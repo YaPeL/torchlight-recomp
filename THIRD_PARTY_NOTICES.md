@@ -47,6 +47,7 @@ provides their own copy of the game. Every package carries this file
 | SHA-256 (Stephan Brumme, as altered for Xenia) | `third_party/sha256` | Zlib | inside `torchlight` | static |
 | GNU C++ runtime (libstdc++, libgcc_s) | GCC 16 (`16-20260315-1ubuntu1~22~ppa1`, Ubuntu 22.04, `ppa:ubuntu-toolchain-r/test`) | GPL-3.0-or-later with the GCC Runtime Library Exception 3.1 | `usr/lib/compat/` (used only on hosts with an older libstdc++) | dynamic |
 | libXrandr (needed by OGRE's GL3+ render system), libXext and libXrender (needed by libXrandr) | Ubuntu 22.04: 1.5.2-1build1, 1.3.4-1build1, 0.9.10-1build4 | MIT / X11 | `usr/lib/` (added by linuxdeploy) | dynamic |
+| AppImage runtime (type2-runtime), with musl libc, libfuse, squashfuse, zstd and zlib linked into it | `8f39b89` (the `continuous` release appimagetool 1.9.1 downloads; `--appimage-version` prints it): libfuse 3.15.0 with type2-runtime's `patches/libfuse/mount.c.diff`, squashfuse 0.5.2, musl, zstd and zlib from Alpine Linux 3.21 | MIT (type2-runtime, musl), LGPL-2.1 (libfuse), BSD-2-Clause (squashfuse), BSD-3-Clause (zstd), Zlib (zlib) | the start of the AppImage file, before its file system (the program that mounts it and starts `AppRun`) | static |
 
 The full notices of the Ubuntu libraries added by linuxdeploy are in the AppImage, in
 `usr/share/doc/<package>/copyright`. Not in the packages: Tracy (the SDK links it only in Debug
@@ -81,7 +82,7 @@ as on Linux; and what Windows 10 and later provide: the Universal C Runtime (`uc
 `api-ms-win-crt-*` API sets), `d3dcompiler_47.dll`, `opengl32.dll`, `d3d11.dll`, `dxgi.dll` and
 the system DLLs `check_zip.ps1` lists.
 
-## FFmpeg and libmspack (LGPL)
+## FFmpeg, libmspack and libfuse (LGPL)
 
 - **Configuration** (`thirdparty/FFmpeg/config_linux_x86_64.h` and `config_windows_x86_64.h` in
   the SDK): `--disable-everything --disable-programs --disable-all --disable-x86asm
@@ -110,6 +111,15 @@ the system DLLs `check_zip.ps1` lists.
   - The terms of the combined work must allow modification for the user's own use and reverse
     engineering for debugging such modifications (section 6): the project's own license, GPL-3.0
     (`LICENSE`), does not forbid that.
+
+libfuse (LGPL-2.1) is linked statically into the AppImage runtime, a separate program at the start
+of the AppImage file that mounts the image and starts the game; the game does not link it. Its
+source: libfuse 3.15.0 (`https://github.com/libfuse/libfuse/releases/tag/fuse-3.15.0`) with the
+patch and the build scripts of type2-runtime at the version the AppImage reports
+(`https://github.com/AppImage/type2-runtime/tree/8f39b89`: `patches/libfuse/mount.c.diff`,
+`scripts/`). The runtime is open source (MIT) and built by those public scripts, so a user can
+rebuild it with a modified libfuse and repack the image with it: `--appimage-extract`, then
+`appimagetool --runtime-file RUNTIME squashfs-root` (LGPL-2.1 section 6(a)).
 
 ## GNU C++ runtime
 
@@ -1802,6 +1812,156 @@ applications, and to alter it and redistribute it freely, subject to the followi
 ```
 Their copyright notices and licenses as Ubuntu 22.04 ships them are in the AppImage, in
 usr/share/doc/{libxrandr2,libxext6,libxrender1}/copyright.
+```
+
+### AppImage runtime (type2-runtime)
+
+```
+MIT License
+
+Copyright (c) 2004-23 probonopd
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+```
+
+#### musl libc (in the AppImage runtime)
+
+The MIT license of musl as a whole, from its `COPYRIGHT` file (v1.2.5); the full file, with the
+list of contributors and the notes on files under other permissive terms, is at
+`https://git.musl-libc.org/cgit/musl/tree/COPYRIGHT`.
+
+```
+musl as a whole is licensed under the following standard MIT license:
+
+----------------------------------------------------------------------
+Copyright © 2005-2020 Rich Felker, et al.
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
+CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
+TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
+SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+----------------------------------------------------------------------
+```
+
+#### libfuse (in the AppImage runtime)
+
+```
+FUSE: Filesystem in Userspace
+Copyright (C) 2001-2007  Miklos Szeredi <miklos@szeredi.hu>
+
+This program can be distributed under the terms of the GNU LGPLv2.
+See the file COPYING.LIB.
+```
+
+```
+Full license: GNU Lesser General Public License 2.1 (text below).
+```
+
+#### squashfuse (in the AppImage runtime)
+
+```
+The squashfuse distribution as a whole is copyright Dave
+Vasilevsky and is subject to the copyright notice reproduced at
+the bottom of this file.
+
+The file squashfs_fs.h is copyright Phillip Lougher and, with his permission,
+subject to the same license.
+
+
+Copyright (c) 2012 Dave Vasilevsky <dave@vasilevsky.ca>
+                   Phillip Lougher <phillip@squashfs.org.uk>
+All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions
+are met:
+1. Redistributions of source code must retain the above copyright
+   notice, this list of conditions and the following disclaimer.
+2. Redistributions in binary form must reproduce the above copyright
+   notice, this list of conditions and the following disclaimer in the
+   documentation and/or other materials provided with the distribution.
+
+THIS SOFTWARE IS PROVIDED BY THE AUTHOR(S) ``AS IS'' AND ANY EXPRESS OR
+IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES
+OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+IN NO EVENT SHALL THE AUTHOR(S) BE LIABLE FOR ANY DIRECT, INDIRECT,
+INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF
+THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+#### zstd (in the AppImage runtime)
+
+```
+BSD License
+
+For Zstandard software
+
+Copyright (c) Meta Platforms, Inc. and affiliates. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without modification,
+are permitted provided that the following conditions are met:
+
+ * Redistributions of source code must retain the above copyright notice, this
+   list of conditions and the following disclaimer.
+
+ * Redistributions in binary form must reproduce the above copyright notice,
+   this list of conditions and the following disclaimer in the documentation
+   and/or other materials provided with the distribution.
+
+ * Neither the name Facebook, nor Meta, nor the names of its contributors may
+   be used to endorse or promote products derived from this software without
+   specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND
+ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR
+ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES
+(INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON
+ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
+SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+```
+
+#### zlib (in the AppImage runtime)
+
+```
+The zlib license, as in the zlib (Windows) section above.
 ```
 
 ### GNU Lesser General Public License 2.1

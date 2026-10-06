@@ -126,7 +126,8 @@ Other languages can be added as language packs, including translations made for 
 - **PC achievements** are covered by tests, but only a few have been earned in actual play so far.
 - **Xbox LIVE** features (sign-in, leaderboards) are not available.
 - **Steam Deck**: the AppImage is meant to work in Desktop Mode but has not been tested on the
-  device yet. **macOS** is not supported.
+  device yet.
+- **macOS** is not supported in this beta; a macOS version is planned for the next release.
 - **Ultrawide**: at 32:9, the story screens shown inside a level can show a few rows of the level at
   the top right.
 - **Mods** made for the PC version are not supported. Language packs for scripts written right to
