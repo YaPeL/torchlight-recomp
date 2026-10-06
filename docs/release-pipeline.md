@@ -465,6 +465,16 @@ announces it.
 **Was blocking the first release**: the repository's `LICENSE` (REL.8); the owner chose GPL-3.0 in
 `f37b2ad`.
 
+### 5.8 Pending after the beta
+
+- **The AppImage runtime in a release of our own.** `packaging/linux/get_tools.sh` pins
+  type2-runtime `8f39b89` by SHA-256, but upstream only publishes it as its `continuous` release,
+  which each new upstream build replaces: from then on the download no longer matches and the
+  build stops until the pin and `THIRD_PARTY_NOTICES.md` are updated. To be independent of that,
+  the owner uploads the same verified file (`runtime-x86_64`, SHA-256 `156f4bdb…`, signed by
+  type2-runtime's key) as an asset of a release of this repository, and `get_tools.sh` downloads
+  it from there with the same hash.
+
 ## Sources
 
 - Unleashed Recompiled: <https://github.com/hedge-dev/UnleashedRecomp> (`.github/workflows/`,
