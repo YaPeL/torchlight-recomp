@@ -4,10 +4,11 @@
 # and OGRE, RUNPATH $ORIGIN/../lib), the libraries they need that hosts do not have (linuxdeploy,
 # with AppImage's exclusion list, and never libwayland-*), the build's libstdc++/libgcc_s in
 # usr/lib/compat for AppRun's check, our desktop file and icon. appimagetool makes the image with
-# its static runtime.
+# the pinned static runtime get_tools.sh puts next to it (runtime-x86_64).
 # Usage: make_appimage.sh INSTALL_DIR OUTPUT.AppImage [EXECUTABLE]
 #   EXECUTABLE  what AppRun starts (default torchlight; replay for CI's package-check)
-# Needs linuxdeploy and appimagetool in PATH (CI downloads pinned versions), objcopy, and the
+# Needs linuxdeploy and appimagetool in PATH with runtime-x86_64 next to appimagetool (CI downloads
+# pinned versions with get_tools.sh), objcopy, and the
 # compiler the tree was built with (for its libstdc++).
 set -eu
 [ $# -ge 2 ] || { echo "usage: $0 INSTALL_DIR OUTPUT.AppImage [EXECUTABLE]" >&2; exit 2; }
@@ -57,5 +58,8 @@ rm -f "$appdir/AppRun"
 sed "s/@EXECUTABLE@/$executable/" "$here/AppRun.in" > "$appdir/AppRun"
 chmod +x "$appdir/AppRun"
 
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 appimagetool --no-appstream "$appdir" "$output"
+runtime="$(dirname "$(command -v appimagetool)")/runtime-x86_64"
+[ -f "$runtime" ] || { echo "make_appimage: no AppImage runtime at $runtime (get_tools.sh)" >&2; exit 1; }
+APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 appimagetool --no-appstream --runtime-file "$runtime" \
+  "$appdir" "$output"
 echo "AppImage: $output"
