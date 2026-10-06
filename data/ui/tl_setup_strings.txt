@@ -1,0 +1,98 @@
+# Translations of the first start's texts (src/game_setup/: setup_text.h, game_files.h, install.h)
+# for the languages the game ships, written for this project in the register of the game's own
+# translations (de: du, fr: vous, es: tú). A section per language code; each line is
+# "English text = translation"; "\n" is a line break and {words} in braces are filled in.
+# setup_text_test checks that every text has a line in every section.
+
+[de]
+Torchlight setup = Torchlight einrichten
+Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE) or a folder where it is already extracted. The files are checked and copied to:\n{where} = Torchlight braucht die Spieldateien aus deiner Kopie von Torchlight für Xbox Live Arcade (Version 1.0.140.0).\n\nWähle das Paket des Spiels (die von deiner Konsole kopierte Datei, die mit LIVE beginnt) oder einen Ordner, in den es bereits entpackt wurde. Die Dateien werden geprüft und kopiert nach:\n{where}
+Choose package... = Paket wählen …
+Choose folder... = Ordner wählen …
+Quit = Beenden
+Torchlight package (Xbox Live Arcade) = Torchlight-Paket (Xbox Live Arcade)
+Folder with the extracted game files = Ordner mit den entpackten Spieldateien
+The file chooser could not be opened ({error}).\n\nOn the Steam Deck, do this first setup in Desktop Mode. = Die Dateiauswahl konnte nicht geöffnet werden ({error}).\n\nFühre diese Ersteinrichtung auf dem Steam Deck im Desktop-Modus durch.
+Extracting the game files... = Spieldateien werden entpackt ...
+Copying the game files... = Spieldateien werden kopiert ...
+Checking the game files... = Spieldateien werden geprüft ...
+Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version; some cannot be earned yet. Each set keeps its own progress. You can change this later in the settings (restart required). = Wähle, welche Erfolge du verdienen möchtest. Xbox 360: die 12 ursprünglichen Erfolge des Spiels. PC: die 66 Erfolge der PC-Version; einige lassen sich noch nicht verdienen. Jede Auswahl behält ihren eigenen Fortschritt. Du kannst das später in den Optionen ändern (Neustart erforderlich).
+Xbox 360 = Xbox 360
+PC (incomplete) = PC (unvollständig)
+This file is not an Xbox 360 package (no LIVE, CON or PIRS header). = Diese Datei ist kein Xbox-360-Paket (kein LIVE-, CON- oder PIRS-Header).
+This package is not an Xbox Live Arcade game (content type {value}). = Dieses Paket ist kein Xbox-Live-Arcade-Spiel (Inhaltstyp {value}).
+This package is not Torchlight (title ID {value}, expected {expected}). = Dieses Paket ist nicht Torchlight (Titel-ID {value}, erwartet {expected}).
+The game files are incomplete: {file} is missing. = Die Spieldateien sind unvollständig: {file} fehlt.
+The game files do not match the supported version (Torchlight XBLA 1.0.140.0): {file} has another size. = Die Spieldateien entsprechen nicht der unterstützten Version (Torchlight XBLA 1.0.140.0): {file} hat eine andere Größe.
+The game files do not match the supported version (Torchlight XBLA 1.0.140.0): {file} differs. = Die Spieldateien entsprechen nicht der unterstützten Version (Torchlight XBLA 1.0.140.0): {file} weicht ab.
+Cannot read {file}. = {file} kann nicht gelesen werden.
+Cannot read the folder {path}: {error} = Der Ordner {path} kann nicht gelesen werden: {error}
+Cannot copy {path}. = {path} kann nicht kopiert werden.
+Cannot read the package {path}. = Das Paket {path} kann nicht gelesen werden.
+Cannot read {file} from the package. = {file} kann nicht aus dem Paket gelesen werden.
+Cannot write {path}. = {path} kann nicht geschrieben werden.
+Cannot create {path}: {error} = {path} kann nicht erstellt werden: {error}
+Cannot move the previous {path} aside: {error} = Der bisherige Ordner {path} kann nicht beiseitegelegt werden: {error}
+Cannot finish the install in {path}: {error} = Die Installation in {path} kann nicht abgeschlossen werden: {error}
+
+[fr]
+Torchlight setup = Configuration de Torchlight
+Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE) or a folder where it is already extracted. The files are checked and copied to:\n{where} = Torchlight a besoin des fichiers du jeu de votre copie de Torchlight pour Xbox Live Arcade (version 1.0.140.0).\n\nChoisissez le paquet du jeu (le fichier copié depuis votre console, qui commence par LIVE) ou un dossier où il est déjà extrait. Les fichiers seront vérifiés puis copiés dans :\n{where}
+Choose package... = Choisir le paquet...
+Choose folder... = Choisir le dossier...
+Quit = Quitter
+Torchlight package (Xbox Live Arcade) = Paquet de Torchlight (Xbox Live Arcade)
+Folder with the extracted game files = Dossier contenant les fichiers du jeu extraits
+The file chooser could not be opened ({error}).\n\nOn the Steam Deck, do this first setup in Desktop Mode. = Impossible d'ouvrir le sélecteur de fichiers ({error}).\n\nSur Steam Deck, effectuez cette première configuration en mode Bureau.
+Extracting the game files... = Extraction des fichiers du jeu...
+Copying the game files... = Copie des fichiers du jeu...
+Checking the game files... = Vérification des fichiers du jeu...
+Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version; some cannot be earned yet. Each set keeps its own progress. You can change this later in the settings (restart required). = Choisissez les succès à obtenir. Xbox 360 : les 12 succès d'origine du jeu. PC : les 66 succès de la version PC ; certains ne peuvent pas encore être obtenus. Chaque ensemble conserve sa propre progression. Vous pourrez modifier ce choix plus tard dans les options (redémarrage nécessaire).
+Xbox 360 = Xbox 360
+PC (incomplete) = PC (incomplet)
+This file is not an Xbox 360 package (no LIVE, CON or PIRS header). = Ce fichier n'est pas un paquet Xbox 360 (aucun en-tête LIVE, CON ou PIRS).
+This package is not an Xbox Live Arcade game (content type {value}). = Ce paquet n'est pas un jeu Xbox Live Arcade (type de contenu {value}).
+This package is not Torchlight (title ID {value}, expected {expected}). = Ce paquet n'est pas Torchlight (identifiant de titre {value}, attendu {expected}).
+The game files are incomplete: {file} is missing. = Les fichiers du jeu sont incomplets : {file} est manquant.
+The game files do not match the supported version (Torchlight XBLA 1.0.140.0): {file} has another size. = Les fichiers du jeu ne correspondent pas à la version prise en charge (Torchlight XBLA 1.0.140.0) : la taille de {file} est différente.
+The game files do not match the supported version (Torchlight XBLA 1.0.140.0): {file} differs. = Les fichiers du jeu ne correspondent pas à la version prise en charge (Torchlight XBLA 1.0.140.0) : {file} est différent.
+Cannot read {file}. = Impossible de lire {file}.
+Cannot read the folder {path}: {error} = Impossible de lire le dossier {path} : {error}
+Cannot copy {path}. = Impossible de copier {path}.
+Cannot read the package {path}. = Impossible de lire le paquet {path}.
+Cannot read {file} from the package. = Impossible de lire {file} dans le paquet.
+Cannot write {path}. = Impossible d'écrire {path}.
+Cannot create {path}: {error} = Impossible de créer {path} : {error}
+Cannot move the previous {path} aside: {error} = Impossible de mettre de côté l'ancien dossier {path} : {error}
+Cannot finish the install in {path}: {error} = Impossible de terminer l'installation dans {path} : {error}
+
+[es]
+Torchlight setup = Configuración de Torchlight
+Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE) or a folder where it is already extracted. The files are checked and copied to:\n{where} = Torchlight necesita los archivos del juego de tu copia de Torchlight para Xbox Live Arcade (versión 1.0.140.0).\n\nElige el paquete del juego (el archivo copiado de tu consola, que empieza con LIVE) o una carpeta donde ya esté extraído. Los archivos se comprueban y se copian en:\n{where}
+Choose package... = Elegir paquete...
+Choose folder... = Elegir carpeta...
+Quit = Salir
+Torchlight package (Xbox Live Arcade) = Paquete de Torchlight (Xbox Live Arcade)
+Folder with the extracted game files = Carpeta con los archivos del juego extraídos
+The file chooser could not be opened ({error}).\n\nOn the Steam Deck, do this first setup in Desktop Mode. = No se pudo abrir el selector de archivos ({error}).\n\nEn la Steam Deck, haz esta primera configuración en el modo escritorio.
+Extracting the game files... = Extrayendo los archivos del juego...
+Copying the game files... = Copiando los archivos del juego...
+Checking the game files... = Comprobando los archivos del juego...
+Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version; some cannot be earned yet. Each set keeps its own progress. You can change this later in the settings (restart required). = Elige qué logros quieres conseguir. Xbox 360: los 12 logros originales del juego. PC: los 66 logros de la versión de PC; algunos todavía no se pueden conseguir. Cada conjunto conserva su propio progreso. Puedes cambiarlo más adelante en las opciones (requiere reiniciar).
+Xbox 360 = Xbox 360
+PC (incomplete) = PC (incompletos)
+This file is not an Xbox 360 package (no LIVE, CON or PIRS header). = Este archivo no es un paquete de Xbox 360 (no tiene cabecera LIVE, CON ni PIRS).
+This package is not an Xbox Live Arcade game (content type {value}). = Este paquete no es un juego de Xbox Live Arcade (tipo de contenido {value}).
+This package is not Torchlight (title ID {value}, expected {expected}). = Este paquete no es Torchlight (ID de título {value}, se esperaba {expected}).
+The game files are incomplete: {file} is missing. = Los archivos del juego están incompletos: falta {file}.
+The game files do not match the supported version (Torchlight XBLA 1.0.140.0): {file} has another size. = Los archivos del juego no coinciden con la versión admitida (Torchlight XBLA 1.0.140.0): {file} tiene otro tamaño.
+The game files do not match the supported version (Torchlight XBLA 1.0.140.0): {file} differs. = Los archivos del juego no coinciden con la versión admitida (Torchlight XBLA 1.0.140.0): {file} es distinto.
+Cannot read {file}. = No se puede leer {file}.
+Cannot read the folder {path}: {error} = No se puede leer la carpeta {path}: {error}
+Cannot copy {path}. = No se puede copiar {path}.
+Cannot read the package {path}. = No se puede leer el paquete {path}.
+Cannot read {file} from the package. = No se puede leer {file} del paquete.
+Cannot write {path}. = No se puede escribir {path}.
+Cannot create {path}: {error} = No se puede crear {path}: {error}
+Cannot move the previous {path} aside: {error} = No se puede apartar la carpeta anterior {path}: {error}
+Cannot finish the install in {path}: {error} = No se puede terminar la instalación en {path}: {error}

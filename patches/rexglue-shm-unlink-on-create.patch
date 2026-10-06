@@ -1,0 +1,15 @@
+diff --git a/src/core/memory_posix.cpp b/src/core/memory_posix.cpp
+index b52bf39..47b9143 100644
+--- a/src/core/memory_posix.cpp
++++ b/src/core/memory_posix.cpp
+@@ -483,6 +483,10 @@ FileMappingHandle CreateFileMappingHandle(const std::filesystem::path& path, siz
+     shm_unlink(full_path.c_str());
+     return kFileMappingHandleInvalid;
+   }
++  // Remove the name right away: the mapping is only used through this descriptor, and the memory is
++  // freed when the last descriptor and view go away, also when the process dies by a signal (with
++  // the name kept until CloseFileMappingHandle, a killed process left the whole file behind).
++  shm_unlink(full_path.c_str());
+   return static_cast<FileMappingHandle>(ret);
+ #endif
+ }

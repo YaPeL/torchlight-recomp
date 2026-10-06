@@ -1,0 +1,15 @@
+diff --git a/src/kernel/xam/xam_info.cpp b/src/kernel/xam/xam_info.cpp
+index 1fda053..1be084a 100644
+--- a/src/kernel/xam/xam_info.cpp
++++ b/src/kernel/xam/xam_info.cpp
+@@ -281,7 +281,9 @@ void XamLoaderLaunchTitle_entry(mapped_string raw_name_ptr, u32 flags) {
+       loader_data.launch_path = path;
+     }
+   } else {
+-    assert_always("Game requested exit to dashboard via XamLoaderLaunchTitle");
++    // Exit to dashboard is a normal quit for a recompiled title: there is no dashboard to
++    // launch, so terminate the title as release builds already do.
++    REXKRNL_INFO("XamLoaderLaunchTitle: game requested exit to dashboard; terminating title");
+   }
+ 
+   // This function does not return.

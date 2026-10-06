@@ -1,0 +1,291 @@
+diff --git a/include/rex/system/xam/content_manager.h b/include/rex/system/xam/content_manager.h
+index 949d185..4f1b134 100644
+--- a/include/rex/system/xam/content_manager.h
++++ b/include/rex/system/xam/content_manager.h
+@@ -189,6 +189,11 @@ class ContentManager {
+   std::filesystem::path ResolvePackageHeaderPath(const std::string_view file_name, uint64_t xuid,
+                                                  uint32_t title_id,
+                                                  XContentType content_type) const;
++  // Copies a package directory and its header into
++  // root_path_/save-backups/<UTC timestamp>-<package name>/ before it is deleted. Returns false
++  // (and leaves no partial copy) if the copy fails; callers must not delete in that case.
++  bool BackupPackageBeforeDelete(const std::filesystem::path& package_path,
++                                 const std::filesystem::path& header_path);
+ 
+   std::unordered_map<string::string_key_case, ContentPackage*,
+                      string::string_key_case::Hash>::iterator
+diff --git a/src/system/xam/content_manager.cpp b/src/system/xam/content_manager.cpp
+index d0c7bfd..40b0f93 100644
+--- a/src/system/xam/content_manager.cpp
++++ b/src/system/xam/content_manager.cpp
+@@ -10,10 +10,12 @@
+  */
+ 
+ #include <array>
++#include <ctime>
+ #include <cstring>
+ #include <queue>
+ #include <string>
+ 
++#include <fmt/chrono.h>
+ #include <fmt/format.h>
+ 
+ #include <rex/filesystem.h>
+@@ -364,6 +366,43 @@ X_RESULT ContentManager::SetContentThumbnail(uint64_t xuid, const XCONTENT_AGGRE
+   }
+ }
+ 
++bool ContentManager::BackupPackageBeforeDelete(const std::filesystem::path& package_path,
++                                               const std::filesystem::path& header_path) {
++  std::error_code ec;
++  if (!std::filesystem::exists(package_path, ec) && !std::filesystem::exists(header_path, ec)) {
++    return true;  // nothing to lose
++  }
++
++  const auto backups_root = root_path_ / "save-backups";
++  const std::string stamp = fmt::format("{:%Y%m%d-%H%M%S}", fmt::gmtime(std::time(nullptr)));
++  const std::string name = rex::path_to_utf8(package_path.filename());
++  std::filesystem::path backup = backups_root / (stamp + "-" + name);
++  for (int i = 2; std::filesystem::exists(backup, ec); ++i) {
++    backup = backups_root / fmt::format("{}-{}-{}", stamp, name, i);
++  }
++
++  bool ok = std::filesystem::create_directories(backup, ec) && !ec;
++  if (ok && std::filesystem::exists(package_path, ec)) {
++    std::filesystem::copy(package_path, backup / package_path.filename(),
++                          std::filesystem::copy_options::recursive, ec);
++    ok = !ec;
++  }
++  if (ok && std::filesystem::exists(header_path, ec)) {
++    std::filesystem::copy_file(header_path, backup / header_path.filename(), ec);
++    ok = !ec;
++  }
++  if (!ok) {
++    REXSYS_ERROR("ContentManager: could not back up '{}' before deleting it ({}); not deleting",
++                 rex::path_to_utf8(package_path), ec.message());
++    std::error_code cleanup_ec;
++    std::filesystem::remove_all(backup, cleanup_ec);
++    return false;
++  }
++  REXSYS_INFO("ContentManager: backed up '{}' to '{}' before deleting it",
++              rex::path_to_utf8(package_path), rex::path_to_utf8(backup));
++  return true;
++}
++
+ X_RESULT ContentManager::DeleteContent(uint64_t xuid, const XCONTENT_AGGREGATE_DATA& data) {
+   auto global_lock = global_critical_region_.Acquire();
+ 
+@@ -373,6 +412,13 @@ X_RESULT ContentManager::DeleteContent(uint64_t xuid, const XCONTENT_AGGREGATE_D
+   }
+ 
+   auto package_path = ResolvePackagePath(xuid, data);
++  uint64_t used_xuid = (data.xuid != uint64_t(-1) && data.xuid != 0) ? uint64_t(data.xuid) : xuid;
++  auto header_path =
++      ResolvePackageHeaderPath(data.file_name(), used_xuid, data.title_id, data.content_type);
++  if (!BackupPackageBeforeDelete(package_path, header_path)) {
++    return X_ERROR_ACCESS_DENIED;
++  }
++
+   std::error_code ec;
+   auto dir_removed = std::filesystem::remove_all(package_path, ec);
+   if (ec ||
+@@ -380,9 +426,6 @@ X_RESULT ContentManager::DeleteContent(uint64_t xuid, const XCONTENT_AGGREGATE_D
+     return X_ERROR_ACCESS_DENIED;
+   }
+ 
+-  uint64_t used_xuid = (data.xuid != uint64_t(-1) && data.xuid != 0) ? uint64_t(data.xuid) : xuid;
+-  auto header_path =
+-      ResolvePackageHeaderPath(data.file_name(), used_xuid, data.title_id, data.content_type);
+   std::error_code ec2;
+   bool header_removed = std::filesystem::remove(header_path, ec2);
+ 
+@@ -426,6 +469,10 @@ X_RESULT ContentManager::UnmountAndDeleteContent(uint64_t xuid,
+   auto header_path =
+       ResolvePackageHeaderPath(data.file_name(), used_xuid, data.title_id, data.content_type);
+ 
++  if (!BackupPackageBeforeDelete(package_path, header_path)) {
++    return X_ERROR_ACCESS_DENIED;
++  }
++
+   std::error_code ec;
+   auto dir_removed = std::filesystem::remove_all(package_path, ec);
+   if (ec ||
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 7bda2ad..c92c86d 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -14,6 +14,7 @@ add_executable(unit_tests
+     ppc/import_function_test.cpp
+     ppc/stack_test.cpp
+     system/guest_path_test.cpp
++    system/content_delete_backup_test.cpp
+     system/achievement_manager_test.cpp
+     system/function_dispatcher_test.cpp
+     input/input_assignment_test.cpp
+diff --git a/tests/unit/system/content_delete_backup_test.cpp b/tests/unit/system/content_delete_backup_test.cpp
+new file mode 100644
+index 0000000..beaef9e
+--- /dev/null
++++ b/tests/unit/system/content_delete_backup_test.cpp
+@@ -0,0 +1,161 @@
++#include <algorithm>
++#include <cstdio>
++#include <filesystem>
++#include <string>
++#include <vector>
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <rex/filesystem.h>
++#include <rex/system/xam/content_manager.h>
++
++using rex::X_RESULT;
++using rex::system::XContentType;
++using rex::system::xam::ContentManager;
++using rex::system::xam::XCONTENT_AGGREGATE_DATA;
++
++namespace {
++
++constexpr uint64_t kXuid = 0xB13EBABEBABEBABEull;
++constexpr uint32_t kTitleId = 0x58410A7E;
++
++// A user data root with one saved-game package (two files) and its header.
++class ContentRoot {
++ public:
++  ContentRoot() {
++    root_ = std::filesystem::temp_directory_path() /
++            ("rexglue_content_delete_backup_" + std::to_string(counter_++));
++    std::error_code ec;
++    std::filesystem::remove_all(root_, ec);
++    CreatePackage();
++    data_.device_id = 1;
++    data_.content_type = XContentType::kSavedGame;
++    data_.set_file_name("torchlight.sav");
++    data_.xuid = kXuid;
++    data_.title_id = kTitleId;
++  }
++  ~ContentRoot() {
++    std::error_code ec;
++    std::filesystem::remove_all(root_, ec);
++  }
++
++  void CreatePackage() {
++    std::error_code ec;
++    std::filesystem::create_directories(package(), ec);
++    std::filesystem::create_directories(header().parent_path(), ec);
++    Write(package() / "0.TSV", "character zero");
++    Write(package() / "sharedstash.bin", "stash");
++    Write(header(), "header");
++  }
++
++  static void Write(const std::filesystem::path& path, const std::string& text) {
++    FILE* file = rex::filesystem::OpenFile(path, "wb");
++    REQUIRE(file != nullptr);
++    fwrite(text.data(), 1, text.size(), file);
++    fclose(file);
++  }
++
++  static std::string Read(const std::filesystem::path& path) {
++    FILE* file = rex::filesystem::OpenFile(path, "rb");
++    if (!file) return {};
++    std::string text(256, '\0');
++    text.resize(fread(text.data(), 1, text.size(), file));
++    fclose(file);
++    return text;
++  }
++
++  std::filesystem::path root() const { return root_; }
++  std::filesystem::path package() const {
++    return root_ / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav";
++  }
++  std::filesystem::path header() const {
++    return root_ / "B13EBABEBABEBABE" / "58410A7E" / "Headers" / "00000001" /
++           "torchlight.sav.header";
++  }
++  std::filesystem::path backups() const { return root_ / "save-backups"; }
++  const XCONTENT_AGGREGATE_DATA& data() const { return data_; }
++
++  std::vector<std::filesystem::path> BackupDirs() const {
++    std::vector<std::filesystem::path> dirs;
++    std::error_code ec;
++    for (auto& entry : std::filesystem::directory_iterator(backups(), ec)) {
++      dirs.push_back(entry.path());
++    }
++    return dirs;
++  }
++
++ private:
++  static int counter_;
++  std::filesystem::path root_;
++  XCONTENT_AGGREGATE_DATA data_;
++};
++
++int ContentRoot::counter_ = 0;
++
++}  // namespace
++
++TEST_CASE("Deleting a package backs it up first", "[content][xam]") {
++  ContentRoot root;
++  ContentManager manager(nullptr, root.root());
++
++  REQUIRE(manager.DeleteContent(kXuid, root.data()) == X_ERROR_SUCCESS);
++  CHECK_FALSE(std::filesystem::exists(root.package()));
++  CHECK_FALSE(std::filesystem::exists(root.header()));
++
++  auto dirs = root.BackupDirs();
++  REQUIRE(dirs.size() == 1);
++  CHECK(dirs[0].filename().string().ends_with("-torchlight.sav"));
++  CHECK(ContentRoot::Read(dirs[0] / "torchlight.sav" / "0.TSV") == "character zero");
++  CHECK(ContentRoot::Read(dirs[0] / "torchlight.sav" / "sharedstash.bin") == "stash");
++  CHECK(ContentRoot::Read(dirs[0] / "torchlight.sav.header") == "header");
++}
++
++TEST_CASE("A package is not deleted when its backup fails", "[content][xam]") {
++  ContentRoot root;
++  ContentManager manager(nullptr, root.root());
++  // A file where the backup directory should go makes the backup impossible.
++  ContentRoot::Write(root.backups(), "not a directory");
++
++  CHECK(manager.DeleteContent(kXuid, root.data()) == X_ERROR_ACCESS_DENIED);
++  CHECK(ContentRoot::Read(root.package() / "0.TSV") == "character zero");
++  CHECK(std::filesystem::exists(root.header()));
++}
++
++TEST_CASE("Repeated deletions keep separate backups", "[content][xam]") {
++  ContentRoot root;
++  ContentManager manager(nullptr, root.root());
++
++  REQUIRE(manager.DeleteContent(kXuid, root.data()) == X_ERROR_SUCCESS);
++  root.CreatePackage();
++  ContentRoot::Write(root.package() / "0.TSV", "second version");
++  REQUIRE(manager.DeleteContent(kXuid, root.data()) == X_ERROR_SUCCESS);
++
++  auto dirs = root.BackupDirs();
++  REQUIRE(dirs.size() == 2);
++  std::vector<std::string> contents;
++  for (auto& dir : dirs) contents.push_back(ContentRoot::Read(dir / "torchlight.sav" / "0.TSV"));
++  CHECK(std::find(contents.begin(), contents.end(), "character zero") != contents.end());
++  CHECK(std::find(contents.begin(), contents.end(), "second version") != contents.end());
++}
++
++TEST_CASE("Unmount and delete also backs up", "[content][xam]") {
++  ContentRoot root;
++  ContentManager manager(nullptr, root.root());
++
++  REQUIRE(manager.UnmountAndDeleteContent(kXuid, root.data()) == X_ERROR_SUCCESS);
++  CHECK_FALSE(std::filesystem::exists(root.package()));
++  auto dirs = root.BackupDirs();
++  REQUIRE(dirs.size() == 1);
++  CHECK(ContentRoot::Read(dirs[0] / "torchlight.sav" / "0.TSV") == "character zero");
++}
++
++TEST_CASE("Deleting a missing package makes no backup", "[content][xam]") {
++  ContentRoot root;
++  ContentManager manager(nullptr, root.root());
++  std::error_code ec;
++  std::filesystem::remove_all(root.package(), ec);
++  std::filesystem::remove(root.header(), ec);
++
++  CHECK(manager.DeleteContent(kXuid, root.data()) == X_ERROR_FILE_NOT_FOUND);
++  CHECK_FALSE(std::filesystem::exists(root.backups()));
++}

@@ -1,0 +1,14 @@
+out/
+generated/
+
+core
+core.*
+*.log
+.gdb_history
+
+docs/bringup-artifacts/
+
+__pycache__/
+*.pyc
+
+reference

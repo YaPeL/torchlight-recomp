@@ -1,0 +1,11 @@
+# Files that must keep LF endings on every platform, whatever core.autocrlf says: the SDK patches
+# are applied with `git apply` to an LF checkout of the SDK, ReXGlue's codegen rewrites the
+# manifest with LF, and the scripts run with a shebang.
+patches/*.patch text eol=lf
+*.toml text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+# Hashed by tools/deps/key.sh: LF on every checkout (a Windows runner's git converts to CRLF by
+# default), so the dependency key is the same on a runner and on a developer's machine.
+patches/series text eol=lf
+*.ps1 text eol=lf

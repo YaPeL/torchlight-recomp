@@ -1,0 +1,125 @@
+diff --git a/cmake/rexglue_install.cmake b/cmake/rexglue_install.cmake
+index d9a64eb..63116c3 100644
+--- a/cmake/rexglue_install.cmake
++++ b/cmake/rexglue_install.cmake
+@@ -15,6 +15,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/rexglue_helpers.cmake)
+ set(REXGLUE_INSTALL_TARGETS
+     rexruntime
+     rexgpu-xenos
++    rexgpu-null
+     disruptorplus renderdoc simde tomlplusplus
+     aes128 mspack o1heap disasm xxhash
+     libavcodec libavutil
+diff --git a/src/graphics/CMakeLists.txt b/src/graphics/CMakeLists.txt
+index 0d8f8af..2bbe9ea 100644
+--- a/src/graphics/CMakeLists.txt
++++ b/src/graphics/CMakeLists.txt
+@@ -158,3 +158,30 @@ if(REXGLUE_USE_D3D12)
+         dxguid
+     )
+ endif()
++
++# rexgpu-null: the same command processing without GPU emulation (no draws,
++# no copies), for games rendered by a native D3D-level renderer.
++set(REXGPU_NULL_SOURCES ${REXGPU_XENOS_SOURCES})
++list(REMOVE_ITEM REXGPU_NULL_SOURCES plugin_main.cpp)
++list(APPEND REXGPU_NULL_SOURCES null/null_gpu.cpp)
++add_library(rexgpu-null SHARED ${REXGPU_NULL_SOURCES})
++add_library(rex::gpu-null ALIAS rexgpu-null)
++set_target_properties(rexgpu-null PROPERTIES
++    EXPORT_NAME gpu-null
++    CXX_VISIBILITY_PRESET hidden
++    VISIBILITY_INLINES_HIDDEN ON
++)
++target_include_directories(rexgpu-null PRIVATE
++    ${REXGLUE_ROOT}/thirdparty/renderdoc
++    ${REXGLUE_ROOT}
++)
++target_compile_options(rexgpu-null PRIVATE -Wno-unused-variable)
++target_link_libraries(rexgpu-null PRIVATE rexruntime xxHash::xxhash)
++if(REXGLUE_USE_VULKAN)
++    target_link_libraries(rexgpu-null PRIVATE
++        Vulkan::Headers glslang::SPIRV GPUOpen::VulkanMemoryAllocator
++        glslang MachineIndependent GenericCodeGen OSDependent OGLCompiler)
++endif()
++if(REXGLUE_USE_D3D12)
++    target_link_libraries(rexgpu-null PRIVATE d3d12 dxgi dxguid)
++endif()
+diff --git a/src/graphics/null/null_gpu.cpp b/src/graphics/null/null_gpu.cpp
+new file mode 100644
+index 0000000..f5f65c9
+--- /dev/null
++++ b/src/graphics/null/null_gpu.cpp
+@@ -0,0 +1,72 @@
++/**
++ * @file        graphics/null/null_gpu.cpp
++ * @brief       rexgpu-null: command stream processing without GPU emulation.
++ *
++ * Keeps the guest's GPU protocol alive (ring buffer, fences, event writes,
++ * interrupts, vblank) but draws nothing: for games whose rendering is done by a
++ * native renderer hooked at the D3D level. No presenter is created, so the
++ * native renderer owns the window's surface.
++ *
++ * @license     BSD 3-Clause License (same as ReXGlue)
++ */
++
++#include <memory>
++#include <string>
++#include <string_view>
++
++#include <rex/graphics/command_processor.h>
++#include <rex/graphics/graphics_system.h>
++#include <rex/logging.h>
++#include <rex/system/gpu_plugin.h>
++
++namespace rex::graphics::null_gpu {
++
++class NullCommandProcessor : public CommandProcessor {
++ public:
++  NullCommandProcessor(GraphicsSystem* graphics_system, system::KernelState* kernel_state)
++      : CommandProcessor(graphics_system, kernel_state) {}
++
++  void IssueSwap(uint32_t, uint32_t, uint32_t) override {}
++
++ protected:
++  bool SetupContext() override { return true; }
++  void ShutdownContext() override {}
++  Shader* LoadShader(xenos::ShaderType, uint32_t, const uint32_t*, uint32_t) override { return nullptr; }
++  bool IssueDraw(xenos::PrimitiveType, uint32_t, IndexBufferInfo*, bool) override { return true; }
++  bool IssueCopy() override { return true; }
++};
++
++class NullGraphicsSystem : public GraphicsSystem {
++ public:
++  std::string name() const override { return "Null"; }
++
++  // No presenter: the window is left to the native renderer, which draws into
++  // it directly.
++  X_STATUS SetupPresentation(::rex::ui::WindowedAppContext*) override { return X_STATUS_SUCCESS; }
++
++ protected:
++  // No graphics provider either: without draws or a presenter nothing uses it,
++  // and a Vulkan device would keep a host GPU awake (a discrete GPU on a hybrid
++  // laptop) while the native renderer draws on another one. provider_ stays
++  // null; SetupGuestGpu and the command processor do not need it.
++  void CreateProvider(bool) override {}
++  std::unique_ptr<CommandProcessor> CreateCommandProcessor() override {
++    return std::make_unique<NullCommandProcessor>(this, kernel_state_);
++  }
++};
++
++}  // namespace rex::graphics::null_gpu
++
++extern "C" REX_GPU_PLUGIN_EXPORT uint32_t rex_gpu_abi_version(void) {
++  return rex::system::kGpuPluginAbiVersion;
++}
++
++extern "C" REX_GPU_PLUGIN_EXPORT rex::system::IGraphicsSystem* rex_gpu_create(
++    uint32_t abi_version, const rex::system::GpuCreateInfo* info) {
++  if (abi_version != rex::system::kGpuPluginAbiVersion || !info ||
++      info->struct_size < sizeof(rex::system::GpuCreateInfo)) {
++    REXLOG_ERROR("rexgpu-null: ABI or create info mismatch");
++    return nullptr;
++  }
++  return new rex::graphics::null_gpu::NullGraphicsSystem();
++}

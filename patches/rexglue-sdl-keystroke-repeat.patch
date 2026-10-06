@@ -1,0 +1,368 @@
+diff --git a/include/rex/input/keystroke_repeat.h b/include/rex/input/keystroke_repeat.h
+new file mode 100644
+index 0000000..39dc780
+--- /dev/null
++++ b/include/rex/input/keystroke_repeat.h
+@@ -0,0 +1,80 @@
++/**
++ * @file        input/keystroke_repeat.h
++ * @brief       XInput keystroke events from a pad's button bits, with key repeat.
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#pragma once
++
++#include <cstdint>
++#include <optional>
++
++namespace rex::input {
++
++// What a pad has reported as keystrokes so far.
++struct KeystrokeTracker {
++  enum class Repeat : uint8_t {
++    kIdle,       // nothing to repeat
++    kWaiting,    // a button is held and the delay is awaited
++    kRepeating,  // repeating at the rate
++  };
++  uint64_t buttons = 0;  // bits reported as down
++  Repeat repeat = Repeat::kIdle;
++  uint8_t repeat_index = 0;  // the button pressed last
++  uint32_t repeat_time = 0;  // when its down or last repeat was reported (ms)
++};
++
++struct Keystroke {
++  uint8_t index;  // button bit
++  bool down;      // false: up
++  bool repeat;    // a repeated down
++};
++
++// The next keystroke for the buttons now `pressed` (bit i = button i, i < `count`), or nothing.
++// Bits outside `reportable` are never reported. Ups come before downs (so a thumb diagonal is up
++// before its side is down, as XInput does). A held button repeats after `delay_ms`, then every
++// `rate_ms`, only while it is still pressed: XInput never repeats a released button, and a guest
++// that stops reading keystrokes for a while (a loading screen) would otherwise get a repeated
++// down for a button released meanwhile, before its up.
++inline std::optional<Keystroke> NextKeystroke(KeystrokeTracker& t, uint64_t pressed,
++                                              uint64_t reportable, uint8_t count, uint32_t now_ms,
++                                              uint32_t delay_ms, uint32_t rate_ms) {
++  using Repeat = KeystrokeTracker::Repeat;
++  if (t.repeat != Repeat::kIdle && !((pressed >> t.repeat_index) & 1)) {
++    t.repeat = Repeat::kIdle;  // released: its up comes from the change pass below
++  }
++  if (t.repeat == Repeat::kWaiting && t.repeat_time + delay_ms < now_ms) {
++    t.repeat = Repeat::kRepeating;
++  }
++  if (t.repeat == Repeat::kRepeating && t.repeat_time + rate_ms < now_ms) {
++    t.repeat_time = now_ms;
++    return Keystroke{t.repeat_index, true, true};
++  }
++  const uint64_t changed = (pressed ^ t.buttons) & reportable;
++  if (!changed) {
++    return std::nullopt;
++  }
++  for (uint8_t i = 0; i < count; i++) {
++    const uint64_t bit = uint64_t(1) << i;
++    if ((changed & bit) && !(pressed & bit)) {
++      t.buttons &= ~bit;
++      t.repeat = Repeat::kIdle;
++      return Keystroke{i, false, false};
++    }
++  }
++  for (uint8_t i = 0; i < count; i++) {
++    const uint64_t bit = uint64_t(1) << i;
++    if ((changed & bit) && (pressed & bit)) {
++      t.buttons |= bit;
++      t.repeat = Repeat::kWaiting;
++      t.repeat_index = i;
++      t.repeat_time = now_ms;
++      return Keystroke{i, true, false};
++    }
++  }
++  return std::nullopt;
++}
++
++}  // namespace rex::input
+diff --git a/include/rex/input/sdl/sdl_input_driver.h b/include/rex/input/sdl/sdl_input_driver.h
+index cf0e3d1..f14fefc 100644
+--- a/include/rex/input/sdl/sdl_input_driver.h
++++ b/include/rex/input/sdl/sdl_input_driver.h
+@@ -17,6 +17,7 @@
+ #include <vector>
+ 
+ #include <rex/input/input_driver.h>
++#include <rex/input/keystroke_repeat.h>
+ 
+ #include <SDL3/SDL.h>
+ 
+@@ -44,20 +45,6 @@ class SDLInputDriver final : public InputDriver, public rex::ui::WindowListener
+   void OnWindowAvailable(rex::ui::Window* window) override;
+ 
+  private:
+-  enum class RepeatState {
+-    Idle,       // no buttons pressed or repeating has ended
+-    Waiting,    // a button is held and the delay is awaited
+-    Repeating,  // actively repeating at a rate
+-  };
+-  struct KeystrokeState {
+-    uint64_t buttons;
+-    RepeatState repeat_state;
+-    // the button number that was pressed last:
+-    uint8_t repeat_butt_idx;
+-    // the last time (ms) a down (and/or repeat) event for that button was send:
+-    uint32_t repeat_time;
+-  };
+-
+   struct ControllerState {
+     SDL_Gamepad* sdl;
+     X_INPUT_CAPABILITIES caps;
+@@ -66,7 +53,7 @@ class SDLInputDriver final : public InputDriver, public rex::ui::WindowListener
+     bool is_active;
+     DeviceId id;
+     // Per pad rather than per guest user, so it survives reassignment.
+-    KeystrokeState keystroke;
++    KeystrokeTracker keystroke;
+   };
+ 
+   // WindowListener
+diff --git a/src/input/sdl/sdl_input_driver.cpp b/src/input/sdl/sdl_input_driver.cpp
+index c7c440d..4dc1eab 100644
+--- a/src/input/sdl/sdl_input_driver.cpp
++++ b/src/input/sdl/sdl_input_driver.cpp
+@@ -318,73 +318,28 @@ X_RESULT SDLInputDriver::GetDeviceKeystroke(DeviceId id, uint32_t flags,
+       is_active ? (static_cast<uint64_t>(static_cast<uint16_t>(controller->state.gamepad.buttons)) |
+                    AnalogToKeyfield(controller->state.gamepad))
+                 : uint64_t(0);
+-  KeystrokeState& last = controller->keystroke;
+-
+-  // Handle repeating
+-  auto guest_now = rex::chrono::Clock::QueryGuestUptimeMillis();
+-  static_assert(HID_SDL_REPEAT_DELAY >= HID_SDL_REPEAT_RATE);
+-  if (last.repeat_state == RepeatState::Waiting &&
+-      (last.repeat_time + HID_SDL_REPEAT_DELAY < guest_now)) {
+-    last.repeat_state = RepeatState::Repeating;
+-  }
+-  if (last.repeat_state == RepeatState::Repeating &&
+-      (last.repeat_time + HID_SDL_REPEAT_RATE < guest_now)) {
+-    last.repeat_time = guest_now;
+-    rex::ui::VirtualKey vk = kVkLookup.at(last.repeat_butt_idx);
+-    assert_true(vk != rex::ui::VirtualKey::kNone);
+-    out_keystroke->virtual_key = uint16_t(vk);
+-    out_keystroke->unicode = 0;
+-    // InputSystem stamps the guest user this device is assigned to.
+-    out_keystroke->user_index = 0;
+-    out_keystroke->hid_code = 0;
+-    out_keystroke->flags = X_INPUT_KEYSTROKE_KEYDOWN | X_INPUT_KEYSTROKE_REPEAT;
+-    return X_ERROR_SUCCESS;
+-  }
+-
+-  auto butts_changed = curr_butts ^ last.buttons;
+-  if (!butts_changed) {
+-    return X_ERROR_EMPTY;
+-  }
+-
+-  // First try to clear buttons with up events. This is to match xinput
+-  // behavior when transitioning thumb sticks, e.g. so that THUMB_UPLEFT is
+-  // up before THUMB_LEFT is down.
+-  for (auto [clear_pass, pass] = std::tuple{true, 0}; pass < 2; clear_pass = false, pass++) {
+-    for (uint8_t i = 0; i < uint8_t(std::size(kVkLookup)); i++) {
+-      auto fbutton = uint64_t(1) << i;
+-      if (!(butts_changed & fbutton)) {
+-        continue;
+-      }
+-      rex::ui::VirtualKey vk = kVkLookup.at(i);
+-      if (vk == rex::ui::VirtualKey::kNone) {
+-        continue;
+-      }
+-
+-      out_keystroke->virtual_key = uint16_t(vk);
+-      out_keystroke->unicode = 0;
+-      out_keystroke->user_index = 0;
+-      out_keystroke->hid_code = 0;
+-
+-      bool is_pressed = curr_butts & fbutton;
+-      if (clear_pass && !is_pressed) {
+-        // up
+-        out_keystroke->flags = X_INPUT_KEYSTROKE_KEYUP;
+-        last.buttons &= ~fbutton;
+-        last.repeat_state = RepeatState::Idle;
+-        return X_ERROR_SUCCESS;
+-      }
+-      if (!clear_pass && is_pressed) {
+-        // down
+-        out_keystroke->flags = X_INPUT_KEYSTROKE_KEYDOWN;
+-        last.buttons |= fbutton;
+-        last.repeat_state = RepeatState::Waiting;
+-        last.repeat_butt_idx = i;
+-        last.repeat_time = guest_now;
+-        return X_ERROR_SUCCESS;
+-      }
++  uint64_t reportable = 0;
++  for (uint8_t i = 0; i < uint8_t(std::size(kVkLookup)); i++) {
++    if (kVkLookup[i] != rex::ui::VirtualKey::kNone) {
++      reportable |= uint64_t(1) << i;
+     }
+   }
+-  return X_ERROR_EMPTY;
++  const auto keystroke = NextKeystroke(
++      controller->keystroke, curr_butts, reportable, uint8_t(std::size(kVkLookup)),
++      rex::chrono::Clock::QueryGuestUptimeMillis(), HID_SDL_REPEAT_DELAY, HID_SDL_REPEAT_RATE);
++  if (!keystroke) {
++    return X_ERROR_EMPTY;
++  }
++  out_keystroke->virtual_key = uint16_t(kVkLookup.at(keystroke->index));
++  out_keystroke->unicode = 0;
++  // InputSystem stamps the guest user this device is assigned to.
++  out_keystroke->user_index = 0;
++  out_keystroke->hid_code = 0;
++  out_keystroke->flags =
++      !keystroke->down ? X_INPUT_KEYSTROKE_KEYUP
++      : keystroke->repeat ? X_INPUT_KEYSTROKE_KEYDOWN | X_INPUT_KEYSTROKE_REPEAT
++                          : X_INPUT_KEYSTROKE_KEYDOWN;
++  return X_ERROR_SUCCESS;
+ }
+ 
+ void SDLInputDriver::HandleEvent(const SDL_Event& event) {
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index bdd8a02..721fb9f 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -20,6 +20,7 @@ add_executable(unit_tests
+     system/achievement_manager_test.cpp
+     system/function_dispatcher_test.cpp
+     input/input_assignment_test.cpp
++    input/keystroke_repeat_test.cpp
+     codegen/codegen_writer_test.cpp
+     codegen/output_partition_test.cpp
+     codegen/output_stamp_test.cpp
+diff --git a/tests/unit/input/keystroke_repeat_test.cpp b/tests/unit/input/keystroke_repeat_test.cpp
+new file mode 100644
+index 0000000..c1fde12
+--- /dev/null
++++ b/tests/unit/input/keystroke_repeat_test.cpp
+@@ -0,0 +1,124 @@
++// Tests for NextKeystroke (input/keystroke_repeat.h): downs, ups, ordering and key repeat, which
++// must stop as soon as the repeated button is released.
++
++#include <catch2/catch_test_macros.hpp>
++#include <cstdint>
++#include <optional>
++#include <vector>
++
++#include <rex/input/keystroke_repeat.h>
++
++using rex::input::Keystroke;
++using rex::input::KeystrokeTracker;
++using rex::input::NextKeystroke;
++
++namespace {
++
++constexpr uint32_t kDelay = 400, kRate = 100;
++constexpr uint8_t kCount = 34;
++constexpr uint64_t kAll = (uint64_t(1) << kCount) - 1;
++constexpr uint8_t kA = 12, kB = 13;
++constexpr uint64_t Bit(uint8_t i) { return uint64_t(1) << i; }
++
++// Every keystroke the guest gets by reading until empty at `now`.
++std::vector<Keystroke> Drain(KeystrokeTracker& t, uint64_t pressed, uint32_t now,
++                             uint64_t reportable = kAll) {
++  std::vector<Keystroke> out;
++  while (auto k = NextKeystroke(t, pressed, reportable, kCount, now, kDelay, kRate)) {
++    out.push_back(*k);
++    REQUIRE(out.size() < 100);
++  }
++  return out;
++}
++
++bool Is(const Keystroke& k, uint8_t index, bool down, bool repeat) {
++  return k.index == index && k.down == down && k.repeat == repeat;
++}
++
++}  // namespace
++
++TEST_CASE("NextKeystroke reports a press and a release", "[input][keystroke]") {
++  KeystrokeTracker t;
++  auto down = Drain(t, Bit(kA), 1000);
++  REQUIRE(down.size() == 1);
++  CHECK(Is(down[0], kA, true, false));
++  CHECK(Drain(t, Bit(kA), 1016).empty());
++  auto up = Drain(t, 0, 1032);
++  REQUIRE(up.size() == 1);
++  CHECK(Is(up[0], kA, false, false));
++  CHECK(Drain(t, 0, 1048).empty());
++}
++
++TEST_CASE("NextKeystroke repeats a held button after the delay, at the rate",
++          "[input][keystroke]") {
++  KeystrokeTracker t;
++  Drain(t, Bit(kA), 1000);
++  CHECK(Drain(t, Bit(kA), 1400).empty());  // not past the delay yet
++  auto first = Drain(t, Bit(kA), 1401);
++  REQUIRE(first.size() == 1);
++  CHECK(Is(first[0], kA, true, true));
++  CHECK(Drain(t, Bit(kA), 1450).empty());
++  auto second = Drain(t, Bit(kA), 1502);
++  REQUIRE(second.size() == 1);
++  CHECK(Is(second[0], kA, true, true));
++  auto up = Drain(t, 0, 1510);
++  REQUIRE(up.size() == 1);
++  CHECK(Is(up[0], kA, false, false));
++}
++
++TEST_CASE("NextKeystroke does not repeat a button released while nobody read keystrokes",
++          "[input][keystroke]") {
++  // Pressed, then the guest stops reading (a loading screen) and the button is released
++  // meanwhile: the next read gets only its up, never a repeated down.
++  KeystrokeTracker t;
++  Drain(t, Bit(kA), 1000);
++  auto after_load = Drain(t, 0, 2500);
++  REQUIRE(after_load.size() == 1);
++  CHECK(Is(after_load[0], kA, false, false));
++  CHECK(Drain(t, 0, 2600).empty());
++}
++
++TEST_CASE("NextKeystroke stops repeating once the button is released", "[input][keystroke]") {
++  KeystrokeTracker t;
++  Drain(t, Bit(kA), 1000);
++  Drain(t, Bit(kA), 1401);  // repeating
++  auto later = Drain(t, 0, 3000);
++  REQUIRE(later.size() == 1);
++  CHECK(Is(later[0], kA, false, false));
++}
++
++TEST_CASE("NextKeystroke repeats the button pressed last, while it is held",
++          "[input][keystroke]") {
++  KeystrokeTracker t;
++  Drain(t, Bit(kA), 1000);
++  auto b = Drain(t, Bit(kA) | Bit(kB), 1100);
++  REQUIRE(b.size() == 1);
++  CHECK(Is(b[0], kB, true, false));
++  auto repeat = Drain(t, Bit(kA) | Bit(kB), 1501);
++  REQUIRE(repeat.size() == 1);
++  CHECK(Is(repeat[0], kB, true, true));
++  // B released, A still held: B's up, and no repeat of either afterwards.
++  auto up = Drain(t, Bit(kA), 1600);
++  REQUIRE(up.size() == 1);
++  CHECK(Is(up[0], kB, false, false));
++  CHECK(Drain(t, Bit(kA), 3000).empty());
++}
++
++TEST_CASE("NextKeystroke reports ups before downs", "[input][keystroke]") {
++  KeystrokeTracker t;
++  Drain(t, Bit(kA), 1000);
++  auto swap = Drain(t, Bit(kB), 1016);
++  REQUIRE(swap.size() == 2);
++  CHECK(Is(swap[0], kA, false, false));
++  CHECK(Is(swap[1], kB, true, false));
++}
++
++TEST_CASE("NextKeystroke never reports buttons outside the reportable mask",
++          "[input][keystroke]") {
++  KeystrokeTracker t;
++  const uint64_t reportable = kAll & ~Bit(10);  // the guide button has no virtual key
++  CHECK(Drain(t, Bit(10), 1000, reportable).empty());
++  auto a = Drain(t, Bit(10) | Bit(kA), 1016, reportable);
++  REQUIRE(a.size() == 1);
++  CHECK(Is(a[0], kA, true, false));
++}

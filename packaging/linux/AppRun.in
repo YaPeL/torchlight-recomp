@@ -1,0 +1,26 @@
+#!/bin/sh
+# The AppImage's entry point (packaging/linux/make_appimage.sh). The image carries the libstdc++
+# and libgcc_s it was built with in usr/lib/compat; they are used only when the host's libstdc++ is
+# older (its highest GLIBCXX_ version is lower), so a newer host keeps its own
+# (docs/release-pipeline.md, decision 2). This selection is the launcher's alone.
+here=$(dirname "$(readlink -f "$0")")
+
+glibcxx() {  # the highest GLIBCXX_3.4.N minor of a libstdc++, 0 when unknown
+  [ -r "$1" ] || { echo 0; return; }
+  grep -ao 'GLIBCXX_3\.4\.[0-9]*' "$1" | sed 's/GLIBCXX_3\.4\.//' | sort -n | tail -1
+}
+host_libstdcxx() {
+  path=$(ldconfig -p 2>/dev/null | awk '/libstdc\+\+\.so\.6 .*x86-64/ { print $NF; exit }')
+  for candidate in "$path" /usr/lib/x86_64-linux-gnu/libstdc++.so.6 /usr/lib64/libstdc++.so.6 \
+                   /usr/lib/libstdc++.so.6; do
+    [ -n "$candidate" ] && [ -r "$candidate" ] && { echo "$candidate"; return; }
+  done
+}
+
+bundled=$(glibcxx "$here/usr/lib/compat/libstdc++.so.6")
+host=$(glibcxx "$(host_libstdcxx)")
+if [ "${bundled:-0}" -gt "${host:-0}" ]; then
+  LD_LIBRARY_PATH="$here/usr/lib/compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+  export LD_LIBRARY_PATH
+fi
+exec "$here/usr/bin/@EXECUTABLE@" "$@"

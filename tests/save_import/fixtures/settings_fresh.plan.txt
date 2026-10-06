@@ -1,0 +1,6 @@
+settings.txt change SHOW BLOOD None 0
+settings.txt change AUTOMAP ZOOM None 40.000000
+local_settings.txt change SOUND VOLUME None 0.300000
+local_settings.txt change MUSIC VOLUME None 0.500000
+local_settings.txt change SHOW TIPS None 0
+local_settings.txt change GAME_COMPLETED_ONCE None 1

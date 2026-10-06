@@ -1,0 +1,421 @@
+diff --git a/include/rex/filesystem/devices/host_path_entry.h b/include/rex/filesystem/devices/host_path_entry.h
+index e061b06..9445068 100644
+--- a/include/rex/filesystem/devices/host_path_entry.h
++++ b/include/rex/filesystem/devices/host_path_entry.h
+@@ -50,7 +50,8 @@ class HostPathEntry : public Entry {
+   std::unique_ptr<Entry> CreateEntryInternal(const std::string_view name,
+                                              uint32_t attributes) override;
+   bool DeleteEntryInternal(Entry* entry) override;
+-  X_STATUS RenameEntryInternal(const std::vector<std::string_view>& path_parts) override;
++  X_STATUS RenameEntryInternal(const std::vector<std::string_view>& path_parts,
++                               bool replace_existing) override;
+ 
+   std::filesystem::path host_path_;
+ };
+diff --git a/include/rex/filesystem/entry.h b/include/rex/filesystem/entry.h
+index 3dc9a15..24bd70d 100644
+--- a/include/rex/filesystem/entry.h
++++ b/include/rex/filesystem/entry.h
+@@ -116,7 +116,11 @@ class Entry {
+   bool Delete(Entry* entry);
+   bool Delete();
+   virtual bool Truncate() { return false; }
+-  X_STATUS Rename(const std::filesystem::path& file_path);
++  // Renames or moves the entry to a guest path on the same device ("root:\\dir\\name"). An
++  // existing entry at the destination is replaced only with replace_existing (NT's
++  // FILE_RENAME_INFORMATION.ReplaceIfExists); otherwise the rename fails with
++  // X_STATUS_OBJECT_NAME_COLLISION and nothing changes.
++  X_STATUS Rename(const std::filesystem::path& file_path, bool replace_existing);
+   void Touch();
+ 
+   // If successful, out_file points to a new file. When finished, call
+@@ -146,8 +150,10 @@ class Entry {
+     (void)entry;
+     return false;
+   }
+-  virtual X_STATUS RenameEntryInternal(const std::vector<std::string_view>& path_parts) {
++  virtual X_STATUS RenameEntryInternal(const std::vector<std::string_view>& path_parts,
++                                       bool replace_existing) {
+     (void)path_parts;
++    (void)replace_existing;
+     return X_STATUS_NOT_SUPPORTED;
+   }
+ 
+diff --git a/include/rex/system/xfile.h b/include/rex/system/xfile.h
+index 6063f3c..ed029eb 100644
+--- a/include/rex/system/xfile.h
++++ b/include/rex/system/xfile.h
+@@ -100,7 +100,7 @@ class XFile : public XObject {
+                  uint32_t* out_bytes_written, uint32_t apc_context);
+ 
+   X_STATUS SetLength(size_t length);
+-  X_STATUS Rename(const std::filesystem::path& file_path);
++  X_STATUS Rename(const std::filesystem::path& file_path, bool replace_existing);
+ 
+   void RegisterIOCompletionPort(uint32_t key, object_ref<XIOCompletion> port);
+   void RemoveIOCompletionPort(uint32_t key);
+diff --git a/include/rex/system/xtypes.h b/include/rex/system/xtypes.h
+index d0e8f67..5fe485a 100644
+--- a/include/rex/system/xtypes.h
++++ b/include/rex/system/xtypes.h
+@@ -54,6 +54,7 @@ typedef uint32_t X_STATUS;
+ #define X_STATUS_OBJECT_NAME_INVALID ((X_STATUS)0xC0000033L)
+ #define X_STATUS_OBJECT_NAME_NOT_FOUND ((X_STATUS)0xC0000034L)
+ #define X_STATUS_OBJECT_NAME_COLLISION ((X_STATUS)0xC0000035L)
++#define X_STATUS_OBJECT_PATH_NOT_FOUND ((X_STATUS)0xC000003AL)
+ #define X_STATUS_INVALID_PAGE_PROTECTION ((X_STATUS)0xC0000045L)
+ #define X_STATUS_MUTANT_NOT_OWNED ((X_STATUS)0xC0000046L)
+ #define X_STATUS_THREAD_IS_TERMINATING ((X_STATUS)0xC000004BL)
+diff --git a/src/filesystem/devices/host_path_entry.cpp b/src/filesystem/devices/host_path_entry.cpp
+index 6650400..353140a 100644
+--- a/src/filesystem/devices/host_path_entry.cpp
++++ b/src/filesystem/devices/host_path_entry.cpp
+@@ -133,13 +133,21 @@ bool HostPathEntry::DeleteEntryInternal(Entry* entry) {
+   return std::filesystem::status(full_path, ec).type() == std::filesystem::file_type::not_found;
+ }
+ 
+-X_STATUS HostPathEntry::RenameEntryInternal(const std::vector<std::string_view>& path_parts) {
++X_STATUS HostPathEntry::RenameEntryInternal(const std::vector<std::string_view>& path_parts,
++                                            bool replace_existing) {
+   auto new_host_path = static_cast<HostPathDevice*>(device_)->host_path();
+   for (const auto& path_part : path_parts) {
+     new_host_path /= rex::to_path(path_part);
+   }
+ 
+   std::error_code ec;
++  // The host rename replaces an existing file; without replace_existing that must fail, even for
++  // a host file the entry tree does not know about. Renaming to the same file (a change of case on
++  // a case-insensitive host) is not a collision.
++  if (!replace_existing && std::filesystem::exists(new_host_path, ec) &&
++      !std::filesystem::equivalent(host_path_, new_host_path, ec)) {
++    return X_STATUS_OBJECT_NAME_COLLISION;
++  }
+   std::filesystem::rename(host_path_, new_host_path, ec);
+   if (ec) {
+     REXFS_ERROR("RenameEntryInternal: failed to rename '{}' to '{}': {}",
+diff --git a/src/filesystem/entry.cpp b/src/filesystem/entry.cpp
+index 163c257..46ac235 100644
+--- a/src/filesystem/entry.cpp
++++ b/src/filesystem/entry.cpp
+@@ -135,7 +135,8 @@ bool Entry::Delete() {
+   return parent_->Delete(this);
+ }
+ 
+-X_STATUS Entry::Rename(const std::filesystem::path& file_path) {
++X_STATUS Entry::Rename(const std::filesystem::path& file_path, bool replace_existing) {
++  auto global_lock = global_critical_region_.Acquire();
+   // Store the string so split path string_views remain valid.
+   const std::string path_str = rex::path_to_utf8(file_path);
+   std::vector<std::string_view> path_parts = rex::string::utf8_split_path(path_str);
+@@ -143,16 +144,61 @@ X_STATUS Entry::Rename(const std::filesystem::path& file_path) {
+     // Drop root path (for example, "game:").
+     path_parts.erase(path_parts.begin());
+   }
++  if (path_parts.empty() || !parent_) {
++    return X_STATUS_OBJECT_NAME_INVALID;
++  }
++  // The name is the last component of the guest path. (std::filesystem::path::filename() does not
++  // split guest paths on hosts where '\\' is not a separator, which left the whole path as the
++  // name and the entry unreachable by name.)
++  const std::string new_name(path_parts.back());
++  const std::string parent_path = rex::string::utf8_join_guest_paths(
++      std::vector<std::string_view>(path_parts.begin(), path_parts.end() - 1));
++  Entry* new_parent = device_->ResolvePath(parent_path);
++  if (!new_parent || !(new_parent->attributes() & kFileAttributeDirectory)) {
++    return X_STATUS_OBJECT_PATH_NOT_FOUND;
++  }
++  Entry* existing = new_parent->GetChild(new_name);
++  if (existing == this) {
++    existing = nullptr;  // same entry, maybe a change of case
++  }
++  if (existing) {
++    if (!replace_existing) {
++      return X_STATUS_OBJECT_NAME_COLLISION;
++    }
++    if (existing->attributes() & kFileAttributeDirectory) {
++      return X_STATUS_ACCESS_DENIED;
++    }
++  }
+ 
+-  X_STATUS status = RenameEntryInternal(path_parts);
++  X_STATUS status = RenameEntryInternal(path_parts, replace_existing);
+   if (status != X_STATUS_SUCCESS) {
+     return status;
+   }
+ 
++  // The host rename already replaced the destination file: drop its entry from the tree (without
++  // deleting on the host again).
++  if (existing) {
++    auto& siblings = new_parent->children_;
++    siblings.erase(std::remove_if(siblings.begin(), siblings.end(),
++                                  [&](const auto& child) { return child.get() == existing; }),
++                   siblings.end());
++  }
++  if (new_parent != parent_) {
++    auto& old_siblings = parent_->children_;
++    auto it = std::find_if(old_siblings.begin(), old_siblings.end(),
++                           [&](const auto& child) { return child.get() == this; });
++    if (it != old_siblings.end()) {
++      std::unique_ptr<Entry> self = std::move(*it);
++      old_siblings.erase(it);
++      new_parent->children_.push_back(std::move(self));
++    }
++    parent_ = new_parent;
++  }
++
+   const std::string guest_path = rex::string::utf8_join_guest_paths(path_parts);
+   absolute_path_ = rex::string::utf8_join_guest_paths(device_->mount_path(), guest_path);
+   path_ = guest_path;
+-  name_ = rex::path_to_utf8(file_path.filename());
++  name_ = new_name;
+   return X_STATUS_SUCCESS;
+ }
+ 
+diff --git a/src/kernel/crt/file.cpp b/src/kernel/crt/file.cpp
+index 1fe75ab..ac1f204 100644
+--- a/src/kernel/crt/file.cpp
++++ b/src/kernel/crt/file.cpp
+@@ -344,7 +344,7 @@ u32 MoveFileA_entry(mapped_string lpExistingFileName, mapped_string lpNewFileNam
+     return 0;
+   }
+ 
+-  X_STATUS rename_status = src_entry->Rename(rex::to_path(dst));
++  X_STATUS rename_status = src_entry->Rename(rex::to_path(dst), false);
+   if (rename_status != X_STATUS_SUCCESS) {
+     REXKRNL_DEBUG("rexcrt_MoveFileA: rename failed '{}' -> '{}': {:#x}", src, dst, rename_status);
+     return 0;
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp b/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp
+index bd5de65..1389d47 100644
+--- a/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_io_info.cpp
+@@ -302,7 +302,7 @@ u32 NtSetInformationFile_entry(u32 file_handle, ppc_ptr_t<X_IO_STATUS_BLOCK> io_
+         return X_STATUS_INVALID_PARAMETER;
+       }
+ 
+-      result = file->Rename(target_file_path);
++      result = file->Rename(target_file_path, info->replace_existing != 0);
+       out_length = sizeof(*info);
+       break;
+     }
+diff --git a/src/system/xfile.cpp b/src/system/xfile.cpp
+index 4179e8b..7321de0 100644
+--- a/src/system/xfile.cpp
++++ b/src/system/xfile.cpp
+@@ -290,9 +290,9 @@ X_STATUS XFile::SetLength(size_t length) {
+   return file_->SetLength(length);
+ }
+ 
+-X_STATUS XFile::Rename(const std::filesystem::path& file_path) {
++X_STATUS XFile::Rename(const std::filesystem::path& file_path, bool replace_existing) {
+   std::lock_guard<std::mutex> lock(file_lock_);
+-  return entry()->Rename(file_path);
++  return entry()->Rename(file_path, replace_existing);
+ }
+ 
+ void XFile::RegisterIOCompletionPort(uint32_t key, object_ref<XIOCompletion> port) {
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index c92c86d..3e5c80d 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -8,6 +8,7 @@ add_executable(unit_tests
+     core/fiber_test.cpp
+     core/filesystem_test.cpp
+     core/vfs_overwrite_test.cpp
++    core/vfs_rename_test.cpp
+     core/hash_test.cpp
+     core/stream_test.cpp
+     core/chrono_test.cpp
+diff --git a/tests/unit/core/vfs_rename_test.cpp b/tests/unit/core/vfs_rename_test.cpp
+new file mode 100644
+index 0000000..fb9e536
+--- /dev/null
++++ b/tests/unit/core/vfs_rename_test.cpp
+@@ -0,0 +1,188 @@
++#include <algorithm>
++#include <cstdint>
++#include <filesystem>
++#include <memory>
++#include <span>
++#include <string>
++#include <vector>
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <rex/filesystem.h>
++#include <rex/filesystem/devices/host_path_device.h>
++#include <rex/filesystem/entry.h>
++#include <rex/filesystem/file.h>
++#include <rex/filesystem/vfs.h>
++
++using rex::X_STATUS;
++using rex::filesystem::Entry;
++using rex::filesystem::File;
++using rex::filesystem::FileAccess;
++using rex::filesystem::FileAction;
++using rex::filesystem::FileDisposition;
++using rex::filesystem::HostPathDevice;
++using rex::filesystem::VirtualFileSystem;
++
++namespace {
++
++// A writable host directory mounted as test:, like a title's save container.
++class RenameStore {
++ public:
++  RenameStore() {
++    root_ = std::filesystem::temp_directory_path() /
++            ("rexglue_vfs_rename_" + std::to_string(counter_++));
++    std::error_code ec;
++    std::filesystem::remove_all(root_, ec);
++    std::filesystem::create_directories(root_ / "sub", ec);
++    WriteHost("1.TSV", "first save");
++    WriteHost("backup.tmp", "old backup");
++
++    auto device = std::make_unique<HostPathDevice>("\\RenameStore", root_, false, true);
++    REQUIRE(device->Initialize());
++    REQUIRE(vfs_.RegisterDevice(std::move(device)));
++    REQUIRE(vfs_.RegisterSymbolicLink("test:", "\\RenameStore"));
++  }
++  ~RenameStore() {
++    std::error_code ec;
++    std::filesystem::remove_all(root_, ec);
++  }
++
++  void WriteHost(const std::string& name, const std::string& text) {
++    FILE* file = rex::filesystem::OpenFile(root_ / name, "wb");
++    REQUIRE(file != nullptr);
++    fwrite(text.data(), 1, text.size(), file);
++    fclose(file);
++  }
++  std::string ReadHost(const std::string& name) {
++    FILE* file = rex::filesystem::OpenFile(root_ / name, "rb");
++    if (!file) return "<missing>";
++    std::string text(64, '\0');
++    text.resize(fread(text.data(), 1, text.size(), file));
++    fclose(file);
++    return text;
++  }
++  bool HostExists(const std::string& name) { return std::filesystem::exists(root_ / name); }
++
++  // Writes a file through the VFS (create or overwrite), like the guest's fopen("wb").
++  void Write(const std::string& name, const std::string& text) {
++    File* file = nullptr;
++    FileAction action;
++    REQUIRE(vfs_.OpenFile(nullptr, "test:\\" + name, FileDisposition::kOverwriteIf,
++                          FileAccess::kGenericWrite, false, true, &file,
++                          &action) == X_STATUS_SUCCESS);
++    size_t written = 0;
++    file->WriteSync(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(text.data()),
++                                             text.size()),
++                    0, &written);
++    file->Destroy();
++  }
++
++  // What NtSetInformationFile(FileRenameInformation) does: the target is the guest path.
++  X_STATUS Rename(const std::string& from, const std::string& to, bool replace) {
++    Entry* entry = vfs_.ResolvePath("test:\\" + from);
++    REQUIRE(entry != nullptr);
++    return entry->Rename(rex::to_path("test:\\" + to), replace);
++  }
++
++  Entry* Lookup(const std::string& name) { return vfs_.ResolvePath("test:\\" + name); }
++
++  std::vector<std::string> Names(const std::string& dir = "") {
++    Entry* parent = vfs_.ResolvePath(dir.empty() ? "test:" : "test:\\" + dir);
++    REQUIRE(parent != nullptr);
++    std::vector<std::string> names;
++    for (const auto& child : parent->children()) names.push_back(child->name());
++    std::sort(names.begin(), names.end());
++    return names;
++  }
++
++  VirtualFileSystem& vfs() { return vfs_; }
++
++ private:
++  static int counter_;
++  std::filesystem::path root_;
++  VirtualFileSystem vfs_;
++};
++
++int RenameStore::counter_ = 0;
++
++}  // namespace
++
++TEST_CASE("A renamed entry is found by its new name", "[filesystem][vfs]") {
++  RenameStore store;
++  REQUIRE(store.Rename("1.TSV", "2.TSV", false) == X_STATUS_SUCCESS);
++  Entry* entry = store.Lookup("2.TSV");
++  REQUIRE(entry != nullptr);
++  CHECK(entry->name() == "2.TSV");
++  CHECK(entry->path() == "2.TSV");
++  CHECK(store.Lookup("1.TSV") == nullptr);
++  CHECK(store.ReadHost("2.TSV") == "first save");
++  CHECK_FALSE(store.HostExists("1.TSV"));
++}
++
++TEST_CASE("Rename replaces an existing entry only when asked", "[filesystem][vfs]") {
++  RenameStore store;
++  SECTION("without replace: collision, nothing changes") {
++    CHECK(store.Rename("1.TSV", "backup.tmp", false) == X_STATUS_OBJECT_NAME_COLLISION);
++    CHECK(store.Names() == std::vector<std::string>{"1.TSV", "backup.tmp", "sub"});
++    CHECK(store.ReadHost("1.TSV") == "first save");
++    CHECK(store.ReadHost("backup.tmp") == "old backup");
++  }
++  SECTION("with replace: one entry left, holding the renamed file") {
++    REQUIRE(store.Rename("1.TSV", "backup.tmp", true) == X_STATUS_SUCCESS);
++    CHECK(store.Names() == std::vector<std::string>{"backup.tmp", "sub"});
++    CHECK(store.ReadHost("backup.tmp") == "first save");
++    CHECK(store.Lookup("backup.tmp")->name() == "backup.tmp");
++  }
++}
++
++TEST_CASE("Rename without replace refuses a host file the tree does not know", "[filesystem][vfs]") {
++  RenameStore store;
++  store.WriteHost("late.tmp", "written behind the VFS");
++  CHECK(store.Rename("1.TSV", "late.tmp", false) == X_STATUS_OBJECT_NAME_COLLISION);
++  CHECK(store.ReadHost("late.tmp") == "written behind the VFS");
++  CHECK(store.ReadHost("1.TSV") == "first save");
++}
++
++TEST_CASE("Repeated safe saves keep one save and one backup", "[filesystem][vfs]") {
++  // Torchlight's save: write save.tmp, delete backup.tmp, rename N.TSV -> backup.tmp,
++  // rename save.tmp -> N.TSV. The delete is left out here (it is a delete-on-close), so the
++  // renames replace.
++  RenameStore store;
++  for (const std::string text : {"second save", "third save"}) {
++    const std::string previous = store.ReadHost("1.TSV");
++    store.Write("save.tmp", text);
++    REQUIRE(store.Rename("1.TSV", "backup.tmp", true) == X_STATUS_SUCCESS);
++    REQUIRE(store.Rename("save.tmp", "1.TSV", true) == X_STATUS_SUCCESS);
++    CHECK(store.Names() == std::vector<std::string>{"1.TSV", "backup.tmp", "sub"});
++    CHECK(store.ReadHost("1.TSV") == text);
++    CHECK(store.ReadHost("backup.tmp") == previous);
++    CHECK_FALSE(store.HostExists("save.tmp"));
++  }
++}
++
++TEST_CASE("Rename moves an entry to another directory", "[filesystem][vfs]") {
++  RenameStore store;
++  REQUIRE(store.Rename("1.TSV", "sub\\1.TSV", false) == X_STATUS_SUCCESS);
++  Entry* moved = store.Lookup("sub\\1.TSV");
++  REQUIRE(moved != nullptr);
++  CHECK(moved->parent() == store.Lookup("sub"));
++  CHECK(store.Names("sub") == std::vector<std::string>{"1.TSV"});
++  CHECK(store.Names() == std::vector<std::string>{"backup.tmp", "sub"});
++  CHECK(store.ReadHost("sub/1.TSV") == "first save");
++}
++
++TEST_CASE("Rename to a missing directory fails", "[filesystem][vfs]") {
++  RenameStore store;
++  CHECK(store.Rename("1.TSV", "nowhere\\1.TSV", false) == X_STATUS_OBJECT_PATH_NOT_FOUND);
++  CHECK(store.Lookup("1.TSV") != nullptr);
++  CHECK(store.ReadHost("1.TSV") == "first save");
++}
++
++TEST_CASE("A renamed entry can be deleted by its new name", "[filesystem][vfs]") {
++  RenameStore store;
++  REQUIRE(store.Rename("1.TSV", "2.TSV", false) == X_STATUS_SUCCESS);
++  CHECK(store.vfs().DeletePath("test:\\2.TSV"));
++  CHECK(store.Lookup("2.TSV") == nullptr);
++  CHECK_FALSE(store.HostExists("2.TSV"));
++  CHECK(store.ReadHost("backup.tmp") == "old backup");
++}

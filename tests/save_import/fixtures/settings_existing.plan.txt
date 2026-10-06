@@ -1,0 +1,5 @@
+settings.txt skip SHOW BLOOD 1 0
+settings.txt skip AUTOMAP ZOOM 30.000000 40.000000
+local_settings.txt change GAME_COMPLETED_ONCE 0 1
+local_settings.txt skip SOUND VOLUME 0.800000 0.300000
+local_settings.txt skip SHOW TIPS 1 0

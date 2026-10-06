@@ -1,0 +1,326 @@
+# Release of the Linux and Windows beta (docs/release-pipeline.md 5.4): the game built from the XEX
+# in the private assets repository, packaged as an AppImage and a Windows zip, checked in clean
+# containers (Linux) and on a second runner (Windows) and left as a draft release for the owner to
+# try and publish. Only from v* tags (or by hand), after the owner
+# approves the `release` environment.
+#
+# Rules for the job that touches the game (decision 3): no actions/cache, no compiler cache, no
+# upload of generated/, of the build directory or of the symbols; nothing of the game printed. The
+# only artifacts are the AppImage and the zip, which are what get published.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  DEPS_DIR: /deps
+
+jobs:
+  game-linux:
+    name: Game (Linux)
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    environment: release
+    steps:
+      - name: Bootstrap
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git zstd gh openssh-client
+          git config --global --add safe.directory '*'
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: sh tools/deps/ubuntu_toolchain.sh
+      - name: Dependencies (published by CI for this key)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          key=$(tools/deps/key.sh)
+          gh release download "deps-$key" -R "$GITHUB_REPOSITORY" -D /tmp/deps || {
+            echo "No published dependencies for key $key: let CI run on main first." >&2; exit 1; }
+          mkdir -p "$DEPS_DIR"
+          for f in /tmp/deps/*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
+      - name: Game executable (private repository)
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.ASSETS_REPOSITORY }}
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          persist-credentials: false
+          path: _assets
+      - name: Check the XEX
+        run: |
+          expected=$(sed -nE 's/^\{"default\.xex", [0-9]+, "([0-9a-f]{64})"\},$/\1/p' \
+            src/game_setup/game_files_table.inc)
+          actual=$(sha256sum _assets/default.xex | cut -d' ' -f1)
+          [ -n "$expected" ] && [ "$expected" = "$actual" ] || {
+            echo "default.xex is not the supported version (1.0.140.0)" >&2; exit 1; }
+          # Where torchlight_manifest.toml expects it, relative to the checkout.
+          mkdir -p ../360tools/extracted/extracted
+          mv _assets/default.xex ../360tools/extracted/extracted/default.xex
+          rm -rf _assets
+      - name: Codegen
+        run: |
+          "$DEPS_DIR/sdk/bin/rexglue" codegen torchlight_manifest.toml > /tmp/codegen.log 2>&1 || {
+            tail -20 /tmp/codegen.log; exit 1; }
+      - name: Build (Release with debug information)
+        run: |
+          cmake --preset linux-amd64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
+            -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g"
+          cmake --build --preset linux-amd64-release --parallel
+          ctest --test-dir out/build/linux-amd64-release --output-on-failure
+      - name: AppImage
+        run: |
+          cmake --install out/build/linux-amd64-release --prefix /tmp/install
+          packaging/linux/split_debug.sh /tmp/install /tmp/symbols
+          packaging/linux/get_tools.sh /tmp/tools
+          PATH=/tmp/tools:$PATH CXX=clang++ packaging/linux/make_appimage.sh /tmp/install \
+            "Torchlight-Recomp-${GITHUB_REF_NAME}-x86_64.AppImage"
+      # The bundled libstdc++ and libgcc_s are GPL-3.0 (with the GCC Runtime Library Exception):
+      # every release carries the exact source package they were built from, so it does not
+      # depend on the PPA keeping that version (THIRD_PARTY_NOTICES.md). If the PPA no longer has
+      # that exact version the step fails, and with it the release: no release without the source.
+      - name: Source of the bundled C++ runtime
+        shell: bash
+        run: |
+          set -euo pipefail
+          package=$(dpkg-query -W -f='${source:Package}' libstdc++6)
+          version=$(dpkg-query -W -f='${source:Version}' libstdc++6)
+          [ "$(dpkg-query -W -f='${source:Package} ${source:Version}' libgcc-s1)" = "$package $version" ] || {
+            echo "libstdc++6 and libgcc-s1 come from different sources" >&2; exit 1; }
+          sed -i 's/^# *deb-src/deb-src/' /etc/apt/sources.list.d/ubuntu-toolchain-r-ubuntu-test-*.list
+          apt-get update
+          mkdir -p "/tmp/$package-source" && cd "/tmp/$package-source"
+          apt-get source --download-only "$package=$version"
+          tar -cf "$GITHUB_WORKSPACE/$package-source-$version.tar" -C /tmp "$package-source"
+      - name: Symbols (private repository)
+        env:
+          SYMBOLS_KEY: ${{ secrets.SYMBOLS_DEPLOY_KEY }}
+          SYMBOLS_REPOSITORY: ${{ vars.SYMBOLS_REPOSITORY }}
+        run: |
+          umask 077
+          printf '%s\n' "$SYMBOLS_KEY" > /tmp/symbols_key
+          export GIT_SSH_COMMAND="ssh -i /tmp/symbols_key -o StrictHostKeyChecking=accept-new"
+          git clone --depth 1 "git@github.com:$SYMBOLS_REPOSITORY.git" /tmp/symbols-repo
+          mkdir -p "/tmp/symbols-repo/$GITHUB_REF_NAME/linux-x86_64"
+          cp -a /tmp/symbols/. "/tmp/symbols-repo/$GITHUB_REF_NAME/linux-x86_64/"
+          cd /tmp/symbols-repo
+          git config user.name "release workflow"
+          git config user.email "release@localhost"
+          git add -A
+          git commit -q -m "Symbols of $GITHUB_REF_NAME, linux-x86_64 ($GITHUB_SHA)"
+          # The Windows job pushes to the same repository: on a race, rebase onto its commit.
+          for attempt in 1 2 3; do
+            git push -q origin HEAD && break
+            [ "$attempt" = 3 ] && exit 1
+            git pull -q --rebase origin HEAD
+          done
+          rm -f /tmp/symbols_key
+      - uses: actions/upload-artifact@v7
+        with:
+          name: appimage
+          path: |
+            Torchlight-Recomp-*-x86_64.AppImage
+            gcc-*-source-*.tar
+          retention-days: 7
+
+  check:
+    name: AppImage on ${{ matrix.image }}
+    needs: game-linux
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:22.04", "archlinux:latest"]
+    container: ${{ matrix.image }}
+    steps:
+      - name: Host packages (what an AppImage takes from the system)
+        run: |
+          if command -v apt-get > /dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              libgl1 libegl1 libx11-6 libx11-xcb1 libxrandr2 libsm6 libice6 libwayland-client0 libwayland-egl1 \
+              zlib1g libasound2 libvulkan1
+          else
+            pacman -Syu --noconfirm mesa libx11 libxrandr libsm libice wayland zlib alsa-lib vulkan-icd-loader \
+              which
+          fi
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: packaging/linux
+      - uses: actions/download-artifact@v8
+        with:
+          name: appimage
+      - name: Check
+        run: |
+          chmod +x Torchlight-Recomp-*-x86_64.AppImage
+          packaging/linux/check_appimage.sh Torchlight-Recomp-*-x86_64.AppImage
+
+  # Windows: the same rules (no cache, nothing of the game uploaded but the zip). The dependencies
+  # are CI's deps-windows-<key>; LLVM comes from windows_toolchain.ps1, MSVC from the runner.
+  game-windows:
+    name: Game (Windows)
+    runs-on: windows-2022
+    environment: release
+    env:
+      DEPS_DIR: C:\deps
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        shell: pwsh
+        run: tools/build-deps/windows_toolchain.ps1 -Destination C:\llvm
+      - name: Dependencies (published by CI for this key)
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          key=$(tools/deps/key.sh windows)
+          gh release download "deps-windows-$key" -R "$GITHUB_REPOSITORY" -D "$RUNNER_TEMP/deps" || {
+            echo "No published Windows dependencies for key $key: let CI run on main first." >&2; exit 1; }
+          mkdir -p /c/deps
+          for f in "$RUNNER_TEMP"/deps/*.zip; do tar -xf "$f" -C /c/deps; done
+      - name: Game executable (private repository)
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.ASSETS_REPOSITORY }}
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          persist-credentials: false
+          path: _assets
+      - name: Check the XEX
+        shell: bash
+        run: |
+          expected=$(sed -nE 's/^\{"default\.xex", [0-9]+, "([0-9a-f]{64})"\},\r?$/\1/p' \
+            src/game_setup/game_files_table.inc)
+          actual=$(sha256sum _assets/default.xex | cut -d' ' -f1)
+          [ -n "$expected" ] && [ "$expected" = "$actual" ] || {
+            echo "default.xex is not the supported version (1.0.140.0)" >&2; exit 1; }
+          mkdir -p ../360tools/extracted/extracted
+          mv _assets/default.xex ../360tools/extracted/extracted/default.xex
+          rm -rf _assets
+      # The MSVC environment, with LLVM first in PATH, for the steps below.
+      - name: Environment
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          cmd /d /s /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul 2>&1 && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+          }
+          "C:\llvm\bin" >> $env:GITHUB_PATH
+      - name: Codegen
+        shell: pwsh
+        run: |
+          & "$env:DEPS_DIR\sdk\bin\rexglue.exe" codegen torchlight_manifest.toml *> "$env:RUNNER_TEMP\codegen.log"
+          if ($LASTEXITCODE) { Get-Content "$env:RUNNER_TEMP\codegen.log" -Tail 20; exit 1 }
+      - name: Build (Release with debug information)
+        shell: pwsh
+        run: |
+          cmake --preset win-amd64-release "-DCMAKE_PREFIX_PATH=$env:DEPS_DIR\sdk" `
+            "-DTORCHLIGHT_OGRE_INSTALL=$env:DEPS_DIR\ogre" "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -g"
+          if ($LASTEXITCODE) { exit 1 }
+          cmake --build --preset win-amd64-release --parallel
+          if ($LASTEXITCODE) { exit 1 }
+          ctest --test-dir out/build/win-amd64-release --output-on-failure
+      - name: Zip
+        shell: pwsh
+        run: |
+          $install = "$env:RUNNER_TEMP\install"
+          cmake --install out/build/win-amd64-release --prefix $install
+          if ($LASTEXITCODE) { exit 1 }
+          packaging/windows/collect_symbols.ps1 $install "$env:RUNNER_TEMP\symbols" `
+            out\build\win-amd64-release "$env:DEPS_DIR\ogre\bin" "$env:DEPS_DIR\sdk\bin"
+          Get-ChildItem -Recurse -File $install -Filter *.pdb | Remove-Item
+          packaging/windows/make_zip.ps1 $install "Torchlight-Recomp-$env:GITHUB_REF_NAME-x86_64.zip"
+          packaging/windows/check_zip.ps1 "Torchlight-Recomp-$env:GITHUB_REF_NAME-x86_64.zip"
+      - name: Symbols (private repository)
+        shell: bash
+        env:
+          SYMBOLS_KEY: ${{ secrets.SYMBOLS_DEPLOY_KEY }}
+          SYMBOLS_REPOSITORY: ${{ vars.SYMBOLS_REPOSITORY }}
+        run: |
+          umask 077
+          key_file="$RUNNER_TEMP/symbols_key"
+          printf '%s\n' "$SYMBOLS_KEY" > "$key_file"
+          export GIT_SSH_COMMAND="ssh -i '$key_file' -o StrictHostKeyChecking=accept-new"
+          repo="$RUNNER_TEMP/symbols-repo"
+          git clone --depth 1 "git@github.com:$SYMBOLS_REPOSITORY.git" "$repo"
+          mkdir -p "$repo/$GITHUB_REF_NAME/windows-x86_64"
+          cp -a "$RUNNER_TEMP/symbols/." "$repo/$GITHUB_REF_NAME/windows-x86_64/"
+          cd "$repo"
+          git config user.name "release workflow"
+          git config user.email "release@localhost"
+          git add -A
+          git commit -q -m "Symbols of $GITHUB_REF_NAME, windows-x86_64 ($GITHUB_SHA)"
+          # The Linux job pushes to the same repository: on a race, rebase onto its commit.
+          for attempt in 1 2 3; do
+            git push -q origin HEAD && break
+            [ "$attempt" = 3 ] && exit 1
+            git pull -q --rebase origin HEAD
+          done
+          rm -f "$key_file"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: windows-zip
+          path: Torchlight-Recomp-*-x86_64.zip
+          retention-days: 7
+
+  # A second runner: the zip's imports against a Windows that did not build it. Runners have no
+  # Windows Sandbox and no GPU; the clean-machine run stays packaging/windows/sandbox_check.ps1.
+  check-windows:
+    name: Zip on a clean runner
+    needs: game-windows
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: packaging/windows
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-zip
+      - name: Check
+        shell: pwsh
+        run: packaging/windows/check_zip.ps1 (Get-Item Torchlight-Recomp-*-x86_64.zip).FullName
+
+  publish:
+    name: Draft release
+    needs: [check, check-windows]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: appimage
+      - uses: actions/download-artifact@v8
+        with:
+          name: windows-zip
+      - name: Checksums
+        run: |
+          sha256sum Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.zip \
+            gcc-*-source-*.tar > SHA256SUMS
+      # Build attestations need a public repository: skipped while it is private.
+      - name: Attestation
+        if: ${{ !github.event.repository.private }}
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: |
+            Torchlight-Recomp-*-x86_64.AppImage
+            Torchlight-Recomp-*-x86_64.zip
+      - name: Draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > notes.md <<'NOTES'
+          Linux and Windows beta. Needs your own copy of Torchlight for Xbox Live Arcade (asked for on the first start).
+
+          **Windows:** the zip is not code-signed, so the first start may show SmartScreen's "Windows protected your PC". That is Windows being cautious with programs it has not seen downloaded often, not a detection of anything harmful: click **More info**, then **Run anyway**. `SHA256SUMS` lists the checksum of every file.
+          NOTES
+          gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft \
+            --title "Torchlight Recomp $GITHUB_REF_NAME" \
+            --notes-file notes.md \
+            Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.zip gcc-*-source-*.tar SHA256SUMS

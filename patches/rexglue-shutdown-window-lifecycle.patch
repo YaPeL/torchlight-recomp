@@ -1,0 +1,13 @@
+--- a/src/ui/rex_app.cpp
++++ b/src/ui/rex_app.cpp
+@@ -601,6 +601,10 @@
+   if (window_) {
+     window_->RemoveInputListener(this);
+     window_->RemoveListener(this);
++    // Guest-initiated exit may quit the UI loop without closing the window.
++    // Notify the remaining listeners while their window is still alive so
++    // input drivers detach before window destruction and runtime teardown.
++    window_->RequestClose();
+   }
+   window_.reset();
+   runtime_.reset();

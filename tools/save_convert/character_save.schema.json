@@ -1,0 +1,1333 @@
+{
+ "format": "torchlight-character-save",
+ "description": "Schema of a Torchlight character save (N.SVT on PC v1.15, N.TSV on Xbox 360), derived from the guest reader. The body is the same on both platforms except for byte order; the end of the file is a u32 with the total length (PC, little-endian) or the SHA-256 of the body (360, big-endian). Verified with versions 23 (PC) and 25 (360).",
+ "verified_versions": [
+  23,
+  25
+ ],
+ "trailers": {
+  "pc": {
+   "endian": "little",
+   "type": "u32_total_length"
+  },
+  "x360": {
+   "endian": "big",
+   "type": "sha256_of_body"
+  }
+ },
+ "none_guids": [
+  -1,
+  0
+ ],
+ "root": "character",
+ "structs": {
+  "character": {
+   "source": {
+    "function": "sub_8221DC20",
+    "address": "0x8221DC20"
+   },
+   "description": "Character load: checks the trailing SHA-256 and reads the version; everything else is read according to that version.",
+   "fields": [
+    {
+     "name": "version",
+     "type": "u32",
+     "role": "version"
+    },
+    {
+     "name": "class_name",
+     "type": "wstring16"
+    },
+    {
+     "name": "w0",
+     "type": "u32"
+    },
+    {
+     "name": "b0",
+     "type": "u8"
+    },
+    {
+     "if": {
+      "version_ge": 13
+     },
+     "then": [
+      {
+       "name": "w1",
+       "type": "u32"
+      },
+      {
+       "name": "b1",
+       "type": "u8"
+      }
+     ]
+    },
+    {
+     "name": "player",
+     "type": "struct",
+     "struct": "unit"
+    },
+    {
+     "name": "guids0",
+     "type": "list",
+     "count": "u16",
+     "of": {
+      "name": "g",
+      "type": "u64",
+      "role": "unique_guid"
+     }
+    },
+    {
+     "name": "guids1",
+     "type": "list",
+     "count": "u16",
+     "of": [
+      {
+       "name": "g",
+       "type": "u64"
+      },
+      {
+       "if": {
+        "version_ge": 12
+       },
+       "then": [
+        {
+         "name": "g2",
+         "type": "u64"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "name": "guids2",
+     "type": "list",
+     "count": "u16",
+     "of": {
+      "name": "g",
+      "type": "u64",
+      "role": "unit_guid"
+     }
+    },
+    {
+     "name": "w2",
+     "type": "repeat",
+     "times": 18,
+     "of": {
+      "name": "v",
+      "type": "u32"
+     }
+    },
+    {
+     "name": "s0",
+     "type": "wstring16"
+    },
+    {
+     "if": {
+      "version_ge": 2
+     },
+     "then": [
+      {
+       "name": "s1",
+       "type": "wstring16"
+      },
+      {
+       "name": "w3",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "b2",
+     "type": "u8"
+    },
+    {
+     "name": "v0",
+     "type": "f32",
+     "count": 3
+    },
+    {
+     "name": "s2",
+     "type": "wstring16"
+    },
+    {
+     "name": "w4",
+     "type": "u32"
+    },
+    {
+     "name": "pets",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "unit",
+      "type": "struct",
+      "struct": "unit"
+     }
+    },
+    {
+     "if": {
+      "version_eq": 10
+     },
+     "then": [
+      {
+       "name": "bytes35",
+       "type": "u8",
+       "count": 35
+      }
+     ],
+     "else": [
+      {
+       "name": "bytes34",
+       "type": "u8",
+       "count": 34
+      }
+     ]
+    },
+    {
+     "name": "levels",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "level",
+      "type": "struct",
+      "struct": "level"
+     }
+    },
+    {
+     "name": "records",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "record",
+      "type": "struct",
+      "struct": "record"
+     }
+    },
+    {
+     "name": "quests",
+     "type": "struct",
+     "struct": "quests"
+    }
+   ]
+  },
+  "unit": {
+   "source": {
+    "function": "sub_822A7D78",
+    "address": "0x822A7D78"
+   },
+   "description": "Unit (player, pets, the units of every level).",
+   "fields": [
+    {
+     "name": "b0",
+     "type": "u8"
+    },
+    {
+     "name": "unit_guid",
+     "type": "u64",
+     "role": "unit_guid"
+    },
+    {
+     "name": "q1",
+     "type": "u64"
+    },
+    {
+     "name": "q2",
+     "type": "u64"
+    },
+    {
+     "name": "b1",
+     "type": "u8"
+    },
+    {
+     "name": "b2",
+     "type": "u8"
+    },
+    {
+     "name": "b3",
+     "type": "u8"
+    },
+    {
+     "name": "b4",
+     "type": "u8"
+    },
+    {
+     "name": "b5",
+     "type": "u8"
+    },
+    {
+     "name": "b6",
+     "type": "u8"
+    },
+    {
+     "name": "w0",
+     "type": "u32"
+    },
+    {
+     "name": "w1",
+     "type": "u32"
+    },
+    {
+     "name": "w2",
+     "type": "u32"
+    },
+    {
+     "name": "w3",
+     "type": "u32"
+    },
+    {
+     "name": "w4",
+     "type": "u32"
+    },
+    {
+     "if": {
+      "version_ge": 8
+     },
+     "then": [
+      {
+       "name": "q_w5",
+       "type": "u64",
+       "src": "0x822A7EE0: u64 from version 8, u32 before"
+      }
+     ],
+     "else": [
+      {
+       "name": "w5",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "q3",
+     "type": "u64"
+    },
+    {
+     "name": "w6",
+     "type": "u32"
+    },
+    {
+     "name": "name",
+     "type": "wstring16"
+    },
+    {
+     "name": "w7",
+     "type": "u32"
+    },
+    {
+     "name": "w8",
+     "type": "u32"
+    },
+    {
+     "name": "v0",
+     "type": "f32",
+     "count": 3
+    },
+    {
+     "name": "m",
+     "type": "f32",
+     "count": 16
+    },
+    {
+     "name": "w9",
+     "type": "repeat",
+     "times": 6,
+     "of": {
+      "name": "v",
+      "type": "u32"
+     }
+    },
+    {
+     "if": {
+      "version_ge": 2
+     },
+     "then": [
+      {
+       "name": "w10",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "w11",
+     "type": "u32"
+    },
+    {
+     "name": "w12",
+     "type": "u32"
+    },
+    {
+     "if": {
+      "version_ge": 2
+     },
+     "then": [
+      {
+       "name": "w13",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "w14",
+     "type": "repeat",
+     "times": 7,
+     "of": {
+      "name": "v",
+      "type": "u32"
+     }
+    },
+    {
+     "name": "q4",
+     "type": "u64",
+     "role": "unique_guid"
+    },
+    {
+     "name": "q5",
+     "type": "u64",
+     "role": "unique_guid"
+    },
+    {
+     "if": {
+      "version_ge": 12
+     },
+     "then": [
+      {
+       "name": "q6",
+       "type": "u64"
+      }
+     ]
+    },
+    {
+     "name": "list0",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "v",
+      "type": "u32"
+     }
+    },
+    {
+     "name": "slots",
+     "type": "repeat",
+     "times": 4,
+     "of": [
+      {
+       "name": "name",
+       "type": "wstring16"
+      },
+      {
+       "name": "v",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "w15",
+     "type": "repeat",
+     "times": 7,
+     "of": {
+      "name": "v",
+      "type": "u32"
+     }
+    },
+    {
+     "name": "w16",
+     "type": "repeat",
+     "times": 6,
+     "of": {
+      "name": "v",
+      "type": "u32"
+     }
+    },
+    {
+     "if": {
+      "version_ge": 19
+     },
+     "then": [
+      {
+       "name": "q7",
+       "type": "u64",
+       "role": "quest_guid",
+       "only_if_set": "unit_guid"
+      },
+      {
+       "name": "w17",
+       "type": "u32"
+      }
+     ],
+     "else": [
+      {
+       "name": "w17a",
+       "type": "u32"
+      },
+      {
+       "name": "w17",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "if": {
+      "version_ge": 9
+     },
+     "then": [
+      {
+       "name": "names",
+       "type": "list",
+       "count": "u32",
+       "of": {
+        "name": "name",
+        "type": "wstring16"
+       }
+      }
+     ]
+    },
+    {
+     "name": "items",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "item",
+      "type": "struct",
+      "struct": "item"
+     }
+    },
+    {
+     "name": "effect_groups",
+     "type": "repeat",
+     "times": 3,
+     "of": {
+      "name": "effects",
+      "type": "list",
+      "count": "u32",
+      "of": {
+       "name": "effect",
+       "type": "struct",
+       "struct": "effect"
+      }
+     }
+    }
+   ]
+  },
+  "item": {
+   "source": {
+    "function": "sub_822CA9A0",
+    "address": "0x822CA9A0"
+   },
+   "description": "Item; contains items (children) recursively.",
+   "fields": [
+    {
+     "name": "unit_guid",
+     "type": "u64",
+     "role": "unit_guid"
+    },
+    {
+     "name": "s0",
+     "type": "wstring16"
+    },
+    {
+     "name": "s1",
+     "type": "wstring16"
+    },
+    {
+     "name": "s2",
+     "type": "wstring16"
+    },
+    {
+     "name": "q0",
+     "type": "u64"
+    },
+    {
+     "if": {
+      "version_eq": 16
+     },
+     "then": [
+      {
+       "name": "w_q1",
+       "type": "u32",
+       "src": "0x822CAAA0: u32 only in version 16, u64 from 17"
+      }
+     ]
+    },
+    {
+     "if": {
+      "version_ge": 17
+     },
+     "then": [
+      {
+       "name": "q1",
+       "type": "u64"
+      }
+     ]
+    },
+    {
+     "name": "b0",
+     "type": "u8"
+    },
+    {
+     "name": "q2",
+     "type": "u64"
+    },
+    {
+     "name": "q3",
+     "type": "u64"
+    },
+    {
+     "if": {
+      "version_ge": 14
+     },
+     "then": [
+      {
+       "name": "w0",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "if": {
+      "version_ge": 23
+     },
+     "then": [
+      {
+       "name": "w1",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "w2",
+     "type": "u32"
+    },
+    {
+     "name": "b1",
+     "type": "u8"
+    },
+    {
+     "name": "b2",
+     "type": "u8"
+    },
+    {
+     "if": {
+      "version_ge": 18
+     },
+     "then": [
+      {
+       "name": "b3",
+       "type": "u8"
+      }
+     ]
+    },
+    {
+     "name": "b4",
+     "type": "u8"
+    },
+    {
+     "name": "b5",
+     "type": "u8"
+    },
+    {
+     "name": "b6",
+     "type": "u8"
+    },
+    {
+     "name": "v0",
+     "type": "f32",
+     "count": 3
+    },
+    {
+     "name": "v1",
+     "type": "f32",
+     "count": 3
+    },
+    {
+     "name": "m",
+     "type": "f32",
+     "count": 16
+    },
+    {
+     "name": "w3",
+     "type": "u32"
+    },
+    {
+     "name": "w4",
+     "type": "u32"
+    },
+    {
+     "name": "children",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "item",
+      "type": "struct",
+      "struct": "item"
+     }
+    },
+    {
+     "name": "w5",
+     "type": "u32"
+    },
+    {
+     "name": "w6",
+     "type": "u32"
+    },
+    {
+     "name": "w7",
+     "type": "u32"
+    },
+    {
+     "if": {
+      "version_ge": 19
+     },
+     "then": [
+      {
+       "name": "q4",
+       "type": "u64",
+       "role": "quest_guid",
+       "only_if_set": "unit_guid"
+      },
+      {
+       "name": "w8",
+       "type": "u32"
+      }
+     ],
+     "else": [
+      {
+       "name": "w8a",
+       "type": "u32"
+      },
+      {
+       "name": "w8",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "pairs",
+     "type": "list",
+     "count": "u16",
+     "of": {
+      "name": "pair",
+      "type": "repeat",
+      "times": 2,
+      "of": {
+       "name": "v",
+       "type": "u32"
+      }
+     }
+    },
+    {
+     "name": "effect_groups",
+     "type": "repeat",
+     "times": 3,
+     "of": {
+      "name": "effects",
+      "type": "list",
+      "count": "u32",
+      "of": {
+       "name": "effect",
+       "type": "struct",
+       "struct": "effect"
+      }
+     }
+    }
+   ]
+  },
+  "effect": {
+   "source": {
+    "function": "sub_822CA9A0",
+    "address": "0x822CA9A0"
+   },
+   "description": "Effect (loc_822CAF84 for items, loc_822A8C6C in sub_822A7D78 for units; same format). skipped: the reader advances 4 bytes without reading them (0x822CB7F0, 0x822A94DC); the writer sub_822C9AB8 does write them.",
+   "fields": [
+    {
+     "name": "name",
+     "type": "wstring16",
+     "role": "effect_name"
+    },
+    {
+     "if": {
+      "version_ge": 4
+     },
+     "then": [
+      {
+       "name": "name2",
+       "type": "wstring16",
+       "role": "effect_source"
+      }
+     ]
+    },
+    {
+     "name": "name3",
+     "type": "wstring16"
+    },
+    {
+     "if": {
+      "version_ge": 7
+     },
+     "then": [
+      {
+       "name": "name4",
+       "type": "wstring16"
+      }
+     ]
+    },
+    {
+     "name": "b0",
+     "type": "u8"
+    },
+    {
+     "name": "a",
+     "type": "u32"
+    },
+    {
+     "name": "b",
+     "type": "u32"
+    },
+    {
+     "name": "b1",
+     "type": "u8"
+    },
+    {
+     "name": "b2",
+     "type": "u8"
+    },
+    {
+     "name": "b3",
+     "type": "u8"
+    },
+    {
+     "if": {
+      "version_ge": 7
+     },
+     "then": [
+      {
+       "name": "b4",
+       "type": "u8"
+      }
+     ]
+    },
+    {
+     "name": "c",
+     "type": "u32"
+    },
+    {
+     "name": "d",
+     "type": "u32"
+    },
+    {
+     "if": {
+      "version_ge": 5
+     },
+     "then": [
+      {
+       "name": "e64",
+       "type": "u64",
+       "src": "u64 from version 5; before it the reader skips 4 bytes"
+      }
+     ],
+     "else": [
+      {
+       "name": "e32",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "f",
+     "type": "u32"
+    },
+    {
+     "name": "skipped",
+     "type": "u32"
+    },
+    {
+     "name": "g",
+     "type": "u32"
+    },
+    {
+     "name": "h",
+     "type": "u32"
+    },
+    {
+     "name": "i",
+     "type": "u32"
+    },
+    {
+     "name": "j",
+     "type": "u32"
+    },
+    {
+     "name": "k",
+     "type": "u32"
+    },
+    {
+     "name": "l",
+     "type": "repeat",
+     "times": 4,
+     "of": {
+      "name": "v",
+      "type": "u32"
+     }
+    }
+   ]
+  },
+  "level": {
+   "source": {
+    "function": "sub_822FC2F8",
+    "address": "0x822FC2F8"
+   },
+   "description": "Visited level. The reader also reads a block of width*height*4 bytes using the previous dimensions of the freshly created object (0x822FC340); they are 0 and it takes no bytes. grid: f32 per cell (explored map).",
+   "fields": [
+    {
+     "name": "w0",
+     "type": "u32"
+    },
+    {
+     "name": "w1",
+     "type": "u32"
+    },
+    {
+     "name": "name",
+     "type": "wstring16"
+    },
+    {
+     "name": "b0",
+     "type": "u8"
+    },
+    {
+     "if": {
+      "version_ge": 22
+     },
+     "then": [
+      {
+       "name": "b1",
+       "type": "u8"
+      }
+     ]
+    },
+    {
+     "name": "width",
+     "type": "u32"
+    },
+    {
+     "name": "height",
+     "type": "u32"
+    },
+    {
+     "name": "grid",
+     "type": "u32",
+     "count_product": [
+      "width",
+      "height"
+     ]
+    },
+    {
+     "name": "units",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "unit",
+      "type": "struct",
+      "struct": "unit"
+     }
+    },
+    {
+     "name": "items",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "item",
+      "type": "struct",
+      "struct": "item"
+     }
+    },
+    {
+     "name": "objects",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "object",
+      "type": "struct",
+      "struct": "object"
+     }
+    },
+    {
+     "name": "strings",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "s",
+      "type": "wstring16"
+     }
+    },
+    {
+     "name": "notes",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "note",
+      "type": "struct",
+      "struct": "note"
+     }
+    }
+   ]
+  },
+  "object": {
+   "source": {
+    "function": "sub_822FCC80",
+    "address": "0x822FCC80"
+   },
+   "description": "Level object (triggers, nodes, groups).",
+   "fields": [
+    {
+     "name": "name",
+     "type": "wstring16"
+    },
+    {
+     "name": "b0",
+     "type": "u8"
+    },
+    {
+     "name": "b1",
+     "type": "u8"
+    },
+    {
+     "name": "b2",
+     "type": "u8"
+    },
+    {
+     "name": "b3",
+     "type": "u8"
+    },
+    {
+     "name": "w0",
+     "type": "u32"
+    },
+    {
+     "name": "w1",
+     "type": "u32"
+    },
+    {
+     "name": "w2",
+     "type": "u32"
+    },
+    {
+     "name": "w3",
+     "type": "u32"
+    },
+    {
+     "name": "q0",
+     "type": "u64"
+    },
+    {
+     "name": "q1",
+     "type": "u64"
+    },
+    {
+     "if": {
+      "version_ge": 17
+     },
+     "then": [
+      {
+       "name": "q2",
+       "type": "u64"
+      }
+     ]
+    },
+    {
+     "if": {
+      "version_eq": 16
+     },
+     "then": [
+      {
+       "name": "w4",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "v0",
+     "type": "f32",
+     "count": 3
+    },
+    {
+     "name": "b4",
+     "type": "u8"
+    },
+    {
+     "name": "w5",
+     "type": "u32"
+    }
+   ]
+  },
+  "note": {
+   "source": {
+    "function": "sub_82307F30",
+    "address": "0x82307F30"
+   },
+   "description": "Text with a 32-bit length and three u32.",
+   "fields": [
+    {
+     "name": "text",
+     "type": "wstring32"
+    },
+    {
+     "name": "w0",
+     "type": "u32"
+    },
+    {
+     "name": "w1",
+     "type": "u32"
+    },
+    {
+     "name": "w2",
+     "type": "u32"
+    }
+   ]
+  },
+  "record": {
+   "source": {
+    "function": "sub_822D71A8",
+    "address": "0x822D71A8"
+   },
+   "description": "Named record (TOWN, MAIN...).",
+   "fields": [
+    {
+     "name": "name",
+     "type": "wstring16"
+    },
+    {
+     "name": "w0",
+     "type": "u32"
+    },
+    {
+     "name": "w1",
+     "type": "u32"
+    },
+    {
+     "if": {
+      "version_ge": 3
+     },
+     "then": [
+      {
+       "name": "w2",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "if": {
+      "version_ge": 6
+     },
+     "then": [
+      {
+       "name": "values",
+       "type": "list",
+       "count": "u32",
+       "of": {
+        "name": "v",
+        "type": "u32"
+       }
+      }
+     ]
+    }
+   ]
+  },
+  "quests": {
+   "source": {
+    "function": "sub_823D0A08",
+    "address": "0x823D0A08"
+   },
+   "description": "Quests: progress flags by name and active quests. end_offset is the absolute offset of the end of the block; the reader jumps there if it does not know the quest (0x823D0C14).",
+   "fields": [
+    {
+     "name": "flags",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "flag",
+      "type": "wstring16",
+      "role": "quest_name"
+     }
+    },
+    {
+     "name": "active",
+     "type": "list",
+     "count": "u32",
+     "of": [
+      {
+       "name": "end_offset",
+       "type": "u32",
+       "check": "end_of_element"
+      },
+      {
+       "name": "name",
+       "type": "wstring16",
+       "role": "quest_name"
+      },
+      {
+       "name": "quest",
+       "type": "struct",
+       "struct": "quest"
+      }
+     ]
+    }
+   ]
+  },
+  "quest": {
+   "source": {
+    "function": "sub_823CB2B0",
+    "address": "0x823CB2B0"
+   },
+   "description": "State of an active quest. giver_unit_guid: the NPC's UNIT_GUID (or -1).",
+   "fields": [
+    {
+     "name": "giver_unit_guid",
+     "type": "u64",
+     "role": "unit_guid"
+    },
+    {
+     "name": "w0",
+     "type": "u32"
+    },
+    {
+     "name": "w1",
+     "type": "u32"
+    },
+    {
+     "if": {
+      "version_ge": 20
+     },
+     "then": [
+      {
+       "name": "w2",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "byte_pairs",
+     "type": "repeat",
+     "times": 4,
+     "of": {
+      "name": "pairs",
+      "type": "list",
+      "count": "u32",
+      "of": {
+       "name": "p",
+       "type": "repeat",
+       "times": 2,
+       "of": {
+        "name": "v",
+        "type": "u8"
+       }
+      }
+     }
+    },
+    {
+     "name": "objective_groups",
+     "type": "repeat",
+     "times": 3,
+     "of": {
+      "name": "groups",
+      "type": "list",
+      "count": "u32",
+      "of": {
+       "name": "objectives",
+       "type": "list",
+       "count": "u32",
+       "of": {
+        "name": "objective",
+        "type": "struct",
+        "struct": "objective"
+       }
+      }
+     }
+    }
+   ]
+  },
+  "objective": {
+   "source": {
+    "function": "sub_823D6D00",
+    "address": "0x823D6D00"
+   },
+   "description": "Quest objective, recursive.",
+   "fields": [
+    {
+     "name": "b0",
+     "type": "u8"
+    },
+    {
+     "name": "b1",
+     "type": "u8"
+    },
+    {
+     "name": "w0",
+     "type": "u32"
+    },
+    {
+     "name": "w1",
+     "type": "u32"
+    },
+    {
+     "if": {
+      "version_lt": 10
+     },
+     "then": [
+      {
+       "name": "w2",
+       "type": "u32"
+      }
+     ]
+    },
+    {
+     "name": "w3",
+     "type": "u32"
+    },
+    {
+     "if": {
+      "version_ge": 20
+     },
+     "then": [
+      {
+       "name": "q0",
+       "type": "u64",
+       "role": "unit_guid"
+      }
+     ]
+    },
+    {
+     "name": "children",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "objective",
+      "type": "struct",
+      "struct": "objective"
+     }
+    }
+   ]
+  },
+  "shared_stash": {
+   "source": {
+    "function": "sub_82326360",
+    "address": "0x82326360"
+   },
+   "description": "Shared stash (sharedstash.bin; sharedstashh.bin for hardcore characters). Read by sub_82326360 and written by sub_82326650 on the 360, and by 0x52A5D0 / 0x52A8C0 of Torchlight.exe v1.15 on PC (fopen 'rb'/'wb'): the same layout in each platform's byte order, with no trailer (no length, no hash). Items use the character item reader with the file's version; each one goes back to the slot in its w2 field of a 42-slot container (the same on both), and one that does not fit is deleted (sub_822E29F8).",
+   "fields": [
+    {
+     "name": "version",
+     "type": "u32",
+     "role": "version"
+    },
+    {
+     "name": "items",
+     "type": "list",
+     "count": "u32",
+     "of": {
+      "name": "item",
+      "type": "struct",
+      "struct": "item"
+     }
+    }
+   ]
+  }
+ },
+ "stash_root": "shared_stash"
+}

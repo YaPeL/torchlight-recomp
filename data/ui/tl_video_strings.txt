@@ -1,0 +1,58 @@
+# Translations of the video settings column (tl_video_settings.uilayout) for the languages the game
+# ships, written for this project: the game's own translation files have none of these texts.
+# A section per language code ([de], [fr], [es]); each line is "English text = translation".
+# Texts without a line stay in English.
+
+[de]
+Video = Video
+Resolution = Auflösung
+Aspect Ratio = Seitenverhältnis
+Frame Rate Limit = Bildratenlimit
+Language = Sprache
+Achievements = Erfolge
+PC (incomplete) = PC (unvollständig)
+Vertical Sync = V-Sync
+Renderer = Renderer
+GPU = Grafikkarte
+Some changes need a restart = Einige Änderungen erst nach Neustart
+Unlimited = Unbegrenzt
+Window = Fenster
+Default = Standard
+Auto = Automatisch
+OpenGL 3+ (unavailable) = OpenGL 3+ (nicht verfügbar)
+
+[fr]
+Video = Vidéo
+Resolution = Résolution
+Aspect Ratio = Format d'image
+Frame Rate Limit = Limite d'images par seconde
+Language = Langue
+Achievements = Succès
+PC (incomplete) = PC (incomplet)
+Vertical Sync = Synchro verticale
+Renderer = Moteur de rendu
+GPU = Carte graphique
+Some changes need a restart = Certains réglages exigent un redémarrage
+Unlimited = Illimitée
+Window = Fenêtre
+Default = Par défaut
+Auto = Auto
+OpenGL 3+ (unavailable) = OpenGL 3+ (indisponible)
+
+[es]
+Video = Video
+Resolution = Resolución
+Aspect Ratio = Relación de aspecto
+Frame Rate Limit = Límite de FPS
+Language = Idioma
+Achievements = Logros
+PC (incomplete) = PC (incompletos)
+Vertical Sync = Sincronización vertical
+Renderer = Renderizador
+GPU = Tarjeta gráfica
+Some changes need a restart = Algunos cambios requieren reiniciar
+Unlimited = Sin límite
+Window = Ventana
+Default = Predeterminada
+Auto = Automática
+OpenGL 3+ (unavailable) = OpenGL 3+ (no disponible)

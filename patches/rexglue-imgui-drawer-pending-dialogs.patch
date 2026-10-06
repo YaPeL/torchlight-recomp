@@ -1,0 +1,19 @@
+diff --git a/src/ui/imgui_drawer.cpp b/src/ui/imgui_drawer.cpp
+index f270f3c..127f6fd 100644
+--- a/src/ui/imgui_drawer.cpp
++++ b/src/ui/imgui_drawer.cpp
+@@ -109,6 +109,14 @@ ImGuiDrawer::~ImGuiDrawer() {
+       }
+     }
+   }
++  // Dialogs still open (e.g. the game quit with a XAM dialog showing): delete
++  // them, which signals their waiting fences. Otherwise the kernel dispatch
++  // thread stays blocked in xeXamDispatchDialogEx and the KernelState teardown
++  // waits for it forever. Their close callbacks do not run, so the pending XAM
++  // operation completes with an unspecified result; the title is exiting.
++  while (!dialogs_.empty()) {
++    delete dialogs_.back();  // ~ImGuiDialog removes it from dialogs_
++  }
+   if (internal_state_) {
+     ImGui::DestroyContext(internal_state_);
+     internal_state_ = nullptr;

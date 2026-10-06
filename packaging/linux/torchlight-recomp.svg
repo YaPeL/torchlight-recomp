@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Torchlight Recomp's own icon (drawn for this project, nothing from the game): a flame over a
+     torch handle on a dark disc. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256">
+  <circle cx="128" cy="128" r="120" fill="#1e1a16"/>
+  <path d="M128 36 C150 70 176 92 170 128 C166 154 148 168 128 168 C108 168 90 154 86 128
+           C82 100 104 84 112 60 C118 78 124 86 132 92 C134 74 132 56 128 36 Z" fill="#e8892c"/>
+  <path d="M128 92 C140 110 150 122 146 138 C143 152 136 158 128 158 C120 158 112 152 110 140
+           C108 126 118 116 122 104 C125 112 128 116 132 118 C133 108 131 100 128 92 Z"
+        fill="#f6d55c"/>
+  <rect x="116" y="170" width="24" height="56" rx="6" fill="#8a5a33"/>
+  <rect x="108" y="166" width="40" height="12" rx="4" fill="#b0763f"/>
+</svg>

@@ -1,0 +1,274 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- The host's video settings, a column on the right of the game's settings menu
+     (settingsmenu_xenon), in the style of its rows: labels over slider bars, values in the menu's
+     yellow, a checkbox like "Show Tips". Our own layout: it only references the game's widget types
+     (ceguiWidget/*), fonts and imagesets at runtime. The values are filled in by the host. Every
+     window is named under "tl_video/": the guest's generator of unique names makes clashing ones
+     (sub_825B8248 returned "27_"), and the host finds the rows by these names. -->
+<GUILayout >
+    <Window Type="DefaultWindow" Name="tl_video" >
+        <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+        <Property Name="UnifiedAreaRect" Value="{{0,430},{0,10},{0,725},{0,575}}" />
+        <Property Name="MousePassThroughEnabled" Value="True" />
+        <Property Name="WantsMultiClickEvents" Value="False" />
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/header" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Video" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,0},{0,276},{0,22}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/resolution/label" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Resolution" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,33},{0,276},{0,55}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/resolution" >
+            <Property Name="tabOrder" Value="12" />
+            <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,50},{0,279},{0,88}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/resolution/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="&lt; 1920x1080 &gt;" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-3},{1,0},{1,-3}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/aspect/label" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Aspect Ratio" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,89},{0,276},{0,111}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/aspect" >
+            <Property Name="tabOrder" Value="13" />
+            <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,106},{0,279},{0,144}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/aspect/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="&lt; Auto &gt;" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-3},{1,0},{1,-3}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/fps_cap/label" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Frame Rate Limit" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,145},{0,276},{0,167}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/fps_cap" >
+            <Property Name="tabOrder" Value="14" />
+            <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,162},{0,279},{0,200}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/fps_cap/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="&lt; 60 &gt;" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-3},{1,0},{1,-3}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/language/label" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Language" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,201},{0,276},{0,223}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/language" >
+            <Property Name="tabOrder" Value="15" />
+            <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,218},{0,279},{0,256}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/language/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="&lt; English &gt;" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-3},{1,0},{1,-3}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/achievements/label" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Achievements" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,257},{0,276},{0,279}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/achievements" >
+            <Property Name="tabOrder" Value="16" />
+            <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,274},{0,279},{0,312}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/achievements/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="&lt; Xbox 360 &gt;" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-3},{1,0},{1,-3}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/Checkbox" Name="tl_video/vsync" >
+            <Property Name="tabOrder" Value="17" />
+            <Property Name="Selected" Value="True" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,315},{0,66},{0,355}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/vsync/label" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="Vertical Sync" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="ClippedByParent" Value="False" />
+                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,274},{0,32.0788}}" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/renderer/label" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Renderer" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,359},{0,276},{0,381}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/renderer" >
+            <Property Name="tabOrder" Value="18" />
+            <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,376},{0,279},{0,414}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="Disabled" Value="True" />
+            <Property Name="Alpha" Value="0.5" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/renderer/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="&lt; OpenGL 3+ &gt;" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-3},{1,0},{1,-3}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/gpu/label" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="GPU" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,415},{0,276},{0,437}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/gpu" >
+            <Property Name="tabOrder" Value="19" />
+            <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,432},{0,279},{0,470}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="Disabled" Value="True" />
+            <Property Name="Alpha" Value="0.5" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/gpu/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="&lt; Default &gt;" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-3},{1,0},{1,-3}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/restart_note" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Some changes need a restart" />
+            <Property Name="TextColour" Value="FFFCD615" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,0},{0,479},{0,295},{0,557}}" />
+            <Property Name="HorzTextFormatting" Value="WordWrapCentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+    </Window>
+</GUILayout>

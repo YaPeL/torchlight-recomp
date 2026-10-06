@@ -1,0 +1,673 @@
+diff --git a/include/rex/input/gamepad_keystrokes.h b/include/rex/input/gamepad_keystrokes.h
+new file mode 100644
+index 0000000..7fb1927
+--- /dev/null
++++ b/include/rex/input/gamepad_keystrokes.h
+@@ -0,0 +1,132 @@
++/**
++ * @file        input/gamepad_keystrokes.h
++ * @brief       XInput keystrokes from a gamepad state: the bit of each button,
++ *              trigger and stick direction, and its virtual key.
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#pragma once
++
++#include <array>
++#include <cstdint>
++
++#include <rex/input/input.h>
++#include <rex/input/keystroke_repeat.h>
++#include <rex/ui/virtual_key.h>
++
++namespace rex::input {
++
++// The virtual key of each keystroke bit. Bits 0-15 are X_INPUT_GAMEPAD's
++// buttons; 16 and up are generated from the analog inputs (GamepadKeyfield).
++// The order is also the order in which simultaneous changes are reported.
++inline constexpr std::array<rex::ui::VirtualKey, 34> kGamepadKeystrokeKeys = {
++    // 00 - True buttons from xinput button field
++    rex::ui::VirtualKey::kXInputPadDpadUp,
++    rex::ui::VirtualKey::kXInputPadDpadDown,
++    rex::ui::VirtualKey::kXInputPadDpadLeft,
++    rex::ui::VirtualKey::kXInputPadDpadRight,
++    rex::ui::VirtualKey::kXInputPadStart,
++    rex::ui::VirtualKey::kXInputPadBack,
++    rex::ui::VirtualKey::kXInputPadLThumbPress,
++    rex::ui::VirtualKey::kXInputPadRThumbPress,
++    rex::ui::VirtualKey::kXInputPadLShoulder,
++    rex::ui::VirtualKey::kXInputPadRShoulder,
++    rex::ui::VirtualKey::kNone, /* Guide has no VK */
++    rex::ui::VirtualKey::kNone, /* Unknown */
++    rex::ui::VirtualKey::kXInputPadA,
++    rex::ui::VirtualKey::kXInputPadB,
++    rex::ui::VirtualKey::kXInputPadX,
++    rex::ui::VirtualKey::kXInputPadY,
++    // 16 - Fake buttons generated from analog inputs
++    rex::ui::VirtualKey::kXInputPadLTrigger,
++    rex::ui::VirtualKey::kXInputPadRTrigger,
++    // 18
++    rex::ui::VirtualKey::kXInputPadLThumbUp,
++    rex::ui::VirtualKey::kXInputPadLThumbDown,
++    rex::ui::VirtualKey::kXInputPadLThumbRight,
++    rex::ui::VirtualKey::kXInputPadLThumbLeft,
++    rex::ui::VirtualKey::kXInputPadLThumbUpLeft,
++    rex::ui::VirtualKey::kXInputPadLThumbUpRight,
++    rex::ui::VirtualKey::kXInputPadLThumbDownRight,
++    rex::ui::VirtualKey::kXInputPadLThumbDownLeft,
++    // 26
++    rex::ui::VirtualKey::kXInputPadRThumbUp,
++    rex::ui::VirtualKey::kXInputPadRThumbDown,
++    rex::ui::VirtualKey::kXInputPadRThumbRight,
++    rex::ui::VirtualKey::kXInputPadRThumbLeft,
++    rex::ui::VirtualKey::kXInputPadRThumbUpLeft,
++    rex::ui::VirtualKey::kXInputPadRThumbUpRight,
++    rex::ui::VirtualKey::kXInputPadRThumbDownRight,
++    rex::ui::VirtualKey::kXInputPadRThumbDownLeft,
++};
++
++// The bits that have a virtual key.
++inline constexpr uint64_t GamepadKeystrokeReportable() {
++  uint64_t reportable = 0;
++  for (uint8_t i = 0; i < uint8_t(kGamepadKeystrokeKeys.size()); i++) {
++    if (kGamepadKeystrokeKeys[i] != rex::ui::VirtualKey::kNone) {
++      reportable |= uint64_t(1) << i;
++    }
++  }
++  return reportable;
++}
++
++// Every pressed bit of a gamepad state: its buttons, the triggers past
++// `trigger_threshold` and each stick's direction past `thumb_threshold` (one of
++// eight: a diagonal instead of its two sides).
++inline uint64_t GamepadKeyfield(const X_INPUT_GAMEPAD& gamepad, uint8_t trigger_threshold,
++                                int16_t thumb_threshold) {
++  uint64_t f = static_cast<uint16_t>(gamepad.buttons);
++
++  f |= static_cast<uint64_t>(gamepad.left_trigger > trigger_threshold) << 16;
++  f |= static_cast<uint64_t>(gamepad.right_trigger > trigger_threshold) << 17;
++
++  auto thumb_x = static_cast<int16_t>(gamepad.thumb_lx);
++  auto thumb_y = static_cast<int16_t>(gamepad.thumb_ly);
++  for (size_t i = 0; i <= 8; i = i + 8) {
++    uint64_t u = thumb_y > thumb_threshold;
++    uint64_t d = thumb_y < ~thumb_threshold;
++    uint64_t r = thumb_x > thumb_threshold;
++    uint64_t l = thumb_x < ~thumb_threshold;
++    if (u && l) {
++      u = l = 0;
++      f |= uint64_t(1) << (22 + i);
++    }
++    if (u && r) {
++      u = r = 0;
++      f |= uint64_t(1) << (23 + i);
++    }
++    if (d && r) {
++      d = r = 0;
++      f |= uint64_t(1) << (24 + i);
++    }
++    if (d && l) {
++      d = l = 0;
++      f |= uint64_t(1) << (25 + i);
++    }
++    f |= u << (18 + i);
++    f |= d << (19 + i);
++    f |= r << (20 + i);
++    f |= l << (21 + i);
++
++    thumb_x = static_cast<int16_t>(gamepad.thumb_rx);
++    thumb_y = static_cast<int16_t>(gamepad.thumb_ry);
++  }
++  return f;
++}
++
++// The XInput keystroke for one NextKeystroke result.
++inline void FillGamepadKeystroke(const Keystroke& keystroke, X_INPUT_KEYSTROKE* out) {
++  out->virtual_key = uint16_t(kGamepadKeystrokeKeys.at(keystroke.index));
++  out->unicode = 0;
++  // InputSystem stamps the guest user this device is assigned to.
++  out->user_index = 0;
++  out->hid_code = 0;
++  out->flags = !keystroke.down    ? X_INPUT_KEYSTROKE_KEYUP
++               : keystroke.repeat ? X_INPUT_KEYSTROKE_KEYDOWN | X_INPUT_KEYSTROKE_REPEAT
++                                  : X_INPUT_KEYSTROKE_KEYDOWN;
++}
++
++}  // namespace rex::input
+diff --git a/include/rex/input/mnk/mnk_input_driver.h b/include/rex/input/mnk/mnk_input_driver.h
+index c8751b7..a68b27a 100644
+--- a/include/rex/input/mnk/mnk_input_driver.h
++++ b/include/rex/input/mnk/mnk_input_driver.h
+@@ -11,13 +11,13 @@
+ #pragma once
+ 
+ #include <rex/input/input_driver.h>
++#include <rex/input/keystroke_repeat.h>
+ #include <rex/ui/window.h>
+ #include <rex/ui/window_listener.h>
+ 
+ #include <atomic>
+ #include <cstdint>
+ #include <mutex>
+-#include <queue>
+ #include <string>
+ 
+ namespace rex::input::mnk {
+@@ -59,7 +59,9 @@ class MnkInputDriver final : public InputDriver,
+  private:
+   bool IsEnabled() const;
+   void SetKeyState(uint16_t vk, bool down);
+-  void EnqueueKeystroke(uint16_t vk_pad, bool down);
++  // The pad the pressed keys emulate (the keybind_* cvars). state_mutex_ held.
++  void KeysToGamepadLocked(uint16_t& buttons, uint8_t& lt, uint8_t& rt, int32_t& lx, int32_t& ly,
++                           int32_t& rx, int32_t& ry) const;
+ 
+   // Called from the guest thread. The rest of the capture path stays on the UI
+   // thread, since every Window call in it reaches SDL.
+@@ -99,8 +101,14 @@ class MnkInputDriver final : public InputDriver,
+ 
+   std::atomic<bool> has_focus_{true};
+ 
+-  // Keystroke queue
+-  std::queue<X_INPUT_KEYSTROKE> keystroke_queue_;
++  // Keystrokes from the emulated pad's buttons, with repeat, as the SDL driver
++  // reports a real pad's (400 ms, then every 100 ms). Guest thread, under
++  // state_mutex_.
++  static constexpr uint8_t kKeystrokeTriggerThreshold = 0x1F;
++  static constexpr int16_t kKeystrokeThumbThreshold = 0x4E00;
++  static constexpr uint32_t kKeystrokeRepeatDelayMs = 400;
++  static constexpr uint32_t kKeystrokeRepeatRateMs = 100;
++  KeystrokeTracker keystroke_;
+ 
+   // Packet number incremented on state change
+   uint32_t packet_number_ = 0;
+diff --git a/include/rex/input/sdl/sdl_input_driver.h b/include/rex/input/sdl/sdl_input_driver.h
+index f14fefc..5fc4f16 100644
+--- a/include/rex/input/sdl/sdl_input_driver.h
++++ b/include/rex/input/sdl/sdl_input_driver.h
+@@ -69,7 +69,6 @@ class SDLInputDriver final : public InputDriver, public rex::ui::WindowListener
+   void OnControllerDeviceAxisMotionLocked(const SDL_Event& event);
+   void OnControllerDeviceButtonChangedLocked(const SDL_Event& event);
+ 
+-  inline uint64_t AnalogToKeyfield(const X_INPUT_GAMEPAD& gamepad) const;
+   std::optional<size_t> GetControllerIndexFromInstanceID(SDL_JoystickID instance_id);
+   ControllerState* FindController(DeviceId id);
+   DeviceId AllocateDeviceId();
+diff --git a/src/input/mnk/mnk_input_driver.cpp b/src/input/mnk/mnk_input_driver.cpp
+index 3f9422d..f58f7df 100644
+--- a/src/input/mnk/mnk_input_driver.cpp
++++ b/src/input/mnk/mnk_input_driver.cpp
+@@ -10,7 +10,9 @@
+  */
+ #include <rex/input/mnk/mnk_input_driver.h>
+ 
++#include <rex/chrono/clock.h>
+ #include <rex/cvar.h>
++#include <rex/input/gamepad_keystrokes.h>
+ #include <rex/input/input.h>
+ #include <rex/logging.h>
+ #include <rex/ui/keybinds.h>
+@@ -275,6 +277,56 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
+   std::lock_guard lock(state_mutex_);
+ 
+   uint16_t buttons = 0;
++  uint8_t lt = 0;
++  uint8_t rt = 0;
++  int32_t lx = 0;
++  int32_t ly = 0;
++  int32_t rx = 0;
++  int32_t ry = 0;
++  KeysToGamepadLocked(buttons, lt, rt, lx, ly, rx, ry);
++
++  if (REXCVAR_GET(mnk_mouse) && IsMouseLookActive()) {
++    double sensitivity = REXCVAR_GET(mnk_sensitivity);
++    constexpr double kBaseScale = 200.0;
++    rx += static_cast<int32_t>(double(mouse_dx_) * sensitivity * kBaseScale);
++    ry += static_cast<int32_t>(double(-mouse_dy_) * sensitivity * kBaseScale);
++  }
++  // Drained unconditionally: deltas keep accumulating in OnMouseMove while the
++  // mouse is off, and toggling it on would otherwise dump the whole backlog
++  // into one frame as a camera snap.
++  mouse_dx_ = 0.0f;
++  mouse_dy_ = 0.0f;
++
++  auto clamp16 = [](int32_t v) -> int16_t {
++    return static_cast<int16_t>(std::clamp(v, (int32_t)INT16_MIN, (int32_t)INT16_MAX));
++  };
++
++  packet_number_++;
++
++  if (out_state) {
++    out_state->packet_number = packet_number_;
++    out_state->gamepad.buttons = buttons;
++    out_state->gamepad.left_trigger = lt;
++    out_state->gamepad.right_trigger = rt;
++    out_state->gamepad.thumb_lx = clamp16(lx);
++    out_state->gamepad.thumb_ly = clamp16(ly);
++    out_state->gamepad.thumb_rx = clamp16(rx);
++    out_state->gamepad.thumb_ry = clamp16(ry);
++  }
++  return X_ERROR_SUCCESS;
++}
++
++X_RESULT MnkInputDriver::SetDeviceVibration(DeviceId id, X_INPUT_VIBRATION* vibration) {
++  if (!IsEnabled() || id != kMnkDevice) {
++    return X_ERROR_DEVICE_NOT_CONNECTED;
++  }
++  return X_ERROR_SUCCESS;
++}
++
++void MnkInputDriver::KeysToGamepadLocked(uint16_t& buttons, uint8_t& lt, uint8_t& rt,
++                                         int32_t& lx, int32_t& ly, int32_t& rx,
++                                         int32_t& ry) const {
++  buttons = 0;
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_a)))
+     buttons |= X_INPUT_GAMEPAD_A;
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_b)))
+@@ -306,11 +358,11 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_dpad_right)))
+     buttons |= X_INPUT_GAMEPAD_DPAD_RIGHT;
+ 
+-  uint8_t lt = IsBindPressed(key_down_, REXCVAR_GET(keybind_left_trigger)) ? 0xFF : 0;
+-  uint8_t rt = IsBindPressed(key_down_, REXCVAR_GET(keybind_right_trigger)) ? 0xFF : 0;
++  lt = IsBindPressed(key_down_, REXCVAR_GET(keybind_left_trigger)) ? 0xFF : 0;
++  rt = IsBindPressed(key_down_, REXCVAR_GET(keybind_right_trigger)) ? 0xFF : 0;
+ 
+-  int32_t lx = 0;
+-  int32_t ly = 0;
++  lx = 0;
++  ly = 0;
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_lstick_left)))
+     lx -= INT16_MAX;
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_lstick_right)))
+@@ -320,8 +372,8 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_lstick_down)))
+     ly -= INT16_MAX;
+ 
+-  int32_t rx = 0;
+-  int32_t ry = 0;
++  rx = 0;
++  ry = 0;
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_rstick_left)))
+     rx -= INT16_MAX;
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_rstick_right)))
+@@ -330,43 +382,6 @@ X_RESULT MnkInputDriver::GetDeviceState(DeviceId id, X_INPUT_STATE* out_state) {
+     ry += INT16_MAX;
+   if (IsBindPressed(key_down_, REXCVAR_GET(keybind_rstick_down)))
+     ry -= INT16_MAX;
+-
+-  if (REXCVAR_GET(mnk_mouse) && IsMouseLookActive()) {
+-    double sensitivity = REXCVAR_GET(mnk_sensitivity);
+-    constexpr double kBaseScale = 200.0;
+-    rx += static_cast<int32_t>(double(mouse_dx_) * sensitivity * kBaseScale);
+-    ry += static_cast<int32_t>(double(-mouse_dy_) * sensitivity * kBaseScale);
+-  }
+-  // Drained unconditionally: deltas keep accumulating in OnMouseMove while the
+-  // mouse is off, and toggling it on would otherwise dump the whole backlog
+-  // into one frame as a camera snap.
+-  mouse_dx_ = 0.0f;
+-  mouse_dy_ = 0.0f;
+-
+-  auto clamp16 = [](int32_t v) -> int16_t {
+-    return static_cast<int16_t>(std::clamp(v, (int32_t)INT16_MIN, (int32_t)INT16_MAX));
+-  };
+-
+-  packet_number_++;
+-
+-  if (out_state) {
+-    out_state->packet_number = packet_number_;
+-    out_state->gamepad.buttons = buttons;
+-    out_state->gamepad.left_trigger = lt;
+-    out_state->gamepad.right_trigger = rt;
+-    out_state->gamepad.thumb_lx = clamp16(lx);
+-    out_state->gamepad.thumb_ly = clamp16(ly);
+-    out_state->gamepad.thumb_rx = clamp16(rx);
+-    out_state->gamepad.thumb_ry = clamp16(ry);
+-  }
+-  return X_ERROR_SUCCESS;
+-}
+-
+-X_RESULT MnkInputDriver::SetDeviceVibration(DeviceId id, X_INPUT_VIBRATION* vibration) {
+-  if (!IsEnabled() || id != kMnkDevice) {
+-    return X_ERROR_DEVICE_NOT_CONNECTED;
+-  }
+-  return X_ERROR_SUCCESS;
+ }
+ 
+ X_RESULT MnkInputDriver::GetDeviceKeystroke(DeviceId id, uint32_t flags,
+@@ -374,28 +389,48 @@ X_RESULT MnkInputDriver::GetDeviceKeystroke(DeviceId id, uint32_t flags,
+   if (!IsEnabled() || id != kMnkDevice) {
+     return X_ERROR_DEVICE_NOT_CONNECTED;
+   }
++  if (!out_keystroke) {
++    return X_ERROR_BAD_ARGUMENTS;
++  }
+   std::lock_guard lock(state_mutex_);
+-  if (keystroke_queue_.empty()) {
++  // The keys as the pad they emulate (the mouse look is not a keystroke), as
++  // the SDL driver reports a pad: menus read keystrokes, not the state. Without
++  // focus or while an overlay has the input, nothing is pressed, so the held
++  // buttons get their ups.
++  uint64_t pressed = 0;
++  if (is_active() && has_focus_) {
++    X_INPUT_GAMEPAD gamepad = {};
++    uint16_t buttons = 0;
++    uint8_t lt = 0;
++    uint8_t rt = 0;
++    int32_t lx = 0;
++    int32_t ly = 0;
++    int32_t rx = 0;
++    int32_t ry = 0;
++    KeysToGamepadLocked(buttons, lt, rt, lx, ly, rx, ry);
++    auto clamp16 = [](int32_t v) -> int16_t {
++      return static_cast<int16_t>(std::clamp(v, (int32_t)INT16_MIN, (int32_t)INT16_MAX));
++    };
++    gamepad.buttons = buttons;
++    gamepad.left_trigger = lt;
++    gamepad.right_trigger = rt;
++    gamepad.thumb_lx = clamp16(lx);
++    gamepad.thumb_ly = clamp16(ly);
++    gamepad.thumb_rx = clamp16(rx);
++    gamepad.thumb_ry = clamp16(ry);
++    pressed = GamepadKeyfield(gamepad, kKeystrokeTriggerThreshold, kKeystrokeThumbThreshold);
++  }
++  const auto keystroke = NextKeystroke(
++      keystroke_, pressed, GamepadKeystrokeReportable(), uint8_t(kGamepadKeystrokeKeys.size()),
++      rex::chrono::Clock::QueryGuestUptimeMillis(), kKeystrokeRepeatDelayMs,
++      kKeystrokeRepeatRateMs);
++  if (!keystroke) {
+     return X_ERROR_EMPTY;
+   }
+-  if (out_keystroke) {
+-    *out_keystroke = keystroke_queue_.front();
+-  }
+-  keystroke_queue_.pop();
++  FillGamepadKeystroke(*keystroke, out_keystroke);
+   return X_ERROR_SUCCESS;
+ }
+ 
+-void MnkInputDriver::EnqueueKeystroke(uint16_t vk_pad, bool down) {
+-  X_INPUT_KEYSTROKE ks = {};
+-  ks.virtual_key = vk_pad;
+-  ks.unicode = 0;
+-  ks.flags = down ? X_INPUT_KEYSTROKE_KEYDOWN : X_INPUT_KEYSTROKE_KEYUP;
+-  // InputSystem stamps the guest user this device is assigned to.
+-  ks.user_index = 0;
+-  ks.hid_code = 0;
+-  keystroke_queue_.push(ks);
+-}
+-
+ void MnkInputDriver::QueueMouseCaptureUpdate(bool should_capture) {
+   mouse_capture_requested_.store(should_capture, std::memory_order_relaxed);
+   bool already_queued = false;
+diff --git a/src/input/sdl/sdl_input_driver.cpp b/src/input/sdl/sdl_input_driver.cpp
+index 4dc1eab..adc0b77 100644
+--- a/src/input/sdl/sdl_input_driver.cpp
++++ b/src/input/sdl/sdl_input_driver.cpp
+@@ -16,6 +16,7 @@
+ #include <rex/chrono/clock.h>
+ #include <rex/cvar.h>
+ #include <rex/input/flags.h>
++#include <rex/input/gamepad_keystrokes.h>
+ #include <rex/input/sdl/sdl_input_driver.h>
+ #include <rex/logging.h>
+ #include <rex/ui/virtual_key.h>
+@@ -254,50 +255,6 @@ X_RESULT SDLInputDriver::GetDeviceKeystroke(DeviceId id, uint32_t flags,
+     return X_ERROR_BAD_ARGUMENTS;
+   }
+ 
+-  // The order of this list is also the order in which events are send if
+-  // multiple buttons change at once.
+-  static_assert(sizeof(X_INPUT_GAMEPAD::buttons) == 2);
+-  static constexpr std::array<rex::ui::VirtualKey, 34> kVkLookup = {
+-      // 00 - True buttons from xinput button field
+-      rex::ui::VirtualKey::kXInputPadDpadUp,
+-      rex::ui::VirtualKey::kXInputPadDpadDown,
+-      rex::ui::VirtualKey::kXInputPadDpadLeft,
+-      rex::ui::VirtualKey::kXInputPadDpadRight,
+-      rex::ui::VirtualKey::kXInputPadStart,
+-      rex::ui::VirtualKey::kXInputPadBack,
+-      rex::ui::VirtualKey::kXInputPadLThumbPress,
+-      rex::ui::VirtualKey::kXInputPadRThumbPress,
+-      rex::ui::VirtualKey::kXInputPadLShoulder,
+-      rex::ui::VirtualKey::kXInputPadRShoulder,
+-      rex::ui::VirtualKey::kNone, /* Guide has no VK */
+-      rex::ui::VirtualKey::kNone, /* Unknown */
+-      rex::ui::VirtualKey::kXInputPadA,
+-      rex::ui::VirtualKey::kXInputPadB,
+-      rex::ui::VirtualKey::kXInputPadX,
+-      rex::ui::VirtualKey::kXInputPadY,
+-      // 16 - Fake buttons generated from analog inputs
+-      rex::ui::VirtualKey::kXInputPadLTrigger,
+-      rex::ui::VirtualKey::kXInputPadRTrigger,
+-      // 18
+-      rex::ui::VirtualKey::kXInputPadLThumbUp,
+-      rex::ui::VirtualKey::kXInputPadLThumbDown,
+-      rex::ui::VirtualKey::kXInputPadLThumbRight,
+-      rex::ui::VirtualKey::kXInputPadLThumbLeft,
+-      rex::ui::VirtualKey::kXInputPadLThumbUpLeft,
+-      rex::ui::VirtualKey::kXInputPadLThumbUpRight,
+-      rex::ui::VirtualKey::kXInputPadLThumbDownRight,
+-      rex::ui::VirtualKey::kXInputPadLThumbDownLeft,
+-      // 26
+-      rex::ui::VirtualKey::kXInputPadRThumbUp,
+-      rex::ui::VirtualKey::kXInputPadRThumbDown,
+-      rex::ui::VirtualKey::kXInputPadRThumbRight,
+-      rex::ui::VirtualKey::kXInputPadRThumbLeft,
+-      rex::ui::VirtualKey::kXInputPadRThumbUpLeft,
+-      rex::ui::VirtualKey::kXInputPadRThumbUpRight,
+-      rex::ui::VirtualKey::kXInputPadRThumbDownRight,
+-      rex::ui::VirtualKey::kXInputPadRThumbDownLeft,
+-  };
+-
+   auto is_active = this->is_active();
+ 
+   if (is_active) {
+@@ -315,30 +272,17 @@ X_RESULT SDLInputDriver::GetDeviceKeystroke(DeviceId id, uint32_t flags,
+   // "unpressed". The algorithm will automatically send UP events when
+   // 'is_active()' goes low and DOWN events when it goes high again.
+   const uint64_t curr_butts =
+-      is_active ? (static_cast<uint64_t>(static_cast<uint16_t>(controller->state.gamepad.buttons)) |
+-                   AnalogToKeyfield(controller->state.gamepad))
++      is_active ? GamepadKeyfield(controller->state.gamepad, HID_SDL_TRIGG_THRES,
++                                  HID_SDL_THUMB_THRES)
+                 : uint64_t(0);
+-  uint64_t reportable = 0;
+-  for (uint8_t i = 0; i < uint8_t(std::size(kVkLookup)); i++) {
+-    if (kVkLookup[i] != rex::ui::VirtualKey::kNone) {
+-      reportable |= uint64_t(1) << i;
+-    }
+-  }
+   const auto keystroke = NextKeystroke(
+-      controller->keystroke, curr_butts, reportable, uint8_t(std::size(kVkLookup)),
+-      rex::chrono::Clock::QueryGuestUptimeMillis(), HID_SDL_REPEAT_DELAY, HID_SDL_REPEAT_RATE);
++      controller->keystroke, curr_butts, GamepadKeystrokeReportable(),
++      uint8_t(kGamepadKeystrokeKeys.size()), rex::chrono::Clock::QueryGuestUptimeMillis(),
++      HID_SDL_REPEAT_DELAY, HID_SDL_REPEAT_RATE);
+   if (!keystroke) {
+     return X_ERROR_EMPTY;
+   }
+-  out_keystroke->virtual_key = uint16_t(kVkLookup.at(keystroke->index));
+-  out_keystroke->unicode = 0;
+-  // InputSystem stamps the guest user this device is assigned to.
+-  out_keystroke->user_index = 0;
+-  out_keystroke->hid_code = 0;
+-  out_keystroke->flags =
+-      !keystroke->down ? X_INPUT_KEYSTROKE_KEYUP
+-      : keystroke->repeat ? X_INPUT_KEYSTROKE_KEYDOWN | X_INPUT_KEYSTROKE_REPEAT
+-                          : X_INPUT_KEYSTROKE_KEYDOWN;
++  FillGamepadKeystroke(*keystroke, out_keystroke);
+   return X_ERROR_SUCCESS;
+ }
+ 
+@@ -635,46 +579,4 @@ void SDLInputDriver::QueueControllerUpdate() {
+   }
+ }
+ 
+-// Check if the analog inputs exceed their thresholds to become a button press
+-// and build the bitfield.
+-inline uint64_t SDLInputDriver::AnalogToKeyfield(const X_INPUT_GAMEPAD& gamepad) const {
+-  uint64_t f = 0;
+-
+-  f |= static_cast<uint64_t>(gamepad.left_trigger > HID_SDL_TRIGG_THRES) << 16;
+-  f |= static_cast<uint64_t>(gamepad.right_trigger > HID_SDL_TRIGG_THRES) << 17;
+-
+-  auto thumb_x = static_cast<int16_t>(gamepad.thumb_lx);
+-  auto thumb_y = static_cast<int16_t>(gamepad.thumb_ly);
+-  for (size_t i = 0; i <= 8; i = i + 8) {
+-    uint64_t u = thumb_y > HID_SDL_THUMB_THRES;
+-    uint64_t d = thumb_y < ~HID_SDL_THUMB_THRES;
+-    uint64_t r = thumb_x > HID_SDL_THUMB_THRES;
+-    uint64_t l = thumb_x < ~HID_SDL_THUMB_THRES;
+-    if (u && l) {
+-      u = l = 0;
+-      f |= uint64_t(1) << (22 + i);
+-    }
+-    if (u && r) {
+-      u = r = 0;
+-      f |= uint64_t(1) << (23 + i);
+-    }
+-    if (d && r) {
+-      d = r = 0;
+-      f |= uint64_t(1) << (24 + i);
+-    }
+-    if (d && l) {
+-      d = l = 0;
+-      f |= uint64_t(1) << (25 + i);
+-    }
+-    f |= u << (18 + i);
+-    f |= d << (19 + i);
+-    f |= r << (20 + i);
+-    f |= l << (21 + i);
+-
+-    thumb_x = static_cast<int16_t>(gamepad.thumb_rx);
+-    thumb_y = static_cast<int16_t>(gamepad.thumb_ry);
+-  }
+-  return f;
+-}
+-
+ }  // namespace rex::input::sdl
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 46f9f42..f441a6a 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -21,6 +21,7 @@ add_executable(unit_tests
+     system/function_dispatcher_test.cpp
+     input/input_assignment_test.cpp
+     input/keystroke_repeat_test.cpp
++    input/mnk_keystroke_test.cpp
+     codegen/codegen_writer_test.cpp
+     codegen/output_partition_test.cpp
+     codegen/output_stamp_test.cpp
+diff --git a/tests/unit/input/mnk_keystroke_test.cpp b/tests/unit/input/mnk_keystroke_test.cpp
+new file mode 100644
+index 0000000..d200bcf
+--- /dev/null
++++ b/tests/unit/input/mnk_keystroke_test.cpp
+@@ -0,0 +1,104 @@
++#include <catch2/catch_test_macros.hpp>
++
++#include <cstdint>
++#include <vector>
++
++#include <rex/cvar.h>
++#include <rex/input/mnk/mnk_input_driver.h>
++#include <rex/ui/ui_event.h>
++#include <rex/ui/virtual_key.h>
++
++REXCVAR_DECLARE(bool, mnk_mode);
++
++// The keyboard's controller emulation reports keystrokes, which menus read
++// instead of the state: before, it never queued any, so a keyboard could not
++// get past a menu. Default keybinds: Space is A, W/A the left stick up/left.
++
++using rex::X_RESULT;
++using rex::input::DeviceId;
++using rex::input::DeviceInfo;
++using rex::input::X_INPUT_KEYSTROKE;
++using rex::input::X_INPUT_KEYSTROKE_KEYDOWN;
++using rex::input::X_INPUT_KEYSTROKE_KEYUP;
++using rex::input::mnk::MnkInputDriver;
++using rex::ui::KeyEvent;
++using rex::ui::VirtualKey;
++
++namespace {
++
++void Key(MnkInputDriver& driver, VirtualKey key, bool down) {
++  KeyEvent e(nullptr, key, 1, !down, false, false, false, false);
++  if (down) {
++    driver.OnKeyDown(e);
++  } else {
++    driver.OnKeyUp(e);
++  }
++}
++
++DeviceId Device(MnkInputDriver& driver) {
++  std::vector<DeviceInfo> devices;
++  driver.EnumerateDevices(devices);
++  REQUIRE(devices.size() == 1);
++  return devices[0].id;
++}
++
++// The next keystroke: its virtual key and whether it is a down; 0 when none.
++struct Stroke {
++  uint16_t key = 0;
++  bool down = false;
++};
++Stroke Next(MnkInputDriver& driver, DeviceId id) {
++  X_INPUT_KEYSTROKE k = {};
++  if (driver.GetDeviceKeystroke(id, 0, &k) != X_ERROR_SUCCESS) {
++    return {};
++  }
++  return {uint16_t(k.virtual_key), (uint16_t(k.flags) & X_INPUT_KEYSTROKE_KEYDOWN) != 0};
++}
++
++}  // namespace
++
++TEST_CASE("MnK: a key's press and release are keystrokes", "[input][mnk]") {
++  REXCVAR_SET(mnk_mode, true);
++  MnkInputDriver driver(nullptr, 0);
++  const DeviceId id = Device(driver);
++
++  REQUIRE(Next(driver, id).key == 0);
++  Key(driver, VirtualKey::kSpace, true);
++  Stroke s = Next(driver, id);
++  REQUIRE(s.key == uint16_t(VirtualKey::kXInputPadA));
++  REQUIRE(s.down);
++  REQUIRE(Next(driver, id).key == 0);  // held: no repeat before the delay
++  Key(driver, VirtualKey::kSpace, false);
++  s = Next(driver, id);
++  REQUIRE(s.key == uint16_t(VirtualKey::kXInputPadA));
++  REQUIRE_FALSE(s.down);
++  REQUIRE(Next(driver, id).key == 0);
++  REXCVAR_SET(mnk_mode, false);
++}
++
++TEST_CASE("MnK: stick keys are directions, two of them a diagonal", "[input][mnk]") {
++  REXCVAR_SET(mnk_mode, true);
++  MnkInputDriver driver(nullptr, 0);
++  const DeviceId id = Device(driver);
++
++  Key(driver, VirtualKey::kW, true);
++  Stroke s = Next(driver, id);
++  REQUIRE(s.key == uint16_t(VirtualKey::kXInputPadLThumbUp));
++  REQUIRE(s.down);
++  Key(driver, VirtualKey::kA, true);
++  s = Next(driver, id);  // ups first
++  REQUIRE(s.key == uint16_t(VirtualKey::kXInputPadLThumbUp));
++  REQUIRE_FALSE(s.down);
++  s = Next(driver, id);
++  REQUIRE(s.key == uint16_t(VirtualKey::kXInputPadLThumbUpLeft));
++  REQUIRE(s.down);
++  REXCVAR_SET(mnk_mode, false);
++}
++
++TEST_CASE("MnK: no keystrokes while the emulation is off", "[input][mnk]") {
++  REXCVAR_SET(mnk_mode, false);
++  MnkInputDriver driver(nullptr, 0);
++  X_INPUT_KEYSTROKE k = {};
++  REQUIRE(driver.GetDeviceKeystroke(DeviceId(0x4D4E4B00), 0, &k) ==
++          X_ERROR_DEVICE_NOT_CONNECTED);
++}

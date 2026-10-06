@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Torchlight Recomp
+Comment=Torchlight (Xbox Live Arcade), recompiled; needs your own copy of the game
+Exec=torchlight
+Icon=torchlight-recomp
+Categories=Game;RolePlaying;
+Terminal=false

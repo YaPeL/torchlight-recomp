@@ -1,0 +1,15 @@
+--- a/src/graphics/vulkan/render_target_cache.cpp
++++ b/src/graphics/vulkan/render_target_cache.cpp
+@@ -3704,6 +3704,12 @@
+           }
+         } break;
+       }
++    } else if (mode.output == TransferOutput::kStencilBit) {
++      // Stencil-only transfers don't load depth. Feed the source stencil to
++      // the per-bit discard below; otherwise every pass writes its bit and
++      // the destination becomes 0xFF regardless of the source value.
++      assert_true(source_stencil[0] != spv::NoResult);
++      packed = source_stencil[0];
+     } else if (source_depth_float[0] != spv::NoResult) {
+       if (mode.output == TransferOutput::kDepth && dest_depth_format == source_depth_format) {
+         builder.createStore(source_depth_float[0], output_fragment_depth);

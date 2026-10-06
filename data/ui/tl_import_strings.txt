@@ -1,0 +1,85 @@
+# Translations of the save import message boxes (save_import/import_message.cpp) for the languages
+# the game ships, written for this project. A section per language code ([de], [fr], [es]); each
+# line is "English text = translation", and {words} in braces are filled in by the game. Texts
+# without a line stay in English.
+
+[de]
+Import from the PC version = Aus der PC-Version importieren
+Hardcore shared stash ({items} items) = Gemeinsame Hardcore-Truhe ({items} Gegenstände)
+Shared stash ({items} items) = Gemeinsame Truhe ({items} Gegenstände)
+The stash from the PC version was not applied when the game started: the shared stash now has {now} items ({then} when you confirmed). = Die Truhe aus der PC-Version wurde beim Spielstart nicht übernommen: Die gemeinsame Truhe enthält jetzt {now} Gegenstände ({then} bei deiner Bestätigung).
+What you confirmed last time was not applied: the save folder it was meant for no longer exists. = Was du zuletzt bestätigt hast, wurde nicht übernommen: Der Speicherordner, für den es bestimmt war, existiert nicht mehr.
+What you confirmed last time was not applied: {file} could not be read or written (see import.log). = Was du zuletzt bestätigt hast, wurde nicht übernommen: {file} konnte nicht gelesen oder geschrieben werden (siehe import.log).
+There are files from the PC version in the import folder. To import them, copy into that folder the Pak.zip of the PC version (it is next to Torchlight.exe): = Im Importordner liegen Dateien aus der PC-Version. Um sie zu importieren, kopiere die Pak.zip der PC-Version (sie liegt neben Torchlight.exe) in diesen Ordner:
+The files in the import folder cannot be imported: {reason} = Die Dateien im Importordner können nicht importiert werden: {reason}
+Not now = Nicht jetzt
+Do not ask again = Nicht mehr fragen
+{name} ({class}), slot {slot} = {name} ({class}), Platz {slot}
+Settings (volumes, automap, tips...) = Einstellungen (Lautstärke, Automap, Tipps...)
+There are files from the PC version in the import folder. = Im Importordner liegen Dateien aus der PC-Version.
+Imported now: = Jetzt importiert:
+{count} characters = {count} Charaktere
+Applied the next time you open the game: = Beim nächsten Spielstart übernommen:
+{count} files = {count} Dateien
+Cannot be imported (see import.log in the import folder): = Nicht importierbar (siehe import.log im Importordner):
+Import them? = Importieren?
+Yes = Ja
+The {stash} already has {recomp} items. Replace it with the one from the PC version ({pc} items)? The current one is kept in the import folder. = Die {stash} enthält bereits {recomp} Gegenstände. Durch die aus der PC-Version ersetzen ({pc} Gegenstände)? Die aktuelle bleibt im Importordner erhalten.
+hardcore shared stash = gemeinsame Hardcore-Truhe
+shared stash = gemeinsame Truhe
+No = Nein
+Replace = Ersetzen
+
+[fr]
+Import from the PC version = Importer depuis la version PC
+Hardcore shared stash ({items} items) = Coffre partagé hardcore ({items} objets)
+Shared stash ({items} items) = Coffre partagé ({items} objets)
+The stash from the PC version was not applied when the game started: the shared stash now has {now} items ({then} when you confirmed). = Le coffre de la version PC n'a pas été appliqué au démarrage du jeu : le coffre partagé contient maintenant {now} objets ({then} lors de votre confirmation).
+What you confirmed last time was not applied: the save folder it was meant for no longer exists. = Ce que vous avez confirmé la dernière fois n'a pas été appliqué : le dossier de sauvegarde visé n'existe plus.
+What you confirmed last time was not applied: {file} could not be read or written (see import.log). = Ce que vous avez confirmé la dernière fois n'a pas été appliqué : impossible de lire ou d'écrire {file} (voir import.log).
+There are files from the PC version in the import folder. To import them, copy into that folder the Pak.zip of the PC version (it is next to Torchlight.exe): = Le dossier d'importation contient des fichiers de la version PC. Pour les importer, copiez dans ce dossier le Pak.zip de la version PC (il se trouve à côté de Torchlight.exe) :
+The files in the import folder cannot be imported: {reason} = Les fichiers du dossier d'importation ne peuvent pas être importés : {reason}
+Not now = Pas maintenant
+Do not ask again = Ne plus demander
+{name} ({class}), slot {slot} = {name} ({class}), emplacement {slot}
+Settings (volumes, automap, tips...) = Options (volume, carte automatique, astuces...)
+There are files from the PC version in the import folder. = Le dossier d'importation contient des fichiers de la version PC.
+Imported now: = Importés maintenant :
+{count} characters = {count} personnages
+Applied the next time you open the game: = Appliqués au prochain lancement du jeu :
+{count} files = {count} fichiers
+Cannot be imported (see import.log in the import folder): = Impossible à importer (voir import.log dans le dossier d'importation) :
+Import them? = Les importer ?
+Yes = Oui
+The {stash} already has {recomp} items. Replace it with the one from the PC version ({pc} items)? The current one is kept in the import folder. = Le {stash} contient déjà {recomp} objets. Le remplacer par celui de la version PC ({pc} objets) ? L'actuel est conservé dans le dossier d'importation.
+hardcore shared stash = coffre partagé hardcore
+shared stash = coffre partagé
+No = Non
+Replace = Remplacer
+
+[es]
+Import from the PC version = Importar de la versión de PC
+Hardcore shared stash ({items} items) = Cofre compartido hardcore ({items} objetos)
+Shared stash ({items} items) = Cofre compartido ({items} objetos)
+The stash from the PC version was not applied when the game started: the shared stash now has {now} items ({then} when you confirmed). = El cofre de la versión de PC no se aplicó al iniciar el juego: el cofre compartido ahora tiene {now} objetos ({then} cuando lo confirmaste).
+What you confirmed last time was not applied: the save folder it was meant for no longer exists. = Lo que confirmaste la última vez no se aplicó: la carpeta de partidas a la que iba ya no existe.
+What you confirmed last time was not applied: {file} could not be read or written (see import.log). = Lo que confirmaste la última vez no se aplicó: no se pudo leer o escribir {file} (ver import.log).
+There are files from the PC version in the import folder. To import them, copy into that folder the Pak.zip of the PC version (it is next to Torchlight.exe): = Hay archivos de la versión de PC en la carpeta de importación. Para importarlos, copia en esa carpeta el Pak.zip de la versión de PC (está junto a Torchlight.exe):
+The files in the import folder cannot be imported: {reason} = Los archivos de la carpeta de importación no se pueden importar: {reason}
+Not now = Ahora no
+Do not ask again = No volver a preguntar
+{name} ({class}), slot {slot} = {name} ({class}), ranura {slot}
+Settings (volumes, automap, tips...) = Opciones (volumen, automapa, consejos...)
+There are files from the PC version in the import folder. = Hay archivos de la versión de PC en la carpeta de importación.
+Imported now: = Se importan ahora:
+{count} characters = {count} personajes
+Applied the next time you open the game: = Se aplican la próxima vez que abras el juego:
+{count} files = {count} archivos
+Cannot be imported (see import.log in the import folder): = No se pueden importar (ver import.log en la carpeta de importación):
+Import them? = ¿Importarlos?
+Yes = Sí
+The {stash} already has {recomp} items. Replace it with the one from the PC version ({pc} items)? The current one is kept in the import folder. = El {stash} ya tiene {recomp} objetos. ¿Reemplazarlo por el de la versión de PC ({pc} objetos)? El actual se guarda en la carpeta de importación.
+hardcore shared stash = cofre compartido hardcore
+shared stash = cofre compartido
+No = No
+Replace = Reemplazar

@@ -1,0 +1,291 @@
+# Public CI, without the game (docs/release-pipeline.md 5.3): the patched SDK and OGRE, the
+# libraries and tests (preset linux-amd64-nogame), and the packaged replay checked in clean
+# containers; on Windows the SDK and OGRE, and the libraries and tests (preset win-amd64-nogame).
+# No secrets. To save Actions minutes it runs on pull requests, on main and by hand,
+# not on every push; the SDK and OGRE are built once per key (tools/deps/key.sh) and reused.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DEPS_DIR: /deps
+
+jobs:
+  deps:
+    name: SDK and OGRE
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    # Writes only to publish the builds (decision 5), on main.
+    permissions:
+      contents: write
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - name: Bootstrap
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git zstd gh
+          git config --global --add safe.directory '*'
+      - uses: actions/checkout@v7
+      - id: key
+        name: Key
+        run: echo "key=$(tools/deps/key.sh)" >> "$GITHUB_OUTPUT"
+      - id: published
+        name: Already published?
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "deps-${{ steps.key.outputs.key }}" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - id: cache
+        if: steps.published.outputs.found != 'true'
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.DEPS_DIR }}
+          key: deps-linux-amd64-ubuntu22.04-${{ steps.key.outputs.key }}
+      - name: Build
+        if: steps.published.outputs.found != 'true' && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          sh tools/deps/ubuntu_toolchain.sh
+          tools/deps/build_sdk.sh "$DEPS_DIR/sdk"
+          tools/deps/build_ogre.sh "$DEPS_DIR/ogre"
+      - name: Publish
+        if: >-
+          steps.published.outputs.found != 'true' && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          key=${{ steps.key.outputs.key }}
+          tar -C "$DEPS_DIR" -cf - sdk | zstd -19 -T0 > sdk-linux-amd64.tar.zst
+          tar -C "$DEPS_DIR" -cf - ogre | zstd -19 -T0 > ogre-linux-amd64.tar.zst
+          gh release create "deps-$key" -R "$GITHUB_REPOSITORY" --prerelease \
+            --title "Dependencies $key" \
+            --notes "The patched ReXGlue SDK and OGRE 14.6.0 (Release, ubuntu:22.04, clang 21), built by tools/deps/ for key $key. Nothing of the game." \
+            sdk-linux-amd64.tar.zst ogre-linux-amd64.tar.zst
+
+  test:
+    name: Build and test (no game)
+    needs: deps
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    steps:
+      - name: Bootstrap
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git zstd gh
+          git config --global --add safe.directory '*'
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: sh tools/deps/ubuntu_toolchain.sh
+      - id: published
+        name: Published dependencies
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          key=${{ needs.deps.outputs.key }}
+          mkdir -p "$DEPS_DIR"
+          if gh release download "deps-$key" -R "$GITHUB_REPOSITORY" -D /tmp/deps 2>/dev/null; then
+            for f in /tmp/deps/*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.published.outputs.found != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.DEPS_DIR }}
+          key: deps-linux-amd64-ubuntu22.04-${{ needs.deps.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Configure
+        run: >-
+          cmake --preset linux-amd64-nogame -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk"
+          -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre"
+      - name: Build
+        run: cmake --build --preset linux-amd64-nogame --parallel
+      - name: Test
+        run: ctest --test-dir out/build/linux-amd64-nogame --output-on-failure
+      - name: Package replay
+        run: |
+          cmake --install out/build/linux-amd64-nogame --prefix /tmp/install
+          cmake --install out/build/linux-amd64-nogame --prefix /tmp/install --component tools
+          packaging/linux/get_tools.sh /tmp/tools
+          PATH=/tmp/tools:$PATH CXX=clang++ packaging/linux/make_appimage.sh /tmp/install \
+            replay-x86_64.AppImage replay
+          /tmp/install/bin/synthetic_capture synthetic.tlcap
+      # Nothing of the game: the replay tool and a synthetic capture.
+      - uses: actions/upload-artifact@v7
+        with:
+          name: replay-appimage
+          path: |
+            replay-x86_64.AppImage
+            synthetic.tlcap
+          retention-days: 3
+
+  # Windows: the same scheme. The SDK and OGRE come from tools/build-deps/windows.ps1 with LLVM from
+  # windows_toolchain.ps1, keyed by `key.sh windows` and published as deps-windows-<key>; zip files
+  # (Windows' tar writes and reads them; it has no zstd).
+  deps-windows:
+    name: SDK and OGRE (Windows)
+    runs-on: windows-2022
+    permissions:
+      contents: write
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    env:
+      DEPS_DIR: C:\deps
+    steps:
+      - uses: actions/checkout@v7
+      - id: key
+        name: Key
+        shell: bash
+        run: echo "key=$(tools/deps/key.sh windows)" >> "$GITHUB_OUTPUT"
+      - id: published
+        name: Already published?
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "deps-windows-${{ steps.key.outputs.key }}" -R "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - id: cache
+        if: steps.published.outputs.found != 'true'
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.DEPS_DIR }}
+          key: deps-windows-amd64-windows2022-${{ steps.key.outputs.key }}
+      - name: Build
+        if: steps.published.outputs.found != 'true' && steps.cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          tools/build-deps/windows_toolchain.ps1 -Destination C:\llvm
+          tools/build-deps/windows.ps1 -Prefix "$env:DEPS_DIR\ogre" -SdkPrefix "$env:DEPS_DIR\sdk" `
+            -WorkDir C:\deps-work -Configs RelWithDebInfo -SdkConfigs Release -LlvmBin C:\llvm\bin
+      - name: Publish
+        if: >-
+          steps.published.outputs.found != 'true' && github.event_name == 'push' &&
+          github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $key = '${{ steps.key.outputs.key }}'
+          tar -a -cf sdk-windows-amd64.zip -C $env:DEPS_DIR sdk
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          tar -a -cf ogre-windows-amd64.zip -C $env:DEPS_DIR ogre
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          gh release create "deps-windows-$key" -R $env:GITHUB_REPOSITORY --prerelease `
+            --title "Dependencies (Windows) $key" `
+            --notes "The patched ReXGlue SDK (Release) and OGRE 14.6.0 (RelWithDebInfo) with zlib 1.3.2, built for Windows by tools/build-deps/windows.ps1 (windows-2022, LLVM 21.1.8, MSVC) for key $key. Nothing of the game." `
+            sdk-windows-amd64.zip ogre-windows-amd64.zip
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+  test-windows:
+    name: Build and test (Windows, no game)
+    needs: deps-windows
+    runs-on: windows-2022
+    env:
+      DEPS_DIR: C:\deps
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        shell: pwsh
+        run: tools/build-deps/windows_toolchain.ps1 -Destination C:\llvm
+      - id: published
+        name: Published dependencies
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $key = '${{ needs.deps-windows.outputs.key }}'
+          New-Item -ItemType Directory -Force $env:DEPS_DIR | Out-Null
+          gh release download "deps-windows-$key" -R $env:GITHUB_REPOSITORY -D "$env:RUNNER_TEMP\deps" 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            foreach ($f in Get-ChildItem "$env:RUNNER_TEMP\deps\*.zip") { tar -xf $f.FullName -C $env:DEPS_DIR }
+            "found=true" >> $env:GITHUB_OUTPUT
+          } else {
+            "found=false" >> $env:GITHUB_OUTPUT
+          }
+          exit 0
+      - if: steps.published.outputs.found != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.DEPS_DIR }}
+          key: deps-windows-amd64-windows2022-${{ needs.deps-windows.outputs.key }}
+          fail-on-cache-miss: true
+      # The MSVC environment, with LLVM first in PATH, for the configure, build and test steps.
+      - name: Environment
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          cmd /d /s /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul 2>&1 && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+          }
+          "C:\llvm\bin" >> $env:GITHUB_PATH
+      - name: Configure
+        shell: pwsh
+        run: >-
+          cmake --preset win-amd64-nogame "-DCMAKE_PREFIX_PATH=$env:DEPS_DIR\sdk"
+          "-DTORCHLIGHT_OGRE_INSTALL=$env:DEPS_DIR\ogre"
+      - name: Build
+        shell: pwsh
+        run: cmake --build --preset win-amd64-nogame --parallel
+      # ui_pass_test and render_scale_test draw with OGRE's GL3+ render system and need OpenGL 3.3:
+      # the runner has no GPU, only Windows' own OpenGL 1.1, and unlike Linux without a display they
+      # cannot tell that before starting. They run on machines with a GPU.
+      - name: Test
+        shell: pwsh
+        run: >-
+          ctest --test-dir out/build/win-amd64-nogame --output-on-failure
+          -E "^(ui_pass_test|render_scale_test)$"
+
+  package-check:
+    name: Packaged replay on ${{ matrix.image }}
+    needs: test
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:22.04", "archlinux:latest"]
+    container: ${{ matrix.image }}
+    steps:
+      - name: Host packages (what an AppImage takes from the system)
+        run: |
+          if command -v apt-get > /dev/null; then
+            apt-get update
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              xvfb xauth libgl1 libegl1 libgl1-mesa-dri libx11-6 libx11-xcb1 libxrandr2 libsm6 libice6 \
+              libwayland-client0 libwayland-egl1 zlib1g
+          else
+            pacman -Syu --noconfirm xorg-server-xvfb xorg-xauth mesa libx11 libxrandr libsm libice wayland zlib \
+              which
+          fi
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: packaging/linux
+      - uses: actions/download-artifact@v8
+        with:
+          name: replay-appimage
+      - name: Check
+        run: |
+          chmod +x replay-x86_64.AppImage
+          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a packaging/linux/check_appimage.sh \
+            replay-x86_64.AppImage synthetic.tlcap

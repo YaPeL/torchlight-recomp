@@ -1,0 +1,2 @@
+Reading of the Torchlight PC binaries (x86 PE, OGRE 1.6.x), without external dependencies.
+`pe_utils.py BINARY` summarizes a PE (sections, exports, imports); `extract_imports_exports.py OUT_DIR BINARY...` dumps exports and imports with basic MSVC demangling; `align_render_vtables.py --d3d9 ... --gl ... --ogre-main ... --guest-image IMAGE` recovers the PC and guest RenderSystem vtables (image from `tools/xex/xex_dump.py`, through `tools/guest_re/rtti_vtable.py`) and locates the `_beginFrame`/`_endFrame` slots.

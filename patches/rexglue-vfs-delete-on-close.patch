@@ -1,0 +1,451 @@
+diff --git a/include/rex/filesystem/entry.h b/include/rex/filesystem/entry.h
+index 24bd70d..ed01c53 100644
+--- a/include/rex/filesystem/entry.h
++++ b/include/rex/filesystem/entry.h
+@@ -93,6 +93,11 @@ class Entry {
+   uint64_t access_timestamp() const { return access_timestamp_; }
+   uint64_t write_timestamp() const { return write_timestamp_; }
+   bool delete_on_close() const { return delete_on_close_; }
++  // Open File objects on this entry, kept by File itself. An entry with open files is not
++  // destroyed: Delete fails, and an entry marked for deletion is deleted when the last one closes.
++  void AddOpenFile(File* file);
++  void ReleaseOpenFile(File* file);
++  size_t open_file_count() const { return open_files_.size(); }
+ 
+   virtual bool SetAttributes([[maybe_unused]] uint64_t attributes) { return false; }
+   virtual bool SetCreateTimestamp([[maybe_unused]] uint64_t timestamp) { return false; }
+@@ -171,6 +176,7 @@ class Entry {
+   uint64_t write_timestamp_;
+   std::vector<std::unique_ptr<Entry>> children_;
+   bool delete_on_close_ = false;
++  std::vector<File*> open_files_;
+ };
+ 
+ }  // namespace rex::filesystem
+diff --git a/include/rex/filesystem/file.h b/include/rex/filesystem/file.h
+index 1f22413..40131b4 100644
+--- a/include/rex/filesystem/file.h
++++ b/include/rex/filesystem/file.h
+@@ -22,8 +22,10 @@ class Entry;
+ 
+ class File {
+  public:
+-  File(uint32_t file_access, Entry* entry) : file_access_(file_access), entry_(entry) {}
+-  virtual ~File() = default;
++  // Every open File counts as a handle on its entry: an entry marked for deletion
++  // (FileDispositionInformation) is deleted when its last handle closes.
++  File(uint32_t file_access, Entry* entry);
++  virtual ~File();
+ 
+   virtual void Destroy() = 0;
+ 
+@@ -65,7 +67,9 @@ class File {
+  protected:
+   // rex::filesystem::FileAccess
+   uint32_t file_access_ = 0;
+-  Entry* entry_ = nullptr;
++  Entry* entry_ = nullptr;  // null only if the entry was destroyed with the file open (unmount)
++
++  friend class Entry;
+ };
+ 
+ }  // namespace rex::filesystem
+diff --git a/include/rex/system/xtypes.h b/include/rex/system/xtypes.h
+index 5fe485a..7b9c5b8 100644
+--- a/include/rex/system/xtypes.h
++++ b/include/rex/system/xtypes.h
+@@ -55,6 +55,7 @@ typedef uint32_t X_STATUS;
+ #define X_STATUS_OBJECT_NAME_NOT_FOUND ((X_STATUS)0xC0000034L)
+ #define X_STATUS_OBJECT_NAME_COLLISION ((X_STATUS)0xC0000035L)
+ #define X_STATUS_OBJECT_PATH_NOT_FOUND ((X_STATUS)0xC000003AL)
++#define X_STATUS_DELETE_PENDING ((X_STATUS)0xC0000056L)
+ #define X_STATUS_INVALID_PAGE_PROTECTION ((X_STATUS)0xC0000045L)
+ #define X_STATUS_MUTANT_NOT_OWNED ((X_STATUS)0xC0000046L)
+ #define X_STATUS_THREAD_IS_TERMINATING ((X_STATUS)0xC000004BL)
+diff --git a/src/filesystem/entry.cpp b/src/filesystem/entry.cpp
+index 46ac235..14b98fd 100644
+--- a/src/filesystem/entry.cpp
++++ b/src/filesystem/entry.cpp
+@@ -14,6 +14,7 @@
+ #include <rex/filesystem.h>
+ #include <rex/filesystem/device.h>
+ #include <rex/filesystem/entry.h>
++#include <rex/filesystem/file.h>
+ #include <rex/string.h>
+ 
+ namespace rex::filesystem {
+@@ -33,7 +34,13 @@ Entry::Entry(Device* device, Entry* parent, const std::string_view path)
+   name_ = rex::string::utf8_find_name_from_guest_path(path);
+ }
+ 
+-Entry::~Entry() = default;
++Entry::~Entry() {
++  // Only reached with files open when the whole device goes away (unmount): the files keep their
++  // host handle but no longer point at the entry.
++  for (File* file : open_files_) {
++    file->entry_ = nullptr;
++  }
++}
+ 
+ void Entry::Dump(rex::string::StringBuffer* string_buffer, int indent) {
+   for (int i = 0; i < indent; ++i) {
+@@ -117,6 +124,10 @@ bool Entry::Delete(Entry* entry) {
+   if (entry->parent() != this) {
+     return false;
+   }
++  if (entry->open_file_count()) {
++    // Like NT, an open file is not deleted under its handles: mark it (delete on close) instead.
++    return false;
++  }
+   if (!DeleteEntryInternal(entry)) {
+     return false;
+   }
+@@ -135,6 +146,35 @@ bool Entry::Delete() {
+   return parent_->Delete(this);
+ }
+ 
++void Entry::AddOpenFile(File* file) {
++  auto global_lock = global_critical_region_.Acquire();
++  open_files_.push_back(file);
++}
++
++void Entry::ReleaseOpenFile(File* file) {
++  auto global_lock = global_critical_region_.Acquire();
++  open_files_.erase(std::remove(open_files_.begin(), open_files_.end(), file), open_files_.end());
++  if (open_files_.empty() && delete_on_close_ && parent_) {
++    // Deleting removes this entry from its parent and destroys it: nothing may touch members after
++    // this call. If the host refuses, the entry stays, still marked.
++    parent_->Delete(this);
++  }
++}
++
++File::File(uint32_t file_access, Entry* entry) : file_access_(file_access), entry_(entry) {
++  if (entry_) {
++    entry_->AddOpenFile(this);
++  }
++}
++
++// Runs after the derived file closed its host handle, so the host file can be removed.
++File::~File() {
++  auto global_lock = rex::thread::global_critical_region::AcquireDirect();
++  if (entry_) {
++    entry_->ReleaseOpenFile(this);
++  }
++}
++
+ X_STATUS Entry::Rename(const std::filesystem::path& file_path, bool replace_existing) {
+   auto global_lock = global_critical_region_.Acquire();
+   // Store the string so split path string_views remain valid.
+@@ -165,7 +205,7 @@ X_STATUS Entry::Rename(const std::filesystem::path& file_path, bool replace_exis
+     if (!replace_existing) {
+       return X_STATUS_OBJECT_NAME_COLLISION;
+     }
+-    if (existing->attributes() & kFileAttributeDirectory) {
++    if ((existing->attributes() & kFileAttributeDirectory) || existing->open_file_count()) {
+       return X_STATUS_ACCESS_DENIED;
+     }
+   }
+diff --git a/src/filesystem/virtual_file_system.cpp b/src/filesystem/virtual_file_system.cpp
+index 682b23d..6ad32c0 100644
+--- a/src/filesystem/virtual_file_system.cpp
++++ b/src/filesystem/virtual_file_system.cpp
+@@ -230,6 +230,11 @@ X_STATUS VirtualFileSystem::OpenFile(Entry* root_entry, const std::string_view p
+   }
+ 
+   if (entry) {
++    if (entry->delete_on_close()) {
++      // Marked for deletion and still open somewhere: NT refuses new opens until it is gone.
++      *out_action = FileAction::kExists;
++      return X_STATUS_DELETE_PENDING;
++    }
+     if (entry->attributes() & kFileAttributeDirectory && is_non_directory) {
+       return X_STATUS_FILE_IS_A_DIRECTORY;
+     }
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 3e5c80d..bdd8a02 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -9,6 +9,7 @@ add_executable(unit_tests
+     core/filesystem_test.cpp
+     core/vfs_overwrite_test.cpp
+     core/vfs_rename_test.cpp
++    core/vfs_delete_on_close_test.cpp
+     core/hash_test.cpp
+     core/stream_test.cpp
+     core/chrono_test.cpp
+diff --git a/tests/unit/core/vfs_delete_on_close_test.cpp b/tests/unit/core/vfs_delete_on_close_test.cpp
+new file mode 100644
+index 0000000..71da743
+--- /dev/null
++++ b/tests/unit/core/vfs_delete_on_close_test.cpp
+@@ -0,0 +1,270 @@
++#include <algorithm>
++#include <cstdint>
++#include <filesystem>
++#include <memory>
++#include <span>
++#include <string>
++#include <vector>
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <rex/filesystem.h>
++#include <rex/filesystem/devices/host_path_device.h>
++#include <rex/filesystem/entry.h>
++#include <rex/filesystem/file.h>
++#include <rex/filesystem/vfs.h>
++
++using rex::X_STATUS;
++using rex::filesystem::Entry;
++using rex::filesystem::File;
++using rex::filesystem::FileAccess;
++using rex::filesystem::FileAction;
++using rex::filesystem::FileDisposition;
++using rex::filesystem::HostPathDevice;
++using rex::filesystem::VirtualFileSystem;
++
++namespace {
++
++constexpr uint32_t kDeleteAccess = 0x00010000;  // NT DELETE
++
++// A writable host directory mounted as test:, with a few files.
++class DeleteStore {
++ public:
++  DeleteStore() {
++    root_ = std::filesystem::temp_directory_path() /
++            ("rexglue_vfs_delete_on_close_" + std::to_string(counter_++));
++    std::error_code ec;
++    std::filesystem::remove_all(root_, ec);
++    std::filesystem::create_directories(root_, ec);
++    for (const char* name : {"0.TSV", "1.TSV", "2.TSV", "backup.tmp"}) {
++      WriteHost(name, std::string("contents of ") + name);
++    }
++    auto device = std::make_unique<HostPathDevice>("\\DeleteStore", root_, false, true);
++    REQUIRE(device->Initialize());
++    REQUIRE(vfs_.RegisterDevice(std::move(device)));
++    REQUIRE(vfs_.RegisterSymbolicLink("test:", "\\DeleteStore"));
++  }
++  ~DeleteStore() {
++    std::error_code ec;
++    std::filesystem::remove_all(root_, ec);
++  }
++
++  void WriteHost(const std::string& name, const std::string& text) {
++    FILE* file = rex::filesystem::OpenFile(root_ / name, "wb");
++    REQUIRE(file != nullptr);
++    fwrite(text.data(), 1, text.size(), file);
++    fclose(file);
++  }
++  std::string ReadHost(const std::string& name) {
++    FILE* file = rex::filesystem::OpenFile(root_ / name, "rb");
++    if (!file) return "<missing>";
++    std::string text(64, '\0');
++    text.resize(fread(text.data(), 1, text.size(), file));
++    fclose(file);
++    return text;
++  }
++  bool HostExists(const std::string& name) { return std::filesystem::exists(root_ / name); }
++
++  X_STATUS TryOpen(const std::string& name, File** out,
++                   FileDisposition disposition = FileDisposition::kOpen,
++                   uint32_t access = FileAccess::kGenericRead) {
++    FileAction action;
++    *out = nullptr;
++    return vfs_.OpenFile(nullptr, "test:\\" + name, disposition, access, false, true, out,
++                         &action);
++  }
++  File* Open(const std::string& name, uint32_t access = FileAccess::kGenericRead) {
++    File* file = nullptr;
++    REQUIRE(TryOpen(name, &file, FileDisposition::kOpen, access) == X_STATUS_SUCCESS);
++    return file;
++  }
++
++  // The guest's DeleteFileA: open with DELETE access, mark it, close.
++  void DeleteFile(const std::string& name) {
++    File* file = Open(name, kDeleteAccess);
++    file->entry()->SetForDeletion(true);
++    file->Destroy();
++  }
++
++  void Write(const std::string& name, const std::string& text) {
++    File* file = nullptr;
++    REQUIRE(TryOpen(name, &file, FileDisposition::kOverwriteIf, FileAccess::kGenericWrite) ==
++            X_STATUS_SUCCESS);
++    size_t written = 0;
++    file->WriteSync(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(text.data()),
++                                             text.size()),
++                    0, &written);
++    file->Destroy();
++  }
++
++  // The guest's MoveFile: open the source, rename it through its handle, close.
++  X_STATUS Move(const std::string& from, const std::string& to, bool replace) {
++    File* file = Open(from, kDeleteAccess);
++    X_STATUS status = file->entry()->Rename(rex::to_path("test:\\" + to), replace);
++    file->Destroy();
++    return status;
++  }
++
++  Entry* Lookup(const std::string& name) { return vfs_.ResolvePath("test:\\" + name); }
++
++  std::vector<std::string> Names() {
++    std::vector<std::string> names;
++    for (const auto& child : vfs_.ResolvePath("test:")->children()) names.push_back(child->name());
++    std::sort(names.begin(), names.end());
++    return names;
++  }
++  std::vector<std::string> HostNames() {
++    std::vector<std::string> names;
++    for (const auto& item : std::filesystem::directory_iterator(root_)) {
++      names.push_back(rex::path_to_utf8(item.path().filename()));
++    }
++    std::sort(names.begin(), names.end());
++    return names;
++  }
++
++  VirtualFileSystem& vfs() { return vfs_; }
++
++ private:
++  static int counter_;
++  std::filesystem::path root_;
++  VirtualFileSystem vfs_;
++};
++
++int DeleteStore::counter_ = 0;
++
++}  // namespace
++
++TEST_CASE("Delete on close removes the file when its only handle closes", "[filesystem][vfs]") {
++  DeleteStore store;
++  File* file = store.Open("1.TSV", kDeleteAccess);
++  file->entry()->SetForDeletion(true);
++  CHECK(store.HostExists("1.TSV"));  // marking alone deletes nothing
++  file->Destroy();
++  CHECK_FALSE(store.HostExists("1.TSV"));
++  CHECK(store.Lookup("1.TSV") == nullptr);
++}
++
++TEST_CASE("Delete on close waits for the last of several handles", "[filesystem][vfs]") {
++  DeleteStore store;
++  File* reader = store.Open("1.TSV");
++  File* deleter = store.Open("1.TSV", kDeleteAccess);
++  REQUIRE(reader->entry() == deleter->entry());
++  CHECK(reader->entry()->open_file_count() == 2);
++
++  deleter->entry()->SetForDeletion(true);
++  deleter->Destroy();
++  CHECK(store.HostExists("1.TSV"));  // the reader is still open
++  CHECK(store.Lookup("1.TSV") != nullptr);
++
++  reader->Destroy();
++  CHECK_FALSE(store.HostExists("1.TSV"));
++  CHECK(store.Lookup("1.TSV") == nullptr);
++}
++
++TEST_CASE("A file pending deletion cannot be opened again", "[filesystem][vfs]") {
++  DeleteStore store;
++  File* reader = store.Open("1.TSV");
++  store.DeleteFile("1.TSV");  // pending: the reader keeps it
++
++  File* file = nullptr;
++  CHECK(store.TryOpen("1.TSV", &file) == X_STATUS_DELETE_PENDING);
++  CHECK(store.TryOpen("1.TSV", &file, FileDisposition::kOverwriteIf, FileAccess::kGenericWrite) ==
++        X_STATUS_DELETE_PENDING);
++  CHECK(file == nullptr);
++
++  reader->Destroy();
++  CHECK_FALSE(store.HostExists("1.TSV"));
++  store.Write("1.TSV", "new");  // gone: the name can be created again
++  CHECK(store.ReadHost("1.TSV") == "new");
++}
++
++TEST_CASE("Closing an unmarked file keeps it", "[filesystem][vfs]") {
++  DeleteStore store;
++  store.Open("1.TSV", kDeleteAccess)->Destroy();
++  CHECK(store.HostExists("1.TSV"));
++  CHECK(store.Lookup("1.TSV") != nullptr);
++}
++
++TEST_CASE("Clearing the mark before closing keeps the file", "[filesystem][vfs]") {
++  DeleteStore store;
++  File* file = store.Open("1.TSV", kDeleteAccess);
++  file->entry()->SetForDeletion(true);
++  file->entry()->SetForDeletion(false);
++  file->Destroy();
++  CHECK(store.ReadHost("1.TSV") == "contents of 1.TSV");
++}
++
++TEST_CASE("An open file is not deleted under its handle", "[filesystem][vfs]") {
++  DeleteStore store;
++  File* file = store.Open("1.TSV");
++  CHECK_FALSE(store.vfs().DeletePath("test:\\1.TSV"));
++  CHECK(file->entry() == store.Lookup("1.TSV"));
++  CHECK(store.HostExists("1.TSV"));
++  file->Destroy();
++  CHECK(store.vfs().DeletePath("test:\\1.TSV"));
++  CHECK_FALSE(store.HostExists("1.TSV"));
++}
++
++TEST_CASE("Rename does not replace an open file", "[filesystem][vfs]") {
++  DeleteStore store;
++  File* backup = store.Open("backup.tmp");
++  CHECK(store.Move("1.TSV", "backup.tmp", true) == X_STATUS_ACCESS_DENIED);
++  backup->Destroy();
++  CHECK(store.ReadHost("backup.tmp") == "contents of backup.tmp");
++  CHECK(store.ReadHost("1.TSV") == "contents of 1.TSV");
++}
++
++TEST_CASE("Repeated safe saves with the backup deleted keep one save and one backup",
++          "[filesystem][vfs]") {
++  // Torchlight's save: write save.tmp, delete backup.tmp, rename N.TSV -> backup.tmp,
++  // rename save.tmp -> N.TSV.
++  DeleteStore store;
++  for (const std::string text : {"second save", "third save"}) {
++    const std::string previous = store.ReadHost("1.TSV");
++    store.Write("save.tmp", text);
++    store.DeleteFile("backup.tmp");
++    CHECK_FALSE(store.HostExists("backup.tmp"));
++    REQUIRE(store.Move("1.TSV", "backup.tmp", false) == X_STATUS_SUCCESS);
++    REQUIRE(store.Move("save.tmp", "1.TSV", false) == X_STATUS_SUCCESS);
++    CHECK(store.Names() == std::vector<std::string>{"0.TSV", "1.TSV", "2.TSV", "backup.tmp"});
++    CHECK(store.HostNames() == store.Names());
++    CHECK(store.ReadHost("1.TSV") == text);
++    CHECK(store.ReadHost("backup.tmp") == previous);
++  }
++}
++
++TEST_CASE("A renamed file is deleted by its new name", "[filesystem][vfs]") {
++  DeleteStore store;
++  REQUIRE(store.Move("2.TSV", "5.TSV", false) == X_STATUS_SUCCESS);
++  store.DeleteFile("5.TSV");
++  CHECK(store.Names() == std::vector<std::string>{"0.TSV", "1.TSV", "backup.tmp"});
++  CHECK(store.HostNames() == store.Names());
++}
++
++TEST_CASE("Only the marked files disappear", "[filesystem][vfs]") {
++  DeleteStore store;
++  File* reader0 = store.Open("0.TSV");
++  File* reader2 = store.Open("2.TSV");
++  store.DeleteFile("1.TSV");       // closed: goes now
++  store.DeleteFile("2.TSV");       // open elsewhere: goes when reader2 closes
++  store.Write("save.tmp", "tmp");  // never marked
++  CHECK(store.Names() == std::vector<std::string>{"0.TSV", "2.TSV", "backup.tmp", "save.tmp"});
++
++  reader0->Destroy();
++  CHECK(store.HostExists("0.TSV"));
++  reader2->Destroy();
++  CHECK(store.Names() == std::vector<std::string>{"0.TSV", "backup.tmp", "save.tmp"});
++  CHECK(store.HostNames() == store.Names());
++  CHECK(store.ReadHost("0.TSV") == "contents of 0.TSV");
++  CHECK(store.ReadHost("backup.tmp") == "contents of backup.tmp");
++}
++
++TEST_CASE("A file left open when its device is unmounted closes safely", "[filesystem][vfs]") {
++  DeleteStore store;
++  File* file = store.Open("1.TSV");
++  REQUIRE(store.vfs().UnregisterSymbolicLink("test:"));
++  REQUIRE(store.vfs().UnregisterDevice("\\DeleteStore"));
++  CHECK(file->entry() == nullptr);  // detached from the destroyed entry
++  file->Destroy();                  // must not touch it
++  CHECK(store.HostExists("1.TSV"));
++}
