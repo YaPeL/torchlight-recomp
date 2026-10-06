@@ -248,14 +248,11 @@ jobs:
       - name: Build
         shell: pwsh
         run: cmake --build --preset win-amd64-nogame --parallel
-      # ui_pass_test and render_scale_test draw with OGRE's GL3+ render system and need OpenGL 3.3:
-      # the runner has no GPU, only Windows' own OpenGL 1.1, and unlike Linux without a display they
-      # cannot tell that before starting. They run on machines with a GPU.
+      # Tests labeled opengl33 need OpenGL 3.3, which the runner (no GPU) lacks: the label and the
+      # reason are with the tests (src/backend/CMakeLists.txt); release.yml leaves them out too.
       - name: Test
         shell: pwsh
-        run: >-
-          ctest --test-dir out/build/win-amd64-nogame --output-on-failure
-          -E "^(ui_pass_test|render_scale_test)$"
+        run: ctest --test-dir out/build/win-amd64-nogame --output-on-failure -LE opengl33
 
   package-check:
     name: Packaged replay on ${{ matrix.image }}

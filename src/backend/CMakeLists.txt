@@ -115,17 +115,22 @@ target_include_directories(conventions_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_options(conventions_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME conventions_test COMMAND conventions_test)
 
-# The host UI pass on an offscreen backend (needs a display; skipped without one).
+# The two tests below draw with OGRE's GL3+ render system: they skip (code 77) without a display,
+# and need OpenGL 3.3. Label `opengl33`: Windows CI and release runners have no GPU, only Windows'
+# own OpenGL 1.1, on which OGRE crashes before the test can tell (no display to probe first, unlike
+# Linux), so their ctest leaves the label out (`-LE opengl33`, .github/workflows/ci.yml and
+# release.yml). They run on machines with a GPU.
+# The host UI pass on an offscreen backend.
 add_executable(ui_pass_test ui_pass_test.cpp)
 target_link_libraries(ui_pass_test PRIVATE torchlight_backend)
 target_compile_options(ui_pass_test PRIVATE -Wall -Wextra -Werror)
 torchlight_stage_ogre(ui_pass_test)
 add_test(NAME ui_pass_test COMMAND ui_pass_test)
-set_tests_properties(ui_pass_test PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(ui_pass_test PROPERTIES SKIP_RETURN_CODE 77 LABELS opengl33)
 
 add_executable(render_scale_test render_scale_test.cpp)
 target_link_libraries(render_scale_test PRIVATE torchlight_backend)
 target_compile_options(render_scale_test PRIVATE -Wall -Wextra -Werror)
 torchlight_stage_ogre(render_scale_test)
 add_test(NAME render_scale_test COMMAND render_scale_test)
-set_tests_properties(render_scale_test PROPERTIES SKIP_RETURN_CODE 77)
+set_tests_properties(render_scale_test PROPERTIES SKIP_RETURN_CODE 77 LABELS opengl33)
