@@ -15,7 +15,7 @@ running whole: SceneManager, materials and culling. Only the layer below (D3D9/X
 - `~/ogre-1.7.0` (OGRECave/ogre, tag `v1-7-0`): reference headers of the guest OGRE. They are the base
   hypothesis for class layouts and vtable order; every offset and slot is confirmed with accesses in
   the recompiled code. Whatever does not match is marked as a "Runic difference", without forcing it.
-- `~/ogre14-install`: the host's OGRE 14.6.0 (headers + libs; recipe in the README).
+- `~/ogre14-install`: the host's OGRE 14.6.0 (headers + libs; recipe in docs/BUILDING.md).
 - `~/torchlight-recomp/reference/pc`: Torchlight PC binaries (OGRE 1.6.x). There is no Torchlight PC
   source code.
 

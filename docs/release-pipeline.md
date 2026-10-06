@@ -253,12 +253,12 @@ Neither one contains game content, so both can be cached and even published:
    (`docs/windows-port.md`, WIN.2). Cache key: SDK commit + hash of `patches/` + toolchain image.
    Only the Release configuration is needed for the release (the SDK also builds Debug and
    RelWithDebInfo; the build time can be cut by building one).
-2. **OGRE 14.6.0** with the README's recipe (GL3+, RTSS, STBI) and the second GL3+ build with
+2. **OGRE 14.6.0** with the recipe in docs/BUILDING.md (GL3+, RTSS, STBI) and the second GL3+ build with
    `OGRE_USE_WAYLAND` for `lib/OGRE/wayland/`, plus `-DCMAKE_INSTALL_RPATH='$ORIGIN;$ORIGIN/..'`
    (or patchelf afterwards) so the install is relocatable. On Windows, without the Wayland build.
    Cache key: OGRE tag + hash of the recipe.
 
-The OGRE recipe is today only in the README; the cross-platform stage of `ARCHITECTURE.md` already
+The OGRE recipe is today only in docs/BUILDING.md; the cross-platform stage of `ARCHITECTURE.md` already
 asks for it to be described inside the project. A script used by CI and by developers (one source)
 would serve both.
 

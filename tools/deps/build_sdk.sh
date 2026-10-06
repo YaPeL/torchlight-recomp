@@ -1,7 +1,7 @@
 #!/bin/sh
 # Builds and installs the ReXGlue SDK with this project's patches (patches/series): Release only by
 # default, what CI and the published game use (docs/release-pipeline.md, REL.5); developers build
-# every configuration (README). Nothing of the game is involved.
+# every configuration (docs/BUILDING.md). Nothing of the game is involved.
 #
 # Usage: tools/deps/build_sdk.sh PREFIX [WORK_DIR] [CONFIGS]
 #   PREFIX    where the SDK is installed (its lib/cmake/rexglue is what -DCMAKE_PREFIX_PATH finds)

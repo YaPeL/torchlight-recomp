@@ -12,7 +12,7 @@ clang) and installed for -SdkConfigs. CI builds Release only, as on Linux; a dev
 every configuration (the default).
 
 
-The same OGRE options as the Linux recipe in README.md (without the Wayland build of the GL3+ plugin),
+The same OGRE options as the Linux recipe in docs/BUILDING.md (without the Wayland build of the GL3+ plugin),
 plus the Direct3D 11 render system (it uses the Windows SDK's D3D11, DXGI and D3DCompiler), with
 the dynamic C runtime the ReXGlue SDK uses (/MD, /MDd in Debug). zlib is built with LLVM 21's
 clang, like the game. OGRE is built with MSVC's cl.exe, its supported Windows compiler: its Win32 GL

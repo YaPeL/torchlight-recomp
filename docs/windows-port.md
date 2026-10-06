@@ -113,7 +113,7 @@ backend loads `RenderSystem_GL3Plus` and `Codec_STBI` by plugin name, so on Wind
 naming changes (OGRE resolves the `.dll` suffix). The Wayland-only subdirectory
 (`OgreRenderSystemDir`) has no Windows counterpart; the platform returns the plain plugin directory.
 
-The build recipe in the README works on Windows with two changes: no Wayland build of the plugin,
+The build recipe in docs/BUILDING.md works on Windows with two changes: no Wayland build of the plugin,
 and the install prefix. A pinned OGRE build described by the project (already a pending item in
 `ARCHITECTURE.md`, cross-platform stage) would serve the four platforms.
 

@@ -245,7 +245,7 @@ phase 2 we need to measure:
   while the game was not reading keystrokes (a loading screen), before reporting its up. Fixed by
   SDK patch 16 (`patches/README.md`); with Xenos it happened the same way.
 - Guest memory left in `/dev/shm` by runs that end by a signal (closed): SDK patch 15 unlinks the
-  shared memory right after creating it. The README's cleanup loop is still useful for files left
+  shared memory right after creating it. The cleanup loop in docs/BUILDING.md is still useful for files left
   by runs with an SDK without the patch. Pending: the upstream report.
 - Full-screen images on screens wider than 16:9 (TLR-006.5, after the beta): loading and story
   screens show their image pillarboxed with continuous bands, which looks right. To review: on the
@@ -278,7 +278,7 @@ phase 2 we need to measure:
   exports its whole spdlog 1.17 (template instantiations included). On the first `eglSwapBuffers`
   MangoHud creates its logger and `ansicolor_sink::set_formatter` resolves against the runtime's
   copy: `free(): invalid pointer` (confirmed with the stack). A MangoHud built with its internal
-  spdlog is used (README). For the Steam Deck: Game Mode's performance overlay is `mangoapp` inside
+  spdlog is used (docs/BUILDING.md). For the Steam Deck: Game Mode's performance overlay is `mangoapp` inside
   gamescope, a separate process that is not injected into the game; verify it when we test there
   (`gamescope --mangoapp` also works on the desktop). Possible upstream report to the SDK: that
   `librexruntime` not export spdlog or fmt (today its public logging headers expose spdlog types, so

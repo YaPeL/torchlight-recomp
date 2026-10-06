@@ -1,320 +1,182 @@
-# torchlight-recomp
+# Torchlight Recomp
 
-## Build and run
+[![CI](https://github.com/YaPeL/torchlight-recomp/actions/workflows/ci.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/ci.yml)
+[![Release](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-recomp?include_prereleases)](https://github.com/YaPeL/torchlight-recomp/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+[![Platforms: Linux | Windows](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-lightgrey)](#installing)
 
-Requirements: the ReXGlue SDK with the patches from `patches/` (in the order of `patches/series`),
-OGRE 14.6.0, and the game's files (the first start installs them from your package, see below; for
-development they can also be passed with `--game_data_root`). All commands are run from
-`~/torchlight-rewrite`.
+An unofficial native PC port of Torchlight for Xbox LIVE Arcade (Xbox 360), made by static
+recompilation with the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk). The game's PowerPC
+code is translated to C++ and compiled for x86-64; instead of emulating the Xbox 360 GPU, every draw
+is rebuilt with [OGRE 14](https://www.ogre3d.org/) on OpenGL 3.3 (or Direct3D 11 on Windows).
 
-The SDK and OGRE are built with the same scripts CI uses (`tools/deps/`; Release; CI publishes them
-as `deps-<key>` downloads, `tools/deps/key.sh`). On Ubuntu 22.04, `tools/deps/ubuntu_toolchain.sh`
-(as root) installs the toolchain CI uses: clang 21, libstdc++ 13, a recent CMake:
+> [!IMPORTANT]
+> The releases contain no game assets and no original game files. The executable is built from the
+> game's code and only runs with files from your own copy of Torchlight for Xbox LIVE Arcade (the
+> XBLA package from your Xbox 360, version 1.0.140.0). This project is not affiliated with or
+> endorsed by the owners of Torchlight or by Microsoft.
 
-```sh
-tools/deps/build_sdk.sh ~/rexglue-sdk/out/install/linux-amd64 "" all
-tools/deps/build_ogre.sh ~/ogre14-install
-```
+This is a **beta**, the first public release. See [Known limitations](#known-limitations).
 
-OGRE: GL3+ (EGL), the RTSS with its shaders and the STBI codec; the GL3+ plugin is built a second
-time for Wayland windows, in `lib/OGRE/wayland/` (OGRE builds its window support for X11 or for
-Wayland). `build_ogre.sh PREFIX WORK RelWithDebInfo` gives OGRE with debug information; another
-OGRE path: cache variable `TORCHLIGHT_OGRE_INSTALL`. `all` builds the SDK's Debug, Release and
-RelWithDebInfo libraries, which the debug and relwithdebinfo presets link; without it, Release only
-(what CI and the published game use).
+## Contents
 
-A build directory configured earlier with the OGRE 1.6.1 backend needs `cmake --fresh --preset ...`
-(the cache keeps the old OGRE path).
+- [Installing](#installing)
+- [First start](#first-start)
+- [What works](#what-works)
+- [Known limitations](#known-limitations)
+- [Where files are kept](#where-files-are-kept)
+- [Building](#building)
+- [Credits](#credits)
+- [License](#license)
 
-On Windows, `tools/build-deps/windows.ps1` builds the host dependencies into
-`%USERPROFILE%\ogre14-install` (the default of `TORCHLIGHT_OGRE_INSTALL` there): zlib 1.3.2 (static;
-Windows has no system zlib) and OGRE 14.6.0 with the options above (no Wayland build), in Debug and
-RelWithDebInfo, with the dynamic C runtime the SDK uses (`/MD`, `/MDd` in Debug, checked after the
-build). zlib is built with clang like the game; OGRE with MSVC's `cl.exe`, because OGRE's Win32 GL
-code has two constructs clang rejects (the script lists them). It needs Visual Studio 2022 or its
-Build Tools (MSVC x64 tools, a Windows SDK, the CMake tools), LLVM 21 and Git:
+## Installing
 
-```powershell
-powershell -ExecutionPolicy Bypass -File tools\build-deps\windows.ps1 [-Prefix DIR] [-WorkDir DIR] [-SdkPrefix DIR]
-```
+Download only from this repository's
+[Releases](https://github.com/YaPeL/torchlight-recomp/releases) page. Each release has a
+`SHA256SUMS` file with the checksum of every download.
 
-With `-SdkPrefix` it also builds the ReXGlue SDK with `patches/series` (the Windows counterpart of
-`tools/deps/build_sdk.sh`; every configuration, or `-SdkConfigs`) and installs it there: that
-folder is the `-DCMAKE_PREFIX_PATH` below. CI builds the same with `-SdkConfigs Release
--Configs RelWithDebInfo`, with the LLVM of `tools/build-deps/windows_toolchain.ps1`.
+### Linux
 
-Regenerate the recompiled code (only needed if `generated/` does not exist or
-`config/torchlight_functions.toml` changed; the build also reruns it if its inputs change):
+Requirements: x86-64, glibc 2.35 or newer (Ubuntu 22.04 or later, or any current distribution), a
+GPU driver with OpenGL 3.3. X11 and Wayland both work.
 
 ```sh
-~/rexglue-sdk/out/install/linux-amd64/bin/rexglue codegen torchlight_manifest.toml
+chmod +x Torchlight-Recomp-*-x86_64.AppImage
+./Torchlight-Recomp-*-x86_64.AppImage
 ```
 
-Build (configure + build, Debug):
+The AppImage carries everything it needs except the system's graphics and sound libraries.
 
-```sh
-cmake --preset linux-amd64-debug
-cmake --build --preset linux-amd64-debug -j"$(nproc)"
-```
+### Windows
 
-Optimized build with symbols (RelWithDebInfo; the one used to measure performance):
+Requirements: 64-bit Windows 10 or 11. Direct3D 11 is the default and recommended renderer: it
+uses less CPU than OpenGL. OpenGL 3+ can be chosen in the settings when the GPU driver provides
+OpenGL 3.3.
 
-```sh
-cmake --preset linux-amd64-relwithdebinfo
-cmake --build --preset linux-amd64-relwithdebinfo -j"$(nproc)"
-```
+Extract `Torchlight-Recomp-*-x86_64.zip` anywhere and run `TorchlightRecomp\torchlight.exe`.
 
-The executable ends up in `out/build/linux-amd64-relwithdebinfo/torchlight` (the commands below use
-that one; with Debug, `out/build/linux-amd64-debug/torchlight`).
-Its RUNPATH has the SDK's and OGRE's library directories, so it needs no `LD_LIBRARY_PATH`; OGRE's
-plugins and media are linked next to it in `ogre/`.
+The zip is not code-signed. The first time, Windows SmartScreen may show "Windows protected your
+PC": that is Windows being cautious with programs it has not seen downloaded often, not a detection
+of anything harmful. Click **More info**, then **Run anyway**; Windows remembers the choice for
+that copy. To check a download, compare its SHA-256 with the release's `SHA256SUMS`.
 
-A relocatable install (the executable, the GPU plugins, `data/ui` and `ogre/` in `bin/`, the shared
-libraries in `lib/`, RUNPATH `$ORIGIN/../lib`) runs from any folder, read-only included, without
-`LD_LIBRARY_PATH`; `--component tools` adds the `replay` tool:
+## First start
 
-```sh
-cmake --install out/build/linux-amd64-relwithdebinfo --prefix DIR
-cmake --install out/build/linux-amd64-relwithdebinfo --prefix DIR --component tools
-```
+1. A dialog asks for your Torchlight XBLA package: the file copied from your console's storage, or
+   a folder with its contents already extracted. The package is checked (it must be Torchlight's,
+   version 1.0.140.0, with every file intact) and its files, about 200 MB, are copied to the game's
+   data folder ([Where files are kept](#where-files-are-kept)). Your package is only read.
+2. A second dialog asks which achievement set to use, Xbox 360 or PC
+   ([Achievements](#achievements)). It can be changed later in the settings.
 
-On Windows (from a shell with the MSVC x64 environment, `vcvars64.bat`, and LLVM 21 first in
-`PATH`; the SDK installed with the `win-amd64` preset, see `patches/README.md`):
+After that the game starts; later starts go straight to it. These dialogs follow your system's
+language (English, German, French or Spanish).
 
-```bat
-cmake --preset win-amd64-relwithdebinfo -DCMAKE_PREFIX_PATH=<sdk>/out/install/win-amd64
-cmake --build --preset win-amd64-relwithdebinfo
-ctest --test-dir out/build/win-amd64-relwithdebinfo --output-on-failure
-```
+A gamepad is recommended. A keyboard can play through ReXGlue's controller emulation: start the game
+with `--mnk_mode=true`.
 
-There every executable (the game, the replay, the tests) ends up in the build directory itself,
-next to the OGRE and SDK DLLs it needs (Windows has no rpath). Settings go to
-`%APPDATA%\TorchlightRecomp\`; the shader cache, the logs and the installed game files to
-`%LOCALAPPDATA%\TorchlightRecomp\` (`ogre\`, `logs\`, `game\`); saves to
-`%USERPROFILE%\Saved Games\TorchlightRecomp\`.
+## What works
 
-The Linux AppImage (what the release workflow does, `docs/release-pipeline.md`): a Release build
-installed to a folder, its symbols split, then
-`packaging/linux/get_tools.sh TOOLS && PATH=TOOLS:$PATH packaging/linux/make_appimage.sh INSTALL
-OUT.AppImage`; `packaging/linux/check_appimage.sh OUT.AppImage` checks it.
+The game runs on the native renderer: menus, town, dungeons, character creation, inventory, pets and
+saves.
 
-Without the game (libraries, tests and tools only, no `generated/`; what CI builds):
-`cmake --preset linux-amd64-nogame` (with `-DCMAKE_PREFIX_PATH=<SDK install>` when the SDK is not
-found by itself).
+### Display settings
 
-Without `--game_data_root` the game uses its own copy of the game files in
-`~/.local/share/TorchlightRecomp/game/`: on the first start it asks for your Torchlight XBLA package
-(or an extracted folder), checks it against the supported version (1.0.140.0) and installs it
-there. `game_setup_test PACKAGE` checks a package the same way without starting the game. The game
-runs as the full game (`license_mask` 1); `--license_mask=0` gives the demo.
+The game's own Options → Settings menu has an extra **Video** column:
 
-The first configure downloads miniz 3.0.2 (for the save import, `src/save_import/CMakeLists.txt`,
-pinned by the SHA-256 of its release zip). Without network, extract that zip somewhere and point
-CMake at it: `-DFETCHCONTENT_SOURCE_DIR_MINIZ=/path/to/miniz-3.0.2` (the folder with `miniz.c`).
+- **Resolution**: the internal render resolution, independent of the window's size.
+- **Aspect ratio**: Auto (your display's), or 4:3, 16:10, 16:9, 21:9 and 32:9 up to your display's
+  width. A wider ratio shows more of the scene instead of stretching it.
+- **Frame rate limit** and **Vertical sync**.
+- **Renderer** (Windows: Direct3D 11, recommended, or OpenGL 3+) and **GPU**, on machines with more
+  than one.
+- **Language** and **Achievements** (below).
 
-Run (by default `--native_live=only`: the native OGRE backend is the only renderer, Xenos off). The
-app forces the `null` GPU plugin and the backend draws inside the game's window (fullscreen,
-letterboxed if the aspect ratio is not 16:9), which keeps focus and input (keyboard, gamepad, F9),
-with the video driver SDL picked (wayland or x11; to force X11, `--video_driver=x11`). The GPU, the
-internal resolution, the FPS cap, vsync and the language are chosen in the game's menu (Options →
-Settings, *Video* column) and saved in `~/.config/TorchlightRecomp/settings.toml`:
+Some settings apply after a restart; the column says which.
 
-```sh
-./out/build/linux-amd64-relwithdebinfo/torchlight \
-  --game_data_root $HOME/360tools/extracted/extracted --capture_dir $PWD/out/captures
-```
+### Achievements
 
-F9 captures (`--capture_frames` frames) to `--capture_dir`.
+Two sets, chosen at the first start or in the Video column. Each keeps its own progress.
 
-ReXGlue's emulated GPU (Xenos plugin, Vulkan): `--native_live=off`. An explicit `--gpu_plugin xenos`
-without `--native_live` also selects Xenos. `VK_ICD_FILENAMES` picks Xenos' GPU:
+- **Xbox 360**: the game's original 12 achievements, listed with their icons in the game's
+  Achievements screen.
+- **PC (incomplete)**: the 66 achievements of the PC version, with an unlock notification in the
+  game. 63 are implemented; the three for mods (`MODS_1`, `MODS_5`, `MODS_10`) are not available,
+  since this version has no mods. They are kept on this machine: there is no Steam connection.
 
-```sh
-# NVIDIA (for the Intel one: intel_icd.json)
-VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \
-./out/build/linux-amd64-relwithdebinfo/torchlight \
-  --game_data_root $HOME/360tools/extracted/extracted --native_live=off
-```
+### Importing PC saves
 
-Parallel mode (diagnostics: the game keeps running on Xenos and every frame is also drawn by the
-OGRE backend in a second window; the PRIME variables pick that window's GPU, GL):
+Characters, the shared stash and the options of Torchlight for PC can be brought over. Copy them,
+together with the PC version's `Pak.zip`, into the `import` folder of the game's data folder. When
+you open the "load character" menu, the game offers the import and explains anything it cannot
+convert. Your PC installation is never touched; the copies in `import` are renamed once imported.
 
-```sh
-__NV_PRIME_RENDER_OFFLOAD=1 __GLX_VENDOR_LIBRARY_NAME=nvidia \
-VK_ICD_FILENAMES=/usr/share/vulkan/icd.d/nvidia_icd.json \
-./out/build/linux-amd64-relwithdebinfo/torchlight \
-  --game_data_root $HOME/360tools/extracted/extracted \
-  --native_live=parallel --capture_dir $PWD/out/captures
-```
+### Languages
 
-F9 captures with the focus on either window.
+English, German, French and Spanish, as in the game, chosen in the Video column (after a restart).
+Other languages can be added as language packs, including translations made for the PC version: see
+[docs/translations.md](docs/translations.md).
 
-MangoHud in only mode: the distribution's (Debian/Ubuntu) uses the system spdlog and clashes with
-the one `librexruntime` exports (it breaks on the first swap). Use one built with its internal
-spdlog, installed separately in `~/mangohud-install` (the system one is left alone):
+## Known limitations
 
-```sh
-mkdir -p ~/mangohud-build && cd ~/mangohud-build
-python3 -m venv venv && ./venv/bin/pip install meson mako
-# glslangValidator (used by MangoHud's Vulkan layer), built from the source shipped with the SDK
-cmake -S ~/rexglue-sdk/thirdparty/glslang -B glslang -G Ninja -DCMAKE_BUILD_TYPE=Release \
-  -DENABLE_OPT=OFF -DGLSLANG_TESTS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build glslang
-git clone --depth 1 --branch v0.8.1 https://github.com/flightlessmango/MangoHud.git src
-export PATH=$PWD/venv/bin:$PWD/glslang/StandAlone:$PATH
-# -include sstream: gpu_fdinfo.cpp is missing the include with GCC 15
-meson setup build src --prefix=$HOME/mangohud-install -Dbuildtype=release \
-  -Duse_system_spdlog=disabled -Dwith_xnvctrl=disabled -Dmangoapp=false -Dmangohudctl=false \
-  -Dmangoplot=disabled -Dtests=disabled "-Dcpp_args=-include sstream"
-ninja -C build && meson install -C build
-```
+- **Beta.** Expect bugs. Please report them in the
+  [issues](https://github.com/YaPeL/torchlight-recomp/issues), with the log of the run
+  ([Where files are kept](#where-files-are-kept)).
+- **PC achievements** are covered by tests, but only a few have been earned in actual play so far.
+- **Xbox LIVE** features (sign-in, leaderboards) are not available.
+- **Steam Deck**: the AppImage is meant to work in Desktop Mode but has not been tested on the
+  device yet. **macOS** is not supported.
+- **Ultrawide**: at 32:9, the story screens shown inside a level can show a few rows of the level at
+  the top right.
+- **Mods** made for the PC version are not supported. Language packs for scripts written right to
+  left (Arabic) are not supported, and Chinese and Japanese not yet.
+- The Windows zip is not code-signed (see SmartScreen, above).
 
-And its script is prepended to the command (it reads the same configuration as the system one):
+## Where files are kept
 
-```sh
-~/mangohud-install/bin/mangohud ./out/build/linux-amd64-relwithdebinfo/torchlight \
-  --game_data_root $HOME/360tools/extracted/extracted
-```
+| | Linux | Windows |
+|---|---|---|
+| Settings (`settings.toml`) | `~/.config/TorchlightRecomp/` | `%APPDATA%\TorchlightRecomp\` |
+| Game data, with `import` for PC saves | `~/.local/share/TorchlightRecomp/game/` | `%LOCALAPPDATA%\TorchlightRecomp\game\` |
+| Saves | `~/.local/share/TorchlightRecomp/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\` |
+| Logs | `~/.local/state/TorchlightRecomp/logs/` | `%LOCALAPPDATA%\TorchlightRecomp\logs\` |
+| Shader cache | `~/.cache/TorchlightRecomp/` | `%LOCALAPPDATA%\TorchlightRecomp\ogre\` |
 
-Record the live mode session (every frame the backend consumed; cap `--live_record_max_mb`, 4096 by
-default) and replay it offline with the accumulated state:
+On Linux the `XDG_*_HOME` variables are honored.
 
-```sh
-  ... --live_record=$PWD/out/sessions/session.tlses
-./out/build/linux-amd64-relwithdebinfo/tools/replay/replay --session out/sessions/session.tlses \
-  --game_data_root $HOME/360tools/extracted/extracted --out out/replay/session \
-  [--session_frame N] [--session_frames A-B] [--region X0,Y0,X1,Y1] [--dump_targets]
-```
+## Building
 
-To validate a change that must not alter the image (resource handling, caches), compare two replay
-builds on one session: every sampled frame has to come out identical, and each one's time is
-reported.
+Building the game needs your own copy of it too: the code generator reads its executable. Without
+it, only the libraries, the tests and the tools build (what CI does). See
+[docs/BUILDING.md](docs/BUILDING.md) for the dependencies (the patched ReXGlue SDK, OGRE 14.6.0),
+the build on Linux and Windows, the tests and the development tools, and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the port works.
 
-```sh
-tools/replay/session_compare.sh REPLAY_BASE REPLAY_NEW out/sessions/session.tlses \
-  $HOME/360tools/extracted/extracted 0-11000/29 6400
-```
+## Credits
 
-Tests (unit, without the game), after building:
+- [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk): the static recompiler and runtime this port
+  is built on, which includes code derived from [Xenia](https://github.com/xenia-project/xenia).
+  Our patches to it are in [patches/](patches/).
+- [OGRE](https://github.com/OGRECave/ogre): the renderer that draws the game.
+- [Rayman Origins Recompiled](https://github.com/XDanfr/RaymanOriginsRecomp): the null GPU plugin
+  patch ([patches/README.md](patches/README.md)).
+- [SDL](https://www.libsdl.org/), [FFmpeg](https://ffmpeg.org/),
+  [Dear ImGui](https://github.com/ocornut/imgui), [miniz](https://github.com/richgel999/miniz) and
+  the other components listed, with their licenses, in
+  [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- [Unleashed Recompiled](https://github.com/hedge-dev/UnleashedRecomp) and
+  [Zelda 64: Recompiled](https://github.com/Zelda64Recomp/Zelda64Recomp), whose release and
+  packaging practices this project follows.
 
-```sh
-ctest --test-dir out/build/linux-amd64-relwithdebinfo --output-on-failure
-```
-
-The tests never write to the user's folders: ctest sets `TORCHLIGHT_TEST_USER_FOLDERS` for each of
-them to `out/build/<preset>/test_home/`, below which every user folder then lives (on every
-platform; nothing else uses that variable), created empty before the suite and removed after it, and
-`test_home_check` fails if the real `TorchlightRecomp` folders gained anything meanwhile (their
-`logs/` aside, which a running game writes to).
-
-The user's folders are named `TorchlightRecomp` (so they do not collide with the PC game's):
-`~/.config/TorchlightRecomp/` (settings, the runtime's `torchlight.toml`),
-`~/.local/state/TorchlightRecomp/logs/`, `~/.cache/TorchlightRecomp/` (shaders, layouts) and
-`~/.local/share/TorchlightRecomp/` (saves, `save-backups`, profiles; the runtime's default
-`--user_data_root`), or under the `XDG_*_HOME` directories. At startup, each folder still named
-`torchlight` is renamed to `TorchlightRecomp` when the new one does not exist yet and the old one
-holds this project's files; with both, nothing is touched. The log says what moved.
-
-The logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
-runtime's as `torchlight_NNN.log` and OGRE's next to it as `torchlight_NNN_ogre.log`. The game
-prints the log's path at startup, and the first line of each log has the executable's path and the
-build's commit (`git describe`, `-dirty` with local changes). `--log_file=PATH` puts the runtime's
-log elsewhere. The runtime's own config, `torchlight.toml`, is read from
-`~/.config/TorchlightRecomp/`. To quit, use Quit from the game's menu.
-
-With an SDK without patch 15 (`patches/README.md`), a run that ends by a signal (a crash,
-`timeout`, `kill`) leaves its guest memory behind as a `/dev/shm/xenia_memory_*` file of about
-4.8 GB; enough of them fill the shared memory and later runs die with SIGBUS. To delete the ones no
-running process maps (other instances keep theirs):
-
-```sh
-for f in /dev/shm/xenia_memory_*; do grep -qs "$f" /proc/[0-9]*/maps || rm -f "$f"; done
-```
-
-## Windows: the SmartScreen prompt
-
-The Windows zip is not code-signed: signing needs a paid certificate tied to a verified identity,
-and the beta goes without one. Windows' SmartScreen shows "Windows protected your PC" the first
-time a program it has not seen downloaded often is started, and every new unsigned release starts
-out that way. It is not a detection of anything harmful. To start the game, click **More info**,
-then **Run anyway**; Windows remembers the choice for that copy. To check that a download is the
-published one, compare its SHA-256 with the release's `SHA256SUMS`.
-
-## Languages and translations
-
-The game ships English plus German, French and Spanish. The language is chosen in the game's own
-menu (Options → Settings, the *Video* column on the right, *Language*); the change applies after a
-restart. The choice is saved with the other host settings in
-`~/.config/TorchlightRecomp/settings.toml`.
-
-### Language packs
-
-Any other language can be added as a language pack: a folder `translations/<code>/` in the extracted
-game data (next to `translations/de`, `fr` and `es`) with:
-
-- `translation.dat.adm`: the translation, in the game's format (pairs of English original and
-  translation). The game looks texts up by their exact English original.
-- optionally `media/UI/`: fonts for the language's script. A pack's files take the place of the
-  game's with the same path. Scripts the game's fonts lack (Cyrillic, for instance) need `.font`
-  files pointing to a font that has them, including `Serif14.font`, which the Xbox 360 version has
-  and the PC version does not.
-
-Packs appear in the *Language* list by their folder name. If the selected pack is removed, the game
-starts in English.
-
-### Translations from the PC version
-
-Translations made for Torchlight on PC use the same `translation.dat.adm` format and can be used as
-packs. The official Russian translation of the GOG release, for instance, covers about 92% of the
-Xbox 360 texts, with its fonts from the release's `Pak.zip` (`media/UI/*.font` and `ariblk.ttf`). To
-take it from your own GOG installer without running it:
-
-```sh
-innoextract --language=ru-RU -I translations -I Pak.zip -d /tmp/tl_ru setup_torchlight_*_(russian)_*.exe
-```
-
-What a PC translation lacks is the text that only exists on the Xbox 360 (Xbox LIVE messages,
-leaderboards, the controller tutorials, a few menus such as *New Character*) and texts whose English
-changed between versions. Mods made for the PC version's mods folder (for instance translations that
-replace game data files) are not supported.
-
-Scripts written right to left (Arabic) are not supported. Chinese and Japanese are not supported yet.
-
-### Completing a translation
-
-`tools/translations/tl_translate.py` lists what a pack is missing and adds what someone translated;
-it works on the game data directly and never runs the game:
-
-```sh
-# Write translations/ru/missing.txt with every text the pack has no translation for.
-tools/translations/tl_translate.py missing --game-data ~/360tools/extracted/extracted --lang ru
-
-# After filling it in: add the translated entries to the pack
-# (the previous translation.dat.adm is kept as translation.dat.adm.bak).
-tools/translations/tl_translate.py merge --game-data ~/360tools/extracted/extracted --lang ru \
-  ~/360tools/extracted/extracted/translations/ru/missing.txt
-```
-
-The file is UTF-8, one entry per pair of lines, taken exactly as written after the prefix:
-
-```
-EN: New Character
-TR: Новый персонаж
-```
-
-Entries left empty are ignored, so a file can be filled in bit by bit and merged again; `missing`
-then lists only what is still left. `\n` in a text is the game's line break. Markers such as
-`[VALUE]`, `[ITEM]` or `|cFFFFBA00…|u` must stay in the translation (in any order); `merge` skips
-entries whose markers differ from the original's and says which. Starting a new language works the
-same way: with no pack yet, `missing` lists all of the game's texts.
+Torchlight was made by Runic Games.
 
 ## License
 
-- The project's own code is licensed under the GNU General Public License, version 3
-  ([LICENSE](LICENSE)).
-- The patches to the ReXGlue SDK in [patches/](patches/) are licensed under the BSD 3-Clause
-  License ([patches/LICENSE](patches/LICENSE)), ReXGlue's license, so that they can go upstream.
-  Patches taken from other projects keep their original license and attribution.
-- The game is not included: you need your own copy of Torchlight for Xbox 360.
-- The code generated from the game (`generated/`) is not covered by any of the project's licenses.
-- Third-party licenses are listed in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- The project's own code: GNU General Public License, version 3 ([LICENSE](LICENSE)).
+- The patches to the ReXGlue SDK in [patches/](patches/): BSD 3-Clause License
+  ([patches/LICENSE](patches/LICENSE)), ReXGlue's license, so that they can go upstream. Patches
+  taken from other projects keep their original license and attribution.
+- The game is not included and is not covered by these licenses, nor is the code generated from it
+  (`generated/`).
+- Third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

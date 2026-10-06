@@ -5,7 +5,7 @@
 # each other through RUNPATH $ORIGIN, so the install can move; linked --as-needed, so a library
 # is a dependency only if its symbols are used (OGRE links all of X11_LIBRARIES: without it the
 # GL3+ plugin asked for libSM, libICE and libXext and used none). One recipe for CI and developers
-# (README; docs/release-pipeline.md, REL.5).
+# (docs/BUILDING.md; docs/release-pipeline.md, REL.5).
 #
 # Usage: tools/deps/build_ogre.sh PREFIX [WORK_DIR] [BUILD_TYPE]
 #   BUILD_TYPE  Release (default; what CI and the published game use) or RelWithDebInfo
