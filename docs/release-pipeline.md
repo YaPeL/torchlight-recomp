@@ -474,6 +474,11 @@ announces it.
   the owner uploads the same verified file (`runtime-x86_64`, SHA-256 `156f4bdb…`, signed by
   type2-runtime's key) as an asset of a release of this repository, and `get_tools.sh` downloads
   it from there with the same hash.
+- **Re-running a release whose symbols were already pushed.** Each game job's Symbols step
+  commits `<tag>/<platform>/` to `torchlight-symbols` and fails when there is nothing new to commit
+  (a re-run with the same binaries: `git commit` exits 1). For v0.1.0-beta the owner deleted the
+  folders and re-ran. To fix: skip the commit and the push when the tree did not change, and say
+  so in the log.
 
 ## Sources
 
