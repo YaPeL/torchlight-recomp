@@ -229,6 +229,45 @@ Validation, same binary with the cvar off and on, the fixed-floor saved game, a 
 
 Not measured: by the profile its gain is about 1 % of the main thread, below the noise of a run.
 
+## Draw and bindings: evidence (2026-10-07)
+
+The D3D9 `_render` (`0x821C4058`), in order: returns when the operation has no vertices
+(`@0x821C4070`); calls the base `RenderSystem::_render` (`0x821CEA60`: batch counters, clip planes);
+calls slots 84 and 85 through the vtable (`@0x821C4098`, `@0x821C40B4`), whose guest code uploads a
+dirty buffer to its device copy (`0x821A71E8`, through the large copy); takes the device's render
+target and depth stencil with a reference (`0x821C0A08`, `0x821E0088`) and releases them
+(`0x821CEDD8`), with a path for depth-only passes that sets and restores render targets
+(`0x821BA040`, `0x821D1288`, `0x821BF940`); for indexed draws finds or creates the device's index
+buffer (`0x82581D98`, `0x82582520`), uploads it when dirty (`0x82582668`) and calls `SetIndices`;
+then per pass iteration calls `_setDepthBias` through the vtable (`@0x821C43C8`), draws
+(`DrawIndexedPrimitive` `0x821CF830` `@0x821C43F4`, `DrawPrimitive` `0x821D0A10` `@0x821C4490`)
+and updates the pass iteration (`0x821CE928`); finally unbinds the streams and indices.
+
+Our `_render` hook runs the guest's first and captures after it, because the buffer snapshots
+read the device copy the guest has just uploaded, and our slot 84, 85 and 68 hooks record through
+those calls. So `_render` is not skipped; its device calls are:
+
+- **`DrawIndexedPrimitive`, `DrawPrimitive`**: flush the dirty device state into the ring
+  (`0x821CFF38`), allocate ring space (`0x821EA6F0`), fences (`0x821F3D78`), wait for ring space
+  only when the ring is full (`0x821A5C10`, 0.02 % of the samples in the slow stretch). Called only
+  by `_render`.
+- **`SetIndices`** (`0x821C39F8`), **`SetStreamSource`** (`0x821C3D58`): store the buffer in the
+  device (`device + 12684`; `device + 4 * (stream + 3177)` and the stream's fetch constant), and
+  stamp the replaced buffer's fence (`+8`) or queue a pending fence entry (`0x82775DF8`): the
+  resource fences, whose loss is accepted (Decisions). Other callers: `setVertexBufferBinding`
+  (`0x821C3E78`), the device's unbind-all `0x821CECF0` (from `_beginFrame`) and `0x827746B0`,
+  which unbind; with every binding skipped there is nothing bound to unbind. No caller reads `r3`
+  after them.
+- **Kept**: the render target and depth stencil references (reference counts and EDRAM
+  bookkeeping), `SetVertexDeclaration` (`0x821CE588`, two stores), the state flush when other
+  draws call it (`0x821E94A0`, `0x82775198`: the `_endFrame` full-screen pass), the index buffer
+  lookup and uploads.
+
+Skipped since this step: those four device calls, by overriding them
+(`hooks/render_system_hooks.cpp`, `DEVICE_SKIP_HOOK`), so every caller skips them. In the slow
+stretch they took about 2.2 % of all samples (about 4.5 % of the main thread, a lower bound: the
+call graphs are cut by the LBR depth).
+
 ## Decisions (2026-10-07)
 
 - **Cvar**: `native_skip_guest_d3d` (bool, default `false`): in the native mode, the RenderSystem

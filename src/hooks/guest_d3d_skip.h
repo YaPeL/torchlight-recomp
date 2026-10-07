@@ -51,5 +51,4 @@ constexpr bool SkippableDeviceCall(uint32_t address) {
 // Before the guest runs: decides once for the session and logs it.
 void InstallGuestD3DSkip(bool native_only);
 
-
 }  // namespace torchlight::hooks
