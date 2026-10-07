@@ -306,7 +306,14 @@ host wraps `sub_822A68F0`.
   writer, and the hash is computed afterwards (`sub_8221CC70`), so it covers the repaired bytes.
 - **Fallback**: in any other case (not found, found twice, a name longer than 65,535 units) it
   rewinds the stream (position `+16` and size `+24`) and writes the unit again with the list
-  emptied, as every Xbox save is, and logs a warning.
+  emptied, as every Xbox save is. The log says it plainly (`mods: FALLBACK: ...`).
+- **Writing a unit twice is safe** **[read]**: across the writer, the item writer
+  `sub_822C9AB8`, `sub_823A24D8` and `sub_823A20E8`, the only stores outside the stack are the
+  stream's fields (`+4` when it grows, `+16`, `+24`) and the guest's write-error flag
+  `0x8355A268`, whose 148 stores all sit behind a branch taken on a complete write. The temporary
+  strings live on the stack (`r1+96`) and are freed in the same call; the unit and its items are
+  only read. Tested with a stand-in writer in `src/game_menu/save_mod_list_test.cpp` (repair,
+  moved buffer, fallback, no names).
 
 **Not done: repair at load.** Saves already written with the bug cannot load. Only test saves
 exist today. **Condition for any release that ships mods without this repair** (or for builds of
