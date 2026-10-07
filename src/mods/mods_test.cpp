@@ -131,6 +131,10 @@ int main() {
     plan = PlanMods(scan, list);
     Check(plan.mods.size() == 3, "without CHECKFORNEW new folders are not added");
 
+    // The manager only exists with mods.
+    Check(!ModManagerNeeded(PlanMods(ScanResult{}, std::nullopt)), "no mods: no mod manager");
+    Check(ModManagerNeeded(plan), "mods (even if disabled): a mod manager");
+
     // Fingerprint.
     Check(ModSetFingerprint(PlanMods(ScanResult{}, std::nullopt), ScanResult{}).empty(), "no mods: empty fingerprint");
     const std::string before = ModSetFingerprint(PlanMods(scan, std::nullopt), scan);

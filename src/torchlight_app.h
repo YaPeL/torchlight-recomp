@@ -19,6 +19,7 @@
 #include "achievements/achievement_list.h"
 #include "achievements/runtime.h"
 #include "game_menu/save_import_menu.h"
+#include "game_menu/mods_install.h"
 #include "game_menu/video_menu.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
@@ -100,6 +101,8 @@ class TorchlightApp : public rex::ReXApp {
     // PC saves from the game files' import/ folder: the part confirmed before is applied here,
     // before the guest runs; old save backups are pruned too.
     torchlight::game_menu::InstallSaveImport(runtime(), game_data_root(), user_data_root());
+    // The player's PC mods (any mode): mounted and their saves protected before the guest runs.
+    torchlight::game_menu::InstallMods(runtime(), torchlight::platform::DataDir(), user_data_root());
     torchlight::live::Install(
         game_data_root(),
         {&app_context(), window(), runtime(),

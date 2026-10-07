@@ -15,9 +15,9 @@ bool ShouldBackUpSaves(const std::optional<std::string>& previous, const std::st
   return *previous != current;
 }
 
-std::optional<fs::path> BackUpSaves(const fs::path& user_data_root, const std::string& title_folder,
-                                    std::chrono::system_clock::time_point now,
-                                    const std::function<void(const std::string&)>& log) {
+SaveBackup BackUpSaves(const fs::path& user_data_root, const std::string& title_folder,
+                       std::chrono::system_clock::time_point now,
+                       const std::function<void(const std::string&)>& log) {
   std::error_code ec;
   std::vector<fs::path> containers;  // <profile>/<title_folder>
   if (!user_data_root.empty() && fs::is_directory(user_data_root, ec)) {
@@ -30,7 +30,7 @@ std::optional<fs::path> BackUpSaves(const fs::path& user_data_root, const std::s
   }
   if (containers.empty()) {
     if (log) log("mods: no saves to back up");
-    return std::nullopt;
+    return {};
   }
   using namespace std::chrono;
   const auto day = floor<days>(now);
@@ -49,11 +49,11 @@ std::optional<fs::path> BackUpSaves(const fs::path& user_data_root, const std::s
     if (!ec) fs::copy(container, destination, fs::copy_options::recursive, ec);
     if (ec) {
       if (log) log("mods: save backup failed (" + container.string() + "): " + ec.message());
-      return std::nullopt;
+      return {SaveBackup::Result::kFailed, {}};
     }
   }
   if (log) log("mods: saves backed up to " + target.string());
-  return target;
+  return {SaveBackup::Result::kDone, target};
 }
 
 std::optional<std::string> ReadModSetRecord(const fs::path& file) {

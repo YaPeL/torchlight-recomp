@@ -118,6 +118,14 @@ inline void InitModManager(uint8_t* base, uint32_t at) {
   base[at + manager::kFlagB.offset] = 0;
 }
 
+// Makes `manager_address` the game's mod manager: the data manager's +20 and the singleton, the two
+// places the guest reads it from (the host builds it only when the player has mods; without, both
+// stay 0 as in the original game).
+inline void PublishModManager(uint8_t* base, uint32_t data_manager, uint32_t manager_address) {
+  WriteU32(base, data_manager + kDataManagerModManager.offset, manager_address);
+  WriteU32(base, kModManagerGlobal, manager_address);
+}
+
 // What kActiveModCount returns, read from the host (for tests and diagnostics).
 inline uint32_t ActiveModCount(const uint8_t* base, uint32_t manager_address) {
   if (!manager_address) return 0;

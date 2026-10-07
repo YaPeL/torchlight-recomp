@@ -69,6 +69,10 @@ struct ModPlan {
 // PC does; entries whose folder is gone are dropped.
 ModPlan PlanMods(const ScanResult& scan, const std::optional<ModList>& list);
 
+// Whether the game gets a mod manager at all: only with at least one mod (enabled or not); without,
+// the guest keeps the original game's state (no manager).
+inline bool ModManagerNeeded(const ModPlan& plan) { return !plan.mods.empty(); }
+
 // The set of mods in effect: one line per planned mod (folder, priority, mod.dat digest), in plan
 // order. Empty when there are none. The save safety net compares it between starts.
 std::string ModSetFingerprint(const ModPlan& plan, const ScanResult& scan);

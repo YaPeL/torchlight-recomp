@@ -43,11 +43,12 @@ int main() {
   std::string log;
   auto logger = [&log](const std::string& line) { log += line + "\n"; };
 
-  Check(!BackUpSaves(root, "TITLE", now, logger), "no saves: no backup folder");
+  Check(BackUpSaves(root, "TITLE", now, logger).result == SaveBackup::Result::kNothingToCopy, "no saves: nothing to copy");
   Write(root / "PROFILE1" / "TITLE" / "00000001" / "slot.sav", "save one");
   Write(root / "PROFILE2" / "TITLE" / "00000001" / "slot.sav", "save two");
   Write(root / "PROFILE2" / "OTHER" / "file", "not this title");
-  const auto backup = BackUpSaves(root, "TITLE", now, logger);
+  const auto done = BackUpSaves(root, "TITLE", now, logger);
+  const std::optional<fs::path> backup = done.result == SaveBackup::Result::kDone ? std::optional(done.folder) : std::nullopt;
   Check(backup && backup->filename() == "20261007-130509-mods", "name: UTC yyyymmdd-hhmmss-mods");
   if (backup) {
     Check(fs::exists(*backup / "PROFILE1" / "TITLE" / "00000001" / "slot.sav") &&
@@ -56,8 +57,8 @@ int main() {
     Check(!fs::exists(*backup / "PROFILE2" / "OTHER"), "other titles left out");
   }
   const auto second = BackUpSaves(root, "TITLE", now, logger);
-  Check(second && second->filename() == "20261007-130509-mods-2", "same second: -2");
-  Check(second && !fs::exists(*second / "save-backups"), "the backups folder is not copied into itself");
+  Check(second.result == SaveBackup::Result::kDone && second.folder.filename() == "20261007-130509-mods-2", "same second: -2");
+  Check(!fs::exists(second.folder / "save-backups"), "the backups folder is not copied into itself");
 
   // Record.
   const fs::path record = root / "state" / "mod_set.txt";
