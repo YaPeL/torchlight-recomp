@@ -202,6 +202,17 @@ inline std::string ReadString(const uint8_t* membase, uint32_t str, uint32_t max
   return std::string(reinterpret_cast<const char*>(membase + data), length);
 }
 
+// A NUL-terminated guest char string at `address` (bytes as they are in memory), at most
+// `max_length` bytes; empty for a null address.
+inline std::string ReadCString(const uint8_t* membase, uint32_t address,
+                               uint32_t max_length = 4096) {
+  std::string s;
+  if (!address) return s;
+  for (uint32_t i = 0; i < max_length && membase[address + i]; ++i)
+    s.push_back(static_cast<char>(membase[address + i]));
+  return s;
+}
+
 // ---------------------------------------------------------------------------------------------
 // RenderOperation (non-polymorphic)
 

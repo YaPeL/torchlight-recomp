@@ -1,5 +1,7 @@
 // Guest frame time (swap to swap), always measured and summarised in the log every 10 s, with
-// or without the live mode, so the two can be compared; and the game's level loads, timed by the
+// or without the live mode, so the two can be compared; a frame past kLongFrameMs gets its own
+// "long frame:" line with what the guest did in it (guest_events.h; in the native mode the live
+// mode's "slow frame" line has the backend's side); and the game's level loads, timed by the
 // level load hook (achievements/guest_hooks.cpp). docs/performance-profile.md uses both.
 
 #pragma once

@@ -180,6 +180,56 @@ project's producer (11 %) and libc (8 %). The backend thread is not the limit (4
 there against 11 ms on the main thread). The guest's D3D work under the RenderSystem, which in the
 native mode prepares a Xenos GPU nobody reads, is the next candidate.
 
+### The default code model on Linux (2026-10-07)
+
+The SDK compiles its Linux x86-64 targets with `-mcmodel=large`, which makes every call between
+guest functions a 64-bit address loaded into a register and an indirect call; the game now
+overrides it with the default model (`CMakeLists.txt`; `docs/guest-hot-paths.md`). The executable's
+text went from 67.5 to 62.7 MB. Same method as above, `--native_skip_guest_d3d=true` in both, two
+runs each, interleaved:
+
+| Step | Large model | Default model |
+|---|---|---|
+| Main menu | 269.0 fps | 299.3 fps (+11 %) |
+| Dungeon, still | 156.6 fps | 163.6 fps (+4.5 %) |
+| Dungeon, fighting | 118.2 fps | 118.5 fps (1 % low 76.6 -> 79.8 fps) |
+| Town, still | 185.6 fps | 190.3 fps |
+| Town, walking | 101.9 fps | 105.2 fps |
+
+Both runs with the default model beat both with the large one in the main menu and in the
+dungeon, still; in the fight and the town the ranges overlap (within the noise of a run).
+
+### Long frames (2026-10-07)
+
+Since this date the log has a `long frame:` line for every guest frame past 33.3 ms, in every
+mode (`live/guest_events.h`): the guest's file existence checks (missing ones, the slowest path),
+reads and `XMemAlloc` calls in that frame, and the rest of it. In the native mode the live mode's
+`slow frame` line has the backend's side (textures, RTSS programs, now with the generation time
+apart, buffers, present).
+
+What they showed, native and Xenos, on the fixed-floor saved game:
+
+- **The spikes in a fight are the game assembling equipment models** on its main thread
+  (`MEDIA\WARDROBE\...`, `MODELS\ARMOR\...`): 84-99 ms in the native mode, of which about 7 ms
+  of `XMemAlloc` (80-120 calls), 1-2.5 ms of file checks, 0.05 ms of reads, and 76-89 ms of the
+  guest's own work; the backend's side of those frames is normal (1-2 textures, no program, about
+  9 ms). DWARF profiles put that work across the game's equipment code and OGRE, with no hot
+  function, and this project's producer at its usual share. With Xenos the same loads take longer
+  (`LEATHER_SET.MESH`: 184.7 ms against 84.2 ms): they are the game's.
+- **The same model spikes again**: `WARDROBE\DESTROYER\LEATHER_SET.MESH` took 84.2 ms and, a
+  minute later in the same run, 98.8 ms. Dropping and picking up the same item does not spike.
+- **The town, walking**, has a sustained lower frame rate (more draws) and no frame past 33 ms
+  outside the level load.
+- **Present stalls**: on the test laptop the backend's present sometimes takes 30-40 ms, every 11 to
+  17 s, always at the same fraction of the second across separate processes: tied to the system's
+  clock, so outside the game (likely the laptop's GPU or compositor); not followed further. The
+  user's desktop has drops too, so it is not the main cause.
+- **File existence checks**: OGRE looks every resource up in each resource location, about 20,700
+  missing files per run, about 0.5 s of the main thread over a session (each failure also logs a
+  warning from the SDK). Candidate, not implemented: a generic negative cache ("this file does not
+  exist") for the read-only game data locations, without touching the SDK; mods will add locations
+  and lookups.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
