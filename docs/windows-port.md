@@ -199,6 +199,23 @@ showed "OpenGL 3+ (unavailable)", and after changing the frame rate limit and sa
 `settings.toml` still had GL3+. With the sandbox's GPU (the host's, shared) the probe found
 OpenGL 3.3 and the game ran on GL3+.
 
+With a GPU driver the probe takes 150-180 ms (NVIDIA's OpenGL driver loading; 4.6 ms on Windows'
+own OpenGL), so since 2026-10-07 startup runs it only when the session would use GL3+ and could
+fall back (`settings::StartupNeedsRenderSystemCheck`: GL3+ saved, or first offered, with Direct3D
+11 installed). Otherwise startup logs `live: OpenGL 3.3 check deferred to the settings menu`, and
+the check (`live::DeferredCheck`, at most once) runs when `live::HostCapabilities` is first asked:
+the video column is built with the game's settings menu, once, while the title screen loads (game
+thread, about 2.5 s after the backend starts), not when the player opens Settings. So the probe
+left the backend's startup but still runs in every session, hidden in the title's load; moving it
+to the first change of the Renderer row (the only thing that needs it when Direct3D 11 is saved)
+would mean building the video column's model without it. Measured on a Ryzen 7 5700X3D with an
+RTX 5080, Direct3D 11 saved, from the log's first line to `live: backend draws inside the game
+window`, three runs each on fresh user folders: before 1588, 1177 and 1097 ms (the probe 264,
+150 and 149 ms; the first run cold), after 1006, 949 and 940 ms, with the probe at 130 ms during
+the title's load. With GL3+ saved the probe still runs at startup (168 ms, GL3+ loaded); with
+Direct3D 11 saved the deferred check found OpenGL 3.3 when the settings menu was built, so the
+Renderer row offers OpenGL 3+ (the user opened Settings and felt no pause).
+
 Paths with accents and ñ (a Windows account such as Martín's): `utf8_paths_test` checks a
 command-line argument both ways the executables read it (main's argv; GetCommandLineW converted to
 UTF-8, the game's through the SDK), `user_folders_test` and `platform_win_test` the user folders
@@ -514,3 +531,9 @@ here.
   platform): the SDK's keyboard controller emulation makes keystrokes, sharing the SDL driver's
   keystroke table in a new header, so the SDL input driver changes too (same behavior,
   `patches/README.md` item 19).
+- The deferred OpenGL 3.3 check (branch `perf/deferred-gl-probe`, 2026-10-07). **For the render
+  agent to review:** `live/install.cpp` (startup probes only when `StartupNeedsRenderSystemCheck`
+  says so; `HostCapabilities` runs the deferred check on its first call, which the video column
+  makes when the game builds its settings menu), the new `live/deferred_check.h` with its test, and
+  `settings/host_settings.*` (`StartupNeedsRenderSystemCheck` and its test). `game_menu/` is
+  unchanged.

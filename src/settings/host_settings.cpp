@@ -154,6 +154,15 @@ std::string EffectiveRenderSystem(const Capabilities& caps, const std::string& r
   return "";
 }
 
+bool StartupNeedsRenderSystemCheck(const Capabilities& caps, const std::string& render_system,
+                                   const std::string& checked) {
+  if (EffectiveRenderSystem(caps, render_system) != checked) return false;
+  for (const std::string& offered : caps.render_systems) {
+    if (offered != checked && RenderSystemUsable(caps, offered)) return true;
+  }
+  return false;
+}
+
 Choices<std::string> RenderSystemChoices(const Capabilities& caps) {
   Choices<std::string> choices;
   for (const std::string& offered : caps.render_systems) {

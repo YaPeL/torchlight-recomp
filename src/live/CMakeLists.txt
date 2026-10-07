@@ -44,6 +44,11 @@ target_link_libraries(slow_frames_test PRIVATE torchlight_live)
 target_compile_options(slow_frames_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME slow_frames_test COMMAND slow_frames_test)
 
+add_executable(deferred_check_test deferred_check_test.cpp)
+target_link_libraries(deferred_check_test PRIVATE torchlight_live)
+target_compile_options(deferred_check_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME deferred_check_test COMMAND deferred_check_test)
+
 # The consumer side (backend thread): links the frontend and the OGRE backend, so it is a library
 # of its own; the queue and the store above stay testable without OGRE.
 add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp frame_timing.cpp frame_counter.cpp
