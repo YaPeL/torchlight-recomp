@@ -70,7 +70,7 @@ Classified by instruction mix (from `generated/default`):
 
 | # | Candidate | Estimate (main thread) | Risk | Where |
 |---|---|---|---|---|
-| 1 | The default code model on Linux (no `-mcmodel=large`) | 2-5 % | Low (build flag; Windows already) | This project's CMake; report upstream |
+| 1 | The default code model on Linux (no `-mcmodel=large`) | measured: +11 % main menu, +4.5 % dungeon still, fight within noise (`docs/performance-profile.md`); done | Low (build flag; Windows already) | This project's CMake; report upstream |
 | 2 | Native implementations of the hottest lookups (`0x82581D98`, `0x824C6960`, `0x8262D6C8`) | about 2 % | Low to medium (read only; the comparison must match) | Here, as the memcpy |
 | 3 | Native register save and restore helpers | 1-2 % | Low (fixed semantics) | Here, or in the codegen upstream |
 | 4 | Native implementations of the five hottest arithmetic functions | about 3 % | Medium (results must be bit identical: fused multiply-add, vector denormals; some may feed game logic) | Here, with the evidence of each |
