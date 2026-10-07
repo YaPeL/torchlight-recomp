@@ -2,7 +2,10 @@
 // that is exactly the same copy (hooks/guest_copy.h), else the guest's own. Every mode.
 // --native_guest_copy=false keeps the guest's copies everywhere (docs/performance-profile.md).
 
+#include "hooks/guest_copy_hooks.h"
+
 #include <rex/cvar.h>
+#include <rex/logging.h>
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 
@@ -27,6 +30,17 @@ bool HostCopy(PPCContext& ctx, uint8_t* base) {
 }
 
 }  // namespace
+
+namespace torchlight::hooks {
+
+void LogGuestCopyMode() {
+  REXLOG_INFO("guest copies: {} (--native_guest_copy={})",
+              REXCVAR_GET(native_guest_copy) ? "host memcpy where it is the same copy"
+                                             : "the recompiled guest code",
+              REXCVAR_GET(native_guest_copy));
+}
+
+}  // namespace torchlight::hooks
 
 extern "C" {
 

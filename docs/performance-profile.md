@@ -143,7 +143,42 @@ host instruction. Every mode, native and Xenos.
 as before. It compares the two with one binary, and rules the change out if something looks wrong
 (a report of corrupted data, a crash in a copy).
 
-Measurement: pending (with and without the flag, same binary, the fixed-floor saved game).
+The log's first lines say which: `guest copies: host memcpy where it is the same copy
+(--native_guest_copy=true)` or `... the recompiled guest code (--native_guest_copy=false)`.
+
+**Measured** (2026-10-07; same machine, flags, warm shader caches and release build as above; the
+steps of each run start from one saved game on the first floor of the mine, so the dungeon is the
+same map in every run; frame rate per step, mean of the runs):
+
+| Step | Guest copies (2 runs) | Host memcpy (3 runs) | x86-64-v3, host memcpy (2 runs) |
+|---|---|---|---|
+| Main menu | 246.1 fps | 252.2 fps (+2.5 %) | 262.2 fps |
+| Dungeon, still | 148.4 fps | 152.3 fps (+2.6 %) | 151.4 fps |
+| Dungeon, fighting | 102.9 fps | 106.2 fps (+3.2 %) | 108.4 fps |
+| Town, still | 158.0 fps | 158.3 fps | 179.6 fps |
+| Town, walking | 88.4 fps | 93.2 fps (+5.4 %) | 97.4 fps |
+
+The host copies gain 2-5 %, small but in the same direction in every step but one: in the dungeon,
+still, all three runs with them (149.4-153.8 fps) beat both without (148.3-148.5); elsewhere the
+ranges touch. Two identical runs differed by up to 3 % in the dungeon and 16 % in the town, still
+(where the camera stops depends on where the player stands), so the town, still, is not compared.
+No step changed its long frames (0-3 over 33 ms in any run). A profile of a run with them (`perf`,
+as above) no longer has the guest's block copy loop.
+
+**x86-64-v3** (the game built with `-march=x86-64-v3`: AVX2, BMI2, FMA; the SDK and OGRE unchanged)
+was measured too and dropped: 0-2 % in the dungeon (within the noise), +4 % in the main menu, and
+the town, still, is the noisy step. Not worth requiring AVX2 (CPUs from about 2013 on), two builds
+or a launcher choosing one; the release stays x86-64-v2.
+
+**Where the frame rate drops** (same profile): below 100 fps, in the dungeon with several enemies and
+an NPC on screen and in the town walking, the game issues about twice the draws (about 340 per frame
+against 180 in the dungeon, still) at about the same main thread cost per draw (33-37 us), so the
+frame rate halves. The time stays where it is in the fast steps: the guest's per-object rendering
+in its SceneManager (at least 39 % of the main thread), its `_setPass` (13 %), the guest's own D3D9
+`_render` under the RenderSystem hooks (at least 12 %; the call graphs are cut by the LBR depth), this
+project's producer (11 %) and libc (8 %). The backend thread is not the limit (4.6 ms per frame
+there against 11 ms on the main thread). The guest's D3D work under the RenderSystem, which in the
+native mode prepares a Xenos GPU nobody reads, is the next candidate.
 
 ## Controlled follow-up results
 

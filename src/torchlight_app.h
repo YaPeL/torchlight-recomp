@@ -20,6 +20,7 @@
 #include "achievements/runtime.h"
 #include "game_menu/save_import_menu.h"
 #include "game_menu/video_menu.h"
+#include "hooks/guest_copy_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
 #include "game_setup/first_run.h"
@@ -93,6 +94,7 @@ class TorchlightApp : public rex::ReXApp {
     // ratio the game has no mode for.
     torchlight::live::ApplyAspect();
     torchlight::hooks::InstallVideoMode();
+    torchlight::hooks::LogGuestCopyMode();
     auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
     torchlight::capture::Install(graphics ? graphics->presenter() : nullptr);
     // The video menu changes what the native backend draws: only mode.
