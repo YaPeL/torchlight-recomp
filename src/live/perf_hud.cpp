@@ -32,7 +32,7 @@ struct Step {
 // Startup: until the player is in the main menu; then the timed steps. A step with seconds 0 ends
 // at the next level load (plus kSettle, so the loading screen is not measured).
 constexpr Step kSteps[] = {
-    {"Press Start and go to the main menu", 30, false},
+    {"Press A and go to the main menu", 30, false},
     {"MAIN MENU: hands off", 40, true},
     {"New Character: create one and start", 0, false},
     {"TOWN: stand still", 40, true},
