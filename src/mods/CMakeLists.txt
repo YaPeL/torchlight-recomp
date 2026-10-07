@@ -1,0 +1,19 @@
+# The player's PC mods (docs/mods.md): the text data format, the mods folder and mods.dat, with
+# no guest, OGRE or platform dependencies. The app registers the plan with the guest.
+
+if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+  cmake_minimum_required(VERSION 3.25)
+  project(torchlight_mods LANGUAGES CXX)
+endif()
+
+add_library(torchlight_mods STATIC dat_text.cpp mod_list.cpp)
+target_include_directories(torchlight_mods PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_mods PUBLIC cxx_std_23)
+target_compile_options(torchlight_mods PRIVATE -Wall -Wextra -Werror)
+set_target_properties(torchlight_mods PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+enable_testing()
+add_executable(mods_test mods_test.cpp)
+target_link_libraries(mods_test PRIVATE torchlight_mods)
+target_compile_options(mods_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME mods_test COMMAND mods_test)
