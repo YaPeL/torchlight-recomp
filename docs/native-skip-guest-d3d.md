@@ -268,6 +268,36 @@ Skipped since this step: those four device calls, by overriding them
 stretch they took about 2.2 % of all samples (about 4.5 % of the main thread, a lower bound: the
 call graphs are cut by the LBR depth).
 
+## Draw and bindings: validated and measured (2026-10-07)
+
+Same binary, cvar off and on, the fixed-floor saved game:
+
+- The 20 replays: byte for byte as before.
+- F9 captures standing still where the player arrives: the same 40 sampler commands; 183 against
+  184 draws; the replays differ by 33.5 dB PSNR (two runs before any change: 33.2 dB), only in what
+  moves.
+- Session recordings (menus, dungeon, town): the same sampler states (33 distinct); the same draws
+  per recorded frame in the dungeon, standing still (199.1 against 197.7). The live mode drops the
+  frames the backend cannot keep up with (75-78 % in a recording run) and a recorded frame carries
+  the presents of the dropped ones, so counts per present differ with the frame rate; counts per
+  recorded frame do not.
+- Xenos: not run (the decision never skips outside `--native_live=only`; the test).
+
+Measured, two runs each, interleaved, frame rate per step (mean; 1 % low = the 99th percentile
+frame time as a rate):
+
+| Step | 1 % low off -> on | Frames over 33 / 50 ms (both runs) | Frame rate off -> on |
+|---|---|---|---|
+| Dungeon, fighting | 74.2 -> 79.7 fps (+7 %) | 4 / 2 -> 2 / 2 | 107.4 -> 116.3 fps (+8 %) |
+| Town, walking | 70.2 -> 72.5 fps (+3 %) | 0 -> 0 | 93.3 -> 98.6 fps (+6 %) |
+| Dungeon, still | 119 -> 126 fps | 1 / 0 -> 0 / 0 | 148.5 -> 163.6 fps (+10 %) |
+| Town, still | 124 -> 136 fps | 0 -> 0 | 166.2 -> 177.7 fps (+7 %) |
+| Main menu | | 0 -> 0 | 277 -> 271 fps (few draws: noise) |
+
+In the fight, both runs with the skip beat both without on the frame rate (113.5, 119.1 against
+105.7, 109.0) and on the 1 % low (78.6, 80.8 against 71.0, 77.5). The long frames did not change:
+0-2 per run either way, spawn and load spikes, not the per-draw cost.
+
 ## Decisions (2026-10-07)
 
 - **Cvar**: `native_skip_guest_d3d` (bool, default `false`): in the native mode, the RenderSystem
