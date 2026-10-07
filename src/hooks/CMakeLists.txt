@@ -9,3 +9,16 @@ add_executable(video_mode_test video_mode_test.cpp)
 target_link_libraries(video_mode_test PRIVATE torchlight_video_mode)
 target_compile_options(video_mode_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME video_mode_test COMMAND video_mode_test)
+
+# The guest's memory copies on the host (guest_copy.h): the routing and the copy, tested with a fake
+# address space; the hooks that use it (guest_copy_hooks.cpp) are part of the executable.
+add_library(torchlight_guest_copy STATIC guest_copy.cpp)
+target_include_directories(torchlight_guest_copy PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_include_directories(torchlight_guest_copy PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
+target_compile_features(torchlight_guest_copy PUBLIC cxx_std_23)
+target_compile_options(torchlight_guest_copy PRIVATE -Wall -Wextra)
+
+add_executable(guest_copy_test guest_copy_test.cpp)
+target_link_libraries(guest_copy_test PRIVATE torchlight_guest_copy)
+target_compile_options(guest_copy_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME guest_copy_test COMMAND guest_copy_test)
