@@ -15,6 +15,7 @@
 #include "capture/session.h"
 #include "capture/translate.h"
 #include "guest_abi/ogre_enums.h"
+#include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
 #include "hooks/guest_d3d_skip.h"
 
@@ -429,6 +430,22 @@ extern "C" REX_FUNC(sub_821C4058) {
   }
 }
 
+// ---- device calls skipped as a whole (guest_d3d_skip.h) ------------------------------------
+// The draw and the index and stream bindings of the Xbox D3D device, whatever calls them. Callers
+// overwrite r3 after each (they return nothing used), so a skipped call leaves the context as is.
+#define DEVICE_SKIP_HOOK(entry, addr)                                                   \
+  static_assert(torchlight::guest_abi::functions::entry.address == 0x##addr##u);         \
+  static_assert(torchlight::hooks::SkippableDeviceCall(0x##addr##u));                    \
+  REX_EXTERN(__imp__sub_##addr);                                                        \
+  extern "C" REX_FUNC(sub_##addr) {                                                     \
+    if (g_skip_guest_d3d) return;                                                       \
+    __imp__sub_##addr(ctx, base);                                                       \
+  }
+DEVICE_SKIP_HOOK(kD3DDrawIndexed, 821CF830)
+DEVICE_SKIP_HOOK(kD3DDraw, 821D0A10)
+DEVICE_SKIP_HOOK(kD3DSetIndices, 821C39F8)
+DEVICE_SKIP_HOOK(kD3DSetStreamSource, 821C3D58)
+
 // ---- count-only slots ------------------------------------------------------------------------
 extern "C" {
 COUNT_HOOK(0, 8256E4E8)  // ~dtor
@@ -525,7 +542,8 @@ namespace torchlight::hooks {
 void InstallGuestD3DSkip(bool native_only) {
   g_skip_guest_d3d = SkipGuestD3D(native_only, REXCVAR_GET(native_skip_guest_d3d));
   REXLOG_INFO("guest D3D: {} (--native_skip_guest_d3d={}, native mode {})",
-              g_skip_guest_d3d ? "skipped for the device-only RenderSystem calls" : "runs in full",
+              g_skip_guest_d3d ? "skipped for the device-only calls (sampler states, draws, bindings)"
+                               : "runs in full",
               REXCVAR_GET(native_skip_guest_d3d), native_only ? "on" : "off");
 }
 

@@ -229,6 +229,75 @@ Validation, same binary with the cvar off and on, the fixed-floor saved game, a 
 
 Not measured: by the profile its gain is about 1 % of the main thread, below the noise of a run.
 
+## Draw and bindings: evidence (2026-10-07)
+
+The D3D9 `_render` (`0x821C4058`), in order: returns when the operation has no vertices
+(`@0x821C4070`); calls the base `RenderSystem::_render` (`0x821CEA60`: batch counters, clip planes);
+calls slots 84 and 85 through the vtable (`@0x821C4098`, `@0x821C40B4`), whose guest code uploads a
+dirty buffer to its device copy (`0x821A71E8`, through the large copy); takes the device's render
+target and depth stencil with a reference (`0x821C0A08`, `0x821E0088`) and releases them
+(`0x821CEDD8`), with a path for depth-only passes that sets and restores render targets
+(`0x821BA040`, `0x821D1288`, `0x821BF940`); for indexed draws finds or creates the device's index
+buffer (`0x82581D98`, `0x82582520`), uploads it when dirty (`0x82582668`) and calls `SetIndices`;
+then per pass iteration calls `_setDepthBias` through the vtable (`@0x821C43C8`), draws
+(`DrawIndexedPrimitive` `0x821CF830` `@0x821C43F4`, `DrawPrimitive` `0x821D0A10` `@0x821C4490`)
+and updates the pass iteration (`0x821CE928`); finally unbinds the streams and indices.
+
+Our `_render` hook runs the guest's first and captures after it, because the buffer snapshots
+read the device copy the guest has just uploaded, and our slot 84, 85 and 68 hooks record through
+those calls. So `_render` is not skipped; its device calls are:
+
+- **`DrawIndexedPrimitive`, `DrawPrimitive`**: flush the dirty device state into the ring
+  (`0x821CFF38`), allocate ring space (`0x821EA6F0`), fences (`0x821F3D78`), wait for ring space
+  only when the ring is full (`0x821A5C10`, 0.02 % of the samples in the slow stretch). Called only
+  by `_render`.
+- **`SetIndices`** (`0x821C39F8`), **`SetStreamSource`** (`0x821C3D58`): store the buffer in the
+  device (`device + 12684`; `device + 4 * (stream + 3177)` and the stream's fetch constant), and
+  stamp the replaced buffer's fence (`+8`) or queue a pending fence entry (`0x82775DF8`): the
+  resource fences, whose loss is accepted (Decisions). Other callers: `setVertexBufferBinding`
+  (`0x821C3E78`), the device's unbind-all `0x821CECF0` (from `_beginFrame`) and `0x827746B0`,
+  which unbind; with every binding skipped there is nothing bound to unbind. No caller reads `r3`
+  after them.
+- **Kept**: the render target and depth stencil references (reference counts and EDRAM
+  bookkeeping), `SetVertexDeclaration` (`0x821CE588`, two stores), the state flush when other
+  draws call it (`0x821E94A0`, `0x82775198`: the `_endFrame` full-screen pass), the index buffer
+  lookup and uploads.
+
+Skipped since this step: those four device calls, by overriding them
+(`hooks/render_system_hooks.cpp`, `DEVICE_SKIP_HOOK`), so every caller skips them. In the slow
+stretch they took about 2.2 % of all samples (about 4.5 % of the main thread, a lower bound: the
+call graphs are cut by the LBR depth).
+
+## Draw and bindings: validated and measured (2026-10-07)
+
+Same binary, cvar off and on, the fixed-floor saved game:
+
+- The 20 replays: byte for byte as before.
+- F9 captures standing still where the player arrives: the same 40 sampler commands; 183 against
+  184 draws; the replays differ by 33.5 dB PSNR (two runs before any change: 33.2 dB), only in what
+  moves.
+- Session recordings (menus, dungeon, town): the same sampler states (33 distinct); the same draws
+  per recorded frame in the dungeon, standing still (199.1 against 197.7). The live mode drops the
+  frames the backend cannot keep up with (75-78 % in a recording run) and a recorded frame carries
+  the presents of the dropped ones, so counts per present differ with the frame rate; counts per
+  recorded frame do not.
+- Xenos: not run (the decision never skips outside `--native_live=only`; the test).
+
+Measured, two runs each, interleaved, frame rate per step (mean; 1 % low = the 99th percentile
+frame time as a rate):
+
+| Step | 1 % low off -> on | Frames over 33 / 50 ms (both runs) | Frame rate off -> on |
+|---|---|---|---|
+| Dungeon, fighting | 74.2 -> 79.7 fps (+7 %) | 4 / 2 -> 2 / 2 | 107.4 -> 116.3 fps (+8 %) |
+| Town, walking | 70.2 -> 72.5 fps (+3 %) | 0 -> 0 | 93.3 -> 98.6 fps (+6 %) |
+| Dungeon, still | 119 -> 126 fps | 1 / 0 -> 0 / 0 | 148.5 -> 163.6 fps (+10 %) |
+| Town, still | 124 -> 136 fps | 0 -> 0 | 166.2 -> 177.7 fps (+7 %) |
+| Main menu | | 0 -> 0 | 277 -> 271 fps (few draws: noise) |
+
+In the fight, both runs with the skip beat both without on the frame rate (113.5, 119.1 against
+105.7, 109.0) and on the 1 % low (78.6, 80.8 against 71.0, 77.5). The long frames did not change:
+0-2 per run either way, spawn and load spikes, not the per-draw cost.
+
 ## Decisions (2026-10-07)
 
 - **Cvar**: `native_skip_guest_d3d` (bool, default `false`): in the native mode, the RenderSystem

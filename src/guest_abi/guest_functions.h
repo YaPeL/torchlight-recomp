@@ -239,4 +239,22 @@ inline constexpr GuestFunction kMemcpy{0x82860A50, Confidence::kConfirmed};
 // locked.
 inline constexpr GuestFunction kLargeCopy{0x821A7138, Confidence::kConfirmed};
 
+// Xbox D3D device calls of the D3D9 render system's _render (0x821C4058) that only feed the Xenos
+// GPU (hooks/guest_d3d_skip.h; evidence in docs/native-skip-guest-d3d.md, "Draw and bindings").
+// [confirmed] DrawIndexedPrimitive: flushes the dirty device state into the ring (0x821CFF38),
+// allocates ring space and fences (0x821EA6F0, 0x821F3D78), waits for ring space (0x821A5C10);
+// called only by _render (@0x821C43F4). DrawPrimitive: the same without indices (@0x821C4490).
+inline constexpr GuestFunction kD3DDrawIndexed{0x821CF830, Confidence::kConfirmed};
+inline constexpr GuestFunction kD3DDraw{0x821D0A10, Confidence::kConfirmed};
+// [confirmed] SetIndices (device in r3, buffer in r4): stores the buffer at device+12684
+// (@0x821C3A7C); the buffer it replaces gets the current fence in its +8 (@0x821C3A24) or a
+// pending fence entry (@0x821C3A74). Callers: _render (@0x821C4368, @0x821C4500) and 0x827746B0.
+inline constexpr GuestFunction kD3DSetIndices{0x821C39F8, Confidence::kConfirmed};
+// [confirmed] SetStreamSource (device r3, stream r4, buffer r5, offset r6, stride r7): writes the
+// stream's vertex fetch constant and dirty bit (@0x821C3DB4..@0x821C3DC4), stores the buffer at
+// device+4*(stream+3177) (@0x821C3E44) and its stride (@0x821C3E50); the replaced buffer gets its
+// fence like SetIndices (@0x821C3DE8, @0x821C3E38). Callers: setVertexBufferBinding 0x821C3E78,
+// _render (unbinding), the device's unbind-all 0x821CECF0 (from _beginFrame) and 0x827746B0.
+inline constexpr GuestFunction kD3DSetStreamSource{0x821C3D58, Confidence::kConfirmed};
+
 }  // namespace torchlight::guest_abi::functions
