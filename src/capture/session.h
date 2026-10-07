@@ -239,6 +239,16 @@ class Session {
   void AddTexture(commands::TextureDesc desc, commands::Hash live_content = 0);
   void AddProgram(commands::ProgramDesc desc);
   void AddVertexDeclaration(commands::VertexDeclarationContent content);
+  // Live mode with no capture armed (render thread): whether the live stream already has this
+  // texture's description with no content snapshot (a static texture or a render target), or this
+  // declaration with this content. The hooks then skip reading the description from guest memory
+  // again; AddTexture / AddVertexDeclaration would drop it anyway. Within a generation such a
+  // texture's description cannot change: a new texture at the address (its constructor) and every
+  // reload after the first are new generations, and the key holds the generation. Declarations are
+  // keyed by their content's hash too, which the hook still computes on every bind, so one changed
+  // in place is described again. Programs are not skipped: no hook sees their destruction.
+  bool LiveTextureDescribed(const commands::ResourceId& id) const;
+  bool LiveDeclarationDescribed(const commands::ResourceId& id, commands::Hash content) const;
 
  private:
   Session() = default;
@@ -324,6 +334,8 @@ class Session {
     return uint64_t(id.generation) << 32 | id.guest_address;
   }
   std::set<std::tuple<uint32_t, uint32_t, uint64_t>> live_sent_declarations_, live_sent_textures_;
+  // Live mode: textures whose description holds no content snapshot, already sent (BufferKey).
+  std::unordered_set<uint64_t> live_described_textures_;
   std::set<std::tuple<uint32_t, uint32_t>> live_sent_programs_;  // (address, generation)
   std::set<std::string> live_sent_sources_;
   std::unordered_set<commands::Hash> live_frame_contents_;

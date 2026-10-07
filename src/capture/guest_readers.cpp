@@ -137,6 +137,8 @@ std::optional<commands::ResourceId> CaptureTexture(const uint8_t* m, uint32_t te
     return std::nullopt;
   }
   if (!s.recording()) return info->id;
+  // Already in the live stream with a description that cannot change (session.h).
+  if (s.LiveTextureDescribed(info->id)) return info->id;
 
   commands::TextureDesc d = ReadTextureDesc(m, texture);
   d.id = info->id;
@@ -220,6 +222,11 @@ commands::SetVertexDeclaration CaptureVertexDeclaration(const uint8_t* m, uint32
   if (first != 0 && last >= first && (last - first) / stride <= 64) {
     content.content =
         commands::HashBytes(m + first, last - first, commands::BlobEndian::kGuestCpuBigEndian, 0);
+    // Already in the live stream with this content: its elements are not read again (session.h).
+    if (s.LiveDeclarationDescribed(info->id, content.content)) {
+      c.content = content.content;
+      return c;
+    }
     for (uint32_t e = first; e < last; e += stride) {
       commands::VertexElement el;
       el.source = abi::ReadU16(m, e, ogre::vertex_element::kSource);

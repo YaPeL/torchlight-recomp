@@ -184,6 +184,7 @@ void Session::CutLiveFrame(bool measured) {
     for (const auto& id : live_pending_destroyed_) {
       live_frame_.destroyed.push_back(id);
       live_buffers_.erase(BufferKey(id));
+      live_described_textures_.erase(BufferKey(id));
       live_sent_programs_.erase({id.guest_address, id.generation});
     }
     live_pending_textures_.clear();
@@ -533,6 +534,12 @@ void Session::AddTexture(commands::TextureDesc desc, commands::Hash live_content
       d.content = live_content;
       live_frame_.textures.push_back(std::move(d));
     }
+    // No content snapshot (a static texture or a render target): this generation's description
+    // is final, the hooks need not read it again (LiveTextureDescribed). Dynamic textures carry
+    // their content and keep being read.
+    if (live_content == 0 && (desc.render_target || (!desc.name.empty() && !desc.manual))) {
+      live_described_textures_.insert(BufferKey(desc.id));
+    }
   }
   if (!armed()) return;
   if (live() && live_content &&
@@ -561,6 +568,16 @@ void Session::AddProgram(commands::ProgramDesc desc) {
   if (armed() && program_index_.emplace(desc.id.guest_address, capture_.programs.size()).second) {
     capture_.programs.push_back(std::move(desc));
   }
+}
+
+bool Session::LiveTextureDescribed(const commands::ResourceId& id) const {
+  return live() && !armed() && live_described_textures_.count(BufferKey(id)) != 0;
+}
+
+bool Session::LiveDeclarationDescribed(const commands::ResourceId& id,
+                                       commands::Hash content) const {
+  return live() && !armed() &&
+         live_sent_declarations_.count({id.guest_address, id.generation, content}) != 0;
 }
 
 void Session::AddVertexDeclaration(commands::VertexDeclarationContent content) {
