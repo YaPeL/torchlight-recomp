@@ -2,10 +2,6 @@
 #include <algorithm>
 #include "achievements/display_names.h"
 namespace torchlight::achievements {
-Availability AvailabilityOf(std::string_view id) {
-  if (id == "MODS_1" || id == "MODS_5" || id == "MODS_10") return Availability::kOutOfScope;
-  return Availability::kAvailable;
-}
 std::vector<ListRow> BuildList(const State& state) {
   std::vector<ListRow> rows;
   rows.reserve(kCatalog.size());
@@ -19,7 +15,6 @@ std::vector<ListRow> BuildList(const State& state) {
       row.threshold = d.threshold;
       row.value = std::clamp(state.stats[d.stat], 0, d.threshold);
     }
-    row.availability = AvailabilityOf(d.id);
     rows.push_back(row);
   }
   return rows;

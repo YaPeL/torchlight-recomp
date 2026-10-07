@@ -305,3 +305,21 @@ ModDrop has no direct link, the community site did not answer):
 | SSS Torchlight Texture Project | 1.31 | textures (large, about 149 MB) | https://www.moddrop.com/torchlight/mods/660498-sss-torchlight-texture-project-v131-updated |
 | Grimm Overall Improved Torchlight | — | data changes | https://www.nexusmods.com/games/torchlight/mods |
 | Grimm Reworked Spells | — | data changes (spells) | https://www.nexusmods.com/games/torchlight/mods |
+
+## 11. Implementation status (2026-10-07, branch feature/pc-mods)
+
+- `src/guest_abi/mods.h`: the data manager hook points, the mod manager layout (from PC's
+  constructor, checked against every surviving guest reader), `InitModManager`,
+  `PublishModManager`, `ActiveModCount`; tests on synthetic memory.
+- `src/mods/`: the text data format, the folder scan, `mods.dat`, the registration plan
+  (`ModManagerNeeded`: a manager only with at least one mod) and the save safety net (backup when
+  the set changes, including the first time mods appear); tests on synthetic mods.
+- `src/game_menu/mods_install.cpp`: `InstallMods` before the guest runs (scan, `mods.dat`, backup,
+  `tlmods:` writable mount) and `RegisterMods` from the data manager constructor's hook (build and
+  publish the manager, register each mod with `sub_823AA550`, disabled priorities, resource
+  locations after the game's). The hook is the video menu's (`video_menu.cpp`): one override per
+  guest function.
+- Achievements: the PC set accepts the guest's MODS_1/5/10 completions; the list shows all 66 as
+  earnable.
+- Not yet run in the game: the validation (section 10 and the plan) comes next, starting with a
+  save that holds an item of a mod that is then removed.

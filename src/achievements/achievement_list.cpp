@@ -56,9 +56,9 @@ class PcList : public rex::ui::ImGuiDialog {
   void OnDraw(ImGuiIO& io) override {
     const auto state = SnapshotState();
     const auto rows = BuildList(state.value_or(State{}));
-    int unlocked = 0, available = 0;
+    int unlocked = 0;
+    const int available = static_cast<int>(rows.size());
     for (const auto& r : rows) {
-      if (r.availability == Availability::kAvailable) ++available;
       if (r.unlocked) ++unlocked;
     }
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, 40.0f), ImGuiCond_FirstUseEver,
@@ -73,16 +73,10 @@ class PcList : public rex::ui::ImGuiDialog {
       ImGui::Separator();
       ImGui::BeginChild("##pc_list", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing() * 1.5f));
       for (const auto& r : rows) {
-        const bool earnable = r.availability == Availability::kAvailable;
-        const ImVec4 color = r.unlocked ? ImVec4(1.0f, 0.85f, 0.4f, 1.0f)
-                             : earnable ? ImVec4(0.9f, 0.9f, 0.9f, 1.0f)
-                                        : ImVec4(0.55f, 0.55f, 0.55f, 1.0f);
+        const ImVec4 color = r.unlocked ? ImVec4(1.0f, 0.85f, 0.4f, 1.0f) : ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
         ImGui::TextColored(color, "%s %s", r.unlocked ? "[*]" : "[ ]",
                            Translate(r.english).c_str());
-        if (!earnable) {
-          const char* why = "Not available in this version";  // mods (list_model.h)
-          ImGui::TextDisabled("    %s", Translate(why).c_str());
-        } else if (r.counter && !r.unlocked) {
+        if (r.counter && !r.unlocked) {
           ImGui::TextDisabled("    %d / %d", r.value, r.threshold);
         }
       }

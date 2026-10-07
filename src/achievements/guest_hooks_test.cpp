@@ -84,6 +84,13 @@ int main() {
   Check(observations.back().find("\"source\":\"retained-completion\"")!=std::string::npos &&
       observations.back().find("\"id\":\"PET_MIMIC\"")!=std::string::npos,
       "completion observation captures ID before the original clobbers guest registers");
+  // MODS_1/5/10: the guest's own check is PC's once the host gives it the player's mods.
+  std::memcpy(base+text,"MODS_1",7); put(achievement+28,6);
+  ctx.r3.u64=achievement; sub_823D9930(ctx,base);
+  Check(Has("MODS_1"),"the guest's MODS completion is accepted in the PC set");
+  std::memcpy(base+text,"MAX_FAME",9); put(achievement+28,8);
+  ctx.r3.u64=achievement; sub_823D9930(ctx,base);
+  Check(!Has("MAX_FAME"),"the guest's MAX_FAME completion still is not (PC's check is the hook's)");
   ctx.r3.u64=player; ctx.r4.u64=1; ctx.r5.u64=5000; sub_822D7520(ctx,base);
   Check(service.state().stats[13]==5000 && Has("PLAYER_GOLD_IN_POCKET"),"gold delta and current snapshot");
   ctx.r3.u64=player; ctx.r4.u64=5; ctx.r5.u64=1; sub_822D7520(ctx,base);
