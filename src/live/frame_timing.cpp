@@ -1,5 +1,4 @@
 #include "live/frame_timing.h"
-#include "live/perf_hud.h"
 
 #include <algorithm>
 
@@ -16,7 +15,6 @@ void FrameTiming::OnSwap() {
   auto now = std::chrono::steady_clock::now();
   if (last_swap_.time_since_epoch().count() != 0) {
     frame_ms_.push_back(std::chrono::duration<double, std::milli>(now - last_swap_).count());
-    perf::OnSwap(frame_ms_.back());  // TEMPORARY (perf_hud.h)
   } else {
     last_summary_ = now;
   }
@@ -42,7 +40,6 @@ void FrameTiming::OnSwap() {
 
 void LogLevelLoad(std::chrono::milliseconds duration) {
   REXLOG_INFO("level load: {} ms", duration.count());
-  perf::OnLevelLoaded();  // TEMPORARY (perf_hud.h)
 }
 
 }  // namespace torchlight::live
