@@ -228,4 +228,12 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     Windows: the keyboard drives the menus. Not specific to any GPU. Candidate for an upstream
     report to ReXGlue.
 
+Prepared, not in `series` (not applied, not installed; installing it is decided separately with the
+shared SDK):
+
+- `rexglue-timer-queue-blocking-wait.patch`: the timer queue's dispatch thread waits on a condition
+  variable instead of spinning (about 20 % of a core), and disruptorplus' blocking strategy gets its
+  timed waits fixed (they never compiled). Its header says what to measure: the thread's CPU, and
+  the frame rate, frame times and vblank pacing, since the guest timers' precision can change.
+
 The observation and diagnostic patches there were before remain in the git history.
