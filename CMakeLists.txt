@@ -78,6 +78,15 @@ endif()
 
 set(TORCHLIGHT_GPU_PLUGINS xenos null)
 rexglue_setup_target(torchlight GPU_PLUGINS ${TORCHLIGHT_GPU_PLUGINS})
+# The default code model for the game on Linux x86-64 (docs/guest-hot-paths.md). The SDK compiles
+# its targets with -mcmodel=large ("large executable support"), which makes every call between
+# guest functions a 64-bit absolute address in a register and an indirect call; the executable's
+# text (67 MB) is far below the default model's 2 GB, and the Windows build already uses it. The
+# later -mcmodel wins; the SDK's libraries keep theirs (code models link together).
+if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    target_compile_options(torchlight_recomp PRIVATE -mcmodel=small)
+    target_compile_options(torchlight PRIVATE -mcmodel=small)
+endif()
 # The SDK copies the GPU plugins next to the executable in a POST_BUILD step, which only runs when
 # the executable relinks: after reinstalling the SDK the game kept loading the old plugins. This copy
 # depends on the installed plugin files instead (a stamp per plugin: OUTPUT takes no target-dependent
