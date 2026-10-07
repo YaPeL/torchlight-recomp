@@ -281,9 +281,13 @@ Nothing showed it before because without a mod manager the list is always empty.
 - **Loading**: the unit reader `sub_822A7D78` takes a u16 length (`lhz` `@0x822A8A44`) before
   each name, so every name reads as empty and the units as the next fields. In the run's save the
   item list then claimed 4,291,686,325 entries.
-- **Use**: `sub_822D6858` copies the list to the player (`+2524`). The character menu
-  `sub_8238C3A8` compares it with the active mods and shows `CharacterModsWarning` when they
-  differ; the window exists in the Xbox layouts (`main_xenon.layout` and others).
+- **Use**: `sub_822D6858` copies the list to the player (`+2524`). The main menu (`CMainMenu`,
+  vtable slot 3 at `0x820D2450`: `sub_8238C3A8`) compares the current character's list with the
+  active mods and calls `setVisible(1)` on `CharacterModsWarning` when they differ
+  (`@0x8238C930`..`@0x8238C944`). On Xbox that widget is a `Text` with no text
+  (`main_xenon.layout`, bottom right of the main menu) and no code gives it one (`CMainMenu`
+  only finds it and hides it, `@0x8238C0A8`..`@0x8238C0C4`), so the warning shows nothing.
+  Making it visible would be new UI work (a translated text); not done.
 - **Checked on the run's save** (outside the repository): with only the ten lengths written, the
   save parses completely with `tools/save_convert`'s schema; the saves made without mods have an
   empty list.
@@ -383,7 +387,12 @@ ModDrop has no direct link, the community site did not answer):
 - Save mod list (section 7d): the unit writer's bug repaired as the save is written; tests of the
   repair on synthetic stream bytes and of the PC import with a filled list.
 - Validation run 1 (synthetic mods): mount, backup, manager, MODS toasts, texture replacement and
-  the achievement list confirmed; it also found the save bug of section 7d. Next: run 1 again
-  with the repair on restored saves (save with mods, back to the menu, reload; the menu's mod
-  warning shown only when the mods differ), then a save holding an item of a mod that is then
-  removed.
+  the achievement list confirmed; it also found the save bug of section 7d.
+- Validation of the repair (2026-10-07, saves restored from before run 1, default settings):
+  with 10 mods, a character loaded, saved on the way back to the menu and loaded again, with no
+  hang. Both saves logged `repaired (10 names)` and no fallback, and the save parses completely
+  with the 10 names. With one mod removed (9), the same steps: the backup ran, both saves logged
+  `repaired (9 names)`, and the save holds the 9 names. The menu's mod warning cannot be seen on
+  Xbox (no text, above).
+- Next: a save holding an item of a mod that is then removed (needs new-item mods, blocked by the
+  prebuilt `UNITDATA.RAW`).
