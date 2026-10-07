@@ -32,7 +32,24 @@ constexpr bool SkippableSlot(uint32_t slot) {
 // Whether the hooks skip those implementations: the native mode only, and the cvar on.
 constexpr bool SkipGuestD3D(bool native_only, bool enabled) { return native_only && enabled; }
 
+// Xbox D3D device calls skipped as a whole ("Draw and bindings"): the draws and the index and
+// stream bindings, whatever calls them. They only feed the Xenos GPU; what our hooks need from
+// _render (the buffer uploads, the declaration and binding slots, the depth bias and pass
+// iteration calls, the base _render) still runs.
+constexpr bool SkippableDeviceCall(uint32_t address) {
+  switch (address) {
+    case 0x821CF830:  // DrawIndexedPrimitive
+    case 0x821D0A10:  // DrawPrimitive
+    case 0x821C39F8:  // SetIndices
+    case 0x821C3D58:  // SetStreamSource
+      return true;
+    default:
+      return false;
+  }
+}
+
 // Before the guest runs: decides once for the session and logs it.
 void InstallGuestD3DSkip(bool native_only);
+
 
 }  // namespace torchlight::hooks
