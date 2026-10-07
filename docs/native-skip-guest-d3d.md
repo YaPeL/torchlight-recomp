@@ -31,7 +31,7 @@ only effect is on the Xenos device, keeping every effect the guest itself can ob
 - Our recorded commands must not change: the hook body runs before `__imp__` and reads the guest's
   OGRE objects, not the device. A skipped call that changed what the guest does next would show up
   as a different command stream (see Validation).
-- One cvar to turn it off at run time (as `--native_guest_copy`), to be agreed before it is added.
+- One cvar, off by default (`native_skip_guest_d3d`, see Decisions).
 - No probe or trace without agreeing on it first (each one this plan needs is listed under Evidence).
 
 ## What can observe a skipped call
@@ -123,9 +123,9 @@ in this document:
    readers together, or not at all.
 4. **Resource tracking and waits**: find where a draw or a `SetTexture`/`SetStreamSource` stores a
    fence or reference in the resource, and every lock path that waits on it (`0x821A70D8` and the
-   hardware buffer `lockImpl`, `guest_abi` `hardware_buffer_vtable`). Decide with the user whether
-   losing those waits is acceptable with the `null` GPU before slot 87.
-5. **Dynamic confirmation** (needs agreement, diagnostics build only, removed after): a write watch
+   hardware buffer `lockImpl`, `guest_abi` `hardware_buffer_vtable`). Losing those waits is accepted
+   (Decisions); the step records where they are, for the day a deferred read would need them.
+5. **Dynamic confirmation** (diagnostics build only, `TORCHLIGHT_DIAG_WRITE_WATCH`): a write watch
    on the members of step 2 for one session of the fixed-floor scene and the menus, to catch a
    reader the static reading missed.
 
@@ -138,8 +138,8 @@ in this document:
 4. Shader constants and programs (91, 90, 93): members kept, device calls skipped.
 5. Transforms and culling (28, 30, 31, 61).
 6. Declarations and streams (84, 85).
-7. `_render` (87): last, after step 4 of Evidence is settled; the base counters and clip planes are
-   kept, only `SetIndices` and the draw are skipped.
+7. `_render` (87): last; the base counters and clip planes are kept, only `SetIndices` and the draw
+   are skipped.
 
 Each step is its own commit, behind the same cvar, and is measured before the next one starts.
 
@@ -159,10 +159,23 @@ Each step is its own commit, behind the same cvar, and is measured before the ne
 6. Soak, once per class: new character, level loads up and down, town portal, menus, inventory,
    a cutscene, saving and loading, quitting to the dashboard; no new errors in the log.
 
-## Open points to agree before starting
+## Decisions (2026-10-07)
 
-- The cvar's name and default (off until the soak passes).
-- The diagnostics of Evidence step 5.
-- Whether losing the Xbox D3D resource fence waits (Evidence step 4) is acceptable; if not, slot 87
-  and the binding slots keep their resource tracking and only skip packet building, which needs a
-  deeper look at the Xbox D3D runtime.
+- **Cvar**: `native_skip_guest_d3d` (bool, default `false`): in the native mode, the RenderSystem
+  calls whose only effect is the Xenos device do not run the guest's implementation. It stays off
+  by default until the soak of every class it covers passes; the log's first lines say its value.
+- **Diagnostics build** (Evidence step 5): approved, behind a CMake option off by default that
+  neither the release nor any preset turns on, like `TORCHLIGHT_DEV_COMMANDS`:
+  `TORCHLIGHT_DIAG_WRITE_WATCH`.
+- **Resource fences** (Evidence step 4): accepted, the waits go with the skipped draws and
+  bindings. The producer copies everything it sends on the game's thread, at the bind or the draw,
+  before the guest's implementation runs: `Session::RecordContent` (`capture/session.cpp`) copies
+  the bytes into the snapshot store when the content's version changed, and the version only moves
+  on the guest's unlocks (`Session::OnUnlock`, `OnContentWritten`); named textures are loaded by the
+  backend from the game's files, not read from guest memory; the backend thread only gets those
+  copies. No read of guest memory is deferred, so a guest write after the draw, which the fence
+  would have held back for the GPU, cannot change what was sent. If a deferred read is ever added,
+  the fence tracking of `_render` and the bindings comes back for those resources.
+
+The first step is a (sampler and texture stage states of the device), on its own branch, with the
+whole evidence of this plan written before any code.
