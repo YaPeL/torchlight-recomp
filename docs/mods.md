@@ -221,6 +221,45 @@ practical reference.
 menu's helper (`AddFileSystemLocation` in `src/game_menu/video_menu.cpp`, the render agent's area).
 If it has to be shared (moved to a common place), the commit says so for review at integration.
 
+## 7c. The mod manager is missing on Xbox; its layout (2026-10-07)
+
+**Finding.** The guest's data manager zeroes its mod manager pointer (`+20`) in its constructor
+(`sub_8239B998`) and nothing writes it again; the global the dead entry reads (`0x83559518`) has
+four readers (`sub_82256AA0`, `sub_8225F590`, `sub_82268180`, `sub_82268300`) and no writer.
+PC's class is `CModFileFilter` (RTTI of vtable `0xA90E48`), derived from `CRunicCore`; the Xbox
+image has no RTTI, vtable or constructor for it. Its non-virtual methods survive because the data
+loader and the MODS check use them. So the guest's mod system has everything except the manager
+object itself, which the host must build. **[read]**
+
+**PC layout** (constructor `0x5CE440`, created by `new(0x38)` and stored at the data manager's
+`+0xC` at `0x5C1AAA`; base constructor `0x5FC950`):
+
+| Offset | PC | Guest evidence |
+| --- | --- | --- |
+| `+0x00` | vtable `0xA90E48` (one slot: deleting destructor `0x5CE420`) | needed only by the data manager's destructor (below) |
+| `+0x04` | 0 (`CRunicCore` base) | `CRunicCore`'s destructor `sub_823DED38` acts only when it is not 0 |
+| `+0x08` | `std::wstring`: the mods folder | not read by any surviving method |
+| `+0x24` | list data | `+36` in `sub_823AA550`, `sub_823AAC48`, `sub_823AA988`, `sub_823AA630`, `sub_82256AA0`, `sub_8225F590`, `sub_82268180` |
+| `+0x28` | list count | `+40`, same functions |
+| `+0x2C` | list capacity | `+44`, same functions |
+| `+0x30` | 1 | `+48`: read by the list's growth `sub_8230AB58` (`+12` of the list) |
+| `+0x34`, `+0x35` | 1, 0 (save `mods.dat` flags, used by PC's destructor `0x5CDBB0`) | not read by any surviving method |
+| global | `0xEBBC7C` = this | `0x83559518` (the four readers above) |
+
+The base constructor also increments the instance counter (PC `0xF36C48`; guest `0x8355A2A0`,
+incremented by every `CRunicCore` constructor, e.g. `sub_823A9EA0`, `sub_8239B998`). All guest
+offsets match PC's; no field is unexplained for what the guest uses. **[read]**
+
+**Lifecycle.** Allocation with the game's allocator `sub_821CD7F8(0, size)` (as `sub_823AA550`
+allocates a `CMod`); the matching free is `sub_821CD9A8`. The data manager's destructor
+`sub_8239CFB8` calls slot 0 of `+20`'s vtable when it is set, then zeroes it. Since `CModFileFilter`'s
+vtable does not exist on Xbox, the object uses `CRunicCore`'s own vtable `0x820D61FC`, whose slot 0
+`sub_823DECE0` runs the base destructor (nothing to do with `+4` = 0) and frees the object with
+`sub_821CD9A8`. The list buffer and the `CMod` objects are not freed then (PC's destructor would);
+that only happens when the data manager itself is destroyed, at shutdown. **[read]** Whether the
+data manager is ever destroyed and rebuilt while the game runs (a data reload) is **[to verify]**;
+if it is, the manager is built again for the new one.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
@@ -249,3 +288,18 @@ Two ideas, outside the mods task, recorded for later:
   touching the executable) plus a mod with the Xbox `.UILAYOUT` files, whose imagesets and fonts can
   only come from the player's own Xbox copy; PC's menu classes look windows up by other names, so a
   bridge or adapted layouts are needed.
+
+## 10. Validation mods (candidates, not downloaded)
+
+Development uses synthetic mods made by the tests. For the final validation the user downloads real
+mods from a browser to `~/torchlight-mods-test/` (outside the repository and the real user folder);
+they are checked to be data folders only (no executables, installers or DLLs). Candidates found on
+2026-10-07 (automatic download was not possible: ModDB answers 403, Nexus requires an account,
+ModDrop has no direct link, the community site did not answer):
+
+| Mod | Version | Covers | Source |
+| --- | --- | --- | --- |
+| TET: Torchlight Enhanced Textures | 0.9.5 | textures only | https://www.moddb.com/games/torchlight/addons/tet-torchlight-enhanced-textures-v095 |
+| SSS Torchlight Texture Project | 1.31 | textures (large, about 149 MB) | https://www.moddrop.com/torchlight/mods/660498-sss-torchlight-texture-project-v131-updated |
+| Grimm Overall Improved Torchlight | — | data changes | https://www.nexusmods.com/games/torchlight/mods |
+| Grimm Reworked Spells | — | data changes (spells) | https://www.nexusmods.com/games/torchlight/mods |
