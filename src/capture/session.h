@@ -239,6 +239,16 @@ class Session {
   void AddTexture(commands::TextureDesc desc, commands::Hash live_content = 0);
   void AddProgram(commands::ProgramDesc desc);
   void AddVertexDeclaration(commands::VertexDeclarationContent content);
+  // Live mode with no capture armed (render thread): whether the live stream already has this
+  // texture's description with no content snapshot (a static texture or a render target), or this
+  // declaration with this content. The hooks then skip reading the description from guest memory
+  // again; AddTexture / AddVertexDeclaration would drop it anyway. Within a generation such a
+  // texture's description cannot change: a new texture at the address (its constructor) and every
+  // reload after the first are new generations, and the key holds the generation. Declarations are
+  // keyed by their content's hash too, which the hook still computes on every bind, so one changed
+  // in place is described again. Programs are not skipped: no hook sees their destruction.
+  bool LiveTextureDescribed(const commands::ResourceId& id) const;
+  bool LiveDeclarationDescribed(const commands::ResourceId& id, commands::Hash content) const;
 
  private:
   Session() = default;
@@ -264,7 +274,10 @@ class Session {
     uint64_t version = 0;
     bool present = true;
   };
-  std::map<uint32_t, ShadowEntry> shadow_;
+  // A hash map (looked up on every state hook); its node-based entries keep their address, which
+  // the early out's memos rely on. Walked in key order where order shows (ShadowKeysInOrder).
+  std::unordered_map<uint32_t, ShadowEntry> shadow_;
+  std::vector<uint32_t> ShadowKeysInOrder() const;
   struct ArgsMemo {
     const ShadowEntry* entry = nullptr;
     uint64_t version = 0;
@@ -323,9 +336,19 @@ class Session {
   static uint64_t BufferKey(const commands::ResourceId& id) {
     return uint64_t(id.generation) << 32 | id.guest_address;
   }
-  std::set<std::tuple<uint32_t, uint32_t, uint64_t>> live_sent_declarations_, live_sent_textures_;
-  std::set<std::tuple<uint32_t, uint32_t>> live_sent_programs_;  // (address, generation)
-  std::set<std::string> live_sent_sources_;
+  // (address, generation, content): hashed, these are checked on every bind.
+  struct SentKeyHash {
+    size_t operator()(const std::tuple<uint32_t, uint32_t, uint64_t>& k) const noexcept {
+      const uint64_t id = uint64_t(std::get<1>(k)) << 32 | std::get<0>(k);
+      return std::hash<uint64_t>{}(id ^ (std::get<2>(k) * 0x9E3779B97F4A7C15ull));
+    }
+  };
+  std::unordered_set<std::tuple<uint32_t, uint32_t, uint64_t>, SentKeyHash> live_sent_declarations_,
+      live_sent_textures_;
+  // Live mode: textures whose description holds no content snapshot, already sent (BufferKey).
+  std::unordered_set<uint64_t> live_described_textures_;
+  std::unordered_set<uint64_t> live_sent_programs_;  // BufferKey: (generation, address)
+  std::unordered_set<std::string> live_sent_sources_;
   std::unordered_set<commands::Hash> live_frame_contents_;
   // Capture armed during the live mode: live content already written to it (chunk LIVE).
   std::set<commands::Hash> capture_live_blobs_;
