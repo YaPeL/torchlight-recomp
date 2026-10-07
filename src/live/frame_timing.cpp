@@ -15,6 +15,9 @@ void FrameTiming::OnSwap() {
   auto now = std::chrono::steady_clock::now();
   if (last_swap_.time_since_epoch().count() != 0) {
     frame_ms_.push_back(std::chrono::duration<double, std::milli>(now - last_swap_).count());
+    std::lock_guard lock(recent_mutex_);
+    recent_.emplace_back(now, float(frame_ms_.back()));
+    while (!recent_.empty() && now - recent_.front().first > kRecent) recent_.pop_front();
   } else {
     last_summary_ = now;
   }
@@ -36,6 +39,14 @@ void FrameTiming::OnSwap() {
               pct(0.95), pct(0.99), frame_ms_.back(), over(33.0), over(50.0));
   frame_ms_.clear();
   last_summary_ = now;
+}
+
+std::vector<float> FrameTiming::Recent() {
+  std::lock_guard lock(recent_mutex_);
+  std::vector<float> out;
+  out.reserve(recent_.size());
+  for (const auto& [time, ms] : recent_) out.push_back(ms);
+  return out;
 }
 
 void LogLevelLoad(std::chrono::milliseconds duration) {

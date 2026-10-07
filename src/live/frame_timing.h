@@ -5,6 +5,8 @@
 #pragma once
 
 #include <chrono>
+#include <deque>
+#include <mutex>
 #include <vector>
 
 namespace torchlight::live {
@@ -14,11 +16,16 @@ class FrameTiming {
   static FrameTiming& Get();
   // Guest render thread, at every device swap.
   void OnSwap();
+  // The frame times (ms) of the last kRecent, oldest first, for the frame counter (any thread).
+  static constexpr std::chrono::seconds kRecent{10};
+  std::vector<float> Recent();
 
  private:
   FrameTiming() = default;
   std::chrono::steady_clock::time_point last_swap_{}, last_summary_{};
   std::vector<double> frame_ms_;
+  std::mutex recent_mutex_;
+  std::deque<std::pair<std::chrono::steady_clock::time_point, float>> recent_;
 };
 
 // "level load: N ms" in the log: one call of the guest's level load (guest_abi kLevelLoad).
