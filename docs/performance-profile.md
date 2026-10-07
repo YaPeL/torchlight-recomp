@@ -84,6 +84,37 @@ frames past 33 ms per 40 s step against up to 459 (Xenos, walking in the town, w
 is about 31 ms). Not measured: other GPUs (Intel and Windows pending), runs with a frame cap, and
 the Windows release's OGRE build (`/Ob1`).
 
+### The producer on the guest's render thread (2026-10-07)
+
+A profile of the same native run (`perf record --all-user --call-graph lbr`, 999 Hz, warm caches)
+showed the game's main thread at 100 % of a core and everything else with room: the backend thread
+about half a core, the GPU at 13-31 % utilization. On the main thread 75-83 % was the recompiled
+game, 10-12 % this project's producer (the RenderSystem hooks recording commands) and 8-9 % libc and
+std containers, mostly the producer's too: re-reading resource descriptions on every bind only to
+drop them as already sent, tree containers, two clock reads per lock in `MeasuredMutex`, and the
+frame's command vector growing by doubling. Four changes (`perf/producer`): descriptions the live
+stream already has are not read again (textures without a content snapshot and declarations, keyed
+by identity with its generation, so a resource recreated at the same address is described again;
+programs are not cached: no hook sees their destruction), hash containers, the lock's hold time
+sampled (below), and each frame's commands reserved at the last frame's count.
+
+Same method and build as above, one run before (`perf-1`) and one after (`perf-2`):
+
+| Step | Before | After |
+|---|---|---|
+| Main menu | 225.1 fps | 258.1 fps (+15 %) |
+| Town, still | 108.8 fps | 119.1 fps (+9 %) |
+| Town, walking | 80.7 fps | 87.8 fps (+9 %) |
+| Dungeon, still | 123.0 fps | 160.5 fps |
+| Dungeon, fighting | 89.8 fps | 114.4 fps |
+
+The producer and its libc/std time in the town, walking: 2.55 to 1.99 ms per frame (-22 %), with
+the game's own code unchanged (9.3 and 9.1 ms per frame). The dungeon rows are not comparable: each
+run creates a new character, and the mine's floor is generated, so the map and the fight differ;
+later dungeon measurements start from a saved game on a fixed floor. Left in the producer (town,
+walking, share of the main thread): the registry lookup 2.2 %, the state early out 1.3 %, malloc
+about 2 %.
+
 **Lock times in the log**: the `locks:` part of the `live measurements` summary counts each
 `MeasuredMutex`'s acquisitions and contended acquisitions exactly, and its wait when it was
 contended, but the time held (`held ~N ms`) is an estimate since 2026-10-07: timed on one
