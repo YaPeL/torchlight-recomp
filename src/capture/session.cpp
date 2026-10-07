@@ -200,8 +200,12 @@ void Session::CutLiveFrame(bool measured) {
     live_pending_destroyed_.clear();
   }
   live_frame_.swap = swap_number_;
+  // The next frame's commands reserved at this one's count and a margin: growing the vector by
+  // doubling reallocated and moved every command several times per frame.
+  const size_t commands = live_frame_.commands.size();
   live_queue_->Push(std::move(live_frame_));
   live_frame_ = live::LiveFrame{};
+  live_frame_.commands.reserve(commands + commands / 8);
   live_frame_.cut = std::chrono::steady_clock::now();
   live_frame_contents_.clear();
 }
