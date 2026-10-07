@@ -480,6 +480,29 @@ announces it.
   folders and re-ran. To fix: skip the commit and the push when the tree did not change, and say
   so in the log.
 
+### 5.9 Branches and releases (since 2026-10-07)
+
+- **`develop`** is where the work is integrated. Work happens on branches made from `develop` and
+  merged back into it (the project's agents integrate directly; external contributors open pull
+  requests against `develop`, `CONTRIBUTING.md`).
+- **`main`** only receives releases. At a feature freeze `develop` is merged into `main`, the
+  release is tagged on `main` (`vX.Y.Z`, annotated) and the tag starts `release.yml`. Nobody pushes
+  to `main` otherwise.
+- **Hotfix**: a branch from `main` with the fix, merged into `main` and tagged there, then merged
+  back into `develop` so the fix is not lost at the next freeze.
+- **CI** (`ci.yml`) runs on pushes to `develop` and `main`, on pull requests into either, and by
+  hand. The SDK and OGRE builds (`deps-<key>`, `deps-windows-<key>`) are published from pushes to
+  either branch, at the commit that built them (`--target`), and every run first looks for a
+  published one with its key. After a freeze merge both branches point at the same commit and two
+  runs may build the same key at once: the second `gh release create` fails, and the step then
+  counts the release it finds as published.
+- **Release** (`release.yml`): only from `v*` tags whose commit is on `main`. The `release`
+  environment allows deployments from `v*` tags but cannot tell which branch a tag is on, so the
+  first job, *Tag on main*, checks that the tagged commit is an ancestor of `origin/main` and stops
+  the run before the approval is asked for otherwise: a `v*` tag on `develop` cannot publish. The
+  check is in the `release.yml` of the tagged commit, so it covers every commit of `develop` from
+  the one that added it on.
+
 ## Sources
 
 - Unleashed Recompiled: <https://github.com/hedge-dev/UnleashedRecomp> (`.github/workflows/`,

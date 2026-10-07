@@ -1,14 +1,16 @@
 # Public CI, without the game (docs/release-pipeline.md 5.3): the patched SDK and OGRE, the
 # libraries and tests (preset linux-amd64-nogame), and the packaged replay checked in clean
 # containers; on Windows the SDK and OGRE, and the libraries and tests (preset win-amd64-nogame).
-# No secrets. To save Actions minutes it runs on pull requests, on main and by hand,
-# not on every push; the SDK and OGRE are built once per key (tools/deps/key.sh) and reused.
+# No secrets. To save Actions minutes it runs on pushes to and pull requests into develop (where
+# the work is integrated) and main (releases), and by hand; the SDK and OGRE are built once per key
+# (tools/deps/key.sh), published from either branch, and reused (docs/release-pipeline.md, 5.9).
 name: CI
 
 on:
   pull_request:
+    branches: [develop, main]
   push:
-    branches: [main]
+    branches: [develop, main]
   workflow_dispatch:
 
 permissions:
@@ -26,7 +28,7 @@ jobs:
     name: SDK and OGRE
     runs-on: ubuntu-24.04
     container: ubuntu:22.04
-    # Writes only to publish the builds (decision 5), on main.
+    # Writes only to publish the builds (decision 5), on pushes to develop or main.
     permissions:
       contents: write
     outputs:
@@ -63,20 +65,23 @@ jobs:
           sh tools/deps/ubuntu_toolchain.sh
           tools/deps/build_sdk.sh "$DEPS_DIR/sdk"
           tools/deps/build_ogre.sh "$DEPS_DIR/ogre"
+      # A push to develop and one to main with the same key (a freeze merge) can both get here: the
+      # second create fails, and finding the release then means the other run published it.
       - name: Publish
         if: >-
           steps.published.outputs.found != 'true' && github.event_name == 'push' &&
-          github.ref == 'refs/heads/main'
+          (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           key=${{ steps.key.outputs.key }}
           tar -C "$DEPS_DIR" -cf - sdk | zstd -19 -T0 > sdk-linux-amd64.tar.zst
           tar -C "$DEPS_DIR" -cf - ogre | zstd -19 -T0 > ogre-linux-amd64.tar.zst
-          gh release create "deps-$key" -R "$GITHUB_REPOSITORY" --prerelease \
+          gh release create "deps-$key" -R "$GITHUB_REPOSITORY" --prerelease --target "$GITHUB_SHA" \
             --title "Dependencies $key" \
             --notes "The patched ReXGlue SDK and OGRE 14.6.0 (Release, ubuntu:22.04, clang 21), built by tools/deps/ for key $key. Nothing of the game." \
-            sdk-linux-amd64.tar.zst ogre-linux-amd64.tar.zst
+            sdk-linux-amd64.tar.zst ogre-linux-amd64.tar.zst ||
+            gh release view "deps-$key" -R "$GITHUB_REPOSITORY" > /dev/null
 
   test:
     name: Build and test (no game)
@@ -178,10 +183,11 @@ jobs:
           tools/build-deps/windows_toolchain.ps1 -Destination C:\llvm
           tools/build-deps/windows.ps1 -Prefix "$env:DEPS_DIR\ogre" -SdkPrefix "$env:DEPS_DIR\sdk" `
             -WorkDir C:\deps-work -Configs RelWithDebInfo -SdkConfigs Release -LlvmBin C:\llvm\bin
+      # As the Linux job's: a concurrent run with the same key may have published it first.
       - name: Publish
         if: >-
           steps.published.outputs.found != 'true' && github.event_name == 'push' &&
-          github.ref == 'refs/heads/main'
+          (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,10 +198,13 @@ jobs:
           tar -a -cf ogre-windows-amd64.zip -C $env:DEPS_DIR ogre
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           gh release create "deps-windows-$key" -R $env:GITHUB_REPOSITORY --prerelease `
-            --title "Dependencies (Windows) $key" `
+            --target $env:GITHUB_SHA --title "Dependencies (Windows) $key" `
             --notes "The patched ReXGlue SDK (Release) and OGRE 14.6.0 (RelWithDebInfo) with zlib 1.3.2, built for Windows by tools/build-deps/windows.ps1 (windows-2022, LLVM 21.1.8, MSVC) for key $key. Nothing of the game." `
             sdk-windows-amd64.zip ogre-windows-amd64.zip
-          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          if ($LASTEXITCODE) {
+            gh release view "deps-windows-$key" -R $env:GITHUB_REPOSITORY > $null
+            if ($LASTEXITCODE) { exit 1 }
+          }
 
   test-windows:
     name: Build and test (Windows, no game)

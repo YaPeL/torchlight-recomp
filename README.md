@@ -152,7 +152,8 @@ Building the game needs your own copy of it too: the code generator reads its ex
 it, only the libraries, the tests and the tools build (what CI does). See
 [docs/BUILDING.md](docs/BUILDING.md) for the dependencies (the patched ReXGlue SDK, OGRE 14.6.0),
 the build on Linux and Windows, the tests and the development tools, and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the port works.
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the port works. To contribute, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

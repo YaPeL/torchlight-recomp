@@ -1,8 +1,10 @@
 # Release of the Linux and Windows beta (docs/release-pipeline.md 5.4): the game built from the XEX
 # in the private assets repository, packaged as an AppImage and a Windows zip, checked in clean
 # containers (Linux) and on a second runner (Windows) and left as a draft release for the owner to
-# try and publish. Only from v* tags (or by hand), after the owner
-# approves the `release` environment.
+# try and publish. Only from v* tags on main (or by hand on such a tag), after the owner approves
+# the `release` environment. The environment's rule only sees the tag's name, so the on-main job
+# first stops a tag whose commit is not on main (a tag on develop), before the approval is asked
+# for (docs/release-pipeline.md, 5.9).
 #
 # Rules for the job that touches the game (decision 3): no actions/cache, no compiler cache, no
 # upload of generated/, of the build directory or of the symbols; nothing of the game printed. The
@@ -21,8 +23,22 @@ env:
   DEPS_DIR: /deps
 
 jobs:
+  on-main:
+    name: Tag on main
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The tagged commit is on main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "$GITHUB_REF_NAME ($GITHUB_SHA) is not on main: releases are tagged on main" >&2
+            exit 1; }
+
   game-linux:
     name: Game (Linux)
+    needs: on-main
     runs-on: ubuntu-24.04
     container: ubuntu:22.04
     environment: release
@@ -163,6 +179,7 @@ jobs:
   # are CI's deps-windows-<key>; LLVM comes from windows_toolchain.ps1, MSVC from the runner.
   game-windows:
     name: Game (Windows)
+    needs: on-main
     runs-on: windows-2022
     environment: release
     env:
