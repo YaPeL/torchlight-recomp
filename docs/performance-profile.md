@@ -230,6 +230,69 @@ What they showed, native and Xenos, on the fixed-floor saved game:
   exist") for the read-only game data locations, without touching the SDK; mods will add locations
   and lookups.
 
+## PC reference (2026-10-07)
+
+How far the recomp is from the original PC game on the same machine and scenes: where the PC is
+much faster there is something to change on our side; where it is not, the ceiling is the game's
+own design.
+
+**Setup**: Torchlight PC v1.15 (Steam, build 95256) under Proton Experimental (11.0) with DXVK
+3.1.1 (D3D9 on Vulkan), `PROTON_USE_WOW64=1` (the game is 32-bit; only the 64-bit MangoHud layer is
+installed), in its own Proton prefix with Steam Cloud off for the game and the cloud files backed
+up first. Same machine as above, `powersave` CPU governor (as MangoHud reports it; the recomp runs
+used the same system settings). Fullscreen 1280x720, vsync off, no frame cap. Quality as close
+as possible to what the native mode draws: the backend adds no anti-aliasing, so FSAA off on the
+PC (set in the game's options); shadows and rim lighting on. The shadow texture was set to 512 in
+`local_settings.txt` (the 360 renders two 512x512 targets in a dungeon capture; the PC default is
+1024), but the game wrote 1024 back when the options were saved, so which size this run used is
+not known.
+
+**Saved game**: the recomp's fixed-floor character, converted to PC
+(`tools/save_convert/convert_to_pc.py`): every reference exists in the PC data; two random quests
+had their dialog state fitted to the PC definitions. Each saved level keeps its explored map,
+units and objects.
+
+**Method**: MangoHud logs every frame (`log_interval=0`), one file per step started by hand and
+stopped after 40 s (`log_duration=40`). Its frame time is the PC game's present to present. Same
+metrics as the recomp's: frame rate (frames over the summed frame time), p99 frame time and its
+rate (1 % low), longest frame, frames past 33 and 50 ms. The native numbers are the two warm runs
+of the default code model above (`--native_skip_guest_d3d=true`), mean of the two; their steps are
+shorter (menu 15 s, still 10 s, fight and walk 40 s), which changes the counts of long frames more
+than the rates.
+
+| Step | Native: fps / p99 / longest / >33 / >50 | PC (Proton): fps / p99 / longest / >33 / >50 | PC / native |
+|---|---|---|---|
+| Main menu | 299 / 4.6 / 7.5 / 0 / 0 | 322 / 4.9 / 58.3 / 7 / 5 | 1.08 |
+| Dungeon, still | 164 / 8.0 / 34.1 / 1 / 0 | 247 / 6.0 / 57.4 / 8 / 7 | 1.51 |
+| Dungeon, fighting | 118 / 12.5 / 89.2 / 2 / 2 | not recorded yet | |
+| Town, still | 190 / 7.0 / 10.8 / 0 / 0 | 247 / 6.0 / 57.5 / 9 / 7 | 1.30 |
+| Town, walking | 105 / 13.2 / 22.1 / 0 / 0 | 124 / 21.2 / 176.5 / 20 / 13 | 1.18 |
+| Dropping and picking up an item | (no spike) | 141 / 16.3 / 250.2 (186-250 ms on each drop or pick-up) | |
+
+(times in ms)
+
+**What it says**:
+
+- **Standing still, the PC runs 1.3 to 1.5 times our frame rate.** That is the clearest margin:
+  a fixed cost per frame on our side (the recompiled game logic on its single main thread, at
+  100 % of a core, and the producer), not the scene.
+- **Walking in the town the gap shrinks to 1.18**, and the main menu is close (1.08): with more
+  of the game's own work per frame both are bound by the same thing.
+- **Long frames: the recomp is smoother than the PC.** Walking in the town the PC had 20 frames
+  past 33 ms (up to 177 ms) against none; dropping or picking up an item cost the PC 186-250 ms
+  each time, where the recomp shows no spike. The recomp's worst, assembling equipment models in a
+  fight (84-99 ms), is still to be compared with the PC doing the same.
+- **Every 5.0 s exactly the PC shows a frame of about 55 ms**, menu included. The period points to
+  the tools (MangoHud, Proton or Steam) more than to the game; not explained, so not used for any
+  conclusion (it accounts for most of the PC's long frames in the still steps).
+- **The PC numbers are a floor**: Proton and DXVK translate every D3D9 call; native Windows would
+  likely be somewhat faster.
+
+**Still to do**: the fight and equipping armour on the PC (the equipment spike), with the shadow
+size confirmed (each run starts again from the converted save: the game saves over it), and the PC
+counterparts of the guest functions in that spike (`0x822DC6B0`, `0x822C08E0`) to time them with
+`perf` on the Wine process.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
