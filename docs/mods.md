@@ -174,6 +174,53 @@ loader, priorities, text parser and MODS check do the rest. Assets (meshes, text
 loads by name additionally need the mod folder as a resource location added after `pak.zip` (rule
 of reading 1), which is the mechanism the project already uses.
 
+## 7b. Mounting, registering a mod, writes and saves (2026-10-07)
+
+**Mounting the folder.** The guest reads files through the runtime's virtual file system. The SDK
+already offers what is needed, with no patch: `rex::filesystem::HostPathDevice` on a host folder,
+`RegisterDevice` and `RegisterSymbolicLink`; the video menu mounts `data/ui/` as `tlhost:` and the
+wide layouts as `tlwide:` this way (`src/game_menu/video_menu.cpp`). The mods folder would be a
+device of its own on `DataDir()/mods/` (for example `tlmods:`), **writable** (`read_only` false)
+because of the compiled files below, and only that folder: never the game's data. **[read]**
+
+**Registering a mod.** `sub_823AA550(manager, const std::wstring& path)` takes the highest
+priority among the listed mods, allocates a 200-byte mod object, builds it with
+`sub_823A9EA0(mod, path, highest + 1)` and appends it to the manager's list (`+36` data, `+40`
+count, `+44` capacity). `sub_823A9EA0` stores the mod's folder at `+164` (adding a trailing `\`
+when missing), sets it active (`+192` = 1, `+193` = 0) with that priority (`+196`), checks
+`mod.dat` in the folder, reads `NAME`, `AUTHOR` and `DESCRIPTION`, and lists the folder (`*.*`,
+`sub_823AA340`) into the mod's file map (`+36`). The manager is the global at `0x83559518`. The
+only caller, `sub_82268300(const wchar_t* path)`, takes the path, checks two flags of the global at
+`0x8355A9C0` (`+65` clear and `+72` set) and calls it; nothing calls it. **[read]** The order of
+registration therefore sets the priorities (each new mod gets the next one); a negative priority
+from `mods.dat` can be applied afterwards by writing `+196`, as PC's list does. **[to verify]** that
+the two flags are what "the data manager is ready" means, and the exact point at startup.
+
+**Writes.** The data save `sub_82396950` resolves the file through the mod-aware loader, derives
+the compiled name (`sub_823A66E0`) and opens it with `"wb"`: a `.DAT` from a mod is compiled into
+the mod's own folder, next to its source. **[read]** So the device must be writable, and the
+writes stay in the user's mods folder; the game's data is never written (its device stays
+read-only). The exact compiled name (`X.DAT.adm`, as in `pak.zip`) is **[to verify]** in a run.
+
+**Saves that reference a removed mod.** **[to verify]** for PC and the guest: what loading a
+character does with an item whose unit no longer exists (dropped, kept as unknown, or a failure).
+Characters reference their class data; the guest has "Missing datagroup for character " in its
+unit spawner (`sub_82287868`, logs and continues) but the save loading path for a missing item was
+not read. To check in a run on copies: a synthetic mod that adds an item, a character that holds
+it, the mod removed, the character loaded.
+
+**Safety net.** Today the runtime backs a save container up only before deleting it (SDK patch 12,
+`<user_data_root>/save-backups/<UTC>-<package>/`, kept by `save_import/backup_retention.h`).
+Proposed: at startup, before the guest runs, compare the active mod set (folder names, priorities
+and a digest of each `mod.dat`) with the set recorded at the previous start; when it differs, copy
+the save containers to `save-backups/<UTC>-mods/` first, so the same retention rules keep it. The
+game does not record which mods a save was made with, so "the set of the previous start" is the
+practical reference.
+
+**The render front's code.** Adding a mod's folder as an OGRE resource location reuses the video
+menu's helper (`AddFileSystemLocation` in `src/game_menu/video_menu.cpp`, the render agent's area).
+If it has to be shared (moved to a common place), the commit says so for review at integration.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
