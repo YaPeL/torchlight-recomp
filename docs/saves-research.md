@@ -30,8 +30,11 @@ Torchtools specification and code (see section 3).
   length, loads; the game saves it again as v25. One more difference is in the game data, not the
   format: the state of each active quest's dialog lines follows the quest definitions, and two
   quests have different dialogs on the 360 (section 4b). The converter adapts them.
-- **Recomp → PC is not**: the PC reader knows up to version 23. The fields added by 24 and 25 would
-  misalign it, and downgrading the version means dropping those fields (not analyzed which ones).
+- **Recomp → PC is possible too** (corrected 2026-10-07): the PC reader knows up to version 23, but
+  versions 24 and 25 add no field. The 360 reader's highest comparison is "≥ 23", so what the 360
+  writes as v25 is exactly what it reads, the v23 layout. Written little-endian as version 23 with
+  the length trailer, and with the quest dialog states fitted to the PC definitions, a recomp save
+  is a PC one (`tools/save_convert/convert_to_pc.py`).
 - **The converter needs the size of every field** to reverse bytes, and the 360 reader itself gives
   it: it reads with primitives that take the element size (`sub_823A2450`: 1, 2, 4 or 8 bytes in 161
   of 178 calls). The exceptions are few and localized (12 and 64 bytes, the hash and some

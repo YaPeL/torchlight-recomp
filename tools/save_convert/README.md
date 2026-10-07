@@ -12,6 +12,13 @@ Converts a Torchlight PC character save (`N.SVT`, v1.15) to the 360 format (`N.T
   GUID changed.
 - The source is only read. The destination is not replaced if it exists, unless `--force` is given.
 
+The other way, `convert_to_pc.py SOURCE.TSV DESTINATION.SVT --pak PATH/pak.zip --pc-pak PATH/Pak.zip
+[--force]` turns a recomp character (360 save, version 23 to 25) into a PC v1.15 one (version 23),
+for example to compare both games on the same saved floor. The 360 reader has no field that
+depends on versions 24 or 25, so a v25 body has the v23 layout; the checks are the same as above
+the other way round (every reference must exist in the PC data, quest dialog states are fitted to
+the PC definitions). Same rules for the source and the destination.
+
 The shared stash and the settings have their own commands (same rules: the source is only read,
 nothing is replaced without `--force`, and nothing is written unless it validates):
 

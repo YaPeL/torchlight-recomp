@@ -358,15 +358,31 @@ def pc_stash_to_360(schema, data, replacements=None):
     return write_body(schema, parsed.tree, 'big', schema['stash_root'])
 
 
-def x360_to_pc(schema, data):
-    """Inverse of pc_to_360 for a version-23 N.TSV (used to check the round trip)."""
+# The 360 reader compares the version only up to "version >= 23" (no field depends on 24 or 25),
+# so a v24 or v25 body has the v23 layout and differs from a PC v1.15 one only in byte order.
+X360_VERSIONS_WITH_PC_LAYOUT = (23, 24, 25)
+
+
+def x360_to_pc(schema, data, replacements=None, adapt=None):
+    """Convert N.TSV bytes (version 23 to 25) to PC v1.15 N.SVT bytes (version 23).
+
+    replacements and adapt as in pc_to_360, the other way round (offsets in the 360 body; adapt
+    is called with the parsed 360 save). Unchanged, a v23 N.TSV gives back the original N.SVT.
+    """
     body = split_360(data)
     parsed = parse_body(schema, body, 'big')
-    if parsed.version != PC_VERSION:
-        raise SaveError('only a version %d save can be turned back into a PC one (this one is %d)'
-                        % (PC_VERSION, parsed.version))
-    out = _swap(body, parsed.tokens)
-    return bytes(out) + struct.pack('<I', len(out) + LENGTH_TRAILER_SIZE)
+    if parsed.version not in X360_VERSIONS_WITH_PC_LAYOUT:
+        raise SaveError('unsupported 360 save version %d: only versions %s have the PC v1.15 layout'
+                        % (parsed.version, ', '.join(str(v) for v in X360_VERSIONS_WITH_PC_LAYOUT)))
+    refs = {ref.offset: ref for ref in parsed.refs}
+    for offset, new in (replacements or {}).items():
+        ref = refs[offset]
+        ref.element[ref.name] = new & 0xFFFFFFFFFFFFFFFF
+    if adapt is not None:
+        adapt(parsed)
+    parsed.tree['version'] = PC_VERSION
+    out = write_body(schema, parsed.tree, 'little')
+    return out + struct.pack('<I', len(out) + LENGTH_TRAILER_SIZE)
 
 
 def signed64(value):

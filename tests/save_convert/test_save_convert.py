@@ -18,6 +18,7 @@ sys.path.insert(0, HERE)
 sys.path.insert(0, os.path.join(HERE, '..', '..', 'tools', 'save_convert'))
 
 import convert  # noqa: E402
+import convert_to_pc  # noqa: E402
 import synthetic  # noqa: E402
 from gamedata import GameData, adapt_quest_dialogs, check_references, parse_adm  # noqa: E402
 from savefile import (SaveError, load_schema, parse_body, pc_to_360, read_pc, signed64,  # noqa: E402
@@ -394,6 +395,107 @@ class CommandLineTest(unittest.TestCase):
         self.assertIn('without guessing', err)
         self.assertFalse(os.path.exists(self.destination))
 
+
+
+def as_version(x360, version):
+    """The same 360 save with another version number (the recomp writes 25)."""
+    parsed = parse_body(SCHEMA, split_360(x360), 'big')
+    parsed.tree['version'] = version
+    body = write_body(SCHEMA, parsed.tree, 'big')
+    return body + hashlib.sha256(body).digest()
+
+
+class ConvertToPcTest(unittest.TestCase):
+    """convert_to_pc.py: a recomp (360 v25) save back to PC v1.15."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        os.makedirs(os.path.join(self.dir.name, '360'))
+        os.makedirs(os.path.join(self.dir.name, 'pc'))
+        self.pak = os.path.join(self.dir.name, '360', 'pak.zip')
+        self.pc_pak = os.path.join(self.dir.name, 'pc', 'Pak.zip')
+        synthetic.make_pak(self.pak)
+        synthetic.make_pak(self.pc_pak)
+        self.pc_save = synthetic.make_save(SCHEMA)
+        self.source = os.path.join(self.dir.name, '0.TSV')
+        self.write_source(as_version(pc_to_360(SCHEMA, self.pc_save), 25))
+        self.destination = os.path.join(self.dir.name, '0.SVT')
+
+    def tearDown(self):
+        with open(self.source, 'rb') as f:
+            self.assertEqual(f.read(), self.source_bytes, 'the source is never modified')
+        self.dir.cleanup()
+
+    def write_source(self, data):
+        with open(self.source, 'wb') as f:
+            f.write(data)
+        self.source_bytes = data
+
+    def run_cli(self, *args):
+        out, err = io.StringIO(), io.StringIO()
+        with redirect_stdout(out), redirect_stderr(err):
+            code = convert_to_pc.main(list(args))
+        return code, out.getvalue(), err.getvalue()
+
+    def converted(self):
+        with open(self.destination, 'rb') as f:
+            return f.read()
+
+    def test_v25_save_becomes_the_pc_save_it_came_from(self):
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.converted(), self.pc_save)
+        _, parsed = read_pc(SCHEMA, self.converted())
+        self.assertEqual(parsed.version, 23)
+
+    def test_versions_without_the_pc_layout_are_rejected(self):
+        for version in (22, 26):
+            with self.assertRaisesRegex(SaveError, 'unsupported 360 save version %d' % version):
+                x360_to_pc(SCHEMA, as_version(pc_to_360(SCHEMA, self.pc_save), version))
+
+    def test_existing_destination_is_kept(self):
+        with open(self.destination, 'wb') as f:
+            f.write(b'keep me')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 1)
+        self.assertIn('--force', err)
+        self.assertEqual(self.converted(), b'keep me')
+
+    def test_data_missing_in_the_pc_game_writes_nothing(self):
+        synthetic.make_pak(self.pc_pak, drop_unit=synthetic.UNIT_GUIDS[0])
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 1)
+        self.assertIn('does not exist in the PC game', err)
+        self.assertFalse(os.path.exists(self.destination))
+
+    def test_quest_dialogs_are_adapted_back_to_the_pc_definitions(self):
+        # A PC save converted to the 360 (QUEST_ALPHA's PASSIVE dialog has a line more there) comes
+        # back as the original PC save.
+        synthetic.make_pak(self.pc_pak, dialogs={'QUEST_ALPHA': {'PASSIVE': [A]}})
+        synthetic.make_pak(self.pak, dialogs={'QUEST_ALPHA': {'PASSIVE': [D, A]}})
+        to_360 = os.path.join(self.dir.name, 'via.TSV')
+        with redirect_stdout(io.StringIO()):
+            convert.convert(self._pc_file(), to_360, self.pak, self.pc_pak)
+        with open(to_360, 'rb') as f:
+            self.write_source(as_version(f.read(), 25))
+        code, out, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertIn('PASSIVE dialog: 2 lines (360) -> 1 (PC)', out)
+        self.assertEqual(self.converted(), self.pc_save)
+
+    def test_quest_dialog_that_cannot_be_adapted_writes_nothing(self):
+        synthetic.make_pak(self.pc_pak, dialogs={'QUEST_ALPHA': {'PASSIVE': [B]}})
+        synthetic.make_pak(self.pak, dialogs={'QUEST_ALPHA': {'PASSIVE': [A]}})
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 1)
+        self.assertIn('PC game data without guessing', err)
+        self.assertFalse(os.path.exists(self.destination))
+
+    def _pc_file(self):
+        path = os.path.join(self.dir.name, 'pc.SVT')
+        with open(path, 'wb') as f:
+            f.write(self.pc_save)
+        return path
 
 
 def zip_entries(data):

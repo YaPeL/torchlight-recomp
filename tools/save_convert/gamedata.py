@@ -194,15 +194,18 @@ def _dialog_lines(root):
     return sections
 
 
-def adapt_quest_dialogs(parsed, target, source):
-    """Fit the dialog state of every active quest to the 360 quest definitions.
+def adapt_quest_dialogs(parsed, target, source, names=('PC', '360')):
+    """Fit the dialog state of every active quest to the target game's quest definitions.
 
-    The 360 reader reads as many state pairs as the 360 definition has lines and does not skip
-    the rest, so a save written with the PC definition is misread wherever they differ. Each 360
-    line takes the state of the PC line with the same speaker and text; a 360 line with no such
-    line starts as new. Returns (changes [str], problems [str]); a problem means a state that
-    cannot be placed without guessing, and the save must not be converted.
+    The reader (PC or 360) reads as many state pairs as its own definition has lines and does not
+    skip the rest, so a save written with the other game's definition is misread wherever they
+    differ. Each target line takes the state of the source line with the same speaker and text; a
+    target line with no such line starts as new. Returns (changes [str], problems [str]); a problem means a state that
+    cannot be placed without guessing, and the save must not be converted. names: how the
+    messages call the source and the target game (PC to 360 by default; the other way round for a
+    360 save converted to PC).
     """
+    source_name, target_name = names
     changes, problems = [], []
     quests = parsed.tree.get('quests', {}).get('active', [])
     for quest in quests:
@@ -218,7 +221,7 @@ def adapt_quest_dialogs(parsed, target, source):
             expected = new if old is None else old
             if len(states) != len(expected):
                 problems.append('%s: the save has %d lines and the %s game data %d' % (
-                    where, len(states), '360' if old is None else 'PC', len(expected)))
+                    where, len(states), target_name if old is None else source_name, len(expected)))
                 continue
             if old is None or old == new:
                 continue
@@ -230,17 +233,20 @@ def adapt_quest_dialogs(parsed, target, source):
                     adapted.append(states[matches[0]])
                 elif any(states[i] != NEW_LINE_STATE for i in matches):
                     ambiguous.update(matches)
-                    problems.append('%s: the line of %s appears %d times in the PC data and one has '
-                                    'a state; which one is meant cannot be known' % (where, line[0], len(matches)))
+                    problems.append('%s: the line of %s appears %d times in the %s data and one has '
+                                    'a state; which one is meant cannot be known'
+                                    % (where, line[0], len(matches), source_name))
                     adapted.append(list(NEW_LINE_STATE))
                 else:
                     adapted.append(list(NEW_LINE_STATE))
             for i, state in enumerate(states):
                 if i not in used and i not in ambiguous and state != NEW_LINE_STATE:
-                    problems.append('%s: the line of %s has state %s and the 360 game has no line '
-                                    'with the same speaker and text' % (where, old[i][0], tuple(state)))
+                    problems.append('%s: the line of %s has state %s and the %s game has no line '
+                                    'with the same speaker and text'
+                                    % (where, old[i][0], tuple(state), target_name))
             pairs[index] = adapted
-            changes.append('%s: %d lines (PC) -> %d (360)' % (where, len(old), len(new)))
+            changes.append('%s: %d lines (%s) -> %d (%s)' % (where, len(old), source_name, len(new),
+                                                             target_name))
     return changes, problems
 
 
@@ -268,9 +274,10 @@ _KIND_NAMES = {
 
 
 def check_references(parsed, target, source=None):
-    """Check every GUID and name of a parsed PC save against the 360 data (target).
+    """Check every GUID and name of a parsed save against the data of the game it goes to (target).
 
-    Quest GUIDs missing in the target are mapped through the PC data (source) by quest name.
+    Quest GUIDs missing in the target are mapped through the data of the game it comes from
+    (source) by quest name (PC to 360, or the other way round).
     Returns (replacements {offset: new_guid}, problems [Problem]). Problems mean "do not convert".
     """
     replacements = {}
