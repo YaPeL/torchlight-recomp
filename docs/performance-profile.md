@@ -1,5 +1,92 @@
 # Gameplay performance profile — 2026-09-12
 
+## Native renderer against Xenos (2026-10-07)
+
+The same build of the game run twice with each renderer: the native backend (`--native_live=only`,
+OGRE GL3+) and the SDK's emulated GPU (`--native_live=off`, Xenos on Vulkan). Not against Xenia.
+
+**Machine**: Lenovo ThinkPad X1 Extreme, Intel Core i7-8750H (6 cores, 12 threads), NVIDIA GeForce
+GTX 1050 Ti with Max-Q Design (driver 580.178.04, GL for the native backend, Vulkan for Xenos), 30
+GB RAM, Ubuntu 26.04 (kernel 7.0), Wayland, plugged in, nothing else open, no MangoHud.
+
+**Build** (the Linux release's flags, built locally): the game (`linux-amd64-release`,
+`-O3 -g -DNDEBUG`; `generated/` also `-gline-tables-only -mcmodel=large -msse4.1`), the SDK's
+Release libraries (`librexruntime.so`, `librexgpu-xenos.so`: `-O3 -DNDEBUG -march=x86-64-v2`,
+`patches/series` up to 19) and OGRE 14.6.0 Release (`-O3 -DNDEBUG`, `tools/deps/build_ogre.sh`). No
+LTO anywhere. The two renderers run the same executable and runtime; only the renderer differs
+(OGRE for the native one, the xenos plugin for Xenos), both at `-O3`. For comparison: a local
+`linux-amd64-relwithdebinfo` build is `-O2 -g` in every part, and the Windows release takes OGRE
+RelWithDebInfo built by MSVC (`/O2 /Ob1`, limited inlining).
+
+**What Xenos runs without**: the native backend's own optimizations (the program analysis cache,
+the producer that does not re-emit unchanged state) only exist in the native path; this project's
+guest-side GPU wait hook (`hooks/gpu_wait_hooks.cpp`) was limited to the native mode for these runs,
+so Xenos spins in the guest's GPU wait as without the project. The SDK patches (`patches/series`)
+apply to both.
+
+**Method**: four runs, alternating (native 1, Xenos 1, native 2, Xenos 2), each on fresh copies of
+the user data and settings (`--user_data_root`, `XDG_*_HOME`), with a new character each time. No
+frame cap and no vsync in both (`--vsync=false`, so the guest's vblank comes every millisecond;
+native: `fps_cap = 0`, the window's vsync off). 720p in both: the native backend's internal
+resolution 1280x720 (`render_resolution`), as Xenos draws the guest's 1280x720 and scales it to the
+window (1920x1080, fullscreen, in both). Disk caches per run, the same rule for both: run 1 starts
+with none (OGRE's RTSS shaders, the SDK's shader and pipeline cache, the NVIDIA driver's shader
+caches under `$XDG_CACHE_HOME`), run 2 with what run 1 of the same mode left. A temporary overlay
+(not in the release) showed the frame rate and the steps, with a beep at each: main menu, hands off
+15 s; a new character into the town; town, still 40 s; town, walking around the square 40 s; into the
+mine (floor 1); dungeon, still 40 s; dungeon, walking and fighting 40 s. Frame times are the guest's
+swap to swap (the game's own frame rate; the native backend presented all but 0-12 of every ~1000
+frames per 10 s); load times come from `level load: N ms` (the guest's level load, timed in its
+hook); CPU from `tools/profile_utilization.py`, all threads, sampled every second.
+
+Frame rate (frames per second, mean over the step), p99 and longest frame (ms), and frames past 33
+and 50 ms (two and three 60 Hz frames: the stutters a percentile hides):
+
+| Step | Native 1 (cold) | Xenos 1 (cold) | Native 2 (warm) | Xenos 2 (warm) |
+|---|---|---|---|---|
+| Main menu, 15 s | 240.7 fps; 5.6 / 7.5; 0, 0 | 97.4 fps; 12.4 / 17.2; 0, 0 | 229.5 fps; 5.4 / 7.7; 0, 0 | 97.1 fps; 12.6 / 16.5; 0, 0 |
+| Town, still, 40 s | 108.1 fps; 20.5 / 154.9; 2, 2 | 48.4 fps; 35.7 / 216.2; 47, 5 | 110.5 fps; 20.7 / 209.8; 3, 2 | 55.5 fps; 34.3 / 205.0; 30, 3 |
+| Town, walking, 40 s | 81.0 fps; 15.6 / 22.5; 0, 0 | 32.3 fps; 40.3 / 46.9; 459, 0 | 75.3 fps; 18.1 / 20.5; 0, 0 | 36.9 fps; 38.4 / 41.5; 168, 0 |
+| Dungeon, still, 40 s | 115.1 fps; 10.6 / 15.0; 0, 0 | 61.1 fps; 20.6 / 25.2; 0, 0 | 134.8 fps; 9.2 / 11.9; 0, 0 | 66.9 fps; 17.3 / 22.3; 0, 0 |
+| Dungeon, fighting, 40 s | 90.8 fps; 16.3 / 85.4; 1, 1 | 45.2 fps; 37.3 / 148.8; 63, 4 | 99.9 fps; 13.9 / 190.5; 3, 2 | 51.4 fps; 32.3 / 320.1; 16, 6 |
+
+Native frame rate over Xenos's, run against run: cold 2.47 / 2.23 / 2.51 / 1.88 / 2.01, warm
+2.36 / 1.99 / 2.04 / 2.01 / 1.94 (in the order of the table's rows).
+
+Level loads (`level load`), ms:
+
+| Load | Native 1 | Xenos 1 | Native 2 | Xenos 2 |
+|---|---|---|---|---|
+| Main menu to the town (a new character) | 7454 | 14833 | 7604 | 12315 |
+| Town to the mine's first floor | 5417 | 9260 | 5079 | 7869 |
+
+CPU: the whole process as a percentage of one core, and the CPU time per frame it gives (process CPU
+over the step's frame rate). With no frame cap both renderers keep the game's main thread at 99-100 %
+of a core (it runs as fast as it can), so the process total is not comparable by itself; per frame
+it is:
+
+| Step | Native 1 | Xenos 1 | Native 2 | Xenos 2 |
+|---|---|---|---|---|
+| Main menu | 247 %, 10.3 ms | 180 %, 18.5 ms | 246 %, 10.7 ms | 174 %, 17.9 ms |
+| Town, still | 216 %, 20.0 ms | 180 %, 37.2 ms | 218 %, 19.7 ms | 180 %, 32.4 ms |
+| Town, walking | 212 %, 26.2 ms | 183 %, 56.7 ms | 205 %, 27.2 ms | 180 %, 48.8 ms |
+| Dungeon, still | 223 %, 19.4 ms | 181 %, 29.6 ms | 223 %, 16.5 ms | 172 %, 25.7 ms |
+| Dungeon, fighting | 216 %, 23.8 ms | 194 %, 42.9 ms | 217 %, 21.7 ms | 184 %, 35.8 ms |
+
+Busiest threads: native, the game's main thread 100 %, the backend's thread (`torchlight`) 72-79 %
+and the SDK's GPU command thread 25-64 %; Xenos, the main thread 99 %, GPU commands 32-47 % and
+`torchlight` 29-40 %.
+
+**Results**: on this machine the native renderer ran the game about twice as fast as Xenos (1.9 to
+2.5 times the frame rate in every step, cold and warm), loaded the town 1.6-2.0 times and the mine
+1.5-1.7 times faster, used about half the CPU time per frame, and had almost no long frames: 0-3
+frames past 33 ms per 40 s step against up to 459 (Xenos, walking in the town, where its mean frame
+is about 31 ms). Not measured: other GPUs (Intel and Windows pending), runs with a frame cap, and
+the Windows release's OGRE build (`/Ob1`).
+
+**Open**: the native renderer still has a few long frames with warm caches (209.8 ms on arriving in
+the town, 190.5 ms in a fight): not shader compilation, to be traced.
+
 ## Controlled follow-up results
 
 Repeated untraced captures at the saved pond support a real RelWithDebInfo

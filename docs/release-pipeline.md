@@ -502,6 +502,18 @@ announces it.
   the run before the approval is asked for otherwise: a `v*` tag on `develop` cannot publish. The
   check is in the `release.yml` of the tagged commit, so it covers every commit of `develop` from
   the one that added it on.
+- **OGRE in the Windows release is RelWithDebInfo** (MSVC `/O2 /Ob1`: inlining limited to functions
+  marked inline), while the game and the SDK are Release and the Linux release's OGRE is `-O3`.
+  `ci.yml`'s deps-windows builds it with `tools/build-deps/windows.ps1 -Configs RelWithDebInfo`, and
+  the top `CMakeLists.txt` maps the game's Release to those libraries
+  (`CMAKE_MAP_IMPORTED_CONFIG_RELEASE Release RelWithDebInfo`). To do: build OGRE Release (`/O2 /Ob2`)
+  for the package, measure it against RelWithDebInfo on Windows (docs/performance-profile.md, the
+  native/Xenos method), and keep RelWithDebInfo only where symbols are wanted. Careful with the
+  dependency key: `tools/deps/key.sh windows` hashes `windows.ps1` and `windows_toolchain.ps1` but
+  not the `-Configs` that `ci.yml` passes, so changing only `-Configs` keeps the key and CI keeps
+  downloading the published `deps-windows-<key>` with RelWithDebInfo. The change has to reach what
+  the key covers (for example windows.ps1's default configurations), or the key has to include the
+  configurations.
 
 ## Sources
 

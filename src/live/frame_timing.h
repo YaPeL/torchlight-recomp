@@ -1,5 +1,6 @@
 // Guest frame time (swap to swap), always measured and summarised in the log every 10 s, with
-// or without the live mode, so the two can be compared.
+// or without the live mode, so the two can be compared; and the game's level loads, timed by the
+// level load hook (achievements/guest_hooks.cpp). docs/performance-profile.md uses both.
 
 #pragma once
 
@@ -19,5 +20,8 @@ class FrameTiming {
   std::chrono::steady_clock::time_point last_swap_{}, last_summary_{};
   std::vector<double> frame_ms_;
 };
+
+// "level load: N ms" in the log: one call of the guest's level load (guest_abi kLevelLoad).
+void LogLevelLoad(std::chrono::milliseconds duration);
 
 }  // namespace torchlight::live
