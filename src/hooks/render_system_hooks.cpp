@@ -6,6 +6,8 @@
 #include <initializer_list>
 #include <span>
 
+#include <rex/cvar.h>
+#include <rex/logging.h>
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 
@@ -14,6 +16,11 @@
 #include "capture/translate.h"
 #include "guest_abi/ogre_enums.h"
 #include "guest_abi/ogre_layout.h"
+#include "hooks/guest_d3d_skip.h"
+
+REXCVAR_DEFINE_BOOL(native_skip_guest_d3d, false, "Torchlight",
+                    "Native mode only: skip the guest's D3D work for RenderSystem calls whose only "
+                    "effect is the Xenos device (docs/native-skip-guest-d3d.md)");
 
 namespace {
 
@@ -22,6 +29,9 @@ namespace cmd = torchlight::commands;
 namespace cap = torchlight::capture;
 namespace abi = torchlight::guest_abi;
 namespace ogre = torchlight::guest_abi::ogre;
+
+// InstallGuestD3DSkip's decision for the session (guest_d3d_skip.h).
+bool g_skip_guest_d3d = false;
 
 uint32_t R(const PPCRegister& r) { return r.u32; }
 float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
@@ -40,7 +50,8 @@ float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
     __imp__sub_##addr(ctx, base);                    \
   }
 
-// Recording override: `body` runs before the original and may use ctx/base/s.
+// Recording override: `body` runs before the original and may use ctx/base/s. The original is
+// skipped for the slots of guest_d3d_skip.h when the session decided so.
 #define RECORD_HOOK(slot, addr, body)                \
   SLOT_ADDRESS_CHECK(slot, addr);                    \
   REX_EXTERN(__imp__sub_##addr);                     \
@@ -53,6 +64,9 @@ float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
                                cap::ProducerSection::kCommands, s.measuring()); \
       cap::HookTimer hook_timer(s.hook_costs(), slot, s.measuring()); \
       body;                                          \
+    }                                                \
+    if constexpr (torchlight::hooks::SkippableSlot(slot)) { \
+      if (g_skip_guest_d3d) return;                  \
     }                                                \
     __imp__sub_##addr(ctx, base);                    \
   }
@@ -502,6 +516,17 @@ SlotAttribution GetSlotAttribution(uint32_t slot) {
     default:
       return {true, ""};
   }
+}
+
+}  // namespace torchlight::hooks
+
+namespace torchlight::hooks {
+
+void InstallGuestD3DSkip(bool native_only) {
+  g_skip_guest_d3d = SkipGuestD3D(native_only, REXCVAR_GET(native_skip_guest_d3d));
+  REXLOG_INFO("guest D3D: {} (--native_skip_guest_d3d={}, native mode {})",
+              g_skip_guest_d3d ? "skipped for the device-only RenderSystem calls" : "runs in full",
+              REXCVAR_GET(native_skip_guest_d3d), native_only ? "on" : "off");
 }
 
 }  // namespace torchlight::hooks

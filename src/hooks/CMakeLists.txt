@@ -22,3 +22,10 @@ add_executable(guest_copy_test guest_copy_test.cpp)
 target_link_libraries(guest_copy_test PRIVATE torchlight_guest_copy)
 target_compile_options(guest_copy_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME guest_copy_test COMMAND guest_copy_test)
+
+# The guest D3D skip decision (guest_d3d_skip.h, header only): which slots, in which mode.
+add_executable(guest_d3d_skip_test guest_d3d_skip_test.cpp)
+target_include_directories(guest_d3d_skip_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(guest_d3d_skip_test PRIVATE cxx_std_23)
+target_compile_options(guest_d3d_skip_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME guest_d3d_skip_test COMMAND guest_d3d_skip_test)

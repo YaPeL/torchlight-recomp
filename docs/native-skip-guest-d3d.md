@@ -70,8 +70,8 @@ member); **C** keep (lifecycle, frame, targets, sync, queries, getters, resource
 | Slot | Function | Calls | What OGRE 1.7 D3D9 does (*hypothesis*) | Guest-readable state | Class |
 |---|---|---|---|---|---|
 | 44 | `_setTextureUnitFiltering` (one filter) | 915 | sampler state | device sampler state | A |
-| 45 | `_setTextureUnitFiltering` (min/mag/mip) | 305 | calls slot 44 three times (confirmed) | none of its own | A |
-| 43 | `_setTextureBlendMode` | 610 | render and texture stage states | device states | A |
+| 45 | `_setTextureUnitFiltering` (min/mag/mip) | 305 | calls slot 44 three times (confirmed) | none of its own | keep: our slot 44 hook records through it |
+| 43 | `_setTextureBlendMode` | 610 | render and texture stage states; in the guest, members only (step a) | render system members at `+144 + 32 * unit` | keep |
 | 47 | `_setTextureAddressingMode` | 305 | sampler state | device | A |
 | 46 | `_setTextureLayerAnisotropy` | 277 | sampler state | device | A |
 | 49 | `_setTextureMipmapBias` | 277 | sampler state | device | A |
@@ -158,6 +158,76 @@ Each step is its own commit, behind the same cvar, and is measured before the ne
    binary, focusing on the two slow stretches (dungeon fight with the NPC, town walking).
 6. Soak, once per class: new character, level loads up and down, town portal, menus, inventory,
    a cutscene, saving and loading, quitting to the dashboard; no new errors in the log.
+
+## Step a: evidence (2026-10-07)
+
+Recompiled code read for slots 43-47 and 49 and every helper they call; device offsets are from
+the device pointer in the global `0x8355A2E4` (`guest_abi` `xbox_d3d::kActiveDeviceGlobal`).
+
+- **The Xbox D3D keeps sampler state inside the device's texture fetch constants**, at
+  `device + 1152 + 24 * sampler` (six words per sampler), marks them in the dirty mask at
+  `device + 24` (bit `32 + sampler`), and keeps the maximum anisotropy per sampler in the byte at
+  `device + 10864 + sampler`.
+- **Slot 44** `_setTextureUnitFiltering` (`0x821CA470`): reads the stage's texture type
+  (`this + 24 * (unit + 37)`, `@0x821CA4A8`) and the caps (`this + 2184`), maps the filter
+  (`0x821CA528`) and calls `0x821CA620`, OGRE's `__SetSamplerState`: it reads the current value
+  through the device's getter table (`device + 952 + type`, `@0x821CA648`) and, when different,
+  writes it through the setter table (`device + 468 + type`, `@0x821CA66C`). On failure it throws
+  (`@0x821CA510`). No store to the render system. **Device only.**
+- **Slot 45** (`0x821CA3F0`): three virtual calls to slot 44 (`vt + 0xB0`, `@0x821CA420`,
+  `@0x821CA440`, `@0x821CA460`), nothing else. All 915 calls of slot 44 per frame come from it
+  (3 x 305). Our slot 44 hook records the filters (`SetSamplerFilter`) and slot 45's only counts,
+  so **slot 45 keeps running**: skipping it would drop those commands.
+- **Slot 46** `_setTextureLayerAnisotropy` (`0x821CAD08`): clamps to the caps' maximum
+  (`@0x821CAD24`), reads the device byte (`0x821CAD78`) and writes it with `0x82768830`, which
+  also rewrites the sampler's fetch constant filter bits and sets the dirty bit. **Device only.**
+- **Slot 47** `_setTextureAddressingMode` (`0x821CA1A8`): for U, V and W reads the current clamp
+  bits of the fetch constant (`0x821CA3D8`, `0x821CA190`, `0x821CA3C0`) and, when different,
+  writes them in place (`stwx` `@0x821CA264`, `@0x821CA304`, `@0x821CA3A4`) and sets the dirty bit
+  (`@0x821CA270`, `@0x821CA310`, `@0x821CA3B0`). **Device only.**
+- **Slot 49** `_setTextureMipmapBias` (`0x821CA880`): when the caps allow it (`this + 764`,
+  `@0x821CA8A0`), reads the bias from the fetch constant (`0x821CA8F0`) and writes it with
+  `0x82768940`. **Device only.**
+- **Slot 43** `_setTextureBlendMode` (`0x821C9100`): no device call at all; it stores the blend
+  colours in the render system, `this + 144 + 32 * unit` (`@0x821C91A8`, `@0x821C91B0`,
+  `@0x821C92BC`, `@0x821C92C4`): a Runic difference (OGRE 1.7 PC sets texture stage states). Not a
+  candidate; it stays.
+- **Other readers of that device state.** The getter table (`device + 952`) is used only by
+  `0x821CA620`. The read-back helpers are called only by the slots above and by the `_endFrame`
+  wrapper `0x821B1000` (`@0x821B1260`, `@0x821B1274`), which saves sampler 0's state, sets its own
+  for a full-screen pass (`0x82198A08`) and restores what it saved (`@0x821B1438..@0x821B1490`):
+  the values only go back into the device. The anisotropy byte is also read by `0x821AF998` and
+  `0x821B6010` (filter setters, called only from that wrapper). Everything else that reads the
+  fetch constants builds GPU packets, which the `null` plugin drops. Our producer reads none of
+  it (`ActiveDevice` is only a key of the per-device resource maps).
+
+Conclusion: in the native mode, slots **44, 46, 47 and 49** can skip the guest implementation;
+43 and 45 keep it. What it is worth: in the slow stretch of the profile (dungeon fight, last
+15 s) those four implementations take about 1 % of the main thread together (0.54 % of all
+samples). The guest's D3D under the RenderSystem is mostly elsewhere: the D3D9 `_render`
+(`0x821C4058`) about 5.8 % of all samples (about 12 % of the main thread), of which the draw
+itself, after the declaration and stream bindings, about 3 %; `bindGpuProgramParameters` 0.7 %;
+`_setTexture` 0.6 %. All of the guest's D3D work together is about 13 % of the main thread; most of
+it is in the last step.
+
+## Step a: implemented and validated (2026-10-07)
+
+`--native_skip_guest_d3d=true` skips slots 44, 46, 47 and 49 (`hooks/guest_d3d_skip.h`,
+`RECORD_HOOK` in `hooks/render_system_hooks.cpp`); the decision is tested in `guest_d3d_skip_test`.
+Validation, same binary with the cvar off and on, the fixed-floor saved game, a session recording
+(`--live_record`) and an F9 capture standing still where the player arrives:
+
+- The 20 replays: byte for byte as before (the replay does not run the guest).
+- Session recordings: the same sampler states sent (19 distinct in the menus, 22 in the dungeon,
+  equal sets); the commands per guest frame equal within 1-3 % (the animation; the menu range mixes
+  the title screen and the menu, which each run spent a different time on).
+- F9 captures: the same 40 sampler commands; 185 against 184 draws (an animated effect); the two
+  replays differ by 32.3 dB PSNR, where two runs before any change differ by 33.2 dB, and only in
+  what moves (the pet, the character's pose, a glow): textures, filtering and addressing equal.
+- Xenos: not run; the decision never skips outside `--native_live=only` (the test), and the log's
+  first lines say what was decided.
+
+Not measured: by the profile its gain is about 1 % of the main thread, below the noise of a run.
 
 ## Decisions (2026-10-07)
 
