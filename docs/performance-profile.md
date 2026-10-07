@@ -180,6 +180,61 @@ project's producer (11 %) and libc (8 %). The backend thread is not the limit (4
 there against 11 ms on the main thread). The guest's D3D work under the RenderSystem, which in the
 native mode prepares a Xenos GPU nobody reads, is the next candidate.
 
+## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
+
+The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
+inline are inlined; `docs/release-pipeline.md`, 5.8). The same game run with OGRE built Release
+(`/O2 /Ob2`) instead, everything else equal, in the native mode on Direct3D 11.
+
+**Machine**: AMD Ryzen 7 5700X3D (8 cores, 16 threads), NVIDIA GeForce RTX 5080 (driver
+32.0.16.1088), 32 GB RAM, Windows 11 Pro (build 26200), a 3840x2160 display at 120 Hz.
+
+**Build**: the game as the Windows release builds it (`win-amd64-release`, `-O3 -DNDEBUG -g`,
+clang 21.1.8), the SDK's Release libraries (`patches/series` up to 19), and OGRE 14.6.0 built by
+`tools/build-deps/windows.ps1` with `-Configs RelWithDebInfo` (`OgreMain.dll` 7.3 MB) or
+`-Configs Release` (3.3 MB). Two install trees that differ only in OGRE's DLLs and plugins.
+
+**Method**: the one above, with the same temporary step overlay (built locally, not integrated):
+fresh copies of every user folder per run (`--user_data_root` and the tests' user folder variable,
+as `XDG_*_HOME` on Linux), a new character each time, Direct3D 11, internal resolution 1280x720 in
+a 3840x2160 fullscreen window, no frame cap and no vsync (`--vsync=false`). Runs alternated
+(RelWithDebInfo 1, Release 1, RelWithDebInfo 2); run 1 of each with no OGRE shader cache, run 2
+with run 1's. NVIDIA's own Direct3D shader cache lives outside the run's folders and was not
+cleared, so only the very first run met it empty; both variants compile the same shaders. CPU: the
+process's CPU time sampled every second, averaged over each step. A fourth run (Release 2) was not
+made: the three that were already answered the question.
+
+Frame rate (fps, mean over the step); p99 and longest frame (ms); frames past 33 and 50 ms; process
+CPU (% of one core) and CPU time per frame:
+
+| Step | RelWithDebInfo 1 (cold) | Release 1 (cold) | RelWithDebInfo 2 (warm) |
+|---|---|---|---|
+| Main menu, 40 s | 311.9; 3.9 / 5.6; 0, 0; 184 %, 5.9 ms | 311.6; 4.0 / 6.7; 0, 0; 182 %, 5.8 ms | 310.7; 4.2 / 6.4; 0, 0; 185 %, 6.0 ms |
+| Town, still, 40 s | 146.3; 13.9 / 159.5; 2, 2; 186 %, 12.7 ms | 146.6; 14.1 / 157.7; 2, 2; 184 %, 12.6 ms | 144.8; 14.4 / 156.0; 2, 2; 187 %, 12.9 ms |
+| Town, walking, 40 s | 98.3; 13.1 / 15.7; 0, 0; 180 %, 18.3 ms | 99.8; 12.6 / 16.9; 0, 0; 183 %, 18.3 ms | 99.3; 12.9 / 19.0; 0, 0; 182 %, 18.4 ms |
+| Dungeon, still, 40 s | 199.7; 6.3 / 9.1; 0, 0; 178 %, 8.9 ms | 178.5; 6.9 / 8.8; 0, 0; 186 %, 10.4 ms | 161.3; 8.0 / 12.3; 0, 0; 195 %, 12.1 ms |
+| Dungeon, fighting, 40 s | 134.8; 10.4 / 176.2; 3, 2; 188 %, 13.9 ms | 119.8; 11.0 / 17.4; 0, 0; 189 %, 15.8 ms | 149.9; 9.8 / 15.0; 0, 0; 192 %, 12.8 ms |
+
+Level loads (`level load`), ms:
+
+| Load | RelWithDebInfo 1 | Release 1 | RelWithDebInfo 2 |
+|---|---|---|---|
+| Main menu to the town (a new character) | 6440 | 6401 | 6338 |
+| Town to the mine's first floor | 4378 | 3820 | 3925 |
+
+**Results**: no measurable difference. Where a step repeats the same scene every run (the main
+menu, the town still and walking) the two builds are within 1 % of each other in frame rate, p99
+and CPU time per frame. The dungeon steps depend on where the player stands and fights each time
+and vary more between two runs of the same build (199.7 against 161.3 fps standing still) than
+between the builds. The loads are within run-to-run variation too. The main thread is the limit
+(the process holds 180-195 % of a core in every step, as on Linux), not OGRE's code, so OGRE's
+inlining does not show. The game runs correctly with OGRE Release (a whole run without errors).
+The Windows release keeps OGRE RelWithDebInfo, which also keeps its symbols for crash reports.
+
+Also seen: on this machine the startup's OpenGL 3.3 probe (`platform::CanCreateGl33Context`) takes
+about 180 ms (NVIDIA's driver initializing; 4.6 ms on Windows' own OpenGL in a sandbox without a
+GPU), on the critical path before the backend starts.
+
 ## Controlled follow-up results
 
 Repeated untraced captures at the saved pond support a real RelWithDebInfo
