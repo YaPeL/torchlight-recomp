@@ -210,6 +210,25 @@ itself, after the declaration and stream bindings, about 3 %; `bindGpuProgramPar
 `_setTexture` 0.6 %. All of the guest's D3D work together is about 13 % of the main thread; most of
 it is in the last step.
 
+## Step a: implemented and validated (2026-10-07)
+
+`--native_skip_guest_d3d=true` skips slots 44, 46, 47 and 49 (`hooks/guest_d3d_skip.h`,
+`RECORD_HOOK` in `hooks/render_system_hooks.cpp`); the decision is tested in `guest_d3d_skip_test`.
+Validation, same binary with the cvar off and on, the fixed-floor saved game, a session recording
+(`--live_record`) and an F9 capture standing still where the player arrives:
+
+- The 20 replays: byte for byte as before (the replay does not run the guest).
+- Session recordings: the same sampler states sent (19 distinct in the menus, 22 in the dungeon,
+  equal sets); the commands per guest frame equal within 1-3 % (the animation; the menu range mixes
+  the title screen and the menu, which each run spent a different time on).
+- F9 captures: the same 40 sampler commands; 185 against 184 draws (an animated effect); the two
+  replays differ by 32.3 dB PSNR, where two runs before any change differ by 33.2 dB, and only in
+  what moves (the pet, the character's pose, a glow): textures, filtering and addressing equal.
+- Xenos: not run; the decision never skips outside `--native_live=only` (the test), and the log's
+  first lines say what was decided.
+
+Not measured: by the profile its gain is about 1 % of the main thread, below the noise of a run.
+
 ## Decisions (2026-10-07)
 
 - **Cvar**: `native_skip_guest_d3d` (bool, default `false`): in the native mode, the RenderSystem
