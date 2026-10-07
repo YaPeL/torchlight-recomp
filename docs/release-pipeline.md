@@ -522,14 +522,15 @@ announces it.
   marked inline), while the game and the SDK are Release and the Linux release's OGRE is `-O3`.
   `ci.yml`'s deps-windows builds it with `tools/build-deps/windows.ps1 -Configs RelWithDebInfo`, and
   the top `CMakeLists.txt` maps the game's Release to those libraries
-  (`CMAKE_MAP_IMPORTED_CONFIG_RELEASE Release RelWithDebInfo`). To do: build OGRE Release (`/O2 /Ob2`)
-  for the package, measure it against RelWithDebInfo on Windows (docs/performance-profile.md, the
-  native/Xenos method), and keep RelWithDebInfo only where symbols are wanted. Careful with the
-  dependency key: `tools/deps/key.sh windows` hashes `windows.ps1` and `windows_toolchain.ps1` but
-  not the `-Configs` that `ci.yml` passes, so changing only `-Configs` keeps the key and CI keeps
-  downloading the published `deps-windows-<key>` with RelWithDebInfo. The change has to reach what
-  the key covers (for example windows.ps1's default configurations), or the key has to include the
-  configurations.
+  (`CMAKE_MAP_IMPORTED_CONFIG_RELEASE Release RelWithDebInfo`). Measured 2026-10-07 against OGRE
+  Release (`/O2 /Ob2`) in the native mode on Direct3D 11 (docs/performance-profile.md, "OGRE Release
+  against RelWithDebInfo on Windows"): no measurable difference, the game's main thread being the
+  limit. The release keeps RelWithDebInfo, and with it OGRE's symbols. The dependency key
+  covers the configurations since 2026-10-07: `tools/deps/key.sh` holds the ones CI builds for
+  Windows, hashes them into `key.sh windows`, and prints them with `key.sh windows-configs`, which
+  `ci.yml`'s deps-windows passes to `windows.ps1 -Configs` and `-SdkConfigs`. Changing them there
+  changes the Windows key (and not the Linux one), so CI builds and publishes a new
+  `deps-windows-<key>` instead of reusing the RelWithDebInfo one.
 
 ## Sources
 
