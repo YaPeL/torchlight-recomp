@@ -244,8 +244,10 @@ used the same system settings). Fullscreen 1280x720, vsync off, no frame cap. Qu
 as possible to what the native mode draws: the backend adds no anti-aliasing, so FSAA off on the
 PC (set in the game's options); shadows and rim lighting on. The shadow texture was set to 512 in
 `local_settings.txt` (the 360 renders two 512x512 targets in a dungeon capture; the PC default is
-1024), but the game wrote 1024 back when the options were saved, so which size this run used is
-not known.
+1024), but the game wrote 1024 back when the options were saved, so which size the first run
+used (menu, still steps, town walk, drop and pick-up) is not known. The second run (fight and
+armour) left the options alone and kept 512 (the game reads the setting with 512 as its default,
+`0x5FE3CA`).
 
 **Saved game**: the recomp's fixed-floor character, converted to PC
 (`tools/save_convert/convert_to_pc.py`): every reference exists in the PC data; two random quests
@@ -264,34 +266,36 @@ than the rates.
 |---|---|---|---|
 | Main menu | 299 / 4.6 / 7.5 / 0 / 0 | 322 / 4.9 / 58.3 / 7 / 5 | 1.08 |
 | Dungeon, still | 164 / 8.0 / 34.1 / 1 / 0 | 247 / 6.0 / 57.4 / 8 / 7 | 1.51 |
-| Dungeon, fighting | 118 / 12.5 / 89.2 / 2 / 2 | not recorded yet | |
+| Dungeon, fighting | 118 / 12.5 / 89.2 / 2 / 2 | 163 / 15.8 / 124.8 / 23 / 14 | 1.38 |
 | Town, still | 190 / 7.0 / 10.8 / 0 / 0 | 247 / 6.0 / 57.5 / 9 / 7 | 1.30 |
 | Town, walking | 105 / 13.2 / 22.1 / 0 / 0 | 124 / 21.2 / 176.5 / 20 / 13 | 1.18 |
 | Dropping and picking up an item | (no spike) | 141 / 16.3 / 250.2 (186-250 ms on each drop or pick-up) | |
+| Equipping and removing armour, 40 s | spikes of 84-99 ms (long frame lines) | 157 / 22.2 / 202.8 / 49 / 42 (100-203 ms on each change) | |
 
 (times in ms)
 
 **What it says**:
 
-- **Standing still, the PC runs 1.3 to 1.5 times our frame rate.** That is the clearest margin:
+- **Standing still and fighting, the PC runs 1.3 to 1.5 times our frame rate** (fighting 1.38). That is the clearest margin:
   a fixed cost per frame on our side (the recompiled game logic on its single main thread, at
   100 % of a core, and the producer), not the scene.
 - **Walking in the town the gap shrinks to 1.18**, and the main menu is close (1.08): with more
   of the game's own work per frame both are bound by the same thing.
 - **Long frames: the recomp is smoother than the PC.** Walking in the town the PC had 20 frames
   past 33 ms (up to 177 ms) against none; dropping or picking up an item cost the PC 186-250 ms
-  each time, where the recomp shows no spike. The recomp's worst, assembling equipment models in a
-  fight (84-99 ms), is still to be compared with the PC doing the same.
+  each time, where the recomp shows no spike. In the fight the PC had 23 frames past 33 ms (up to
+  125 ms) against 1-3. **Equipment spike**: changing armour costs the PC 100-203 ms per change,
+  about twice the recomp's 84-99 ms; the spike is the game's own model assembly, and the native
+  mode already does it faster than the PC under Proton.
 - **Every 5.0 s exactly the PC shows a frame of about 55 ms**, menu included. The period points to
   the tools (MangoHud, Proton or Steam) more than to the game; not explained, so not used for any
   conclusion (it accounts for most of the PC's long frames in the still steps).
 - **The PC numbers are a floor**: Proton and DXVK translate every D3D9 call; native Windows would
   likely be somewhat faster.
 
-**Still to do**: the fight and equipping armour on the PC (the equipment spike), with the shadow
-size confirmed (each run starts again from the converted save: the game saves over it), and the PC
-counterparts of the guest functions in that spike (`0x822DC6B0`, `0x822C08E0`) to time them with
-`perf` on the Wine process.
+**Not done**: timing the PC counterparts of the guest functions in the equipment spike
+(`0x822DC6B0`, `0x822C08E0`) with `perf` on the Wine process: they are not identified in the PC
+executable yet, and the frame times already show the PC spending longer on the same work.
 
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
