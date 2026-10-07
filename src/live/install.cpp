@@ -20,6 +20,7 @@
 #include <rex/ui/presenter.h>
 
 #include "hooks/video_mode.h"
+#include "live/deferred_check.h"
 #include "live/live_mode.h"
 #include "live/ui_gamepad.h"
 #include "live/ui_overlay.h"
@@ -199,6 +200,17 @@ std::string g_gpu_error;
 
 // The settings while running (only mode): what the machine offers, the settings normalized against
 // it at Install and as changed since by the menu.
+// Whether OpenGL 3.3, which GL3+ needs, can run here (platform::CanCreateGl33Context, timed): at
+// startup when the session would use GL3+, else when the settings menu is built (HostCapabilities).
+DeferredCheck g_gl33([] {
+  const auto start = std::chrono::steady_clock::now();
+  const bool gl33 = platform::CanCreateGl33Context();
+  const double ms =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  REXLOG_INFO("live: OpenGL 3.3 {} ({:.1f} ms to check)", gl33 ? "available" : "not available", ms);
+  return gl33;
+});
+
 struct RunningSettings {
   std::mutex mutex;
   settings::Capabilities caps;
@@ -307,13 +319,16 @@ void InitRunningSettings(const std::filesystem::path& game_data_root, rex::Runti
   }
   // GL3+ needs OpenGL 3.3 and OGRE crashes without it (Windows with no GPU driver): it stays
   // installed, a saved choice of it is kept, and the session uses another (EffectiveRenderSystem).
-  const auto probe_start = std::chrono::steady_clock::now();
-  const bool gl33 = platform::CanCreateGl33Context();
-  const double probe_ms =
-      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - probe_start).count();
-  REXLOG_INFO("live: OpenGL 3.3 {} ({:.1f} ms to check)", gl33 ? "available" : "not available",
-              probe_ms);
-  if (!gl33) caps.unavailable_render_systems = {kGl3PlusRenderSystemName};
+  // The probe costs ~150-180 ms with a GPU driver, so it runs here only when the session would use
+  // GL3+ and could fall back; otherwise it runs when the game builds its settings menu, which asks
+  // for the capabilities to list the render systems (HostCapabilities; while the title screen
+  // loads, not when the player opens Settings).
+  if (settings::StartupNeedsRenderSystemCheck(caps, g_host_settings.values.render_system,
+                                              kGl3PlusRenderSystemName)) {
+    if (!g_gl33.Result()) caps.unavailable_render_systems = {kGl3PlusRenderSystemName};
+  } else {
+    REXLOG_INFO("live: OpenGL 3.3 check deferred to the settings menu");
+  }
   for (const platform::Gpu& gpu : platform::SelectableGpus(platform::Gpus())) {
     caps.gpus.push_back({gpu.id, gpu.name, gpu.boot});
   }
@@ -543,7 +558,12 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
 std::string LanguagePack() { return g_language_pack; }
 
 settings::Capabilities HostCapabilities() {
+  // The deferred OpenGL 3.3 check, run outside the lock, when startup did not need it: the game
+  // builds its settings menu, with our video column, once while the title screen loads (game
+  // thread).
+  const bool gl33 = g_gl33.Result();
   std::lock_guard lock(g_running.mutex);
+  if (!gl33) g_running.caps.unavailable_render_systems = {kGl3PlusRenderSystemName};
   return g_running.caps;
 }
 
