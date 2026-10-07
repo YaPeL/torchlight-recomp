@@ -18,7 +18,6 @@
 #include <rex/thread.h>
 
 #include "guest_abi/guest_functions.h"
-#include "live/install.h"
 
 namespace {
 
@@ -38,9 +37,7 @@ extern "C" {
 FUNCTION_ADDRESS_CHECK(kGpuProgressWaitStep, 82774170);
 REX_EXTERN(__imp__sub_82774170);
 REX_FUNC(sub_82774170) {
-  // TEMPORARY (perf/native-vs-xenos): Xenos is measured without this project's optimizations.
-  static const bool sleep = torchlight::live::OnlyMode();
-  if (sleep) rex::thread::Sleep(kWaitStepSleep);
+  rex::thread::Sleep(kWaitStepSleep);
   __imp__sub_82774170(ctx, base);
 }
 
