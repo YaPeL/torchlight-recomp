@@ -1,4 +1,5 @@
 #include "live/install.h"
+#include "live/frame_counter.h"
 
 #include <algorithm>
 #include <atomic>
@@ -112,14 +113,24 @@ void RequestDialogFrame() {
     Dialogs* d = g_dialogs.get();
     if (!d) return;
     d->frame_requested = false;
+    // The frame counter (frame_counter.h) is drawn but is not a dialog that takes the input: it is
+    // left out of "a dialog is open".
+    rex::ui::ImGuiDialog* counter = FrameCounterDialog();
+    if (counter) d->drawer->RemoveDialog(counter);
     const bool open = d->drawer->HasDialogs();
+    if (counter) d->drawer->AddDialog(counter);
     const platform::GamepadState pad = platform::ReadGamepad();
     g_guest_input_blocked = BlockGuestInput(open, g_guest_input_blocked.load(), pad);
-    if (open) {
-      // Gamepad navigation (the drawer itself only takes keyboard, mouse and touch).
+    if (open || counter) {
+      // Gamepad navigation (the drawer itself only takes keyboard, mouse and touch), only for the
+      // dialogs.
       ImGuiIO& io = d->drawer->GetIO();
-      io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-      if (pad.connected) {
+      if (open) {
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+      } else {
+        io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+      }
+      if (open && pad.connected) {
         io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
         for (const UiGamepadKey& k : GamepadToImGui(pad)) {
           io.AddKeyAnalogEvent(k.key, k.down, k.value);
@@ -459,6 +470,7 @@ void PreSetup(rex::RuntimeConfig& config) {
 void Install(const std::filesystem::path& game_data_root, const DialogHost& dialogs) {
   // Before the guest runs, in every mode.
   ApplyLanguage(g_host_settings.values.language, game_data_root);
+  InstallFrameCounter(dialogs.runtime);
   if (!Only()) BlockGuestInputUnderXamDialogs(dialogs.runtime);
   std::string mode = Mode();
   if (mode == "off") return;
