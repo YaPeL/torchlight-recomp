@@ -256,9 +256,11 @@ allocates a `CMod`); the matching free is `sub_821CD9A8`. The data manager's des
 vtable does not exist on Xbox, the object uses `CRunicCore`'s own vtable `0x820D61FC`, whose slot 0
 `sub_823DECE0` runs the base destructor (nothing to do with `+4` = 0) and frees the object with
 `sub_821CD9A8`. The list buffer and the `CMod` objects are not freed then (PC's destructor would);
-that only happens when the data manager itself is destroyed, at shutdown. **[read]** Whether the
-data manager is ever destroyed and rebuilt while the game runs (a data reload) is **[to verify]**;
-if it is, the manager is built again for the new one.
+that only happens when the data manager itself is destroyed, at shutdown. **[read]** The data
+manager is never rebuilt while the game runs: its constructor is called only by the global data
+loader `sub_8231FF28` (`new(136)` @`0x823200BC`), which only `CGame`'s vtable slot 2 `sub_82206000`
+calls; that method loads `plugins.cfg` and sets the engine up, once per process. **[read]** So the
+host builds the mod manager once, and nothing frees it twice.
 
 ## 8. Where mods go on our side
 
