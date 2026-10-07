@@ -1,7 +1,7 @@
 // The internal render scale (tl_backend_set_render_scale) and the guest's frame size
 // (tl_backend_set_guest_size) on an offscreen backend: targets keep the guest's sizes for viewports
-// and reads at any scale, and both can change between frames. Needs a GL context (a display);
-// skipped without one.
+// and reads at any scale, and both can change between frames. With the render system of its
+// command line (test_render_system.h). Needs a display; skipped without one.
 
 #include <cstdio>
 #include <cstdlib>
@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "backend/backend_api.h"
+#include "backend/test_render_system.h"
 #include "platform/platform.h"
 
 namespace {
@@ -64,14 +65,16 @@ void CheckHalves(tl_backend* b, const char* when) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  torchlight::backend_test::RenderSystemArgs args;
+  if (!torchlight::backend_test::ParseRenderSystemArgs(argc, argv, args)) return 2;
   if (!torchlight::platform::HasDisplay()) {
     std::printf("render scale test: skipped (no display)\n");
     return 77;
   }
   char error[512] = {};
-  tl_backend* b = tl_backend_create(TL_RENDER_SYSTEM_GL3PLUS, nullptr, kWidth, kHeight, nullptr, nullptr,
-                                    error, sizeof(error));
+  tl_backend* b = tl_backend_create(args.render_system, args.gpu.c_str(), kWidth, kHeight, nullptr,
+                                    nullptr, error, sizeof(error));
   if (!b) {
     std::fprintf(stderr, "backend: %s\n", error);
     return 1;
@@ -159,6 +162,6 @@ int main() {
 
   tl_backend_destroy(b);
   if (failures) return 1;
-  std::printf("render scale test: ok\n");
+  std::printf("render scale test (%s): ok\n", args.name);
   return 0;
 }

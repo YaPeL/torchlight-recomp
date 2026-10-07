@@ -252,8 +252,9 @@ jobs:
           if ($LASTEXITCODE) { exit 1 }
           cmake --build --preset win-amd64-release --parallel
           if ($LASTEXITCODE) { exit 1 }
-          # Tests labeled opengl33 need OpenGL 3.3, which the runner (no GPU) lacks: the label and
-          # the reason are with the tests (src/backend/CMakeLists.txt), as in ci.yml's test-windows.
+          # Tests labeled opengl33 are the GL3+ runs of the backend tests, which need OpenGL 3.3 and
+          # the runner (no GPU) lacks; their Direct3D 11 runs (WARP) run here. The label and the
+          # reason are with the tests (src/backend/CMakeLists.txt), as in ci.yml's test-windows.
           ctest --test-dir out/build/win-amd64-release --output-on-failure -LE opengl33
       - name: Zip
         shell: pwsh

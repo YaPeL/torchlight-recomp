@@ -263,8 +263,9 @@ jobs:
       - name: Build
         shell: pwsh
         run: cmake --build --preset win-amd64-nogame --parallel
-      # Tests labeled opengl33 need OpenGL 3.3, which the runner (no GPU) lacks: the label and the
-      # reason are with the tests (src/backend/CMakeLists.txt); release.yml leaves them out too.
+      # Tests labeled opengl33 are the GL3+ runs of the backend tests, which need OpenGL 3.3 and the
+      # runner (no GPU) lacks; their Direct3D 11 runs (WARP) run here. The label and the reason are
+      # with the tests (src/backend/CMakeLists.txt); release.yml leaves them out too.
       - name: Test
         shell: pwsh
         run: ctest --test-dir out/build/win-amd64-nogame --output-on-failure -LE opengl33

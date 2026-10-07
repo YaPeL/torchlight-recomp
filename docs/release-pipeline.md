@@ -361,7 +361,9 @@ On push and `pull_request` (never `pull_request_target`), no secrets, `permissio
    (`measured_mutex`, `snapshot_store`, `session_file`, `frame_queue`, `slow_frames`,
    `live_content_source`, `ui_overlay`, `ui_gamepad`), `detile_test` and the Python tests
    (`save_convert_test`, `tl_translate_test`). `ui_pass_test` and `render_scale_test` need a display
-   and skip with code 77; with Mesa llvmpipe and Xvfb (or surfaceless EGL) they could run.
+   and skip with code 77; with Mesa llvmpipe and Xvfb (or surfaceless EGL) they could run. On
+   Windows they also run with Direct3D 11 (`<name>_d3d11`), which the runner draws in software
+   (WARP); their GL3+ runs (label `opengl33`) are left out there, as the runner has no OpenGL 3.3.
 3. **package-check** job: package the `replay` tool (it links the backend and loads the OGRE plugins
    and media like the game) with the same AppImage layout and run it in clean `ubuntu:22.04` and
    `archlinux` containers on a synthetic capture. It validates relocatable paths and bundled
