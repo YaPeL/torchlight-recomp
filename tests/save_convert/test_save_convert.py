@@ -73,6 +73,20 @@ class FormatTest(unittest.TestCase):
             position += size
         self.assertEqual(position, len(body))
 
+    def test_pc_mod_list_reaches_the_360_save_with_its_lengths(self):
+        # A PC character saved with mods records their names (player/names). The 360 file must
+        # hold each one as the 360 reader takes it (u16 length, then the UTF-16 units, both
+        # big-endian), not with the zero lengths the 360 writer itself leaves (docs/mods.md, 7d).
+        _, parsed = read_pc(SCHEMA, self.save)
+        mods = ['First Mod', 'another_mod', 'Z']
+        parsed.tree['player']['names'] = list(mods)
+        pc_body = write_body(SCHEMA, parsed.tree, 'little')
+        x360 = split_360(pc_to_360(SCHEMA, pc_body + struct.pack('<I', len(pc_body) + 4)))
+        expected = struct.pack('>I', len(mods)) + b''.join(
+            struct.pack('>H', len(m)) + m.encode('utf-16-be') for m in mods)
+        self.assertEqual(x360.count(expected), 1)
+        self.assertEqual(parse_body(SCHEMA, x360, 'big').tree['player']['names'], mods)
+
     def test_synthetic_save_covers_every_struct(self):
         visited = set()
         synthetic.make_save(SCHEMA, visited=visited)

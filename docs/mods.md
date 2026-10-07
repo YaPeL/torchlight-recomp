@@ -213,9 +213,10 @@ it, the mod removed, the character loaded.
 `<user_data_root>/save-backups/<UTC>-<package>/`, kept by `save_import/backup_retention.h`).
 Proposed: at startup, before the guest runs, compare the active mod set (folder names, priorities
 and a digest of each `mod.dat`) with the set recorded at the previous start; when it differs, copy
-the save containers to `save-backups/<UTC>-mods/` first, so the same retention rules keep it. The
-game does not record which mods a save was made with, so "the set of the previous start" is the
-practical reference.
+the save containers to `save-backups/<UTC>-mods/` first, so the same retention rules keep it. A
+character save does record the names of the mods active when it was saved (section 7d), but only
+per character and only for the menu's warning, so "the set of the previous start" stays the
+reference for the backup.
 
 **The render front's code.** Adding a mod's folder as an OGRE resource location reuses the video
 menu's helper (`AddFileSystemLocation` in `src/game_menu/video_menu.cpp`, the render agent's area).
@@ -261,6 +262,57 @@ manager is never rebuilt while the game runs: its constructor is called only by 
 loader `sub_8231FF28` (`new(136)` @`0x823200BC`), which only `CGame`'s vtable slot 2 `sub_82206000`
 calls; that method loads `plugins.cfg` and sets the engine up, once per process. **[read]** So the
 host builds the mod manager once, and nothing frees it twice.
+
+## 7d. The mod list in character saves: a writer bug of the Xbox build (2026-10-07)
+
+**Finding.** A character saved with mods active could not be loaded again: the loading screen
+never ended (validation run 2, loading it without mods; frames kept being presented). Run 1's hang
+on the way back to the menu, with mods, is probably the same and is checked by the next run. The save
+records the active mods' names in the player's unit, and the Xbox build writes that list wrong.
+Nothing showed it before because without a mod manager the list is always empty. **[read]**
+
+- **Saving**: `sub_822D66A8` asks the data manager for the active mods' names (`sub_8239E718`:
+  data manager `+20`, each `CMod` with `+192` set, its name at `+80`) and appends them to the
+  unit's save data (`+576`, a vector of `std::wstring`). The unit writer `sub_822A68F0` writes the
+  u32 at `+568`, the count, and per name the length and the UTF-16 units.
+- **The bug**: the length is loaded as a u32, stored on the stack, and 2 bytes of it are written
+  (`@0x822A74FC`). On big-endian those are the high half: 0. The units follow with the right
+  size. PC, little-endian, writes the low half, the real length.
+- **Loading**: the unit reader `sub_822A7D78` takes a u16 length (`lhz` `@0x822A8A44`) before
+  each name, so every name reads as empty and the units as the next fields. In the run's save the
+  item list then claimed 4,291,686,325 entries.
+- **Use**: `sub_822D6858` copies the list to the player (`+2524`). The character menu
+  `sub_8238C3A8` compares it with the active mods and shows `CharacterModsWarning` when they
+  differ; the window exists in the Xbox layouts (`main_xenon.layout` and others).
+- **Checked on the run's save** (outside the repository): with only the ten lengths written, the
+  save parses completely with `tools/save_convert`'s schema; the saves made without mods have an
+  empty list.
+
+**Correct format**: a u16 length, then the UTF-16 units, both big-endian: what the reader
+takes, what PC writes (in its own byte order) and what the save converter and the in-game import
+produce from a PC save (`wstring16` in the schema; tests with a filled list in
+`tests/save_convert` and `src/save_import/save_tree_test.cpp`). An imported PC character saved
+with mods therefore loads, and the menu warns when those mods are not active. **[read + tested]**
+
+**Repair while writing** (`src/game_menu/mods_install.cpp`, `src/mods/saved_mod_list.h`). The
+host wraps `sub_822A68F0`.
+
+- **Units without names** (all of them without mods) only call the original.
+- **Otherwise** it keeps the stream's position, calls the original, and searches the bytes that
+  call wrote for the list exactly as the bug leaves it: the u32 from `+568`, the exact count, and
+  every name with length 0. If the list is found exactly once, it writes each length (big-endian
+  u16).
+- **Why this is safe**: the save's size does not change, nothing reaches the file during the
+  writer, and the hash is computed afterwards (`sub_8221CC70`), so it covers the repaired bytes.
+- **Fallback**: in any other case (not found, found twice, a name longer than 65,535 units) it
+  rewinds the stream (position `+16` and size `+24`) and writes the unit again with the list
+  emptied, as every Xbox save is, and logs a warning.
+
+**Not done: repair at load.** Saves already written with the bug cannot load. Only test saves
+exist today. **Condition for any release that ships mods without this repair** (or for builds of
+this branch from before it that reached players): add a check at startup, before the guest runs,
+that finds this pattern in the character saves with the schema, repairs the lengths in place
+after a backup, and logs it.
 
 ## 8. Where mods go on our side
 
@@ -321,5 +373,10 @@ ModDrop has no direct link, the community site did not answer):
   guest function.
 - Achievements: the PC set accepts the guest's MODS_1/5/10 completions; the list shows all 66 as
   earnable.
-- Not yet run in the game: the validation (section 10 and the plan) comes next, starting with a
-  save that holds an item of a mod that is then removed.
+- Save mod list (section 7d): the unit writer's bug repaired as the save is written; tests of the
+  repair on synthetic stream bytes and of the PC import with a filled list.
+- Validation run 1 (synthetic mods): mount, backup, manager, MODS toasts, texture replacement and
+  the achievement list confirmed; it also found the save bug of section 7d. Next: run 1 again
+  with the repair on restored saves (save with mods, back to the menu, reload; the menu's mod
+  warning shown only when the mods differ), then a save holding an item of a mod that is then
+  removed.

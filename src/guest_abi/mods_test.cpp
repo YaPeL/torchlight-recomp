@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 namespace mods = torchlight::guest_abi::mods;
@@ -73,6 +74,31 @@ int main() {
       munmap(arena, size_t{1} << 32);
     }
   }
+  // A unit's saved mod names: one inline (capacity 7), one behind a pointer, big-endian units.
+  {
+    const uint32_t save_data = 0x20000, names = 0x21000, heap = 0x22000;
+    auto put_wstring = [&](uint32_t str, const std::u16string& text, uint32_t capacity, uint32_t at) {
+      for (size_t c = 0; c < text.size(); ++c) {
+        base[at + 2 * c] = static_cast<uint8_t>(text[c] >> 8);
+        base[at + 2 * c + 1] = static_cast<uint8_t>(text[c]);
+      }
+      if (at != str) WriteU32(base, str, at);
+      WriteU32(base, str + 16, static_cast<uint32_t>(text.size()));
+      WriteU32(base, str + 20, capacity);
+    };
+    put_wstring(names, u"short", 7, names);
+    put_wstring(names + 28, u"a longer mod name", 31, heap);
+    WriteU32(base, save_data + 576, names);
+    WriteU32(base, save_data + 580, 2);
+    const auto read = mods::ReadSavedModNames(base, save_data);
+    Check(read.size() == 2 && read[0] == u"short" && read[1] == u"a longer mod name",
+          "saved mod names: inline and heap");
+    WriteU32(base, save_data + 580, 0);
+    Check(mods::ReadSavedModNames(base, save_data).empty(), "saved mod names: none");
+    WriteU32(base, save_data + 580, 5000);
+    Check(mods::ReadSavedModNames(base, save_data).empty(), "saved mod names: implausible count");
+  }
+
   if (failures) return EXIT_FAILURE;
   std::puts("guest_abi mods tests passed");
   return EXIT_SUCCESS;

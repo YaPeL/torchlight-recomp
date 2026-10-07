@@ -10,6 +10,8 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
@@ -102,6 +104,74 @@ inline constexpr Field kFolder{164, Confidence::kConfirmed};   // std::wstring, 
 inline constexpr Field kActive{192, Confidence::kConfirmed};   // u8, set to 1
 inline constexpr Field kPriority{196, Confidence::kConfirmed}; // s32, < 0 = disabled
 }  // namespace mod
+
+// ---------------------------------------------------------------------------------------------
+// The mods a character save records (docs/mods.md, section 7d). Saving, sub_822D66A8 asks the data
+// manager for the active mods' names (sub_8239E718 @0x822D67C8: data manager +20, each CMod with
+// +192 set, its name at +80; none without a manager) and appends them to the unit's save data
+// (+576, @0x822D67E0). Loading, sub_822D6858 copies them to the player (+2524, @0x822D69F8), and
+// the character menu sub_8238C3A8 compares them with the active mods (@0x8238C818..@0x8238C930)
+// and shows the CharacterModsWarning window when they differ (@0x8238C944; the window, found by
+// name in sub_8238BEE8 @0x8238C094, is in the Xbox layouts too).
+
+// [confirmed] The unit's save writer: r3 = the unit's save data, r4 = the save stream (@0x822A68FC,
+// @0x822A6900). Called by the character save sub_8221CC70 (@0x8221D1D4, @0x8221D81C) and
+// sub_822FBD90 (@0x822FBFC8). Its only callees write to the stream (sub_823A20E8, sub_823A24D8),
+// recurse into the item writer sub_822C9AB8 (same two) or handle temporary strings: nothing reaches
+// the file during the call. The character save then hashes the stream (sub_823A2610 @0x8221D9E8)
+// and writes it out (sub_823A1F38 @0x8221D9F0).
+//
+// Runic difference (a bug of the Xbox build, latent because the list was always empty without a
+// mod manager): the list is written as a u32 count (@0x822A7490) and, per name, the length loaded
+// as a u32 (@0x822A74F4) and stored on the stack, of which 2 bytes are written (@0x822A74FC): on
+// big-endian those are the high half, 0. The name's UTF-16 units follow with the right size
+// (@0x822A7564). The reader sub_822A7D78 takes a u16 length (lhz @0x822A8A44) before each name
+// (sub_823A1A98 @0x822A8A4C), so it reads every name as empty and the following bytes as the next
+// fields: a save made with mods never finishes loading. PC (little-endian) writes the low half.
+inline constexpr GuestFunction kUnitSaveWriter{0x822A68F0, Confidence::kConfirmed};
+
+namespace unit_save {
+// [confirmed] The u32 written right before the mod list (@0x822A7468, 4 bytes).
+inline constexpr Field kBeforeModNames{568, Confidence::kConfirmed};
+// [confirmed] The mod names: a vector of std::wstring, data +576, count +580 (@0x822A74D8,
+// @0x822A7490; the reader appends to it @0x822A89C0).
+inline constexpr Field kModNamesData{576, Confidence::kConfirmed};
+inline constexpr Field kModNamesCount{580, Confidence::kConfirmed};
+// [confirmed] One std::wstring per name (the writer steps 28 bytes); length +16 (@0x822A74F4), text
+// inline while the capacity +20 is below 8 (@0x822A7544), otherwise behind the pointer at +0.
+inline constexpr uint32_t kNameStride = 28;
+}  // namespace unit_save
+
+namespace save_stream {
+// [confirmed] The in-memory save stream (sub_823A20E8): the buffer's start at +0 (@0x823A21C0,
+// written at start + position @0x823A21CC), the write position at +16 (s64, @0x823A211C, advanced
+// @0x823A21E0) and the size written so far at +24 (s64, raised to the position @0x823A21EC). The
+// file gets +24 bytes from +0 (sub_823A1F38 @0x823A1FA0, @0x823A1FAC).
+inline constexpr Field kBuffer{0, Confidence::kConfirmed};
+inline constexpr Field kPosition{16, Confidence::kConfirmed};
+inline constexpr Field kSize{24, Confidence::kConfirmed};
+}  // namespace save_stream
+
+// The mod names in a unit's save data, as UTF-16 code units (big-endian in guest memory). Empty
+// on an implausible count or length (more than `max_names`, or more than 0xFFFF units).
+inline std::vector<std::u16string> ReadSavedModNames(const uint8_t* base, uint32_t save_data,
+                                                     uint32_t max_names = 1024) {
+  std::vector<std::u16string> names;
+  const uint32_t data = ReadU32(base, save_data + unit_save::kModNamesData.offset);
+  const uint32_t count = ReadU32(base, save_data + unit_save::kModNamesCount.offset);
+  if (!data || count > max_names) return names;
+  for (uint32_t i = 0; i < count; ++i) {
+    const uint32_t str = data + i * unit_save::kNameStride;
+    const uint32_t length = ReadU32(base, str + ogre::stl_string::kLength.offset);
+    const uint32_t capacity = ReadU32(base, str + ogre::stl_string::kCapacity.offset);
+    if (length > 0xFFFF) return {};
+    const uint32_t text = capacity > manager::kWStringInlineCapacity ? ReadU32(base, str) : str;
+    std::u16string name(length, u'\0');
+    for (uint32_t c = 0; c < length; ++c) name[c] = static_cast<char16_t>(ReadU16(base, text + 2 * c));
+    names.push_back(std::move(name));
+  }
+  return names;
+}
 
 // The mod manager's initial state, as PC's constructor leaves it, written at `at` (kSize bytes
 // already allocated in guest memory). Does not register the instance (kRunicCoreInstances) or

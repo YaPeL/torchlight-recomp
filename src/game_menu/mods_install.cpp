@@ -5,12 +5,14 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
 #include <rex/filesystem/devices/host_path_device.h>
 #include <rex/filesystem/vfs.h>
 #include <rex/logging.h>
+#include <rex/ppc/func.h>
 #include <rex/runtime.h>
 
 #include "game_menu/guest_call.h"
@@ -20,6 +22,7 @@
 #include "guest_abi/mods.h"
 #include "mods/mod_list.h"
 #include "mods/save_safety.h"
+#include "mods/saved_mod_list.h"
 
 namespace torchlight::game_menu {
 
@@ -62,6 +65,15 @@ uint32_t GuestWString(GuestCall& call, uint8_t* base, const std::string& ascii) 
   base[text + 2 * ascii.size()] = base[text + 2 * ascii.size() + 1] = 0;
   call.Call(ui::kWStringFromText.address, {str, text});
   return str;
+}
+
+uint64_t ReadS64Field(const uint8_t* base, uint32_t addr) {
+  return (uint64_t{abi::ReadU32(base, addr)} << 32) | abi::ReadU32(base, addr + 4);
+}
+
+void WriteS64Field(uint8_t* base, uint32_t addr, uint64_t value) {
+  abi::WriteU32(base, addr, static_cast<uint32_t>(value >> 32));
+  abi::WriteU32(base, addr + 4, static_cast<uint32_t>(value));
 }
 
 bool IsAscii(const std::string& s) {
@@ -182,3 +194,63 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
 }
 
 }  // namespace torchlight::game_menu
+
+REX_EXTERN(__imp__sub_822A68F0);
+
+namespace torchlight::game_menu {
+
+namespace {
+
+// The unit save writer (guest_abi/mods.h kUnitSaveWriter) with its mod-list bug repaired: after
+// the original writes the unit into the in-memory stream, the names' lengths are put into the bytes
+// it wrote (mods/saved_mod_list.h), before the save is hashed and written out. If the list cannot
+// be found exactly once there, the unit is written again from the same position without the list
+// (the save then records no mods, as every Xbox save does). Units without names (every unit when
+// there are no mods) only call the original.
+void WriteUnitSave(PPCContext& ctx, uint8_t* base) {
+  namespace unit = mods_abi::unit_save;
+  namespace stream_abi = mods_abi::save_stream;
+  const uint32_t save_data = ctx.r3.u32;
+  const uint32_t stream = ctx.r4.u32;
+  const std::vector<std::u16string> names = mods_abi::ReadSavedModNames(base, save_data);
+  if (names.empty()) {
+    __imp__sub_822A68F0(ctx, base);
+    return;
+  }
+  const uint64_t start = ReadS64Field(base, stream + stream_abi::kPosition.offset);
+  const uint64_t size = ReadS64Field(base, stream + stream_abi::kSize.offset);
+  const uint32_t before = abi::ReadU32(base, save_data + unit::kBeforeModNames.offset);
+  __imp__sub_822A68F0(ctx, base);
+
+  const uint64_t end = ReadS64Field(base, stream + stream_abi::kPosition.offset);
+  const uint32_t buffer = abi::ReadU32(base, stream + stream_abi::kBuffer.offset);
+  mods::ModListRepair result = mods::ModListRepair::kNotFound;
+  if (buffer && end >= start && end - start <= (uint64_t{1} << 26)) {
+    result = mods::RepairSavedModList(
+        std::span<uint8_t>(base + buffer + start, static_cast<size_t>(end - start)), before, names);
+  }
+  if (result == mods::ModListRepair::kRepaired) {
+    REXLOG_INFO("mods: save's mod list written ({} names)", names.size());
+    return;
+  }
+  REXLOG_WARN("mods: save's mod list {}; the unit is saved without it", mods::ToString(result));
+  WriteS64Field(base, stream + stream_abi::kPosition.offset, start);
+  WriteS64Field(base, stream + stream_abi::kSize.offset, size);
+  const uint32_t count = abi::ReadU32(base, save_data + unit::kModNamesCount.offset);
+  abi::WriteU32(base, save_data + unit::kModNamesCount.offset, 0);
+  ctx.r3.u64 = save_data;
+  ctx.r4.u64 = stream;
+  __imp__sub_822A68F0(ctx, base);
+  abi::WriteU32(base, save_data + unit::kModNamesCount.offset, count);
+}
+
+}  // namespace
+
+}  // namespace torchlight::game_menu
+
+extern "C" {
+
+static_assert(torchlight::guest_abi::mods::kUnitSaveWriter.address == 0x822A68F0u, "mods mismatch");
+REX_FUNC(sub_822A68F0) { torchlight::game_menu::WriteUnitSave(ctx, base); }
+
+}  // extern "C"
