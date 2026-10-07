@@ -83,7 +83,8 @@ void Session::EnableLive(live::FrameQueue* queue, live::SnapshotStore* store) {
   live_frame_.cut = std::chrono::steady_clock::now();
   // The live consumer starts empty: it gets the state already in the shadow first, as a capture's
   // baseline does, since State skips values that did not change.
-  for (const auto& [key, entry] : shadow_) {
+  for (uint32_t key : ShadowKeysInOrder()) {
+    const ShadowEntry& entry = shadow_.at(key);
     if (entry.present) LiveAppend(entry.payload);
   }
 }
@@ -115,6 +116,14 @@ void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t obj
   entry.object = object;
   entry.present = true;
   ++entry.version;
+}
+
+std::vector<uint32_t> Session::ShadowKeysInOrder() const {
+  std::vector<uint32_t> keys;
+  keys.reserve(shadow_.size());
+  for (const auto& [key, entry] : shadow_) keys.push_back(key);
+  std::sort(keys.begin(), keys.end());
+  return keys;
 }
 
 void Session::EraseState(uint32_t key) {
@@ -185,7 +194,7 @@ void Session::CutLiveFrame(bool measured) {
       live_frame_.destroyed.push_back(id);
       live_buffers_.erase(BufferKey(id));
       live_described_textures_.erase(BufferKey(id));
-      live_sent_programs_.erase({id.guest_address, id.generation});
+      live_sent_programs_.erase(BufferKey(id));
     }
     live_pending_textures_.clear();
     live_pending_destroyed_.clear();
@@ -300,7 +309,8 @@ void Session::Start() {
   // Baseline: the last value of every state setter, with the resources they refer to re-read
   // now so their descriptions are part of the capture.
   size_t baseline = 0;
-  for (auto& [key, entry] : shadow_) {
+  for (uint32_t key : ShadowKeysInOrder()) {
+    ShadowEntry& entry = shadow_.at(key);
     if (!entry.present) continue;
     ++baseline;
     ++entry.version;  // re-read below: early outs recorded against it no longer apply
@@ -554,7 +564,7 @@ void Session::AddTexture(commands::TextureDesc desc, commands::Hash live_content
 }
 
 void Session::AddProgram(commands::ProgramDesc desc) {
-  if (live() && live_sent_programs_.insert({desc.id.guest_address, desc.id.generation}).second) {
+  if (live() && live_sent_programs_.insert(BufferKey(desc.id)).second) {
     live_frame_.programs.push_back(desc);
     if (!live_sent_sources_.count(desc.name)) {
       std::lock_guard<live::MeasuredMutex> lock(registry_mutex_);
