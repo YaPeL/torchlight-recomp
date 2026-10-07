@@ -84,6 +84,12 @@ frames past 33 ms per 40 s step against up to 459 (Xenos, walking in the town, w
 is about 31 ms). Not measured: other GPUs (Intel and Windows pending), runs with a frame cap, and
 the Windows release's OGRE build (`/Ob1`).
 
+**Lock times in the log**: the `locks:` part of the `live measurements` summary counts each
+`MeasuredMutex`'s acquisitions and contended acquisitions exactly, and its wait when it was
+contended, but the time held (`held ~N ms`) is an estimate since 2026-10-07: timed on one
+acquisition in 64 and counted 64 times (`kHoldSampleEvery`, `live/measured_mutex.h`). Timing every
+acquisition took two clock reads each, on per-draw lookups of the guest's render thread.
+
 **Open**: the native renderer still has a few long frames with warm caches (209.8 ms on arriving in
 the town, 190.5 ms in a fight): not shader compilation, to be traced.
 
