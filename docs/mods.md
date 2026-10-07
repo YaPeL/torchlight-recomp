@@ -51,10 +51,13 @@ The developer console has a `MODS` command (`0x5683BC`) that lists them. **[read
 | One mod's descriptor, `0x5CD150` | `sub_823A9EA0` (same strings: `mod.dat`, `MOD`, `NAME`, `AUTHOR`, `DESCRIPTION`) | **Dead**: its only caller `sub_823AA550` is called only by `sub_82268300`, which nothing calls or references |
 | Manager object | created by the global data loader `sub_8231FF28` (`new(136)`, `sub_8239B998`, stored at `+92`) | **Kept, always empty** |
 | MODS check | `sub_8231FF28` @`0x82320A38`..`0x82320AC4`: count `sub_823AAC48` ≥ 1 / 5 / 10 → events 26 / 27 / 28 → completion `0x823D9930` | **Kept, never true**: nothing adds mods |
-| File loader | `sub_8239D5F8` (`.ADM`, `.CMP`, `DDS`), `.ADM` save `sub_82396950`, "DataGroups can't load compressed files" | **Kept** |
+| File loader | `sub_8239D5F8` (`.ADM`, `.CMP`, `DDS`), `.ADM` save `sub_82396950`, "DataGroups can't load compressed files" | **Kept, mod-aware** (section 7) |
+| File lookup in mods | `sub_8239D0E8` → `sub_823AA988`: each active mod's file map (mod `+36`) | **Kept** (section 7) |
+| Text `.DAT` parser | `sub_82396BF0` (virtual, vtable entry `0x820D2A64`) → `sub_82396D60`, type names `sub_82393EA0` | **Kept** (section 7) |
 
-So, as with GUIFEEDPET, the Xbox build keeps the end of the chain (the check, one descriptor reader,
-the file loaders) and lost its entry (the folder scan). **[read]**
+So, as with GUIFEEDPET, the Xbox build keeps almost the whole chain (the manager, a descriptor
+reader, the mod-aware file lookup, the text parser and the MODS check) and lost only its entry: the
+folder scan that fills the list. **[read]**
 
 The Xbox `resources.cfg` (the user's install) adds `Zip=game:\pak.zip`, music, programs and shader
 folders, and `localization_zip` entries described as "the game will look in here first for assets"
@@ -128,12 +131,74 @@ monsters (need the data indexing to see new files). UI mods and mods that rely o
   invented names, exercising discovery, order, activation and the MODS thresholds.
 - Development runs use copies (`--user_data_root`), as always.
 
-## 7. Before any code
+## 7. Code readings (2026-10-07)
 
-1. Read the guest's `resources.cfg` reader: how `localization_zip` is searched first, and whether
-   more locations can be added and in which order. This decides option A's mechanism.
-2. Read how the guest indexes data folders (whether a new `.ADM` in a searched location is picked
-   up, or only replacements).
-3. Check whether the guest keeps a text `.DAT` parser (decides whether option C is needed).
-4. Look at one real PC mod, on the user's machine only, to confirm the folder layout and whether it
-   ships `.DAT` or `.ADM`.
+**1. Resource locations and their order.** The Xbox `resources.cfg` is read by the data manager's
+constructor `sub_8239B998` (guest_abi/game_ui.h `kResourcesCfgLoader`): OGRE's config file with
+`\t:=` separators; `Zip`/`ZIP` entries go to `addResourceLocation` (`kAddResourceLocation`,
+`0x8242AE30`, calls @`0x8239C574`, @`0x8239C5FC`, @`0x8239C6B0`), the language zips are picked by
+name (`pak_fr`, `pak_de`, `pak_es`), and a data group `MAINDATA` is set up. The string
+`localization_zip` is not in the image: the keys the reader compares are `Zip`/`ZIP`. **[read]**
+In OGRE 1.7, `addResourceLocation` indexes the archive's files right away and
+`ResourceGroup::addToIndex` overwrites the index entry of a file already there
+(`OgreResourceGroupManager.cpp`: `resourceIndexCaseSensitive[filename] = arch`); `openResource`
+uses that index first. So, within a group, **the location added last wins** for a file present in
+several; that is how a language zip added after `pak.zip` replaces its files. **[read]** (OGRE 1.7
+source, the guest's base) The project already adds a resource location from the host at a safe
+point (`src/game_menu/video_menu.cpp`, `kAddResourceLocation` through `GuestCall`).
+
+**2. How the game finds data files, new ones included.** The data loader `sub_8239D5F8` is
+mod-aware: when the data manager's flag `+56` is set, or its mod manager (`+20`) has active mods
+(`sub_823AAC48` ≠ 0), it checks the file's freshness (`sub_8239D4C8`) and looks the file up in the
+mods first (`sub_8239D0E8` → `sub_823AA988`: over the active mods, flag `+192` and priority `+196` ≥
+0, a lookup in each mod's own file map at mod `+36`, `sub_82328620`). **[read]** A mod's file map is
+what the (dead) descriptor reader fills when it lists the mod's files (`"*.*"` on PC, `0x5CCEC6`).
+So files a mod adds, not only the ones it replaces, are found through the mod, as on PC. Whether
+the game's lists of units and other records are built from folder listings that include mod files
+is **[to verify]** during implementation (it decides "new items" mods; replacements do not need it).
+
+**3. Text `.DAT`.** The guest keeps the text data parser: `sub_82396BF0`, a virtual method (vtable
+entry at `0x820D2A64`), resolves the file through the mod-aware loader and parses it with
+`sub_82396D60`, which reads the value types by name through `sub_82393EA0` (`INTEGER`, `INTEGER64`,
+`FLOAT`, `DOUBLE`, `UNSIGNED INT`, `STRING`, `TRANSLATE`, `BOOL`; `sub_82394190` the reverse).
+Together with the freshness check and the `.ADM` save (`sub_82396950`), the Xbox build can read a
+mod's text `.DAT` like PC. **[read]** A host converter (option C) is not needed.
+
+**4. A real PC mod** (folder layout, `.DAT` or `.ADM`): pending; the user will point at one on
+their machine, nothing of it enters the repository.
+
+**Consequence for the options.** The guest keeps its own mod system except the entry that fills
+the list. Option A can therefore use the guest's own mechanism instead of extra OGRE locations: the
+host finds the mods and adds them to the guest's list the way PC's scan does, and the guest's
+loader, priorities, text parser and MODS check do the rest. Assets (meshes, textures) that OGRE
+loads by name additionally need the mod folder as a resource location added after `pak.zip` (rule
+of reading 1), which is the mechanism the project already uses.
+
+## 8. Where mods go on our side
+
+- **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
+  `~/.local/share/TorchlightRecomp/mods/` on Linux, `%USERPROFILE%\Saved Games\TorchlightRecomp\mods\`
+  on Windows), with PC's layout: one folder per mod with its `mod.dat` and its files under `media/`.
+  A PC mod is copied in as it is.
+- **Priority:** PC keeps it in `mods/mods.dat` (`DIRECTORY`, `PRIORITY` per mod; a negative priority
+  disables a mod). The same file, in the same format, decides ours: if the player copies PC's
+  `mods.dat` with the mods, their order is kept; a mod with no entry is added after the others, in
+  folder-name order, and the file is written back, as PC's `CHECKFORNEW` does. A later menu could
+  edit it; not in the first version.
+- **Import from PC:** PC's mods are plain folders in the same layout, so the first version only
+  documents "copy the mod folders (and `mods.dat`) from `%APPDATA%\Runic Games\Torchlight\mods\`".
+  An in-game import like the saves' (which reads `<game_data_root>/import/`) is cheap to add later:
+  copy, never move, and keep PC's `mods.dat` priorities. Not needed to start.
+
+## 9. Future work: UI and input crossover
+
+Two ideas, outside the mods task, recorded for later:
+- **PC UI and mouse in the recomp** (this project): the Xbox `pak.zip` carries PC's `.LAYOUT` files,
+  but each is driven by a PC menu class; a survey (like section 2) of which PC menu classes and
+  which mouse/picking code the guest keeps comes first. Menus are CEGUI windows, so mouse input
+  there may be the cheaper part; click-to-move in gameplay is the expensive one.
+- **Xbox UI and a gamepad in Torchlight PC** (a separate product, not this repository): injected code
+  for the gamepad (PC reads input through OIS, which supports joysticks; wrapping `OIS.dll` avoids
+  touching the executable) plus a mod with the Xbox `.UILAYOUT` files, whose imagesets and fonts can
+  only come from the player's own Xbox copy; PC's menu classes look windows up by other names, so a
+  bridge or adapted layouts are needed.
