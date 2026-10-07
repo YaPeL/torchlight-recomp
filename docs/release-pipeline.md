@@ -479,6 +479,22 @@ announces it.
   (a re-run with the same binaries: `git commit` exits 1). For v0.1.0-beta the owner deleted the
   folders and re-ran. To fix: skip the commit and the push when the tree did not change, and say
   so in the log.
+- **Guest memory reads on Windows and macOS arm64, before the macOS port.** The generated code
+  translates a guest address as `base + address`, plus 0x1000 from 0xE0000000 up on Windows and
+  macOS arm64 (`REX_PHYS_HOST_OFFSET`, `rex::memory::GuestPtr`). The content snapshots of buffers
+  and textures translate that way since 2026-10-07 (`capture/guest_readers.cpp`, `GuestBytes`), but
+  the scalar readers of `guest_abi` (`ReadU32`, `ReadU64` and the rest, `ogre_layout.h`) add
+  nothing. On Linux that is right; on those platforms a read from 0xE0000000 up would be 4 KB
+  off. They read the game's OGRE and Xbox D3D objects, expected in the guest's virtual heaps, below
+  0xE0000000; that is not checked for every reader yet.
+  To resolve, without platform `#ifdef`s in `guest_abi`, one of:
+  1. the readers take a guest memory view instead of a bare `membase` (the base plus the
+     translation, built once by the caller with `rex::memory::GuestPtr`), so `guest_abi` stays
+     free of the SDK and is still testable with a fake memory (preferred);
+  2. `guest_abi` includes the SDK's `rex/system/xmemory.h` and uses `GuestPtr` (simple, but
+     `guest_abi` stops building on its own);
+  3. the readers keep `base + address` and state the invariant (no reads from 0xE0000000 up),
+     checked in a test and in the diagnostics build.
 
 ### 5.9 Branches and releases (since 2026-10-07)
 

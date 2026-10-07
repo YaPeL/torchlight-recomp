@@ -5,6 +5,7 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <rex/system/xmemory.h>
 
 #include "capture/session.h"
 #include "capture/translate.h"
@@ -27,6 +28,13 @@ using commands::UnresolvedReason;
 constexpr uint32_t kMaxSnapshotBytes = 64u << 20;
 
 uint32_t U32(const uint8_t* m, uint32_t a) { return abi::ReadU32(m, a); }
+
+// Host pointer to the guest's bytes at a guest virtual address, translated as the generated code
+// translates its own accesses on this platform (rex::memory::GuestPtr: plus 0x1000 from 0xE0000000
+// up on Windows and macOS arm64, nothing elsewhere).
+const uint8_t* GuestBytes(const uint8_t* m, uint32_t address) {
+  return rex::memory::GuestPtr<const uint8_t*>(const_cast<uint8_t*>(m), address);
+}
 
 // In-order walk of an XDK std::map/set. Leaf children point back to the head node.
 template <typename F>
@@ -179,7 +187,7 @@ std::optional<commands::ResourceId> CaptureTexture(const uint8_t* m, uint32_t te
         if (physical == 0 || size == 0 || size > kMaxSnapshotBytes) {
           d.unresolved = UnresolvedReason::kBufferOutOfRange;
         } else {
-          const uint8_t* p = xd3d::HostPointer(m, xd3d::PhysicalToVirtual(physical));
+          const uint8_t* p = GuestBytes(m, xd3d::PhysicalToVirtual(physical));
           // Content version: that of the base level's pixel buffer (surface 0), whose unlocks
           // and blits write it.
           uint32_t surfaces = texture + ogre::d3d9_texture::kSurfaceList.offset;
@@ -315,7 +323,7 @@ commands::BufferSnapshot SnapshotBuffer(const uint8_t* m, commands::ResourceKind
     snap.source = 1;
     snap.guest_virtual = xd3d::PhysicalToVirtual(physical);
     snap.size = size;
-    auto content = s.RecordContent(info->id, buffer, xd3d::HostPointer(m, snap.guest_virtual),
+    auto content = s.RecordContent(info->id, buffer, GuestBytes(m, snap.guest_virtual),
                                    size, endian, endian_raw);
     snap.blob = content.capture;
     live_keys.back() = content.live;
