@@ -124,6 +124,27 @@ acquisition took two clock reads each, on per-draw lookups of the guest's render
 **Open**: the native renderer still has a few long frames with warm caches (209.8 ms on arriving in
 the town, 190.5 ms in a fight): not shader compilation, to be traced.
 
+### The guest's memory copies on the host (2026-10-07)
+
+In the same profile the guest's 128-byte block copy loop (0x82884644) alone took 2.4 % of the main
+thread. Two guest functions copy memory: the CRT memcpy
+(0x82860A50, 1213 call sites) and a large copy built on it (0x821A7138, which uploads buffers); the
+evidence is in `guest_abi/guest_functions.h` (`kMemcpy`, `kLargeCopy`). Both copy front to back with
+plain loads and stores, so between ranges that do not overlap the result is that of a host
+`memcpy`, and `hooks/guest_copy_hooks.cpp` runs one there. The guest's own copy still runs for
+overlapping ranges (where a front-to-back copy and `memmove` differ), ranges touching the device
+registers (0x7F000000-0x7FFFFFFF: the SDK serves those by decoding each faulting instruction) and
+ranges crossing 0xE0000000 (where the host translation adds 0x1000 on Windows and macOS arm64) or
+the end of the address space (`hooks/guest_copy.h`; tests in `guest_copy_test`). Pages the SDK
+write-protects to invalidate GPU copies need nothing: its fault handler unprotects and retries any
+host instruction. Every mode, native and Xenos.
+
+**`--native_guest_copy=false`** turns it off at run time: every copy runs the recompiled guest code,
+as before. It compares the two with one binary, and rules the change out if something looks wrong
+(a report of corrupted data, a crash in a copy).
+
+Measurement: pending (with and without the flag, same binary, the fixed-floor saved game).
+
 ## Controlled follow-up results
 
 Repeated untraced captures at the saved pond support a real RelWithDebInfo

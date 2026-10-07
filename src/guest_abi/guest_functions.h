@@ -221,4 +221,22 @@ inline constexpr uint32_t kViewsSceneViewport = 0x48;
 inline constexpr uint32_t kInLevelChain[] = {0x38, 0x60, 0xC, 0x170};
 inline constexpr uint32_t kInLevelFlag = 0x1404;
 
+// The guest's memory copies (dst r3, src r4, size r5; return the dst in r3). Both copy front to
+// back with plain loads and stores and cache hints (dcbt, dcbf; no dcbz), so a copy between ranges
+// that do not overlap is exactly a host memcpy (hooks/guest_copy.h). No caller reads a volatile
+// register other than r3 after either returns (every call site in generated/default checked).
+// [confirmed] CRT memcpy 0x82860A50: saves r3 (@0x82860A50) and reloads it before every return
+// (@0x82860B24, @0x82860CE8, @0x82860DF4); aligns the destination to 8 with byte or word copies
+// (@0x82860A88, @0x82860AA0), then copies by doublewords (@0x82860AF4, unrolled by 128 bytes at
+// @0x82860BEC), words (@0x82860CC0, @0x82860D70) or bytes (@0x82860DE8, @0x82860E78) by the
+// source's alignment, then the tail bytes. Size 0 touches no memory (@0x82860ADC..@0x82860B24).
+inline constexpr GuestFunction kMemcpy{0x82860A50, Confidence::kConfirmed};
+// [confirmed] Large copy 0x821A7138 (XMemCpy-like): below 256 bytes it is kMemcpy (@0x821A7164);
+// else kMemcpy up to a 128-byte aligned destination (@0x821A7184), whole 128-byte blocks by the
+// vector loops 0x82884644 (unaligned source, @0x821A71B4) or 0x82884320 (16-byte aligned source,
+// @0x821A71BC), the tail by kMemcpy (@0x821A71D4), and returns the destination (mr r3,r27
+// @0x821A71D8). Its one direct caller (0x821A71E8 @0x821A7270) copies into a buffer it has just
+// locked.
+inline constexpr GuestFunction kLargeCopy{0x821A7138, Confidence::kConfirmed};
+
 }  // namespace torchlight::guest_abi::functions
