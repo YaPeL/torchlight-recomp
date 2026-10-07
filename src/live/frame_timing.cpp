@@ -4,6 +4,8 @@
 
 #include <rex/logging.h>
 
+#include "live/guest_events.h"
+
 namespace torchlight::live {
 
 FrameTiming& FrameTiming::Get() {
@@ -13,8 +15,12 @@ FrameTiming& FrameTiming::Get() {
 
 void FrameTiming::OnSwap() {
   auto now = std::chrono::steady_clock::now();
+  // The guest's events of the frame ending now (guest_events.h), logged when it was long.
+  const GuestFrameEvents events = GuestEvents::Get().Take();
   if (last_swap_.time_since_epoch().count() != 0) {
     frame_ms_.push_back(std::chrono::duration<double, std::milli>(now - last_swap_).count());
+    if (frame_ms_.back() > kLongFrameMs)
+      REXLOG_INFO("long frame: {}", DescribeLongFrame(frame_ms_.back(), events));
     std::lock_guard lock(recent_mutex_);
     recent_.emplace_back(now, float(frame_ms_.back()));
     while (!recent_.empty() && now - recent_.front().first > kRecent) recent_.pop_front();

@@ -374,6 +374,7 @@ void LiveMode::Run() {
     tl_backend_take_counters(backend, &counters);
     record.programs_generated = counters.programs_generated;
     record.program_ms = counters.program_ms;
+    record.program_generate_ms = counters.program_generate_ms;
     record.gpu_buffers_created = counters.gpu_buffers_created;
     record.vertex_layouts_created = counters.vertex_layouts_created;
     if (auto line = slow_frames.Add(record)) REXLOG_INFO("live: {}", *line);

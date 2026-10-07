@@ -12,12 +12,12 @@ std::string SlowFrameDetector::Describe(const FrameRecord& f) {
       "swap={} guest={:.2f} dropped={} worst_dropped={:.2f} recording={} commands={} "
       "snapshots={}/{}KB announced={} destroyed={} backend={:.2f} interval={:.2f} "
       "content={:.2f} commands_ms={:.2f} draws={:.2f} end={:.2f} present={:.2f} release={:.2f} "
-      "textures={}/{:.2f}ms programs={}/{:.2f}ms buffers={} layouts={}",
+      "textures={}/{:.2f}ms programs={}/{:.2f}ms (rtss {:.2f}ms) buffers={} layouts={}",
       f.swap, f.guest_ms, f.dropped, f.worst_dropped_guest_ms, recording, f.commands,
       f.snapshot_copies, f.snapshot_bytes / 1024, f.resources_announced, f.resources_destroyed,
       f.backend_ms, f.present_interval_ms, f.content_ms, f.commands_ms, f.draws_ms, f.end_ms,
       f.present_ms, f.release_ms, f.textures_created, f.texture_ms, f.programs_generated,
-      f.program_ms, f.gpu_buffers_created, f.vertex_layouts_created);
+      f.program_ms, f.program_generate_ms, f.gpu_buffers_created, f.vertex_layouts_created);
 }
 
 std::optional<std::string> SlowFrameDetector::Add(const FrameRecord& frame) {
