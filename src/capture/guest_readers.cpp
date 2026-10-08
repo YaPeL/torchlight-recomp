@@ -5,7 +5,6 @@
 #include <vector>
 
 #include <fmt/format.h>
-#include <rex/system/xmemory.h>
 
 #include "capture/constant_mirror.h"
 #include "capture/session.h"
@@ -14,6 +13,7 @@
 #include "guest_abi/ogre_enums.h"
 #include "guest_abi/ogre_layout.h"
 #include "guest_abi/xbox_d3d.h"
+#include "guest_abi/xbox_memory.h"
 
 namespace torchlight::capture {
 
@@ -22,6 +22,7 @@ namespace {
 namespace abi = guest_abi;
 namespace ogre = guest_abi::ogre;
 namespace xd3d = guest_abi::xbox_d3d;
+namespace mem = guest_abi::xbox_memory;
 using commands::UnresolvedReason;
 
 // Largest buffer or texture snapshot taken from a fetch constant; anything bigger is treated as
@@ -29,13 +30,6 @@ using commands::UnresolvedReason;
 constexpr uint32_t kMaxSnapshotBytes = 64u << 20;
 
 uint32_t U32(const uint8_t* m, uint32_t a) { return abi::ReadU32(m, a); }
-
-// Host pointer to the guest's bytes at a guest virtual address, translated as the generated code
-// translates its own accesses on this platform (rex::memory::GuestPtr: plus 0x1000 from 0xE0000000
-// up on Windows and macOS arm64, nothing elsewhere).
-const uint8_t* GuestBytes(const uint8_t* m, uint32_t address) {
-  return rex::memory::GuestPtr<const uint8_t*>(const_cast<uint8_t*>(m), address);
-}
 
 // In-order walk of an XDK std::map/set. Leaf children point back to the head node.
 template <typename F>
@@ -188,7 +182,7 @@ std::optional<commands::ResourceId> CaptureTexture(const uint8_t* m, uint32_t te
         if (physical == 0 || size == 0 || size > kMaxSnapshotBytes) {
           d.unresolved = UnresolvedReason::kBufferOutOfRange;
         } else {
-          const uint8_t* p = GuestBytes(m, xd3d::PhysicalToVirtual(physical));
+          const uint8_t* p = mem::HostAddress(m, xd3d::PhysicalToVirtual(physical));
           // Content version: that of the base level's pixel buffer (surface 0), whose unlocks
           // and blits write it.
           uint32_t surfaces = texture + ogre::d3d9_texture::kSurfaceList.offset;
@@ -230,7 +224,8 @@ commands::SetVertexDeclaration CaptureVertexDeclaration(const uint8_t* m, uint32
   content.id = info->id;
   if (first != 0 && last >= first && (last - first) / stride <= 64) {
     content.content =
-        commands::HashBytes(m + first, last - first, commands::BlobEndian::kGuestCpuBigEndian, 0);
+        commands::HashBytes(mem::HostAddress(m, first), last - first,
+                            commands::BlobEndian::kGuestCpuBigEndian, 0);
     // Already in the live stream with this content: its elements are not read again (session.h).
     if (s.LiveDeclarationDescribed(info->id, content.content)) {
       c.content = content.content;
@@ -316,7 +311,7 @@ std::optional<GuestVertexMemory> VertexBufferMemory(const uint8_t* m, uint32_t b
   memory.fetch_endian = uint8_t(d1 & xd3d::vertex_buffer::kEndianMask);
   if (physical == 0 || memory.size == 0 || memory.size > kMaxSnapshotBytes) return std::nullopt;
   memory.address = xd3d::PhysicalToVirtual(physical);
-  memory.bytes = GuestBytes(m, memory.address);
+  memory.bytes = mem::HostAddress(m, memory.address);
   return memory;
 }
 
@@ -331,7 +326,7 @@ std::optional<GuestIndexMemory> IndexBufferMemory(const uint8_t* m, uint32_t buf
   memory.size = abi::ReadU32(m, object, xd3d::index_buffer::kSize);
   if (physical == 0 || memory.size == 0 || memory.size > kMaxSnapshotBytes) return std::nullopt;
   memory.address = xd3d::PhysicalToVirtual(physical);
-  memory.bytes = GuestBytes(m, memory.address);
+  memory.bytes = mem::HostAddress(m, memory.address);
   return memory;
 }
 
@@ -387,7 +382,7 @@ commands::BufferSnapshot SnapshotBuffer(const uint8_t* m, commands::ResourceKind
     snap.source = 1;
     snap.guest_virtual = xd3d::PhysicalToVirtual(physical);
     snap.size = size;
-    auto content = s.RecordContent(info->id, buffer, GuestBytes(m, snap.guest_virtual),
+    auto content = s.RecordContent(info->id, buffer, mem::HostAddress(m, snap.guest_virtual),
                                    size, endian, endian_raw);
     snap.blob = content.capture;
     live_keys.back() = content.live;
@@ -402,7 +397,7 @@ commands::BufferSnapshot SnapshotBuffer(const uint8_t* m, commands::ResourceKind
     snap.source = 2;
     snap.guest_virtual = sysmem;
     snap.size = bytes;
-    auto content = s.RecordContent(info->id, buffer, m + sysmem, bytes,
+    auto content = s.RecordContent(info->id, buffer, mem::HostAddress(m, sysmem), bytes,
                                    commands::BlobEndian::kGuestCpuBigEndian, 0);
     snap.blob = content.capture;
     live_keys.back() = content.live;

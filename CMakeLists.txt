@@ -27,6 +27,8 @@ else()
     message(STATUS "Found ReXGlue SDK ${REXGLUE_VERSION_STRING} at ${rexglue_DIR} (no game)")
 endif()
 
+include(cmake/guest_host_offset.cmake)
+
 if(WIN32)
     # Every executable next to the game's, where the runtime DLLs are (no rpath on Windows).
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
@@ -115,6 +117,10 @@ enable_testing()
 # executable has its own, empty copy of spdlog's registry): cmake/check_no_spdlog.cmake.
 add_test(NAME no_direct_spdlog COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_SOURCE_DIR}/cmake/check_no_spdlog.cmake)
+# Hooks never touch the guest registers the generated code may keep in locals (r12, r14-r31, f14-f31,
+# v14 and up): cmake/check_guest_registers.cmake.
+add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
+    -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
 add_subdirectory(src/dev)
