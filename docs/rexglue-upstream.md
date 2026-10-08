@@ -50,7 +50,7 @@ unchanged.
 | 18 | win-sdl3-shared | Two SDL3 copies in one process on Windows | Still there | Generic (Windows) | Propose |
 | 19 | mnk-keystrokes | MnK driver never produced keystrokes | Fixed upstream (#310, `3f34ffc`) | Generic | Drop on the next base update |
 | 20 | vfs-wildcard-dos-semantics | `*.*` does not match names without a dot | Still there | Generic | Propose, with the caveat in its draft |
-| 21 | tests-portable | SDK tests do not build on ARM64 or without the PowerPC binutils | Still there | Generic | Propose (D20) |
+| 22 | tests-portable | SDK tests do not build on ARM64 or without the PowerPC binutils | Still there | Generic | Propose (D20) |
 
 Other topics:
 
@@ -823,6 +823,53 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   pointing the builds at the new prefix) happens then, agreed with the agents that share it.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
+
+### 7. For the integrator: patch numbers (2026-10-08)
+
+Three branches added SDK patches with clashing numbers. Numbers are now handed out from one table
+(`patches/README.md`, "Numbers"), kept by the patches maintainer, and are never reused:
+
+| # | Patch | Branch | Base it applies on |
+|---|---|---|---|
+| 19 | `rexglue-mnk-keystrokes.patch` | `develop` | `0c7b01a` only; removed on `bd833a2` |
+| 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | `0c7b01a` and `bd833a2` |
+| 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | `0c7b01a` and `bd833a2` (with or without 18) |
+| 22 | `rexglue-tests-portable.patch` (was 21 on `sdk/rexglue-next` until this change) | `sdk/rexglue-next` | `bd833a2` |
+| 23 | next free | | |
+
+Checked with `git apply --check`: 20 and 21 apply on top of the rebased series (`bd833a2`), and so
+does 22; the three touch different files (`src/filesystem`, `thirdparty/CMakeLists.txt`,
+`tests/`), so they apply in any order.
+
+Merging these branches conflicts in `patches/series` and `patches/README.md`, and the resolution
+is mechanical:
+- `series`: the lines in number order, ending `... 18, 20, 21, 22`. Keep 19 (`rexglue-mnk-keystrokes.patch`)
+  only while `SDK_COMMIT` is `0c7b01a`. 22 needs `bd833a2` and comes in with `sdk/rexglue-next`.
+- `README.md`: keep the "Numbers" table from `sdk/rexglue-next`. Where one side has the "Taken by"
+  placeholder for 20 or 21 and the other has the full text, keep the full text.
+- `tools/deps/key.sh` hashes `series` and the patches, so each merge changes the dependency key
+  once. That is expected.
+
+Ask the patches maintainer before integrating any of these branches. If another branch adds a
+patch, it also asks there for a number.
+
+### 8. For the macOS and Windows agents
+
+There is no direct channel between machines. The user carries messages, and what is meant for
+these agents lives here and in `patches/README.md`.
+
+- **macOS (ARM64).** Base: `sdk/rexglue-next` (series on `bd833a2`, patch 22 included).
+  - The PPC test data is on branch `sdk/ppc-test-data`. Build with
+    `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=<that checkout>/bin`. To remake it after an
+    SDK change, run `tools/deps/build_ppc_test_data.sh` on Linux.
+  - Wanted back, in `docs/macos-port.md` of `docs/macos-port-plan`:
+    - The exact compiler error of `codegen_writer_test.cpp:128`. Patch 22 assumes it is Catch2
+      printing a `file_time_type`.
+    - Whether patch 22 builds and passes there.
+    - The details of the ARM64 bugs (`fctiw`/`fctid`, `mffs`, the unhandled memory fault). They become
+      upstream drafts here.
+- **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
+  22. When you next touch the series, ask for a number here first.
 
 Cost: the series is done; what remains is builds (SDK in all configurations, three game builds
 for the fence measurement), the measurement runs and the game validation. About a day, most of it

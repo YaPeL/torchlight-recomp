@@ -16,6 +16,26 @@ On Linux the same two checks fail, and so do four `core/chrono_test.cpp` cases (
 of the NT epoch, 1601-01-01), with the old base and with `bd833a2` alike; no patch touches either
 file. Every other case passes on `bd833a2` with this series, the patches' own tests included.
 
+## Numbers
+
+A patch's number is its name in this README, the docs and the commits, and it is never reused: a
+withdrawn or removed patch keeps its number (11, 19). Patches live on several branches before
+they reach `develop`, so numbers are handed out in one place, this table, kept by whoever
+maintains the series (ask there before giving a new patch a number). `series` lists the patches
+in number order; a branch adds its own line at its number's place.
+
+| # | Patch | Branch | State |
+|---|---|---|---|
+| 1-18 | (below) | `develop` | In the series |
+| 11 | `rexglue-delete-on-close.patch` | | Withdrawn |
+| 19 | `rexglue-mnk-keystrokes.patch` | `develop` | In the series on `0c7b01a`; removed on `bd833a2` (`sdk/rexglue-next`) |
+| 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
+| 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration |
+| 22 | `rexglue-tests-portable.patch` | `sdk/rexglue-next` | Pending integration (needs `bd833a2`) |
+| 23 | | | Next free number |
+
+## The patches
+
 1. `rexglue-vulkan-stencil-transfer.patch`: the Vulkan backend's stencil copies (without shader
    stencil export) set every bit of the destination to 1. The minimap reinterprets that EDRAM as
    color and showed red. *Bug seen only with the laptop's NVIDIA GPU; it did not happen on the
@@ -239,18 +259,23 @@ file. Every other case passes on `bd833a2` with this series, the patches' own te
     plus a keyboard passthrough mode). Upstream does not repeat a held bound key; if the menus need
     it, that is an upstream PR on top of patch 16's `keystroke_repeat.h`.
 
-21. `rexglue-tests-portable.patch` (number 20 is the VFS wildcard patch, on the mods branch): the
-    SDK's tests did not build on ARM64 or macOS. `tests/ppc/CMakeLists.txt` passed `-msse4.1
-    -mssse3` to `ppc_tests` on every architecture; now only on x86-64, as the root `CMakeLists.txt`
-    already does. The PPC instruction tests assemble `tests/ppc/asm/*.s` with the bundled
-    PowerPC binutils (with VMX128), which exist for Linux and Windows only; the new cache variable
-    `REXGLUE_PPC_TEST_BIN_DIR` points the build at `.bin` and `.map` files assembled elsewhere
-    from the same sources (empty, the default, assembles them as before; a missing file stops the
-    configure). `tools/deps/build_ppc_test_data.sh` makes them on a Linux machine.
-    `codegen_writer_test.cpp` compared two `file_time_type` inside `CHECK`, which makes Catch2 print
-    them; that does not compile with Apple's libc++, so the comparison is made outside. Validated
-    on Linux x86-64: `ppc_tests` passes (1462 cases) both ways, the files assembled by the build
-    and the prebuilt ones are byte identical, and `[codegen_writer]` passes. Not specific to any
-    GPU or to the game. Candidate for an upstream report to ReXGlue.
+20. Taken by `rexglue-vfs-wildcard-dos-semantics.patch` (the mods' `*.*` wildcard), on branch
+    `feature/pc-mods`: described there.
+
+21. Taken by `rexglue-sdl-software-renderer.patch` (`SDL_Renderer` with the software driver only,
+    for the progress window and the launcher), on branch `feature/launcher-imgui`: described there.
+
+22. `rexglue-tests-portable.patch`: the SDK's tests did not build on ARM64 or macOS.
+    `tests/ppc/CMakeLists.txt` passed `-msse4.1 -mssse3` to `ppc_tests` on every architecture; now
+    only on x86-64, as the root `CMakeLists.txt` already does. The PPC instruction tests assemble
+    `tests/ppc/asm/*.s` with the bundled PowerPC binutils (with VMX128), which exist for Linux and
+    Windows only; the new cache variable `REXGLUE_PPC_TEST_BIN_DIR` points the build at `.bin` and
+    `.map` files assembled elsewhere from the same sources (empty, the default, assembles them as
+    before; a missing file stops the configure). `tools/deps/build_ppc_test_data.sh` makes them on a
+    Linux machine. `codegen_writer_test.cpp` compared two `file_time_type` inside `CHECK`, which
+    makes Catch2 print them; that does not compile with Apple's libc++, so the comparison is made
+    outside. Validated on Linux x86-64: `ppc_tests` passes (1462 cases) both ways, the files
+    assembled by the build and the prebuilt ones are byte identical, and `[codegen_writer]` passes.
+    Not specific to any GPU or to the game. Candidate for an upstream report to ReXGlue.
 
 The observation and diagnostic patches there were before remain in the git history.

@@ -2,7 +2,7 @@
 # Assembles the ReXGlue SDK's PPC instruction tests (tests/ppc/asm/*.s) into the .bin and .map files
 # ppc_tests is generated from, with the PowerPC binutils bundled in the SDK (Linux and Windows
 # only). Hosts without them (macOS) build the tests with -DREXGLUE_PPC_TEST_BIN_DIR=<OUT_DIR>
-# (patches/README.md, patch 21). Same commands as the SDK's cmake/ppc_test_pipeline.cmake. Test data
+# (patches/README.md, patch 22). Same commands as the SDK's cmake/ppc_test_pipeline.cmake. Test data
 # of the SDK only; nothing of the game is involved.
 #
 # Usage: tools/deps/build_ppc_test_data.sh SDK_CHECKOUT OUT_DIR
