@@ -2,6 +2,7 @@
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   cmake_minimum_required(VERSION 3.25)
   project(pc_achievements LANGUAGES CXX)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/guest_host_offset.cmake")
 endif()
 add_library(torchlight_achievements STATIC service.cpp diagnostics.cpp notifications.cpp
     toast_schedule.cpp list_model.cpp)

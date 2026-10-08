@@ -45,7 +45,7 @@ uint32_t BoundVertexBuffer(const uint8_t* m, uint32_t binding, uint32_t stream);
 struct GuestVertexMemory {
   uint32_t address = 0, size = 0;
   uint8_t fetch_endian = 0;
-  const uint8_t* bytes = nullptr;  // host view of `address` (GuestBytes: the physical host offset)
+  const uint8_t* bytes = nullptr;  // host view of `address` (xbox_memory::HostAddress)
 };
 std::optional<GuestVertexMemory> VertexBufferMemory(const uint8_t* m, uint32_t buffer);
 
