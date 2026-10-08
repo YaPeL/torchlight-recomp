@@ -1,0 +1,16 @@
+00000000 t test_subfze_one_ca_1
+00000018 t test_subfze_one_ca_1_constant
+00000038 t test_subfze_one_ca_2
+00000050 t test_subfze_one_ca_2_constant
+0000006c t test_subfze_one_ca_3
+00000084 t test_subfze_one_ca_3_constant
+000000a0 t test_subfze_one_ca_4
+000000b8 t test_subfze_one_ca_4_constant
+000000d4 t test_subfze_zero_ca_1
+000000e8 t test_subfze_zero_ca_1_constant
+00000104 t test_subfze_zero_ca_2
+00000118 t test_subfze_zero_ca_2_constant
+00000130 t test_subfze_zero_ca_3
+00000144 t test_subfze_zero_ca_3_constant
+0000015c t test_subfze_zero_ca_4
+00000170 t test_subfze_zero_ca_4_constant

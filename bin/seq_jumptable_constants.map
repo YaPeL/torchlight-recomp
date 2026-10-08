@@ -1,0 +1,8 @@
+00000000 t test_jumptable
+00000020 t .the_table
+00000030 t .case_0
+00000038 t .case_1
+00000040 t .case_2
+00000048 t .case_3
+0000004c t .the_divide
+0000005c t test_jumptable_constants

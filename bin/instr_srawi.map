@@ -1,0 +1,10 @@
+00000000 t test_srawi_1
+0000000c t test_srawi_1_constant
+0000001c t test_srawi_2
+00000028 t test_srawi_2_constant
+00000038 t test_srawi_3
+00000044 t test_srawi_3_constant
+00000054 t test_srawi_4
+00000060 t test_srawi_4_constant
+00000070 t test_srawi_5
+0000007c t test_srawi_5_constant

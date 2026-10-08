@@ -1,0 +1,6 @@
+00000000 t test_lvsr_1
+00000008 t test_lvsr_1_constant
+00000014 t test_lvsr_2
+0000001c t test_lvsr_2_constant
+00000028 t test_lvsr_3
+00000030 t test_lvsr_3_constant

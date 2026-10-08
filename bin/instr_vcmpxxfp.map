@@ -1,0 +1,6 @@
+00000000 t test_vcmpxxfp_1
+0000000c t test_vcmpxxfp_2
+00000018 t test_vcmpxxfp_3
+00000024 t test_vcmpbfp_1
+00000030 t test_vcmpbfp_2
+0000003c t test_vcmpbfp_3

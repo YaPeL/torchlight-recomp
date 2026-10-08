@@ -1,0 +1,10 @@
+00000000 t test_addic_1
+0000000c t test_addic_1_constant
+0000001c t test_addic_2
+00000028 t test_addic_2_constant
+00000038 t test_addic_3
+00000044 t test_addic_3_constant
+00000058 t test_addic_cr_1
+00000068 t test_addic_cr_1_constant
+0000007c t test_addic_cr_2
+0000008c t test_addic_cr_2_constant

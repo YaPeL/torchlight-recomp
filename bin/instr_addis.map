@@ -1,0 +1,10 @@
+00000000 t test_addis_1
+00000008 t test_addis_1_constant
+00000018 t test_addis_2
+00000020 t test_addis_2_constant
+00000030 t test_lis_1
+00000038 t test_lis_1_constant
+00000044 t test_lis_2
+0000004c t test_lis_2_constant
+00000058 t test_subis_1
+00000060 t test_subis_1_constant

@@ -1,0 +1,14 @@
+00000000 t test_add_1
+00000008 t test_add_1_constant
+0000001c t test_add_2
+00000024 t test_add_2_constant
+00000038 t test_add_cr_1
+00000044 t test_add_cr_1_constant
+0000005c t test_add_cr_2
+00000068 t test_add_cr_2_constant
+00000080 t test_add_cr_3
+0000008c t test_add_cr_3_constant
+000000a4 t test_add_cr_4
+000000b0 t test_add_cr_4_constant
+000000c4 t test_add_cr_5
+000000d0 t test_add_cr_5_constant
