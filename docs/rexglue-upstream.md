@@ -587,6 +587,18 @@ pointer the handlers expect, and return. Full exception dispatch (`RtlRaiseExcep
 `throw`) is a larger job and not what this issue asks. Is that direction acceptable, or do you
 prefer to solve it in the codegen (emitting the handler calls at the call site)?
 
+Whatever the shape, an unwinder or dispatcher that calls a funclet has to hand it the same state a
+direct call does. The funclet reads its owner's frame pointer from r12 (see D26). Under
+`non_volatile_as_local`, it also reads the owner's live r14-r31 from `ctx`, and those are host
+locals of the owner. So the codegen has to provide what a direct call site already does: a copy of
+the owner's localized r14-r31 into `ctx` before the funclet runs, and back after. Otherwise the
+funclet reads stale values.
+
+In Torchlight, 52 of the 92 `share_registers` functions are reachable only through exception
+dispatch, so they never run today. The other 40 are called directly, and the SDK already copies
+r14-r31 around those calls (checked call site by call site). None of the 92 reads a non-volatile
+FPR or vector register of its owner, which matters because the copy covers GPRs only.
+
 ---
 
 ### D18. `-mcmodel=large` forced on Linux x86-64
