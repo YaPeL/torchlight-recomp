@@ -315,11 +315,12 @@ passes included):
 
 The PC does not draw clearly fewer: more in the dungeon and the fight, about the same in the town.
 So the share of world draws that fall wholly outside the camera in the 360 build (22-53 %) is not
-a broken cull on the 360 side; the PC game draws them too. Both create their scene manager by type
-mask: the PC calls `Root::createSceneManager(0x10, "SMBKInstance")` and `(0x10, "SMInstance")`
-(`0x401825`, `0x40185C`; 0x10 is `ST_INTERIOR`), and the Octree plugin, loaded by `Plugins.cfg`,
-registers for every type (`OgreOctreeSceneManager.cpp:1156`, mask 0xFFFF), so both get the octree
-scene manager.
+a broken cull on the 360 side; the PC game draws them too. The PC creates its scene managers by
+type mask, `Root::createSceneManager(0x10, "SMBKInstance")` and `(0x10, "SMInstance")` (`0x401825`,
+`0x40185C`; 0x10 is `ST_INTERIOR`), and the Octree plugin, loaded by `Plugins.cfg`, registers for
+every type (`OgreOctreeSceneManager.cpp:1156` in the 1.7 sources, mask 0xFFFF), so the PC gets the
+octree scene manager. How the 360 build creates its own was not read (it looks the same two names
+up, `sub_824B03F8`).
 
 **Not done**: timing the PC counterparts of the guest functions in the equipment spike
 (`0x822DC6B0`, `0x822C08E0`) with `perf` on the Wine process: they are not identified in the PC
