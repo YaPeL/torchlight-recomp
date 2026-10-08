@@ -9,3 +9,6 @@ patches/*.patch text eol=lf
 # default), so the dependency key is the same on a runner and on a developer's machine.
 patches/series text eol=lf
 *.ps1 text eol=lf
+# Copied byte for byte from Dear ImGui's tag (third_party/imgui_backends/README.md), CRLF included.
+third_party/imgui_backends/imgui_impl_* -text
+third_party/imgui_backends/LICENSE.txt -text
