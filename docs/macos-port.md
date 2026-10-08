@@ -135,6 +135,51 @@ each rounding mode; `mffs` after `mtfsfi`; an unhandled fault terminates). Check
 Done when the SDK installs, its tests pass on ARM64 (or every failure is explained and shared with
 x86-64), and the vblank thread's interval at 60 and 120 Hz is measured.
 
+**MAC.1 results (2026-10-08, Mac mini M2, macOS 26.6, Command Line Tools 26.2, CMake 4.4.4):**
+
+- The SDK builds and installs on `mac-arm64` (Release) both on `bd833a2` with `sdk/rexglue-next`'s
+  series (every patch applies; that branch retired patch 19) and on `0c7b01a` with `develop`'s
+  series, the latter through `tools/deps/build_sdk.sh` (branch `feature/macos-sdk`: the preset by
+  host, `-DCMAKE_OSX_SYSROOT=macosx`, deployment target 13.3). A clean build takes about 4 minutes.
+- CMake 4 no longer passes the macOS SDK to the compiler (`CMAKE_OSX_SYSROOT` empty by default):
+  without `-DCMAKE_OSX_SYSROOT=macosx`, Apple's `clang++` finds no C++ standard library.
+- This Mac's Command Line Tools keep a stale `usr/include/c++/v1` (11 entries from 2022-2023, no
+  `<algorithm>`) that clang searches before the macOS SDK's libc++. A machine problem, not the
+  project's: until it is removed (it needs `sudo`), the builds here run with
+  `CPLUS_INCLUDE_PATH=<SDK>/usr/include/c++/v1`. CI runners do not have it.
+- SDK `unit_tests` (`bd833a2`, Release, ARM64): 245 cases, 240 passed, 4 skipped, 1 failed: the
+  same `output_stamp_test.cpp:227-228` checks that fail on Linux and Windows. The four
+  `chrono_test.cpp` NT epoch cases that fail on Linux pass here. One test did not compile with
+  Apple's libc++: `codegen_writer_test.cpp:128`, `CHECK(fs::last_write_time(probe) == before)`,
+  where Catch2 cannot print a `file_time_type` (its `__int128` duration is ambiguous for
+  `operator<<`); run here as `CHECK((...))` in the scratch checkout. **For the ReXGlue agent**:
+  an upstream candidate, test only.
+- The PPC instruction tests (`tests/ppc`) cannot build on macOS as they are: their assembler
+  (`tools/binutils/powerpc-none-elf-as`, with `-mvmx128`) is shipped only as Linux x86-64 and
+  Windows binaries, and `ppc_tests` is compiled with `-msse4.1 -mssse3` unconditionally
+  (`tests/ppc/CMakeLists.txt`). LLVM's PowerPC assembler has no VMX128. Not run yet; options in
+  the report of MAC.1.
+- One SDL: `librexruntime.dylib` exports SDL's functions, and an executable linked with the
+  package's `rex::runtime` (which also lists `SDL3::SDL3-static`) binds them to the runtime
+  (`nm -m`: `_SDL_WasInit (from librexruntime)`) and contains no SDL code: ld64 resolves against
+  the dylib, which comes first on the link line. **Patch 18 is not needed on macOS**; checked
+  again on the game's executable at MAC.6.
+- MoltenVK warns that `newResidencySetWithDescriptor:error:` (macOS 15) is called without an
+  availability check while the target is 13.3: only Xenos uses MoltenVK.
+- The vblank interval needs a running title: measured at MAC.6.
+- OGRE 14.6.0 (trial for MAC.3, not committed): GL3+ (Cocoa, `OpenGL.framework`), RTSS and STBI
+  build as dylibs with `-DOGRE_BUILD_LIBS_AS_FRAMEWORKS=OFF`; the install's rpath is still
+  absolute (MAC.3 sets `@loader_path`).
+
+Disk, measured: the SDK checkout with its submodules 0.7 GB (2.2 GB as `build_sdk.sh` makes it,
+with the whole history), its Release build tree 0.36 GB, its install 0.1 GB; OGRE's shallow
+checkout 0.22 GB, its build tree 0.11 GB, its install 0.01 GB. The game's build is measured at
+MAC.6 (it needs the XEX). If it does not fit, in this order: one configuration at a time
+(Release, or RelWithDebInfo only to profile); no debug information for the generated code
+(`-g0` on `torchlight_recomp`, the bulk of the objects; symbols kept for our own code); remove
+the SDK's and OGRE's build trees and sources once installed (`build_sdk.sh` with an empty work
+directory already does); and `generated/` regenerated rather than kept for both configurations.
+
 ## 2. x86-specific code and what ARM64 needs
 
 **SDK.** The generated code calls only `simde_mm_*` intrinsics, `__builtin_bswap*`,
