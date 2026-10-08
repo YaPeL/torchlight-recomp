@@ -1,0 +1,149 @@
+diff --git a/include/rex/platform/fpscr.h b/include/rex/platform/fpscr.h
+index c2c4fd4..c25e0ad 100644
+--- a/include/rex/platform/fpscr.h
++++ b/include/rex/platform/fpscr.h
+@@ -40,6 +40,8 @@ struct FPSCRPlatform {
+                                        (1 << 12);   // PM - Precision (Inexact)
+   static constexpr size_t GuestToHost[] = {SIMDE_MM_ROUND_NEAREST, SIMDE_MM_ROUND_TOWARD_ZERO,
+                                            SIMDE_MM_ROUND_UP, SIMDE_MM_ROUND_DOWN};
++  // Indexed by MXCSR.RC: 00 nearest, 01 down, 10 up, 11 toward zero.
++  static constexpr u32 HostToGuest[] = {0 /* nearest */, 3 /* down */, 2 /* up */, 1 /* zero */};
+ 
+   static inline u32 getcsr() noexcept { return simde_mm_getcsr(); }
+ 
+@@ -58,9 +60,12 @@ struct FPSCRPlatform {
+   static constexpr size_t RoundMaskVal = 3 << RoundShift;
+   // FZ and FZ16
+   static constexpr size_t FlushMask = (1 << 19) | (1 << 24);
+-  // Nearest, Zero, -Infinity, -Infinity
++  // Guest nearest, toward zero, up (+infinity), down (-infinity) to RMode.
+   static constexpr size_t GuestToHost[] = {0 << RoundShift, 3 << RoundShift, 1 << RoundShift,
+                                            2 << RoundShift};
++  // Indexed by FPCR.RMode: 00 nearest (RN), 01 up (RP), 10 down (RM), 11
++  // toward zero (RZ). Not MXCSR's order: up and down are the other way round.
++  static constexpr u32 HostToGuest[] = {0 /* nearest */, 2 /* up */, 3 /* down */, 1 /* zero */};
+   // Exception enable bits (0 = exception disabled, ARM defaults to 0)
+   static constexpr u32 ExceptionMask = (1 << 8) |   // IOE - Invalid Operation
+                                        (1 << 9) |   // DZE - Division by Zero
+diff --git a/include/rex/ppc/context.h b/include/rex/ppc/context.h
+index 0ede542..ba3f76f 100644
+--- a/include/rex/ppc/context.h
++++ b/include/rex/ppc/context.h
+@@ -147,8 +147,6 @@ constexpr uint32_t kRoundMask = 0x03;
+ struct FPSCRRegister {
+   uint32_t csr;
+ 
+-  static constexpr size_t HostToGuest[] = {kRoundNearest, kRoundDown, kRoundUp, kRoundTowardZero};
+-
+   using Platform = platform::FPSCRPlatform;
+   static constexpr size_t RoundShift = Platform::RoundShift;
+   static constexpr size_t RoundMaskVal = Platform::RoundMaskVal;
+@@ -168,7 +166,7 @@ struct FPSCRRegister {
+ 
+   inline uint32_t loadFromHost() noexcept {
+     csr = getcsr();
+-    return HostToGuest[(csr & RoundMaskVal) >> RoundShift];
++    return Platform::HostToGuest[(csr & RoundMaskVal) >> RoundShift];
+   }
+ 
+   inline void storeFromGuest(uint32_t value) noexcept {
+@@ -208,6 +206,19 @@ struct FPSCRRegister {
+   }
+ };
+ 
++// mffs reads back the rounding mode mtfsf wrote, on every host.
++static_assert(
++    [] {
++      using P = FPSCRRegister::Platform;
++      for (uint32_t mode = 0; mode <= kRoundMask; ++mode) {
++        if (P::HostToGuest[(P::GuestToHost[mode] & P::RoundMaskVal) >> P::RoundShift] != mode) {
++          return false;
++        }
++      }
++      return true;
++    }(),
++    "FPSCRPlatform::HostToGuest must invert GuestToHost");
++
+ }  // namespace rex::ppc
+ 
+ using PPCRegister = rex::ppc::Register;
+diff --git a/tests/ppc/asm/instr_mffs_rounding.s b/tests/ppc/asm/instr_mffs_rounding.s
+new file mode 100644
+index 0000000..e8b22c6
+--- /dev/null
++++ b/tests/ppc/asm/instr_mffs_rounding.s
+@@ -0,0 +1,74 @@
++# mffs reads back the rounding mode mtfsf 0xFF wrote (f1). Each test puts
++# the mode back to round to nearest (f0 = 0).
++
++# round to nearest
++test_mffs_rounding_1:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000000
++  mtfsf 0xFF, f1
++  mffs f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f1 0x0000000000000000
++  #_ REGISTER_OUT f2 0x0000000000000000
++
++# round toward zero
++test_mffs_rounding_2:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000001
++  mtfsf 0xFF, f1
++  mffs f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f1 0x0000000000000001
++  #_ REGISTER_OUT f2 0x0000000000000001
++
++# round up
++test_mffs_rounding_3:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000002
++  mtfsf 0xFF, f1
++  mffs f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f1 0x0000000000000002
++  #_ REGISTER_OUT f2 0x0000000000000002
++
++# round down
++test_mffs_rounding_4:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000003
++  mtfsf 0xFF, f1
++  mffs f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f1 0x0000000000000003
++  #_ REGISTER_OUT f2 0x0000000000000003
++
++# save round up with mffs, switch to nearest, restore the saved word
++test_mffs_rounding_5:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000002
++  mtfsf 0xFF, f1
++  mffs f2
++  mtfsf 0xFF, f0
++  mtfsf 0xFF, f2
++  mffs f3
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x0000000000000002
++  #_ REGISTER_OUT f3 0x0000000000000002
++
++# save round down with mffs, switch to nearest, restore the saved word
++test_mffs_rounding_6:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000003
++  mtfsf 0xFF, f1
++  mffs f2
++  mtfsf 0xFF, f0
++  mtfsf 0xFF, f2
++  mffs f3
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x0000000000000003
++  #_ REGISTER_OUT f3 0x0000000000000003

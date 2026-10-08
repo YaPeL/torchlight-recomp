@@ -19,3 +19,6 @@ rexglue-sdl-keystroke-repeat.patch
 rexglue-win-timer-resolution.patch windows
 rexglue-win-sdl3-shared.patch windows
 rexglue-tests-portable.patch
+rexglue-fctiw-rounding-mode.patch
+rexglue-arm64-mffs-rounding.patch
+rexglue-mtfsf-field-mask.patch

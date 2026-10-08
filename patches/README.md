@@ -32,7 +32,10 @@ in number order; a branch adds its own line at its number's place.
 | 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
 | 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration |
 | 22 | `rexglue-tests-portable.patch` | `sdk/rexglue-next` | Pending integration (needs `bd833a2`) |
-| 23 | | | Next free number |
+| 23 | `rexglue-fctiw-rounding-mode.patch` | `sdk/rexglue-next` | Pending integration |
+| 24 | `rexglue-arm64-mffs-rounding.patch` | `sdk/rexglue-next` | Pending integration; to confirm on ARM64 |
+| 25 | `rexglue-mtfsf-field-mask.patch` | `sdk/rexglue-next` | Pending integration |
+| 26 | | | Next free number |
 
 ## The patches
 
@@ -277,5 +280,36 @@ in number order; a branch adds its own line at its number's place.
     outside. Validated on Linux x86-64: `ppc_tests` passes (1462 cases) both ways, the files
     assembled by the build and the prebuilt ones are byte identical, and `[codegen_writer]` passes.
     Not specific to any GPU or to the game. Candidate for an upstream report to ReXGlue.
+
+23. `rexglue-fctiw-rounding-mode.patch`: `fctiw` and `fctid` (convert in the current rounding mode)
+    were emitted as `simde_mm_cvtsd_si32`/`_si64`. Without native SSE2 (ARM64) SIMDe implements
+    them with C `round`, half away from zero whatever the guest's FPSCR[RN]: 2.5 gave 3 under round
+    to nearest, toward zero and down. Now they call `rex::ppc::cvt_f64_s32_current` /
+    `_s64_current` (`include/rex/ppc/intrinsics.h`): the same SSE conversion when SSE2 is native,
+    `std::nearbyint` (which honours the mode `storeFromGuest` set) with the same out-of-range result
+    elsewhere. Test: `tests/ppc/asm/instr_fctix_rounding.s`, 18 cases (2.5, -2.5, 3.5, 2.7 and -2.7
+    under each mode, `fctiw` and `fctid`). On x86-64 they pass with and without the patch (native
+    SSE2 was right); the portable path was checked with a scratch program built with
+    `-DSIMDE_NO_NATIVE` (the old conversion wrong in 4 to 6 of 11 cases, the helper in none), and
+    the PPC tests fail without the patch on ARM64 only (`docs/rexglue-upstream.md`, section 8).
+    Torchlight uses `fctid` in 10 places. Not specific to any GPU. Upstream draft D22.
+
+24. `rexglue-arm64-mffs-rounding.patch`: `mffs` read the rounding mode back with MXCSR's order on
+    every host (`FPSCRRegister::HostToGuest`); ARM64's FPCR has up and down the other way round, so
+    `mffs` reported up as down and down as up, and a save and restore of FPSCR flipped them. The
+    table moved into each `FPSCRPlatform` (`include/rex/platform/fpscr.h`) next to `GuestToHost`,
+    and a `static_assert` in `include/rex/ppc/context.h` checks on every host that reading back
+    gives what was written. Test: `tests/ppc/asm/instr_mffs_rounding.s` (each mode read back; a
+    save, switch and restore of round up and of round down). Found by reading the code; on x86-64
+    the tests pass with and without the patch, and the failure without it is to be seen on ARM64
+    (`docs/rexglue-upstream.md`, section 8). Torchlight has 5 `mffs`. Upstream draft D23.
+
+25. `rexglue-mtfsf-field-mask.patch`: `mtfsf` with a partial field mask wrote the wrong FPSCR fields
+    on every architecture: FM bit 0 (field 0, `0xF0000000`) was mapped to the low nibble, which
+    holds RN, so `mtfsf 1,f1` did not change the rounding mode and `mtfsf 0x80` did. Now the mask
+    follows PowerPC bit order (`src/codegen/builders/system.cpp`, `build_mtfsf`). Test:
+    `tests/ppc/asm/instr_mtfsf_fields.s`, 4 cases, all 4 failing without the patch on x86-64. With
+    patches 22-25 the whole `ppc_tests` passes on Linux x86-64 (1490 cases) and `unit_tests` is as
+    before. Torchlight only uses the full mask (`mtfsf 0xFF`, 5 places). Upstream draft D24.
 
 The observation and diagnostic patches there were before remain in the git history.

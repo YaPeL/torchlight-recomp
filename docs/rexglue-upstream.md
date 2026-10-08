@@ -775,6 +775,8 @@ each `fesetround` mode:
 
 **PR: `fix(codegen): fctiw/fctid round in the current rounding mode on every architecture`**
 
+(Our patch 23, with the tests below; `patches/README.md`.)
+
 Fixes #NNN. Convert with `std::nearbyint` (or `llrint`), which honours the FP environment that
 `storeFromGuest` sets on both architectures, and keep today's NaN and saturation handling. The
 generated code must not let the compiler fold the conversion across an `mtfsf`, so either keep it
@@ -804,6 +806,8 @@ On ARM64:
 
 **PR: `fix(runtime): read the ARM64 rounding mode back in FPCR order`**
 
+(Our patch 24, with the tests below; `patches/README.md`.)
+
 Fixes #NNN. Move `HostToGuest` into `FPSCRPlatform`, next to `GuestToHost`, with the ARM64 order
 `{kRoundNearest, kRoundUp, kRoundDown, kRoundTowardZero}`. Test: for each mode, `mtfsf 0xFF` and
 then `mffs` returns it.
@@ -828,6 +832,8 @@ and the mode does not change. Checked on x86-64 with a PPC test, `mtfsf 1,f1` wi
 followed by `mffs f2`: it gives 0, expected 3. `mtfsf 0xFF` (the full mask) is right.
 
 **PR: `fix(codegen): mtfsf field mask in PowerPC bit order`**
+
+(Our patch 25, with the tests below; `patches/README.md`.)
 
 Fixes #NNN. `if (fm & (0x80 >> j)) mask |= 0xF0000000u >> (4 * j)`. Test: `mtfsf 1` sets RN and
 `mtfsf 0x80` leaves it alone, each followed by `mffs`. (`mtfsfi`, `mtfsb0` and `mtfsb1` have no
@@ -1036,7 +1042,10 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | `0c7b01a` and `bd833a2` |
 | 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | `0c7b01a` and `bd833a2` (with or without 18) |
 | 22 | `rexglue-tests-portable.patch` (was 21 on `sdk/rexglue-next` until this change) | `sdk/rexglue-next` | `bd833a2` |
-| 23 | next free | | |
+| 23 | `rexglue-fctiw-rounding-mode.patch` (D22) | `sdk/rexglue-next` | `bd833a2` (needs 22 for its tests on macOS) |
+| 24 | `rexglue-arm64-mffs-rounding.patch` (D23) | `sdk/rexglue-next` | `bd833a2` |
+| 25 | `rexglue-mtfsf-field-mask.patch` (D24) | `sdk/rexglue-next` | `bd833a2` |
+| 26 | next free | | |
 
 Checked with `git apply --check`: 20 and 21 apply on top of the rebased series (`bd833a2`), and so
 does 22; the three touch different files (`src/filesystem`, `thirdparty/CMakeLists.txt`,
@@ -1059,7 +1068,7 @@ patch, it also asks there for a number.
 There is no direct channel between machines. The user carries messages, and what is meant for
 these agents lives here and in `patches/README.md`.
 
-- **macOS (ARM64).** Base: `sdk/rexglue-next` (series on `bd833a2`, patch 22 included).
+- **macOS (ARM64).** Base: `sdk/rexglue-next` (series on `bd833a2`, patches 22-25 included).
   - The PPC test data is on branch `sdk/ppc-test-data`. Build with
     `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=<that checkout>/bin`. To remake it after an
     SDK change, run `tools/deps/build_ppc_test_data.sh` on Linux.
@@ -1070,6 +1079,31 @@ these agents lives here and in `patches/README.md`.
     x86-64. The ARM64 bugs are now drafts D22, D23 and D25. D24 (`mtfsf` mask) was found here on
     the way; it affects every architecture. The `tests/ppc` suite covers none of them, so
     `ppc_tests` passing on ARM64 does not clear them.
+  - **Patches 23-25 (2026-10-08): please run this on ARM64 and write the results back** in
+    `docs/macos-port.md`. On x86-64 the tests of 23 and 24 cannot fail, because native SSE2 and
+    MXCSR were right there. Only ARM64 shows those two bugs.
+    1. Take `sdk/rexglue-next` at the commit that adds 23-25, and `sdk/ppc-test-data` at the
+       commit that adds `instr_fctix_rounding`, `instr_mffs_rounding` and `instr_mtfsf_fields`
+       (169 files of each kind). The configure stops if a `.bin` is missing.
+    2. Build the SDK as before with the whole series (`tools/deps/build_sdk.sh`, which applies
+       23-25). Then, in its checkout, take the fixes out but keep their tests:
+
+           for p in rexglue-mtfsf-field-mask rexglue-arm64-mffs-rounding rexglue-fctiw-rounding-mode; do
+             git apply -R --exclude='tests/*' <repo>/patches/$p.patch
+           done
+
+       Build `ppc_tests` with `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=...` and run
+       `ppc_tests "fctix_rounding.*"`, then `"mffs_rounding.*"`, then `"mtfsf_fields.*"`.
+       Expected without the fixes:
+       - **`fctix_rounding`: 12 of 18 fail.** These fail: 2.5 and -2.5 to nearest; 2.7 and -2.7
+         toward zero; -2.5 up; 2.5 down. Each fails for both `fctiw` and `fctid`.
+       - **`mffs_rounding`: 4 of 6 fail.** These fail: up, down, and both save-and-restore cases.
+         Nearest and toward zero pass.
+       - **`mtfsf_fields`: 4 of 4 fail**, as on x86-64.
+    3. Put the fixes back (the same loop without `-R`, in the order 23, 24, 25), rebuild and run all
+       of `ppc_tests` (expected: 1490 cases pass) and `unit_tests` (expected: as before, only
+       `output_stamp_test.cpp:227-228`).
+    4. Anything else is a finding: send the failing cases' output.
 - **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
   22. When you next touch the series, ask for a number here first.
 
