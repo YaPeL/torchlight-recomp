@@ -262,7 +262,12 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
   not read (docs/mods.md, section 7e). An earlier note here
   blamed a saved item with an unknown unit; run 161 had that item removed and still looped, so the
   trigger in the game is not established. The macOS port hit the same on the runtime side (an
-  unhandled memory fault hangs the process). The ReXGlue-patches agent bundles it with the
-  `RtlUnwind` report for upstream.
+  unhandled memory fault hangs the process). Cause in the SDK (on `0c7b01a` and on `bd833a2`
+  alike): `Memory::AccessViolationCallback` (`src/system/xmemory.cpp:547`) logs the line and
+  declines a fault outside the guest's physical heaps (such as 0x1AC), and the POSIX
+  `ExceptionHandlerCallback` (`src/core/exception_handler_posix.cpp`) then returns without
+  chaining to the previous handler or the default action, so the instruction runs and faults
+  again. Upstream draft D25 (`docs/rexglue-upstream.md` on `sdk/rexglue-next`, `0980c6f`) proposes
+  making such a fault an ordinary crash (SIGSEGV); not an SDK patch here unless decided.
 
 The observation and diagnostic patches there were before remain in the git history.
