@@ -107,6 +107,24 @@ MoltenVK) and fixes after them:
 
 New patches the port needs: items 2-4 above (generic, upstream candidates). `series` needs no new kind: `posix` already includes macOS.
 
+**For the render agent** (who integrates the macOS branches into `develop`):
+
+- `feature/guest-memory-view` (MAC.2) changes `guest_abi`, which every platform uses: on Linux the
+  offset is 0 and every access is as before, but the Linux tests and the 20 replays are to be run
+  before merging (not possible on this Mac). Windows has the 0x1000 offset: the checks for the
+  Windows agent are under MAC.2, section 3.
+- `tools/deps/key.sh` hashes the build scripts, so two macOS branches change the deps keys although
+  their Linux and Windows paths build the same as before. CI then rebuilds and republishes the
+  prebuilt SDK and OGRE once, with the same contents:
+  - `feature/macos-sdk` (`build_sdk.sh`, hashed for Linux and for Windows, whose `windows.ps1`
+    reads the SDK commit from it): Linux key 490625dfdd0d3587 -> 96e659a70fad93b2, Windows key
+    dff3a62266274a33 -> 9118838d6b3c0af9.
+  - `feature/macos-ogre` (`build_ogre.sh`, hashed for Linux only): Linux key 490625dfdd0d3587 ->
+    c47d61aaf82c9c0c; Windows unchanged.
+  Merged together, the Linux key changes once more (it hashes both scripts). Keys computed on
+  `develop` at `acadb5a` with `shasum -a 256` (macOS has no `sha256sum`, which `key.sh` calls: a
+  point for MAC.9).
+
 **For the ReXGlue agent** (owner of the series and of `sdk/rexglue-next`; decided 2026-10-08: the
 macOS port uses that branch's series on `bd833a2` as it is, and changes to the series go through
 that agent, not through the macOS branches). Upstream candidates found for macOS, each with the
@@ -200,7 +218,7 @@ x86-64), and the vblank thread's interval at 60 and 120 Hz is measured.
 - The vblank interval needs a running title: measured at MAC.6.
 - OGRE 14.6.0 (trial for MAC.3, not committed): GL3+ (Cocoa, `OpenGL.framework`), RTSS and STBI
   build as dylibs with `-DOGRE_BUILD_LIBS_AS_FRAMEWORKS=OFF`; the install's rpath is still
-  absolute (MAC.3 sets `@loader_path`).
+  absolute (MAC.3 sets `@loader_path`). Done in MAC.3, below.
 
 Disk, measured: the SDK checkout with its submodules 0.7 GB (2.2 GB as `build_sdk.sh` makes it,
 with the whole history), its Release build tree 0.36 GB, its install 0.1 GB; OGRE's shallow
@@ -407,6 +425,19 @@ ticket, evaluated with the replay on the 20 captures (image and frame time again
 becomes urgent if Apple announces OpenGL's removal or GL3+ performs badly here. Metal is out until
 OGRE's RTSS writes Metal.
 
+**MAC.3 results (branch `feature/macos-ogre`, 2026-10-08):** `tools/deps/build_ogre.sh` builds
+OGRE on macOS with the same components as on Linux (GL3+, the RTSS with its shaders, STBI), for
+arm64, deployment target 13.3, plain dylibs, rpath `@loader_path` and `@loader_path/..`,
+`-dead_strip_dylibs`, no Wayland build. OGRE appends its install's absolute `lib/` to every rpath
+(its `CMakeLists.txt`, also on Linux, where `$ORIGIN` comes first); on macOS the script deletes it
+with `install_name_tool`, which keeps the ad hoc signatures valid (`codesign -v`). Checked here: a
+clean build in 32 seconds; no absolute path in any dylib (`otool -L`, `otool -l`); the install
+copied elsewhere with the original hidden loads `RenderSystem_GL3Plus` and `Codec_STBI` from a test
+program (not committed), which lists "OpenGL 3+ Rendering Subsystem" and finds the PNG codec; the
+install takes 9.4 MB (the work directory, temporary, about 0.33 GB while it builds). Creating a GL
+window is MAC.4 and MAC.5's. On Linux the script passes cmake the same options as before (checked
+with a stand-in `cmake`, the old and new script compared); it was not run on Linux here.
+
 **Ticket MAC.5 (backend on macOS, replay):** OGRE 14.6.0 built for arm64 (MAC.3); the replay
 presents in an OGRE window (`--window`) and renders the 20 reference captures, kept on this Mac
 (game-derived: never in the repository), with the PSNR Linux gives. Done when the 20 captures
@@ -560,6 +591,11 @@ laptops are SDL's to handle. Cmd+Q comes as SDL's quit event: it has to take the
 `kCocoa`, the CMake branch and a `mac-arm64-nogame` preset. Done when the `nogame` build's ctest
 passes on this Mac.
 
+Found in MAC.3, for MAC.4 (or MAC.6 at the latest): `src/backend/CMakeLists.txt` finds OGRE's
+plugins as `${OGRE_PLUGIN_DIR}/<name>${CMAKE_SHARED_MODULE_SUFFIX}`, which is `.so` on macOS, but
+OGRE's plugins there are `.dylib` (`lib/OGRE/RenderSystem_GL3Plus.dylib`); the staging of
+`ogre/plugins` and the install rules for the dylibs (Linux-only today) go with it.
+
 ## 9. Plan by stages
 
 From what can be validated first (no game) to what is validated last. Each stage's risks are the
@@ -570,7 +606,7 @@ ones that can stop it; the two-failed-hypotheses rule applies to each.
 | 0. Tools | — | No | CMake and Ninja installed (proposed first) | None |
 | 1. SDK builds and its tests pass on ARM64 (done 2026-10-08) | MAC.1 | No | SDK `unit_tests` and PPC tests on this Mac | SIMDe differences beyond items 2-3 (NaN, denormals, saturation) found by the PPC tests; the series on `bd833a2` not merged yet |
 | 2. Guest memory view | MAC.2 | No | Unit tests with the offset on and off; a Linux replay unchanged | Callers that bypass `guest_abi` |
-| 3. OGRE builds | MAC.3 | No | `build_ogre.sh` on macOS; OGRE's GL3+ plugin loads | Cocoa GL code paths less used upstream |
+| 3. OGRE builds (done 2026-10-08) | MAC.3 | No | `build_ogre.sh` on macOS; OGRE's GL3+ plugin loads | Cocoa GL code paths less used upstream |
 | 4. Platform module, `nogame` ctest | MAC.4 | No | ctest on this Mac (pure tests, `ui_pass_test` and `render_scale_test` on GL) | AppKit main-thread rules for the backend's window |
 | 5. Backend on macOS GL | MAC.5 | Captures (local, from the user) | Replay of the 20 captures, PSNR as Linux | Apple GL differences (precision, polygon offset, sRGB, DXT small mips): each through `xbox_to_gl_conventions` |
 | 6. Codegen and game build | MAC.6 | The XEX (from the user) | `rexglue codegen`, a Release and a RelWithDebInfo build link | Build time, memory and the 25 GB of free disk |
