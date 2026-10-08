@@ -689,12 +689,27 @@ tools/deps/build_sdk.sh ~/rexglue-sdk-next/install ~/rexglue-sdk-next all
 from a worktree of `sdk/rexglue-next`: the checkout stays in `~/rexglue-sdk-next/rexglue-sdk`, the
 install in `~/rexglue-sdk-next/install`. `~/rexglue-sdk` is not touched; the other agents keep using
 it until the update is merged. Then the SDK's `unit_tests` (`-DREXGLUE_BUILD_TESTS=ON` in that
-checkout; check whether `b5e0cf8` removed the need for `-I<sdk>/thirdparty/xxHash`, and drop that
-note from `patches/README.md` if so).
+checkout, a separate build directory, no install).
+
+Done on 2026-10-08 (Linux, all configurations): the series applies, the SDK builds and installs,
+and `unit_tests` (Release) gives 245 cases, 236 passed, 5 failed, 4 skipped. The 5 failures
+(`codegen/output_stamp_test.cpp` 227-228, four `core/chrono_test.cpp` cases on the NT epoch) are the
+same 13 checks that fail with the old base's binary (`~/rexglue-sdk`, 253 cases with patch 19's
+eight); no patch touches those files. The patches' own tests (`[vfs]`, `[keystroke]`, `[content]`,
+`[input]`: 40 cases) pass. The xxHash include workaround is no longer needed (`b5e0cf8`).
 
 **Heavy builds are coordinated with the render agent** (they skew its measurements): the SDK build,
 the unit tests and every game build below start only when it says the machine is free. At the time
 of writing it asked for no build during its measurement runs.
+
+**The SDK's install registers its prefix in CMake's user package registry**
+(`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`, no option to turn
+it off). Our `CMakeLists.txt` finds the SDK with `find_package(rexglue)` and the presets give no
+`CMAKE_PREFIX_PATH`, so with two installs registered, a fresh configure can pick either one. After
+every install into `~/rexglue-sdk-next`, delete its entry; builds against it pass
+`-DCMAKE_PREFIX_PATH=~/rexglue-sdk-next/install`. (Done after the first build, 2026-10-08: the
+entry was there from the end of the install until it was noticed; no build tree was configured
+from scratch meanwhile.)
 
 Windows: `tools/build-deps/windows.ps1 -SdkPrefix ...` from the same branch on the Windows machine
 (patches 17 and 18 only build there). Not possible from this machine.

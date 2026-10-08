@@ -11,8 +11,10 @@ touch POSIX files (`threading_posix.cpp`, `memory_posix.cpp`). `series` marks th
 patches 17 and 18 `windows`; the build scripts apply what their platform takes. Patches 17 and 18 only change Windows
 files or Windows branches, so on Linux they build nothing new. The SDK's `unit_tests` pass on Windows except
 `codegen/output_stamp_test.cpp` (lines 227-228, the escaping of paths with a space or `#`), which
-fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched by these patches
-(not rechecked on `bd833a2` yet).
+fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched by these patches.
+On Linux the same two checks fail, and so do four `core/chrono_test.cpp` cases (the conversions
+of the NT epoch, 1601-01-01), with the old base and with `bd833a2` alike; no patch touches either
+file. Every other case passes on `bd833a2` with this series, the patches' own tests included.
 
 1. `rexglue-vulkan-stencil-transfer.patch`: the Vulkan backend's stencil copies (without shader
    stencil export) set every bit of the destination to 1. The minimap reinterprets that EDRAM as
@@ -97,7 +99,7 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     two handles, unmarked, mark cleared, entry deleted with a file open), in the SDK's `unit_tests`
     (`-DREXGLUE_BUILD_TESTS=ON`; on base `0c7b01a` the unit tests also need
     `-DCMAKE_CXX_FLAGS=-I<sdk>/thirdparty/xxHash` because `hash_test.cpp` does not find `xxhash.h`, an
-    existing problem unrelated to this patch). Not specific to any GPU or
+    existing problem unrelated to this patch; not needed from `bd833a2`, upstream `b5e0cf8`). Not specific to any GPU or
     render mode. **Candidate for an upstream report to ReXGlue**: the bug is in the base SDK
     (`src/kernel/xboxkrnl/xboxkrnl_io_info.cpp` marks, `src/system/xfile.cpp` never acts on it) and
     affects any title that deletes files.
