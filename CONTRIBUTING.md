@@ -12,6 +12,12 @@ Thank you for helping. A few things to know before opening a pull request:
   requests that add any are closed.
 - **Keep changes generic.** Behavior is decided by capability or state, never by a hash, a mesh or
   material name, or another identifier of particular game content.
+- **Hooks read arguments, not the caller's registers.** The recompiled code keeps the guest's
+  non-volatile registers (r14-r31, f14-f31, v14 and up) in C++ locals, so a hook that reads them
+  through `ctx` sees a stale value and fails silently; r12 is also off limits (the game passes data
+  in it outside the ABI). Take such a value from an argument of the enclosing guest call instead.
+  The `no_preserved_guest_registers` test (`cmake/check_guest_registers.cmake`) enforces this, with
+  its justified exceptions listed in the script.
 - **English** for code, comments, documentation and commit messages.
 - **Tests.** Build and run the tests as described in [docs/BUILDING.md](docs/BUILDING.md); CI runs
   them on Linux and Windows for every pull request. Say how you checked your change.
