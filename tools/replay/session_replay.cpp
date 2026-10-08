@@ -17,13 +17,22 @@ namespace torchlight::replay {
 
 namespace {
 
-constexpr uint32_t kWidth = 1280, kHeight = 720;  // the live mode's output size
+// The live mode's output size until the recording's main target says otherwise (the frontend
+// then sets the backend's guest size, as in the live mode: other aspect ratios).
+constexpr uint32_t kWidth = 1280, kHeight = 720;
 
-std::vector<uint8_t> ReadOutput(tl_backend* backend) {
-  std::vector<uint8_t> rgba(size_t(kWidth) * kHeight * 4);
-  tl_backend_read_rgba(backend, rgba.data(), kWidth * 4);
-  for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 255;
-  return rgba;
+struct Output {
+  uint32_t width, height;
+  std::vector<uint8_t> rgba;
+};
+
+Output ReadOutput(tl_backend* backend, const frontend::Frontend& frontend) {
+  Output o{frontend.guest_width() ? frontend.guest_width() : kWidth,
+           frontend.guest_height() ? frontend.guest_height() : kHeight, {}};
+  o.rgba.resize(size_t(o.width) * o.height * 4);
+  tl_backend_read_rgba(backend, o.rgba.data(), o.width * 4);
+  for (size_t i = 3; i < o.rgba.size(); i += 4) o.rgba[i] = 255;
+  return o;
 }
 
 }  // namespace
@@ -105,10 +114,12 @@ int ReplaySession(const SessionOptions& o) {
       if (png) {
         char name[64];
         std::snprintf(name, sizeof(name), "/frame_%06llu.png", (unsigned long long)index);
-        WritePng(o.out_dir + name, kWidth, kHeight, ReadOutput(backend));
+        const Output out = ReadOutput(backend, frontend);
+        WritePng(o.out_dir + name, out.width, out.height, out.rgba);
       }
       if (!is_report) return;
-      WritePng(o.out_dir + "/render.png", kWidth, kHeight, ReadOutput(backend));
+      const Output out = ReadOutput(backend, frontend);
+      WritePng(o.out_dir + "/render.png", out.width, out.height, out.rgba);
       if (o.dump_targets) {
         for (const auto& [key, t] : render_targets) {
           if (!frontend.TextureReady(t.id)) continue;
