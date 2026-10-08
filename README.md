@@ -5,7 +5,7 @@ SDK's own `tests/ppc/asm/*.s` at `bd833a2` (development, 2026-10-01) with the SD
 binutils (`tools/binutils`, with VMX128). They are test data of the SDK (BSD-3-Clause, its
 `LICENSE`); nothing of the game is in them.
 
-For hosts without those binutils (macOS), with patch 21 of `patches/` (branch `sdk/rexglue-next`):
+For hosts without those binutils (macOS), with patch 22 of `patches/` (branch `sdk/rexglue-next`):
 
     cmake ... -DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=<this branch>/bin
 
