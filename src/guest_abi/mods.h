@@ -103,9 +103,10 @@ inline constexpr GuestFunction kActiveModCount{0x823AAC48, Confidence::kConfirme
 // (@0x823AAA50). The map's keys are the files' paths inside the mod (sub_823AA340 removes the mod
 // folder's length @0x823AA448..@0x823AA454), upper case with '/' between folders (as a run's
 // diagnostics showed: "MOD.DAT" -> "TLMODS:/TL_TEST_NEW_ITEM/MOD.DAT"), listed recursively with
-// "*.*" (sub_823A0B30; subfolders through sub_823A1010 with "/*.*", 0x820D2F30): the runtime's
-// wildcard must match names without a dot there, as Windows and the Xbox do (patches/README.md,
-// rexglue-vfs-wildcard-dos-semantics.patch), or no subfolder of a mod is ever seen.
+// "*.*" (sub_823A0B30; subfolders through sub_823A1010, which asks for the CMod's folder, kept
+// with '/', plus "/*.*", 0x820D2F30: "tlmods:/<mod>//*.*"). The Xbox search splits paths only at
+// '\' and failed on those (status 0xC000000D, as a run's diagnostics showed), so no subfolder of a
+// mod was ever listed; hooks/find_file_hooks.cpp gives it Windows separators.
 // Its only caller is the data manager's sub_8239D0E8 (@0x8239D164). PC indexes its list by
 // PRIORITY (0x5CE85B..0x5CE8D2) and takes the first match too: the lowest PRIORITY wins.
 inline constexpr GuestFunction kModFileLookup{0x823AA988, Confidence::kConfirmed};
@@ -227,35 +228,5 @@ inline uint32_t ActiveModCount(const uint8_t* base, uint32_t manager_address) {
   }
   return active;
 }
-
-// ---------------------------------------------------------------------------------------------
-// The guest's directory search (XAPI FindFirstFileA/FindNextFileA, statically linked), with which
-// the mods' file maps are listed (sub_823A1010 calls both). Read only by the mods diagnostics.
-
-namespace find {
-// [confirmed] FindFirstFileA(r3 = path, r4 = WIN32_FIND_DATAA*) -> handle, -1 on failure: calls
-// kFindFirstNative with the path; on success (bge 0x8287E130) kFindDataFromNative into r4.
-inline constexpr GuestFunction kFindFirstFile{0x8287E0C8, Confidence::kConfirmed};
-// [confirmed] FindNextFileA(r3 = handle, r4 = WIN32_FIND_DATAA*) -> 1, or 0 when the search ends
-// or fails: kFindNextNative, then on success (bge 0x8287E18C) kFindDataFromNative into r4.
-inline constexpr GuestFunction kFindNextFile{0x8287E158, Confidence::kConfirmed};
-// [confirmed] The native search under kFindFirstFile -> NTSTATUS. Splits the path at its last '\'
-// (backwards scan, cmplwi 92): without one it returns 0xC000000D and opens nothing (0x82883BDC);
-// a pattern of exactly "*.*" is made empty, i.e. match all (before 0x82883B40). Opens the folder
-// with NtOpenFile (bl 0x83026DBC: access 0x00100001, share 3, options 0x4021) and lists it with
-// NtQueryDirectoryFile through the import table (bctrl; FileName = the pattern, RestartScan 0).
-inline constexpr GuestFunction kFindFirstNative{0x82883A68, Confidence::kConfirmed};
-// [confirmed] The native search under kFindNextFile -> NTSTATUS (NtQueryDirectoryFile, bctrl).
-inline constexpr GuestFunction kFindNextNative{0x82883BF0, Confidence::kConfirmed};
-// [confirmed] Native entry -> WIN32_FIND_DATAA (sub_82883F88): attributes to +0 (from +56), the
-// name to +44 (from +64, length +60), NUL-terminated.
-inline constexpr GuestFunction kFindDataFromNative{0x82883F88, Confidence::kConfirmed};
-namespace find_data {
-inline constexpr Field kAttributes{0, Confidence::kConfirmed};
-inline constexpr Field kFileName{44, Confidence::kConfirmed};
-inline constexpr uint32_t kFileNameCapacity = 260;
-inline constexpr uint32_t kAttributeDirectory = 0x10;  // FILE_ATTRIBUTE_DIRECTORY
-}  // namespace find_data
-}  // namespace find
 
 }  // namespace torchlight::guest_abi::mods

@@ -61,6 +61,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/render_system_hooks.cpp
     src/hooks/resource_hooks.cpp
     src/hooks/video_mode_hooks.cpp
+    src/hooks/find_file_hooks.cpp
     # The video menu inside the game's UI (hooks on the game's menus).
     src/game_menu/guest_call.cpp
     src/game_menu/language_pack.cpp
@@ -68,7 +69,6 @@ set(TORCHLIGHT_SOURCES
     # The mods' units in the game's unit index (guest calls; the format and cache are torchlight_mods).
     src/mods/unit_index_install.cpp
     src/mods/save_units_install.cpp
-    src/mods/find_files_diag.cpp
     src/game_menu/save_import_menu.cpp
     src/game_menu/save_indicator.cpp
     src/game_menu/video_menu.cpp
@@ -142,13 +142,13 @@ if(TORCHLIGHT_DEV_COMMANDS)
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_COMMANDS=1)
 endif()
 # Mods diagnostics for validation runs (mods/unit_index_install.cpp: --mods_unit_index_check; the
-# mods' file maps in the log, game_menu/mods_install.cpp; the guest's directory searches on tlmods:,
-# mods/find_files_diag.cpp, which builds to nothing without it). Off by default; the release
+# mods' file maps in the log, game_menu/mods_install.cpp; the guest's directory searches on tlmods:
+# and those whose path the hook changes, hooks/find_file_hooks.cpp). Off by default; the release
 # workflows and presets never set it, so release builds have no such flag.
 option(TORCHLIGHT_MODS_DIAGNOSTICS "Mods diagnostics (--mods_unit_index_check)" OFF)
 if(TORCHLIGHT_MODS_DIAGNOSTICS)
     set_source_files_properties(src/mods/unit_index_install.cpp src/game_menu/mods_install.cpp
-        src/mods/find_files_diag.cpp PROPERTIES
+        src/hooks/find_file_hooks.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_MODS_DIAGNOSTICS=1)
 endif()
 # Our layouts for the game's UI (game_menu/video_menu.h), next to the executable; copied on every
@@ -159,7 +159,7 @@ add_custom_target(torchlight_data ALL
 add_dependencies(torchlight torchlight_data)
 # The live mode (and through it the frontend) and the backend objects.
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods
-    torchlight_save_mod_list torchlight_video_mode
+    torchlight_save_mod_list torchlight_video_mode torchlight_guest_path
     torchlight_game_setup torchlight_save_import)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
