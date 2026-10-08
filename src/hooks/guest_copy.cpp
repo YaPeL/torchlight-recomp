@@ -12,6 +12,12 @@ namespace {
 
 namespace mem = guest_abi::xbox_memory;
 
+// guest_abi translates guest addresses with its own copy of the SDK's host offset (it builds
+// without the SDK): both must agree on this platform.
+static_assert(rex::memory::detail::PhysicalHostOffset(mem::kHostOffsetBoundary) ==
+              mem::kHostOffset);
+static_assert(rex::memory::detail::PhysicalHostOffset(mem::kHostOffsetBoundary - 1) == 0);
+
 // Whether [begin, begin + size) (size > 0, inside the address space) lies on one side of the host
 // offset boundary and outside the device registers.
 bool Linear(uint64_t begin, uint64_t size) {
