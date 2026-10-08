@@ -27,6 +27,8 @@ else()
     message(STATUS "Found ReXGlue SDK ${REXGLUE_VERSION_STRING} at ${rexglue_DIR} (no game)")
 endif()
 
+include(cmake/guest_host_offset.cmake)
+
 if(WIN32)
     # Every executable next to the game's, where the runtime DLLs are (no rpath on Windows).
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")

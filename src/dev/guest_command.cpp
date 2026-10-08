@@ -16,6 +16,7 @@
 #include "guest_abi/dev_console.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/game_ui_sheet.h"
+#include "guest_abi/xbox_memory.h"
 #endif
 
 REXCVAR_DEFINE_STRING(dev_guest_command, "", "Torchlight",
@@ -56,11 +57,12 @@ void Run(PPCContext& ctx, uint8_t* base, uint32_t console, const std::string& co
     REXLOG_ERROR("dev: no scratch space for \"{}\"", command);
     return;
   }
+  uint8_t* units = torchlight::guest_abi::xbox_memory::HostAddress(base, text);
   for (size_t i = 0; i < command.size(); ++i) {
-    base[text + 2 * i] = 0;
-    base[text + 2 * i + 1] = uint8_t(command[i]);
+    units[2 * i] = 0;
+    units[2 * i + 1] = uint8_t(command[i]);
   }
-  base[text + 2 * command.size()] = base[text + 2 * command.size() + 1] = 0;
+  units[2 * command.size()] = units[2 * command.size() + 1] = 0;
   call.Call(ui::kWStringFromText.address, {source, text});
   call.Call(console_abi::kWStringCopy.address, {argument, source});
   const uint32_t result = call.Call(console_abi::kExecuteCommand.address, {console, argument});

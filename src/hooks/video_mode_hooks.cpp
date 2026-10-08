@@ -91,7 +91,8 @@ void InstallVideoMode() {
   }
   auto* memory = REX_KERNEL_MEMORY();
   uint8_t* membase = memory->virtual_membase();
-  if (std::memcmp(membase + fn::kWideModeName, original.data(), original.size()) != 0) {
+  const uint8_t* current = abi::xbox_memory::HostAddress(membase, fn::kWideModeName);
+  if (std::memcmp(current, original.data(), original.size()) != 0) {
     REXLOG_ERROR("video mode: the mode name at {:08X} is not '{}'; the guest keeps 16:9",
                  fn::kWideModeName, original);
     return;
@@ -111,7 +112,8 @@ void InstallVideoMode() {
     REXLOG_ERROR("video mode: no guest memory for surface parameters; the guest keeps 16:9");
     return;
   }
-  std::memset(membase + aliased_parameters, 0, fn::kSurfaceParametersSize);
+  std::memset(abi::xbox_memory::HostAddress(membase, aliased_parameters), 0,
+              fn::kSurfaceParametersSize);
   abi::WriteBytes(membase, fn::kWideModeName, name, original.size());
   heap->Protect(fn::kWideModeName, uint32_t(original.size()), old_protect);
   name_rewritten = true;
