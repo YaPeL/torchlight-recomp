@@ -54,6 +54,8 @@ inline constexpr Field kParent{0x44, Confidence::kConfirmed};
 // [confirmed] mVertexData (the built copy): the ctor stores the clone @0x8247F5AC; the
 // destructor reads it to delete it @0x8247F740.
 inline constexpr Field kVertexData{0x64, Confidence::kConfirmed};
+// [confirmed] mIndexData (the built copy): the ctor stores the clone @0x8247F5C0.
+inline constexpr Field kIndexData{0x68, Confidence::kConfirmed};
 }  // namespace geometry_bucket
 
 namespace material_bucket {

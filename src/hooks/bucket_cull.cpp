@@ -89,7 +89,100 @@ bool PlacesVertexLikeFixedPipeline(std::string_view source) {
   return uses == 2 && source.find("iPos_0)") == std::string_view::npos;
 }
 
-const Box* BucketBoxes::Find(uint32_t bucket) const {
+namespace {
+
+Box Merge(const Box& a, const Box& b) {
+  Box m;
+  for (int i = 0; i < 3; ++i) {
+    m.min[i] = std::min(a.min[i], b.min[i]);
+    m.max[i] = std::max(a.max[i], b.max[i]);
+  }
+  return m;
+}
+
+float Extent(const Box& b) {
+  float e = 0;
+  for (int i = 0; i < 3; ++i) e = std::max(e, b.max[i] - b.min[i]);
+  return e;
+}
+
+}  // namespace
+
+std::optional<BucketShape> BuildShape(std::span<const std::array<float, 3>> positions,
+                                      std::span<const uint32_t> indices, bool pieces,
+                                      size_t max_pieces) {
+  if (indices.size() < 3) return std::nullopt;
+  for (uint32_t i : indices)
+    if (i >= positions.size()) return std::nullopt;
+  // Union-find over the vertices the triangles use.
+  std::vector<uint32_t> parent(positions.size());
+  for (uint32_t i = 0; i < parent.size(); ++i) parent[i] = i;
+  auto find = [&](uint32_t x) {
+    while (parent[x] != x) x = parent[x] = parent[parent[x]];
+    return x;
+  };
+  const size_t triangles = indices.size() / 3;
+  for (size_t t = 0; t < triangles; ++t) {
+    const uint32_t a = find(indices[t * 3]), b = find(indices[t * 3 + 1]), c = find(indices[t * 3 + 2]);
+    parent[a] = b;
+    parent[find(c)] = find(b);
+  }
+  std::unordered_map<uint32_t, BoxBuilder> components;
+  BoxBuilder whole;
+  for (size_t k = 0; k < triangles * 3; ++k) {
+    const auto& p = positions[indices[k]];
+    components[find(indices[k])].Add(p[0], p[1], p[2]);
+    whole.Add(p[0], p[1], p[2]);
+  }
+  auto whole_box = whole.Result();
+  if (!whole_box) return std::nullopt;
+  BucketShape shape{*whole_box, {}};
+  if (!pieces || components.size() < 2) return shape;
+  std::vector<Box> boxes;
+  for (auto& [root, builder] : components) boxes.push_back(*builder.Result());
+  // Group into at most max_pieces: split the group of largest extent at the median of its boxes'
+  // centres along its longest axis, until there are max_pieces groups.
+  std::vector<std::vector<Box>> groups{std::move(boxes)};
+  while (groups.size() < max_pieces) {
+    size_t widest = groups.size();
+    float widest_extent = -1;
+    for (size_t g = 0; g < groups.size(); ++g) {
+      if (groups[g].size() < 2) continue;
+      Box all = groups[g][0];
+      for (const Box& b : groups[g]) all = Merge(all, b);
+      if (Extent(all) > widest_extent) { widest_extent = Extent(all); widest = g; }
+    }
+    if (widest == groups.size()) break;  // every group is a single piece
+    auto& g = groups[widest];
+    Box all = g[0];
+    for (const Box& b : g) all = Merge(all, b);
+    int axis = 0;
+    for (int i = 1; i < 3; ++i)
+      if (all.max[i] - all.min[i] > all.max[axis] - all.min[axis]) axis = i;
+    std::sort(g.begin(), g.end(), [axis](const Box& a, const Box& b) {
+      return a.min[axis] + a.max[axis] < b.min[axis] + b.max[axis];
+    });
+    std::vector<Box> upper(g.begin() + g.size() / 2, g.end());
+    g.resize(g.size() / 2);
+    groups.push_back(std::move(upper));
+  }
+  for (const auto& g : groups) {
+    Box all = g[0];
+    for (const Box& b : g) all = Merge(all, b);
+    shape.pieces.push_back(all);
+  }
+  return shape;
+}
+
+bool ShapeVisible(const Planes& planes, const BucketShape& shape, const Matrix& world) {
+  if (!BoxVisible(planes, TransformBox(shape.whole, world))) return false;
+  if (shape.pieces.empty()) return true;
+  for (const Box& piece : shape.pieces)
+    if (BoxVisible(planes, TransformBox(piece, world))) return true;
+  return false;
+}
+
+const BucketShape* BucketBoxes::Find(uint32_t bucket) const {
   auto it = boxes_.find(bucket);
   return it == boxes_.end() ? nullptr : &it->second;
 }

@@ -7,7 +7,10 @@
 // and every other renderable are left alone. Bucket boxes are computed on first use from all the
 // vertices of the bucket's vertex data and forgotten in ~GeometryBucket.
 
+#include <array>
+#include <chrono>
 #include <cstdint>
+#include <vector>
 #include <cstring>
 #include <string_view>
 
@@ -28,6 +31,9 @@ REXCVAR_DEFINE_BOOL(native_bucket_cull, true, "Torchlight",
                     "Native mode only: drop the StaticGeometry buckets entirely outside the main "
                     "camera's frustum (an improvement over the original; hooks/bucket_cull.h); "
                     "false queues every bucket as the game does");
+REXCVAR_DEFINE_BOOL(native_bucket_cull_pieces, true, "Torchlight",
+                    "With --native_bucket_cull: test each piece of a bucket (up to 16 boxes) "
+                    "instead of one box for the whole bucket");
 
 namespace {
 
@@ -39,6 +45,7 @@ using namespace torchlight::hooks;
 constexpr uint64_t kReportWalks = 600;  // the log line's period, in main walks
 
 bool g_enabled = false;           // InstallBucketCull: native mode and the cvar
+bool g_pieces = true;             // --native_bucket_cull_pieces: one box per piece
 bool g_programs_ok = true;        // every vertex program seen places vertices as the fixed pipeline
 bool g_main_walk = false;         // inside _findVisibleObjects for the scene viewport
 Planes g_planes{};                // that walk's frustum, read at its first bucket
@@ -57,16 +64,20 @@ Planes ReadPlanes(const uint8_t* m, uint32_t camera) {
   return p;
 }
 
-// The bucket's box in its region's space: every vertex of its vertex data (vertexStart through
-// vertexCount, whatever the indices use), position element as FLOAT3. Nothing when the data is not
-// built or not readable; such a bucket is always queued.
-std::optional<Box> ComputeBucketBox(const uint8_t* m, uint32_t bucket) {
+// The bucket's shape in its region's space. The whole box covers every vertex of its vertex data
+// (vertexStart through vertexCount, whatever the indices use); the pieces come from the triangles
+// of its index data (a triangle list, indices relative to vertexStart). Positions are the FLOAT3
+// position element. Nothing when the data is not built or not readable; such a bucket is always
+// queued.
+std::optional<BucketShape> ComputeBucketShape(const uint8_t* m, uint32_t bucket, bool pieces) {
   namespace og = abi::ogre;
   const uint32_t vdata = abi::ReadU32(m, bucket + sg::geometry_bucket::kVertexData.offset);
-  if (!vdata) return std::nullopt;
+  const uint32_t idata = abi::ReadU32(m, bucket + sg::geometry_bucket::kIndexData.offset);
+  if (!vdata || !idata) return std::nullopt;
   const uint32_t start = abi::ReadU32(m, vdata + og::vertex_data::kVertexStart.offset);
   const uint32_t count = abi::ReadU32(m, vdata + og::vertex_data::kVertexCount.offset);
   if (count == 0) return std::nullopt;
+  std::vector<std::array<float, 3>> positions;
   for (const auto& e : cap::ReadVertexElements(
            m, abi::ReadU32(m, vdata + og::vertex_data::kVertexDeclaration.offset))) {
     if (!e.semantic.known() || e.semantic.get() != torchlight::commands::VertexSemantic::kPosition)
@@ -80,15 +91,41 @@ std::optional<Box> ComputeBucketBox(const uint8_t* m, uint32_t bucket) {
     const uint32_t stride = abi::ReadU32(m, buffer + og::hardware_vertex_buffer::kVertexSize.offset);
     if (!memory || stride < 12 || e.offset + 12 > stride) return std::nullopt;
     if (uint64_t(start + count) * stride > memory->size) return std::nullopt;
-    BoxBuilder b;
-    for (uint32_t v = start; v < start + count; ++v) {
-      const uint8_t* p = memory->bytes + v * stride + e.offset;
-      b.Add(FetchFloat(p, memory->fetch_endian), FetchFloat(p + 4, memory->fetch_endian),
-            FetchFloat(p + 8, memory->fetch_endian));
+    positions.resize(count);
+    for (uint32_t v = 0; v < count; ++v) {
+      const uint8_t* p = memory->bytes + (start + v) * stride + e.offset;
+      positions[v] = {FetchFloat(p, memory->fetch_endian), FetchFloat(p + 4, memory->fetch_endian),
+                      FetchFloat(p + 8, memory->fetch_endian)};
     }
-    return b.Result();
+    break;
   }
-  return std::nullopt;
+  if (positions.empty()) return std::nullopt;
+  BoxBuilder all;
+  for (const auto& p : positions) all.Add(p[0], p[1], p[2]);
+  const auto all_box = all.Result();
+  if (!all_box) return std::nullopt;
+  // The triangles (big-endian indices in guest memory).
+  const uint32_t ibuffer = abi::ReadU32(m, idata + og::index_data::kIndexBuffer.offset +
+                                               og::shared_ptr::kPRep.offset);
+  const uint32_t istart = abi::ReadU32(m, idata + og::index_data::kIndexStart.offset);
+  const uint32_t icount = abi::ReadU32(m, idata + og::index_data::kIndexCount.offset);
+  const uint32_t isize = ibuffer ? abi::ReadU32(m, ibuffer + og::hardware_index_buffer::kIndexSize.offset) : 0;
+  const auto imemory = ibuffer ? cap::IndexBufferMemory(m, ibuffer) : std::nullopt;
+  std::optional<BucketShape> shape;
+  if (imemory && (isize == 2 || isize == 4) && icount >= 3 && icount % 3 == 0 &&
+      uint64_t(istart + icount) * isize <= imemory->size) {
+    std::vector<uint32_t> indices(icount);
+    for (uint32_t k = 0; k < icount; ++k) {
+      const uint8_t* q = imemory->bytes + uint64_t(istart + k) * isize;
+      indices[k] = isize == 4 ? uint32_t(q[0]) << 24 | uint32_t(q[1]) << 16 | uint32_t(q[2]) << 8 | q[3]
+                              : uint32_t(q[0]) << 8 | q[1];
+    }
+    shape = BuildShape(positions, indices, pieces);
+  }
+  if (!shape) return BucketShape{*all_box, {}};  // no usable triangles: the whole box only
+  // The whole box keeps every vertex (a larger box is safe).
+  shape->whole = *all_box;
+  return shape;
 }
 
 // Whether the main walk should drop this renderable: a geometry bucket whose box, under its region
@@ -103,14 +140,19 @@ bool OutsideMainCamera(const uint8_t* m, uint32_t renderable) {
     g_planes = ReadPlanes(m, g_walk_camera);
     g_planes_read = true;
   }
-  const Box* local = g_boxes.Find(renderable);
+  const BucketShape* local = g_boxes.Find(renderable);
   if (!local) {
-    const auto box = ComputeBucketBox(m, renderable);
-    if (!box) {
+    const auto started = std::chrono::steady_clock::now();
+    auto shape = ComputeBucketShape(m, renderable, g_pieces);
+    g_stats.shape_ms +=
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - started).count();
+    if (!shape) {
       ++g_stats.buckets_unreadable;
       return false;
     }
-    g_boxes.Store(renderable, *box);
+    ++g_stats.shapes_built;
+    g_stats.pieces_built += shape->pieces.size();
+    g_boxes.Store(renderable, std::move(*shape));
     local = g_boxes.Find(renderable);
   }
   const uint32_t material = abi::ReadU32(m, renderable + sg::geometry_bucket::kParent.offset);
@@ -128,7 +170,7 @@ bool OutsideMainCamera(const uint8_t* m, uint32_t renderable) {
   Matrix world;
   for (uint32_t i = 0; i < 16; ++i)
     world[i] = abi::ReadF32(m, node + sg::node::kCachedTransform.offset + 4 * i);
-  return !BoxVisible(g_planes, TransformBox(*local, world));
+  return !ShapeVisible(g_planes, *local, world);
 }
 
 }  // namespace
@@ -137,9 +179,11 @@ namespace torchlight::hooks {
 
 void InstallBucketCull(bool native_only) {
   g_enabled = native_only && REXCVAR_GET(native_bucket_cull);
-  REXLOG_INFO("bucket culling: {} (--native_bucket_cull={}, native mode {})",
-              g_enabled ? "on" : "off", REXCVAR_GET(native_bucket_cull),
-              native_only ? "on" : "off");
+  g_pieces = REXCVAR_GET(native_bucket_cull_pieces);
+  REXLOG_INFO("bucket culling: {}{} (--native_bucket_cull={}, --native_bucket_cull_pieces={}, "
+              "native mode {})",
+              g_enabled ? "on" : "off", g_enabled ? (g_pieces ? ", per piece" : ", per bucket") : "",
+              REXCVAR_GET(native_bucket_cull), g_pieces, native_only ? "on" : "off");
 }
 
 void BucketCullNoteProgram(std::string_view target, std::string_view source) {
@@ -173,10 +217,11 @@ REX_FUNC(sub_821A6070) {
     const double w = double(g_stats.main_walks);
     REXLOG_INFO("bucket culling: last {} main walks; per walk: {:.1f} buckets tested, {:.1f} "
                 "dropped, {:.1f} unreadable, {:.1f} without a node, {:.1f} with a stale node "
-                "transform; {} boxes cached{}",
+                "transform; {} shapes built ({} pieces) in {:.2f} ms; {} cached{}",
                 g_stats.main_walks, g_stats.buckets_tested / w, g_stats.buckets_dropped / w,
                 g_stats.buckets_unreadable / w, g_stats.buckets_no_node / w,
-                g_stats.buckets_stale_transform / w, g_boxes.size(),
+                g_stats.buckets_stale_transform / w, g_stats.shapes_built, g_stats.pieces_built,
+                g_stats.shape_ms, g_boxes.size(),
                 g_programs_ok ? "" : " (off: a vertex program places vertices its own way)");
     g_stats = BucketCullStats{};
   }
