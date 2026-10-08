@@ -21,7 +21,7 @@
 namespace torchlight::mods {
 
 // Bumped whenever what goes into a cached index changes (how entries are read or merged).
-inline constexpr uint32_t kUnitIndexVersion = 1;
+inline constexpr uint32_t kUnitIndexVersion = 2;
 
 // One unit definition a mod brings: the mod's folder, the path inside it as the game names it
 // ("MEDIA/UNITS/..."; upper case, '/') and a digest of its bytes.

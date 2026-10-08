@@ -228,4 +228,16 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     Windows: the keyboard drives the menus. Not specific to any GPU. Candidate for an upstream
     report to ReXGlue.
 
+## Known gaps, not patched
+
+- **`RtlUnwind` is a stub** (the kernel logs `[STUB] RtlUnwind called - not implemented`). A guest
+  C++ exception that the game catches needs it to unwind the frames between the throw and the
+  handler; without it the game goes on in a broken state. Seen on 2026-10-08 in a mods validation
+  run (docs/mods.md, section 7f): a saved character wore an item whose unit GUID the game's unit
+  index did not know; while the main menu showed that character, the game hit the stub and then
+  read guest address 0x1AC over and over (thousands of `Unhandled guest access violation` lines in
+  30 s) until it was closed. The save itself was untouched. The project avoids the trigger (items
+  with unknown units are kept out of saves, docs/mods.md) and does not change the SDK for it.
+  Candidate for an upstream report to ReXGlue.
+
 The observation and diagnostic patches there were before remain in the git history.
