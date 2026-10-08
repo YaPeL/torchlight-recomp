@@ -302,8 +302,26 @@ the remove handler `0x49B4B0` too. The only difference: the 360 checks a global 
 defers the rebuild while it is set; the PC has no such flag. So that spike is the game's design,
 on both.
 
-**Not done**: draw calls per frame on the PC (`DXVK_HUD=drawcalls`, cancelled for now), and timing
-the PC counterparts of the guest functions in the equipment spike
+**Draw calls per frame** (PC: DXVK's HUD, `DXVK_HUD=fps,drawcalls`, read by eye, so ranges; 360: the
+native backend's draws per guest frame from a session recording, both 512x512 render-to-texture
+passes included):
+
+| Place | PC (DXVK) | 360 (native backend) |
+|---|---|---|
+| Main menu | 136-138 | |
+| Dungeon floor 1, still where the save loads | 216-218 | 180 |
+| Fighting toward the NPC | about 300, peaks about 380 | 272 |
+| Walking around the town square | 270-280 | 287 |
+
+The PC does not draw clearly fewer: more in the dungeon and the fight, about the same in the town.
+So the share of world draws that fall wholly outside the camera in the 360 build (22-53 %) is not
+a broken cull on the 360 side; the PC game draws them too. Both create their scene manager by type
+mask: the PC calls `Root::createSceneManager(0x10, "SMBKInstance")` and `(0x10, "SMInstance")`
+(`0x401825`, `0x40185C`; 0x10 is `ST_INTERIOR`), and the Octree plugin, loaded by `Plugins.cfg`,
+registers for every type (`OgreOctreeSceneManager.cpp:1156`, mask 0xFFFF), so both get the octree
+scene manager.
+
+**Not done**: timing the PC counterparts of the guest functions in the equipment spike
 (`0x822DC6B0`, `0x822C08E0`) with `perf` on the Wine process: they are not identified in the PC
 executable yet, and the frame times already show the PC spending longer on the same work.
 
