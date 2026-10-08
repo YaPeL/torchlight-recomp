@@ -412,7 +412,9 @@ commands::Draw CaptureDraw(const uint8_t* m, uint32_t render_system, uint32_t op
 }
 
 commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint32_t gptype,
-                                     uint32_t mask, ConstantMirror* mirror, bool filter) {
+                                     uint32_t mask, ConstantMirror* mirror, bool filter,
+                                     bool* unchanged) {
+  if (unchanged) *unchanged = false;
   namespace gpp = ogre::gpu_program_parameters;
   namespace node = ogre::gpu_logical_index_use_node;
   commands::SetConstants c;
@@ -456,8 +458,10 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
   uint32_t first = U32(m, parameters + gpp::kAutoConstants.offset + ogre::stl_vector::kFirst.offset);
   uint32_t last = U32(m, parameters + gpp::kAutoConstants.offset + ogre::stl_vector::kLast.offset);
   uint32_t stride = ogre::auto_constant_entry::kSize.bytes;
+  // Into a scratch list first: a command left unchanged copies nothing (live commands).
+  thread_local std::vector<commands::AutoConstant> autos;
+  autos.clear();
   if (first != 0 && last >= first && (last - first) / stride <= 512) {
-    c.autos.reserve((last - first) / stride);
     for (uint32_t e = first; e < last; e += stride) {
       commands::AutoConstant a;
       a.raw_type = abi::ReadU32(m, e, ogre::auto_constant_entry::kParamType);
@@ -471,9 +475,18 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
         Session::Get().AddUnresolved(UnresolvedReason::kUnknownEnumValue,
                                      fmt::format("auto constant type {}", a.raw_type));
       }
-      c.autos.push_back(std::move(a));
+      autos.push_back(std::move(a));
     }
   }
+  if (mirror) {
+    if (filter && c.floats.empty() && c.ints.empty() &&
+        mirror->SameTail(c.stage.value, autos, c.transpose_matrices)) {
+      if (unchanged) *unchanged = true;
+      return c;
+    }
+    mirror->StoreTail(c.stage.value, autos, c.transpose_matrices);
+  }
+  c.autos.assign(autos.begin(), autos.end());
   return c;
 }
 

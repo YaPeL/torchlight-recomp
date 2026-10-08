@@ -410,15 +410,11 @@ RECORD_HOOK(91, 821C2118, ({
     // nothing changes; a capture being recorded gets every range (capture/constant_mirror.h).
     cap::ConstantMirror* mirror = s.live() ? &s.constant_mirror() : nullptr;
     const bool filter = mirror && !s.armed();
-    cmd::SetConstants c =
-        cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF, mirror, filter);
+    bool unchanged = false;
+    cmd::SetConstants c = cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF,
+                                             mirror, filter, &unchanged);
     // (No return here: the guest's own bindGpuProgramParameters runs after this body.)
-    const bool unchanged = filter && c.floats.empty() && c.ints.empty() &&
-                           mirror->SameTail(c.stage.value, c.autos, c.transpose_matrices);
-    if (!unchanged) {
-      if (mirror) mirror->StoreTail(c.stage.value, c.autos, c.transpose_matrices);
-      s.Event(std::move(c));
-    }
+    if (!unchanged) s.Event(std::move(c));
   }
 }))
 
@@ -436,7 +432,9 @@ extern "C" REX_FUNC(sub_821C4058) {
   if (s.recording()) {
     cap::ProducerTimer timer(s.producer_times(), cap::ProducerSection::kCommands, s.measuring());
     cap::HookTimer hook_timer(s.hook_costs(), 87, s.measuring());
-    std::vector<cmd::Hash> live_keys;
+    // Scratch: DrawEvent reads the keys, it does not keep them.
+    thread_local std::vector<cmd::Hash> live_keys;
+    live_keys.clear();
     cmd::Draw d = cap::CaptureDraw(base, render_system, operation, live_keys);
     s.DrawEvent(std::move(d), live_keys);
   }

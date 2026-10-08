@@ -41,10 +41,12 @@ commands::Draw CaptureDraw(const uint8_t* m, uint32_t render_system, uint32_t op
 
 // Constants that D3D9RenderSystem::bindGpuProgramParameters uploads for `mask`. With `mirror`
 // (live commands) the values read are stored in it, and with `filter` the ranges it already holds
-// are left out (capture/constant_mirror.h).
+// are left out (capture/constant_mirror.h); when that leaves nothing to change (no range, the same
+// auto constants and transpose flag) `*unchanged` is set and the command is not to be sent, and
+// nothing was copied for it.
 commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint32_t gptype,
                                      uint32_t mask, ConstantMirror* mirror = nullptr,
-                                     bool filter = false);
+                                     bool filter = false, bool* unchanged = nullptr);
 
 // Program description (registered in the session).
 commands::BindProgram CaptureProgram(const uint8_t* m, uint32_t program);
