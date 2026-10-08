@@ -5,8 +5,8 @@ folder, tells the player in one short message where the report is, and exits. It
 and it must never fill the disk with logs. This should work the same way on Linux (with the Steam
 Deck), Windows and macOS.
 
-This is a design only; no code yet. The facts about the SDK are from `bd833a2` (the base
-`sdk/rexglue-next` moves to) unless a line says `0c7b01a` (today's base). "Seen" means a run or a
+This is a design; CR.1 (section 9) is implemented. The facts about the SDK are from `bd833a2`, the
+base `develop` uses since 2026-10-08, unless a line says `0c7b01a` (the base before it). "Seen" means a run or a
 test; "read" means only the code was read.
 
 ## 1. What happens today
@@ -23,7 +23,8 @@ Logs:
 - `0c7b01a`: a rotating file sink, 5 MB × 20 files per run (`log_max_file_size_mb`,
   `log_max_files`). Each run gets a new number, and old runs are never removed. This machine's log
   folder (`~/.local/state/TorchlightRecomp/logs`) holds 447 files, 1.1 GB.
-- `bd833a2` (`b971840`): a plain `basic_file_sink`, so a run has **no size limit at all**.
+- `bd833a2` (`b971840`): a plain `basic_file_sink`, so a run had **no size limit at all**, until
+  our SDK patch 26 (`rexglue-log-rotation.patch`) brought the rotating sink and its two cvars back.
   `LogConfig::dir_budget_bytes` prunes old runs, but only when the runtime picks the name itself.
   Our layer sets `log_file` (`src/live/install.cpp`, `ConfigurePaths`), so on the new base an
   endless loop would grow one file without bound.
@@ -152,8 +153,8 @@ if the in-process reports turn out unreliable.
 
 - **Repeat suppression:** the file sink goes behind spdlog's `dup_filter_sink` (5 s window). A
   message repeated in a burst is written once, then `Skipped N duplicate messages`.
-- **Per run, at most 50 MB:** a rotating sink of 5 MB × 10. On `0c7b01a` that is just the two cvars.
-  On `bd833a2`, `b971840` removed rotation; we need it back (SDK patch, section 7).
+- **Per run, at most 50 MB:** a rotating sink of 5 MB × 10, set through the two cvars
+  (`src/live/log_budget.h`). On `bd833a2` the rotation is our SDK patch 26 (section 7).
 - **The folder, at most 200 MB:**
   - At startup our layer removes the oldest runs (each run's log, its rotations, its OGRE log and
     its crash report) until the folder fits.
@@ -186,7 +187,7 @@ if the in-process reports turn out unreliable.
 common interface), following CLAUDE.md's platform rule:
 - the handler and its criterion, the reporter thread and the report writer;
 - the helper mode and the next-start notice;
-- the log sinks (`OnConfigureLogging`: ring buffer, duplicate filter, rotation on `0c7b01a`) and the
+- the log sinks (`OnConfigureLogging`: ring buffer, duplicate filter) and the
   folder pruning;
 - the build section, with the version, the series key and the commit added to `build_info.h`;
 - `tools/crash/resolve.py`.
@@ -202,8 +203,9 @@ common interface), following CLAUDE.md's platform rule:
    - Today they call `Break()`, which returns on POSIX.
    - The C++ alternative, an executable's `__imp__RtlRaiseException` interposing the runtime's,
      would work on Linux and fail on Windows, where the runtime is a DLL.
-3. **Log rotation on `bd833a2`.** Bring back a per-run size limit (rotation or a cap) for
-   `LogConfig`. Its removal is a regression from `0c7b01a`.
+3. **Log rotation on `bd833a2`.** Done: patch 26 brings back the rotating sink and
+   `log_max_file_size_mb`/`log_max_files`. Its removal was a regression from `0c7b01a`. The
+   duplicate filter still needs a way to wrap the runtime's file sink (a `LogConfig` field).
 4. **(Optional) `sigaltstack` for guest threads**, so stack overflows get a report on POSIX.
 
 **Upstream**, proposed together with D17 (`RtlUnwind`) as "fatal guest errors":
@@ -236,7 +238,9 @@ D17's local unwind, once implemented, removes the only stub the game hits on a n
 ## 9. Order
 
 1. **CR.1:** log limits (section 5) and the duplicate filter. This is independent of the rest and
-   ends the disk problem first: on `0c7b01a` without SDK changes; on `bd833a2` with SDK patch 3.
+   ends the disk problem first. **Done** (`fix/log-budget`): the folder pruning and the rotation
+   cvars, on both bases, with SDK patch 26 on `bd833a2`; the duplicate filter is left for patch 3's
+   follow-up.
 2. **CR.2:** SDK patches 1 and 2 (with D25's test), on `sdk/rexglue-next`.
 3. **CR.3:** the POSIX handler, the reporter and the report (Linux), with the child-process tests.
 4. **CR.4:** Windows: the filter, `StackWalk64` and the PDB identity.
