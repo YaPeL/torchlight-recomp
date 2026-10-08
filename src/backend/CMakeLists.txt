@@ -31,7 +31,13 @@ target_link_libraries(torchlight_backend PUBLIC OgreMain OgreRTShaderSystem torc
 # (platform::OgrePluginDir, OgreMediaDir). Every executable that creates a backend gets them in the
 # build tree, as links to the OGRE install; the install rules copy the files.
 # OGRE loads a plugin by its versioned file name (RenderSystem_GL3Plus.so.14.6 on Linux), the file
-# the unversioned name links to.
+# the unversioned name links to. macOS: the plugins are dylibs, and OGRE loads them by the
+# unversioned name (OgreDynLib.cpp adds ".dylib"), so that is the name staged.
+if(APPLE)
+    set(_plugin_suffix "${CMAKE_SHARED_LIBRARY_SUFFIX}")
+else()
+    set(_plugin_suffix "${CMAKE_SHARED_MODULE_SUFFIX}")
+endif()
 set(_plugins "")
 set(_plugin_names RenderSystem_GL3Plus Codec_STBI)
 if(WIN32 AND EXISTS "${OGRE_PLUGIN_DIR}/RenderSystem_Direct3D11.dll")
@@ -39,7 +45,11 @@ if(WIN32 AND EXISTS "${OGRE_PLUGIN_DIR}/RenderSystem_Direct3D11.dll")
     list(APPEND _plugin_names RenderSystem_Direct3D11)
 endif()
 foreach(_plugin IN LISTS _plugin_names)
-    file(REAL_PATH "${OGRE_PLUGIN_DIR}/${_plugin}${CMAKE_SHARED_MODULE_SUFFIX}" _file)
+    if(APPLE)
+        set(_file "${OGRE_PLUGIN_DIR}/${_plugin}${_plugin_suffix}")
+    else()
+        file(REAL_PATH "${OGRE_PLUGIN_DIR}/${_plugin}${_plugin_suffix}" _file)
+    endif()
     list(APPEND _plugins "${_file}")
     # Windows: OGRE's Debug build loads the "_d" plugins (OgreDynLib.cpp adds the suffix itself).
     if(WIN32 AND EXISTS "${OGRE_PLUGIN_DIR}/${_plugin}_d.dll")
