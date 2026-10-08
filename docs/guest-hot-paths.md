@@ -121,8 +121,10 @@ of the level, and `Region::_updateRenderQueue` queues every `GeometryBucket` of 
 material and vertex format, vtable `0x820016B4`) with no test of its own. In the fight 54-58 % of
 the queued buckets lie entirely outside the screen, and they are 86-99 % of the draws that do not
 reach it (session replay, coverage with face culling, depth test and fragment discard off, joined
-with the renderable and owner of each draw logged in the game). In the town square the draws
-outside the screen are mostly not buckets (town buildings); the improvement does nothing there.
+with the renderable and owner of each draw logged in the game). In the town square the buckets
+are the problem too, but one box per bucket does not catch them: a bucket gathers every piece of
+one material in its region (the same building texture on buildings all around the square), and
+its box touches the frustum even when every piece is off screen.
 
 `--native_bucket_cull` (native mode only, on by default; `=false` restores the game's behaviour)
 gives each bucket its own box, computed once from all the vertices of its vertex data in the
@@ -130,14 +132,20 @@ region's space and forgotten in `~GeometryBucket` (`0x8247F728`), brings it to w
 each test with the region node's current transform, and during the walk of the scene's viewport
 does not queue the buckets entirely outside the camera's six planes (`hooks/bucket_cull.h`). Other
 cameras (the light map and shadow passes), other scene managers and other renderables are
-untouched. Every vertex program in our captures places vertices with the RTSS's fixed transform or
+untouched. With `--native_bucket_cull_pieces` (on by default; `=false` keeps one box per bucket)
+a bucket also gets one box per piece, the connected components of its triangles, grouped by
+nearness to at most 16 (`kMaxPiecesPerBucket`, which bounds the tests per bucket and frame), and
+is dropped when no piece is inside the frustum. The pieces are built on first use, not at level
+load: 593 shapes (8776 pieces) in 51 ms in total on entering the town square, within the loading
+frames. Every vertex program in our captures places vertices with the RTSS's fixed transform or
 its hardware skinning; a vertex program that writes the position any other way turns the culling
 off for the session (logged).
 
 Validation: sessions recorded with the culling off but logging what it would drop; on sampled
 frames of the fight and the town square, the frame replayed without those draws is identical to
 the whole frame at 16:9 (4 frames), 21:9 (6) and 32:9 (6), and every dropped draw is outside the
-screen by the coverage probe. The guest camera's frustum follows the wider frames (other aspect
+screen by the coverage probe. Per piece, the same at 16:9 (19 frames), 21:9 (19) and 32:9 (16),
+with the dropped draws matched by geometry (vertex buffer and index range), up to 113 per frame. The guest camera's frustum follows the wider frames (other aspect
 ratios change the guest's video mode, not our projection). Measurement in
 `docs/performance-profile.md`, "Bucket culling".
 

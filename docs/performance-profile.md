@@ -246,6 +246,24 @@ About 53 of 143 buckets per frame are dropped in the fight. In the town square a
 (~1 of 130): 106.8 against 108.2 FPS, within the run-to-run spread. The frames over 50 ms are the
 guest's own (the long frame report).
 
+Per piece (`--native_bucket_cull_pieces`, one box per connected piece of a bucket, at most 16),
+against one box per bucket, same binary, two runs each, step overlay with 40 s in the fight and
+40 s in the town square:
+
+| | Per bucket | Per piece |
+|---|---|---|
+| Fight, FPS | 134.9, 137.3 | 138.8, 138.8 |
+| Fight, p99 (1 % low) | 11.65, 11.30 ms (85.8, 88.5) | 10.58, 10.81 ms (94.5, 92.5) |
+| Town square, FPS | 111.1, 111.6 | 121.6, 113.9 |
+| Town square, p99 (1 % low) | 12.71, 12.03 ms (78.7, 83.1) | 11.19, 12.67 ms (89.4, 78.9) |
+| Town square, buckets dropped per frame | 0.3, 0.2 (of ~130) | 21.2, 23.0 (of ~126) |
+
+The fight's 1 % low gains about 7 %. In the town square both runs drop the same ~22 buckets, but
+the frame rate differs by 8 fps between them: about +6 % on average, inside the square's
+run-to-run spread for the 1 % low. Building the pieces costs 51 ms in total on entering the town
+(27 ms with one box per bucket), spread over the loading frames, which already take 400 ms or
+more; none is built while playing.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked

@@ -316,6 +316,22 @@ std::optional<GuestVertexMemory> VertexBufferMemory(const uint8_t* m, uint32_t b
   memory.fetch_endian = uint8_t(d1 & xd3d::vertex_buffer::kEndianMask);
   if (physical == 0 || memory.size == 0 || memory.size > kMaxSnapshotBytes) return std::nullopt;
   memory.address = xd3d::PhysicalToVirtual(physical);
+  memory.bytes = GuestBytes(m, memory.address);
+  return memory;
+}
+
+std::optional<GuestIndexMemory> IndexBufferMemory(const uint8_t* m, uint32_t buffer) {
+  uint32_t map = buffer + ogre::d3d9_hardware_index_buffer::kDeviceToResourcesMap.offset;
+  uint32_t resources = FindPointerEntry(m, map, ActiveDevice(m));
+  uint32_t object = resources ? abi::ReadU32(m, resources, ogre::d3d9_buffer_resources::kBuffer)
+                              : 0;
+  if (object == 0) return std::nullopt;
+  uint32_t physical = abi::ReadU32(m, object, xd3d::index_buffer::kAddress);
+  GuestIndexMemory memory;
+  memory.size = abi::ReadU32(m, object, xd3d::index_buffer::kSize);
+  if (physical == 0 || memory.size == 0 || memory.size > kMaxSnapshotBytes) return std::nullopt;
+  memory.address = xd3d::PhysicalToVirtual(physical);
+  memory.bytes = GuestBytes(m, memory.address);
   return memory;
 }
 

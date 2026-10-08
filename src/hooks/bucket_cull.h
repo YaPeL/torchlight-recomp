@@ -20,7 +20,9 @@
 #include <cstdint>
 #include <optional>
 #include <string_view>
+#include <span>
 #include <unordered_map>
+#include <vector>
 
 namespace torchlight::hooks {
 
@@ -62,17 +64,42 @@ float FetchFloat(const uint8_t* stored, uint32_t mode);
 // a box computed from the vertex data, so the bucket culling stays off once one appears.
 bool PlacesVertexLikeFixedPipeline(std::string_view vertex_program_source);
 
-// Per-bucket boxes in the region's space, by guest bucket address; forgotten when the bucket is
-// destroyed.
+// The most boxes one bucket keeps. A bucket gathers every piece of geometry of one material in a
+// region (in the town, the same building texture on buildings all around the square), so one box
+// for all of it touches the frustum even when every piece is off screen; one box per piece catches
+// that. The pieces are the connected components of its triangles; beyond this many, the nearest
+// are grouped (median splits along the longest axis) so a frame costs at most this many box tests
+// per bucket, and the first visible piece ends the test.
+inline constexpr size_t kMaxPiecesPerBucket = 16;
+
+// A bucket's boxes in its region's space: the whole bucket, then its pieces (empty when the whole
+// box is the only one: one piece, or pieces turned off).
+struct BucketShape {
+  Box whole;
+  std::vector<Box> pieces;
+};
+
+// The shape of triangles given by `indices` (a triangle list, three per triangle, into
+// `positions`): the whole box and, when `pieces`, the boxes of the connected components, grouped
+// to at most `max_pieces`. Nothing when there are no triangles or a position is not finite.
+std::optional<BucketShape> BuildShape(std::span<const std::array<float, 3>> positions,
+                                      std::span<const uint32_t> indices, bool pieces,
+                                      size_t max_pieces = kMaxPiecesPerBucket);
+
+// Whether any of the shape lies inside the frustum under `world`: the whole box first, then (when
+// there are pieces) each piece until one is visible.
+bool ShapeVisible(const Planes& planes, const BucketShape& shape, const Matrix& world);
+
+// Per-bucket shapes, by guest bucket address; forgotten when the bucket is destroyed.
 class BucketBoxes {
  public:
-  const Box* Find(uint32_t bucket) const;
-  void Store(uint32_t bucket, const Box& box) { boxes_[bucket] = box; }
+  const BucketShape* Find(uint32_t bucket) const;
+  void Store(uint32_t bucket, BucketShape shape) { boxes_[bucket] = std::move(shape); }
   void Forget(uint32_t bucket) { boxes_.erase(bucket); }
   size_t size() const { return boxes_.size(); }
 
  private:
-  std::unordered_map<uint32_t, Box> boxes_;
+  std::unordered_map<uint32_t, BucketShape> boxes_;
 };
 
 }  // namespace torchlight::hooks

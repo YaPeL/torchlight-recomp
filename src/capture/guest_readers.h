@@ -45,8 +45,17 @@ uint32_t BoundVertexBuffer(const uint8_t* m, uint32_t binding, uint32_t stream);
 struct GuestVertexMemory {
   uint32_t address = 0, size = 0;
   uint8_t fetch_endian = 0;
+  const uint8_t* bytes = nullptr;  // host view of `address` (GuestBytes: the physical host offset)
 };
 std::optional<GuestVertexMemory> VertexBufferMemory(const uint8_t* m, uint32_t buffer);
+
+// Where an index buffer's content is for the active device (guest CPU byte order, big-endian):
+// its guest virtual address and size. Nothing without a device resource or out of range.
+struct GuestIndexMemory {
+  uint32_t address = 0, size = 0;
+  const uint8_t* bytes = nullptr;  // host view of `address`
+};
+std::optional<GuestIndexMemory> IndexBufferMemory(const uint8_t* m, uint32_t buffer);
 
 // Draw recorded after the guest D3D9 _render ran (buffers already uploaded).
 // `live_keys` receives the live content key of each buffer snapshot (vertex buffers, then the
