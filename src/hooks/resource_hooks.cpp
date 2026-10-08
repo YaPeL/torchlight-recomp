@@ -21,6 +21,7 @@
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_enums.h"
 #include "guest_abi/ogre_layout.h"
+#include "hooks/bucket_cull_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/frame_timing.h"
 
@@ -163,6 +164,7 @@ REX_FUNC(sub_823F7068) {
         ogre::ReadString(base, program + ogre::d3d9_hlsl_program::kEntryPoint.offset);
     p.target = ogre::ReadString(base, program + ogre::d3d9_hlsl_program::kTarget.offset);
   }
+  torchlight::hooks::BucketCullNoteProgram(p.target, p.source);
   session.OnProgramCreated(std::move(p));
 }
 

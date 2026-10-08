@@ -113,6 +113,39 @@ reuses whatever the last node test of an earlier partial octant gave (the plugin
 failed node test would then queue none of its nodes. That would leave objects out, never add
 any; no visible symptom is known.
 
+### Bucket culling: an improvement over the original
+
+What the walk queues and the screen does not show is OGRE `StaticGeometry`: a region
+(`StaticGeometry::Region`, vtable `0x82002D1C`) is one object with one box covering a large piece
+of the level, and `Region::_updateRenderQueue` queues every `GeometryBucket` of it (one draw per
+material and vertex format, vtable `0x820016B4`) with no test of its own. In the fight 54-58 % of
+the queued buckets lie entirely outside the screen, and they are 86-99 % of the draws that do not
+reach it (session replay, coverage with face culling, depth test and fragment discard off, joined
+with the renderable and owner of each draw logged in the game). In the town square the draws
+outside the screen are mostly not buckets (town buildings); the improvement does nothing there.
+
+`--native_bucket_cull` (native mode only, on by default; `=false` restores the game's behaviour)
+gives each bucket its own box, computed once from all the vertices of its vertex data in the
+region's space and forgotten in `~GeometryBucket` (`0x8247F728`), brings it to world space at
+each test with the region node's current transform, and during the walk of the scene's viewport
+does not queue the buckets entirely outside the camera's six planes (`hooks/bucket_cull.h`). Other
+cameras (the light map and shadow passes), other scene managers and other renderables are
+untouched. Every vertex program in our captures places vertices with the RTSS's fixed transform or
+its hardware skinning; a vertex program that writes the position any other way turns the culling
+off for the session (logged).
+
+Validation: sessions recorded with the culling off but logging what it would drop; on sampled
+frames of the fight and the town square, the frame replayed without those draws is identical to
+the whole frame at 16:9 (4 frames), 21:9 (6) and 32:9 (6), and every dropped draw is outside the
+screen by the coverage probe. The guest camera's frustum follows the wider frames (other aspect
+ratios change the guest's video mode, not our projection). Measurement in
+`docs/performance-profile.md`, "Bucket culling".
+
+**Condition for the next release (freeze):** validate it the same way in the other kinds of
+dungeon, not only the mine (a session recorded with the culling off and the validation log, and
+the frames replayed without the dropped buckets identical to the whole frames). The validation
+log and its scripts are local; they log the would-drop decisions by guest swap and draw index.
+
 ## Upstream report (ReXGlue codegen)
 
 For the agent maintaining the ReXGlue patches: in the generated code every PPC register is a field

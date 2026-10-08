@@ -29,3 +29,15 @@ target_include_directories(guest_d3d_skip_test PRIVATE "${CMAKE_CURRENT_SOURCE_D
 target_compile_features(guest_d3d_skip_test PRIVATE cxx_std_23)
 target_compile_options(guest_d3d_skip_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME guest_d3d_skip_test COMMAND guest_d3d_skip_test)
+
+# Bucket culling (bucket_cull.h): boxes, planes and the per-bucket cache, with no guest access; the
+# hooks that use it (bucket_cull_hooks.cpp) are part of the executable.
+add_library(torchlight_bucket_cull STATIC bucket_cull.cpp)
+target_include_directories(torchlight_bucket_cull PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_bucket_cull PUBLIC cxx_std_23)
+target_compile_options(torchlight_bucket_cull PRIVATE -Wall -Wextra -Werror)
+
+add_executable(bucket_cull_test bucket_cull_test.cpp)
+target_link_libraries(bucket_cull_test PRIVATE torchlight_bucket_cull)
+target_compile_options(bucket_cull_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME bucket_cull_test COMMAND bucket_cull_test)

@@ -230,6 +230,22 @@ What they showed, native and Xenos, on the fixed-floor saved game:
   exist") for the read-only game data locations, without touching the SDK; mods will add locations
   and lookups.
 
+### Bucket culling (2026-10-08)
+
+`--native_bucket_cull` (on by default, `=false` turns it off; `docs/guest-hot-paths.md`, "Bucket
+culling") stops queueing the StaticGeometry buckets entirely outside the main camera. Fixed-floor
+saved game, draw skip on, same binary with the culling off and on, three runs each:
+
+| Fight with the NPC | Off | On |
+|---|---|---|
+| FPS (mean of three runs) | 123.5 (130.8, 118.6, 121.2) | 135.6 (140.3, 136.1, 130.3) |
+| p99 (1 % low) | 12.56 ms (79.6) | 11.52 ms (86.8) |
+| Frames over 50 ms (all runs) | 4 | 5 |
+
+About 53 of 143 buckets per frame are dropped in the fight. In the town square almost none
+(~1 of 130): 106.8 against 108.2 FPS, within the run-to-run spread. The frames over 50 ms are the
+guest's own (the long frame report).
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked

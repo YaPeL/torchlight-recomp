@@ -272,6 +272,53 @@ commands::SetVertexBuffers ReadVertexBufferBinding(const uint8_t* m, uint32_t bi
   return c;
 }
 
+std::vector<commands::VertexElement> ReadVertexElements(const uint8_t* m, uint32_t declaration) {
+  std::vector<commands::VertexElement> elements;
+  if (declaration == 0) return elements;
+  uint32_t list = declaration + ogre::vertex_declaration::kElementList.offset;
+  uint32_t first = U32(m, list + ogre::stl_vector::kFirst.offset);
+  uint32_t last = U32(m, list + ogre::stl_vector::kLast.offset);
+  uint32_t stride = ogre::vertex_element::kSize.bytes;
+  if (first == 0 || last < first || (last - first) / stride > 64) return elements;
+  for (uint32_t e = first; e < last; e += stride) {
+    commands::VertexElement el;
+    el.source = abi::ReadU16(m, e, ogre::vertex_element::kSource);
+    el.offset = abi::ReadU32(m, e, ogre::vertex_element::kOffset);
+    el.index = abi::ReadU16(m, e, ogre::vertex_element::kIndex);
+    el.type = ToVertexType(abi::ReadU32(m, e, ogre::vertex_element::kType));
+    el.semantic = ToVertexSemantic(abi::ReadU32(m, e, ogre::vertex_element::kSemantic));
+    elements.push_back(el);
+  }
+  return elements;
+}
+
+uint32_t BoundVertexBuffer(const uint8_t* m, uint32_t binding, uint32_t stream) {
+  uint32_t buffer = 0;
+  if (binding == 0) return buffer;
+  ForEachNode(m, binding + ogre::vertex_buffer_binding::kBindingMap.offset, [&](uint32_t node) {
+    if (abi::ReadU16(m, node + ogre::stl_tree::kNodeKey.offset) == stream)
+      buffer = U32(m, node + ogre::stl_tree::kNodeValue.offset + ogre::shared_ptr::kPRep.offset);
+  });
+  return buffer;
+}
+
+std::optional<GuestVertexMemory> VertexBufferMemory(const uint8_t* m, uint32_t buffer) {
+  uint32_t map = buffer + ogre::d3d9_hardware_vertex_buffer::kDeviceToResourcesMap.offset;
+  uint32_t resources = FindPointerEntry(m, map, ActiveDevice(m));
+  uint32_t object = resources ? abi::ReadU32(m, resources, ogre::d3d9_buffer_resources::kBuffer)
+                              : 0;
+  if (object == 0) return std::nullopt;
+  uint32_t d0 = abi::ReadU32(m, object, xd3d::vertex_buffer::kFetchDword0);
+  uint32_t d1 = abi::ReadU32(m, object, xd3d::vertex_buffer::kFetchDword1);
+  GuestVertexMemory memory;
+  uint32_t physical = d0 & xd3d::vertex_buffer::kAddressMask;
+  memory.size = d1 & xd3d::vertex_buffer::kSizeMask;
+  memory.fetch_endian = uint8_t(d1 & xd3d::vertex_buffer::kEndianMask);
+  if (physical == 0 || memory.size == 0 || memory.size > kMaxSnapshotBytes) return std::nullopt;
+  memory.address = xd3d::PhysicalToVirtual(physical);
+  return memory;
+}
+
 namespace {
 
 // Pushes exactly one live content key per call (0 when there is no content).

@@ -57,6 +57,7 @@ set(TORCHLIGHT_SOURCES
     src/capture/guest_readers.cpp
     src/capture/install.cpp
     src/capture/session.cpp
+    src/hooks/bucket_cull_hooks.cpp
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
     src/hooks/guest_io_hooks.cpp
@@ -154,7 +155,7 @@ add_custom_target(torchlight_data ALL
 add_dependencies(torchlight torchlight_data)
 # The live mode (and through it the frontend) and the backend objects.
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_video_mode
-    torchlight_game_setup torchlight_save_import torchlight_guest_copy)
+    torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)
