@@ -35,7 +35,8 @@ in number order; a branch adds its own line at its number's place.
 | 23 | `rexglue-fctiw-rounding-mode.patch` | `sdk/rexglue-next` | Pending integration |
 | 24 | `rexglue-arm64-mffs-rounding.patch` | `sdk/rexglue-next` | Pending integration; to confirm on ARM64 |
 | 25 | `rexglue-mtfsf-field-mask.patch` | `sdk/rexglue-next` | Pending integration |
-| 26 | | | Next free number |
+| 26 | `rexglue-log-rotation.patch` | `sdk/rexglue-next` | Pending integration (needs `bd833a2`) |
+| 27 | | | Next free number |
 
 ## The patches
 
@@ -311,5 +312,15 @@ in number order; a branch adds its own line at its number's place.
     `tests/ppc/asm/instr_mtfsf_fields.s`, 4 cases, all 4 failing without the patch on x86-64. With
     patches 22-25 the whole `ppc_tests` passes on Linux x86-64 (1490 cases) and `unit_tests` is as
     before. Torchlight only uses the full mask (`mtfsf 0xFF`, 5 places). Upstream draft D24.
+
+26. `rexglue-log-rotation.patch` (needs `bd833a2`): upstream `b971840` replaced the rotating log file
+    sink with a plain one and removed `log_max_file_size_mb` and `log_max_files`, so a run's log had
+    no size limit (a fault loop logs every retry; on this machine such runs wrote tens of
+    megabytes in seconds). The cvars and the rotating sink are back as they were on `0c7b01a`
+    (5 MB, 20 files by default), through `rex::detail::MakeLogFileSink`, so that our log limits
+    (`src/live/log_budget.h`: 5 MB x 10 a run) work the same on both bases. The runtime's
+    directory budget is untouched. Test: `tests/unit/core/log_rotation_test.cpp` (4 MB written
+    with 1 MB and 2 rotations: three files, at most 3 MB). Not specific to any GPU. Candidate for
+    an upstream report (the removal looks unintended next to the new directory budget).
 
 The observation and diagnostic patches there were before remain in the git history.

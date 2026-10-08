@@ -22,3 +22,4 @@ rexglue-tests-portable.patch
 rexglue-fctiw-rounding-mode.patch
 rexglue-arm64-mffs-rounding.patch
 rexglue-mtfsf-field-mask.patch
+rexglue-log-rotation.patch

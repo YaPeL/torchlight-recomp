@@ -1045,7 +1045,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 23 | `rexglue-fctiw-rounding-mode.patch` (D22) | `sdk/rexglue-next` | `bd833a2` (needs 22 for its tests on macOS) |
 | 24 | `rexglue-arm64-mffs-rounding.patch` (D23) | `sdk/rexglue-next` | `bd833a2` |
 | 25 | `rexglue-mtfsf-field-mask.patch` (D24) | `sdk/rexglue-next` | `bd833a2` |
-| 26 | next free | | |
+| 26 | `rexglue-log-rotation.patch` | `sdk/rexglue-next` | `bd833a2` |
+| 27 | next free | | |
 
 Checked with `git apply --check`: 20 and 21 apply on top of the rebased series (`bd833a2`), and so
 does 22; the three touch different files (`src/filesystem`, `thirdparty/CMakeLists.txt`,
