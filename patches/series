@@ -16,5 +16,6 @@ rexglue-vfs-rename.patch
 rexglue-vfs-delete-on-close.patch
 rexglue-shm-unlink-on-create.patch posix
 rexglue-sdl-keystroke-repeat.patch
+rexglue-tests-portable.patch
 rexglue-win-timer-resolution.patch windows
 rexglue-win-sdl3-shared.patch windows

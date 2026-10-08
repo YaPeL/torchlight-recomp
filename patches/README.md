@@ -239,4 +239,18 @@ file. Every other case passes on `bd833a2` with this series, the patches' own te
     plus a keyboard passthrough mode). Upstream does not repeat a held bound key; if the menus need
     it, that is an upstream PR on top of patch 16's `keystroke_repeat.h`.
 
+21. `rexglue-tests-portable.patch` (number 20 is the VFS wildcard patch, on the mods branch): the
+    SDK's tests did not build on ARM64 or macOS. `tests/ppc/CMakeLists.txt` passed `-msse4.1
+    -mssse3` to `ppc_tests` on every architecture; now only on x86-64, as the root `CMakeLists.txt`
+    already does. The PPC instruction tests assemble `tests/ppc/asm/*.s` with the bundled
+    PowerPC binutils (with VMX128), which exist for Linux and Windows only; the new cache variable
+    `REXGLUE_PPC_TEST_BIN_DIR` points the build at `.bin` and `.map` files assembled elsewhere
+    from the same sources (empty, the default, assembles them as before; a missing file stops the
+    configure). `tools/deps/build_ppc_test_data.sh` makes them on a Linux machine.
+    `codegen_writer_test.cpp` compared two `file_time_type` inside `CHECK`, which makes Catch2 print
+    them; that does not compile with Apple's libc++, so the comparison is made outside. Validated
+    on Linux x86-64: `ppc_tests` passes (1462 cases) both ways, the files assembled by the build
+    and the prebuilt ones are byte identical, and `[codegen_writer]` passes. Not specific to any
+    GPU or to the game. Candidate for an upstream report to ReXGlue.
+
 The observation and diagnostic patches there were before remain in the git history.
