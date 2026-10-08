@@ -293,7 +293,17 @@ than the rates.
 - **The PC numbers are a floor**: Proton and DXVK translate every D3D9 call; native Windows would
   likely be somewhat faster.
 
-**Not done**: timing the PC counterparts of the guest functions in the equipment spike
+**Picking up armour that goes to the backpack** (read in the PC executable, not measured): the
+360 rebuilds the character's whole equipment model when such an item enters its container, even
+though what it wears does not change (`sub_822A0B28` -> `sub_822DC6B0`, about 55-66 ms). The PC does
+the same: its add-to-container handler `0x49B060` makes the same test (`0x4B7F90`, or item type 12,
+or 20) and calls `0x4E1860` (the counterpart of `sub_822DC6B0`) and `0x489550` (of `sub_8228D6D0`);
+the remove handler `0x49B4B0` too. The only difference: the 360 checks a global flag first and
+defers the rebuild while it is set; the PC has no such flag. So that spike is the game's design,
+on both.
+
+**Not done**: draw calls per frame on the PC (`DXVK_HUD=drawcalls`, cancelled for now), and timing
+the PC counterparts of the guest functions in the equipment spike
 (`0x822DC6B0`, `0x822C08E0`) with `perf` on the Wine process: they are not identified in the PC
 executable yet, and the frame times already show the PC spending longer on the same work.
 
