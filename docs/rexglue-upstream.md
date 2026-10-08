@@ -59,7 +59,7 @@ Other topics:
 | Codegen: registers in `ctx`, full CR per compare | The codegen already has `cr_as_local`, `non_volatile_as_local` and the rest, off by default; our manifest uses none | No upstream report. Try the flags here first |
 | `-mcmodel=large` on Linux | Still forced for the SDK and every consumer target | Propose an opt-out |
 | `*.*` in the wildcard engine | Same as patch 20 | See patch 20 |
-| Wiki/code mismatch: `enable_exception_handlers` | The wiki documents that TOML key; `config.cpp` reads `generate_exception_handlers` | Small issue (found during this analysis) |
+| Wiki/code mismatches (D19) | The wiki documents the TOML key `enable_exception_handlers` (the code reads `generate_exception_handlers`) and describes `reserved_as_local` and `non_argument_as_local` wrongly | Small docs issue (found during this analysis) |
 
 ## Per patch
 
@@ -175,7 +175,7 @@ write and reloaded after every call; a compare writes all four CR bytes. The SDK
 switches for this, inherited from XenonRecomp and maintained (`f2b91f2` handles SEH funclets under
 `non_volatile_as_local`): `cr_as_local`, `ctr_as_local`, `xer_as_local`, `reserved_as_local`,
 `non_argument_as_local`, `non_volatile_as_local`, `skip_lr`, `skip_msr`, documented in the wiki
-(`rexglue-CLI-Configuration-File`). All default to false and `torchlight_manifest.toml` sets none,
+(`rexglue-CLI-Configuration-File`; two of its rows are wrong, D19). All default to false and `torchlight_manifest.toml` sets none,
 so the 903-for-176 measurement is the most conservative codegen. With CR fields as locals the
 compiler drops the dead stores, which is the "only the bits that are read" request. Nothing to
 report upstream until we have tried them. A local task, to plan separately: regenerate with
@@ -198,7 +198,9 @@ part of the image, so only the generated code and the SDK count against the smal
 **Wiki mismatch.** `rexglue-CLI-Configuration-File.md` lists the TOML key
 `enable_exception_handlers`; `src/codegen/config.cpp` reads `generate_exception_handlers`
 (`enable_exception_handlers` is only the CLI flag). A manifest following the wiki silently gets
-nothing. Trivial issue.
+nothing. The same table describes `reserved_as_local` as r1/r2/r13 (it is the `lwarx`
+reservation) and `non_argument_as_local` as r11-r12 (it is r0, r2, r11, r12, f0, v32-v63).
+Trivial issue (D19).
 
 ## Drafts
 
@@ -609,63 +611,150 @@ on a large title.
 
 ---
 
-### D19. Wiki: `enable_exception_handlers` is not the TOML key
+### D19. Wiki: codegen option keys and scopes that do not match the code
 
-**Issue: `[Docs]: Configuration-file page lists enable_exception_handlers; the code reads generate_exception_handlers`**
+**Issue: `[Docs]: Configuration-file page: enable_exception_handlers is not the TOML key; two *_as_local rows describe other registers`**
 
 `rexglue-CLI-Configuration-File` documents the TOML key `enable_exception_handlers`.
 `src/codegen/config.cpp` reads `generate_exception_handlers`; `enable_exception_handlers` is only
 the CLI flag (`--enable_exception_handlers`). A manifest that follows the wiki gets no SEH wrappers
-and no warning. Either fix the wiki or accept both keys. The flag names in the
-`Generated-Code-Structure` define table (`ctr_as_local_variable`, ...) are the internal field
-names, not the TOML keys, which is also confusing.
+and no warning. Either fix the wiki or accept both keys.
+
+Two rows of the same table do not match `BuilderContext` (`src/codegen/builders/context.cpp`):
+
+- `reserved_as_local` says "reserved registers (r1, r2, r13)". It makes the `lwarx`/`stwcx.`
+  reservation (`ctx.reserved`) a local; r1, r2 and r13 stay in `ctx` with every flag.
+- `non_argument_as_local` says "r11-r12". It covers r0, r2, r11, r12, f0 and v32-v63.
+
+The define table in `Generated-Code-Structure` lists internal field names
+(`ctr_as_local_variable`, ...) as the config flags, not the TOML keys, which is also confusing.
 
 ---
 
 ## Updating our base from `0c7b01a`
 
-**What upstream brings (19 commits, to `bd833a2`):**
+Decided (2026-10-08): update to `development`, as its own task, **after** the codegen options
+(`cr_as_local` and the rest, above) are measured on the current base, so one change does not hide
+the other. The drafts above are sent only after they are rebased on `development`.
 
-- *Codegen* (needs regenerating `generated/`): `stwcx.`/`stdcx.` as `std::atomic`
+### What upstream brings (19 commits, to `bd833a2`)
+
+- *Codegen* (regenerates `generated/`): `stwcx.`/`stdcx.` as `std::atomic`
   `compare_exchange_strong` (acq_rel) instead of `__sync_bool_compare_and_swap`, `CR0.so` dropped,
-  register fields unsigned (`7f7c92e`, `ea222e9`); `sync` and `eieio` now emit a `seq_cst` fence
-  (`mfence` on x86-64) and `lwsync` an `acq_rel` fence (no instruction on x86-64) (`bd833a2`);
-  `vpkuwus`/`vpkuhus` aliasing (`6319e23`). Torchlight's code has 185 `stwcx.`, 15 `sync`, 18
-  `eieio`, 42 `lwsync`, no `vpkuwus`/`vpkuhus`. The new `mfence`s are the only codegen change with
-  a likely cost on x86-64.
-- *Input:* vibration, deadzones, hotplug notices, real XInput subtypes, and guest input blocked
-  while a XAM dialog is shown (`3cd7243`, `AddUIInputBlocker`); MnK keystrokes and keyboard
-  passthrough (`3f34ffc`, supersedes patch 19). The XAM blocking overlaps
-  `BlockGuestInputUnderXamDialogs` in `src/live/install.cpp`, which replaces `ReXApp`'s active
-  callback; after the update ours may be redundant for XAM dialogs (keep it for the overlay case
-  until checked).
-- *UI:* window size cvars applied live, display mode switch in fullscreen, input gated on window
-  focus (in `ReXApp`'s active callback, which `install.cpp` replaces: the focus gate would be lost
-  unless ours adds it; in native mode the focused window may be our child window).
-- *Logging:* `LogConfig` carries the log path and budget (`b971840`); the `log_file` cvar still
-  exists and `ApplyLogCvarOverrides` reads it, which is what `install.cpp` relies on. To check, not
-  expected to break.
-- *System/build:* `writable_code_segments` (`5e2dae1`), SSE4.1 required on SDK targets, imgui and
-  xxHash headers public (`b5e0cf8`, likely removes the `-I<sdk>/thirdparty/xxHash` workaround for
-  the SDK's unit tests in `patches/README.md`), version resource on Windows binaries.
+  register fields unsigned (`7f7c92e`, `ea222e9`); `sync` and `eieio` emit a `seq_cst` fence
+  (`mfence` on x86-64) and `lwsync` an `acq_rel` fence (no instruction on x86-64, only a compiler
+  barrier) (`bd833a2`); `vpkuwus`/`vpkuhus` aliasing (`6319e23`). Torchlight's generated code has
+  185 `stwcx.`, 15 `sync`, 18 `eieio`, 42 `lwsync`, no `vpkuwus`/`vpkuhus`.
+- *Input:* vibration, deadzones, hotplug notices, real XInput subtypes, guest input blocked while
+  a XAM dialog is shown (`3cd7243`, `ScopedGuestInputBlock` in `xam_ui.cpp`); MnK keystrokes for
+  bound keys and keyboard passthrough (`3f34ffc`, supersedes patch 19).
+- *UI:* window size cvars applied live, display mode switch in fullscreen, input off while the
+  window has no focus (`1406e1b`, `923c1a5`, `289f518`; the focus check lives in `ReXApp`'s active
+  callback).
+- *Logging:* `LogConfig` carries the log path, directory budget and flush (`b971840`);
+  `ApplyLogCvarOverrides` takes `log_file` when it has a non-default value.
+- *System/build:* the `writable_executable_memory` cvar is replaced by `writable_code_segments`
+  (default false: code segments read-only, as before; nothing here sets either), SSE4.1 required
+  on SDK targets, imgui and xxHash headers public (`b5e0cf8`), a version resource on Windows
+  binaries, the export rules moved to `cmake/rexglue_export_targets.cmake`.
 
-**Cost:**
+No vendored dependency changed (no `thirdparty/` path in the diff).
 
-1. Series: rebase patch 8 onto the split install rules; drop patch 19; everything else applies
-   (patch 20 included). Small.
-2. Rebuild and install the SDK on Linux and Windows from the new base (`tools/deps/build_sdk.sh`;
-   the dependency key changes with `series`), run the SDK's `unit_tests` with our tests. The shared
-   `~/rexglue-sdk` is used by other agents: the update has to be scheduled with them, or installed
-   to a separate prefix first.
-3. Regenerate `generated/` (the codegen changed), rebuild, run the project tests and the replays.
-4. Check the overlaps above (input callback and focus, XAM input blocking, keyboard menus without
-   patch 19).
-5. A game run in both modes (Xenos and native), on Linux and Windows, plus the frame-time
-   comparison of `docs/performance-profile.md` for the new fences. This is the part that needs
-   agreement (it runs the game).
+### 1. The rebased series (prepared, branch `sdk/rexglue-next`)
 
-About a day of work, most of it builds and the validation run. **Recommendation:** do it, as its
-own task, before sending the PRs above: they have to be rebased on `development` anyway, the
-patches can be tested against the same SDK they would land in, and dropping patch 19 shrinks the
-series. Nothing in the 19 commits is urgent for us (no bug of ours is fixed except the MnK one we
-already patch), so it can wait for a convenient slot; the fences' cost is the only open risk.
+Checked with `git apply` in order on `bd833a2`; not built yet.
+
+- `tools/deps/build_sdk.sh`: `SDK_COMMIT=bd833a2`. `tools/deps/key.sh` changes the dependency key by
+  itself (it hashes the script, `series` and the patches), on Linux and Windows.
+- Patch 8 (`rexglue-gpu-null-plugin.patch`) regenerated: `rexgpu-null` goes into
+  `REXGLUE_INSTALL_TARGETS` in `cmake/rexglue_export_targets.cmake` (the list left
+  `rexglue_install.cmake`), and gets `rexglue_add_version_resource` like `rexgpu-xenos`. The rest
+  of the patch (sources, `null_gpu.cpp`) is unchanged.
+- Patch 19 (`rexglue-mnk-keystrokes.patch`) removed from `series` and from the tree; its README
+  entry says why, as patch 11's does.
+- Patches 1-7, 9, 10, 12-18 unchanged (byte for byte). Patch 20 (wildcard, `feature/pc-mods`)
+  applies on top of the rebased series as is; it joins `series` when that branch is merged.
+- `patches/README.md`, `THIRD_PARTY_NOTICES.md`, `docs/release-pipeline.md`, `docs/BUILDING.md`:
+  the base commit. `torchlight_manifest.toml`'s first line is regenerated by the codegen.
+
+If `development` moves before the update, the same check is repeated on its new tip and the pin
+moves with it.
+
+### 2. Build the new SDK apart (`~/rexglue-sdk-next`)
+
+```sh
+tools/deps/build_sdk.sh ~/rexglue-sdk-next/install ~/rexglue-sdk-next all
+```
+
+from a worktree of `sdk/rexglue-next`: the checkout stays in `~/rexglue-sdk-next/rexglue-sdk`, the
+install in `~/rexglue-sdk-next/install`. `~/rexglue-sdk` is not touched; the other agents keep using
+it until the update is merged. Then the SDK's `unit_tests` (`-DREXGLUE_BUILD_TESTS=ON` in that
+checkout; check whether `b5e0cf8` removed the need for `-I<sdk>/thirdparty/xxHash`, and drop that
+note from `patches/README.md` if so).
+
+**Heavy builds are coordinated with the render agent** (they skew its measurements): the SDK build,
+the unit tests and every game build below start only when it says the machine is free. At the time
+of writing it asked for no build during its measurement runs.
+
+Windows: `tools/build-deps/windows.ps1 -SdkPrefix ...` from the same branch on the Windows machine
+(patches 17 and 18 only build there). Not possible from this machine.
+
+### 3. Build the game against it
+
+A separate worktree of the branch (codegen writes `generated/` in the source tree, so a shared tree
+would mix the two bases), with `-DCMAKE_PREFIX_PATH=~/rexglue-sdk-next/install` and the codegen
+of the new SDK (`~/rexglue-sdk-next/install/bin/rexglue codegen torchlight_manifest.toml`), using
+the manifest options the codegen task settled on. The project's tests (`ctest`) and the replays of
+the capture set, compared with the same replays on the old base.
+
+### 4. Overlaps to check in our code
+
+| Upstream change | Our code | What to do |
+|---|---|---|
+| `ReXApp`'s active callback now also returns false without window focus (`1406e1b`) | `src/live/install.cpp` replaces that callback in both modes: `InstallDialogs` (only mode, line 103: `!g_guest_input_blocked`) and `BlockGuestInputUnderXamDialogs` (Xenos, line 160). After the update the focus check is lost in both | Add the focus check to ours (the window `ReXApp` gives us has `HasFocus()`), or compose with the previous callback. Verify: with the window unfocused, keyboard and pad do not reach the game; in only mode, the focus seen through our child window (X11) or the window itself (Wayland) |
+| Guest input blocked while a XAM dialog is up, at the XAM layer, both modes (`3cd7243`) | `BlockGuestInputUnderXamDialogs` (Xenos: `xeXamIsUIActive`) and `BlockGuestInput` (only mode: ImGui dialogs, plus the pad's consumed buttons) | Ours stay at first (they also cover the ImGui overlays). Check that the button that closes a dialog does not reach the game twice and is not lost; if upstream covers XAM dialogs, the Xenos half of `BlockGuestInputUnderXamDialogs` can go in a later commit |
+| MnK keystrokes upstream, no repeat for bound keys (`3f34ffc`) | Patch 19 removed | In the game with the keyboard (`--mnk_mode=true`), Linux and Windows: the first menu, the character list, a held direction in a list. If hold-to-repeat is missed: a small upstream PR on top of D13 (`keystroke_repeat.h`), not a local patch |
+| Window size cvars live, `Window::Create` without a size, display mode switch in fullscreen (`289f518`, `923c1a5`, `1406e1b`) | `platform::FindGameWindow`, the child window and its size (`live/install.cpp` ~516, `live_mode.cpp` ~213-224) | Start in windowed and fullscreen, both modes; resize; check the native backend follows the window. Changing `window_width` at run time now resizes the window: check our child follows |
+| `LogConfig` (`b971840`) | `install.cpp` ~408-412 sets `log_file` through `SetFlagByName` before the runtime starts; `torchlight_app.h:142` and `install.cpp:504` read it | Expected to keep working (`ApplyLogCvarOverrides` reads it when non-default). Check the log and the OGRE log land where they did, with the numbering |
+| Input focus inside the SDL and MnK drivers, vibration, deadzones | `platform/` reads the pad for the dialogs (`platform::ReadGamepad`) | Vibration in the game (it now works through the SDK); no deadzone applied twice |
+
+### 5. The cost of the new fences (`mfence`)
+
+Only `sync` and `eieio` add an instruction on x86-64 (`mfence`, tens of cycles); `lwsync` becomes a
+compiler barrier and the `stwcx.` change keeps a `lock cmpxchg` as before. What matters is how often
+the fenced paths run (the guest's locks and its GPU ring writes), not the 33 static sites.
+
+Method of `docs/performance-profile.md` (RelWithDebInfo, `--native_skip_guest_d3d=true`, the
+fixed-floor saved game; main menu, dungeon still, fight, town still, town walking; two runs each,
+interleaved), with three builds that share the manifest options:
+
+- **A**: the current base (`0c7b01a` + series).
+- **B**: the new base (`bd833a2` + rebased series).
+- **C**: B regenerated with `sync`/`eieio` emitting nothing, as before `bd833a2`: a one-line
+  change in the scratch checkout's `build_sync`/`build_eieio`, used only for this measurement, never
+  in `series`.
+
+B against C is the cost of the fences; A against B is the whole update. Plus one Xenos-mode check
+of B against C in the main menu and the dungeon (the GPU ring writes are where `eieio` sits), and
+one Windows run of B.
+
+Reading: B within the noise of C, accept. If C is clearly faster, the place to fix it is upstream,
+not a local patch: on PowerPC `eieio` orders stores to ordinary memory among themselves (and
+device accesses among themselves); it does not give the StoreLoad ordering that `seq_cst`
+(`mfence`) adds, so a release fence (nothing on x86-64) would match it; `sync` is a full barrier and `mfence` is its right mapping. That would be one more
+draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
+
+### 6. Validation and merge
+
+- SDK `unit_tests` (Linux, Windows), the project's tests, the replays: as in 2 and 3.
+- Game runs, agreed beforehand: Xenos and native, Linux; native on Windows. The overlaps of 4,
+  quitting from the menu (patch 2), a save and a character deletion (13, 14), a XAM dialog open at
+  exit (9).
+- The render agent integrates `sdk/rexglue-next`. Installing the new SDK into `~/rexglue-sdk` (or
+  pointing the builds at the new prefix) happens then, agreed with the agents that share it.
+- Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
+  special care).
+
+Cost: the series is done; what remains is builds (SDK in all configurations, three game builds
+for the fence measurement), the measurement runs and the game validation. About a day, most of it
+waiting for the machine to be free.
