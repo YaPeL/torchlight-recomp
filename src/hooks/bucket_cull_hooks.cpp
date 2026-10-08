@@ -82,7 +82,7 @@ std::optional<Box> ComputeBucketBox(const uint8_t* m, uint32_t bucket) {
     if (uint64_t(start + count) * stride > memory->size) return std::nullopt;
     BoxBuilder b;
     for (uint32_t v = start; v < start + count; ++v) {
-      const uint8_t* p = m + memory->address + v * stride + e.offset;
+      const uint8_t* p = memory->bytes + v * stride + e.offset;
       b.Add(FetchFloat(p, memory->fetch_endian), FetchFloat(p + 4, memory->fetch_endian),
             FetchFloat(p + 8, memory->fetch_endian));
     }
