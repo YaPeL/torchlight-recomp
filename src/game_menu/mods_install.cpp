@@ -66,6 +66,53 @@ uint32_t GuestWString(GuestCall& call, uint8_t* base, const std::string& ascii) 
   return str;
 }
 
+#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+// Diagnostics: each mod's file map (CMod +36, a std::map keyed by std::wstring; header node at +4,
+// its parent the root, nodes: left +0, right +8, key +12, "nil" byte +69, sub_82328868), its size
+// and its first keys in order, to see how the game spells them.
+std::string NarrowGuestWString(const uint8_t* base, uint32_t str) {
+  const uint32_t length = abi::ReadU32(base, str + abi::ogre::stl_string::kLength.offset);
+  const uint32_t capacity = abi::ReadU32(base, str + abi::ogre::stl_string::kCapacity.offset);
+  const uint32_t text = capacity > mods_abi::manager::kWStringInlineCapacity ? abi::ReadU32(base, str) : str;
+  std::string out;
+  for (uint32_t i = 0; i < length && i < 200; ++i) {
+    const uint16_t c = abi::ReadU16(base, text + 2 * i);
+    out.push_back(c < 0x80 ? static_cast<char>(c) : '?');
+  }
+  return out;
+}
+
+void LogModFileMaps(const uint8_t* base, uint32_t manager) {
+  const uint32_t list = abi::ReadU32(base, manager + mods_abi::manager::kListData.offset);
+  const uint32_t count = abi::ReadU32(base, manager + mods_abi::manager::kListCount.offset);
+  for (uint32_t i = 0; i < count && i < 64; ++i) {
+    const uint32_t mod = abi::ReadU32(base, list + 4 * i);
+    if (!mod) continue;
+    const uint32_t map = mod + mods_abi::mod::kFiles.offset;
+    const uint32_t head = abi::ReadU32(base, map + 4);
+    const uint32_t size = abi::ReadU32(base, map + 8);
+    std::vector<std::string> keys;
+    std::vector<uint32_t> stack;
+    uint32_t node = head ? abi::ReadU32(base, head + 4) : 0;
+    auto nil = [&](uint32_t n) { return !n || n == head || base[n + 69] != 0; };
+    while ((!nil(node) || !stack.empty()) && keys.size() < 8) {
+      while (!nil(node)) {
+        stack.push_back(node);
+        node = abi::ReadU32(base, node + 0);
+      }
+      node = stack.back();
+      stack.pop_back();
+      keys.push_back("\"" + NarrowGuestWString(base, node + 12) + "\" -> \"" +
+                     NarrowGuestWString(base, node + 40) + "\"");
+      node = abi::ReadU32(base, node + 8);
+    }
+    REXLOG_INFO("mods: diagnostics: mod {} \"{}\" file map: {} keys", i,
+                NarrowGuestWString(base, mod + mods_abi::mod::kFolder.offset), size);
+    for (const auto& k : keys) REXLOG_INFO("mods: diagnostics:   {}", k);
+  }
+}
+#endif
+
 bool IsAscii(const std::string& s) {
   for (unsigned char c : s) {
     if (c < 0x20 || c >= 0x7F) return false;
@@ -180,6 +227,9 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
   }
   REXLOG_INFO("mods: manager 0x{:08X} with {} mods, {} active", manager, count,
               mods_abi::ActiveModCount(base, manager));
+#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+  LogModFileMaps(base, manager);
+#endif
   for (const mods::PlannedMod& mod : g_plan.mods) {
     if (mod.priority < 0) continue;
     const std::string location = std::string(kDeviceLink) + "\\" + mod.folder + "\\";
