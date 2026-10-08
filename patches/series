@@ -19,3 +19,4 @@ rexglue-sdl-keystroke-repeat.patch
 rexglue-win-timer-resolution.patch windows
 rexglue-win-sdl3-shared.patch windows
 rexglue-mnk-keystrokes.patch
+rexglue-sdl-software-renderer.patch

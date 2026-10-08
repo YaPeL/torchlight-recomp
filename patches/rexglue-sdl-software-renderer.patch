@@ -1,0 +1,31 @@
+diff --git a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
+index 28da6f6..5226590 100644
+--- a/thirdparty/CMakeLists.txt
++++ b/thirdparty/CMakeLists.txt
+@@ -260,7 +260,7 @@ set(SDL_TEST OFF CACHE BOOL "" FORCE)
+ set(SDL_UNIX_CONSOLE_BUILD ON CACHE BOOL "" FORCE)
+ 
+ # Video provides the windowing/event layer; presenters create their own
+-# D3D12/Vulkan surfaces from native handles, so SDL_RENDER stays off.
++# D3D12/Vulkan surfaces from native handles, so SDL's GPU render drivers stay off.
+ set(SDL_VIDEO ON CACHE BOOL "" FORCE)
+ if(APPLE)
+     # macOS uses SDL for windowing + Metal/Vulkan surface creation.
+@@ -276,7 +276,16 @@ else()
+         set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
+     endif()
+ endif()
+-set(SDL_RENDER OFF CACHE BOOL "" FORCE)
++# SDL_Renderer with its software driver only, for windows a title draws before the runtime starts
++# (a launcher, a progress bar): no graphics library is loaded before the presenter picks the GPU.
++# The GPU render drivers stay off.
++set(SDL_RENDER ON CACHE BOOL "" FORCE)
++set(SDL_RENDER_D3D OFF CACHE BOOL "" FORCE)
++set(SDL_RENDER_D3D11 OFF CACHE BOOL "" FORCE)
++set(SDL_RENDER_D3D12 OFF CACHE BOOL "" FORCE)
++set(SDL_RENDER_GPU OFF CACHE BOOL "" FORCE)
++set(SDL_RENDER_METAL OFF CACHE BOOL "" FORCE)
++set(SDL_RENDER_VULKAN OFF CACHE BOOL "" FORCE)
+ set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
+ set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
+ set(SDL_POWER OFF CACHE BOOL "" FORCE)

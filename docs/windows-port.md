@@ -540,3 +540,14 @@ here.
   makes when the game builds its settings menu), the new `live/deferred_check.h` with its test, and
   `settings/host_settings.*` (`StartupNeedsRenderSystemCheck` and its test). `game_menu/` is
   unchanged.
+- SDK patch 21, `rexglue-sdl-software-renderer.patch` (branch `feature/launcher-imgui`,
+  2026-10-08), every platform: `SDL_RENDER` on with the software driver only. **For the render
+  agent to integrate, with the numbering:** patch 20 is the mods agent's
+  `rexglue-vfs-wildcard-dos-semantics.patch` (branch `feature/pc-mods`, not in `develop` yet).
+  Both branches append their line at the end of `patches/series`, so the merge of the second one
+  conflicts there: keep both lines, 20 before 21. They touch different SDK files, so either order
+  applies. Patch 21 changes the dependency keys of both platforms (`tools/deps/key.sh`), so CI
+  rebuilds the SDK once; the shared Linux SDK install is the render agent's to update. It also
+  fixes the beta's install, which runs without a progress bar (`docs/launcher.md`, branch
+  `docs/launcher`). The same branch adds `third_party/imgui_backends/` (ImGui's SDL3 backends,
+  not linked into the game yet) and `src/launcher/launcher_imgui_test.cpp`.
