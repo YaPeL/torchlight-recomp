@@ -108,6 +108,22 @@ MoltenVK) and fixes after them:
 New patches the port needs: items 2-4 above (generic, upstream candidates), and 18's macOS branch
 if confirmed. `series` needs no new kind: `posix` already includes macOS.
 
+**For the ReXGlue agent** (owner of the series and of `sdk/rexglue-next`; decided 2026-10-08: the
+macOS port uses that branch's series on `bd833a2` as it is, and changes to the series go through
+that agent, not through the macOS branches). Upstream candidates found for macOS, each with the
+test that shows it:
+
+- `fctiw`/`fctid` round half away from zero on ARM64 (item 2): `build_fctiw`/`build_fctid` in
+  `src/codegen/builders/floating_point.cpp` emit `simde_mm_cvtsd_si32`/`_si64`, which without
+  native SSE2 use `simde_math_round`. Test: `fctiw` of 2.5 and -2.5 under each of the four guest
+  rounding modes (round to nearest gives 2 and -2).
+- `mffs` swaps round up and round down on ARM64 (item 3): `FPSCRRegister::HostToGuest`
+  (`include/rex/ppc/context.h`) is MXCSR's order on every architecture. Test: `mtfsfi` each mode,
+  then `mffs`.
+- Unhandled faults re-fault forever on POSIX (item 4): `exception_handler_posix.cpp` returns
+  without chaining when no handler claims the fault. Test: a read of an unmapped address in a
+  child process terminates with SIGSEGV/SIGBUS instead of hanging.
+
 **Blocks:** yes: an SDK with the fences (`bd833a2`), items 2 and 3 fixed, and our series.
 
 **Ticket MAC.1 (SDK on macOS):** `tools/deps/build_sdk.sh` takes the preset from the host (today
@@ -348,10 +364,29 @@ not create; to confirm), and every library is signed by the same identity. In CI
 secrets in the `release` environment (the certificate as a `.p12` and an App Store Connect API key
 for `notarytool`); the certificate shows the account holder's name as the developer.
 
-Recommendation: the beta unsigned, as decided for Windows (5.7, decision 6), with
-`SHA256SUMS`, the attestation and README instructions for "Open Anyway". Gatekeeper's path is
-clearly worse than SmartScreen's (no button in the first dialog), so it is the owner's call; if
-beta testers stumble, signing is a CI change and a yearly fee, with no code change.
+**Decided (2026-10-08): the macOS beta is unsigned**, as the Windows one (5.7, decision 6), with
+`SHA256SUMS` and the attestation. Gatekeeper's path is clearly worse than SmartScreen's (no button
+in the first dialog), so the README and the release notes explain it step by step; if beta testers
+stumble, signing is a CI change and a yearly fee, with no code change. The text goes into the
+README's Installing section and into `release.yml`'s notes with the first macOS package (MAC.8),
+not before, so no release announces a download it does not have:
+
+> **macOS:** the app is not signed or notarized by Apple, so the first time macOS says it cannot
+> check "Torchlight Recomp" for malicious software. That is macOS refusing apps from developers
+> without a paid Apple account, not a detection of anything harmful. To open it:
+>
+> 1. Open the `.dmg` and drag **Torchlight Recomp** to **Applications**.
+> 2. Double-click it in Applications. macOS shows the warning: click **Done** (not "Move to
+>    Trash").
+> 3. Open **System Settings → Privacy & Security**, scroll down to the message about
+>    "Torchlight Recomp" and click **Open Anyway** (it stays there for about an hour).
+> 4. Confirm with **Open Anyway** again and your password or Touch ID.
+>
+> macOS remembers the choice; later starts open it directly. A new version needs the same steps
+> once. To check a download, compare its SHA-256 (`shasum -a 256 FILE` in Terminal) with the
+> release's `SHA256SUMS`.
+
+The exact wording of macOS' dialogs is checked on this Mac with the first `.dmg` (MAC.8).
 
 **Ticket MAC.8 (package):** `cmake --install` into a `.app` layout, `packaging/macos/make_app.sh`,
 `make_dmg.sh` and `check_app.sh`, symbols split (`dsymutil`, kept private like the Linux `.debug`
@@ -448,7 +483,7 @@ ones that can stop it; the two-failed-hypotheses rule applies to each.
 9. **MAC.9 CI:** deps, tests and the release job on `macos-26`.
 10. **MAC.10 (after the beta) Vulkan on MoltenVK.**
 
-Owner decisions: signing (section 6), and whether Xenos (the emulated GPU) must work on macOS at
+Owner decisions: signing (section 6: decided, unsigned beta), and whether Xenos (the emulated GPU) must work on macOS at
 all: it needs MoltenVK and the write-watch fixes of section 3, and only serves diagnostics.
 
 ## Sources
