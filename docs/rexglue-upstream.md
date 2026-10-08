@@ -804,10 +804,15 @@ by SIGSEGV at once.
 
 **PR: `fix(core): chain unclaimed faults to the previous handler on POSIX`**
 
-Fixes #NNN. When no handler claims a fault, restore the original `sigaction` for that signal and
-return. The instruction faults again and now gets the previous behaviour: the default action, or a
-crash reporter installed before the SDK. Alternatively, call the previous `sa_sigaction` or
-`sa_handler` directly. Test: the child above dies by SIGSEGV.
+Fixes #NNN. When no handler claims a fault, call the handler the SDK replaced
+(`original_sigsegv_handler_` and the others): its `sa_sigaction` with the same arguments, or its
+`sa_handler`. If that was `SIG_DFL`, reset the signal to the default and return, so the
+re-executed instruction terminates the process. This keeps the SDK's handler installed. That
+matters: restoring the original `sigaction` instead would uninstall it, and the next MMIO access or
+write watch would go unhandled. A previous handler can still decide to retry by returning, or end
+the process; a crash reporter installed before the SDK sees every fault the SDK does not claim.
+Test: the child above dies by SIGSEGV; with a previous handler that counts calls, that handler is
+called once per unclaimed fault and an MMIO access still works.
 
 ---
 
