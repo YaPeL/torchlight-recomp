@@ -36,6 +36,9 @@ REX_EXTERN(__imp__sub_823296D0);
 REXCVAR_DEFINE_BOOL(mods_unit_index_check, false, "Torchlight",
                     "Diagnostics: read every base unit through the mods' path and compare with the "
                     "Xbox unit index (log only)");
+REXCVAR_DEFINE_BOOL(mods_unit_index_base_only, false, "Torchlight",
+                    "Diagnostics: build the index the game loads from the base alone (no mods' units), "
+                    "written by us, under its own name in the cache");
 #endif
 
 namespace torchlight::mods {
@@ -54,6 +57,7 @@ constexpr const char* kDeviceLink = "tlunits:";
 struct State {
   bool active = false;      // the hook does something
   bool check = false;       // diagnostics: compare the base read through our path
+  bool base_only = false;   // diagnostics: our index without the mods' units
   bool ready = false;       // the cached index exists for `key`
   bool located = false;     // tlunits: added as a resource location
   std::filesystem::path folder, pak;
@@ -193,6 +197,7 @@ void BuildIndex(GuestCall& call) {
   std::vector<UnitEntry> units;
   size_t left_out = 0;
   for (const std::u16string& path : g.unit_paths) {
+    if (g.base_only) break;
     std::string why;
     if (auto e = ReadUnit(call, path, &why)) {
       units.push_back(std::move(*e));
@@ -206,15 +211,15 @@ void BuildIndex(GuestCall& call) {
   for (const auto& path : skipped) REXLOG_WARN("mods: unit {} is outside MEDIA/UNITS/<group>/", save_import::Utf8(path));
   // Units left out may be read next time (a fault of ours or of the moment, not of the mod's files,
   // which the key covers): such an index serves this start only.
-  g.name = left_out ? IncompleteUnitIndexName(g.key) : g.key;
+  g.name = g.base_only ? g.key + "-base-only" : left_out ? IncompleteUnitIndexName(g.key) : g.key;
   if (left_out) REXLOG_WARN("mods: {} mods' units left out; the index is built again at the next start", left_out);
   if (!StoreCachedUnitIndex(g.folder, g.name, merged, &error)) {
     REXLOG_ERROR("mods: cannot store the unit index ({}); mods' units left out", error);
     return;
   }
   const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
-  REXLOG_INFO("mods: unit index built in {} ms: {} mods' units, {} entries ({})", ms.count(), units.size(),
-              merged.size(), g.key);
+  REXLOG_INFO("mods: unit index built in {} ms: {} mods' units, {} entries ({}){}", ms.count(), units.size(),
+              merged.size(), g.key, g.base_only ? ", diagnostics: base only" : "");
   g.ready = true;
 }
 
@@ -259,6 +264,7 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
   g = {};
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   g.check = REXCVAR_GET(mods_unit_index_check);
+  g.base_only = REXCVAR_GET(mods_unit_index_base_only);
 #endif
   g.pak = pak;
   g.folder = data_dir / "cache" / "unitdata";
@@ -278,7 +284,7 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
   g.key = UnitCacheKey(files, *identity);
   std::string log;
   g.name = g.key;
-  g.ready = FindCachedUnitIndex(g.folder, g.key, &log).has_value();
+  g.ready = !g.base_only && FindCachedUnitIndex(g.folder, g.key, &log).has_value();
   if (!log.empty()) REXLOG_WARN("mods: {}", log);
   std::error_code ec;
   std::filesystem::create_directories(g.folder, ec);
