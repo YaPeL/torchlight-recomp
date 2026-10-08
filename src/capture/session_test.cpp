@@ -148,6 +148,74 @@ int main() {
     Check(f2->vertex_buffers.empty(), "description not sent again");
     Check(f2->contents[1].content->bytes[0] == 2, "new version's bytes");
   }
+  // Descriptions already in the live stream are not read again (LiveTextureDescribed /
+  // LiveDeclarationDescribed), and a resource freed and created again at the same address, or a
+  // declaration changed in place, is described again.
+  {
+    queue.Pop(std::chrono::milliseconds(0));
+    const uint32_t address = 0xB000;
+    s.OnCreated(ResourceKind::kTexture, address);
+    const ResourceId t1 = s.Lookup(ResourceKind::kTexture, address)->id;
+    Check(!s.LiveTextureDescribed(t1), "a new texture is not described yet");
+    TextureDesc first;
+    first.id = t1;
+    first.name = "first.dds";
+    first.width = 64;
+    s.AddTexture(first);
+    Check(s.LiveTextureDescribed(t1), "a static texture, once described, is not read again");
+    s.OnDestroyed(address);
+    s.OnCreated(ResourceKind::kTexture, address);  // another texture at the same address
+    const ResourceId t2 = s.Lookup(ResourceKind::kTexture, address)->id;
+    Check(t2.generation == t1.generation + 1, "the new texture is the next generation");
+    Check(!s.LiveTextureDescribed(t2), "the new texture at the same address is described again");
+    TextureDesc second;
+    second.id = t2;
+    second.name = "second.dds";
+    second.width = 128;
+    s.AddTexture(second);
+    Check(s.LiveTextureDescribed(t2), "and then it is not read again");
+    s.OnSwapBegin();
+    auto f = queue.Pop(std::chrono::milliseconds(100));
+    bool saw_first = false, saw_second = false;
+    for (const auto& t : f->textures) {
+      saw_first |= t.id == t1 && t.name == "first.dds";
+      saw_second |= t.id == t2 && t.name == "second.dds" && t.width == 128;
+    }
+    Check(saw_first && saw_second, "both textures' own descriptions reach the live stream");
+    Check(!s.LiveTextureDescribed(t1), "the destroyed texture is forgotten at the cut");
+
+    // A dynamic texture (manual, its content snapshotted) keeps being read.
+    s.OnCreated(ResourceKind::kTexture, 0xB100);
+    TextureDesc dynamic;
+    dynamic.id = s.Lookup(ResourceKind::kTexture, 0xB100)->id;
+    dynamic.name = "dynamic";
+    dynamic.manual = true;
+    s.AddTexture(dynamic, 0x5555);
+    Check(!s.LiveTextureDescribed(dynamic.id), "a dynamic texture is read on every bind");
+    // A render target's description holds no content: not read again.
+    s.OnCreated(ResourceKind::kTexture, 0xB200);
+    TextureDesc target;
+    target.id = s.Lookup(ResourceKind::kTexture, 0xB200)->id;
+    target.render_target = true;
+    s.AddTexture(target);
+    Check(s.LiveTextureDescribed(target.id), "a render target is not read again");
+
+    // Declarations: keyed by their content too.
+    const uint32_t decl = 0xC000;
+    s.OnCreated(ResourceKind::kVertexDeclaration, decl);
+    VertexDeclarationContent d1;
+    d1.id = s.Lookup(ResourceKind::kVertexDeclaration, decl)->id;
+    d1.content = 0x1234;
+    Check(!s.LiveDeclarationDescribed(d1.id, d1.content), "a new declaration is not described");
+    s.AddVertexDeclaration(d1);
+    Check(s.LiveDeclarationDescribed(d1.id, 0x1234), "the same content: not read again");
+    Check(!s.LiveDeclarationDescribed(d1.id, 0x5678), "changed in place: described again");
+    s.OnDestroyed(decl);
+    s.OnCreated(ResourceKind::kVertexDeclaration, decl);
+    const ResourceId d2 = s.Lookup(ResourceKind::kVertexDeclaration, decl)->id;
+    Check(!s.LiveDeclarationDescribed(d2, 0x1234),
+          "a new declaration at the same address, even with the same content, is described again");
+  }
   // A capture's baseline re-reads shadow entries: early outs recorded before no longer apply.
   {
     const uint32_t raw[] = {9};

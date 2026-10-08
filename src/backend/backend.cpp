@@ -1050,12 +1050,15 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   tl_backend::Program& p = b->programs[MakeProgramKey(b, f, units, unit_count)];
   if (!p.pass && !p.failed) {
     ++b->counters.programs_generated;
+    const auto start = std::chrono::steady_clock::now();
     try {
       GenerateProgram(b, f, units, unit_count, p);
     } catch (Ogre::Exception& e) {
       Ogre::LogManager::getSingleton().logError("RTSS program generation: " + e.getFullDescription());
       p.failed = true;
     }
+    b->counters.program_generate_ms +=
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   }
   if (p.failed) return false;
   Ogre::RenderSystem* rs = b->rs;

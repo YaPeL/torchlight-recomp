@@ -158,7 +158,12 @@ jobs:
       - id: key
         name: Key
         shell: bash
-        run: echo "key=$(tools/deps/key.sh windows)" >> "$GITHUB_OUTPUT"
+        # The configurations come from key.sh, which hashes them: changing one changes the key.
+        run: |
+          echo "key=$(tools/deps/key.sh windows)" >> "$GITHUB_OUTPUT"
+          read -r ogre sdk <<< "$(tools/deps/key.sh windows-configs)"
+          echo "ogre_configs=$ogre" >> "$GITHUB_OUTPUT"
+          echo "sdk_configs=$sdk" >> "$GITHUB_OUTPUT"
       - id: published
         name: Already published?
         shell: bash
@@ -182,7 +187,8 @@ jobs:
         run: |
           tools/build-deps/windows_toolchain.ps1 -Destination C:\llvm
           tools/build-deps/windows.ps1 -Prefix "$env:DEPS_DIR\ogre" -SdkPrefix "$env:DEPS_DIR\sdk" `
-            -WorkDir C:\deps-work -Configs RelWithDebInfo -SdkConfigs Release -LlvmBin C:\llvm\bin
+            -WorkDir C:\deps-work -Configs ${{ steps.key.outputs.ogre_configs }} `
+            -SdkConfigs ${{ steps.key.outputs.sdk_configs }} -LlvmBin C:\llvm\bin
       # As the Linux job's: a concurrent run with the same key may have published it first.
       - name: Publish
         if: >-
@@ -257,8 +263,9 @@ jobs:
       - name: Build
         shell: pwsh
         run: cmake --build --preset win-amd64-nogame --parallel
-      # Tests labeled opengl33 need OpenGL 3.3, which the runner (no GPU) lacks: the label and the
-      # reason are with the tests (src/backend/CMakeLists.txt); release.yml leaves them out too.
+      # Tests labeled opengl33 are the GL3+ runs of the backend tests, which need OpenGL 3.3 and the
+      # runner (no GPU) lacks; their Direct3D 11 runs (WARP) run here. The label and the reason are
+      # with the tests (src/backend/CMakeLists.txt); release.yml leaves them out too.
       - name: Test
         shell: pwsh
         run: ctest --test-dir out/build/win-amd64-nogame --output-on-failure -LE opengl33

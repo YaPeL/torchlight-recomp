@@ -8,6 +8,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -34,6 +35,8 @@ class ResourceRegistry {
                                              BufferInfo info = {});
   // A destruction. Returns the destroyed id.
   std::optional<commands::ResourceId> Destroy(uint32_t address);
+  // Answered from a small per-thread cache while the registry has not changed since (version_):
+  // the guest's render thread looks up the same few resources for every draw.
   std::optional<BufferInfo> Lookup(commands::ResourceKind kind, uint32_t address) const;
 
   struct Renewal {
@@ -57,6 +60,11 @@ class ResourceRegistry {
   commands::ResourceId NewGeneration(commands::ResourceKind kind, uint32_t address);
 
   mutable live::MeasuredMutex mutex_{"resource registry"};
+  // Changed, under the lock, by every change a Lookup could see; a cached answer is valid while it
+  // holds the version it was read at. Starts at 1: an empty cache entry (0) never matches.
+  std::atomic<uint64_t> version_{1};
+  const uint64_t instance_ = next_instance_.fetch_add(1);  // tells registries apart in the cache
+  static inline std::atomic<uint64_t> next_instance_{1};
   std::unordered_map<uint32_t, Live> live_;
   std::unordered_map<uint32_t, uint32_t> generations_;
 };

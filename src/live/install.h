@@ -58,7 +58,9 @@ rex::ui::ImmediateDrawer* DialogImmediateDrawer();
 
 // The host settings while running (only mode, after Install), for the video settings in the
 // game's menu. Any thread.
-// What this machine offers.
+// What this machine offers. The first call may run the OpenGL 3.3 check that startup deferred
+// (~150-180 ms with a GPU driver): the video column, built with the game's settings menu while the
+// title screen loads.
 settings::Capabilities HostCapabilities();
 // The settings in effect, and as they were at startup (what needs a restart compares to these).
 settings::HostSettings CurrentHostSettings();

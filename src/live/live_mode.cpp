@@ -82,7 +82,7 @@ void LogMeasurements(uint64_t cuts, uint64_t measured) {
   for (const auto& m : TakeMutexSummaries()) {
     if (!m.acquisitions) continue;
     locks += fmt::format(
-        "\n    {:<20} {:8.1f} acquisitions, {:5.2f}% contended, wait {:.3f} ms, held {:.3f} ms",
+        "\n    {:<20} {:8.1f} acquisitions, {:5.2f}% contended, wait {:.3f} ms, held ~{:.3f} ms",
         m.name, m.acquisitions / frames, 100.0 * m.contended / m.acquisitions,
         m.wait_ns / 1e6 / frames, m.hold_ns / 1e6 / frames);
   }
@@ -374,6 +374,7 @@ void LiveMode::Run() {
     tl_backend_take_counters(backend, &counters);
     record.programs_generated = counters.programs_generated;
     record.program_ms = counters.program_ms;
+    record.program_generate_ms = counters.program_generate_ms;
     record.gpu_buffers_created = counters.gpu_buffers_created;
     record.vertex_layouts_created = counters.vertex_layouts_created;
     if (auto line = slow_frames.Add(record)) REXLOG_INFO("live: {}", *line);

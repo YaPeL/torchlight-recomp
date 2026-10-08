@@ -361,7 +361,9 @@ On push and `pull_request` (never `pull_request_target`), no secrets, `permissio
    (`measured_mutex`, `snapshot_store`, `session_file`, `frame_queue`, `slow_frames`,
    `live_content_source`, `ui_overlay`, `ui_gamepad`), `detile_test` and the Python tests
    (`save_convert_test`, `tl_translate_test`). `ui_pass_test` and `render_scale_test` need a display
-   and skip with code 77; with Mesa llvmpipe and Xvfb (or surfaceless EGL) they could run.
+   and skip with code 77; with Mesa llvmpipe and Xvfb (or surfaceless EGL) they could run. On
+   Windows they also run with Direct3D 11 (`<name>_d3d11`), which the runner draws in software
+   (WARP); their GL3+ runs (label `opengl33`) are left out there, as the runner has no OpenGL 3.3.
 3. **package-check** job: package the `replay` tool (it links the backend and loads the OGRE plugins
    and media like the game) with the same AppImage layout and run it in clean `ubuntu:22.04` and
    `archlinux` containers on a synthetic capture. It validates relocatable paths and bundled
@@ -479,6 +481,22 @@ announces it.
   (a re-run with the same binaries: `git commit` exits 1). For v0.1.0-beta the owner deleted the
   folders and re-ran. To fix: skip the commit and the push when the tree did not change, and say
   so in the log.
+- **Guest memory reads on Windows and macOS arm64, before the macOS port.** The generated code
+  translates a guest address as `base + address`, plus 0x1000 from 0xE0000000 up on Windows and
+  macOS arm64 (`REX_PHYS_HOST_OFFSET`, `rex::memory::GuestPtr`). The content snapshots of buffers
+  and textures translate that way since 2026-10-07 (`capture/guest_readers.cpp`, `GuestBytes`), but
+  the scalar readers of `guest_abi` (`ReadU32`, `ReadU64` and the rest, `ogre_layout.h`) add
+  nothing. On Linux that is right; on those platforms a read from 0xE0000000 up would be 4 KB
+  off. They read the game's OGRE and Xbox D3D objects, expected in the guest's virtual heaps, below
+  0xE0000000; that is not checked for every reader yet.
+  To resolve, without platform `#ifdef`s in `guest_abi`, one of:
+  1. the readers take a guest memory view instead of a bare `membase` (the base plus the
+     translation, built once by the caller with `rex::memory::GuestPtr`), so `guest_abi` stays
+     free of the SDK and is still testable with a fake memory (preferred);
+  2. `guest_abi` includes the SDK's `rex/system/xmemory.h` and uses `GuestPtr` (simple, but
+     `guest_abi` stops building on its own);
+  3. the readers keep `base + address` and state the invariant (no reads from 0xE0000000 up),
+     checked in a test and in the diagnostics build.
 
 ### 5.9 Branches and releases (since 2026-10-07)
 
@@ -506,14 +524,15 @@ announces it.
   marked inline), while the game and the SDK are Release and the Linux release's OGRE is `-O3`.
   `ci.yml`'s deps-windows builds it with `tools/build-deps/windows.ps1 -Configs RelWithDebInfo`, and
   the top `CMakeLists.txt` maps the game's Release to those libraries
-  (`CMAKE_MAP_IMPORTED_CONFIG_RELEASE Release RelWithDebInfo`). To do: build OGRE Release (`/O2 /Ob2`)
-  for the package, measure it against RelWithDebInfo on Windows (docs/performance-profile.md, the
-  native/Xenos method), and keep RelWithDebInfo only where symbols are wanted. Careful with the
-  dependency key: `tools/deps/key.sh windows` hashes `windows.ps1` and `windows_toolchain.ps1` but
-  not the `-Configs` that `ci.yml` passes, so changing only `-Configs` keeps the key and CI keeps
-  downloading the published `deps-windows-<key>` with RelWithDebInfo. The change has to reach what
-  the key covers (for example windows.ps1's default configurations), or the key has to include the
-  configurations.
+  (`CMAKE_MAP_IMPORTED_CONFIG_RELEASE Release RelWithDebInfo`). Measured 2026-10-07 against OGRE
+  Release (`/O2 /Ob2`) in the native mode on Direct3D 11 (docs/performance-profile.md, "OGRE Release
+  against RelWithDebInfo on Windows"): no measurable difference, the game's main thread being the
+  limit. The release keeps RelWithDebInfo, and with it OGRE's symbols. The dependency key
+  covers the configurations since 2026-10-07: `tools/deps/key.sh` holds the ones CI builds for
+  Windows, hashes them into `key.sh windows`, and prints them with `key.sh windows-configs`, which
+  `ci.yml`'s deps-windows passes to `windows.ps1 -Configs` and `-SdkConfigs`. Changing them there
+  changes the Windows key (and not the Linux one), so CI builds and publishes a new
+  `deps-windows-<key>` instead of reusing the RelWithDebInfo one.
 
 ## Sources
 

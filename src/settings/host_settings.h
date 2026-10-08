@@ -116,6 +116,12 @@ bool RenderSystemUsable(const Capabilities& caps, const std::string& render_syst
 // The render system a session uses for the chosen one: the choice when it can run here, else (empty,
 // not installed, or unavailable) the first one offered that can; empty when none can.
 std::string EffectiveRenderSystem(const Capabilities& caps, const std::string& render_system);
+// Whether startup has to check that `checked` can run here before choosing the session's render
+// system: the one the session would use (the saved `render_system`, or the first offered) is
+// `checked`, and there is another to fall back to. Otherwise the check can wait until the settings
+// menu lists the render systems (Windows: GL3+'s OpenGL 3.3 probe, ~150-180 ms with a GPU driver).
+bool StartupNeedsRenderSystemCheck(const Capabilities& caps, const std::string& render_system,
+                                   const std::string& checked);
 // Whether the GPU choice takes effect with `render_system` (the one in effect for it).
 bool GpuChoiceApplies(const Capabilities& caps, const std::string& render_system);
 Choices<std::string> GpuChoices(const Capabilities& caps);  // ids

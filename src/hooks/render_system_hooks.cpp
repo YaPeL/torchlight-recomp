@@ -6,6 +6,8 @@
 #include <initializer_list>
 #include <span>
 
+#include <rex/cvar.h>
+#include <rex/logging.h>
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 
@@ -13,7 +15,13 @@
 #include "capture/session.h"
 #include "capture/translate.h"
 #include "guest_abi/ogre_enums.h"
+#include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
+#include "hooks/guest_d3d_skip.h"
+
+REXCVAR_DEFINE_BOOL(native_skip_guest_d3d, false, "Torchlight",
+                    "Native mode only: skip the guest's D3D work for RenderSystem calls whose only "
+                    "effect is the Xenos device (docs/native-skip-guest-d3d.md)");
 
 namespace {
 
@@ -22,6 +30,9 @@ namespace cmd = torchlight::commands;
 namespace cap = torchlight::capture;
 namespace abi = torchlight::guest_abi;
 namespace ogre = torchlight::guest_abi::ogre;
+
+// InstallGuestD3DSkip's decision for the session (guest_d3d_skip.h).
+bool g_skip_guest_d3d = false;
 
 uint32_t R(const PPCRegister& r) { return r.u32; }
 float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
@@ -40,7 +51,8 @@ float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
     __imp__sub_##addr(ctx, base);                    \
   }
 
-// Recording override: `body` runs before the original and may use ctx/base/s.
+// Recording override: `body` runs before the original and may use ctx/base/s. The original is
+// skipped for the slots of guest_d3d_skip.h when the session decided so.
 #define RECORD_HOOK(slot, addr, body)                \
   SLOT_ADDRESS_CHECK(slot, addr);                    \
   REX_EXTERN(__imp__sub_##addr);                     \
@@ -53,6 +65,9 @@ float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
                                cap::ProducerSection::kCommands, s.measuring()); \
       cap::HookTimer hook_timer(s.hook_costs(), slot, s.measuring()); \
       body;                                          \
+    }                                                \
+    if constexpr (torchlight::hooks::SkippableSlot(slot)) { \
+      if (g_skip_guest_d3d) return;                  \
     }                                                \
     __imp__sub_##addr(ctx, base);                    \
   }
@@ -391,7 +406,15 @@ RECORD_HOOK(91, 821C2118, ({
     cap::ProducerTimer constants(s.producer_times(), cap::ProducerSection::kConstants,
                                  s.measuring());
     uint32_t parameters = abi::ReadU32(base, R(ctx.r5) + ogre::shared_ptr::kPRep.offset);
-    s.Event(cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF));
+    // Live commands send only the constants the backend does not hold yet, and no command when
+    // nothing changes; a capture being recorded gets every range (capture/constant_mirror.h).
+    cap::ConstantMirror* mirror = s.live() ? &s.constant_mirror() : nullptr;
+    const bool filter = mirror && !s.armed();
+    bool unchanged = false;
+    cmd::SetConstants c = cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF,
+                                             mirror, filter, &unchanged);
+    // (No return here: the guest's own bindGpuProgramParameters runs after this body.)
+    if (!unchanged) s.Event(std::move(c));
   }
 }))
 
@@ -409,11 +432,29 @@ extern "C" REX_FUNC(sub_821C4058) {
   if (s.recording()) {
     cap::ProducerTimer timer(s.producer_times(), cap::ProducerSection::kCommands, s.measuring());
     cap::HookTimer hook_timer(s.hook_costs(), 87, s.measuring());
-    std::vector<cmd::Hash> live_keys;
+    // Scratch: DrawEvent reads the keys, it does not keep them.
+    thread_local std::vector<cmd::Hash> live_keys;
+    live_keys.clear();
     cmd::Draw d = cap::CaptureDraw(base, render_system, operation, live_keys);
     s.DrawEvent(std::move(d), live_keys);
   }
 }
+
+// ---- device calls skipped as a whole (guest_d3d_skip.h) ------------------------------------
+// The draw and the index and stream bindings of the Xbox D3D device, whatever calls them. Callers
+// overwrite r3 after each (they return nothing used), so a skipped call leaves the context as is.
+#define DEVICE_SKIP_HOOK(entry, addr)                                                   \
+  static_assert(torchlight::guest_abi::functions::entry.address == 0x##addr##u);         \
+  static_assert(torchlight::hooks::SkippableDeviceCall(0x##addr##u));                    \
+  REX_EXTERN(__imp__sub_##addr);                                                        \
+  extern "C" REX_FUNC(sub_##addr) {                                                     \
+    if (g_skip_guest_d3d) return;                                                       \
+    __imp__sub_##addr(ctx, base);                                                       \
+  }
+DEVICE_SKIP_HOOK(kD3DDrawIndexed, 821CF830)
+DEVICE_SKIP_HOOK(kD3DDraw, 821D0A10)
+DEVICE_SKIP_HOOK(kD3DSetIndices, 821C39F8)
+DEVICE_SKIP_HOOK(kD3DSetStreamSource, 821C3D58)
 
 // ---- count-only slots ------------------------------------------------------------------------
 extern "C" {
@@ -502,6 +543,18 @@ SlotAttribution GetSlotAttribution(uint32_t slot) {
     default:
       return {true, ""};
   }
+}
+
+}  // namespace torchlight::hooks
+
+namespace torchlight::hooks {
+
+void InstallGuestD3DSkip(bool native_only) {
+  g_skip_guest_d3d = SkipGuestD3D(native_only, REXCVAR_GET(native_skip_guest_d3d));
+  REXLOG_INFO("guest D3D: {} (--native_skip_guest_d3d={}, native mode {})",
+              g_skip_guest_d3d ? "skipped for the device-only calls (sampler states, draws, bindings)"
+                               : "runs in full",
+              REXCVAR_GET(native_skip_guest_d3d), native_only ? "on" : "off");
 }
 
 }  // namespace torchlight::hooks

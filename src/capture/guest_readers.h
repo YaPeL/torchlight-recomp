@@ -11,6 +11,8 @@
 
 namespace torchlight::capture {
 
+class ConstantMirror;
+
 std::array<float, 16> ReadMatrix(const uint8_t* m, uint32_t matrix);
 std::array<float, 4> ReadColour(const uint8_t* m, uint32_t colour);
 
@@ -31,15 +33,44 @@ commands::SetVertexDeclaration CaptureVertexDeclaration(const uint8_t* m, uint32
 // Current vertex buffer binding (ids only).
 commands::SetVertexBuffers ReadVertexBufferBinding(const uint8_t* m, uint32_t binding);
 
+// The elements of a vertex declaration, as the guest stores them (enums mapped, no session).
+std::vector<commands::VertexElement> ReadVertexElements(const uint8_t* m, uint32_t declaration);
+
+// The vertex buffer a binding sets on `stream`, or 0.
+uint32_t BoundVertexBuffer(const uint8_t* m, uint32_t binding, uint32_t stream);
+
+// Where a vertex buffer's content is for the active device: its guest virtual address, size and
+// the vertex fetch swap mode (commands::BlobEndian::kVertexFetch). Nothing for buffers without a
+// device resource or out of range.
+struct GuestVertexMemory {
+  uint32_t address = 0, size = 0;
+  uint8_t fetch_endian = 0;
+  const uint8_t* bytes = nullptr;  // host view of `address` (GuestBytes: the physical host offset)
+};
+std::optional<GuestVertexMemory> VertexBufferMemory(const uint8_t* m, uint32_t buffer);
+
+// Where an index buffer's content is for the active device (guest CPU byte order, big-endian):
+// its guest virtual address and size. Nothing without a device resource or out of range.
+struct GuestIndexMemory {
+  uint32_t address = 0, size = 0;
+  const uint8_t* bytes = nullptr;  // host view of `address`
+};
+std::optional<GuestIndexMemory> IndexBufferMemory(const uint8_t* m, uint32_t buffer);
+
 // Draw recorded after the guest D3D9 _render ran (buffers already uploaded).
 // `live_keys` receives the live content key of each buffer snapshot (vertex buffers, then the
 // index buffer), see Session::DrawEvent.
 commands::Draw CaptureDraw(const uint8_t* m, uint32_t render_system, uint32_t operation,
                            std::vector<commands::Hash>& live_keys);
 
-// Constants that D3D9RenderSystem::bindGpuProgramParameters uploads for `mask`.
+// Constants that D3D9RenderSystem::bindGpuProgramParameters uploads for `mask`. With `mirror`
+// (live commands) the values read are stored in it, and with `filter` the ranges it already holds
+// are left out (capture/constant_mirror.h); when that leaves nothing to change (no range, the same
+// auto constants and transpose flag) `*unchanged` is set and the command is not to be sent, and
+// nothing was copied for it.
 commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint32_t gptype,
-                                     uint32_t mask);
+                                     uint32_t mask, ConstantMirror* mirror = nullptr,
+                                     bool filter = false, bool* unchanged = nullptr);
 
 // Program description (registered in the session).
 commands::BindProgram CaptureProgram(const uint8_t* m, uint32_t program);

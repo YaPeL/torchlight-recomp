@@ -41,12 +41,31 @@ extern "C" {
 DOUBLE(821EF318) DOUBLE(823D9930) DOUBLE(82375500) DOUBLE(822D7298) DOUBLE(8287D8C0)
 DOUBLE(821D7E78) DOUBLE(822D7520) DOUBLE(82361C78) DOUBLE(82361B00) DOUBLE(8221EF28)
 DOUBLE(82217DA8) DOUBLE(8229FB58) DOUBLE(822238E0) DOUBLE(82294548) DOUBLE(822D8548)
-DOUBLE(82217248) DOUBLE(823A1280) DOUBLE(822A0570) DOUBLE(822B9A60) DOUBLE(821DC980)
+DOUBLE(82217248) DOUBLE(823A1280) DOUBLE(822A0570) DOUBLE(821DC980)
+// The two calls whose arguments the hooks inside need (guest_abi kItemUse, kApplyDamage): the item
+// use sends character event 12 to `event_from` when set (the potion path, user in r4), the damage
+// application calls the health setter with the negated damage, as the guest does. Both scribble the
+// caller's preserved registers first: the hooks must not read them.
+uint32_t event_from=0;
+REX_EXTERN(sub_82294548); REX_EXTERN(sub_821D7E78);
+REX_FUNC(__imp__sub_822B9A60) {
+  ++calls; ctx.r28.u64=0xDEAD0028;
+  if (event_from) {
+    ctx.lr=event_from; ctx.r3.u64=ctx.r4.u64; ctx.r4.u64=12; ctx.r5.u64=1; sub_82294548(ctx,base);
+  }
+  ctx.r3.u64=result;
+}
+REX_FUNC(__imp__sub_8229C7B0) {
+  ++calls; ctx.r29.u64=0xDEAD0029; ctx.f30.f64=-1;
+  ctx.f1.u64^=0x8000000000000000ull; ctx.lr=torchlight::guest_abi::achievements::kHealthSetReturn;
+  sub_821D7E78(ctx,base);
+}
 #define DECLARE(address) REX_EXTERN(sub_##address);
 DECLARE(821EF318) DECLARE(823D9930) DECLARE(82375500) DECLARE(822D7298) DECLARE(8287D8C0)
 DECLARE(821D7E78) DECLARE(822D7520) DECLARE(82361C78) DECLARE(82361B00) DECLARE(8221EF28)
 DECLARE(82217DA8) DECLARE(8229FB58) DECLARE(822238E0) DECLARE(82294548) DECLARE(822D8548)
 DECLARE(82217248) DECLARE(823A1280) DECLARE(822A0570) DECLARE(822B9A60) DECLARE(821DC980)
+DECLARE(8229C7B0)
 }
 int main() {
   const size_t arena_size=size_t{1}<<32;
@@ -58,6 +77,7 @@ int main() {
     const auto length=std::strlen(name); put(address+16,uint32_t(length)); put(address+20,7);
     for (size_t i=0;i<length;++i) base[address+2*i+1]=uint8_t(name[i]);
   };
+  const uint32_t abi_health_return=torchlight::guest_abi::achievements::kHealthSetReturn;
   const uint32_t player=0x10000, shared=0x12000, array=0x13000, game=0x14000,
       manager=0x18000, unit=0x20000, ui=0x28000;
   put(0x8355A294,manager); put(manager+88,player);
@@ -122,15 +142,20 @@ int main() {
     put(shared+16,player_tree); put(player_tree+12,player_head); put(player_head+4,player_head);
     base[player_head+33]=1; put(player+372,28);
   }
-  put(player+372,30); ctx.lr=0x8229CAD4; ctx.r29.u64=player; ctx.f30.f64=10000.75;
-  sub_821D7E78(ctx,base);
+  // Max damage: the damage application (unit r3, damage f1, attacker r9) and its health setter.
+  auto damage=[&](uint32_t attacker,double amount) {
+    const auto prior=calls; ctx.r3.u64=unit; ctx.f1.f64=amount; ctx.r9.u64=attacker;
+    sub_8229C7B0(ctx,base);
+    Check(calls==prior+2,"damage application and health setter originals always run");
+  };
+  put(player+372,30); damage(player,10000.75);
   Check(!Has("MAX_DMG_DONE"),"an attacker that is not the player does not count");
-  put(player+372,28); ctx.lr=0x8229CAD4; ctx.r29.u64=player; ctx.f30.f64=10000.75;
-  sub_821D7E78(ctx,base);
-  Check(Has("MAX_DMG_DONE") && service.state().stats[3]==10000 && ctx.r29.u32==player &&
-      ctx.f30.f64==10000.75,"applied damage max and guest registers preserved");
-  ctx.lr=0x8229CAD4; ctx.f30.f64=1; sub_821D7E78(ctx,base);
-  Check(service.state().stats[3]==10000,"smaller damage cannot lower max");
+  put(player+372,28); damage(player,10000.75);
+  Check(Has("MAX_DMG_DONE") && service.state().stats[3]==10000,
+      "applied damage max, from the application's arguments");
+  damage(player,1); Check(service.state().stats[3]==10000,"smaller damage cannot lower max");
+  before=service.state(); ctx.lr=abi_health_return; ctx.f1.f64=-20000; sub_821D7E78(ctx,base);
+  Check(service.state()==before,"a health set outside a damage application does not count");
   before=service.state(); result=0; ctx.lr=0x82356904; sub_8221EF28(ctx,base);
   result=1; ctx.lr=123; sub_8221EF28(ctx,base);
   Check(service.state()==before,"nonmatch and unrelated compare ignored");
@@ -213,11 +238,12 @@ int main() {
   enabled=true;
   // Potions used on a pet: event 12 from the potion effect, target in r28 cast to an owned CCharacter.
   const uint32_t pet=0x34000;
+  // The item use (item r3, user r4, target r5) sends the event from `from`.
   auto potion=[&](uint32_t from,uint32_t target) {
-    const auto prior=calls; ctx.lr=from; ctx.r3.u64=player; ctx.r4.u64=12; ctx.r5.u64=1;
-    ctx.r28.u64=target; ctx.r1.u64=0x70000; sub_82294548(ctx,base);
-    Check(calls==prior+1 && ctx.r3.u32==result && ctx.r28.u32==target && ctx.r1.u32==0x70000,
-        "event original always runs; result and caller registers kept");
+    const auto prior=calls; event_from=from; ctx.lr=0x82300000; ctx.r3.u64=0x62000;
+    ctx.r4.u64=player; ctx.r5.u64=target; ctx.r1.u64=0x70000; sub_822B9A60(ctx,base); event_from=0;
+    Check(calls==prior+2 && ctx.r3.u32==result && ctx.r1.u32==0x70000,
+        "item use and event originals always run; result and stack pointer kept");
   };
   // MSVC RTTI for the host cast (guest_abi CastToCharacter): a vtable whose locator's hierarchy lists
   // a CCharacter base (character classes) or only a CBaseUnit base (other units).

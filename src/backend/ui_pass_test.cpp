@@ -1,5 +1,6 @@
 // The host UI pass (tl_backend_set_ui_frame) on an offscreen backend: a synthetic frame over the
-// output, checked pixel by pixel. Needs a GL context (a display); skipped without one.
+// output, checked pixel by pixel, with the render system of its command line
+// (test_render_system.h). Needs a display; skipped without one.
 
 #include <cmath>
 #include <cstdio>
@@ -8,6 +9,7 @@
 #include <vector>
 
 #include "backend/backend_api.h"
+#include "backend/test_render_system.h"
 #include "platform/platform.h"
 
 namespace {
@@ -52,14 +54,16 @@ bool Near(const uint8_t* p, int r, int g, int b) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char** argv) {
+  torchlight::backend_test::RenderSystemArgs args;
+  if (!torchlight::backend_test::ParseRenderSystemArgs(argc, argv, args)) return 2;
   if (!torchlight::platform::HasDisplay()) {
     std::printf("ui pass test: skipped (no display)\n");
     return 77;
   }
   char error[512] = {};
-  tl_backend* b = tl_backend_create(TL_RENDER_SYSTEM_GL3PLUS, nullptr, kWidth, kHeight, nullptr, nullptr,
-                                    error, sizeof(error));
+  tl_backend* b = tl_backend_create(args.render_system, args.gpu.c_str(), kWidth, kHeight, nullptr,
+                                    nullptr, error, sizeof(error));
   if (!b) {
     std::fprintf(stderr, "backend: %s\n", error);
     return 1;
@@ -129,6 +133,6 @@ int main() {
   tl_backend_ui_release_texture(b, 7);
   tl_backend_destroy(b);
   if (failures) return 1;
-  std::printf("ui pass test: ok\n");
+  std::printf("ui pass test (%s): ok\n", args.name);
   return 0;
 }

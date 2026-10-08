@@ -3,6 +3,12 @@
 // Same use as std::mutex (lock_guard, unique_lock, condition_variable_any). Per name it counts
 // acquisitions, the ones that had to wait (the mutex was held), the time spent waiting and the
 // time held. Instances with the same name add up.
+//
+// The acquisitions, the contended ones and the wait are exact (the wait is timed only when the
+// mutex was held). The time held is an estimate: it is timed on one acquisition in
+// kHoldSampleEvery and counted that many times, since timing every one (two clock reads per
+// acquisition) cost the guest's render thread measurably on the per-draw lookups
+// (docs/performance-profile.md).
 
 #pragma once
 
@@ -40,9 +46,13 @@ class MeasuredMutex {
     return true;
   }
   void unlock() {
-    stats_->hold_ns.fetch_add(Now() - held_since_, std::memory_order_relaxed);
+    if (hold_sampled_) {
+      stats_->hold_ns.fetch_add((Now() - held_since_) * kHoldSampleEvery,
+                                std::memory_order_relaxed);
+    }
     mutex_.unlock();
   }
+  static constexpr uint64_t kHoldSampleEvery = 64;
 
  private:
   static uint64_t Now() {
@@ -51,13 +61,15 @@ class MeasuredMutex {
                         .count());
   }
   void Acquired() {
-    held_since_ = Now();
-    stats_->acquisitions.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t n = stats_->acquisitions.fetch_add(1, std::memory_order_relaxed);
+    hold_sampled_ = n % kHoldSampleEvery == 0;
+    if (hold_sampled_) held_since_ = Now();
   }
 
   std::mutex mutex_;
   MutexStats* stats_;
   uint64_t held_since_ = 0;  // written and read by the holder only
+  bool hold_sampled_ = false;  // the holder's acquisition has its hold timed
 };
 
 struct MutexSummary {

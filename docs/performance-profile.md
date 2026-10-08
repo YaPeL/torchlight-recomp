@@ -84,8 +84,240 @@ frames past 33 ms per 40 s step against up to 459 (Xenos, walking in the town, w
 is about 31 ms). Not measured: other GPUs (Intel and Windows pending), runs with a frame cap, and
 the Windows release's OGRE build (`/Ob1`).
 
+### The producer on the guest's render thread (2026-10-07)
+
+A profile of the same native run (`perf record --all-user --call-graph lbr`, 999 Hz, warm caches)
+showed the game's main thread at 100 % of a core and everything else with room: the backend thread
+about half a core, the GPU at 13-31 % utilization. On the main thread 75-83 % was the recompiled
+game, 10-12 % this project's producer (the RenderSystem hooks recording commands) and 8-9 % libc and
+std containers, mostly the producer's too: re-reading resource descriptions on every bind only to
+drop them as already sent, tree containers, two clock reads per lock in `MeasuredMutex`, and the
+frame's command vector growing by doubling. Four changes (`perf/producer`): descriptions the live
+stream already has are not read again (textures without a content snapshot and declarations, keyed
+by identity with its generation, so a resource recreated at the same address is described again;
+programs are not cached: no hook sees their destruction), hash containers, the lock's hold time
+sampled (below), and each frame's commands reserved at the last frame's count.
+
+Same method and build as above, one run before (`perf-1`) and one after (`perf-2`):
+
+| Step | Before | After |
+|---|---|---|
+| Main menu | 225.1 fps | 258.1 fps (+15 %) |
+| Town, still | 108.8 fps | 119.1 fps (+9 %) |
+| Town, walking | 80.7 fps | 87.8 fps (+9 %) |
+| Dungeon, still | 123.0 fps | 160.5 fps |
+| Dungeon, fighting | 89.8 fps | 114.4 fps |
+
+The producer and its libc/std time in the town, walking: 2.55 to 1.99 ms per frame (-22 %), with
+the game's own code unchanged (9.3 and 9.1 ms per frame). The dungeon rows are not comparable: each
+run creates a new character, and the mine's floor is generated, so the map and the fight differ;
+later dungeon measurements start from a saved game on a fixed floor. Left in the producer (town,
+walking, share of the main thread): the registry lookup 2.2 %, the state early out 1.3 %, malloc
+about 2 %.
+
+**Lock times in the log**: the `locks:` part of the `live measurements` summary counts each
+`MeasuredMutex`'s acquisitions and contended acquisitions exactly, and its wait when it was
+contended, but the time held (`held ~N ms`) is an estimate since 2026-10-07: timed on one
+acquisition in 64 and counted 64 times (`kHoldSampleEvery`, `live/measured_mutex.h`). Timing every
+acquisition took two clock reads each, on per-draw lookups of the guest's render thread.
+
 **Open**: the native renderer still has a few long frames with warm caches (209.8 ms on arriving in
 the town, 190.5 ms in a fight): not shader compilation, to be traced.
+
+### The guest's memory copies on the host (2026-10-07)
+
+In the same profile the guest's 128-byte block copy loop (0x82884644) alone took 2.4 % of the main
+thread. Two guest functions copy memory: the CRT memcpy
+(0x82860A50, 1213 call sites) and a large copy built on it (0x821A7138, which uploads buffers); the
+evidence is in `guest_abi/guest_functions.h` (`kMemcpy`, `kLargeCopy`). Both copy front to back with
+plain loads and stores, so between ranges that do not overlap the result is that of a host
+`memcpy`, and `hooks/guest_copy_hooks.cpp` runs one there. The guest's own copy still runs for
+overlapping ranges (where a front-to-back copy and `memmove` differ), ranges touching the device
+registers (0x7F000000-0x7FFFFFFF: the SDK serves those by decoding each faulting instruction) and
+ranges crossing 0xE0000000 (where the host translation adds 0x1000 on Windows and macOS arm64) or
+the end of the address space (`hooks/guest_copy.h`; tests in `guest_copy_test`). Pages the SDK
+write-protects to invalidate GPU copies need nothing: its fault handler unprotects and retries any
+host instruction. Every mode, native and Xenos.
+
+**`--native_guest_copy=false`** turns it off at run time: every copy runs the recompiled guest code,
+as before. It compares the two with one binary, and rules the change out if something looks wrong
+(a report of corrupted data, a crash in a copy).
+
+The log's first lines say which: `guest copies: host memcpy where it is the same copy
+(--native_guest_copy=true)` or `... the recompiled guest code (--native_guest_copy=false)`.
+
+**Measured** (2026-10-07; same machine, flags, warm shader caches and release build as above; the
+steps of each run start from one saved game on the first floor of the mine, so the dungeon is the
+same map in every run; frame rate per step, mean of the runs):
+
+| Step | Guest copies (2 runs) | Host memcpy (3 runs) | x86-64-v3, host memcpy (2 runs) |
+|---|---|---|---|
+| Main menu | 246.1 fps | 252.2 fps (+2.5 %) | 262.2 fps |
+| Dungeon, still | 148.4 fps | 152.3 fps (+2.6 %) | 151.4 fps |
+| Dungeon, fighting | 102.9 fps | 106.2 fps (+3.2 %) | 108.4 fps |
+| Town, still | 158.0 fps | 158.3 fps | 179.6 fps |
+| Town, walking | 88.4 fps | 93.2 fps (+5.4 %) | 97.4 fps |
+
+The host copies gain 2-5 %, small but in the same direction in every step but one: in the dungeon,
+still, all three runs with them (149.4-153.8 fps) beat both without (148.3-148.5); elsewhere the
+ranges touch. Two identical runs differed by up to 3 % in the dungeon and 16 % in the town, still
+(where the camera stops depends on where the player stands), so the town, still, is not compared.
+No step changed its long frames (0-3 over 33 ms in any run). A profile of a run with them (`perf`,
+as above) no longer has the guest's block copy loop.
+
+**x86-64-v3** (the game built with `-march=x86-64-v3`: AVX2, BMI2, FMA; the SDK and OGRE unchanged)
+was measured too and dropped: 0-2 % in the dungeon (within the noise), +4 % in the main menu, and
+the town, still, is the noisy step. Not worth requiring AVX2 (CPUs from about 2013 on), two builds
+or a launcher choosing one; the release stays x86-64-v2.
+
+**Where the frame rate drops** (same profile): below 100 fps, in the dungeon with several enemies and
+an NPC on screen and in the town walking, the game issues about twice the draws (about 340 per frame
+against 180 in the dungeon, still) at about the same main thread cost per draw (33-37 us), so the
+frame rate halves. The time stays where it is in the fast steps: the guest's per-object rendering
+in its SceneManager (at least 39 % of the main thread), its `_setPass` (13 %), the guest's own D3D9
+`_render` under the RenderSystem hooks (at least 12 %; the call graphs are cut by the LBR depth), this
+project's producer (11 %) and libc (8 %). The backend thread is not the limit (4.6 ms per frame
+there against 11 ms on the main thread). The guest's D3D work under the RenderSystem, which in the
+native mode prepares a Xenos GPU nobody reads, is the next candidate.
+
+### The default code model on Linux (2026-10-07)
+
+The SDK compiles its Linux x86-64 targets with `-mcmodel=large`, which makes every call between
+guest functions a 64-bit address loaded into a register and an indirect call; the game now
+overrides it with the default model (`CMakeLists.txt`; `docs/guest-hot-paths.md`). The executable's
+text went from 67.5 to 62.7 MB. Same method as above, `--native_skip_guest_d3d=true` in both, two
+runs each, interleaved:
+
+| Step | Large model | Default model |
+|---|---|---|
+| Main menu | 269.0 fps | 299.3 fps (+11 %) |
+| Dungeon, still | 156.6 fps | 163.6 fps (+4.5 %) |
+| Dungeon, fighting | 118.2 fps | 118.5 fps (1 % low 76.6 -> 79.8 fps) |
+| Town, still | 185.6 fps | 190.3 fps |
+| Town, walking | 101.9 fps | 105.2 fps |
+
+Both runs with the default model beat both with the large one in the main menu and in the
+dungeon, still; in the fight and the town the ranges overlap (within the noise of a run).
+
+### Long frames (2026-10-07)
+
+Since this date the log has a `long frame:` line for every guest frame past 33.3 ms, in every
+mode (`live/guest_events.h`): the guest's file existence checks (missing ones, the slowest path),
+reads and `XMemAlloc` calls in that frame, and the rest of it. In the native mode the live mode's
+`slow frame` line has the backend's side (textures, RTSS programs, now with the generation time
+apart, buffers, present).
+
+What they showed, native and Xenos, on the fixed-floor saved game:
+
+- **The spikes in a fight are the game assembling equipment models** on its main thread
+  (`MEDIA\WARDROBE\...`, `MODELS\ARMOR\...`): 84-99 ms in the native mode, of which about 7 ms
+  of `XMemAlloc` (80-120 calls), 1-2.5 ms of file checks, 0.05 ms of reads, and 76-89 ms of the
+  guest's own work; the backend's side of those frames is normal (1-2 textures, no program, about
+  9 ms). DWARF profiles put that work across the game's equipment code and OGRE, with no hot
+  function, and this project's producer at its usual share. With Xenos the same loads take longer
+  (`LEATHER_SET.MESH`: 184.7 ms against 84.2 ms): they are the game's.
+- **The same model spikes again**: `WARDROBE\DESTROYER\LEATHER_SET.MESH` took 84.2 ms and, a
+  minute later in the same run, 98.8 ms. Dropping and picking up the same item does not spike.
+- **The town, walking**, has a sustained lower frame rate (more draws) and no frame past 33 ms
+  outside the level load.
+- **Present stalls**: on the test laptop the backend's present sometimes takes 30-40 ms, every 11 to
+  17 s, always at the same fraction of the second across separate processes: tied to the system's
+  clock, so outside the game (likely the laptop's GPU or compositor); not followed further. The
+  user's desktop has drops too, so it is not the main cause.
+- **File existence checks**: OGRE looks every resource up in each resource location, about 20,700
+  missing files per run, about 0.5 s of the main thread over a session (each failure also logs a
+  warning from the SDK). Candidate, not implemented: a generic negative cache ("this file does not
+  exist") for the read-only game data locations, without touching the SDK; mods will add locations
+  and lookups.
+
+### Bucket culling (2026-10-08)
+
+`--native_bucket_cull` (on by default, `=false` turns it off; `docs/guest-hot-paths.md`, "Bucket
+culling") stops queueing the StaticGeometry buckets entirely outside the main camera. Fixed-floor
+saved game, draw skip on, same binary with the culling off and on, three runs each:
+
+| Fight with the NPC | Off | On |
+|---|---|---|
+| FPS (mean of three runs) | 123.5 (130.8, 118.6, 121.2) | 135.6 (140.3, 136.1, 130.3) |
+| p99 (1 % low) | 12.56 ms (79.6) | 11.52 ms (86.8) |
+| Frames over 50 ms (all runs) | 4 | 5 |
+
+About 53 of 143 buckets per frame are dropped in the fight. In the town square almost none
+(~1 of 130): 106.8 against 108.2 FPS, within the run-to-run spread. The frames over 50 ms are the
+guest's own (the long frame report).
+
+Per piece (`--native_bucket_cull_pieces`, one box per connected piece of a bucket, at most 16),
+against one box per bucket, same binary, two runs each, step overlay with 40 s in the fight and
+40 s in the town square:
+
+| | Per bucket | Per piece |
+|---|---|---|
+| Fight, FPS | 134.9, 137.3 | 138.8, 138.8 |
+| Fight, p99 (1 % low) | 11.65, 11.30 ms (85.8, 88.5) | 10.58, 10.81 ms (94.5, 92.5) |
+| Town square, FPS | 111.1, 111.6 | 121.6, 113.9 |
+| Town square, p99 (1 % low) | 12.71, 12.03 ms (78.7, 83.1) | 11.19, 12.67 ms (89.4, 78.9) |
+| Town square, buckets dropped per frame | 0.3, 0.2 (of ~130) | 21.2, 23.0 (of ~126) |
+
+The fight's 1 % low gains about 7 %. In the town square both runs drop the same ~22 buckets, but
+the frame rate differs by 8 fps between them: about +6 % on average, inside the square's
+run-to-run spread for the 1 % low. Building the pieces costs 51 ms in total on entering the town
+(27 ms with one box per bucket), spread over the loading frames, which already take 400 ms or
+more; none is built while playing.
+
+## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
+
+The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
+inline are inlined; `docs/release-pipeline.md`, 5.8). The same game run with OGRE built Release
+(`/O2 /Ob2`) instead, everything else equal, in the native mode on Direct3D 11.
+
+**Machine**: AMD Ryzen 7 5700X3D (8 cores, 16 threads), NVIDIA GeForce RTX 5080 (driver
+32.0.16.1088), 32 GB RAM, Windows 11 Pro (build 26200), a 3840x2160 display at 120 Hz.
+
+**Build**: the game as the Windows release builds it (`win-amd64-release`, `-O3 -DNDEBUG -g`,
+clang 21.1.8), the SDK's Release libraries (`patches/series` up to 19), and OGRE 14.6.0 built by
+`tools/build-deps/windows.ps1` with `-Configs RelWithDebInfo` (`OgreMain.dll` 7.3 MB) or
+`-Configs Release` (3.3 MB). Two install trees that differ only in OGRE's DLLs and plugins.
+
+**Method**: the one above, with the same temporary step overlay (built locally, not integrated):
+fresh copies of every user folder per run (`--user_data_root` and the tests' user folder variable,
+as `XDG_*_HOME` on Linux), a new character each time, Direct3D 11, internal resolution 1280x720 in
+a 3840x2160 fullscreen window, no frame cap and no vsync (`--vsync=false`). Runs alternated
+(RelWithDebInfo 1, Release 1, RelWithDebInfo 2); run 1 of each with no OGRE shader cache, run 2
+with run 1's. NVIDIA's own Direct3D shader cache lives outside the run's folders and was not
+cleared, so only the very first run met it empty; both variants compile the same shaders. CPU: the
+process's CPU time sampled every second, averaged over each step. A fourth run (Release 2) was not
+made: the three that were already answered the question.
+
+Frame rate (fps, mean over the step); p99 and longest frame (ms); frames past 33 and 50 ms; process
+CPU (% of one core) and CPU time per frame:
+
+| Step | RelWithDebInfo 1 (cold) | Release 1 (cold) | RelWithDebInfo 2 (warm) |
+|---|---|---|---|
+| Main menu, 40 s | 311.9; 3.9 / 5.6; 0, 0; 184 %, 5.9 ms | 311.6; 4.0 / 6.7; 0, 0; 182 %, 5.8 ms | 310.7; 4.2 / 6.4; 0, 0; 185 %, 6.0 ms |
+| Town, still, 40 s | 146.3; 13.9 / 159.5; 2, 2; 186 %, 12.7 ms | 146.6; 14.1 / 157.7; 2, 2; 184 %, 12.6 ms | 144.8; 14.4 / 156.0; 2, 2; 187 %, 12.9 ms |
+| Town, walking, 40 s | 98.3; 13.1 / 15.7; 0, 0; 180 %, 18.3 ms | 99.8; 12.6 / 16.9; 0, 0; 183 %, 18.3 ms | 99.3; 12.9 / 19.0; 0, 0; 182 %, 18.4 ms |
+| Dungeon, still, 40 s | 199.7; 6.3 / 9.1; 0, 0; 178 %, 8.9 ms | 178.5; 6.9 / 8.8; 0, 0; 186 %, 10.4 ms | 161.3; 8.0 / 12.3; 0, 0; 195 %, 12.1 ms |
+| Dungeon, fighting, 40 s | 134.8; 10.4 / 176.2; 3, 2; 188 %, 13.9 ms | 119.8; 11.0 / 17.4; 0, 0; 189 %, 15.8 ms | 149.9; 9.8 / 15.0; 0, 0; 192 %, 12.8 ms |
+
+Level loads (`level load`), ms:
+
+| Load | RelWithDebInfo 1 | Release 1 | RelWithDebInfo 2 |
+|---|---|---|---|
+| Main menu to the town (a new character) | 6440 | 6401 | 6338 |
+| Town to the mine's first floor | 4378 | 3820 | 3925 |
+
+**Results**: no measurable difference. Where a step repeats the same scene every run (the main
+menu, the town still and walking) the two builds are within 1 % of each other in frame rate, p99
+and CPU time per frame. The dungeon steps depend on where the player stands and fights each time
+and vary more between two runs of the same build (199.7 against 161.3 fps standing still) than
+between the builds. The loads are within run-to-run variation too. The main thread is the limit
+(the process holds 180-195 % of a core in every step, as on Linux), not OGRE's code, so OGRE's
+inlining does not show. The game runs correctly with OGRE Release (a whole run without errors).
+The Windows release keeps OGRE RelWithDebInfo, which also keeps its symbols for crash reports.
+
+Also seen: on this machine the startup's OpenGL 3.3 probe (`platform::CanCreateGl33Context`) takes
+about 180 ms (NVIDIA's driver initializing; 4.6 ms on Windows' own OpenGL in a sandbox without a
+GPU), on the critical path before the backend starts.
 
 ## Controlled follow-up results
 

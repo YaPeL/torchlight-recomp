@@ -138,6 +138,8 @@ bool InLevel(const uint8_t* base) {
 
 void ViewsCreated(uint32_t viewport) { scene_viewport = viewport; }
 
+uint32_t SceneViewport() { return scene_viewport; }
+
 uint32_t SceneClipViewport(const uint8_t* base) {
   if (!scene_viewport || !WiderThan16x9() || InLevel(base)) return 0;
   return scene_viewport;

@@ -5,7 +5,9 @@
 #include <vector>
 
 #include <fmt/format.h>
+#include <rex/system/xmemory.h>
 
+#include "capture/constant_mirror.h"
 #include "capture/session.h"
 #include "capture/translate.h"
 #include "guest_abi/guest_functions.h"
@@ -27,6 +29,13 @@ using commands::UnresolvedReason;
 constexpr uint32_t kMaxSnapshotBytes = 64u << 20;
 
 uint32_t U32(const uint8_t* m, uint32_t a) { return abi::ReadU32(m, a); }
+
+// Host pointer to the guest's bytes at a guest virtual address, translated as the generated code
+// translates its own accesses on this platform (rex::memory::GuestPtr: plus 0x1000 from 0xE0000000
+// up on Windows and macOS arm64, nothing elsewhere).
+const uint8_t* GuestBytes(const uint8_t* m, uint32_t address) {
+  return rex::memory::GuestPtr<const uint8_t*>(const_cast<uint8_t*>(m), address);
+}
 
 // In-order walk of an XDK std::map/set. Leaf children point back to the head node.
 template <typename F>
@@ -137,6 +146,8 @@ std::optional<commands::ResourceId> CaptureTexture(const uint8_t* m, uint32_t te
     return std::nullopt;
   }
   if (!s.recording()) return info->id;
+  // Already in the live stream with a description that cannot change (session.h).
+  if (s.LiveTextureDescribed(info->id)) return info->id;
 
   commands::TextureDesc d = ReadTextureDesc(m, texture);
   d.id = info->id;
@@ -177,7 +188,7 @@ std::optional<commands::ResourceId> CaptureTexture(const uint8_t* m, uint32_t te
         if (physical == 0 || size == 0 || size > kMaxSnapshotBytes) {
           d.unresolved = UnresolvedReason::kBufferOutOfRange;
         } else {
-          const uint8_t* p = xd3d::HostPointer(m, xd3d::PhysicalToVirtual(physical));
+          const uint8_t* p = GuestBytes(m, xd3d::PhysicalToVirtual(physical));
           // Content version: that of the base level's pixel buffer (surface 0), whose unlocks
           // and blits write it.
           uint32_t surfaces = texture + ogre::d3d9_texture::kSurfaceList.offset;
@@ -220,6 +231,11 @@ commands::SetVertexDeclaration CaptureVertexDeclaration(const uint8_t* m, uint32
   if (first != 0 && last >= first && (last - first) / stride <= 64) {
     content.content =
         commands::HashBytes(m + first, last - first, commands::BlobEndian::kGuestCpuBigEndian, 0);
+    // Already in the live stream with this content: its elements are not read again (session.h).
+    if (s.LiveDeclarationDescribed(info->id, content.content)) {
+      c.content = content.content;
+      return c;
+    }
     for (uint32_t e = first; e < last; e += stride) {
       commands::VertexElement el;
       el.source = abi::ReadU16(m, e, ogre::vertex_element::kSource);
@@ -254,6 +270,69 @@ commands::SetVertexBuffers ReadVertexBufferBinding(const uint8_t* m, uint32_t bi
     c.streams.push_back(stream);
   });
   return c;
+}
+
+std::vector<commands::VertexElement> ReadVertexElements(const uint8_t* m, uint32_t declaration) {
+  std::vector<commands::VertexElement> elements;
+  if (declaration == 0) return elements;
+  uint32_t list = declaration + ogre::vertex_declaration::kElementList.offset;
+  uint32_t first = U32(m, list + ogre::stl_vector::kFirst.offset);
+  uint32_t last = U32(m, list + ogre::stl_vector::kLast.offset);
+  uint32_t stride = ogre::vertex_element::kSize.bytes;
+  if (first == 0 || last < first || (last - first) / stride > 64) return elements;
+  for (uint32_t e = first; e < last; e += stride) {
+    commands::VertexElement el;
+    el.source = abi::ReadU16(m, e, ogre::vertex_element::kSource);
+    el.offset = abi::ReadU32(m, e, ogre::vertex_element::kOffset);
+    el.index = abi::ReadU16(m, e, ogre::vertex_element::kIndex);
+    el.type = ToVertexType(abi::ReadU32(m, e, ogre::vertex_element::kType));
+    el.semantic = ToVertexSemantic(abi::ReadU32(m, e, ogre::vertex_element::kSemantic));
+    elements.push_back(el);
+  }
+  return elements;
+}
+
+uint32_t BoundVertexBuffer(const uint8_t* m, uint32_t binding, uint32_t stream) {
+  uint32_t buffer = 0;
+  if (binding == 0) return buffer;
+  ForEachNode(m, binding + ogre::vertex_buffer_binding::kBindingMap.offset, [&](uint32_t node) {
+    if (abi::ReadU16(m, node + ogre::stl_tree::kNodeKey.offset) == stream)
+      buffer = U32(m, node + ogre::stl_tree::kNodeValue.offset + ogre::shared_ptr::kPRep.offset);
+  });
+  return buffer;
+}
+
+std::optional<GuestVertexMemory> VertexBufferMemory(const uint8_t* m, uint32_t buffer) {
+  uint32_t map = buffer + ogre::d3d9_hardware_vertex_buffer::kDeviceToResourcesMap.offset;
+  uint32_t resources = FindPointerEntry(m, map, ActiveDevice(m));
+  uint32_t object = resources ? abi::ReadU32(m, resources, ogre::d3d9_buffer_resources::kBuffer)
+                              : 0;
+  if (object == 0) return std::nullopt;
+  uint32_t d0 = abi::ReadU32(m, object, xd3d::vertex_buffer::kFetchDword0);
+  uint32_t d1 = abi::ReadU32(m, object, xd3d::vertex_buffer::kFetchDword1);
+  GuestVertexMemory memory;
+  uint32_t physical = d0 & xd3d::vertex_buffer::kAddressMask;
+  memory.size = d1 & xd3d::vertex_buffer::kSizeMask;
+  memory.fetch_endian = uint8_t(d1 & xd3d::vertex_buffer::kEndianMask);
+  if (physical == 0 || memory.size == 0 || memory.size > kMaxSnapshotBytes) return std::nullopt;
+  memory.address = xd3d::PhysicalToVirtual(physical);
+  memory.bytes = GuestBytes(m, memory.address);
+  return memory;
+}
+
+std::optional<GuestIndexMemory> IndexBufferMemory(const uint8_t* m, uint32_t buffer) {
+  uint32_t map = buffer + ogre::d3d9_hardware_index_buffer::kDeviceToResourcesMap.offset;
+  uint32_t resources = FindPointerEntry(m, map, ActiveDevice(m));
+  uint32_t object = resources ? abi::ReadU32(m, resources, ogre::d3d9_buffer_resources::kBuffer)
+                              : 0;
+  if (object == 0) return std::nullopt;
+  uint32_t physical = abi::ReadU32(m, object, xd3d::index_buffer::kAddress);
+  GuestIndexMemory memory;
+  memory.size = abi::ReadU32(m, object, xd3d::index_buffer::kSize);
+  if (physical == 0 || memory.size == 0 || memory.size > kMaxSnapshotBytes) return std::nullopt;
+  memory.address = xd3d::PhysicalToVirtual(physical);
+  memory.bytes = GuestBytes(m, memory.address);
+  return memory;
 }
 
 namespace {
@@ -308,7 +387,7 @@ commands::BufferSnapshot SnapshotBuffer(const uint8_t* m, commands::ResourceKind
     snap.source = 1;
     snap.guest_virtual = xd3d::PhysicalToVirtual(physical);
     snap.size = size;
-    auto content = s.RecordContent(info->id, buffer, xd3d::HostPointer(m, snap.guest_virtual),
+    auto content = s.RecordContent(info->id, buffer, GuestBytes(m, snap.guest_virtual),
                                    size, endian, endian_raw);
     snap.blob = content.capture;
     live_keys.back() = content.live;
@@ -396,7 +475,9 @@ commands::Draw CaptureDraw(const uint8_t* m, uint32_t render_system, uint32_t op
 }
 
 commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint32_t gptype,
-                                     uint32_t mask) {
+                                     uint32_t mask, ConstantMirror* mirror, bool filter,
+                                     bool* unchanged) {
+  if (unchanged) *unchanged = false;
   namespace gpp = ogre::gpu_program_parameters;
   namespace node = ogre::gpu_logical_index_use_node;
   commands::SetConstants c;
@@ -421,10 +502,16 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
       uint32_t physical = abi::ReadU32(m, n, node::kPhysicalIndex);
       r.physical_index = physical;
       if (r.element_count > 4096) return;
-      r.data.reserve(r.element_count);
-      for (uint32_t i = 0; i < r.element_count; ++i) {
-        r.data.push_back(U32(m, data + 4 * (physical + i)));
-      }
+      // Read into a scratch buffer first: a range the backend already holds is left out without
+      // allocating (live commands, `filter`).
+      thread_local std::vector<uint32_t> values;
+      values.resize(r.element_count);
+      for (uint32_t i = 0; i < r.element_count; ++i) values[i] = U32(m, data + 4 * (physical + i));
+      const uint8_t stage = c.stage.value;
+      if (mirror && filter && mirror->Holds(floats, stage, physical, values.data(), r.element_count))
+        return;
+      if (mirror) mirror->Store(floats, stage, physical, values.data(), r.element_count);
+      r.data.assign(values.begin(), values.end());
       out.push_back(std::move(r));
     });
   };
@@ -434,8 +521,10 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
   uint32_t first = U32(m, parameters + gpp::kAutoConstants.offset + ogre::stl_vector::kFirst.offset);
   uint32_t last = U32(m, parameters + gpp::kAutoConstants.offset + ogre::stl_vector::kLast.offset);
   uint32_t stride = ogre::auto_constant_entry::kSize.bytes;
+  // Into a scratch list first: a command left unchanged copies nothing (live commands).
+  thread_local std::vector<commands::AutoConstant> autos;
+  autos.clear();
   if (first != 0 && last >= first && (last - first) / stride <= 512) {
-    c.autos.reserve((last - first) / stride);
     for (uint32_t e = first; e < last; e += stride) {
       commands::AutoConstant a;
       a.raw_type = abi::ReadU32(m, e, ogre::auto_constant_entry::kParamType);
@@ -449,9 +538,18 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
         Session::Get().AddUnresolved(UnresolvedReason::kUnknownEnumValue,
                                      fmt::format("auto constant type {}", a.raw_type));
       }
-      c.autos.push_back(std::move(a));
+      autos.push_back(std::move(a));
     }
   }
+  if (mirror) {
+    if (filter && c.floats.empty() && c.ints.empty() &&
+        mirror->SameTail(c.stage.value, autos, c.transpose_matrices)) {
+      if (unchanged) *unchanged = true;
+      return c;
+    }
+    mirror->StoreTail(c.stage.value, autos, c.transpose_matrices);
+  }
+  c.autos.assign(autos.begin(), autos.end());
   return c;
 }
 

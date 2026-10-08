@@ -306,11 +306,13 @@ uint32_t tl_backend_probe_samples(tl_backend* b);
 
 /* Work the backend did since the previous call, for the live mode's slow frame report: RTSS
  * programs generated and the time of the draws that generated them (generation, compilation and
- * the driver's work on first use, as far as it happens inside the draw), GPU buffers and vertex
- * layouts created. Resets the counts. */
+ * the driver's work on first use, as far as it happens inside the draw), of which the RTSS
+ * generation itself (its material, pass and shader source; program_generate_ms), GPU buffers and
+ * vertex layouts created. Resets the counts. */
 typedef struct tl_backend_counters {
   uint32_t programs_generated;
   double program_ms;
+  double program_generate_ms;
   uint32_t gpu_buffers_created;
   uint32_t vertex_layouts_created;
 } tl_backend_counters;

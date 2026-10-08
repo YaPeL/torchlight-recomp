@@ -81,9 +81,11 @@ void Session::EnableLive(live::FrameQueue* queue, live::SnapshotStore* store) {
   live_store_ = store;
   live_queue_ = queue;
   live_frame_.cut = std::chrono::steady_clock::now();
+  constant_mirror_.Reset();  // the consumer starts with no constants
   // The live consumer starts empty: it gets the state already in the shadow first, as a capture's
   // baseline does, since State skips values that did not change.
-  for (const auto& [key, entry] : shadow_) {
+  for (uint32_t key : ShadowKeysInOrder()) {
+    const ShadowEntry& entry = shadow_.at(key);
     if (entry.present) LiveAppend(entry.payload);
   }
 }
@@ -115,6 +117,14 @@ void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t obj
   entry.object = object;
   entry.present = true;
   ++entry.version;
+}
+
+std::vector<uint32_t> Session::ShadowKeysInOrder() const {
+  std::vector<uint32_t> keys;
+  keys.reserve(shadow_.size());
+  for (const auto& [key, entry] : shadow_) keys.push_back(key);
+  std::sort(keys.begin(), keys.end());
+  return keys;
 }
 
 void Session::EraseState(uint32_t key) {
@@ -184,14 +194,19 @@ void Session::CutLiveFrame(bool measured) {
     for (const auto& id : live_pending_destroyed_) {
       live_frame_.destroyed.push_back(id);
       live_buffers_.erase(BufferKey(id));
-      live_sent_programs_.erase({id.guest_address, id.generation});
+      live_described_textures_.erase(BufferKey(id));
+      live_sent_programs_.erase(BufferKey(id));
     }
     live_pending_textures_.clear();
     live_pending_destroyed_.clear();
   }
   live_frame_.swap = swap_number_;
+  // The next frame's commands reserved at this one's count and a margin: growing the vector by
+  // doubling reallocated and moved every command several times per frame.
+  const size_t commands = live_frame_.commands.size();
   live_queue_->Push(std::move(live_frame_));
   live_frame_ = live::LiveFrame{};
+  live_frame_.commands.reserve(commands + commands / 8);
   live_frame_.cut = std::chrono::steady_clock::now();
   live_frame_contents_.clear();
 }
@@ -299,7 +314,8 @@ void Session::Start() {
   // Baseline: the last value of every state setter, with the resources they refer to re-read
   // now so their descriptions are part of the capture.
   size_t baseline = 0;
-  for (auto& [key, entry] : shadow_) {
+  for (uint32_t key : ShadowKeysInOrder()) {
+    ShadowEntry& entry = shadow_.at(key);
     if (!entry.present) continue;
     ++baseline;
     ++entry.version;  // re-read below: early outs recorded against it no longer apply
@@ -533,6 +549,12 @@ void Session::AddTexture(commands::TextureDesc desc, commands::Hash live_content
       d.content = live_content;
       live_frame_.textures.push_back(std::move(d));
     }
+    // No content snapshot (a static texture or a render target): this generation's description
+    // is final, the hooks need not read it again (LiveTextureDescribed). Dynamic textures carry
+    // their content and keep being read.
+    if (live_content == 0 && (desc.render_target || (!desc.name.empty() && !desc.manual))) {
+      live_described_textures_.insert(BufferKey(desc.id));
+    }
   }
   if (!armed()) return;
   if (live() && live_content &&
@@ -547,7 +569,7 @@ void Session::AddTexture(commands::TextureDesc desc, commands::Hash live_content
 }
 
 void Session::AddProgram(commands::ProgramDesc desc) {
-  if (live() && live_sent_programs_.insert({desc.id.guest_address, desc.id.generation}).second) {
+  if (live() && live_sent_programs_.insert(BufferKey(desc.id)).second) {
     live_frame_.programs.push_back(desc);
     if (!live_sent_sources_.count(desc.name)) {
       std::lock_guard<live::MeasuredMutex> lock(registry_mutex_);
@@ -561,6 +583,16 @@ void Session::AddProgram(commands::ProgramDesc desc) {
   if (armed() && program_index_.emplace(desc.id.guest_address, capture_.programs.size()).second) {
     capture_.programs.push_back(std::move(desc));
   }
+}
+
+bool Session::LiveTextureDescribed(const commands::ResourceId& id) const {
+  return live() && !armed() && live_described_textures_.count(BufferKey(id)) != 0;
+}
+
+bool Session::LiveDeclarationDescribed(const commands::ResourceId& id,
+                                       commands::Hash content) const {
+  return live() && !armed() &&
+         live_sent_declarations_.count({id.guest_address, id.generation, content}) != 0;
 }
 
 void Session::AddVertexDeclaration(commands::VertexDeclarationContent content) {
