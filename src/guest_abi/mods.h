@@ -228,4 +228,34 @@ inline uint32_t ActiveModCount(const uint8_t* base, uint32_t manager_address) {
   return active;
 }
 
+// ---------------------------------------------------------------------------------------------
+// The guest's directory search (XAPI FindFirstFileA/FindNextFileA, statically linked), with which
+// the mods' file maps are listed (sub_823A1010 calls both). Read only by the mods diagnostics.
+
+namespace find {
+// [confirmed] FindFirstFileA(r3 = path, r4 = WIN32_FIND_DATAA*) -> handle, -1 on failure: calls
+// kFindFirstNative with the path; on success (bge 0x8287E130) kFindDataFromNative into r4.
+inline constexpr GuestFunction kFindFirstFile{0x8287E0C8, Confidence::kConfirmed};
+// [confirmed] FindNextFileA(r3 = handle, r4 = WIN32_FIND_DATAA*) -> 1, or 0 when the search ends
+// or fails: kFindNextNative, then on success (bge 0x8287E18C) kFindDataFromNative into r4.
+inline constexpr GuestFunction kFindNextFile{0x8287E158, Confidence::kConfirmed};
+// [confirmed] The native search under kFindFirstFile -> NTSTATUS. Splits the path at its last '\'
+// (backwards scan, cmplwi 92): without one it returns 0xC000000D and opens nothing (0x82883BDC);
+// a pattern of exactly "*.*" is made empty, i.e. match all (before 0x82883B40). Opens the folder
+// with NtOpenFile (bl 0x83026DBC: access 0x00100001, share 3, options 0x4021) and lists it with
+// NtQueryDirectoryFile through the import table (bctrl; FileName = the pattern, RestartScan 0).
+inline constexpr GuestFunction kFindFirstNative{0x82883A68, Confidence::kConfirmed};
+// [confirmed] The native search under kFindNextFile -> NTSTATUS (NtQueryDirectoryFile, bctrl).
+inline constexpr GuestFunction kFindNextNative{0x82883BF0, Confidence::kConfirmed};
+// [confirmed] Native entry -> WIN32_FIND_DATAA (sub_82883F88): attributes to +0 (from +56), the
+// name to +44 (from +64, length +60), NUL-terminated.
+inline constexpr GuestFunction kFindDataFromNative{0x82883F88, Confidence::kConfirmed};
+namespace find_data {
+inline constexpr Field kAttributes{0, Confidence::kConfirmed};
+inline constexpr Field kFileName{44, Confidence::kConfirmed};
+inline constexpr uint32_t kFileNameCapacity = 260;
+inline constexpr uint32_t kAttributeDirectory = 0x10;  // FILE_ATTRIBUTE_DIRECTORY
+}  // namespace find_data
+}  // namespace find
+
 }  // namespace torchlight::guest_abi::mods
