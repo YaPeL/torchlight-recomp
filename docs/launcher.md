@@ -37,9 +37,12 @@ is for their review.
   by the backend (`live/ui_overlay.h`), navigated with the gamepad through `live/ui_gamepad.h`
   (A activates, B cancels, the stick as the d-pad; tested). SDL is 3.4.14 (the SDK's, a DLL on
   Windows).
-- **Images of the game the user has**: the package's extraction leaves `MarketplaceBanner.png`
-  (420x95), `TitleIcon.png` and `DashboardIcon.png` (64x64) in `game/`, next to `pak.zip` with the
-  game's own art; all from the user's copy, read at run time.
+- **Images of the game the user has, only after the install**: the package's extraction leaves
+  `MarketplaceBanner.png` (420x95: the logo on the left, the heroes on the right), `TitleIcon.png`
+  and `DashboardIcon.png` (64x64, the shield "T") in `game/`, next to `pak.zip` with the game's own
+  art (for example the loading screen and the three class intros, 1024x725 regions of 1024x1024
+  DXT1 textures under `media/ui/`). On the first start none of it exists yet: it is what the
+  launcher comes to install.
 
 ## 2. What other recomps and ports do
 
@@ -103,7 +106,8 @@ What follows from it:
    Steam Deck support is mostly documentation (Desktop Mode for the picker).
 5. Translations: only Unleashed and Marathon; the N64Recomp tools are English only.
 6. Launcher art is the projects' own (vector art, a resources submodule). None reads it from the
-   user's files at run time, which is what we would do.
+   user's files at run time. Ours has to work the same way: the base design is our own neutral art,
+   and the user's images are an optional extra once the game is installed (section 5).
 
 ## 3. Technology options
 
@@ -186,12 +190,14 @@ not be reached on 2026-10-08, so these are open questions for it, not agreements
 ## 5. Restrictions
 
 - **Nothing derived from the game in the repository**: no logo, background, font or sound of the
-  game. Images the launcher shows come from the user's files at run time: after the install,
-  `MarketplaceBanner.png`, `TitleIcon.png`, `DashboardIcon.png` in `game/`, or art read from
-  `pak.zip` (miniz is already linked); before it, none (or the STFS header's title thumbnail of the
-  package the player picked **[not verified]** that it is present and usable). The launcher must
-  look complete without them (our own neutral layout and the project's name in a font we may
-  ship).
+  game.
+- **The base design uses only our own neutral art**: on the first start the launcher has no game
+  files (it is there to install them), so it never depends on the game's images. Layout, colours
+  and the project's name in a font we may ship; complete as it is.
+- **The user's images, optional and after the install only**: `MarketplaceBanner.png`,
+  `TitleIcon.png`, `DashboardIcon.png` in `game/`, or art read from `pak.zip` (miniz is already
+  linked), always read at run time from the installed files; when one is missing or unreadable the
+  launcher shows the base design. The same images feed the Steam shortcut (section 7).
 - Fonts: one we may redistribute (license in `THIRD_PARTY_NOTICES.md`), with the Latin glyphs of
   de/fr/es; CJK only if those languages come.
 - No environment variables (the project's rule); a command-line option to skip the launcher or to
@@ -226,14 +232,56 @@ out of the drawing so that the drawing can be replaced.
 3. **Mods**: once `feature/pc-mods` is in `develop` and its API is agreed: list, enable, order,
    import from PC, the saves warning.
 4. **PC save import** from the launcher, on the existing plan.
-5. **Polish**: the user's own art, touch sizes, then a decision on RmlUi.
-6. **Android**: the launcher is the smaller part (an SDL activity, `SDL_IOStream` for the package,
+5. **Steam shortcut with the user's art** (section 7): add the game to Steam as a non-Steam game
+   with its grid, wide capsule, hero and icon made from the installed files, on Windows, Linux and
+   the Deck; nothing written while Steam can overwrite it.
+6. **Polish**: the user's own art inside the launcher, touch sizes, then a decision on RmlUi.
+7. **Android**: the launcher is the smaller part (an SDL activity, `SDL_IOStream` for the package,
    a GLES path for the game). A project of its own.
 
+**Stage 1 plan** (one branch, one commit per step; every step tested before the next):
+
+0. **One ImGui, checked**: `third_party/imgui_backends/` gets `imgui_impl_sdl3` and
+   `imgui_impl_sdlrenderer3` from ImGui's tag `v1.92.5` (MIT, in `THIRD_PARTY_NOTICES.md`); the
+   core keeps coming only from `rex::runtime`. `launcher_imgui_test`: `IMGUI_VERSION_NUM` is 19250
+   at compile time; `IMGUI_CHECKVERSION()` (the header's struct sizes against the compiled
+   library's) and `ImGui::GetVersion()` equal the header's; no current context before, its own
+   context while drawing, none after (the runtime's drawer creates its own later); one frame drawn
+   with `SDL_CreateSoftwareRenderer` on a surface (no window, no display, so it runs in every CI
+   job) and two pixels read back. A second ImGui would also fail the Windows link (LNK2005).
+1. **Model, no drawing**: `src/launcher/launcher_model` (pages: install, achievements, ready; what
+   each button does; the install's progress and errors as `game_setup::Message`) and
+   `file_browser_model` (the fallback browser: folders, `.` and `..`, files filtered by name,
+   drives on Windows through the platform module). Plain C++ with unit tests, as
+   `video_menu_model` is.
+2. **Window**: in the platform module, an SDL window (1280x720, resizable; fullscreen when the
+   desktop is gamescope) with the **software** `SDL_Renderer`, as the progress window today: no
+   graphics library is loaded before the backend chooses the GPU. ImGui's SDL3 backends there;
+   scale from `SDL_GetWindowDisplayScale`.
+3. **Pages**: `src/launcher/launcher_view` draws the model with ImGui: install (package or folder
+   with the system's picker, the fallback browser when it fails, the progress bar and cancel on
+   the worker thread `first_run.cpp` already uses), the achievement set, Play and Quit. Keyboard and
+   mouse from the SDL3 backend; the pad from ImGui's gamepad navigation (A activates, B goes back,
+   as `live/ui_gamepad.h`).
+4. **Texts and font**: the new texts in `data/ui/tl_setup_strings.txt` (de, fr, es) under
+   `setup_text_test`; a redistributable font with the Latin glyphs of those languages (ImGui's
+   built-in one is a small bitmap font that does not scale well).
+5. **Wiring**: `game_setup::EnsureGameData`/`EnsureAchievementChoice` open the launcher instead of
+   the message boxes when something is missing; Play closes the window, destroys the context and
+   returns to `TorchlightApp::Create`, which goes on as now. A command-line option opens it on
+   demand. The SDL message boxes stay only for an error before the launcher's window exists.
+6. **Checks by hand**: Windows with an empty set of user folders (package, folder, cancel, a bad
+   package, picker fallback); Windows Sandbox; Linux; the Steam Deck in Game Mode (the hand-over
+   from the launcher's window to the game's).
+
 **Risks**:
-- **ImGui twice in the process**: the SDK's runtime has its own ImGui inside `rexruntime`. A second
-  copy for the launcher risks two contexts and versions; it has to be the same version, and on
-  Linux the runtime exports its symbols. To check before stage 1 **[not verified]**.
+- **ImGui twice in the process**: checked on 2026-10-08, there is one copy and the launcher must
+  not add another. The SDK builds ImGui 1.92.5 (`thirdparty/imgui` at `6d910d5`, an OBJECT library
+  without backends) into `rexruntime`: on Windows a DLL that exports every ImGui function and the
+  `GImGui` pointer (seen in `rexruntime.lib`), on Linux a static library. The game already uses
+  that copy (the achievement list, the runtime dialogs). The install has no backends, so the
+  launcher brings only `imgui_impl_sdl3` and `imgui_impl_sdlrenderer3` from the same tag; a test
+  checks versions and layout (section 6, stage 1 plan, step 0).
 - **Two windows in a row**: the launcher's window closes before the runtime opens the game's;
   on the Deck in Game Mode and on Android the switch has to stay one visible window (Android: the
   same activity). To try on the Deck in stage 1.
@@ -243,3 +291,116 @@ out of the drawing so that the drawing can be replaced.
 - **Mods are not in `develop`**: stage 3 depends on that branch and on the API above.
 - **The first start and the menus are the render agent's area**: each stage is marked for their
   review.
+
+## 7. Steam shortcut with the user's art
+
+Goal: the launcher adds the game to Steam as a non-Steam game, with artwork made from the user's
+installed files, so that it looks right in the desktop library, Big Picture and the Deck's Game
+Mode. Everything local: the images are cut from `game/` at run time and written only into the
+user's Steam folder; nothing of the game in the repository, nothing downloaded.
+
+### How other tools do it
+
+Steam ROM Manager (SRM), BoilR, decky-steamgriddb and NonSteamLaunchers all do the same two things:
+an entry in `shortcuts.vdf` and image files in the user's `grid/` folder.
+
+- **Where**: `<Steam>/userdata/<account id>/config/shortcuts.vdf` and
+  `<Steam>/userdata/<account id>/config/grid/`; BoilR skips `userdata/0` and creates `config/`
+  when missing (<https://github.com/PhilipK/BoilR/blob/main/crates/boilr-core/src/steam/utils.rs>).
+- **Format**: binary VDF. `00 "shortcuts" 00`, then per entry `00 "<index>" 00` and its fields:
+  strings `01 key 00 value 00`, 32-bit integers `02 key 00` + 4 bytes little endian, `tags` a nested
+  map; `08` closes each map, the file ends `08 08`. Fields in Steam's order and casing: `appid`
+  (int), `AppName`, `Exe`, `StartDir`, `icon`, `ShortcutPath`, `LaunchOptions`, `IsHidden`,
+  `AllowDesktopConfig`, `AllowOverlay`, `openvr` (lower case), `Devkit`, `DevkitGameID`,
+  `DevkitOverrideAppID`, `LastPlayTime`, `tags`
+  (<https://github.com/PhilipK/steam_shortcuts_util/blob/main/src/shortcuts_writer.rs>). SRM
+  writes `appname`/`exe` in lower case and reads keys case-insensitively, which a reader must too
+  (<https://github.com/SteamGridDB/steam-rom-manager/blob/master/src/lib/vdf-manager.ts>).
+- **The id**: `crc32(Exe + AppName) | 0x80000000`, written into `appid` as a signed 32-bit number;
+  its unsigned value names the grid files; `(id << 32) | 0x02000000` is the 64-bit game id
+  (SRM: <https://github.com/SteamGridDB/steam-rom-manager/blob/master/src/lib/helpers/steam/generate-app-id.ts>,
+  BoilR: <https://github.com/PhilipK/steam_shortcuts_util/blob/main/src/app_id_generator.rs>). The
+  stored `appid` is what counts: shortcuts Steam adds itself get other ids
+  (<https://steamcommunity.com/discussions/forum/1/3361398061434096995>), and decky-steamgriddb
+  looks shortcuts up by it (<https://github.com/SteamGridDB/decky-steamgriddb/blob/main/main.py>).
+  `Exe` is quoted (`"..."`) and the quotes are part of the CRC
+  (<https://github.com/SteamGridDB/steam-rom-manager/blob/master/src/lib/file-parser.ts>).
+- **Images** (`grid/`, `<id>` the unsigned 32-bit id; names and the sizes SRM asks for,
+  <https://github.com/SteamGridDB/steam-rom-manager/blob/master/src/lib/artwork-types/available-artwork-types.ts>;
+  Valve's sizes, <https://partner.steamgames.com/doc/store/assets/libraryassets>):
+
+  | File | Asset | Size | Where Steam shows it (Valve's page) |
+  |---|---|---|---|
+  | `<id>p.png` | library capsule ("grid") | 600x900 | library overview, collections |
+  | `<id>.png` | library header ("wide capsule") | 920x430 | recent games and other places |
+  | `<id>_hero.png` | hero | 1920x620 (Valve: 3840x1240, no text, a centred 860x380 safe area) | the game's page header |
+  | `<id>_logo.png` | logo | up to 1280 wide or 720 tall, transparent | over the hero |
+  | `<id>_icon.png` | icon | square (SRM: up to 600x600) | lists; the entry's `icon` field holds its absolute path |
+
+  Which of them each view of Big Picture and Game Mode uses beyond Valve's list
+  **[not verified]**; the plan writes four of them (capsule, wide, hero, icon) so every view has
+  one. The logo's position is a `<id>.json` next to it, schema **[not verified]**;
+  decky-steamgriddb sets one because shortcut logos show blank otherwise
+  (<https://github.com/SteamGridDB/decky-steamgriddb/blob/main/src/hooks/useSGDB.tsx>).
+- **Steam running**: Steam keeps the shortcuts in memory and writes `shortcuts.vdf` back, so the
+  file tools close it first. BoilR runs `steam -shutdown`, waits up to 20 s, then signals, and
+  starts Steam again
+  (<https://github.com/PhilipK/BoilR/blob/main/crates/boilr-core/src/steam/restarter.rs>); SRM:
+  `steam.exe -shutdown` on Windows, `kill -15` on Linux, restarted with `-silent` or through
+  Flatpak
+  (<https://github.com/SteamGridDB/steam-rom-manager/blob/master/src/lib/helpers/steam/stop-start-steam.ts>).
+  In Game Mode Steam cannot be closed; Decky plugins call the client's own JavaScript API instead
+  (`SteamClient.Apps.AddShortcut`, `SetShortcutIcon`, `SetCustomArtworkForApp(appId, base64, 'png',
+  type)` with 0 capsule, 1 hero, 2 logo, 3 wide, 4 icon;
+  <https://github.com/moraroy/NonSteamLaunchersDecky/blob/main/src/hooks/createShortcut.tsx>),
+  which needs Decky Loader and is not something a game can do.
+- **Finding Steam and the user**: Windows `%PROGRAMFILES(X86)%\Steam` by default (the registry's
+  `HKCU\Software\Valve\Steam\SteamPath` **[not verified]** from a primary source); Linux
+  `~/.steam/steam`, Flatpak `~/.var/app/com.valvesoftware.Steam/.steam/steam`; every numeric
+  `userdata/*` but `0` (BoilR, link above). SRM reads `config/loginusers.vdf` and turns each
+  SteamID64 into the account id by subtracting 76561197960265728
+  (<https://github.com/SteamGridDB/steam-rom-manager/blob/master/src/lib/helpers/steam/get-available-logins.ts>).
+- **Icon cache**: Steam keeps an old icon when it sees its cache written directly; decky-steamgriddb
+  goes through a temporary file (main.py above).
+
+### What the user's files give each image
+
+From the installed `game/` only (section 1). The crops are generic (centred, by aspect ratio): no
+coordinates tuned to a picture, so nothing about the art is in the code.
+
+| Steam image | Source | Work |
+|---|---|---|
+| Capsule 600x900 | a 1024x725 art region from `pak.zip` (the loading screen or a class intro, DXT1) | decode DXT1 on the CPU, centre crop to 2:3 (483x725), scale 1.24x; `MarketplaceBanner.png` scaled into a band at the bottom, for the name |
+| Wide 920x430 | the same art region | centre crop to 2.14:1 (1024x478), scale 0.9x; the banner over its lower part |
+| Hero 1920x620 | the same art region | centre crop to 3.1:1 (1024x330), scale 1.875x (soft, acceptable for a background); no text, as Valve asks |
+| Icon | `TitleIcon.png` (64x64) | as is, or scaled to 256x256 |
+| Logo | none | the banner's logo sits on an opaque background and cannot be cut out generically; Steam shows the name instead |
+
+The launcher shows these previews before writing anything, and the user can leave any of them out
+(and replace them in Steam later, as with any game). The PNGs are written with SDL 3.4's
+`SDL_SavePNG`.
+
+### Design
+
+- **Find**: Steam's folder per platform (Windows registry, else the default; Linux native and
+  Flatpak) and the account from `loginusers.vdf` (asked when there is more than one).
+- **Exe**: the installed executable's stable path (on Linux the packaged launcher script or
+  AppImage, not a temporary mount), quoted; `StartDir` its folder; `AppName` "Torchlight Recomp";
+  `AllowDesktopConfig` and `AllowOverlay` 1. With Flatpak Steam the game must be reachable from
+  Steam's sandbox **[not verified]**: detected and explained, not worked around.
+- **Steam closed**: before writing `shortcuts.vdf`, check whether Steam runs (in the platform
+  module, from the process list). If it does, offer "close Steam and add" (`steam -shutdown`, wait,
+  write, start it again) or cancel. Never write while it runs.
+- **Writing**: read the whole file, keep every entry and unknown field as read, replace ours (found
+  by `Exe`) or append it, write to a temporary file and rename it; the first previous file is kept
+  as `shortcuts.vdf.bak`. A unit test round-trips a file with other entries byte for byte.
+- **Game Mode on the Deck**: Steam always runs. If the game was started from Steam (it already has
+  a shortcut, found read-only in `shortcuts.vdf` by `Exe`), only the images are written to `grid/`
+  under that shortcut's id, which does not touch `shortcuts.vdf`; whether Steam shows them without
+  a restart **[not verified]**. Adding a new shortcut there means going to Desktop Mode, and the
+  launcher says so.
+- **Removing**: the same page removes our entry and our grid files (only files named with our id).
+
+**Risks**: the binary format is undocumented (the tools above agree on it). A wrong write could
+lose the user's other shortcuts, hence the backup, the temporary file and the round-trip test.
+Steam's views and caches change without notice. Flatpak and Snap Steam sandboxes.
