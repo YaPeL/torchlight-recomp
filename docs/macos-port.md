@@ -139,6 +139,11 @@ Requests from the macOS port (2026-10-08), to be fixed in the series on `sdk/rex
   build outputs, not project sources, and nothing of the game is in them. The macOS build then
   takes them in place of the assembling steps.
 
+All three done by that agent the same day: patch 22 (`rexglue-tests-portable.patch`, on
+`sdk/rexglue-next`) builds the SDK tests on ARM64 and without the PowerPC binutils, taking the
+`.bin`/`.map` from `-DREXGLUE_PPC_TEST_BIN_DIR`; branch `sdk/ppc-test-data` holds them for
+`bd833a2`, with their SHA-256 sums (checked here).
+
 **Blocks:** yes: an SDK with the fences (`bd833a2`), items 2 and 3 fixed, and our series.
 
 **Ticket MAC.1 (SDK on macOS):** `tools/deps/build_sdk.sh` takes the preset from the host (today
@@ -158,10 +163,11 @@ x86-64), and the vblank thread's interval at 60 and 120 Hz is measured.
   host, `-DCMAKE_OSX_SYSROOT=macosx`, deployment target 13.3). A clean build takes about 4 minutes.
 - CMake 4 no longer passes the macOS SDK to the compiler (`CMAKE_OSX_SYSROOT` empty by default):
   without `-DCMAKE_OSX_SYSROOT=macosx`, Apple's `clang++` finds no C++ standard library.
-- This Mac's Command Line Tools keep a stale `usr/include/c++/v1` (11 entries from 2022-2023, no
-  `<algorithm>`) that clang searches before the macOS SDK's libc++. A machine problem, not the
-  project's: until it is removed (it needs `sudo`), the builds here run with
-  `CPLUS_INCLUDE_PATH=<SDK>/usr/include/c++/v1`. CI runners do not have it.
+- This Mac's Command Line Tools kept a stale `usr/include/c++/v1` (11 entries from 2022-2023, no
+  `<algorithm>`) that clang searched before the macOS SDK's libc++. A machine problem, not the
+  project's: removed by hand (`sudo rm -r /Library/Developer/CommandLineTools/usr/include/c++`),
+  after which the SDK builds from clean with no include path workaround. CI runners do not have
+  it; a developer who sees `'algorithm' file not found` on macOS has the same leftover.
 - SDK `unit_tests` (`bd833a2`, Release, ARM64): 245 cases, 240 passed, 4 skipped, 1 failed: the
   same `output_stamp_test.cpp:227-228` checks that fail on Linux and Windows. The four
   `chrono_test.cpp` NT epoch cases that fail on Linux pass here. One test did not compile with
@@ -169,11 +175,21 @@ x86-64), and the vblank thread's interval at 60 and 120 Hz is measured.
   where Catch2 cannot print a `file_time_type` (its `__int128` duration is ambiguous for
   `operator<<`); run here as `CHECK((...))` in the scratch checkout. **For the ReXGlue agent**:
   an upstream candidate, test only.
-- The PPC instruction tests (`tests/ppc`) cannot build on macOS as they are: their assembler
+- The PPC instruction tests (`tests/ppc`) could not build on macOS as they were: their assembler
   (`tools/binutils/powerpc-none-elf-as`, with `-mvmx128`) is shipped only as Linux x86-64 and
-  Windows binaries, and `ppc_tests` is compiled with `-msse4.1 -mssse3` unconditionally
-  (`tests/ppc/CMakeLists.txt`). LLVM's PowerPC assembler has no VMX128. Not run yet; options in
-  the report of MAC.1.
+  Windows binaries, and `ppc_tests` was compiled with `-msse4.1 -mssse3` unconditionally
+  (`tests/ppc/CMakeLists.txt`). LLVM's PowerPC assembler has no VMX128. Decided: the ReXGlue agent
+  assembles them on Linux (above).
+- With patch 22 and `sdk/ppc-test-data` (`sdk/rexglue-next` at `aec4e3a`, every patch of its
+  series applied on `bd833a2`, `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=...`), clean
+  build in 2.5 minutes: **`ppc_tests` passes entirely on ARM64, 1462 cases, 5757 assertions**,
+  the generated code of 166 instruction files run through SIMDe on NEON. `unit_tests`: the same
+  240 of 245 as above (the `output_stamp_test.cpp:227-228` failure shared with x86-64).
+- The PPC tests do not cover items 2 and 3 of section 1: of the conversions they test only
+  `fctiwz` (truncation, which does not depend on the rounding mode), and neither `fctiw`/`fctid`
+  under a rounding mode nor `mffs`/`mtfsfi`. Those two stay as the ReXGlue agent's patches with
+  their own tests, as listed above; MAC.1 is closed without them, and they are needed before the
+  game runs (MAC.6).
 - One SDL: `librexruntime.dylib` exports SDL's functions, and an executable linked with the
   package's `rex::runtime` (which also lists `SDL3::SDL3-static`) binds them to the runtime
   (`nm -m`: `_SDL_WasInit (from librexruntime)`) and contains no SDL code: ld64 resolves against
@@ -303,6 +319,42 @@ where the same offset applies.
 every caller builds it with `GuestPtr`. Done when the unit tests pass with the view's offset both
 off and on (the macOS translation tested on every platform), and a Linux replay of a session is
 unchanged.
+
+**MAC.2 as built (branch `feature/guest-memory-view`, 2026-10-08):** rather than a view object
+passed to the 330 calls (a change to every reader's callers and to the render agent's open
+branches), the offset is a build constant: `xbox_memory::kHostOffset`, set for every target by
+`cmake/guest_host_offset.cmake` (0x1000 on Windows and macOS arm64, 0 elsewhere), and
+`xbox_memory::HostAddress(base, address)`, which every reader and writer of `ogre_layout.h` uses.
+`hooks/guest_copy.cpp` checks `kHostOffset` against the SDK's
+`rex::memory::detail::PhysicalHostOffset` with a `static_assert`, so `guest_abi` keeps no SDK
+include and no `#ifdef`, and cannot drift from the SDK. The accesses that bypassed the readers
+(capture snapshots, `GuestCall`, language pack, save import box, dev command, video mode name and
+surface parameters, the achievements' tree walk) use `HostAddress` too. On Linux the offset is 0
+and every access is `base + address` as before. Checked on this Mac: `guest_abi_layout_test`
+(the translation for both offsets as constants, and the readers on both sides of 0xE0000000 with
+the build's offset; also built with offset 0), the achievements tests, `guest_copy_test`, and the
+changed files compiled against the SDK. Not checkable here (no `mac-arm64-nogame` before MAC.4,
+no captures): the Linux tests and the 20 replays, which the render agent runs before merging.
+
+**What the Windows agent has to check after MAC.2** (Windows has the same 0x1000 offset, so MAC.2
+changes behavior there, unlike Linux; before it, every `guest_abi` read at 0xE0000000 or above
+was 0x1000 off on Windows):
+
+1. Build `windows-x64` (and `-nogame`): the `static_assert` in `hooks/guest_copy.cpp` passes,
+   which confirms `TORCHLIGHT_GUEST_HOST_OFFSET=0x1000u` reached the build.
+2. `ctest` in the nogame build: all as before, `guest_abi_layout_test` included.
+3. The 20 captures replayed on Windows: same results as before MAC.2 (the replay reads captures,
+   not guest memory, so any change there is a bug of the branch).
+4. New captures of the same scenes (title, menus, town, a dungeon level), compared with the Linux
+   captures of the same scenes: before MAC.2, content read through the scalar readers from the
+   physical heap (vertex and index buffer descriptors, fetch constants, texture descriptors at
+   0xE0000000 or above) could differ from Linux; after it, it must match. Any difference that
+   remains is a finding to report, not to tune.
+5. A play session of a few minutes on a copy of a save (`--user_data_root`): the game menu
+   (video, language pack, save import box), the achievements toast and list, and the video mode
+   rename for other aspect ratios: these write guest memory through `HostAddress` now.
+6. Report whether anything that used to look wrong on Windows (and not on Linux) changed: MAC.2
+   may have fixed it.
 
 **Blocks:** for the native mode, only MAC.2. Items 2 and 4 of section 1 decide how a stray access
 shows up.
@@ -516,7 +568,7 @@ ones that can stop it; the two-failed-hypotheses rule applies to each.
 | Stage | Ticket | Needs the game? | Validated by | Risks |
 |---|---|---|---|---|
 | 0. Tools | — | No | CMake and Ninja installed (proposed first) | None |
-| 1. SDK builds and its tests pass on ARM64 | MAC.1 | No | SDK `unit_tests` and PPC tests on this Mac | SIMDe differences beyond items 2-3 (NaN, denormals, saturation) found by the PPC tests; the series on `bd833a2` not merged yet |
+| 1. SDK builds and its tests pass on ARM64 (done 2026-10-08) | MAC.1 | No | SDK `unit_tests` and PPC tests on this Mac | SIMDe differences beyond items 2-3 (NaN, denormals, saturation) found by the PPC tests; the series on `bd833a2` not merged yet |
 | 2. Guest memory view | MAC.2 | No | Unit tests with the offset on and off; a Linux replay unchanged | Callers that bypass `guest_abi` |
 | 3. OGRE builds | MAC.3 | No | `build_ogre.sh` on macOS; OGRE's GL3+ plugin loads | Cocoa GL code paths less used upstream |
 | 4. Platform module, `nogame` ctest | MAC.4 | No | ctest on this Mac (pure tests, `ui_pass_test` and `render_scale_test` on GL) | AppKit main-thread rules for the backend's window |
