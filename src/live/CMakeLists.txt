@@ -13,7 +13,7 @@ target_compile_options(measured_mutex_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME measured_mutex_test COMMAND measured_mutex_test)
 
 add_library(torchlight_live STATIC snapshot_store.cpp frame_queue.cpp session_file.cpp
-    slow_frames.cpp guest_events.cpp)
+    slow_frames.cpp guest_events.cpp log_budget.cpp)
 target_include_directories(torchlight_live PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_live PUBLIC cxx_std_23)
 target_link_libraries(torchlight_live PUBLIC torchlight_commands torchlight_measure ZLIB::ZLIB)
@@ -43,6 +43,11 @@ add_executable(slow_frames_test slow_frames_test.cpp)
 target_link_libraries(slow_frames_test PRIVATE torchlight_live)
 target_compile_options(slow_frames_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME slow_frames_test COMMAND slow_frames_test)
+
+add_executable(log_budget_test log_budget_test.cpp)
+target_link_libraries(log_budget_test PRIVATE torchlight_live)
+target_compile_options(log_budget_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME log_budget_test COMMAND log_budget_test)
 
 add_executable(deferred_check_test deferred_check_test.cpp)
 target_link_libraries(deferred_check_test PRIVATE torchlight_live)

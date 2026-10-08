@@ -22,6 +22,7 @@
 #include "hooks/video_mode.h"
 #include "live/deferred_check.h"
 #include "live/live_mode.h"
+#include "live/log_budget.h"
 #include "live/ui_gamepad.h"
 #include "live/ui_overlay.h"
 #include "platform/platform.h"
@@ -405,10 +406,26 @@ void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths) {
       paths.cache_root = paths.user_data_root / "cache";
     }
   }
+  // A run's log rotates within the budget. These cvars exist on the SDK base 0c7b01a; bd833a2's
+  // file sink does not rotate (docs/crash-handling.md, section 5).
+  const LogBudget budget;
+  const auto set_unless_command_line = [](const char* name, const std::string& value) {
+    const rex::cvar::FlagEntry* entry = rex::cvar::GetFlagInfo(name);
+    if (entry && entry->source != rex::cvar::Source::kCommandLine) {
+      rex::cvar::SetFlagByName(name, value);
+    }
+  };
+  set_unless_command_line("log_max_file_size_mb", std::to_string(budget.file_bytes >> 20));
+  set_unless_command_line("log_max_files", std::to_string(RotatedFilesPerRun(budget)));
+
   const rex::cvar::FlagEntry* flag = rex::cvar::GetFlagInfo("log_file");
   if (!flag || flag->source == rex::cvar::Source::kCommandLine) return;
   const std::string dir = platform::LogDir();
   if (dir.empty()) return;  // the runtime's default, next to the executable
+  if (const size_t removed = PruneLogFolder(dir, app_name, budget); removed > 0) {
+    std::printf("torchlight: removed %zu old log files to keep the log folder under %llu MB\n",
+                removed, static_cast<unsigned long long>(budget.folder_bytes >> 20));
+  }
   rex::cvar::SetFlagByName("log_file", NextLogPath(dir, app_name).string());
 }
 
