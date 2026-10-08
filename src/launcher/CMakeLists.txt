@@ -8,6 +8,21 @@ target_include_directories(torchlight_imgui_backends SYSTEM PUBLIC "${_backends}
 target_include_directories(torchlight_imgui_backends PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_link_libraries(torchlight_imgui_backends PUBLIC rex::runtime)
 
+# The launcher's model and its fallback file browser: what it shows and does, without drawing,
+# the platform or the runtime; tested on their own.
+add_library(torchlight_launcher_model STATIC launcher_model.cpp file_browser_model.cpp)
+target_include_directories(torchlight_launcher_model PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_launcher_model PUBLIC cxx_std_23)
+target_compile_options(torchlight_launcher_model PRIVATE -Wall -Wextra)
+target_link_libraries(torchlight_launcher_model PUBLIC torchlight_game_files torchlight_settings)
+
+foreach(_test launcher_model_test file_browser_model_test)
+    add_executable(${_test} ${_test}.cpp)
+    target_link_libraries(${_test} PRIVATE torchlight_launcher_model)
+    target_compile_options(${_test} PRIVATE -Wall -Wextra -Werror)
+    add_test(NAME ${_test} COMMAND ${_test})
+endforeach()
+
 # One ImGui in the process: the backends work on the runtime's ImGui (versions, layout, context),
 # and a frame drawn with the software renderer comes out (no window: runs without a display).
 add_executable(launcher_imgui_test launcher_imgui_test.cpp)
