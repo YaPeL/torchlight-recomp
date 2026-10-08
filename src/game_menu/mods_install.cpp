@@ -140,6 +140,10 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
   }
 }
 
+const mods::ModPlan* MountedModPlan() {
+  return g_mounted && mods::ModManagerNeeded(g_plan) ? &g_plan : nullptr;
+}
+
 void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
   static bool done = false;
   if (done || !g_mounted || !mods::ModManagerNeeded(g_plan) || !data_manager) return;

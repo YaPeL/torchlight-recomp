@@ -65,6 +65,8 @@ set(TORCHLIGHT_SOURCES
     src/game_menu/guest_call.cpp
     src/game_menu/language_pack.cpp
     src/game_menu/mods_install.cpp
+    # The mods' units in the game's unit index (guest calls; the format and cache are torchlight_mods).
+    src/mods/unit_index_install.cpp
     src/game_menu/save_import_menu.cpp
     src/game_menu/save_indicator.cpp
     src/game_menu/video_menu.cpp
@@ -136,6 +138,13 @@ if(TORCHLIGHT_DEV_COMMANDS)
     # Only the file that uses it, so switching the option does not rebuild the recompiled code.
     set_source_files_properties(src/dev/guest_command.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_COMMANDS=1)
+endif()
+# Mods diagnostics for validation runs (mods/unit_index_install.cpp: --mods_unit_index_check). Off
+# by default; the release workflows and presets never set it, so release builds have no such flag.
+option(TORCHLIGHT_MODS_DIAGNOSTICS "Mods diagnostics (--mods_unit_index_check)" OFF)
+if(TORCHLIGHT_MODS_DIAGNOSTICS)
+    set_source_files_properties(src/mods/unit_index_install.cpp PROPERTIES
+        COMPILE_DEFINITIONS TORCHLIGHT_MODS_DIAGNOSTICS=1)
 endif()
 # Our layouts for the game's UI (game_menu/video_menu.h), next to the executable; copied on every
 # build (an edited layout needs no relink).

@@ -47,6 +47,13 @@ inline constexpr GuestFunction kReadU32{0x8232C490, Confidence::kConfirmed};
 inline constexpr GuestFunction kReadS32{0x8232C518, Confidence::kConfirmed};
 inline constexpr GuestFunction kReadString{0x82329D38, Confidence::kConfirmed};
 
+// [confirmed] Empties a node list: r3 = list. Destroys each node through slot 0 of its vtable
+// (r4 = 1, @0x823D403C..@0x823D404C), frees the buffer (@0x823D4088) and zeroes data, count and
+// capacity; the builder calls it after each definition (@0x8232AC20). Not sub_82392B50, which the
+// builder calls just before: that one writes the definition back to a file (the build tool's
+// compile step).
+inline constexpr GuestFunction kClearNodeList{0x823D3FF8, Confidence::kConfirmed};
+
 namespace node_list {
 // [confirmed] The builder's list on its stack (@0x8232A170..@0x8232A17C): data, count, capacity,
 // growth (5); read by the property reads at +0, +4, +8 (@0x8232C4B8..@0x8232C4CC).

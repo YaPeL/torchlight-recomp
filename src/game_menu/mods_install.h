@@ -12,6 +12,8 @@
 
 #include <rex/ppc/context.h>
 
+#include "mods/mod_list.h"
+
 namespace rex {
 class Runtime;
 }
@@ -30,5 +32,8 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
 // registers the mods in their planned order and adds their folders as resource locations after the
 // game's (the last location added wins). Nothing when there are no mods.
 void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager);
+
+// The plan InstallMods mounted (the mods the guest gets), or null when there are none.
+const mods::ModPlan* MountedModPlan();
 
 }  // namespace torchlight::game_menu

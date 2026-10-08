@@ -20,6 +20,7 @@
 #include "achievements/runtime.h"
 #include "game_menu/save_import_menu.h"
 #include "game_menu/mods_install.h"
+#include "mods/unit_index_install.h"
 #include "game_menu/video_menu.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
@@ -103,6 +104,10 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::game_menu::InstallSaveImport(runtime(), game_data_root(), user_data_root());
     // The player's PC mods (any mode): mounted and their saves protected before the guest runs.
     torchlight::game_menu::InstallMods(runtime(), torchlight::platform::DataDir(), user_data_root());
+    // Their units in the game's unit index (cached in the user's folder when mods bring any).
+    torchlight::mods::InstallUnitIndex(runtime(), torchlight::platform::DataDir(),
+                                       game_data_root() / "pak.zip",
+                                       torchlight::game_menu::MountedModPlan());
     torchlight::live::Install(
         game_data_root(),
         {&app_context(), window(), runtime(),
