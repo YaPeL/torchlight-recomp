@@ -137,6 +137,8 @@ almost nothing:
   - `TerminateProcess` on Windows, so WER adds no dialog of its own.
 - If anything in the reporter fails or times out, the process still ends: no hang in any case.
 - Development builds re-raise to the default action instead, keeping core dumps and debuggers.
+- Windows also writes `torchlight_<NNN>_crash.dmp` with `MiniDumpWriteDump` (`MiniDumpNormal`:
+  stacks and modules, no process memory), from the reporter thread.
 - **Stack overflow:** the SDK creates the guest threads without an alternate signal stack, so on
   POSIX an overflow cannot run the handler and the process just dies, which is not a hang. A
   `sigaltstack` per guest thread (an SDK patch, section 7) would let it write the report too.
@@ -227,9 +229,9 @@ D17's local unwind, once implemented, removes the only stub the game hits on a n
   - an MMIO access in the same child still works, so nothing that recovers today is cut.
 - **Guest exceptions:** a PPC test that calls `RtlRaiseException` with a C++ code ends the child
   with a report. The test needs the hook (SDK patch 2).
-- **One game run, agreed beforehand,** per platform with a deliberate crash, to check the message,
-  the next-start notice and the guest back chain's layout. That needs a way to trigger a crash: see
-  the questions.
+- **One game run, agreed beforehand,** per platform with a deliberate crash (the command-line
+  option of section 10), to check the message, the next-start notice and the guest back chain's
+  layout.
 
 ## 9. Order
 
@@ -242,12 +244,15 @@ D17's local unwind, once implemented, removes the only stub the game hits on a n
 6. **CR.6:** `tools/crash/resolve.py`, checked on a report from each platform.
 7. **CR.7:** macOS, with the macOS port (`docs/macos-port.md`), on the same POSIX code.
 
-## 10. Questions for the owner
+## 10. Decisions (owner, 2026-10-08)
 
-1. A way to trigger a crash on purpose, for the validation runs: a debug-only cvar such as
-   `--crash_test=host|guest`. This needs your approval (CLAUDE.md: configuration is agreed first).
-2. Release builds write no core dump (`_exit`), and development builds keep them. Agreed?
-3. Keep the last 10 crash reports, within a 200 MB folder limit and 50 MB per run. Are these numbers
-   right?
-4. The report holds the guest registers and both stacks, but no memory. A Windows minidump
-   (`MiniDumpNormal`: stacks only, a few hundred KB) could go next to it. Add it?
+1. **A crash on request, as a command-line option** (not a cvar of the menu), available in the
+   release too, so that a tester can check that the report is written and resolves with the
+   symbols. It is documented in the development docs only (`docs/BUILDING.md`), not in the
+   player's.
+2. **No core dump in the release, a core in development builds.**
+3. **50 MB a run, 200 MB a folder, the last 10 crash reports.**
+4. **A minimal minidump on Windows** next to the report: the threads' stacks and the module list,
+   none of the process's memory (`MiniDumpNormal`).
+
+The order of section 9 stands: the log limits first (CR.1).
