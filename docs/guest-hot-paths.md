@@ -16,7 +16,7 @@ confirmed in the recompiled code are marked *hypothesis*.
 | -- the main scene: `SceneManager::_renderScene` (`0x821BC5A0`, *hypothesis*) | 51.0 % |
 | --- `renderSingleObject` (`0x821C5FA0`, per the legacy) | 32.5 % |
 | --- `_setPass` (`0x821C5730`, per the legacy) | 11.0 % |
-| -- a block before the scene, mostly arithmetic (`0x821C7158`, called from `0x821A6070`) | 11.6 % |
+| -- culling: Runic's octree walk (`0x821C7158`, from `_findVisibleObjects` `0x821A6070`; see below) | 11.6 % |
 | -- another render target's update (`0x82198608`; shadows or a render texture, *hypothesis*) | 19.9 % |
 | - game logic, outside rendering (`0x821F9DA8`) | 17.9 % |
 
@@ -80,6 +80,38 @@ Classified by instruction mix (from `generated/default`):
 Native implementations follow the guest copy hooks (`hooks/guest_copy.h`): a pure function
 identified by behaviour, evidence in `guest_abi/`, a fallback to the guest's code, a cvar to turn
 it off, and synthetic tests.
+
+## Culling: Runic's octree walk
+
+Every scene manager the game creates (`0x82209F88`: `SMBKInstance`, `SMInstance`, `SMUIInstance`,
+`SMRBInstance`, `SMRBPInstance`, `SMAMInstance`) is an `OctreeSceneManager`: Runic's
+`createSceneManager` (`0x824B03F8`) takes the first factory whose mask has `ST_INTERIOR`, and the
+octree factory registers `0xFFFF` (`0x8251A650`). The PC build does the same (`ST_INTERIOR`
+through `Root::createSceneManager`, with the stock plugin).
+
+`_findVisibleObjects` is Runic's (`0x821A6070`, vtable `0x82005B9C` slot 122) and calls an
+iterative rewrite of the plugin's recursive `walkOctree` (`0x821C7158`, an explicit stack):
+
+- octants: the loose bounds (box grown by the half size, `0x821C7000`) against the camera
+  (`OctreeCamera::getVisibility`, `0x821C0E78`): none, partial or full; a full octant marks its
+  children full;
+- nodes, in partial octants only: the node's world box (`OctreeNode::_updateBounds`
+  `0x821BE630`: the union of its own objects' boxes, no children) against the six planes
+  (`Frustum::isVisible`, `0x821C74A0`; the camera's culling frustum when one is set);
+- objects of a visible node: no frustum test; `isVisible()` (flags and masks),
+  `_notifyCurrentCamera` and `_updateRenderQueue`, as in the stock plugin.
+
+So an object is queued whenever its node's box (the union of the node's objects) touches the
+frustum. In the fight and the town square, 25-53 % and 22-31 % of the world draws to the main target
+are entirely outside the screen (session replay, coverage with depth test and face culling off);
+the PC draws as many or more in the same places.
+
+**Possible bug in the walk, not touched:** the node visibility flag is set once before the walk
+(`li r18,1`) and only refreshed in partial octants (`@0x821C72A0..0x821C72BC`); a full octant
+reuses whatever the last node test of an earlier partial octant gave (the plugin declares
+`bool vis = true` per octant, OgreOctreeSceneManager.cpp:633). A full octant visited right after a
+failed node test would then queue none of its nodes. That would leave objects out, never add
+any; no visible symptom is known.
 
 ## Upstream report (ReXGlue codegen)
 
