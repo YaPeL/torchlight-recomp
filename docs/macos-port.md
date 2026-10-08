@@ -208,6 +208,33 @@ x86-64), and the vblank thread's interval at 60 and 120 Hz is measured.
   under a rounding mode nor `mffs`/`mtfsfi`. Those two stay as the ReXGlue agent's patches with
   their own tests, as listed above; MAC.1 is closed without them, and they are needed before the
   game runs (MAC.6).
+
+**Patches 23-25 on ARM64 (2026-10-08, same Mac):** the ReXGlue agent's patches 23
+(`fctiw`/`fctid` rounding mode, D22), 24 (ARM64 `mffs`, D23) and 25 (`mtfsf` field mask, D24),
+with their PPC tests, run as `docs/rexglue-upstream.md` section 8 asks (`sdk/rexglue-next` at
+`3bdc5d0`, whose series also has 26; `sdk/ppc-test-data` at `66c6bf1`, 169 `.bin`/`.map`, SHA-256
+sums checked). Results:
+
+1. Without the three fixes (`git apply -R --exclude='tests/*'` of 25, 24, 23; their tests kept),
+   exactly as expected:
+   - `fctix_rounding`: 18 cases, 12 fail: `test_fctiw_rounding_` and `test_fctid_rounding_` 1, 2
+     (2.5 and -2.5 to nearest), 4, 5 (2.7 and -2.7 toward zero), 7 (-2.5 up) and 8 (2.5 down).
+   - `mffs_rounding`: 6 cases, 4 fail: 3 (up), 4 (down), 5 and 6 (save and restore); e.g.
+     `test_3` reads back 3 (down) for up. Nearest and toward zero pass.
+   - `mtfsf_fields`: 4 of 4 fail.
+2. **Patch 24 alone** (23 and 25 put back, 24 still out): `fctix_rounding` passes (18 of 18);
+   `mffs_rounding` fails the same 4 cases as above, so the `mffs` failures are patch 24's alone;
+   `mtfsf_fields` fails only `test_1`, which sets round down with `mtfsf 0x01` and reads it back
+   with `mffs` (2 for 3, the swap patch 24 fixes). `test_4` (round up, read back with `mffs`)
+   passes without 24: reported as observed.
+3. With the whole series, applied again from a clean `bd833a2`: `fctix_rounding` 18 of 18,
+   `mffs_rounding` 6 of 6, `mtfsf_fields` 4 of 4; **`ppc_tests` 1490 of 1490** (5811
+   assertions); `unit_tests` 246 cases, 241 passed, 4 skipped, 1 failed: only
+   `output_stamp_test.cpp:227-228`, as before (the extra case is patch 26's). Nothing else
+   failed; nothing to report as a finding.
+
+With D22 and D23 fixed in the series, MAC.6 (the game on ARM64) is no longer blocked by them. The
+SDK installed in `~/rexglue-sdk/out/install/mac-arm64` is this series.
 - One SDL: `librexruntime.dylib` exports SDL's functions, and an executable linked with the
   package's `rex::runtime` (which also lists `SDL3::SDL3-static`) binds them to the runtime
   (`nm -m`: `_SDL_WasInit (from librexruntime)`) and contains no SDL code: ld64 resolves against
@@ -562,6 +589,11 @@ hold: no caches or compiler caches in jobs that touch the game.
 `release.yml` (the private XEX checkout, codegen, Release, ctest, `.app`, `.dmg`, symbols to
 `torchlight-symbols/<tag>/macos-arm64/`). Done when a dry-run tag produces the `.dmg` in the draft
 release with its checksum and attestation.
+
+Also for MAC.9: `tools/deps/key.sh` pipes into `sha256sum`, which macOS does not have (it has
+`shasum -a 256`; MAC.3's keys were computed with it by hand). The script should use whichever
+exists (`sha256sum`, else `shasum -a 256`; both print the same digest first), so the same key
+comes out on Linux, Windows (Git Bash has `sha256sum`) and macOS.
 
 ## 8. Platform module
 
