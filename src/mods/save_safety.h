@@ -26,11 +26,12 @@ struct SaveBackup {
 };
 
 // Copies every <user_data_root>/<profile>/<title_folder>/ to a new
-// <user_data_root>/save-backups/<UTC yyyymmdd-hhmmss>-mods[-N]/<profile>/<title_folder>/; `log` gets
-// a line for the outcome.
+// <user_data_root>/save-backups/<UTC yyyymmdd-hhmmss>-<reason>[-N]/<profile>/<title_folder>/; `log`
+// gets a line for the outcome.
 SaveBackup BackUpSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
                        std::chrono::system_clock::time_point now,
-                       const std::function<void(const std::string&)>& log);
+                       const std::function<void(const std::string&)>& log,
+                       const std::string& reason = "mods");
 
 // The recorded fingerprint (none when the file is missing) and its update.
 std::optional<std::string> ReadModSetRecord(const std::filesystem::path& file);

@@ -49,6 +49,12 @@ struct Problem {
   std::string Text() const;
 };
 
+// An item or a unit (pet, creature) whose unit GUID the 360 data lacks: not a reason to refuse the
+// save, since at every start the recomp takes such entries out of the saves, with a backup and a
+// notice (mods/save_units.h; a PC mod's items, docs/mods.md section 7f). The character's own class
+// and any other missing reference still are.
+bool IsRemovableUnit(const Problem& problem);
+
 // Checks every GUID and name of a parsed PC save (or stash) against the 360 data (`target`).
 // Quest GUIDs missing there are mapped by quest name through the PC data (`source`, may be null):
 // `replacements` (offset in the PC body -> new GUID). Problems mean "do not convert".

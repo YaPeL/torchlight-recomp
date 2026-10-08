@@ -21,6 +21,7 @@
 #include "game_menu/save_import_menu.h"
 #include "game_menu/mods_install.h"
 #include "mods/mod_files_install.h"
+#include "mods/save_units_install.h"
 #include "mods/unit_index_install.h"
 #include "game_menu/video_menu.h"
 #include "hooks/video_mode_hooks.h"
@@ -112,6 +113,10 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::mods::InstallUnitIndex(runtime(), torchlight::platform::DataDir(),
                                        game_data_root() / "pak.zip",
                                        torchlight::game_menu::MountedModPlan());
+    // Items and creatures the game would not know (a removed mod's) out of the saves, backed up
+    // first, so a save never stops the game.
+    torchlight::mods::InstallSaveUnits(torchlight::platform::DataDir(), game_data_root() / "pak.zip",
+                                       user_data_root(), torchlight::game_menu::MountedModPlan());
     torchlight::live::Install(
         game_data_root(),
         {&app_context(), window(), runtime(),

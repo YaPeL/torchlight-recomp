@@ -378,6 +378,25 @@ class CommandLineTest(unittest.TestCase):
         self.assertIn('does not exist in the 360 game', err)
         self.assertFalse(os.path.exists(self.destination))
 
+    def test_item_of_a_missing_unit_is_removed_and_reported(self):
+        # A PC mod's item: its unit is in neither game's data. The item is taken out, the rest
+        # converts, and the output says so (docs/mods.md, 7f).
+        _, parsed = read_pc(SCHEMA, self.source_bytes)
+        parsed.tree['player']['items'][0]['unit_guid'] = 0x0777000000000001
+        body = write_body(SCHEMA, parsed.tree, 'little')
+        with open(self.source, 'wb') as f:
+            f.write(body + struct.pack('<I', len(body) + 4))
+        with open(self.source, 'rb') as f:
+            self.source_bytes = f.read()
+        items_before = len(parsed.tree['player']['items'])
+        code, out, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertIn('removed player/items/item %d' % 0x0777000000000001, out)
+        with open(self.destination, 'rb') as f:
+            converted = parse_body(SCHEMA, split_360(f.read()), 'big')
+        self.assertEqual(len(converted.tree['player']['items']), items_before - 1)
+        self.assertNotIn(0x0777000000000001, [i['unit_guid'] for i in converted.tree['player']['items']])
+
     def test_missing_pc_pak_explains_why_and_where(self):
         code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak)
         self.assertEqual(code, 1)

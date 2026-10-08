@@ -18,7 +18,7 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from gamedata import GameData, adapt_quest_dialogs, check_references  # noqa: E402
+from gamedata import GameData, adapt_quest_dialogs, check_references, is_removable_unit, remove_units  # noqa: E402
 from savefile import SaveError, load_schema, pc_to_360, read_pc, split_360, parse_body, summary  # noqa: E402
 
 
@@ -52,6 +52,9 @@ def convert(source_path, destination_path, pak_path, pc_pak_path, force=False, l
     target = GameData.from_pak(pak_path)
     source = GameData.from_pak(pc_pak_path)
     replacements, problems = check_references(parsed, target, source)
+    # Items and units of units the target lacks (a PC mod's) are taken out, not a reason to refuse.
+    missing_units = {p.value for p in problems if is_removable_unit(p)}
+    problems = [p for p in problems if not is_removable_unit(p)]
     if problems:
         lines = '\n'.join('  - %s' % p for p in problems)
         raise SaveError('the save references data that does not exist in the 360 game (%s); it is '
@@ -60,6 +63,7 @@ def convert(source_path, destination_path, pak_path, pc_pak_path, force=False, l
     dialog = {}
 
     def adapt(pc_save):
+        dialog['removed'] = remove_units(pc_save, missing_units)
         dialog['changes'], dialog['problems'] = adapt_quest_dialogs(pc_save, target, source)
 
     output = pc_to_360(schema, data, replacements, adapt)
@@ -71,6 +75,13 @@ def convert(source_path, destination_path, pak_path, pc_pak_path, force=False, l
     check = parse_body(schema, split_360(output), 'big')
     if check.end != len(output) - 32:
         raise SaveError('internal error: the converted save cannot be read back')
+    # Nothing of a missing unit may be left where it cannot be removed (the class, a quest's unit).
+    _, leftover = check_references(check, target)
+    leftover = [p for p in leftover if p.kind == 'unit (UNIT_GUID)']
+    if leftover:
+        lines = '\n'.join('  - %s' % p for p in leftover)
+        raise SaveError('the save references data that does not exist in the 360 game (%s); it is '
+                        'not converted:\n%s' % (pak_path, lines))
     for quest in check.tree['quests']['active']:
         lines = target.quest_dialogs.get(quest['name'].upper())
         if lines is not None and [len(p) for p in quest['quest']['byte_pairs']] != [len(l) for l in lines]:
@@ -80,6 +91,8 @@ def convert(source_path, destination_path, pak_path, pc_pak_path, force=False, l
     _write_new(destination_path, output, force)
     for offset, guid in sorted(replacements.items()):
         log('quest GUID at offset %d replaced with %d' % (offset, guid))
+    for path, name, guid in dialog['removed']:
+        log('removed %s %d%s: its unit is not in the 360 game' % (path, guid, ' (%s)' % name if name else ''))
     for change in dialog['changes']:
         log('adapted %s' % change)
     log('Wrote %s (%d bytes). The source was not modified.' % (destination_path, len(output)))

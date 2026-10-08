@@ -59,23 +59,6 @@ struct State {
 };
 State g;
 
-std::optional<UnitIndex> ReadBaseIndex(const std::filesystem::path& pak, std::string* error) {
-  auto archive = save_import::Pak::Open(pak, *error);
-  if (!archive) return std::nullopt;
-  std::optional<uint32_t> found;
-  archive->ForEach([&](uint32_t index, const std::string& name) {
-    if (save_import::Upper(name) == "MEDIA/UNITDATA.RAW") found = index;
-    return !found;
-  });
-  if (!found) {
-    *error = "no media/UNITDATA.RAW in " + pak.string();
-    return std::nullopt;
-  }
-  std::vector<uint8_t> bytes;
-  if (!archive->Read(*found, bytes, *error)) return std::nullopt;
-  return ParseUnitIndex(bytes, error);
-}
-
 // A guest std::wstring in the scratch area from UTF-16 text (the game's constructor); destroy it
 // with ui::kWStringDtor.
 uint32_t ScratchWString(GuestCall& call, std::u16string_view text) {
@@ -198,7 +181,7 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
 void BuildIndex(GuestCall& call) {
   std::string error;
   const auto start = std::chrono::steady_clock::now();
-  const auto base_index = ReadBaseIndex(g.pak, &error);
+  const auto base_index = ReadPakUnitIndex(g.pak, &error);
   if (!base_index) {
     REXLOG_ERROR("mods: cannot read the game's unit index ({}); mods' units left out", error);
     return;
@@ -229,7 +212,7 @@ void BuildIndex(GuestCall& call) {
 // Every base unit read through the mods' path, compared with the Xbox index (log only).
 void CheckBase(GuestCall& call) {
   std::string error;
-  const auto base_index = ReadBaseIndex(g.pak, &error);
+  const auto base_index = ReadPakUnitIndex(g.pak, &error);
   if (!base_index) {
     REXLOG_ERROR("mods: unit index check: {}", error);
     return;

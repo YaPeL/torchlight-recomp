@@ -1,5 +1,10 @@
 #include "mods/unit_cache.h"
 
+#include <charconv>
+
+#include "mods/dat_text.h"
+#include "save_import/pak.h"
+
 #include <algorithm>
 #include <cstdio>
 #include <fstream>
@@ -71,7 +76,7 @@ std::vector<ModUnitFile> ScanModUnitFiles(const fs::path& mods_folder, const Mod
       if (type_ec || !IsUnitDefinition(game_path)) continue;
       const auto bytes = ReadAll(it->path());
       if (!bytes) continue;
-      found.push_back({mod.folder, game_path, Fnv(kFnvBasis, bytes->data(), bytes->size())});
+      found.push_back({mod.folder, game_path, Fnv(kFnvBasis, bytes->data(), bytes->size()), it->path()});
     }
     std::sort(found.begin(), found.end(),
               [](const ModUnitFile& a, const ModUnitFile& b) { return a.game_path < b.game_path; });
@@ -91,6 +96,44 @@ std::vector<std::u16string> UnitPathsByPriority(const std::vector<ModUnitFile>& 
   std::vector<std::u16string> out;
   for (auto& [r, path] : ordered) out.push_back(std::move(path));
   return out;
+}
+
+std::optional<std::vector<int64_t>> ModUnitGuids(const std::vector<ModUnitFile>& files, std::string* why) {
+  std::vector<int64_t> guids;
+  for (const ModUnitFile& f : files) {
+    const auto bytes = ReadAll(f.file);
+    std::string error;
+    const auto blocks = bytes ? ParseDatText(*bytes, &error) : std::nullopt;
+    const DatValue* guid = blocks && !blocks->empty() ? blocks->front().Find("UNIT_GUID") : nullptr;
+    int64_t value = 0;
+    const char* first = guid ? guid->value.data() : nullptr;
+    if (!guid || std::from_chars(first, first + guid->value.size(), value).ec != std::errc()) {
+      if (why) *why = "no UNIT_GUID read from " + f.mod_folder + " " + f.file.filename().string();
+      return std::nullopt;
+    }
+    guids.push_back(value);
+  }
+  return guids;
+}
+
+std::optional<UnitIndex> ReadPakUnitIndex(const fs::path& pak, std::string* error) {
+  std::string e;
+  auto archive = save_import::Pak::Open(pak, e);
+  if (!archive) {
+    if (error) *error = e;
+    return std::nullopt;
+  }
+  std::optional<uint32_t> found;
+  archive->ForEach([&](uint32_t index, const std::string& name) {
+    if (save_import::Upper(name) == "MEDIA/UNITDATA.RAW") found = index;
+    return !found;
+  });
+  std::vector<uint8_t> bytes;
+  if (!found || !archive->Read(*found, bytes, e)) {
+    if (error) *error = found ? e : "no media/UNITDATA.RAW in " + pak.string();
+    return std::nullopt;
+  }
+  return ParseUnitIndex(bytes, error);
 }
 
 std::optional<uint64_t> PakIdentity(const fs::path& pak) {

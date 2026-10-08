@@ -29,6 +29,7 @@ struct ModUnitFile {
   std::string mod_folder;
   std::u16string game_path;
   uint64_t digest = 0;
+  std::filesystem::path file;  // on disk
 };
 
 // The enabled mods' unit definitions (*.dat under media/units/, any case), in the plan's
@@ -39,6 +40,13 @@ std::vector<ModUnitFile> ScanModUnitFiles(const std::filesystem::path& mods_fold
 // The distinct game paths the mods define units at, the ones whose winning mod comes first in the
 // search order last (so merging in this order lets that mod's unit win a GUID clash).
 std::vector<std::u16string> UnitPathsByPriority(const std::vector<ModUnitFile>& files);
+
+// The UNIT_GUID each file sets (text definitions, the format mods ship), or none (with `why`)
+// when any file cannot be read or sets none: then the mods' units are not all known.
+std::optional<std::vector<int64_t>> ModUnitGuids(const std::vector<ModUnitFile>& files, std::string* why);
+
+// The base index from the game's pak (media/UNITDATA.RAW), or none (with `error`).
+std::optional<UnitIndex> ReadPakUnitIndex(const std::filesystem::path& pak, std::string* error);
 
 // What identifies the base game: a digest of the pak's central directory (each entry's name, size
 // and CRC-32), cheap to read; none when the file is not a zip.
