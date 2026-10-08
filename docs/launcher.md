@@ -11,12 +11,20 @@ is for their review.
 
 ## 1. What we have today
 
+**Bug in v0.1.0-beta (found 2026-10-08): the install runs without a progress bar.** The SDK builds
+SDL with `SDL_RENDER` off (its `thirdparty/CMakeLists.txt`), so `SDL_CreateRenderer` always
+returns `nullptr` and `platform::ProgressWindow::Open` gives up: the package is extracted and
+checked with no window on screen until it finishes or fails. Nothing else goes wrong. Fixed by
+SDK patch 21 (`rexglue-sdl-software-renderer.patch`: `SDL_Renderer` with its software driver
+only), which stage 1 needs anyway. **For the next release's notes.**
+
 - **First start** (`docs/ARCHITECTURE.md`, `src/game_setup/`): before the runtime's window exists,
   SDL3 message boxes ask for the XBLA package or an extracted folder (the system's pickers,
   `platform::PickFile`/`PickFolder`), the package is checked (LIVE/CON/PIRS, Arcade title
   `0x58410A7E`) and extracted with the runtime's STFS reader into `game.partial/`, every file
   checked against `game_files_table.inc` (size and SHA-256), then renamed to `game/`. A small SDL
-  window shows the progress with SDL's debug font (ASCII only). Then a message box asks for the
+  window was meant to show the progress with SDL's debug font (ASCII only), but it never opens
+  (the bug below). Then a message box asks for the
   achievement set (Xbox 360 or PC). Texts: English templates translated from
   `data/ui/tl_setup_strings.txt` (de, fr, es), `setup_text_test` checks every language has every
   text. Lines are broken for SDL's boxes by `platform/text_wrap.h`.
@@ -249,6 +257,9 @@ out of the drawing so that the drawing can be replaced.
    context while drawing, none after (the runtime's drawer creates its own later); one frame drawn
    with `SDL_CreateSoftwareRenderer` on a surface (no window, no display, so it runs in every CI
    job) and two pixels read back. A second ImGui would also fail the Windows link (LNK2005).
+   The first run found SDL built without `SDL_Renderer` ("SDL not built with rendering support"):
+   SDK patch 21 turns it on with the software driver only (approved 2026-10-08; branch
+   `feature/launcher-imgui`).
 1. **Model, no drawing**: `src/launcher/launcher_model` (pages: install, achievements, ready; what
    each button does; the install's progress and errors as `game_setup::Message`) and
    `file_browser_model` (the fallback browser: folders, `.` and `..`, files filtered by name,
