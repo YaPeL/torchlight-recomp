@@ -6,6 +6,17 @@
 // GpuProgramParameters) share that array, so a range can be left out only when the array already
 // holds its values, whoever wrote them; that is what this mirrors. Live commands only: a capture
 // replays from its first frame and needs every range (Session decides).
+//
+// When the frontend's arrays start over, this has to start over too (Reset). Checked (2026-10-07):
+// the live consumer creates its Frontend once, when its thread starts (live/live_mode.cpp), and
+// only SetConstants writes the arrays, so they start over only with a new live session, which
+// Session::EnableLive resets this for. Render target changes, recreating the device or the
+// context, the render scale or window, reloading programs (the arrays are per stage, not per
+// program) leave them alone; a dropped frame keeps its SetConstants (LiveFrame::AbsorbDropped) and
+// the consumer executes every command of every frame it takes (live/frame_step.cpp); while an F9
+// capture records every range is sent and still stored here; a session recording starts with the
+// live session and its replay with a new frontend. Anything that ever recreates or clears the
+// frontend mid-session must reset this at the same point of the command stream.
 
 #pragma once
 

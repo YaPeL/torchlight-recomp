@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <map>
 #include <vector>
 
 #include "capture/constant_mirror.h"
@@ -67,6 +68,27 @@ int main() {
   // A new live session: nothing held.
   m.Reset();
   Check(!m.Holds(kFloats, kVertex, 20, scalar.data(), 1), "reset");
+
+  // A frontend that starts over between two draws (a model of its per-stage array): with the
+  // mirror reset at the same point, the second draw's constants are sent in full and the frontend
+  // has them; without it, they would be left out and the frontend would draw with nothing there.
+  std::map<uint32_t, uint32_t> frontend;
+  auto send = [&](ConstantMirror& mirror, uint32_t physical, const std::vector<uint32_t>& values) {
+    if (mirror.Holds(kFloats, kVertex, physical, values.data(), uint32_t(values.size()))) return;
+    mirror.Store(kFloats, kVertex, physical, values.data(), uint32_t(values.size()));
+    for (uint32_t i = 0; i < values.size(); ++i) frontend[physical + i] = values[i];
+  };
+  ConstantMirror live;
+  send(live, 0, matrix);  // draw 1
+  frontend.clear();       // the frontend starts over
+  live.Reset();           // ...and so does the mirror
+  send(live, 0, matrix);  // draw 2, same constants
+  Check(frontend.size() == 16 && frontend[5] == matrix[5], "resent in full after a reset");
+  ConstantMirror stale;
+  send(stale, 0, matrix);
+  frontend.clear();      // the frontend starts over, the mirror does not
+  send(stale, 0, matrix);
+  Check(frontend.empty(), "without the reset the constants would be missing (why it is needed)");
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return 1;
