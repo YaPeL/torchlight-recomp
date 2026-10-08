@@ -406,8 +406,8 @@ void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths) {
       paths.cache_root = paths.user_data_root / "cache";
     }
   }
-  // A run's log rotates within the budget. These cvars exist on the SDK base 0c7b01a; bd833a2's
-  // file sink does not rotate (docs/crash-handling.md, section 5).
+  // A run's log rotates within the budget (the runtime's rotating file sink; on bd833a2 through
+  // SDK patch 26, which brought it back).
   const LogBudget budget;
   const auto set_unless_command_line = [](const char* name, const std::string& value) {
     const rex::cvar::FlagEntry* entry = rex::cvar::GetFlagInfo(name);
