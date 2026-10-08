@@ -627,6 +627,80 @@ Found in MAC.3, for MAC.4 (or MAC.6 at the latest): `src/backend/CMakeLists.txt`
 plugins as `${OGRE_PLUGIN_DIR}/<name>${CMAKE_SHARED_MODULE_SUFFIX}`, which is `.so` on macOS, but
 OGRE's plugins there are `.dylib` (`lib/OGRE/RenderSystem_GL3Plus.dylib`); the staging of
 `ogre/plugins` and the install rules for the dylibs (Linux-only today) go with it.
+Done in MAC.4 for the staging (the install rules stay for MAC.8).
+
+**MAC.4 results (branch `feature/macos-platform`, 2026-10-08):** `platform_mac.mm`,
+`user_folders_mac.cpp`, `NativeWindow::kCocoa`, the CMake branch, the backend's plugin names and
+the `mac-arm64-nogame` preset (`mac-base` also passes `CMAKE_OSX_SYSROOT=macosx` and deployment
+target 13.3). The user folders: settings, user data and the game's files in
+`~/Library/Application Support/TorchlightRecomp/`, shaders in `~/Library/Caches/TorchlightRecomp/`,
+logs in `~/Library/Logs/TorchlightRecomp/`. Nothing outside `platform/` and the backend's CMake
+needed a change for the build: no other Linux dependency showed up. On this Mac, with the SDK on
+`bd833a2`: the nogame build configures and builds with no new warnings, and ctest passes 57 of 59
+(with `3bdc5d0` of `sdk/rexglue-next` applied by hand, which `develop` needs on that SDK base).
+
+The two that fail are the GL3+ tests (`ui_pass_test`, `render_scale_test`), for a reason found,
+not guessed: **OGRE 14.6's Cocoa GL window cannot create a window of its own**
+(`CocoaWindow::createNewWindow` throws "Builtin Window creation broken. Use an external Window",
+`RenderSystems/GLSupport/src/OSX/OgreOSXCocoaWindow.mm:628`). It only draws in an external
+`NSView`/`NSWindow` (`externalWindowHandle`). The game's window is SDL's, so the game is not
+affected; what is affected is every backend top-level window: the hidden 64x64 one of an offscreen
+backend (the tests, the replay without a window) and the replay's visible window. Proposal, to
+agree with the render agent since it touches `backend.cpp`: a platform function that makes that
+window where OGRE cannot (`platform::OgreTopLevelWindow`, null on Linux and Windows, an `NSWindow`
+on macOS, hidden or not, with `[NSApplication sharedApplication]` first), whose view
+`tl_backend_create` passes through `OgreWindowParams` and keeps until the OGRE window is destroyed.
+About 15 lines in `backend.cpp`, no change on Linux or Windows. Until then MAC.4 is done but for
+those two tests, and MAC.5 (the replay) needs it.
+
+**Durable writes on macOS (for the ticket below).** On macOS `fsync` hands the data to the drive
+but does not make the drive write it: only `fcntl(F_FULLFSYNC)` does (Apple's `fsync(2)` man page).
+Where the project writes files that must survive a power cut:
+
+| Where | What | Linux | Windows | macOS today |
+|---|---|---|---|---|
+| `achievements/service.cpp` (state) | temporary file, rename | `fsync` file and folder (`#if defined(__linux__)`) | nothing | nothing (the `#if` leaves it out) |
+| `settings/host_settings.cpp` `Save` | `settings.toml` through `.tmp`, rename | nothing | nothing | nothing |
+| `save_import/import_plan.cpp` `WriteAtomic` (`.RAW` and the import state) | `.import-tmp`, rename | nothing | nothing | nothing |
+| `save_import/backup_retention.cpp` | only removes old backups | - | - | - |
+| The game's saves and their backups | written by the SDK (VFS, `content-delete-backup`) | SDK's | SDK's | SDK's |
+
+Proposal: a small library in the platform module with no SDK dependency, like
+`torchlight_user_folders` (the achievements build on their own), `platform/durable_file.h`:
+`bool FlushToDisk(const std::filesystem::path& file, std::string& error)` and
+`bool FlushFolderToDisk(const std::filesystem::path& folder, std::string& error)`, one
+implementation per platform: Linux `fsync`, exactly what `service.cpp` does now; macOS
+`fcntl(F_FULLFSYNC)`, falling back to `fsync` where the file system does not support it
+(`ENOTSUP`, e.g. some network volumes); Windows nothing, as now. Step 1, no change on Linux or
+Windows: `service.cpp` calls it instead of its `#if defined(__linux__)` blocks (which also takes
+a platform `#if` out of `achievements/`). Step 2, a decision for the owners because it adds
+durability on Linux too: settings and `WriteAtomic` call it before their rename. The SDK's writes
+of the game's saves are the ReXGlue agent's to check (a `F_FULLFSYNC` in `HostPathFile` on macOS).
+
+**Ticket MAC.4b (durable writes, before MAC.7):** `platform/durable_file.h` and step 1; step 2
+if the owners agree; done when `service.cpp` has no platform `#if` and a test writes, flushes and
+reads back on each platform.
+
+**`feature/launcher-imgui` on macOS (for the Windows agent; branch `feature/launcher-imgui-macos`
+= that branch, merged with `feature/macos-platform`, plus one fix):**
+
+- `browse_places_test` passes on macOS, its startup disk case included: the made-up
+  `Volumes/Macintosh HD` link to the root is left out (on macOS the link can be made, so the case
+  that could not run on Windows ran). `BrowsePlaces()` on this Mac (`platform_mac_launcher.cpp`,
+  built in the macOS module) gives `/Users/<user>`, `~/Downloads`, `/Volumes/Claude` (a mounted
+  volume) and `/`, without `/Volumes/Macintosh HD -> /`. `PreferFullscreenLauncher()` is false.
+- `platform_mac_launcher.cpp` and `browse_places.cpp` join the macOS sources of
+  `src/platform/CMakeLists.txt` (in the merge; the only conflict was that list).
+- **Fix to SDK patch 21** (`rexglue-sdl-software-renderer.patch`), commit `a343dc4`: with every GPU
+  render driver off, SDL's software renderer cannot open a window on macOS ("Window framebuffer
+  support not available"): Cocoa has no window framebuffer of its own, and SDL3 shows a software
+  renderer's frames through a GPU texture (`SDL_CreateWindowTexture`). The fix keeps
+  `SDL_RENDER_METAL` on for Apple only (one GPU on Apple Silicon: nothing chosen too early); the
+  patch still applies after `rexglue-win-sdl3-shared` (Windows) and without it (macOS), and its
+  Windows and Linux parts do not change. With it, `launcher_imgui_test` (its frame read back) and
+  `launcher_window_test` pass here; without it, both fail. The README's entry says so.
+- With both branches, ctest passes 63 of 65 on this Mac: every launcher test; the two that fail
+  are the GL3+ ones above.
 
 ## 9. Plan by stages
 
