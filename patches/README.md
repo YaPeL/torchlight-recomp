@@ -238,7 +238,12 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     progress bar), and the launcher (`docs/launcher.md`) draws ImGui with `SDL_Renderer`. Now
     `SDL_RENDER` is on with the software driver only: the Direct3D 9/11/12, GPU, Metal and Vulkan
     render drivers stay off (OpenGL and OpenGL ES were off already), so no graphics library is
-    loaded before the presenter or the backend picks the GPU. Every platform. Size (Release):
+    loaded before the presenter or the backend picks the GPU. Every platform, but for Metal on
+    macOS: Cocoa has no window framebuffer of its own, so SDL shows a software renderer's frames
+    through a GPU texture (`SDL_CreateWindowTexture`), and with every GPU driver off the software
+    renderer fails there ("Window framebuffer support not available"). Apple Silicon has one GPU,
+    so nothing is chosen too early (checked on macOS arm64: `launcher_imgui_test` and
+    `launcher_window_test` pass with Metal on and fail without it). Size (Release):
     Windows `SDL3.dll` 2 149 888 -> 2 319 360 bytes (+169 472, +7.9%), `rexruntime.dll` unchanged
     (8 098 304); Linux (ubuntu:22.04, `tools/deps/build_sdk.sh`, where SDL is static and inside
     the runtime) `libSDL3.a` 5 969 216 -> 6 228 956 bytes (+259 740, +4.4%), `librexruntime.so`

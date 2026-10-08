@@ -11,7 +11,7 @@ index 28da6f6..5226590 100644
  set(SDL_VIDEO ON CACHE BOOL "" FORCE)
  if(APPLE)
      # macOS uses SDL for windowing + Metal/Vulkan surface creation.
-@@ -276,7 +276,16 @@ else()
+@@ -276,7 +276,22 @@ else()
          set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
      endif()
  endif()
@@ -24,7 +24,13 @@ index 28da6f6..5226590 100644
 +set(SDL_RENDER_D3D11 OFF CACHE BOOL "" FORCE)
 +set(SDL_RENDER_D3D12 OFF CACHE BOOL "" FORCE)
 +set(SDL_RENDER_GPU OFF CACHE BOOL "" FORCE)
-+set(SDL_RENDER_METAL OFF CACHE BOOL "" FORCE)
++if(APPLE)
++    # Cocoa has no window framebuffer of its own: SDL shows a software renderer's frames through a
++    # GPU texture (SDL_CreateWindowTexture), Metal's here. One GPU on Apple Silicon: nothing to choose.
++    set(SDL_RENDER_METAL ON CACHE BOOL "" FORCE)
++else()
++    set(SDL_RENDER_METAL OFF CACHE BOOL "" FORCE)
++endif()
 +set(SDL_RENDER_VULKAN OFF CACHE BOOL "" FORCE)
  set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
  set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
