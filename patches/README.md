@@ -251,12 +251,18 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
 
 - **`RtlUnwind` is a stub** (the kernel logs `[STUB] RtlUnwind called - not implemented`). A guest
   C++ exception that the game catches needs it to unwind the frames between the throw and the
-  handler; without it the game goes on in a broken state. Seen on 2026-10-08 in a mods validation
-  run (docs/mods.md, section 7f): a saved character wore an item whose unit GUID the game's unit
-  index did not know; while the main menu showed that character, the game hit the stub and then
-  read guest address 0x1AC over and over (thousands of `Unhandled guest access violation` lines in
-  30 s) until it was closed. The save itself was untouched. The project avoids the trigger (items
-  with unknown units are kept out of saves, docs/mods.md) and does not change the SDK for it.
-  Candidate for an upstream report to ReXGlue.
+  handler; without it the game goes on in a broken state. Every start already hits it once (after
+  the first reads of `SAVE:\` at the title screen) with no visible effect. Candidate for an
+  upstream report to ReXGlue.
+- **An unhandled guest fault never ends the process.** The runtime logs `Unhandled guest access
+  violation` and resumes the faulting code, which faults again: the process loops forever and
+  fills the disk with logs (run 161 of 2026-10-08: 14 rotated log files of 5 MB in seconds) instead
+  of ending with an error. Seen in four mods validation runs (2026-10-07/08), always a read of
+  guest address 0x1AC soon after our unit index build had the game load a mod's unit that it could
+  not read (docs/mods.md, section 7e). An earlier note here
+  blamed a saved item with an unknown unit; run 161 had that item removed and still looped, so the
+  trigger in the game is not established. The macOS port hit the same on the runtime side (an
+  unhandled memory fault hangs the process). The ReXGlue-patches agent bundles it with the
+  `RtlUnwind` report for upstream.
 
 The observation and diagnostic patches there were before remain in the git history.

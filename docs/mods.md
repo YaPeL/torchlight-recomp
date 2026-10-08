@@ -325,6 +325,41 @@ this branch from before it that reached players): add a check at startup, before
 that finds this pattern in the character saves with the schema, repairs the lengths in place
 after a backup, and logs it.
 
+## 7e. New-item mods in validation: what kept the unit out (2026-10-08)
+
+A synthetic mod (outside the repository) adds a sword, a text `.DAT` under
+`media/units/items/`, in the encoding PC mods ship (UTF-16LE with a BOM). Runs on copies of the
+saves, with the mods diagnostics (`TORCHLIGHT_MODS_DIAGNOSTICS`), found three causes, one after the
+other:
+
+1. **The mod's subfolders were never listed.** The game asks for a mod's subfolders with the
+   CMod's folder, kept with `/`, plus `"/*.*"` (`tlmods:/<mod>//*.*`, sub_823A1010). The Xbox
+   library's FindFirstFileA splits a path only at `\` and returned 0xC000000D without opening
+   anything (guest_abi `xapi_files.h`), so the mod's file map held only `MOD.DAT`. Fixed in our
+   hooks for `tlmods:` only (`hooks/find_file_hooks.cpp`); OGRE's recursive searches on `game:`
+   ask for `<dir>/*` the same way and are left as the Xbox reads them, since made global the fix
+   would start loading `game:\RTShaderLib\materials\RTShaderSystem.material`. The SDK wildcard
+   patch (patches/README.md, 20) was not the cause.
+2. **An index with the unit left out was cached under its key.** The key covers only the mods'
+   files and the base, so the index built while the subfolders were invisible was reused after
+   that was fixed. Now such an index serves its start only (`IncompleteUnitIndexName`,
+   `kUnitIndexVersion` 3).
+3. **The game's text `.DAT` reader reads UTF-16 big-endian.** `sub_82399C00` (and the `FILE*`
+   variant `sub_82399B00`) loads the file into 16-bit units as they are in memory and skips a
+   first unit of 0xFFFE, which is how the bytes `FF FE` of a little-endian BOM read on the Xbox; it
+   swaps nothing after it, so a PC `.DAT` reads as garbage and the unit has no `UNIT_GUID`. The
+   game's own data is compiled (`.DAT.adm` only in `pak.zip`), so this reader never saw a PC file.
+   A conversion on our side, without touching the files on disk, is **[proposed]**.
+
+**A guest fault never ends the process.** In each of the four runs where our index build had the
+game load the mod's unit and it was left out (117, 129, 130 and 161), the game soon read guest
+address 0x1AC and then looped on `Unhandled guest access violation`, logging tens of megabytes in
+seconds (run 161: 14 rotated log files) until it was killed; the runs that used a cached index
+did not. Run 161 rules out the item with an unknown unit as the trigger: the save protection had
+already removed it, and the loop came at the title screen, before any character was loaded. What
+reads 0x1AC is **[to find]**. The runtime side (an unhandled guest fault hangs the process instead
+of ending it with an error; `RtlUnwind` is a stub) is in patches/README.md, known gaps.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
