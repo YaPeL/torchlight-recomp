@@ -1,4 +1,5 @@
-// Bucket culling (--native_bucket_cull, off by default): an improvement over the original game.
+// Bucket culling (--native_bucket_cull, on by default; false turns it off): an improvement over
+// the original game.
 //
 // The guest culls per scene node (Runic's octree walk, docs/guest-hot-paths.md "Culling"), and a
 // StaticGeometry region is one object with one box covering a large piece of the level; every

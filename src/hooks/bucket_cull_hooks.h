@@ -7,7 +7,7 @@
 
 namespace torchlight::hooks {
 
-// After the guest image is loaded: on in native mode with --native_bucket_cull.
+// After the guest image is loaded: on in native mode unless --native_bucket_cull=false.
 void InstallBucketCull(bool native_only);
 // Every program the guest's RTSS creates (resource_hooks.cpp): a vertex program that does not
 // place vertices as the fixed pipeline does turns the culling off for the rest of the session.

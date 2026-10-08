@@ -1,4 +1,4 @@
-// Bucket culling hooks (bucket_cull.h; --native_bucket_cull, native mode only, off by default).
+// Bucket culling hooks (bucket_cull.h; --native_bucket_cull, native mode only, on by default).
 //
 // Runic's _findVisibleObjects marks the walk of the scene's main viewport; during it, every
 // StaticGeometry::GeometryBucket that reaches RenderQueue::addRenderable is tested with its own
@@ -24,9 +24,10 @@
 #include "hooks/bucket_cull_hooks.h"
 #include "hooks/video_mode_hooks.h"
 
-REXCVAR_DEFINE_BOOL(native_bucket_cull, false, "Torchlight",
+REXCVAR_DEFINE_BOOL(native_bucket_cull, true, "Torchlight",
                     "Native mode only: drop the StaticGeometry buckets entirely outside the main "
-                    "camera's frustum (an improvement over the original; hooks/bucket_cull.h)");
+                    "camera's frustum (an improvement over the original; hooks/bucket_cull.h); "
+                    "false queues every bucket as the game does");
 
 namespace {
 
@@ -34,6 +35,8 @@ namespace abi = torchlight::guest_abi;
 namespace sg = torchlight::guest_abi::static_geometry;
 namespace cap = torchlight::capture;
 using namespace torchlight::hooks;
+
+constexpr uint64_t kReportWalks = 600;  // the log line's period, in main walks
 
 bool g_enabled = false;           // InstallBucketCull: native mode and the cvar
 bool g_programs_ok = true;        // every vertex program seen places vertices as the fixed pipeline
@@ -149,13 +152,14 @@ REX_FUNC(sub_821A6070) {
     g_planes = ReadPlanes(base, camera);
   }
   __imp__sub_821A6070(ctx, base);
-  if (g_main_walk && g_enabled && g_stats.main_walks % 600 == 0) {
+  if (g_main_walk && g_enabled && g_stats.main_walks == kReportWalks) {
     const double w = double(g_stats.main_walks);
-    REXLOG_INFO("bucket culling: {} main walks; per walk: {:.1f} buckets tested, {:.1f} dropped, "
-                "{:.1f} unreadable; {} boxes cached{}",
+    REXLOG_INFO("bucket culling: last {} main walks; per walk: {:.1f} buckets tested, {:.1f} "
+                "dropped, {:.1f} unreadable; {} boxes cached{}",
                 g_stats.main_walks, g_stats.buckets_tested / w, g_stats.buckets_dropped / w,
                 g_stats.buckets_unreadable / w, g_boxes.size(),
                 g_programs_ok ? "" : " (off: a vertex program places vertices its own way)");
+    g_stats = BucketCullStats{};
   }
   g_main_walk = false;
 }
