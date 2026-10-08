@@ -61,7 +61,10 @@ Other topics:
 | `-mcmodel=large` on Linux | Still forced for the SDK and every consumer target | Propose an opt-out |
 | `*.*` in the wildcard engine | Same as patch 20 | See patch 20 |
 | `non_volatile_as_local` with `setjmp` (D21) | The generated `setjmp` saves only `ctx`; the localized r14-r31 are lost across a `longjmp` | Issue, for when we want that flag |
-| ARM64 codegen and runtime (from the macOS port) | `fctiw`/`fctid`, `mffs`, and an unhandled memory fault | Candidates; drafts once the port gives the details |
+| `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
+| `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
+| `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
+| An unclaimed host fault hangs instead of crashing on POSIX (D25) | Still there | Issue and PR |
 | Wiki/code mismatches (D19) | The wiki documents the TOML key `enable_exception_handlers` (the code reads `generate_exception_handlers`) and describes `reserved_as_local` and `non_argument_as_local` wrongly | Small docs issue (found during this analysis) |
 
 ## Per patch
@@ -684,6 +687,133 @@ Possible directions:
 run. We have not enabled the flag.)
 
 ---
+### D22. Codegen: `fctiw`/`fctid` ignore the rounding mode on ARM64
+
+The macOS port found it by reading the code (`docs/macos-port.md` on `docs/macos-port-plan`,
+section 1, item 2). Checked here on `bd833a2`.
+
+**Issue: `[Codegen]: fctiw/fctid round half away from zero on ARM64`**
+
+`build_fctiw` and `build_fctid` (`src/codegen/builders/floating_point.cpp`) emit
+`simde_mm_cvtsd_si32` / `simde_mm_cvtsd_si64`. On x86-64 these are `cvtsd2si`, which rounds by
+MXCSR, and MXCSR follows the guest's FPSCR[RN]. On ARM64 SIMDe has no native path for them
+(`thirdparty/simde/simde/x86/sse2.h`, `simde_mm_cvtsd_si32` and `_si64`). It calls
+`simde_math_round`, which is C `round`: half away from zero, whatever the guest's mode.
+
+Reproduced on x86-64 with SIMDe's portable path (`-DSIMDE_NO_NATIVE`, the code ARM64 runs), under
+each `fesetround` mode:
+
+| Input | Mode | Native (`cvtsd2si`) | Portable (SIMDe) | PowerPC |
+|---|---|---|---|---|
+| 2.5 | nearest | 2 | 3 | 2 |
+| -2.5 | nearest | -2 | -3 | -2 |
+| 2.7 | toward zero | 2 | 3 | 2 |
+| 2.5 | down | 2 | 3 | 2 |
+| -2.5 | up | -2 | -3 | -2 |
+
+`fctiwz`/`fctidz` (`cvttsd2si`, truncation) are right on both. `tests/ppc` only covers `fctiwz`, so
+`ppc_tests` passes on ARM64 with this bug.
+
+**PR: `fix(codegen): fctiw/fctid round in the current rounding mode on every architecture`**
+
+Fixes #NNN. Convert with `std::nearbyint` (or `llrint`), which honours the FP environment that
+`storeFromGuest` sets on both architectures, and keep today's NaN and saturation handling. The
+generated code must not let the compiler fold the conversion across an `mtfsf`, so either keep it
+behind a call or compile with `-frounding-math`. Tests: `fctiw` and `fctid` of 2.5, -2.5, 3.5 and
+2.7 under each of the four modes, set with `mtfsf 0xFF`.
+
+---
+
+### D23. Runtime: `mffs` reports round up and round down swapped on ARM64
+
+Also from the macOS port (item 3). Checked here by reading the code only; not run on ARM64 yet.
+
+**Issue: `[Runtime]: FPSCRRegister::HostToGuest uses the MXCSR order on ARM64`**
+
+`FPSCRRegister::HostToGuest` (`include/rex/ppc/context.h`) is
+`{kRoundNearest, kRoundDown, kRoundUp, kRoundTowardZero}`, indexed by the host's rounding field.
+That is MXCSR.RC's order (00 nearest, 01 down, 10 up, 11 zero). ARM64's FPCR.RMode is 00 nearest,
+01 up (RP), 10 down (RM), 11 zero. `FPSCRPlatform::GuestToHost` (`include/rex/platform/fpscr.h`)
+already has the ARM64 order, so the write path is right and the read path is wrong.
+
+On ARM64:
+- `mffs` (`loadFromHost`) reports up as down and down as up.
+- A partial `mtfsf` reads the mode back through the same table (`build_mtfsf`, the
+  `loadFromHost() & ~mask` branch), so writing other FPSCR fields flips an up or down mode.
+- The common save, change and restore sequence (`mffs`, `mtfsf`, then `mtfsf` of the saved value)
+  restores the opposite mode.
+
+**PR: `fix(runtime): read the ARM64 rounding mode back in FPCR order`**
+
+Fixes #NNN. Move `HostToGuest` into `FPSCRPlatform`, next to `GuestToHost`, with the ARM64 order
+`{kRoundNearest, kRoundUp, kRoundDown, kRoundTowardZero}`. Test: for each mode, `mtfsf 0xFF` and
+then `mffs` returns it.
+
+---
+
+### D24. Codegen: `mtfsf` applies its field mask reversed
+
+Found here while checking D23, on every architecture.
+
+**Issue: `[Codegen]: mtfsf with a partial FM writes the wrong FPSCR fields`**
+
+`build_mtfsf` (`src/codegen/builders/system.cpp`) builds the mask with
+`if (fm & (1 << (7 - j))) mask |= 0xF << (4 * j)`. `FM[0]`, the most significant bit of the
+8-bit field, selects FPSCR field 0, which is bits 0-3 in PowerPC numbering (`0xF0000000`). The
+code maps it to `0x0000000F`, the field that holds RN. So `mtfsf 1,f1` encodes FM = 0x01
+(`fc 02 0d 8e`), which should write field 7 (the rounding mode), but generates
+
+    ctx.fpscr.storeFromGuest((ctx.fpscr.loadFromHost() & 0x0FFFFFFF) | (ctx.f1.u32 & 0xF0000000));
+
+and the mode does not change. Checked on x86-64 with a PPC test, `mtfsf 1,f1` with RN = 3 in `f1`
+followed by `mffs f2`: it gives 0, expected 3. `mtfsf 0xFF` (the full mask) is right.
+
+**PR: `fix(codegen): mtfsf field mask in PowerPC bit order`**
+
+Fixes #NNN. `if (fm & (0x80 >> j)) mask |= 0xF0000000u >> (4 * j)`. Test: `mtfsf 1` sets RN and
+`mtfsf 0x80` leaves it alone, each followed by `mffs`. (`mtfsfi`, `mtfsb0` and `mtfsb1` have no
+builder: they reach the unimplemented-instruction trap.)
+
+---
+
+### D25. POSIX: a fault no handler claims hangs instead of crashing
+
+From the macOS port (item 4). Reproduced here on Linux x86-64.
+
+**Issue: `[Runtime]: unhandled SIGSEGV re-faults forever on POSIX`**
+
+`ExceptionHandlerCallback` (`src/core/exception_handler_posix.cpp`) tries the installed handlers
+and returns when none claims the fault. It never chains to the handler it replaced
+(`original_sigsegv_handler_` and the others) or to the default action, so the faulting instruction
+runs again and faults again, forever: a host crash becomes a hang at 100 % of a core, with no
+crash report. The same happens with the early `return` on SIGBUS outside macOS
+(`assert_unhandled_case` does nothing in Release). It matters more on macOS, where its page
+handling can leave pages inaccessible that are accessible on Linux.
+
+Reproduction against the installed SDK: in a forked child, install a handler that returns `false`,
+set `alarm(3)` and read address 16. The child is killed by SIGALRM after 3 s. It should be killed
+by SIGSEGV at once.
+
+**PR: `fix(core): chain unclaimed faults to the previous handler on POSIX`**
+
+Fixes #NNN. When no handler claims a fault, restore the original `sigaction` for that signal and
+return. The instruction faults again and now gets the previous behaviour: the default action, or a
+crash reporter installed before the SDK. Alternatively, call the previous `sa_sigaction` or
+`sa_handler` directly. Test: the child above dies by SIGSEGV.
+
+---
+
+Not drafted, from the same port (`docs/macos-port.md`, section 1, items 5-7, and section 2):
+- No `SO_NOSIGPIPE` / `MSG_NOSIGNAL` in `xsocket.cpp`.
+- Scalar audio fallbacks, one of which truncates where x86 rounds.
+- A partial ARM64 MMIO decoder.
+- The `mac-arm64` presets' `-march=armv8-a`, which may keep LSE atomics out of every
+  compare-exchange.
+
+They are lower risk for this game or still need a measurement. Each becomes a draft when it has
+one.
+
+---
 
 ## Updating our base from `0c7b01a`
 
@@ -862,12 +992,13 @@ these agents lives here and in `patches/README.md`.
   - The PPC test data is on branch `sdk/ppc-test-data`. Build with
     `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=<that checkout>/bin`. To remake it after an
     SDK change, run `tools/deps/build_ppc_test_data.sh` on Linux.
-  - Wanted back, in `docs/macos-port.md` of `docs/macos-port-plan`:
-    - The exact compiler error of `codegen_writer_test.cpp:128`. Patch 22 assumes it is Catch2
-      printing a `file_time_type`.
-    - Whether patch 22 builds and passes there.
-    - The details of the ARM64 bugs (`fctiw`/`fctid`, `mffs`, the unhandled memory fault). They become
-      upstream drafts here.
+  - Received from `docs/macos-port.md` (`docs/macos-port-plan`, 9f6ab66). The
+    `codegen_writer_test.cpp:128` error is Catch2's `operator<<` being ambiguous for the `__int128`
+    duration of `file_time_type`, which patch 22 avoids. With patch 22, `ppc_tests` passes on
+    ARM64 (1462 cases), and `unit_tests` fails only the `output_stamp_test.cpp` checks shared with
+    x86-64. The ARM64 bugs are now drafts D22, D23 and D25. D24 (`mtfsf` mask) was found here on
+    the way; it affects every architecture. The `tests/ppc` suite covers none of them, so
+    `ppc_tests` passing on ARM64 does not clear them.
 - **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
   22. When you next touch the series, ask for a number here first.
 
