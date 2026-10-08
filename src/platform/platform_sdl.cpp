@@ -20,6 +20,7 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_init.h>
 #include <SDL3/SDL_locale.h>
 #include <SDL3/SDL_messagebox.h>
 #include <SDL3/SDL_properties.h>
@@ -27,6 +28,9 @@
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_timer.h>
 #include <SDL3/SDL_video.h>
+#include <imgui.h>
+#include <imgui_impl_sdl3.h>
+#include <imgui_impl_sdlrenderer3.h>
 
 namespace torchlight::platform {
 
@@ -312,6 +316,129 @@ std::unique_ptr<ProgressWindow> ProgressWindow::Open(const std::string& title) {
     return nullptr;
   }
   return std::make_unique<SdlProgressWindow>(window, renderer);
+}
+
+namespace {
+
+class SdlLauncherWindow : public LauncherWindow {
+ public:
+  SdlLauncherWindow(SDL_Window* window, SDL_Renderer* renderer, SDL_InitFlags subsystems)
+      : window_(window), renderer_(renderer), subsystems_(subsystems) {
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.LogFilename = nullptr;
+    io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+    ImGui_ImplSDL3_InitForSDLRenderer(window_, renderer_);
+    ImGui_ImplSDLRenderer3_Init(renderer_);
+    ApplyScale();
+  }
+  ~SdlLauncherWindow() override {
+    ImGui_ImplSDLRenderer3_Shutdown();
+    ImGui_ImplSDL3_Shutdown();
+    ImGui::DestroyContext();
+    SDL_DestroyRenderer(renderer_);
+    SDL_DestroyWindow(window_);
+    SDL_QuitSubSystem(subsystems_);
+  }
+
+  bool NewFrame() override {
+    bool close = false;
+    SDL_Event event;
+    for (bool have = SDL_WaitEventTimeout(&event, kFrameMs); have; have = SDL_PollEvent(&event)) {
+      ImGui_ImplSDL3_ProcessEvent(&event);
+      if (event.type == SDL_EVENT_QUIT ||
+          (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+           event.window.windowID == SDL_GetWindowID(window_))) {
+        close = true;
+      } else if (event.type == SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED) {
+        ApplyScale();
+      }
+    }
+    ImGui_ImplSDLRenderer3_NewFrame();
+    ImGui_ImplSDL3_NewFrame();
+    ImGui::NewFrame();
+    return close;
+  }
+
+  void Present() override {
+    ImGui::Render();
+    const ImGuiIO& io = ImGui::GetIO();
+    SDL_SetRenderScale(renderer_, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
+    SDL_SetRenderDrawColor(renderer_, 24, 20, 16, 255);
+    SDL_RenderClear(renderer_);
+    ImGui_ImplSDLRenderer3_RenderDrawData(ImGui::GetDrawData(), renderer_);
+    SDL_RenderPresent(renderer_);
+  }
+
+  float scale() const override { return scale_; }
+
+ private:
+  static constexpr Sint32 kFrameMs = 16;
+
+  // The style is rebuilt from the default at each scale, so that sizes are not scaled twice.
+  void ApplyScale() {
+    const float scale = SDL_GetWindowDisplayScale(window_);
+    scale_ = scale > 0 ? scale : 1;
+    ImGuiStyle style;
+    ImGui::StyleColorsDark(&style);
+    style.ScaleAllSizes(scale_);
+    style.FontScaleDpi = scale_;
+    ImGui::GetStyle() = style;
+  }
+
+  SDL_Window* window_;
+  SDL_Renderer* renderer_;
+  SDL_InitFlags subsystems_;
+  float scale_ = 1;
+};
+
+}  // namespace
+
+std::unique_ptr<LauncherWindow> LauncherWindow::Open(const std::string& title,
+                                                     std::string& error) {
+  if (ImGui::GetCurrentContext()) {
+    error = "another ImGui context is current";
+    return nullptr;
+  }
+  if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
+    error = std::string("SDL video: ") + SDL_GetError();
+    return nullptr;
+  }
+  // Without gamepads the launcher still works with the keyboard and the mouse.
+  SDL_InitFlags subsystems = SDL_INIT_VIDEO;
+  if (SDL_InitSubSystem(SDL_INIT_GAMEPAD)) subsystems |= SDL_INIT_GAMEPAD;
+
+  // 1280x720 at 100%, grown with the display's scale and kept inside its usable area.
+  int width = 1280, height = 720;
+  const SDL_DisplayID display = SDL_GetPrimaryDisplay();
+  if (const float scale = SDL_GetDisplayContentScale(display); scale > 0) {
+    width = int(float(width) * scale);
+    height = int(float(height) * scale);
+  }
+  if (SDL_Rect usable; SDL_GetDisplayUsableBounds(display, &usable)) {
+    const float fit = std::min({1.0f, 0.9f * float(usable.w) / float(width),
+                                0.9f * float(usable.h) / float(height)});
+    width = int(float(width) * fit);
+    height = int(float(height) * fit);
+  }
+  SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
+  if (PreferFullscreenLauncher()) flags |= SDL_WINDOW_FULLSCREEN;
+  SDL_Window* window = SDL_CreateWindow(title.c_str(), width, height, flags);
+  if (!window) {
+    error = std::string("window: ") + SDL_GetError();
+    SDL_QuitSubSystem(subsystems);
+    return nullptr;
+  }
+  SDL_Renderer* renderer = SDL_CreateRenderer(window, SDL_SOFTWARE_RENDERER);
+  if (!renderer) {
+    error = std::string("software renderer: ") + SDL_GetError();
+    SDL_DestroyWindow(window);
+    SDL_QuitSubSystem(subsystems);
+    return nullptr;
+  }
+  return std::make_unique<SdlLauncherWindow>(window, renderer, subsystems);
 }
 
 }  // namespace torchlight::platform

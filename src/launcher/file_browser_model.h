@@ -18,7 +18,7 @@
 namespace torchlight::launcher {
 
 struct FolderEntry {
-  std::string name;
+  std::string name;  // UTF-8
   bool folder = false;
   uint64_t size = 0;  // files only
 };

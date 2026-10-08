@@ -9,6 +9,7 @@
 #pragma once
 
 #include <cstdint>
+#include <filesystem>
 #include <functional>
 #include <memory>
 #include <string>
@@ -95,6 +96,33 @@ class ProgressWindow {
   // Draws `fraction` (0-1) and `text`; false once the user has closed the window.
   virtual bool Show(double fraction, const std::string& text) = 0;
 };
+
+// ---- launcher (docs/launcher.md) ---------------------------------------------------------------
+// The launcher's window: ImGui (the runtime's) through its SDL3 backends, drawn with SDL's software
+// renderer, as the progress window: no graphics library is loaded before the GPU is chosen. Its
+// ImGui context lives as long as the window (no imgui.ini is written); keyboard, mouse and gamepad
+// navigation are on. Main thread, before the runtime.
+class LauncherWindow {
+ public:
+  // Fullscreen when PreferFullscreenLauncher(); nullptr with the reason when it cannot open (also
+  // when another ImGui context is current).
+  static std::unique_ptr<LauncherWindow> Open(const std::string& title, std::string& error);
+  virtual ~LauncherWindow() = default;
+  // Waits up to a frame for events, hands them to ImGui and starts its frame; true when the user
+  // asked to close the window (what that does is the caller's).
+  virtual bool NewFrame() = 0;
+  // Draws the frame and shows it.
+  virtual void Present() = 0;
+  // The display's scale (1 at 100%), already applied to ImGui's style.
+  virtual float scale() const = 0;
+};
+// Whether the launcher's window should cover the screen: Linux, in a gamescope session (the Steam
+// Deck's Game Mode). Windows and macOS: no.
+bool PreferFullscreenLauncher();
+// Where the launcher's own file browser starts: Windows, the user's folder, Downloads and every
+// drive; Linux, home, ~/Downloads, removable drives (/run/media, /media; the Deck's SD card) and
+// /; macOS, home, ~/Downloads, the volumes in /Volumes and /. Only folders that exist.
+std::vector<std::filesystem::path> BrowsePlaces();
 
 // ---- files -----------------------------------------------------------------------------------
 

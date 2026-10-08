@@ -2,6 +2,7 @@
 // (whichever driver SDL chose); OGRE GL (EGL) draws in it with the build for that window system.
 // Top-level OGRE windows (the replay's) are X11 ones.
 
+#include "platform/browse_places.h"
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
 #include "platform/user_folders.h"
@@ -14,6 +15,9 @@
 #include <filesystem>
 #include <system_error>
 #include <tuple>
+
+#include <pwd.h>
+#include <unistd.h>
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
@@ -352,6 +356,30 @@ std::unique_ptr<KeyReader> KeyReader::ForOgreWindow(
   custom_attribute("WINDOW", &window);
   if (!display || !window) return nullptr;
   return std::make_unique<X11KeyReader>(display, window);
+}
+
+bool PreferFullscreenLauncher() {
+  // gamescope (the Steam Deck's Game Mode) shows one window at a time, covering the screen.
+  const char* desktop = std::getenv("XDG_CURRENT_DESKTOP");
+  return desktop && std::strstr(desktop, "gamescope");
+}
+
+std::vector<std::filesystem::path> BrowsePlaces() {
+  std::filesystem::path home;
+  std::string user;
+  if (const passwd* entry = getpwuid(getuid())) {
+    home = entry->pw_dir ? entry->pw_dir : "";
+    user = entry->pw_name ? entry->pw_name : "";
+  }
+  if (const char* variable = std::getenv("HOME"); variable && *variable) home = variable;
+  // udisks mounts under /run/media/<user> (SteamOS: the SD card), Debian's under /media/<user>;
+  // some systems use /run/media or /media themselves.
+  std::vector<std::filesystem::path> mount_roots;
+  if (!user.empty()) mount_roots.push_back("/run/media/" + user);
+  mount_roots.push_back("/run/media");
+  if (!user.empty()) mount_roots.push_back("/media/" + user);
+  mount_roots.push_back("/media");
+  return UnixBrowsePlaces(home, mount_roots);
 }
 
 }  // namespace torchlight::platform

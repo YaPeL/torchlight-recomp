@@ -3,7 +3,8 @@
 # The user's folders and their migration (user_folders.h): no SDL or runtime, tested on their own.
 if(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
-    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp text_wrap.cpp)
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp text_wrap.cpp
+                browse_places.cpp)
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE X11)
 elseif(WIN32)
@@ -12,15 +13,18 @@ elseif(WIN32)
     target_link_libraries(torchlight_user_folders PRIVATE shell32 ole32)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_win.cpp gpu_adapters.cpp
                 gl_probe_win.cpp text_wrap.cpp)
-    # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats).
+    # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats);
+    # shell32 and ole32: the launcher browser's known folders.
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
-                          PRIVATE dxgi opengl32 gdi32)
+                          PRIVATE dxgi opengl32 gdi32 shell32 ole32)
 else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
 target_include_directories(torchlight_user_folders PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_user_folders PUBLIC cxx_std_23)
 target_compile_options(torchlight_user_folders PRIVATE -Wall -Wextra)
+# The launcher's window draws with ImGui's SDL3 backends (src/launcher).
+target_link_libraries(torchlight_platform PRIVATE torchlight_imgui_backends)
 target_include_directories(torchlight_platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(torchlight_platform PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_features(torchlight_platform PUBLIC cxx_std_23)
@@ -59,6 +63,14 @@ target_include_directories(text_wrap_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.
 target_compile_features(text_wrap_test PRIVATE cxx_std_23)
 target_compile_options(text_wrap_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME text_wrap_test COMMAND text_wrap_test)
+
+# The launcher browser's places on Linux and macOS (browse_places.h): pure, tested on every
+# platform. macOS's part of the launcher (platform_mac_launcher.cpp) joins the macOS module.
+add_executable(browse_places_test browse_places_test.cpp browse_places.cpp)
+target_include_directories(browse_places_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(browse_places_test PRIVATE cxx_std_23)
+target_compile_options(browse_places_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME browse_places_test COMMAND browse_places_test)
 
 add_executable(user_folders_test user_folders_test.cpp)
 target_link_libraries(user_folders_test PRIVATE torchlight_user_folders)

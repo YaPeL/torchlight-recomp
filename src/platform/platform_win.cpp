@@ -30,6 +30,8 @@
 #endif
 #include <windows.h>
 #include <dxgi1_6.h>
+#include <knownfolders.h>
+#include <shlobj.h>
 #include <wrl/client.h>
 
 // Asks the NVIDIA (Optimus) and AMD (switchable graphics) drivers of a machine with an integrated
@@ -260,6 +262,27 @@ std::unique_ptr<KeyReader> KeyReader::ForOgreWindow(
   custom_attribute("WINDOW", &window);
   if (!window) return nullptr;
   return std::make_unique<Win32KeyReader>(window);
+}
+
+bool PreferFullscreenLauncher() { return false; }
+
+std::vector<std::filesystem::path> BrowsePlaces() {
+  std::vector<std::filesystem::path> places;
+  const auto add = [&](const std::filesystem::path& place) {
+    std::error_code ec;
+    if (!place.empty() && std::filesystem::is_directory(place, ec)) places.push_back(place);
+  };
+  for (REFKNOWNFOLDERID folder : {FOLDERID_Profile, FOLDERID_Downloads}) {
+    PWSTR path = nullptr;
+    if (SUCCEEDED(SHGetKnownFolderPath(folder, KF_FLAG_DEFAULT, nullptr, &path))) add(path);
+    CoTaskMemFree(path);
+  }
+  // The drives, A: to Z:; one without a disk in it (an empty card reader) is not a folder.
+  const DWORD drives = GetLogicalDrives();
+  for (int i = 0; i < 26; ++i) {
+    if (drives & (DWORD(1) << i)) add(std::wstring{wchar_t(L'A' + i), L':', L'\\'});
+  }
+  return places;
 }
 
 }  // namespace torchlight::platform

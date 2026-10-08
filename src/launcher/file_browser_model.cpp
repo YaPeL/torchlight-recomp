@@ -18,6 +18,15 @@ bool NameLess(const std::string& a, const std::string& b) {
 
 bool AtTop(const std::filesystem::path& folder) { return folder == folder.root_path(); }
 
+// Names and paths in UTF-8 on every platform, whatever the process's code page.
+std::filesystem::path FromUtf8(const std::string& name) {
+  return std::filesystem::path(std::u8string(name.begin(), name.end()));
+}
+std::string ToUtf8(const std::filesystem::path& path) {
+  const std::u8string text = path.u8string();
+  return std::string(text.begin(), text.end());
+}
+
 }  // namespace
 
 FileBrowserModel::FileBrowserModel(Mode mode, ListFolder list, const std::filesystem::path& start,
@@ -36,7 +45,7 @@ bool FileBrowserModel::Open(const std::filesystem::path& folder) {
   std::vector<FolderEntry> entries;
   std::string error;
   if (!list_(normal, entries, error)) {
-    error_ = {std::string(kTextCannotOpen), {{"path", normal.string()}, {"error", error}}};
+    error_ = {std::string(kTextCannotOpen), {{"path", ToUtf8(normal)}, {"error", error}}};
     return false;
   }
   error_ = {};
@@ -77,11 +86,11 @@ std::optional<std::filesystem::path> FileBrowserModel::Activate(size_t row) {
     case RowKind::kUseFolder:
       return folder_;
     case RowKind::kFolder:
-      Open(folder_ / r.name);
+      Open(folder_ / FromUtf8(r.name));
       return std::nullopt;
     case RowKind::kFile:
       // In folder mode files are shown (an extracted game is recognised by them) but not chosen.
-      if (mode_ == Mode::kFile) return folder_ / r.name;
+      if (mode_ == Mode::kFile) return folder_ / FromUtf8(r.name);
       return std::nullopt;
   }
   return std::nullopt;
