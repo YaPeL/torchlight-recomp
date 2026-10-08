@@ -264,7 +264,7 @@ inline bool UnitIsType(const uint8_t* base, uint32_t unit, uint32_t type) {
   if (!Plausible(head)) return false;
   auto found = head;
   auto node = ReadU32(base, head + 4);
-  for (int depth = 0; depth < 64 && Plausible(node) && !base[node + 33]; ++depth) {
+  for (int depth = 0; depth < 64 && Plausible(node) && !ReadU8(base, node + 33); ++depth) {
     if (ReadU32(base, node + 12) < own) {
       node = ReadU32(base, node + 8);
     } else {
