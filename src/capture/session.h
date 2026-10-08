@@ -22,6 +22,7 @@
 #include <unordered_map>
 #include <vector>
 
+#include "capture/constant_mirror.h"
 #include "capture/resource_registry.h"
 #include "commands/types.h"
 #include "live/frame_queue.h"
@@ -150,6 +151,8 @@ class Session {
   bool live() const { return live_queue_ != nullptr; }
   // Commands and resource descriptions are being recorded (a capture is armed or live is on).
   bool recording() const { return armed() || live(); }
+  // What the live consumer holds of the shader constants sent (guest render thread only).
+  ConstantMirror& constant_mirror() { return constant_mirror_; }
   // Recording, on a frame whose recording cost is timed (kMeasureEveryFrames).
   bool measuring() const {
     return recording() && measure_frame_.load(std::memory_order_relaxed);
@@ -286,6 +289,7 @@ class Session {
   };
   std::vector<ArgsMemo> memos_ = std::vector<ArgsMemo>(kRenderSystemSlotCount * kMemoSubs);
   const uint8_t* membase_ = nullptr;
+  ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;
   std::atomic<bool> measure_frame_{true};
   bool finishing_ = false;

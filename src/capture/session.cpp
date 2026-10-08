@@ -81,6 +81,7 @@ void Session::EnableLive(live::FrameQueue* queue, live::SnapshotStore* store) {
   live_store_ = store;
   live_queue_ = queue;
   live_frame_.cut = std::chrono::steady_clock::now();
+  constant_mirror_.Reset();  // the consumer starts with no constants
   // The live consumer starts empty: it gets the state already in the shadow first, as a capture's
   // baseline does, since State skips values that did not change.
   for (uint32_t key : ShadowKeysInOrder()) {

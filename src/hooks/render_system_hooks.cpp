@@ -406,7 +406,19 @@ RECORD_HOOK(91, 821C2118, ({
     cap::ProducerTimer constants(s.producer_times(), cap::ProducerSection::kConstants,
                                  s.measuring());
     uint32_t parameters = abi::ReadU32(base, R(ctx.r5) + ogre::shared_ptr::kPRep.offset);
-    s.Event(cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF));
+    // Live commands send only the constants the backend does not hold yet, and no command when
+    // nothing changes; a capture being recorded gets every range (capture/constant_mirror.h).
+    cap::ConstantMirror* mirror = s.live() ? &s.constant_mirror() : nullptr;
+    const bool filter = mirror && !s.armed();
+    cmd::SetConstants c =
+        cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF, mirror, filter);
+    // (No return here: the guest's own bindGpuProgramParameters runs after this body.)
+    const bool unchanged = filter && c.floats.empty() && c.ints.empty() &&
+                           mirror->SameTail(c.stage.value, c.autos, c.transpose_matrices);
+    if (!unchanged) {
+      if (mirror) mirror->StoreTail(c.stage.value, c.autos, c.transpose_matrices);
+      s.Event(std::move(c));
+    }
   }
 }))
 

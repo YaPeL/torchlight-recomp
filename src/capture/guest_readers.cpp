@@ -7,6 +7,7 @@
 #include <fmt/format.h>
 #include <rex/system/xmemory.h>
 
+#include "capture/constant_mirror.h"
 #include "capture/session.h"
 #include "capture/translate.h"
 #include "guest_abi/guest_functions.h"
@@ -411,7 +412,7 @@ commands::Draw CaptureDraw(const uint8_t* m, uint32_t render_system, uint32_t op
 }
 
 commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint32_t gptype,
-                                     uint32_t mask) {
+                                     uint32_t mask, ConstantMirror* mirror, bool filter) {
   namespace gpp = ogre::gpu_program_parameters;
   namespace node = ogre::gpu_logical_index_use_node;
   commands::SetConstants c;
@@ -436,10 +437,16 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
       uint32_t physical = abi::ReadU32(m, n, node::kPhysicalIndex);
       r.physical_index = physical;
       if (r.element_count > 4096) return;
-      r.data.reserve(r.element_count);
-      for (uint32_t i = 0; i < r.element_count; ++i) {
-        r.data.push_back(U32(m, data + 4 * (physical + i)));
-      }
+      // Read into a scratch buffer first: a range the backend already holds is left out without
+      // allocating (live commands, `filter`).
+      thread_local std::vector<uint32_t> values;
+      values.resize(r.element_count);
+      for (uint32_t i = 0; i < r.element_count; ++i) values[i] = U32(m, data + 4 * (physical + i));
+      const uint8_t stage = c.stage.value;
+      if (mirror && filter && mirror->Holds(floats, stage, physical, values.data(), r.element_count))
+        return;
+      if (mirror) mirror->Store(floats, stage, physical, values.data(), r.element_count);
+      r.data.assign(values.begin(), values.end());
       out.push_back(std::move(r));
     });
   };
