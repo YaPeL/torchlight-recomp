@@ -178,8 +178,13 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
       e.level = read_u32(u"LEVEL", 1, false);
       e.min_level = read_u32(u"MINLEVEL", 0, false);
       e.max_level = read_u32(u"MAXLEVEL", 0, false);
-      e.rarity = read_u32(u"RARITY", e.name.empty() ? 0 : 1, true);
-      e.rarity_hardcore = read_u32(u"RARITY_HARDCORE", e.rarity, true);
+      // RARITY defaults to 1 and RARITY_HARDCORE to RARITY (as PC reads them for spawning,
+      // 0x537541 and 0x53759B). A unit without a NAME (a base the game never spawns) has both at 0
+      // in the Xbox file whatever it sets: all 118 such entries do (docs/mods.md, 7e).
+      if (!e.name.empty()) {
+        e.rarity = read_u32(u"RARITY", 1, true);
+        e.rarity_hardcore = read_u32(u"RARITY_HARDCORE", e.rarity, true);
+      }
       e.unit_type = read_text(u"UNITTYPE");
       entry = e;
     }
