@@ -81,12 +81,13 @@ std::vector<ModUnitFile> ScanModUnitFiles(const fs::path& mods_folder, const Mod
 }
 
 std::vector<std::u16string> UnitPathsByPriority(const std::vector<ModUnitFile>& files) {
-  // A path's rank is the position of the last (highest priority) file that has it.
+  // A path's rank is the position of the first file that has it (the mod the game finds it in);
+  // the paths of earlier mods go last, so merging in this order lets them win.
   std::map<std::u16string, size_t> rank;
-  for (size_t i = 0; i < files.size(); ++i) rank[files[i].game_path] = i;
+  for (size_t i = 0; i < files.size(); ++i) rank.try_emplace(files[i].game_path, i);
   std::vector<std::pair<size_t, std::u16string>> ordered;
   for (const auto& [path, r] : rank) ordered.emplace_back(r, path);
-  std::sort(ordered.begin(), ordered.end());
+  std::sort(ordered.begin(), ordered.end(), [](const auto& x, const auto& y) { return x.first > y.first; });
   std::vector<std::u16string> out;
   for (auto& [r, path] : ordered) out.push_back(std::move(path));
   return out;

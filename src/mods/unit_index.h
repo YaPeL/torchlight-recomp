@@ -1,7 +1,7 @@
 // The game's unit index file (MEDIA/UNITDATA.RAW; guest_abi/unit_index.h, docs/mods.md section
 // 7e): reading, writing and comparing it, and merging the player's mods' units into it the way PC
 // Torchlight builds its table (a mod's unit file replaces the base one with the same path; the
-// highest-priority mod wins). No guest, OGRE or platform types.
+// first mod in the search order, the lowest PRIORITY, wins). No guest, OGRE or platform types.
 //
 // Layout (little-endian), as the game's loader reads it: 4 groups (the folder under MEDIA/UNITS/:
 // ITEMS, MONSTERS, PLAYERS, PROPS), each a u32 count and its entries. An entry: i64 UNIT_GUID;
@@ -57,9 +57,10 @@ std::u16string NormalizeUnitFile(std::u16string_view path);
 std::vector<std::string> CompareUnitIndexes(const UnitIndex& expected, const UnitIndex& actual,
                                             size_t limit = 50);
 
-// `base` with the mods' units, `units` in increasing priority (the last wins). A unit whose file is
-// also a base unit's (same path) takes that entry's place; one whose GUID another entry has
-// replaces it; any other goes to the end of its group. Units outside MEDIA/UNITS/<group>/ are
+// `base` with the mods' units, `units` in increasing precedence (the last wins; see
+// unit_cache.h UnitPathsByPriority). A unit whose file is also a base unit's (same path) takes that
+// entry's place; one whose GUID another entry has replaces it; any other goes to the end of its
+// group. Units outside MEDIA/UNITS/<group>/ are
 // left out and listed in `skipped`.
 UnitIndex MergeUnitIndex(const UnitIndex& base, const std::vector<UnitEntry>& units,
                          std::vector<std::u16string>* skipped);

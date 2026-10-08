@@ -95,6 +95,17 @@ inline constexpr GuestFunction kFree{0x821CD9A8, Confidence::kConfirmed};
 inline constexpr GuestFunction kAddMod{0x823AA550, Confidence::kConfirmed};
 // [confirmed] Active mods (CMod +192 set and +196 >= 0): r3 = manager.
 inline constexpr GuestFunction kActiveModCount{0x823AAC48, Confidence::kConfirmed};
+// [confirmed] Finds a file in the mods: r3 = std::wstring* result (the file's full path, empty when
+// no mod has it), r4 = manager, r5 = const std::wstring* request, r6/r7 = outputs filled from the
+// mod that has it (+52, +8). Walks the list in order, skipping mods with a negative priority
+// (@0x823AA9F4) or inactive (@0x823AAA14), finds the request in each mod's file map (+36,
+// sub_82328620 @0x823AAA38: exact comparison, sub_821A1478) and returns the first match's path
+// (@0x823AAA50). The map's keys are the files' paths inside the mod as the folder listing spells
+// them (sub_823AA340 removes the mod folder's length @0x823AA448..@0x823AA454; the listing
+// sub_823A0B30 puts '/' between folders, 0x820007C8 @0x823A0BC0): the names on the player's disk.
+// Its only caller is the data manager's sub_8239D0E8 (@0x8239D164). PC indexes its list by
+// PRIORITY (0x5CE85B..0x5CE8D2) and takes the first match too: the lowest PRIORITY wins.
+inline constexpr GuestFunction kModFileLookup{0x823AA988, Confidence::kConfirmed};
 
 namespace mod {
 // [confirmed] A CMod (vtable 0x820D30AC, RTTI .?AVCMod@@), as sub_823A9EA0 builds it.

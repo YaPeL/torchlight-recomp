@@ -32,11 +32,12 @@ struct ModUnitFile {
 };
 
 // The enabled mods' unit definitions (*.dat under media/units/, any case), in the plan's
-// registration order (increasing priority). Disabled mods are left out.
+// registration order: the game's search order, where the first mod that has a file wins (the
+// lowest PRIORITY, as on PC; guest_abi/mods.h kModFileLookup). Disabled mods are left out.
 std::vector<ModUnitFile> ScanModUnitFiles(const std::filesystem::path& mods_folder, const ModPlan& plan);
 
-// The distinct game paths the mods define units at, ordered by the priority of the highest mod
-// that has each (so merging in this order lets the highest priority win).
+// The distinct game paths the mods define units at, the ones whose winning mod comes first in the
+// search order last (so merging in this order lets that mod's unit win a GUID clash).
 std::vector<std::u16string> UnitPathsByPriority(const std::vector<ModUnitFile>& files);
 
 // What identifies the base game: a digest of the pak's central directory (each entry's name, size

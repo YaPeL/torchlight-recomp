@@ -62,7 +62,7 @@ int main() {
         "game paths upper case, in priority order");
   const auto paths = UnitPathsByPriority(files);
   Check(paths.size() == 2 && paths[0] == u"MEDIA/UNITS/MONSTERS/BAT.DAT" && paths[1] == u"MEDIA/UNITS/ITEMS/AXE.DAT",
-        "a path ranks by the highest mod that has it");
+        "a path ranks by the first mod that has it; the first mod's paths last");
 
   // The key: the mods' files, the base and the version; nothing else.
   const std::string key = UnitCacheKey(files, 1);

@@ -67,6 +67,7 @@ set(TORCHLIGHT_SOURCES
     src/game_menu/mods_install.cpp
     # The mods' units in the game's unit index (guest calls; the format and cache are torchlight_mods).
     src/mods/unit_index_install.cpp
+    src/mods/mod_files_install.cpp
     src/game_menu/save_import_menu.cpp
     src/game_menu/save_indicator.cpp
     src/game_menu/video_menu.cpp

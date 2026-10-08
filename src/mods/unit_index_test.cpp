@@ -111,14 +111,14 @@ int main() {
         Unit(-2, u"SWORD", u"media/units/items/sword.dat", 40, true),    // overrides the sword
         Unit(500, u"AXE", u"MEDIA/UNITS/ITEMS/MOD/AXE.DAT", 3, true),    // new
         Unit(600, u"NEWBAT", u"MEDIA/UNITS/MONSTERS/MOD/BAT2.DAT"),      // new monster
-        Unit(500, u"AXE2", u"MEDIA/UNITS/ITEMS/MOD2/AXE.DAT", 5, true),  // same GUID, higher priority
+        Unit(500, u"AXE2", u"MEDIA/UNITS/ITEMS/MOD2/AXE.DAT", 5, true),  // same GUID, later: wins
         Unit(700, u"X", u"MEDIA/OTHER/X.DAT"),                           // outside
     };
     const UnitIndex merged = MergeUnitIndex(base, mods, &skipped);
     Check(merged.groups[0].size() == 3, "items: two base entries and one new");
     Check(merged.groups[0][0].level == 40 && merged.groups[0][0].file == u"media/units/items/sword.dat",
           "the overriding file takes the base entry's place");
-    Check(merged.groups[0][2].name == u"AXE2", "a GUID clash: the higher priority mod's entry");
+    Check(merged.groups[0][2].name == u"AXE2", "a GUID clash: the later (winning) unit's entry");
     Check(merged.groups[1].size() == 2 && merged.groups[1][1].guid == 600, "new monster at its group's end");
     Check(skipped.size() == 1 && skipped[0] == u"MEDIA/OTHER/X.DAT", "outside: skipped and listed");
     Check(MergeUnitIndex(base, {}, nullptr).groups == base.groups, "no mods: the base unchanged");
