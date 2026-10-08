@@ -228,6 +228,21 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     Windows: the keyboard drives the menus. Not specific to any GPU. Candidate for an upstream
     report to ReXGlue.
 
+20. `rexglue-vfs-wildcard-dos-semantics.patch`: the VFS wildcard (`WildcardEngine`, used by the
+    guest's directory queries) read `*.*` as "the name contains a dot", so a find with `*.*` never
+    returned names without one, folders among them. Windows and the Xbox (FindFirstFile) treat
+    `*.*` as every name. Torchlight lists each mod's folder recursively with `*.*` and finds the
+    subfolders with `<folder>/*.*` (sub_823AA340, sub_823A1010): no subfolder of a mod was ever
+    seen, so only the files at a mod's root were in the game's map of its files and every `.DAT`
+    under `media/` was invisible (docs/mods.md, section 7f). Now a pattern ending in `.*` also
+    matches a name without a dot when its stem does (`*.*` matches everything, `a*.*` matches
+    `abc`), and a pattern ending in `.` matches only names without a dot (`*.` matches `media`);
+    the rest is unchanged (`*`, `*.dat`, `?`, exact names, a bare `.*`). The game's other recursive
+    listings (the save menu's `SAVE:\` with `*`, menus) list folders without subfolders, and its
+    build tools behind `COMPRESS` do not run. Test: `tests/unit/core/filesystem_wildcard_test.cpp`
+    in the SDK's `unit_tests`. Not specific to any GPU or platform. Candidate for an upstream
+    report to ReXGlue.
+
 ## Known gaps, not patched
 
 - **`RtlUnwind` is a stub** (the kernel logs `[STUB] RtlUnwind called - not implemented`). A guest

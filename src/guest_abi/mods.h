@@ -100,9 +100,12 @@ inline constexpr GuestFunction kActiveModCount{0x823AAC48, Confidence::kConfirme
 // mod that has it (+52, +8). Walks the list in order, skipping mods with a negative priority
 // (@0x823AA9F4) or inactive (@0x823AAA14), finds the request in each mod's file map (+36,
 // sub_82328620 @0x823AAA38: exact comparison, sub_821A1478) and returns the first match's path
-// (@0x823AAA50). The map's keys are the files' paths inside the mod as the folder listing spells
-// them (sub_823AA340 removes the mod folder's length @0x823AA448..@0x823AA454; the listing
-// sub_823A0B30 puts '/' between folders, 0x820007C8 @0x823A0BC0): the names on the player's disk.
+// (@0x823AAA50). The map's keys are the files' paths inside the mod (sub_823AA340 removes the mod
+// folder's length @0x823AA448..@0x823AA454), upper case with '/' between folders (as a run's
+// diagnostics showed: "MOD.DAT" -> "TLMODS:/TL_TEST_NEW_ITEM/MOD.DAT"), listed recursively with
+// "*.*" (sub_823A0B30; subfolders through sub_823A1010 with "/*.*", 0x820D2F30): the runtime's
+// wildcard must match names without a dot there, as Windows and the Xbox do (patches/README.md,
+// rexglue-vfs-wildcard-dos-semantics.patch), or no subfolder of a mod is ever seen.
 // Its only caller is the data manager's sub_8239D0E8 (@0x8239D164). PC indexes its list by
 // PRIORITY (0x5CE85B..0x5CE8D2) and takes the first match too: the lowest PRIORITY wins.
 inline constexpr GuestFunction kModFileLookup{0x823AA988, Confidence::kConfirmed};
