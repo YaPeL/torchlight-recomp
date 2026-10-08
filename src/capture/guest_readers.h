@@ -33,6 +33,21 @@ commands::SetVertexDeclaration CaptureVertexDeclaration(const uint8_t* m, uint32
 // Current vertex buffer binding (ids only).
 commands::SetVertexBuffers ReadVertexBufferBinding(const uint8_t* m, uint32_t binding);
 
+// The elements of a vertex declaration, as the guest stores them (enums mapped, no session).
+std::vector<commands::VertexElement> ReadVertexElements(const uint8_t* m, uint32_t declaration);
+
+// The vertex buffer a binding sets on `stream`, or 0.
+uint32_t BoundVertexBuffer(const uint8_t* m, uint32_t binding, uint32_t stream);
+
+// Where a vertex buffer's content is for the active device: its guest virtual address, size and
+// the vertex fetch swap mode (commands::BlobEndian::kVertexFetch). Nothing for buffers without a
+// device resource or out of range.
+struct GuestVertexMemory {
+  uint32_t address = 0, size = 0;
+  uint8_t fetch_endian = 0;
+};
+std::optional<GuestVertexMemory> VertexBufferMemory(const uint8_t* m, uint32_t buffer);
+
 // Draw recorded after the guest D3D9 _render ran (buffers already uploaded).
 // `live_keys` receives the live content key of each buffer snapshot (vertex buffers, then the
 // index buffer), see Session::DrawEvent.
