@@ -41,7 +41,9 @@ constexpr uint64_t kReportWalks = 600;  // the log line's period, in main walks
 bool g_enabled = false;           // InstallBucketCull: native mode and the cvar
 bool g_programs_ok = true;        // every vertex program seen places vertices as the fixed pipeline
 bool g_main_walk = false;         // inside _findVisibleObjects for the scene viewport
-Planes g_planes{};                // that walk's frustum
+Planes g_planes{};                // that walk's frustum, read at its first bucket
+uint32_t g_walk_camera = 0;       // that walk's camera
+bool g_planes_read = false;       // g_planes holds this walk's planes
 BucketBoxes g_boxes;
 BucketCullStats g_stats;
 
@@ -94,6 +96,13 @@ std::optional<Box> ComputeBucketBox(const uint8_t* m, uint32_t bucket) {
 bool OutsideMainCamera(const uint8_t* m, uint32_t renderable) {
   if (abi::ReadU32(m, renderable) != sg::geometry_bucket::kVtable) return false;
   ++g_stats.buckets_tested;
+  // The walk brings the camera's planes up to date first (0x821A6070 asks the camera for a
+  // frustum plane, slot 91, @0x821A60C8, before walking); read them when the first bucket arrives,
+  // not before the walk, when they are still the previous frame's.
+  if (!g_planes_read) {
+    g_planes = ReadPlanes(m, g_walk_camera);
+    g_planes_read = true;
+  }
   const Box* local = g_boxes.Find(renderable);
   if (!local) {
     const auto box = ComputeBucketBox(m, renderable);
@@ -156,7 +165,8 @@ REX_FUNC(sub_821A6070) {
   g_main_walk = viewport && viewport == SceneViewport();
   if (g_main_walk) {
     ++g_stats.main_walks;
-    g_planes = ReadPlanes(base, camera);
+    g_walk_camera = camera;
+    g_planes_read = false;
   }
   __imp__sub_821A6070(ctx, base);
   if (g_main_walk && g_enabled && g_stats.main_walks == kReportWalks) {
