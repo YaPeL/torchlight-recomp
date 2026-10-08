@@ -61,6 +61,7 @@ Other topics:
 | `-mcmodel=large` on Linux | Still forced for the SDK and every consumer target | Propose an opt-out |
 | `*.*` in the wildcard engine | Same as patch 20 | See patch 20 |
 | `non_volatile_as_local` with `setjmp` (D21) | The generated `setjmp` saves only `ctx`; the localized r14-r31 are lost across a `longjmp` | Issue, for when we want that flag |
+| `non_argument_as_local` and values passed in r11/r12 (D26) | The funclets' frame in r12 and the stack probe's size are lost: deadlock seen | Issue, with fix directions |
 | `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
 | `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
@@ -688,6 +689,51 @@ Possible directions:
 run. We have not enabled the flag.)
 
 ---
+### D26. Codegen: `non_argument_as_local` drops values passed in r12 (and r11) outside the ABI
+
+From the render work's step E (2026-10-08). The codegen rules were checked here on `bd833a2`; the
+deadlock was seen there on `0c7b01a`.
+
+**Issue: `[Codegen]: non_argument_as_local breaks SEH funclets and stack probes that take r12`**
+
+`non_argument_as_local` makes r0, r2, r11 and r12 C++ locals in every function
+(`BuilderContext::r`, `src/codegen/builders/context.cpp`). That assumes no callee reads them on
+entry. MSVC's Xbox 360 code breaks that assumption in two places:
+
+- **`__try`/`__finally` funclets get their owner's frame in r12.** The owner sets r12 right before
+  the `bl`, and the funclet starts with `addi r31,r12,-N`. Example from a title, generated:
+
+      // addi r31,r12,-112
+      ctx.r31.s64 = ctx.r12.s64 + -112;
+
+  With the flag, r12 is a local in the owner and in the funclet. The funclet reads its own
+  uninitialised local and computes a wrong frame. `share_registers` does not help: it exempts only
+  r14-r31 from localization, and the copy through `ctx` around the call (`ctx.r{i} = r{i}` before,
+  back after) covers only those registers.
+- **The stack probe (`__chkstk`-like) takes the allocation size in r12**:
+  `neg r11,r12` at entry. Some other functions also read r11 set by their caller.
+
+Seen in Torchlight: 88 functions start with `r31 = r12 - N`. With `reserved`, `xer`, `ctr`, `cr`,
+`non_volatile` and `non_argument_as_local` on, the game deadlocks about 3 s after start:
+- three guest threads wait in `RtlEnterCriticalSection`, entered from the CRT heap functions;
+- the funclets that should run `_unlock` in their `__finally` read a wrong frame;
+- the same build without `non_argument_as_local` starts.
+
+**Possible fixes** (any one):
+- Do not localize r11/r12 in functions that call a `share_registers` function, nor in the funclets
+  themselves; and copy them through `ctx` around such calls, as is done for r14-r31.
+- Treat r11 and r12 as live-in for any callee that reads them before writing them. The function
+  graph can see that from the callee's first instructions. It covers the stack probe and the
+  caller-set r11 cases too.
+- At least, document that the flag is unsafe for MSVC code with SEH or large stack frames.
+
+The non-volatile save and restore helpers are already elided under `non_volatile_as_local`, so they
+are not affected.
+
+We keep `non_argument_as_local` off.
+
+---
+
 ### D22. Codegen: `fctiw`/`fctid` ignore the rounding mode on ARM64
 
 The macOS port found it by reading the code (`docs/macos-port.md` on `docs/macos-port-plan`,
