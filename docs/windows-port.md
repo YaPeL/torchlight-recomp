@@ -489,8 +489,11 @@ Pending checks found in the first runs (WIN.5):
 10. **After the beta: Linux without OpenGL 3.3.** `platform::CanCreateGl33Context` returns true on
     Linux without probing (GL3+ is the only render system there), so without OpenGL 3.3 the game
     crashes in OGRE instead of telling the player why.
-11. **After the beta: `ui_pass_test` and `render_scale_test` on Direct3D 11 on Windows,** so CI's
-    runner (no GPU, WARP for D3D11) runs them; today `test-windows` leaves them out.
+11. **Done 2026-10-07: `ui_pass_test` and `render_scale_test` on Direct3D 11 on Windows.** They take
+    the render system from their command line (`backend/test_render_system.h`, also `--gpu=ID`)
+    and are registered twice on Windows: GL3+ (label `opengl33`, left out on the runners) and
+    `<name>_d3d11`, which the runners run on WARP. Checked here on GL3+, on Direct3D 11 with the
+    GPU, and on Direct3D 11 forced to WARP (`--gpu=` the Microsoft Basic Render Driver's id).
 
 ## Integration into main
 
