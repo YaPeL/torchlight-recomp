@@ -35,6 +35,11 @@ struct KnownUnits {
 KnownUnits MakeKnownUnits(const std::optional<UnitIndex>& base, const std::vector<int64_t>& mod_guids,
                           bool mods_complete, const std::string& mods_why = {});
 
+// The units of the index the game loads (the merged index when mods' units made it in, the Xbox
+// one otherwise): exactly what it can resolve. A mod's unit that did not get into it is unknown,
+// whatever its definition says.
+KnownUnits KnownUnitsOfIndex(const UnitIndex& loaded);
+
 struct RemovedUnit {
   std::string path;  // e.g. "player/items/item"
   std::string name;  // the save's own text for it, when it has one

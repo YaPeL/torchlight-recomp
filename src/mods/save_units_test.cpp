@@ -111,6 +111,18 @@ int main() {
     const auto via_mods = CheckCharacterFile(*schema, x360, MakeKnownUnits(IndexWith(base), {kMod}, true));
     Check(via_mods.result == UnitCheck::Result::kClean, "a mod's GUID counts as known");
   }
+  // A mod defines kMod but its unit did not get into the index the game loads (e.g. the game
+  // could not load the definition): to the game, and so to the check, it is unknown.
+  {
+    UnitIndex loaded = IndexWith(base);  // the merged index as built: kMod missing
+    const auto check = CheckCharacterFile(*schema, x360, KnownUnitsOfIndex(loaded));
+    Check(check.result == UnitCheck::Result::kRemoved && check.removed.size() == 1 && check.removed[0].guid == kMod,
+          "a mod's unit missing from the loaded index is removed, whatever its definition says");
+    loaded.groups[0].push_back({});
+    loaded.groups[0].back().guid = kMod;
+    Check(CheckCharacterFile(*schema, x360, KnownUnitsOfIndex(loaded)).result == UnitCheck::Result::kClean,
+          "once in the loaded index it is kept");
+  }
   // Safeguards: nothing is removed.
   {
     const auto incomplete = CheckCharacterFile(*schema, x360, MakeKnownUnits(IndexWith(base), {}, false, "a mod unreadable"));

@@ -68,6 +68,8 @@ KnownUnits MakeKnownUnits(const std::optional<UnitIndex>& base, const std::vecto
   return known;
 }
 
+KnownUnits KnownUnitsOfIndex(const UnitIndex& loaded) { return MakeKnownUnits(loaded, {}, true); }
+
 UnitCheck RemoveUnknownUnits(si::Parsed& parsed, const KnownUnits& known) {
   UnitCheck check;
   Parents parents;

@@ -1,6 +1,8 @@
 #include "mods/unit_index_install.h"
 
 #include <chrono>
+#include <fstream>
+#include <iterator>
 #include <cstdlib>
 #include <memory>
 #include <optional>
@@ -23,6 +25,7 @@
 #include "guest_abi/game_ui.h"
 #include "guest_abi/mods.h"
 #include "guest_abi/unit_index.h"
+#include "mods/save_units_install.h"
 #include "mods/unit_cache.h"
 #include "mods/unit_index.h"
 #include "save_import/pak.h"
@@ -288,8 +291,29 @@ namespace {
 // The game's unit index loader (guest_abi/unit_index.h kLoadIndex): with mods' units, our index
 // is built if needed and loaded in place of the Xbox file, by a name under tlunits: (added as a
 // resource location once the file exists, since locations are indexed when added).
+// The saves checked against the index the game is about to load (save_units_install.h), when
+// that check waits for it: the merged index in the cache, or the Xbox one.
+void CheckSaves(bool merged) {
+  if (!SavesAwaitLoadedIndex()) return;
+  std::string error;
+  std::optional<UnitIndex> loaded;
+  if (merged) {
+    std::string log;
+    if (const auto path = FindCachedUnitIndex(g.folder, g.key, &log)) {
+      std::ifstream in(*path, std::ios::binary);
+      const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
+      loaded = ParseUnitIndex(bytes, &error);
+    }
+  } else {
+    loaded = ReadPakUnitIndex(g.pak, &error);
+  }
+  if (!loaded) REXLOG_ERROR("mods: the unit index to load could not be read for the saves' check ({})", error);
+  CheckSavesAgainstLoadedIndex(loaded);
+}
+
 void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
   if (!g.active) {
+    CheckSaves(false);
     __imp__sub_823296D0(ctx, base);
     return;
   }
@@ -324,6 +348,7 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
       }
     }
   }
+  CheckSaves(our_path != 0);
   ctx.r3.u64 = index;
   ctx.r4.u64 = our_path ? our_path : original_path;
   __imp__sub_823296D0(ctx, base);
