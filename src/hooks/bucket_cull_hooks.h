@@ -19,6 +19,8 @@ bool BucketCulledInMainWalk(const uint8_t* base, uint32_t renderable);
 struct BucketCullStats {
   uint64_t main_walks = 0, buckets_tested = 0, buckets_dropped = 0, buckets_unreadable = 0;
   uint64_t buckets_no_node = 0, buckets_stale_transform = 0;  // queued untested
+  uint64_t shapes_built = 0, pieces_built = 0;  // bucket shapes computed (first use) this period
+  double shape_ms = 0;                          // and the time spent computing them
 };
 
 }  // namespace torchlight::hooks

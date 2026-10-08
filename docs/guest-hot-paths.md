@@ -121,8 +121,10 @@ of the level, and `Region::_updateRenderQueue` queues every `GeometryBucket` of 
 material and vertex format, vtable `0x820016B4`) with no test of its own. In the fight 54-58 % of
 the queued buckets lie entirely outside the screen, and they are 86-99 % of the draws that do not
 reach it (session replay, coverage with face culling, depth test and fragment discard off, joined
-with the renderable and owner of each draw logged in the game). In the town square the draws
-outside the screen are mostly not buckets (town buildings); the improvement does nothing there.
+with the renderable and owner of each draw logged in the game). In the town square the buckets
+are the problem too, but one box per bucket does not catch them: a bucket gathers every piece of
+one material in its region (the same building texture on buildings all around the square), and
+its box touches the frustum even when every piece is off screen.
 
 `--native_bucket_cull` (native mode only, on by default; `=false` restores the game's behaviour)
 gives each bucket its own box, computed once from all the vertices of its vertex data in the
@@ -130,14 +132,20 @@ region's space and forgotten in `~GeometryBucket` (`0x8247F728`), brings it to w
 each test with the region node's current transform, and during the walk of the scene's viewport
 does not queue the buckets entirely outside the camera's six planes (`hooks/bucket_cull.h`). Other
 cameras (the light map and shadow passes), other scene managers and other renderables are
-untouched. Every vertex program in our captures places vertices with the RTSS's fixed transform or
+untouched. With `--native_bucket_cull_pieces` (on by default; `=false` keeps one box per bucket)
+a bucket also gets one box per piece, the connected components of its triangles, grouped by
+nearness to at most 16 (`kMaxPiecesPerBucket`, which bounds the tests per bucket and frame), and
+is dropped when no piece is inside the frustum. The pieces are built on first use, not at level
+load: 593 shapes (8776 pieces) in 51 ms in total on entering the town square, within the loading
+frames. Every vertex program in our captures places vertices with the RTSS's fixed transform or
 its hardware skinning; a vertex program that writes the position any other way turns the culling
 off for the session (logged).
 
 Validation: sessions recorded with the culling off but logging what it would drop; on sampled
 frames of the fight and the town square, the frame replayed without those draws is identical to
 the whole frame at 16:9 (4 frames), 21:9 (6) and 32:9 (6), and every dropped draw is outside the
-screen by the coverage probe. The guest camera's frustum follows the wider frames (other aspect
+screen by the coverage probe. Per piece, the same at 16:9 (19 frames), 21:9 (19) and 32:9 (16),
+with the dropped draws matched by geometry (vertex buffer and index range), up to 113 per frame. The guest camera's frustum follows the wider frames (other aspect
 ratios change the guest's video mode, not our projection). Measurement in
 `docs/performance-profile.md`, "Bucket culling".
 
@@ -156,3 +164,47 @@ whether or not they are read. Measured on Torchlight's generated code: 903 x86 i
 locals within a function and write back only the live ones at calls and returns; set the CR bits
 lazily or only the ones a later branch reads; and compile the generated code with the default code
 model on Linux when the text fits.
+
+## Codegen options (2026-10-08)
+
+The ReXGlue SDK at our base (`0c7b01a`) can keep some PPC registers in C++ locals of each
+generated function instead of `PPCContext` (manifest keys under `[entrypoint]`). What each one
+assumes, read from the SDK's code generator (`src/codegen/builders/context.cpp`,
+`control_flow.cpp`, `system.cpp`):
+
+| Option | Moves to locals | Assumption | State |
+|---|---|---|---|
+| `reserved_as_local` | the `lwarx`/`stwcx.` reservation | both in the same function | on |
+| `xer_as_local` | carry and overflow | not live across a call | on |
+| `ctr_as_local` | the count register (loops, `bctr`) | not live across a call | on |
+| `cr_as_local` | cr0-cr7 | the ABI passes no CR between functions; a function split wrongly by the analysis would lose it at the cut | on |
+| `non_volatile_as_local` | r14-r31, f14-f31, v14 and up; drops every call to `__savegprlr_N`/`__restgprlr_N`/`__savefpr_N`/... | no hook reads a caller's preserved registers through `ctx`; a host `longjmp` only restores `ctx` | off: hooks read `ctx.r28`, `ctx.r29`, `ctx.f30` of their caller |
+| `non_argument_as_local` | r0, r2, r11, r12, f0, v32-v63 | nothing passes them between functions | off: the game passes the save area in `r12` to `__savefpr_N`/`__savevmx_N` (1,046 call sites), which only `non_volatile_as_local` elides; the two go together |
+| `skip_lr` | stops writing `ctx.lr` at calls and `mflr` | nobody reads LR | off: 15 hook reads of `ctx.lr`, and the game's one `blrl` jumps to `ctx.lr` |
+| `skip_msr` | drops `mtmsrd`/`mfmsr` | no critical sections through the MSR | off: the global lock behind them is used at 372 sites |
+
+The four that are on, validated with the game (the 60 tests, a run in the emulated GPU mode, a
+10-minute varied session in the native mode with the log and an achievement checked, and the
+same saved game loaded and saved again by develop twice and by this build once: the saves differ
+no more between the builds than between the two develop runs, only in AI state, positions and
+level timers). The replays do not run guest code and only checked that nothing else changed.
+
+Effect: the recompiled code goes from 52.1 to 44.7 MiB (-14 %; `0x821C5FA0` from 3,211 to 2,775
+x86 instructions), almost all of it from `cr_as_local` (`reserved` changes nothing, `xer` -2 %,
+`ctr` -0.6 %). The frame rate hardly moves (fixed-floor saved game, step overlay, draw skip on,
+two runs each):
+
+| | develop | Codegen options |
+|---|---|---|
+| Fight, FPS | 140.4, 143.5 | 140.6, 145.2 |
+| Fight, p99 (1 % low) | 11.68, 10.52 ms (85.6, 95.1) | 9.70, 10.35 ms (103.1, 96.6) |
+| Town square, FPS | 110.9, 119.3 | 114.0, 117.5 |
+| Town square, p99 (1 % low) | 12.03, 11.70 ms (83.1, 85.5) | 11.92, 11.60 ms (83.9, 86.2) |
+
+About +0.7 % on average, inside the run-to-run spread. The fight's 1 % low is set by the guest's
+first-use loads of effects (55-80 ms frames that load textures), which depend on what the monsters
+do; in the first codegen run they did not cast, so its 103.1 is not comparable. What the options
+remove are mostly stores of CR bytes and counters to the context, which land in the L1 cache and
+rarely stall: fewer instructions, not much less time. The larger cost the profile shows, the
+register save and restore helpers (4.6 % of the main thread) and the reloads of preserved
+registers after every call, is what `non_volatile_as_local` would remove.

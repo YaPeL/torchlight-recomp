@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <vector>
 
 #include "hooks/bucket_cull.h"
 
@@ -85,8 +86,47 @@ int main() {
   Check(!PlacesVertexLikeFixedPipeline(moved_output), "output position written again");
   Check(!PlacesVertexLikeFixedPipeline("float4 main() { return mul(m, p); }"), "anything else");
 
+  // Two triangles far apart on both sides of the cube frustum: the whole box crosses it, no
+  // piece does.
+  const std::vector<std::array<float, 3>> pos{{-30, 0, 0}, {-29, 1, 0}, {-29, 0, 1},
+                                              {30, 0, 0},  {31, 1, 0},  {31, 0, 1}};
+  const std::vector<uint32_t> two{0, 1, 2, 3, 4, 5};
+  const Matrix identity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+  auto split = BuildShape(pos, two, true);
+  Check(split && split->pieces.size() == 2, "two pieces");
+  Check(split && !ShapeVisible(cube, *split, identity), "every piece outside: dropped");
+  auto single = BuildShape(pos, two, false);
+  Check(single && single->pieces.empty() && ShapeVisible(cube, *single, identity),
+        "pieces off: the whole box keeps it");
+  const Matrix to_centre{1, 0, 0, 30, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};  // moves the left one in
+  Check(split && ShapeVisible(cube, *split, to_centre), "one piece inside: kept");
+  const std::vector<uint32_t> shared{0, 1, 2, 2, 1, 3};
+  auto joined = BuildShape(pos, shared, true);
+  Check(joined && joined->pieces.empty(), "triangles sharing vertices are one piece");
+  Check(!BuildShape(pos, std::vector<uint32_t>{0, 1, 9}, true), "an index past the vertices");
+
+  // 40 separate triangles along x, at most 16 boxes, each triangle inside one of them.
+  std::vector<std::array<float, 3>> row;
+  std::vector<uint32_t> row_indices;
+  for (int t = 0; t < 40; ++t) {
+    const float x = float(t * 10);
+    for (auto v : {std::array<float, 3>{x, 0, 0}, {x + 1, 1, 0}, {x + 1, 0, 1}}) {
+      row_indices.push_back(uint32_t(row.size()));
+      row.push_back(v);
+    }
+  }
+  auto capped = BuildShape(row, row_indices, true);
+  Check(capped && capped->pieces.size() == kMaxPiecesPerBucket, "capped pieces");
+  bool covered = capped.has_value();
+  for (int t = 0; capped && t < 40; ++t) {
+    bool in = false;
+    for (const Box& b : capped->pieces) in = in || (b.min[0] <= t * 10.0f && b.max[0] >= t * 10.0f + 1);
+    covered = covered && in;
+  }
+  Check(covered, "every piece inside a grouped box");
+
   BucketBoxes boxes;
-  boxes.Store(0x1000, At(0, 0, 0, 1));
+  boxes.Store(0x1000, BucketShape{At(0, 0, 0, 1), {}});
   Check(boxes.Find(0x1000) && !boxes.Find(0x2000), "found by bucket");
   boxes.Forget(0x1000);
   Check(!boxes.Find(0x1000), "forgotten when the bucket is destroyed");
