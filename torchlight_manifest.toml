@@ -9,4 +9,11 @@ game_root = "../360tools/extracted/extracted"
 file_path = "../360tools/extracted/extracted/default.xex"
 out_directory_path = "generated/default"
 includes = ["config/torchlight_functions.toml"]
+# Codegen options (docs/guest-hot-paths.md, "Codegen options"): these registers live in C++ locals
+# of each function instead of the context. Validated with the game; non_volatile_as_local,
+# non_argument_as_local, skip_lr and skip_msr stay off (see there).
+reserved_as_local = true
+xer_as_local = true
+ctr_as_local = true
+cr_as_local = true
 
