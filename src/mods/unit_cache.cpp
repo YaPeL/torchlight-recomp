@@ -186,6 +186,8 @@ std::optional<fs::path> FindCachedUnitIndex(const fs::path& folder, const std::s
   return std::nullopt;
 }
 
+std::string IncompleteUnitIndexName(const std::string& key) { return key + "-incomplete"; }
+
 bool StoreCachedUnitIndex(const fs::path& folder, const std::string& key, const UnitIndex& index,
                           std::string* error) {
   std::error_code ec;

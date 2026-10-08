@@ -58,6 +58,7 @@ struct State {
   bool located = false;     // tlunits: added as a resource location
   std::filesystem::path folder, pak;
   std::string key;
+  std::string name;  // the cached index loaded: the key, or IncompleteUnitIndexName when units were left out
   std::vector<std::u16string> unit_paths;  // the mods' unit definitions, by priority
 };
 State g;
@@ -190,18 +191,24 @@ void BuildIndex(GuestCall& call) {
     return;
   }
   std::vector<UnitEntry> units;
+  size_t left_out = 0;
   for (const std::u16string& path : g.unit_paths) {
     std::string why;
     if (auto e = ReadUnit(call, path, &why)) {
       units.push_back(std::move(*e));
     } else {
+      ++left_out;
       REXLOG_WARN("mods: unit {} left out: {}", save_import::Utf8(path), why);
     }
   }
   std::vector<std::u16string> skipped;
   const UnitIndex merged = MergeUnitIndex(*base_index, units, &skipped);
   for (const auto& path : skipped) REXLOG_WARN("mods: unit {} is outside MEDIA/UNITS/<group>/", save_import::Utf8(path));
-  if (!StoreCachedUnitIndex(g.folder, g.key, merged, &error)) {
+  // Units left out may be read next time (a fault of ours or of the moment, not of the mod's files,
+  // which the key covers): such an index serves this start only.
+  g.name = left_out ? IncompleteUnitIndexName(g.key) : g.key;
+  if (left_out) REXLOG_WARN("mods: {} mods' units left out; the index is built again at the next start", left_out);
+  if (!StoreCachedUnitIndex(g.folder, g.name, merged, &error)) {
     REXLOG_ERROR("mods: cannot store the unit index ({}); mods' units left out", error);
     return;
   }
@@ -270,6 +277,7 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
   g.unit_paths = UnitPathsByPriority(files);
   g.key = UnitCacheKey(files, *identity);
   std::string log;
+  g.name = g.key;
   g.ready = FindCachedUnitIndex(g.folder, g.key, &log).has_value();
   if (!log.empty()) REXLOG_WARN("mods: {}", log);
   std::error_code ec;
@@ -299,7 +307,7 @@ void CheckSaves(bool merged) {
   std::optional<UnitIndex> loaded;
   if (merged) {
     std::string log;
-    if (const auto path = FindCachedUnitIndex(g.folder, g.key, &log)) {
+    if (const auto path = FindCachedUnitIndex(g.folder, g.name, &log)) {
       std::ifstream in(*path, std::ios::binary);
       const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
       loaded = ParseUnitIndex(bytes, &error);
@@ -332,7 +340,7 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
     }
     if (g.ready && g.located) {
       // On the guest heap: the scratch area is below the stack pointer the loader will use.
-      const std::u16string name = std::u16string(g.key.begin(), g.key.end()) + u".RAW";
+      const std::u16string name = std::u16string(g.name.begin(), g.name.end()) + u".RAW";
       our_text = call.Call(mods_abi::kAlloc.address, {0, static_cast<uint32_t>(2 * (name.size() + 1))});
       our_path = call.Call(mods_abi::kAlloc.address, {0, abi::ogre::stl_string::kSize.bytes});
       if (our_text && our_path) {

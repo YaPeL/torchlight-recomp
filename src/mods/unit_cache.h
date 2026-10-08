@@ -20,8 +20,9 @@
 
 namespace torchlight::mods {
 
-// Bumped whenever what goes into a cached index changes (how entries are read or merged).
-inline constexpr uint32_t kUnitIndexVersion = 2;
+// Bumped whenever what goes into a cached index changes (how entries are read or merged); 3: indexes
+// built with units left out were cached under the key (IncompleteUnitIndexName).
+inline constexpr uint32_t kUnitIndexVersion = 3;
 
 // One unit definition a mod brings: the mod's folder, the path inside it as the game names it
 // ("MEDIA/UNITS/..."; upper case, '/') and a digest of its bytes.
@@ -59,6 +60,12 @@ std::string UnitCacheKey(const std::vector<ModUnitFile>& files, uint64_t base_id
 // (`log` says why) and none is returned, so the caller builds it again.
 std::optional<std::filesystem::path> FindCachedUnitIndex(const std::filesystem::path& folder,
                                                          const std::string& key, std::string* log);
+
+// The name an index is stored under instead of its key when some mod unit could not be read into
+// it (the game could not load the definition). FindCachedUnitIndex never finds it under the key, so
+// the next start builds the index again rather than keeping the units out for good; the next
+// StoreCachedUnitIndex removes it.
+std::string IncompleteUnitIndexName(const std::string& key);
 
 // Writes <folder>/<key>.RAW whole (a temporary file, flushed, renamed into place) and removes the
 // other cached indexes. False (with `error`) when it cannot.
