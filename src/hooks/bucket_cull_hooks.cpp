@@ -108,7 +108,14 @@ bool OutsideMainCamera(const uint8_t* m, uint32_t renderable) {
   const uint32_t lod = material ? abi::ReadU32(m, material + sg::material_bucket::kParent.offset) : 0;
   const uint32_t region = lod ? abi::ReadU32(m, lod + sg::lod_bucket::kParent.offset) : 0;
   const uint32_t node = region ? abi::ReadU32(m, region + sg::movable_object::kParentNode.offset) : 0;
-  if (!node || abi::ReadU8(m, node + sg::node::kCachedTransformOutOfDate.offset)) return false;
+  if (!node) {
+    ++g_stats.buckets_no_node;
+    return false;
+  }
+  if (abi::ReadU8(m, node + sg::node::kCachedTransformOutOfDate.offset)) {
+    ++g_stats.buckets_stale_transform;
+    return false;
+  }
   Matrix world;
   for (uint32_t i = 0; i < 16; ++i)
     world[i] = abi::ReadF32(m, node + sg::node::kCachedTransform.offset + 4 * i);
@@ -155,9 +162,11 @@ REX_FUNC(sub_821A6070) {
   if (g_main_walk && g_enabled && g_stats.main_walks == kReportWalks) {
     const double w = double(g_stats.main_walks);
     REXLOG_INFO("bucket culling: last {} main walks; per walk: {:.1f} buckets tested, {:.1f} "
-                "dropped, {:.1f} unreadable; {} boxes cached{}",
+                "dropped, {:.1f} unreadable, {:.1f} without a node, {:.1f} with a stale node "
+                "transform; {} boxes cached{}",
                 g_stats.main_walks, g_stats.buckets_tested / w, g_stats.buckets_dropped / w,
-                g_stats.buckets_unreadable / w, g_boxes.size(),
+                g_stats.buckets_unreadable / w, g_stats.buckets_no_node / w,
+                g_stats.buckets_stale_transform / w, g_boxes.size(),
                 g_programs_ok ? "" : " (off: a vertex program places vertices its own way)");
     g_stats = BucketCullStats{};
   }
