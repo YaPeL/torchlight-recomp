@@ -1,5 +1,7 @@
 #include "hooks/guest_path.h"
 
+#include <cctype>
+
 namespace torchlight::hooks {
 
 std::optional<std::string> WindowsSeparators(std::string_view path) {
@@ -16,6 +18,15 @@ std::optional<std::string> WindowsSeparators(std::string_view path) {
   }
   if (out == path) return std::nullopt;
   return out;
+}
+
+std::optional<std::string> ModsSearchPath(std::string_view path) {
+  static constexpr std::string_view kDevice = "tlmods:";
+  if (path.size() < kDevice.size()) return std::nullopt;
+  for (size_t i = 0; i < kDevice.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(path[i])) != kDevice[i]) return std::nullopt;
+  }
+  return WindowsSeparators(path);
 }
 
 }  // namespace torchlight::hooks

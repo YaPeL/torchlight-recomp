@@ -3,6 +3,15 @@
 // sub_82885858; NtOpenFile callers sub_8287DE58, sub_82882F58, sub_828835E8, sub_828836B8,
 // sub_82885778; NtQueryFullAttributesFile sub_82882D48) hand the whole path to the kernel
 // (RtlInitAnsiString), whose path resolution takes '/' and '\' alike.
+//
+// The search's '\'-only split is fixed for the mods' device only (hooks/find_file_hooks.cpp), not
+// for every path: the game's other searches with '/' are OGRE's recursive
+// FileSystemArchive::findFiles (OgreFileSystem.cpp:146-160 in 1.7.0, through _findfirst
+// sub_82862F80), which lists subfolders with "<dir>/*" and so never entered a subfolder on the
+// Xbox. Made global, it would (a run's diagnostics showed) start indexing
+// game:\RTShaderLib\materials\RTShaderSystem.material, which the Xbox game never loaded; the
+// other such searches (game:\music, game:\programs, tlhost:, SAVE: through sub_823A1010) have no
+// subfolders.
 
 #pragma once
 

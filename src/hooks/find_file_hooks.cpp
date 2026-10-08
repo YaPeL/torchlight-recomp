@@ -1,13 +1,13 @@
-// The guest's FindFirstFileA with Windows path semantics. The game, written for Windows, builds
-// some search paths with '/' (a mod's subfolders: its folder, kept with '/', plus "/*.*"); the Xbox
-// library's search splits the path only at '\' and fails without one (guest_abi xapi_files.h), so
-// no subfolder of a mod was ever listed. The path is given to the guest with '\' separators
-// (guest_path.h), copied below the stack pointer for the call; a path already so goes through as it
-// is. The guest's other file functions need nothing: the kernel takes both separators.
+// The guest's FindFirstFileA with Windows path semantics on the mods' device. The game, written for
+// Windows, builds a mod's subfolder search with '/' (its folder, kept with '/', plus "/*.*"); the
+// Xbox library's search splits the path only at '\' and fails without one, so no subfolder of a
+// mod was ever listed. A search on tlmods: is given its path with '\' separators (guest_path.h),
+// copied below the stack pointer for the call; any other search goes through as it is (guest_abi
+// xapi_files.h says why it is not global). The guest's other file functions need nothing: the
+// kernel takes both separators.
 //
-// With TORCHLIGHT_MODS_DIAGNOSTICS the searches go to the log: those on tlmods: and any whose path
-// the hook changed, as asked and as answered (status, then each entry's name and whether it is a
-// folder).
+// With TORCHLIGHT_MODS_DIAGNOSTICS the searches on tlmods: go to the log, as asked and as answered
+// (status, then each entry's name and whether it is a folder).
 
 #include <cstdint>
 #include <string>
@@ -80,7 +80,7 @@ extern "C" {
 
 REX_FUNC(sub_8287E0C8) {
   const std::string path = ReadCString(base, ctx.r3.u32, kMaxPath);
-  const auto windows = torchlight::hooks::WindowsSeparators(path);
+  const auto windows = torchlight::hooks::ModsSearchPath(path);
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   const uint32_t find_data = ctx.r4.u32;
   const uint32_t caller = uint32_t(ctx.lr);
