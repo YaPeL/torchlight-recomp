@@ -571,8 +571,9 @@ the guest code around the call, not traced.)
 Seen in Torchlight once per run at the main menu: a CRT `_wfopen` given an empty name returns NULL
 correctly, but the `__finally` that unlocks the CRT stream slot it reserved is skipped, so that
 `FILE` lock stays held by the thread (recursive, so the same thread is fine; another thread using
-that stream would block). We also saw one run where the stub was followed by an endless loop of
-guest access violations at a low address, which we did not analyse further.
+that stream would block). We also saw runs that ended in an endless loop of guest access
+violations at a low address. That loop is D25 (an unclaimed fault is retried forever), and nothing
+ties it to this stub.
 
 `generate_exception_handlers` does not help here: it calls `__finally` handlers when a *host*
 exception passes through the wrapper, while a local unwind is an ordinary call to `RtlUnwind`.
@@ -789,6 +790,13 @@ runs again and faults again, forever: a host crash becomes a hang at 100 % of a 
 crash report. The same happens with the early `return` on SIGBUS outside macOS
 (`assert_unhandled_case` does nothing in Release). It matters more on macOS, where its page
 handling can leave pages inaccessible that are accessible on Linux.
+
+This is also what happens to a guest access the guest memory cannot serve. In
+`Memory::AccessViolationCallback` (`src/system/xmemory.cpp`), an address outside the physical heaps
+logs `Unhandled guest access violation: read of guest 0x...` and returns `false`; then the
+callback above returns, the access runs again, and it logs again. Seen in Torchlight (a mod
+validation run, a guest read near address 0): 14 rotated 5 MB logs within seconds and a process
+that only `kill -9` ended. On a console that read is a crash.
 
 Reproduction against the installed SDK: in a forked child, install a handler that returns `false`,
 set `alarm(3)` and read address 16. The child is killed by SIGALRM after 3 s. It should be killed
