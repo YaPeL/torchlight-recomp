@@ -15,7 +15,7 @@ The Windows port (`docs/windows-port.md`) is the model: each area gives its stat
 | Area | State | Blocks? |
 |---|---|---|
 | ReXGlue SDK | Upstream builds `mac-arm64` (its CI, `macos-26`): SIMDe for VMX128, NEON and FPCR paths, a Darwin exception handler, 16 KB page handling. Never tested there: no SDK test runs in its CI | Yes: two ARM64 conversion bugs, the memory fences of the newer base |
-| Our patches | Generic or POSIX ones apply as they are; patch 18 (one SDL) probably needs macOS too | Yes (small) |
+| Our patches | Generic or POSIX ones apply as they are; patch 18 (one SDL) is not needed (MAC.1) | No |
 | x86-specific code | Almost all of it has an ARM64 path already; ours: one test flag, one `__linux__` block, the presets' `-march` | Small |
 | 16 KB pages | Handled by the SDK (views at 16 KB offsets, the 0xE0000000 +0x1000 shift on the host side, a host page reconcile); write watches have bugs, but the `null` plugin arms none | No for the native mode; `guest_abi` readers must translate (5.8) |
 | Render | GL3+ on Apple's OpenGL 4.1 (on Metal) works with today's backend; OGRE's Metal has no RTSS; Vulkan on MoltenVK is new in OGRE 14.6 | Yes: GL3+ is the first renderer |
@@ -103,10 +103,9 @@ MoltenVK) and fixes after them:
 | 3 `posix-wait-fraction`, 15 `shm-unlink-on-create` (`posix`) | Apply: `threading_posix.cpp` and `memory_posix.cpp` are macOS' files too |
 | 8 `gpu-null-plugin` | Applies; check the plugin installs as `librexgpu-null.dylib`. Its dropped `std::jthread` workaround is not needed: the SDK's own `timer_queue.cpp` uses `std::jthread` and builds on macOS upstream |
 | 17 `win-timer-resolution` (`windows`) | Not needed: POSIX sleeps have microsecond resolution. The vblank interval is measured anyway (MAC.1), as WIN.2 did |
-| 18 `win-sdl3-shared` (`windows`) | **Probably needed on macOS.** The SDK's comment says the runtime links SDL3 (and fmt, spdlog) statically on Apple. macOS' two-level namespace binds `librexruntime.dylib`'s SDL calls to its own copy, so if the package also hands `SDL3-static` to the executable, the process has two SDLs, as on Windows (black screen in only mode). To check with `nm`/`otool` on the first build; the fix would be `if(WIN32 OR APPLE)` in the patch, with `libSDL3.dylib` shipped. spdlog: `no_direct_spdlog` already covers it |
+| 18 `win-sdl3-shared` (`windows`) | Not needed on macOS (checked in MAC.1, below): an executable binds SDL's functions to `librexruntime.dylib`, which exports them, and carries no SDL of its own |
 
-New patches the port needs: items 2-4 above (generic, upstream candidates), and 18's macOS branch
-if confirmed. `series` needs no new kind: `posix` already includes macOS.
+New patches the port needs: items 2-4 above (generic, upstream candidates). `series` needs no new kind: `posix` already includes macOS.
 
 **For the ReXGlue agent** (owner of the series and of `sdk/rexglue-next`; decided 2026-10-08: the
 macOS port uses that branch's series on `bd833a2` as it is, and changes to the series go through
