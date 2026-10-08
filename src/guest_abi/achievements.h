@@ -136,6 +136,8 @@ inline constexpr uint32_t kExplodeEffectReturn = 0x8229D88C;
 // preserved r28) and still calls __RTDynamicCast 0x821E1828 with the same type descriptors, but
 // drops the result. PC +0x5B4 is the pet's owner: PC's pet town sale 0x4924E0 pays [pet+0x5B4],
 // guest 0x8228E580 pays [pet+1444].
+// The target is the item use's third argument (0x822B9A60 keeps r5 in r28 at entry and does not
+// change it before the call), so the hooks take it there instead of from the caller's registers.
 inline constexpr uint32_t kPotionEventReturn = 0x822B9BB8;
 inline constexpr uint32_t kDynamicCast = 0x821E1828;
 inline constexpr uint32_t kTypeBaseUnit = 0x834C27FC;  // .?AVCBaseUnit@@
@@ -302,6 +304,12 @@ inline bool RejectedPetSubtype(const uint8_t* base, uint32_t unit) {
 // 0x82284FD0) and calls 0x8236BB70 again, which now uses the item at the same return; a cancelled
 // dialog (+56 == -1) uses nothing.
 inline constexpr uint32_t kItemUse = 0x822B9A60;
+// Damage application 0x8229C7B0 (unit r3, damage f1, attacker r9: it keeps them in r31, f30 and r29
+// at entry and never writes those again) calls the health setter 0x821D7E78 with the negated damage
+// in f1 (fneg f1,f30 @0x8229CACC, return 0x8229CAD4) after the same early exits as PC's max-damage
+// block.
+inline constexpr uint32_t kApplyDamage = 0x8229C7B0;
+inline constexpr uint32_t kHealthSetReturn = 0x8229CAD4;
 inline constexpr uint32_t kPetSpellUseReturn = 0x8236BC3C;
 // The pet's main bag (BEAST_OF_BURDEN, PC 0x005F4DD7): the player's per-frame unit update 0x4D7C10
 // (vtable slot 63, game state +0x2428 == 1, achievement not completed) takes the first pet
