@@ -188,6 +188,24 @@ inline std::vector<std::u16string> ReadSavedModNames(const uint8_t* base, uint32
   return names;
 }
 
+// ---------------------------------------------------------------------------------------------
+// The game's text reader (text data files such as a mod's .DAT; docs/mods.md, section 7e).
+
+namespace text_reader {
+// [confirmed] Loads a text file (sub_82399C00): r3 = the reader, r4 = const std::wstring* path,
+// the game's name for the file (resolved inside, through the mod-aware loader sub_8239D5F8; with
+// no file system, sub_82399B00 reads it from a FILE*, its only caller). Returns nonzero when the
+// file was read. The file's bytes become 16-bit units as they are in memory, big-endian: +28 the
+// buffer, +32 the count (bytes / 2 + 1, the last unit 0), +36 the position, 1 when the first unit
+// is 0xFFFE (cmplwi 65534, the mark the Xbox game writes before big-endian text), else 0. Nothing
+// turns units around. Callers: sub_82396BF0 (text .DAT), sub_82204590, sub_82397EB8. PC's
+// counterparts compare the first unit with 0xFEFF (0x5C1499, 0x5C173A).
+inline constexpr GuestFunction kLoadText{0x82399C00, Confidence::kConfirmed};
+inline constexpr Field kBuffer{28, Confidence::kConfirmed};
+inline constexpr Field kCount{32, Confidence::kConfirmed};
+inline constexpr Field kPosition{36, Confidence::kConfirmed};
+}  // namespace text_reader
+
 // The mod manager's initial state, as PC's constructor leaves it, written at `at` (kSize bytes
 // already allocated in guest memory). Does not register the instance (kRunicCoreInstances) or
 // publish the pointer.
