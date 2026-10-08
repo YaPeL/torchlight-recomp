@@ -12,6 +12,7 @@
 #include <string>
 
 #include "mods/save_units.h"
+#include "mods/save_units_notice.h"
 #include "save_import/schema.h"
 
 using namespace torchlight::mods;
@@ -172,6 +173,31 @@ int main() {
     const auto again = ProtectSaves(root, "58410A7E", *schema, MakeKnownUnits(IndexWith(base), {}, true), now, log);
     Check(again.changed.empty() && again.backup.empty(), "a second pass finds nothing and backs nothing up");
     fs::remove_all(root);
+  }
+
+  // The player's notice: nothing to tell, the removed items with the backup, risky saves.
+  {
+    const auto english = [](const std::string& s) { return s; };
+    Check(!SaveUnitsNotice(SaveUnitsReport{}, english), "nothing changed: no notice");
+    SaveUnitsReport report;
+    report.backup = "/saves/save-backups/20261008-120000-units";
+    report.changed.push_back({"/saves/a/4.TSV", "Ronan", {{"player/items/item", "", 1}, {"pets/unit", "", 2}}});
+    report.changed.push_back({"/saves/a/sharedstash.bin", "", {{"items/item", "", 3}}});
+    report.left_alone.push_back("/saves/a/7.TSV: unknown unit 5 at player/unit_guid, which cannot be removed");
+    report.left_alone.push_back("/saves/a/9.TSV: unreadable: bad digest");
+    const auto notice = SaveUnitsNotice(report, english);
+    Check(notice && notice->buttons.size() == 1, "a notice with one button");
+    if (notice) {
+      Check(notice->text.find("3 items from mods") != std::string::npos, "the total");
+      Check(notice->text.find("Ronan: 2 items") != std::string::npos, "per character");
+      Check(notice->text.find("Shared stash: 1 items") != std::string::npos, "the stash");
+      Check(notice->text.find("20261008-120000-units") != std::string::npos, "where the copy is");
+      Check(notice->text.find("7.TSV") != std::string::npos && notice->text.find("9.TSV") == std::string::npos,
+            "a save left alone with unknown units listed; an unreadable one not");
+    }
+    const auto spanish = [](const std::string& s) { return s == "OK" ? std::string("Aceptar") : s; };
+    const auto translated = SaveUnitsNotice(report, spanish);
+    Check(translated && translated->buttons[0] == "Aceptar", "texts go through the translation");
   }
 
   if (failures) return EXIT_FAILURE;

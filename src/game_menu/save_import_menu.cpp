@@ -41,6 +41,8 @@
 #include "live/install.h"
 #include "platform/platform.h"
 #include "platform/user_folders.h"
+#include "mods/save_units_install.h"
+#include "mods/save_units_notice.h"
 #include "save_import/backup_retention.h"
 #include "save_import/import_message.h"
 #include "save_import/import_plan.h"
@@ -64,7 +66,7 @@ namespace si = torchlight::save_import;
 constexpr const char* kSaveRoot = "SAVE:\\";
 constexpr const char* kStringsFile = "tl_import_strings.txt";
 
-enum class Stage { kOff, kIdle, kPlanning, kAsking, kAskingStash };
+enum class Stage { kOff, kIdle, kNotice, kPlanning, kAsking, kAskingStash };
 
 // A message box shown with XamShowMessageBoxUI: its texts, buttons, result and XOVERLAPPED in one
 // block of the system heap, alive until the box closes.
@@ -80,6 +82,8 @@ struct State {
   std::string language = "en";
   Stage stage = Stage::kOff;
   bool asked_this_session = false;
+  bool import_on = false;     // InstallSaveImport set the import up
+  bool notice_shown = false;  // the saves' removed items (mods/save_units_notice.h)
 
   si::ImportFolder scanned;
   si::ContainerView view;
@@ -229,6 +233,23 @@ bool ReadContainer(GuestCall& call) {
   return ok;
 }
 
+void PickLanguage() {
+  const std::string pack = live::LanguagePack();
+  g.language = pack.empty() ? settings::LanguageCode(rex::cvar::Query<uint32_t>("user_language")) : pack;
+}
+
+// What the start took out of the saves (mods/save_units_install.h), told once, before the import
+// question. True if the box opened.
+bool ShowSaveUnitsNotice(PPCContext& ctx, uint8_t* base) {
+  if (g.notice_shown) return false;
+  g.notice_shown = true;
+  const auto& changes = mods::SaveUnitsChanges();
+  if (!changes) return false;
+  PickLanguage();
+  const auto message = mods::SaveUnitsNotice(*changes, Tr);
+  return message && ShowBox(ctx, base, *message);
+}
+
 void Begin(PPCContext& ctx, uint8_t* base) {
   std::error_code ec;
   if (!fs::is_directory(g.folder, ec)) return;
@@ -241,8 +262,7 @@ void Begin(PPCContext& ctx, uint8_t* base) {
       return;
     }
   }
-  const std::string pack = live::LanguagePack();
-  g.language = pack.empty() ? settings::LanguageCode(rex::cvar::Query<uint32_t>("user_language")) : pack;
+  PickLanguage();
   g.planning = std::async(std::launch::async, [scanned = g.scanned, view = g.view] {
     return si::BuildImportPlan(*g.schema, scanned, g.game_pak, view);
   });
@@ -293,6 +313,12 @@ void AskNextStash(PPCContext& ctx, uint8_t* base, uint32_t menu_object) {
 
 void Step(PPCContext& ctx, uint8_t* base, uint32_t menu_object) {
   switch (g.stage) {
+    case Stage::kNotice: {
+      if (!PollBox(base)) return;
+      g.stage = Stage::kIdle;
+      if (g.import_on && !g.asked_this_session) Begin(ctx, base);
+      return;
+    }
     case Stage::kPlanning: {
       if (g.planning.wait_for(std::chrono::seconds(0)) != std::future_status::ready) return;
       g.plan = g.planning.get();
@@ -349,8 +375,18 @@ void InstallSaveImport(rex::Runtime* runtime, const fs::path& game_data_root,
   // The SDK backs up a save container before deleting it; keep the newest ten and the last 30 days.
   si::PruneSaveBackups(user_data_root, std::chrono::system_clock::now(),
                        [](const std::string& line) { REXLOG_INFO("save backups: {}", line); });
-  if (!runtime || !runtime->file_system() || game_data_root.empty()) return;
+  if (!runtime || !runtime->file_system()) return;
+  g.runtime = runtime;
   std::string error;
+  {
+    std::vector<std::string> warnings;
+    const fs::path strings = fs::path(platform::ExecutableDir()) / "data" / "ui" / kStringsFile;
+    if (!g.strings.Load(strings.string(), warnings, error)) {
+      REXLOG_WARN("save import: {}; messages in English", error);
+    }
+  }
+  g.stage = Stage::kIdle;  // the saves' notice works without the import
+  if (game_data_root.empty()) return;
   g.schema = si::Schema::Embedded(error);
   if (!g.schema) {
     REXLOG_ERROR("save import: {}; import off", error);
@@ -363,14 +399,8 @@ void InstallSaveImport(rex::Runtime* runtime, const fs::path& game_data_root,
     REXLOG_WARN("save import: no game files folder on this platform; import off");
     return;
   }
-  g.runtime = runtime;
   g.folder = game_files / "import";
   g.game_pak = game_data_root / "pak.zip";
-  std::vector<std::string> warnings;
-  const fs::path strings = fs::path(platform::ExecutableDir()) / "data" / "ui" / kStringsFile;
-  if (!g.strings.Load(strings.string(), warnings, error)) {
-    REXLOG_WARN("save import: {}; messages in English", error);
-  }
   std::error_code ec;
   if (fs::is_directory(g.folder, ec)) {
     for (const auto& notice : si::ApplyPending(g.folder, *g.schema, Log)) {
@@ -378,7 +408,7 @@ void InstallSaveImport(rex::Runtime* runtime, const fs::path& game_data_root,
                   notice.file);
     }
   }
-  g.stage = Stage::kIdle;
+  g.import_on = true;
 }
 
 }  // namespace torchlight::game_menu
@@ -394,7 +424,12 @@ REX_FUNC(sub_823874D8) {
   using namespace torchlight::game_menu;
   const bool open = (ctx.r4.u32 & 0xFF) != 0;
   __imp__sub_823874D8(ctx, base);
-  if (open && g.stage == Stage::kIdle && !g.asked_this_session) Begin(ctx, base);
+  if (!open || g.stage != Stage::kIdle) return;
+  if (ShowSaveUnitsNotice(ctx, base)) {
+    g.stage = Stage::kNotice;
+  } else if (g.import_on && !g.asked_this_session) {
+    Begin(ctx, base);
+  }
 }
 
 FUNCTION_ADDRESS_CHECK(kUpdate, 8238A138);

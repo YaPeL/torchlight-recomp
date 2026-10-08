@@ -29,6 +29,14 @@ hardcore shared stash = gemeinsame Hardcore-Truhe
 shared stash = gemeinsame Truhe
 No = Nein
 Replace = Ersetzen
+Items removed from saved characters = Gegenstände aus gespeicherten Charakteren entfernt
+{count} items from mods that are no longer installed were removed so these saved characters can load: = {count} Gegenstände aus Mods, die nicht mehr installiert sind, wurden entfernt, damit diese gespeicherten Charaktere laden können:
+Shared stash: {count} items = Gemeinsame Truhe: {count} Gegenstände
+{name}: {count} items = {name}: {count} Gegenstände
+A copy of the saves from before is in: = Eine Kopie der vorherigen Spielstände liegt in:
+The saves could not be backed up or written, so not every save was changed; characters holding items of removed mods may not load (see the log). = Die Spielstände konnten nicht gesichert oder geschrieben werden, daher wurde nicht jeder Spielstand geändert; Charaktere mit Gegenständen entfernter Mods laden eventuell nicht (siehe Log).
+These saves hold items the game does not know but were left unchanged, so they may not load (see the log): = Diese Spielstände enthalten Gegenstände, die das Spiel nicht kennt, wurden aber nicht geändert und laden daher eventuell nicht (siehe Log):
+OK = OK
 
 [fr]
 Import from the PC version = Importer depuis la version PC
@@ -56,6 +64,14 @@ hardcore shared stash = coffre partagé hardcore
 shared stash = coffre partagé
 No = Non
 Replace = Remplacer
+Items removed from saved characters = Objets retirés des personnages sauvegardés
+{count} items from mods that are no longer installed were removed so these saved characters can load: = {count} objets de mods qui ne sont plus installés ont été retirés pour que ces personnages sauvegardés puissent se charger :
+Shared stash: {count} items = Coffre partagé : {count} objets
+{name}: {count} items = {name} : {count} objets
+A copy of the saves from before is in: = Une copie des sauvegardes précédentes se trouve dans :
+The saves could not be backed up or written, so not every save was changed; characters holding items of removed mods may not load (see the log). = Les sauvegardes n'ont pas pu être copiées ou écrites, donc toutes n'ont pas été modifiées ; les personnages qui portent des objets de mods retirés risquent de ne pas se charger (voir le journal).
+These saves hold items the game does not know but were left unchanged, so they may not load (see the log): = Ces sauvegardes contiennent des objets que le jeu ne connaît pas mais n'ont pas été modifiées, elles risquent donc de ne pas se charger (voir le journal) :
+OK = OK
 
 [es]
 Import from the PC version = Importar de la versión de PC
@@ -83,3 +99,11 @@ hardcore shared stash = cofre compartido hardcore
 shared stash = cofre compartido
 No = No
 Replace = Reemplazar
+Items removed from saved characters = Objetos quitados de personajes guardados
+{count} items from mods that are no longer installed were removed so these saved characters can load: = Se quitaron {count} objetos de mods que ya no están instalados para que estos personajes guardados puedan cargar:
+Shared stash: {count} items = Cofre compartido: {count} objetos
+{name}: {count} items = {name}: {count} objetos
+A copy of the saves from before is in: = Hay una copia de las partidas anteriores en:
+The saves could not be backed up or written, so not every save was changed; characters holding items of removed mods may not load (see the log). = No se pudieron respaldar o escribir las partidas, así que no se cambiaron todas; los personajes con objetos de mods quitados podrían no cargar (ver el log).
+These saves hold items the game does not know but were left unchanged, so they may not load (see the log): = Estas partidas tienen objetos que el juego no conoce pero no se cambiaron, así que podrían no cargar (ver el log):
+OK = Aceptar
