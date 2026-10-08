@@ -123,6 +123,22 @@ test that shows it:
   without chaining when no handler claims the fault. Test: a read of an unmapped address in a
   child process terminates with SIGSEGV/SIGBUS instead of hanging.
 
+Requests from the macOS port (2026-10-08), to be fixed in the series on `sdk/rexglue-next`:
+
+- `tests/ppc/CMakeLists.txt` compiles `ppc_tests` with `-msse4.1 -mssse3` unconditionally; on
+  arm64 clang rejects them. Only on x86-64, as `rexglue_apply_target_settings` already does.
+- `tests/unit/codegen/codegen_writer_test.cpp:128`: `CHECK(fs::last_write_time(probe) == before)`
+  does not compile with Apple's libc++ (Catch2 cannot print `file_time_type`, whose duration is
+  `__int128`); `CHECK((...))` compares the same without printing the operands.
+- The PPC tests' inputs, assembled on Linux: the assembler (`tools/binutils/powerpc-none-elf-*`,
+  patched for VMX128; neither upstream binutils nor LLVM has it) exists only for Linux x86-64 and
+  Windows. The macOS port needs, for the SDK commit of the series, every `tests/ppc/asm/*.s`
+  turned into the `.bin` and `.map` that `cmake/ppc_test_pipeline.cmake` makes (in the build
+  tree's `tests/ppc/bin/`), with the SDK commit and the assembler's version written next to them.
+  Proposed place: a branch of their own (`sdk/ppc-test-bins`), not `develop`: they are SDK test
+  build outputs, not project sources, and nothing of the game is in them. The macOS build then
+  takes them in place of the assembling steps.
+
 **Blocks:** yes: an SDK with the fences (`bd833a2`), items 2 and 3 fixed, and our series.
 
 **Ticket MAC.1 (SDK on macOS):** `tools/deps/build_sdk.sh` takes the preset from the host (today
