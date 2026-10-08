@@ -349,7 +349,23 @@ other:
    first unit of 0xFFFE, which is how the bytes `FF FE` of a little-endian BOM read on the Xbox; it
    swaps nothing after it, so a PC `.DAT` reads as garbage and the unit has no `UNIT_GUID`. The
    game's own data is compiled (`.DAT.adm` only in `pak.zip`), so this reader never saw a PC file.
-   A conversion on our side, without touching the files on disk, is **[proposed]**.
+   PC's reader is the same code (it skips 0xFEFF, `0x5C1499` and `0x5C173A`) and converts nothing:
+   PC text files are UTF-16LE with or without a mark, and UTF-8 or ANSI fail there too. The Xbox
+   game writes its own text files as `FF FE` followed by big-endian units (`settings.txt`), the
+   mark its reader skips. `mods/text_reader_hooks.cpp` turns a little-endian file's units around in
+   the guest's buffer after the reader loads it; the files on disk are not touched.
+   `mods/text_encoding.h` tells the orders apart on up to 64 characters after the mark (which byte
+   of each is zero), and leaves a file whose order is unclear as it is, with a line in the log.
+
+**Compiled `.ADM`.** The game looks for `<file>.adm` before the text file. PC's and the Xbox's
+`.ADM` are the same format, both little-endian (version `01 00 00 00`, UTF-16LE strings; e.g.
+`media/units/items/BASE.DAT.adm` in both paks), so the game has nothing to tell apart and a mod's
+`.ADM` compiled on PC reads as it is. Freshness is by modification time (`sub_8239D4C8`: each
+file's time from its pak, or `_stat64` `sub_8285FB40`, -1 when missing): the `.ADM` is used when
+it is as new as the text file or newer, otherwise the text is read and compiled again, written
+next to it (section 7b), as on PC. So the game can rewrite a `.ADM` inside a mod's folder (one a
+mod ships older than its text file, or one it compiled itself), exactly as PC does; the project
+does not redirect those writes.
 
 **A guest fault never ends the process.** In each of the four runs where our index build had the
 game load the mod's unit and it was left out (117, 129, 130 and 161), the game soon read guest
