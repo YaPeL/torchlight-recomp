@@ -1,4 +1,4 @@
-// The guest's file existence checks, file reads and XMemAlloc calls, timed for the long frame
+// The guest's file reads and XMemAlloc calls (file existence checks: find_file_hooks.cpp), timed for the long frame
 // report (live/guest_events.h). Every mode; the original always runs, the override only reads its
 // arguments and result.
 
@@ -28,15 +28,8 @@ double Ms(Clock::time_point since) {
 
 extern "C" {
 
-FUNCTION_ADDRESS_CHECK(kFileAttributes, 8287E0C8);
-REX_EXTERN(__imp__sub_8287E0C8);
-REX_FUNC(sub_8287E0C8) {
-  const uint32_t path = ctx.r3.u32;
-  const auto start = Clock::now();
-  __imp__sub_8287E0C8(ctx, base);
-  const double ms = Ms(start);
-  GuestEvents::Get().FileCheck(torchlight::guest_abi::ogre::ReadCString(base, path, 260), ctx.r3.u32 != 0xFFFFFFFFu, ms);
-}
+// The file existence check (kFileAttributes, the guest's FindFirstFileA) is timed in its one
+// override, hooks/find_file_hooks.cpp, which also gives the mods' searches Windows separators.
 
 FUNCTION_ADDRESS_CHECK(kReadFile, 8287F408);
 REX_EXTERN(__imp__sub_8287F408);

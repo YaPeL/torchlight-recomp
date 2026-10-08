@@ -6,9 +6,13 @@
 // xapi_files.h says why it is not global). The guest's other file functions need nothing: the
 // kernel takes both separators.
 //
+// Every search is also timed for the long frame report (live/guest_events.h), as the game's file
+// existence check (guest_abi guest_functions.h kFileAttributes), with the path the game gave.
+//
 // With TORCHLIGHT_MODS_DIAGNOSTICS the searches on tlmods: go to the log, as asked and as answered
 // (status, then each entry's name and whether it is a folder).
 
+#include <chrono>
 #include <cstdint>
 #include <string>
 
@@ -17,7 +21,9 @@
 #include <rex/ppc/func.h>
 
 #include "guest_abi/xapi_files.h"
+#include "guest_abi/guest_functions.h"
 #include "hooks/guest_path.h"
+#include "live/guest_events.h"
 
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
 #include <cctype>
@@ -29,7 +35,8 @@ namespace {
 
 namespace find = torchlight::guest_abi::xapi::find;
 
-static_assert(find::kFindFirstFile.address == 0x8287E0C8);
+static_assert(find::kFindFirstFile.address == 0x8287E0C8 &&
+              torchlight::guest_abi::functions::kFileAttributes.address == find::kFindFirstFile.address);
 
 constexpr uint32_t kMaxPath = 1024;  // read up to here; the guest's own limit is MAX_PATH (260)
 
@@ -86,6 +93,7 @@ REX_FUNC(sub_8287E0C8) {
   const uint32_t caller = uint32_t(ctx.lr);
   g_last_status = 0;
 #endif
+  const auto start = std::chrono::steady_clock::now();
   if (windows) {
     // The copy sits below the caller's stack pointer; the call's frames go below the copy.
     const uint64_t saved_r1 = ctx.r1.u64;
@@ -100,6 +108,9 @@ REX_FUNC(sub_8287E0C8) {
   } else {
     __imp__sub_8287E0C8(ctx, base);
   }
+  torchlight::live::GuestEvents::Get().FileCheck(
+      path, ctx.r3.u32 != 0xFFFFFFFFu,
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   if (!windows && !OnModsDevice(path)) return;
   const uint32_t handle = ctx.r3.u32;
