@@ -1,7 +1,7 @@
 # ReXGlue PPC instruction test data
 
 The `.bin` and `.map` files the ReXGlue SDK's `ppc_tests` is generated from, assembled from the
-SDK's own `tests/ppc/asm/*.s` at `bd833a2` (development, 2026-10-01) with the SDK's bundled PowerPC
+SDK's own `tests/ppc/asm/*.s` at `bd833a2` (development, 2026-10-01) with the series through patch 25 (its tests add `instr_fctix_rounding`, `instr_mffs_rounding` and `instr_mtfsf_fields`) with the SDK's bundled PowerPC
 binutils (`tools/binutils`, with VMX128). They are test data of the SDK (BSD-3-Clause, its
 `LICENSE`); nothing of the game is in them.
 
