@@ -23,7 +23,7 @@ Sources were consulted on 2026-10-05. Repositories were read at the commit given
 | Zelda64Recomp/Zelda64Recomp (branch `dev`) | `b65c482e` (2026-09-25) |
 | birabittoh/NocturneRecomp | `5390d5ec` (2026-08-27) |
 | thefixinhixon/hells-gate-recomp | `69a4b770` (2026-09-28) |
-| rexglue/rexglue-sdk (local checkout, our base) | `0c7b01a` |
+| rexglue/rexglue-sdk (local checkout, our base) | `bd833a2` |
 
 ## Summary
 
@@ -246,7 +246,7 @@ references avoids it.
 
 Neither one contains game content, so both can be cached and even published:
 
-1. **ReXGlue SDK with our patches.** Base `0c7b01a` (`patches/README.md`), the patches of `patches/series` in their
+1. **ReXGlue SDK with our patches.** Base `bd833a2` (`patches/README.md`), the patches of `patches/series` in their
    order with `git apply`, install with the platform preset (`linux-amd64`, `win-amd64`). Inside
    `ubuntu:22.04` with the SDK CI's toolchain (clang 20, g++-13, Kitware CMake, its `apt` package
    list). On Windows the POSIX patch (`rexglue-posix-wait-fraction.patch`) does not apply
@@ -546,7 +546,7 @@ announces it.
   `ci.yml`, `release.yml`, `scripts/build.py`, `README.md`).
 - Dante's Inferno AppImage fork: <https://github.com/thefixinhixon/hells-gate-recomp>
   (`packaging/appimage/`).
-- ReXGlue SDK: local checkout `~/rexglue-sdk` at `0c7b01a` (`.github/workflows/_build-platform.yaml`,
+- ReXGlue SDK: local checkout `~/rexglue-sdk` at `bd833a2` (`.github/workflows/_build-platform.yaml`,
   `cmake/rexglue_helpers.cmake`, `src/ui/rex_app.cpp`); <https://github.com/rexglue/rexglue-sdk>.
 - AppImage runtime: <https://github.com/AppImage/type2-runtime>; appimagetool:
   <https://github.com/AppImage/appimagetool>; exclusion list:

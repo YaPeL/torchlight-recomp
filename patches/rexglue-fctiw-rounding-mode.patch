@@ -1,0 +1,283 @@
+diff --git a/include/rex/ppc/intrinsics.h b/include/rex/ppc/intrinsics.h
+index 3c2fe09..a6efa8d 100644
+--- a/include/rex/ppc/intrinsics.h
++++ b/include/rex/ppc/intrinsics.h
+@@ -112,6 +112,32 @@ inline uint8_t VectorShiftTableR[] = {
+     0x10, 0x0F, 0x0E, 0x0D, 0x0C, 0x0B, 0x0A, 0x09, 0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01,
+ };
+ 
++//=============================================================================
++// Floating-Point Conversions
++//=============================================================================
++
++// fctiw/fctid: convert in the current rounding mode (the guest's FPSCR[RN],
++// which storeFromGuest puts in MXCSR or FPCR). Without native SSE2, SIMDe's
++// simde_mm_cvtsd_si32/_si64 call simde_math_round, which rounds half away from
++// zero whatever the mode. Out of range gives the minimum, as cvtsd2si does.
++inline int32_t cvt_f64_s32_current(double v) {
++#if defined(SIMDE_X86_SSE2_NATIVE)
++  return simde_mm_cvtsd_si32(simde_mm_set_sd(v));
++#else
++  const double r = std::nearbyint(v);
++  return (r >= -2147483648.0 && r < 2147483648.0) ? int32_t(r) : INT32_MIN;
++#endif
++}
++
++inline int64_t cvt_f64_s64_current(double v) {
++#if defined(SIMDE_X86_SSE2_NATIVE) && defined(SIMDE_ARCH_AMD64)
++  return simde_mm_cvtsd_si64(simde_mm_set_sd(v));
++#else
++  const double r = std::nearbyint(v);
++  return (r >= -9223372036854775808.0 && r < 9223372036854775808.0) ? int64_t(r) : INT64_MIN;
++#endif
++}
++
+ //=============================================================================
+ // SIMD Helper Functions
+ //=============================================================================
+diff --git a/src/codegen/builders/floating_point.cpp b/src/codegen/builders/floating_point.cpp
+index 1702241..7e6c04c 100644
+--- a/src/codegen/builders/floating_point.cpp
++++ b/src/codegen/builders/floating_point.cpp
+@@ -61,7 +61,7 @@ bool build_fctid(BuilderContext& ctx) {
+   ctx.println(
+       "\t{0}.s64 = std::isnan({1}.f64) ? int64_t(0x8000000000000000ULL) : "
+       "({1}.f64 > double(LLONG_MAX)) ? LLONG_MAX : "
+-      "simde_mm_cvtsd_si64(simde_mm_load_sd(&{1}.f64));",
++      "rex::ppc::cvt_f64_s64_current({1}.f64);",
+       ctx.f(ctx.insn.operands[0]), ctx.f(ctx.insn.operands[1]));
+   return true;
+ }
+@@ -81,7 +81,7 @@ bool build_fctiw(BuilderContext& ctx) {
+   ctx.println(
+       "\t{0}.s64 = std::isnan({1}.f64) ? int64_t(0x80000000U) : "
+       "({1}.f64 >= double(INT_MAX)) ? INT_MAX : "
+-      "simde_mm_cvtsd_si32(simde_mm_load_sd(&{1}.f64));",
++      "rex::ppc::cvt_f64_s32_current({1}.f64);",
+       ctx.f(ctx.insn.operands[0]), ctx.f(ctx.insn.operands[1]));
+   return true;
+ }
+diff --git a/tests/ppc/asm/instr_fctix_rounding.s b/tests/ppc/asm/instr_fctix_rounding.s
+new file mode 100644
+index 0000000..ec123a0
+--- /dev/null
++++ b/tests/ppc/asm/instr_fctix_rounding.s
+@@ -0,0 +1,218 @@
++# fctiw and fctid convert in the rounding mode FPSCR[RN] selects, set with
++# mtfsf 0xFF (f1). Each test puts the mode back to round to nearest (f0 = 0).
++
++# fctiw 2.5, round to nearest: 2
++test_fctiw_rounding_1:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000000
++  #_ REGISTER_IN f2 0x4004000000000000
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x4004000000000000
++  #_ REGISTER_OUT f3 0x0000000000000002
++
++# fctiw -2.5, round to nearest: -2
++test_fctiw_rounding_2:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000000
++  #_ REGISTER_IN f2 0xC004000000000000
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0xC004000000000000
++  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFE
++
++# fctiw 3.5, round to nearest: 4
++test_fctiw_rounding_3:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000000
++  #_ REGISTER_IN f2 0x400C000000000000
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x400C000000000000
++  #_ REGISTER_OUT f3 0x0000000000000004
++
++# fctiw 2.7, round toward zero: 2
++test_fctiw_rounding_4:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000001
++  #_ REGISTER_IN f2 0x400599999999999A
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x400599999999999A
++  #_ REGISTER_OUT f3 0x0000000000000002
++
++# fctiw -2.7, round toward zero: -2
++test_fctiw_rounding_5:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000001
++  #_ REGISTER_IN f2 0xC00599999999999A
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0xC00599999999999A
++  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFE
++
++# fctiw 2.5, round up: 3
++test_fctiw_rounding_6:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000002
++  #_ REGISTER_IN f2 0x4004000000000000
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x4004000000000000
++  #_ REGISTER_OUT f3 0x0000000000000003
++
++# fctiw -2.5, round up: -2
++test_fctiw_rounding_7:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000002
++  #_ REGISTER_IN f2 0xC004000000000000
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0xC004000000000000
++  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFE
++
++# fctiw 2.5, round down: 2
++test_fctiw_rounding_8:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000003
++  #_ REGISTER_IN f2 0x4004000000000000
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x4004000000000000
++  #_ REGISTER_OUT f3 0x0000000000000002
++
++# fctiw -2.5, round down: -3
++test_fctiw_rounding_9:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000003
++  #_ REGISTER_IN f2 0xC004000000000000
++  mtfsf 0xFF, f1
++  fctiw f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0xC004000000000000
++  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFD
++
++# fctid 2.5, round to nearest: 2
++test_fctid_rounding_1:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000000
++  #_ REGISTER_IN f2 0x4004000000000000
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x4004000000000000
++  #_ REGISTER_OUT f3 0x0000000000000002
++
++# fctid -2.5, round to nearest: -2
++test_fctid_rounding_2:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000000
++  #_ REGISTER_IN f2 0xC004000000000000
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0xC004000000000000
++  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFE
++
++# fctid 3.5, round to nearest: 4
++test_fctid_rounding_3:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000000
++  #_ REGISTER_IN f2 0x400C000000000000
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x400C000000000000
++  #_ REGISTER_OUT f3 0x0000000000000004
++
++# fctid 2.7, round toward zero: 2
++test_fctid_rounding_4:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000001
++  #_ REGISTER_IN f2 0x400599999999999A
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x400599999999999A
++  #_ REGISTER_OUT f3 0x0000000000000002
++
++# fctid -2.7, round toward zero: -2
++test_fctid_rounding_5:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000001
++  #_ REGISTER_IN f2 0xC00599999999999A
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0xC00599999999999A
++  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFE
++
++# fctid 2.5, round up: 3
++test_fctid_rounding_6:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000002
++  #_ REGISTER_IN f2 0x4004000000000000
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x4004000000000000
++  #_ REGISTER_OUT f3 0x0000000000000003
++
++# fctid -2.5, round up: -2
++test_fctid_rounding_7:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000002
++  #_ REGISTER_IN f2 0xC004000000000000
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0xC004000000000000
++  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFE
++
++# fctid 2.5, round down: 2
++test_fctid_rounding_8:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000003
++  #_ REGISTER_IN f2 0x4004000000000000
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x4004000000000000
++  #_ REGISTER_OUT f3 0x0000000000000002
++
++# fctid -2.5, round down: -3
++test_fctid_rounding_9:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000003
++  #_ REGISTER_IN f2 0xC004000000000000
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0xC004000000000000
++  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFD

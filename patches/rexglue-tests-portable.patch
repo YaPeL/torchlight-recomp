@@ -1,0 +1,95 @@
+diff --git a/tests/ppc/CMakeLists.txt b/tests/ppc/CMakeLists.txt
+index 9933e95..caa8230 100644
+--- a/tests/ppc/CMakeLists.txt
++++ b/tests/ppc/CMakeLists.txt
+@@ -1,15 +1,23 @@
+ # PowerPC Instruction Test Suite
+ # Compiles PPC assembly tests and generates Catch2 test cases
+ 
+-include(ppc_test_pipeline)
++# Hosts without the bundled PowerPC binutils (macOS) can point this at the
++# .bin and .map files assembled elsewhere from the same asm/ sources.
++set(REXGLUE_PPC_TEST_BIN_DIR "" CACHE PATH
++    "Prebuilt PPC test binaries (.bin and .map); empty assembles asm/ here")
+ 
+ # Output directories
+ set(PPC_OBJ_DIR ${CMAKE_BINARY_DIR}/tests/ppc/obj)
+-set(PPC_BIN_DIR ${CMAKE_BINARY_DIR}/tests/ppc/bin)
++if(REXGLUE_PPC_TEST_BIN_DIR)
++    set(PPC_BIN_DIR ${REXGLUE_PPC_TEST_BIN_DIR})
++else()
++    include(ppc_test_pipeline)
++    set(PPC_BIN_DIR ${CMAKE_BINARY_DIR}/tests/ppc/bin)
++    file(MAKE_DIRECTORY ${PPC_OBJ_DIR})
++    file(MAKE_DIRECTORY ${PPC_BIN_DIR})
++endif()
+ set(PPC_GEN_DIR ${CMAKE_BINARY_DIR}/tests/ppc/generated)
+ 
+-file(MAKE_DIRECTORY ${PPC_OBJ_DIR})
+-file(MAKE_DIRECTORY ${PPC_BIN_DIR})
+ file(MAKE_DIRECTORY ${PPC_GEN_DIR})
+ 
+ # Collect and build all assembly test files
+@@ -23,12 +31,28 @@ endif()
+ 
+ message(STATUS "Found ${NUM_TESTS} PPC instruction test files")
+ 
+-foreach(ASM_FILE ${ASM_FILES})
+-    ppc_add_test_binary(${ASM_FILE} ${PPC_OBJ_DIR} ${PPC_BIN_DIR})
+-endforeach()
+-
+-get_property(TEST_BINS GLOBAL PROPERTY PPC_TEST_BINS)
+-get_property(TEST_MAPS GLOBAL PROPERTY PPC_TEST_MAPS)
++if(REXGLUE_PPC_TEST_BIN_DIR)
++    set(TEST_BINS "")
++    set(TEST_MAPS "")
++    foreach(ASM_FILE ${ASM_FILES})
++        get_filename_component(BASE_NAME ${ASM_FILE} NAME_WE)
++        foreach(EXT bin map)
++            if(NOT EXISTS ${PPC_BIN_DIR}/${BASE_NAME}.${EXT})
++                message(FATAL_ERROR "${BASE_NAME}.${EXT} missing in ${PPC_BIN_DIR}")
++            endif()
++        endforeach()
++        list(APPEND TEST_BINS ${PPC_BIN_DIR}/${BASE_NAME}.bin)
++        list(APPEND TEST_MAPS ${PPC_BIN_DIR}/${BASE_NAME}.map)
++    endforeach()
++    message(STATUS "PPC test binaries from ${PPC_BIN_DIR}")
++else()
++    foreach(ASM_FILE ${ASM_FILES})
++        ppc_add_test_binary(${ASM_FILE} ${PPC_OBJ_DIR} ${PPC_BIN_DIR})
++    endforeach()
++
++    get_property(TEST_BINS GLOBAL PROPERTY PPC_TEST_BINS)
++    get_property(TEST_MAPS GLOBAL PROPERTY PPC_TEST_MAPS)
++endif()
+ 
+ # Generate Catch2 test code from recompiled binaries
+ add_custom_command(
+@@ -96,8 +120,10 @@ endif()
+ target_compile_options(ppc_tests PRIVATE
+     -UTRACY_ENABLE -UREXGLUE_ENABLE_PROFILING
+     -UREXGLUE_ENABLE_PERF_COUNTERS -UREXGLUE_PROFILE_GUEST_FUNCTIONS
+-    -msse4.1 -mssse3
+ )
++if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
++    target_compile_options(ppc_tests PRIVATE -msse4.1 -mssse3)
++endif()
+ 
+ include(Catch)
+ catch_discover_tests(ppc_tests
+diff --git a/tests/unit/codegen/codegen_writer_test.cpp b/tests/unit/codegen/codegen_writer_test.cpp
+index 9b4b90c..6c3478d 100644
+--- a/tests/unit/codegen/codegen_writer_test.cpp
++++ b/tests/unit/codegen/codegen_writer_test.cpp
+@@ -125,7 +125,10 @@ TEST_CASE("Unchanged files keep their modification time", "[codegen_writer]") {
+   CodegenWriter second(*fx.ctx);
+   REQUIRE(second.write(false));
+ 
+-  CHECK(fs::last_write_time(probe) == before);
++  // Compared outside CHECK, so Catch2 never has to print a file_time_type:
++  // that does not compile with Apple's libc++.
++  const bool unchanged = fs::last_write_time(probe) == before;
++  CHECK(unchanged);
+ }
+ 
+ TEST_CASE("Stale generated files are swept after the write", "[codegen_writer]") {
