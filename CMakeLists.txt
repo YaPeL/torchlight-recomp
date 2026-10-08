@@ -115,6 +115,10 @@ enable_testing()
 # executable has its own, empty copy of spdlog's registry): cmake/check_no_spdlog.cmake.
 add_test(NAME no_direct_spdlog COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_SOURCE_DIR}/cmake/check_no_spdlog.cmake)
+# Hooks never touch the guest registers the generated code may keep in locals (r12, r14-r31, f14-f31,
+# v14 and up): cmake/check_guest_registers.cmake.
+add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
+    -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
 add_subdirectory(src/dev)
