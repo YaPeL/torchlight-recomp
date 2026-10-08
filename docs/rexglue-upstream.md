@@ -50,15 +50,18 @@ unchanged.
 | 18 | win-sdl3-shared | Two SDL3 copies in one process on Windows | Still there | Generic (Windows) | Propose |
 | 19 | mnk-keystrokes | MnK driver never produced keystrokes | Fixed upstream (#310, `3f34ffc`) | Generic | Drop on the next base update |
 | 20 | vfs-wildcard-dos-semantics | `*.*` does not match names without a dot | Still there | Generic | Propose, with the caveat in its draft |
+| 21 | tests-portable | SDK tests do not build on ARM64 or without the PowerPC binutils | Still there | Generic | Propose (D20) |
 
 Other topics:
 
 | Topic | Upstream now | Recommendation |
 |---|---|---|
 | `RtlUnwind` stub | Still a stub (`xboxkrnl_rtl.cpp`), no issue | Report (issue only) |
-| Codegen: registers in `ctx`, full CR per compare | The codegen already has `cr_as_local`, `non_volatile_as_local` and the rest, off by default; our manifest uses none | No upstream report. Try the flags here first |
+| Codegen: registers in `ctx`, full CR per compare | The codegen already has `cr_as_local`, `non_volatile_as_local` and the rest, off by default. Since `b0b2bbb` our manifest sets `reserved_`, `xer_`, `ctr_` and `cr_as_local` (`docs/guest-hot-paths.md`, "Codegen options") | No upstream report beyond D21 |
 | `-mcmodel=large` on Linux | Still forced for the SDK and every consumer target | Propose an opt-out |
 | `*.*` in the wildcard engine | Same as patch 20 | See patch 20 |
+| `non_volatile_as_local` with `setjmp` (D21) | The generated `setjmp` saves only `ctx`; the localized r14-r31 are lost across a `longjmp` | Issue, for when we want that flag |
+| ARM64 codegen and runtime (from the macOS port) | `fctiw`/`fctid`, `mffs`, and an unhandled memory fault | Candidates; drafts once the port gives the details |
 | Wiki/code mismatches (D19) | The wiki documents the TOML key `enable_exception_handlers` (the code reads `generate_exception_handlers`) and describes `reserved_as_local` and `non_argument_as_local` wrongly | Small docs issue (found during this analysis) |
 
 ## Per patch
@@ -175,8 +178,8 @@ write and reloaded after every call; a compare writes all four CR bytes. The SDK
 switches for this, inherited from XenonRecomp and maintained (`f2b91f2` handles SEH funclets under
 `non_volatile_as_local`): `cr_as_local`, `ctr_as_local`, `xer_as_local`, `reserved_as_local`,
 `non_argument_as_local`, `non_volatile_as_local`, `skip_lr`, `skip_msr`, documented in the wiki
-(`rexglue-CLI-Configuration-File`; two of its rows are wrong, D19). All default to false and `torchlight_manifest.toml` sets none,
-so the 903-for-176 measurement is the most conservative codegen. With CR fields as locals the
+(`rexglue-CLI-Configuration-File`; two of its rows are wrong, D19). All default to false; when this was written `torchlight_manifest.toml` set none (since `b0b2bbb`
+it sets four, see `docs/guest-hot-paths.md`), so the 903-for-176 measurement is the most conservative codegen. With CR fields as locals the
 compiler drops the dead stores, which is the "only the bits that are read" request. Nothing to
 report upstream until we have tried them. A local task, to plan separately: regenerate with
 `cr_as_local`, `ctr_as_local`, `xer_as_local` first, then `non_volatile_as_local` (it also elides
@@ -628,6 +631,57 @@ Two rows of the same table do not match `BuilderContext` (`src/codegen/builders/
 
 The define table in `Generated-Code-Structure` lists internal field names
 (`ctr_as_local_variable`, ...) as the config flags, not the TOML keys, which is also confusing.
+
+---
+
+### D20. Tests: `ppc_tests` and `unit_tests` do not build on ARM64 or macOS
+
+**Issue: `[Build]: SDK tests need x86 flags and the bundled PowerPC binutils`**
+
+Three things stop `REXGLUE_BUILD_TESTS=ON` outside Linux and Windows x86-64:
+
+- `tests/ppc/CMakeLists.txt` passes `-msse4.1 -mssse3` to `ppc_tests` unconditionally. The root
+  `CMakeLists.txt` and `rexglue_apply_target_settings` already guard `-msse4.1` with
+  `CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64"`.
+- `cmake/ppc_test_pipeline.cmake` needs `tools/binutils/powerpc-none-elf-*`, shipped for Linux and
+  Windows only, and stops the configure without them (macOS).
+- `tests/unit/codegen/codegen_writer_test.cpp:128` does
+  `CHECK(fs::last_write_time(probe) == before)`. Catch2 then has to stringify a
+  `std::filesystem::file_time_type`, which does not compile with Apple's libc++.
+
+**PR: `build: let the SDK tests build on ARM64 and without the PowerPC binutils`**
+
+Fixes #NNN.
+
+- Guard the SSE flags of `ppc_tests` like the other targets.
+- Add a `REXGLUE_PPC_TEST_BIN_DIR` cache path. When it is set, `ppc_tests` takes the `.bin` and
+  `.map` files from there instead of assembling `tests/ppc/asm`; a missing file is a configure error.
+  Empty (the default) keeps today's pipeline.
+- Compare the file times into a `bool` and `CHECK` that.
+
+Tested on Linux x86-64: `ppc_tests` passes either way (1462 cases), and the prebuilt files are byte
+identical to the ones the pipeline assembles. Built and run on macOS ARM64 by <confirm with the
+macOS port before sending>.
+
+---
+
+### D21. Codegen: `non_volatile_as_local` and `setjmp`/`longjmp`
+
+**Issue: `[Codegen]: non_volatile_as_local leaves r14-r31 indeterminate after a longjmp`**
+
+With `non_volatile_as_local`, a function keeps r14-r31 in host locals. The generated `setjmp`
+saves and restores `ctx` only (`env = ctx; ppc_setjmp; if (temp) ctx = env;`), so after a
+`longjmp` back into it those locals hold whatever they had when the jump left, not their values at
+the `setjmp`. A title that uses `setjmp`/`longjmp` cannot turn the flag on safely.
+`share_registers` does not fit as a per-function opt-out, because its copy-back assumes a funclet.
+
+Possible directions:
+- Spill the localized registers into `ctx` before `ppc_setjmp` and reload them after it returns,
+  both times.
+- A per-function option to keep the registers in `ctx`, without the copy-back.
+
+(For us this is latent: our only `setjmp` users are on image-decoder error paths, never seen to
+run. We have not enabled the flag.)
 
 ---
 
