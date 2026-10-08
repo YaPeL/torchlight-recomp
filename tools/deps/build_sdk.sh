@@ -11,7 +11,7 @@
 set -eu
 
 SDK_REPOSITORY=https://github.com/rexglue/rexglue-sdk.git
-SDK_COMMIT=0c7b01a
+SDK_COMMIT=bd833a2
 
 [ $# -ge 1 ] || { echo "usage: $0 PREFIX [WORK_DIR]" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/../.." && pwd)

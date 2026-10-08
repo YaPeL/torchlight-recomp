@@ -1,6 +1,6 @@
 # Patches
 
-Patches to the ReXGlue SDK (`~/rexglue-sdk`, base `0c7b01a`, v0.10.0.5-dev). They are applied in
+Patches to the ReXGlue SDK (base `bd833a2`, `development` of 2026-10-01; before it, `0c7b01a`). They are applied in
 this order from the SDK checkout with `git apply <patch>`, and then the SDK is rebuilt and installed
 (all configurations). They are functional fixes only; there are no observation hooks.
 
@@ -11,7 +11,8 @@ touch POSIX files (`threading_posix.cpp`, `memory_posix.cpp`). `series` marks th
 patches 17 and 18 `windows`; the build scripts apply what their platform takes. Patches 17 and 18 only change Windows
 files or Windows branches, so on Linux they build nothing new. The SDK's `unit_tests` pass on Windows except
 `codegen/output_stamp_test.cpp` (lines 227-228, the escaping of paths with a space or `#`), which
-fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched by these patches.
+fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched by these patches
+(not rechecked on `bd833a2` yet).
 
 1. `rexglue-vulkan-stencil-transfer.patch`: the Vulkan backend's stencil copies (without shader
    stencil export) set every bit of the destination to 1. The minimap reinterprets that EDRAM as
@@ -61,6 +62,9 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
    GPL-3.0, but its `THIRD_PARTY_NOTICES.md` distributes the ReXGlue patches under ReXGlue's terms
    (BSD-3-Clause), and `null_gpu.cpp` states it in its header. The `std::jthread`/`std::stop_token`
    workaround in `src/core/timer_queue.cpp` that came with 0003 was left out (not needed on Linux).
+   Rebased on `bd833a2`: upstream moved the install target list to
+   `cmake/rexglue_export_targets.cmake`, so `rexgpu-null` is added there, and the plugin gets
+   `rexglue_add_version_resource` like `rexgpu-xenos`.
 
 9. `rexglue-imgui-drawer-pending-dialogs.patch`: if the game quit with a XAM dialog open (keyboard or
    message box), the process hung: the "Kernel Dispatch" thread waits in `xeXamDispatchDialogEx` for
@@ -227,5 +231,10 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     keystrokes while the emulation is off), in the SDK's `unit_tests`. Checked in the game on
     Windows: the keyboard drives the menus. Not specific to any GPU. Candidate for an upstream
     report to ReXGlue.
+
+    **Removed with the move to `bd833a2`** (the file is in the history): upstream fixed it (issue
+    #310, PR #311) and reworked it in `3f34ffc` (keystrokes for bound keys, released on focus loss,
+    plus a keyboard passthrough mode). Upstream does not repeat a held bound key; if the menus need
+    it, that is an upstream PR on top of patch 16's `keystroke_repeat.h`.
 
 The observation and diagnostic patches there were before remain in the git history.
