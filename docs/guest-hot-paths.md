@@ -164,3 +164,107 @@ whether or not they are read. Measured on Torchlight's generated code: 903 x86 i
 locals within a function and write back only the live ones at calls and returns; set the CR bits
 lazily or only the ones a later branch reads; and compile the generated code with the default code
 model on Linux when the text fits.
+
+## Codegen options (2026-10-08)
+
+The ReXGlue SDK at our base (`0c7b01a`) can keep some PPC registers in C++ locals of each
+generated function instead of `PPCContext` (manifest keys under `[entrypoint]`). What each one
+assumes, read from the SDK's code generator (`src/codegen/builders/context.cpp`,
+`control_flow.cpp`, `system.cpp`):
+
+| Option | Moves to locals | Assumption | State |
+|---|---|---|---|
+| `reserved_as_local` | the `lwarx`/`stwcx.` reservation | both in the same function | on |
+| `xer_as_local` | carry and overflow | not live across a call | on |
+| `ctr_as_local` | the count register (loops, `bctr`) | not live across a call | on |
+| `cr_as_local` | cr0-cr7 | the ABI passes no CR between functions; a function split wrongly by the analysis would lose it at the cut | on |
+| `non_volatile_as_local` | r14-r31, f14-f31, v14 and up; drops every call to `__savegprlr_N`/`__restgprlr_N`/`__savefpr_N`/... | no hook reads a caller's preserved registers through `ctx`; a host `longjmp` only restores `ctx` | on (below) |
+| `non_argument_as_local` | r0, r2, r11, r12, f0, v32-v63 | nothing passes them between functions | off: the game passes data in `r12` outside the ABI (below) |
+| `skip_lr` | stops writing `ctx.lr` at calls and `mflr` | nobody reads LR | off: 15 hook reads of `ctx.lr`, and the game's one `blrl` jumps to `ctx.lr` |
+| `skip_msr` | drops `mtmsrd`/`mfmsr` | no critical sections through the MSR | off: the global lock behind them is used at 372 sites |
+
+The four that are on, validated with the game (the 60 tests, a run in the emulated GPU mode, a
+10-minute varied session in the native mode with the log and an achievement checked, and the
+same saved game loaded and saved again by develop twice and by this build once: the saves differ
+no more between the builds than between the two develop runs, only in AI state, positions and
+level timers). The replays do not run guest code and only checked that nothing else changed.
+
+Effect: the recompiled code goes from 52.1 to 44.7 MiB (-14 %; `0x821C5FA0` from 3,211 to 2,775
+x86 instructions), almost all of it from `cr_as_local` (`reserved` changes nothing, `xer` -2 %,
+`ctr` -0.6 %). The frame rate hardly moves (fixed-floor saved game, step overlay, draw skip on,
+two runs each):
+
+| | develop | Codegen options |
+|---|---|---|
+| Fight, FPS | 140.4, 143.5 | 140.6, 145.2 |
+| Fight, p99 (1 % low) | 11.68, 10.52 ms (85.6, 95.1) | 9.70, 10.35 ms (103.1, 96.6) |
+| Town square, FPS | 110.9, 119.3 | 114.0, 117.5 |
+| Town square, p99 (1 % low) | 12.03, 11.70 ms (83.1, 85.5) | 11.92, 11.60 ms (83.9, 86.2) |
+
+About +0.7 % on average, inside the run-to-run spread. The fight's 1 % low is set by the guest's
+first-use loads of effects (55-80 ms frames that load textures), which depend on what the monsters
+do; in the first codegen run they did not cast, so its 103.1 is not comparable. What the options
+remove are mostly stores of CR bytes and counters to the context, which land in the L1 cache and
+rarely stall: fewer instructions, not much less time. The larger cost the profile shows, the
+register save and restore helpers (4.6 % of the main thread) and the reloads of preserved
+registers after every call, is what `non_volatile_as_local` would remove.
+
+### Non-volatile registers in locals (`non_volatile_as_local`)
+
+On since 2026-10-08, on top of the four above. Each generated function keeps r14-r31, f14-f31 and
+v14 and up in C++ locals, and the calls to the register save and restore helpers (1,046 call sites)
+are dropped: in the profile those helpers were 4.6 % of the main thread, and every call reloaded the
+preserved registers from the context afterwards. The recompiled code goes from 44.7 to 41.2 MiB.
+
+What it assumes, and how each point was checked:
+
+- **No hook reads its caller's preserved registers through `ctx`** (they are stale there). Two
+  achievement hooks did (`ctx.r28`; `ctx.r29` and `ctx.f30`); they now take the values from
+  arguments of the enclosing guest call (the item use `0x822B9A60`, the damage application
+  `0x8229C7B0`) and the health setter's own `f1`. The `no_preserved_guest_registers` test
+  (`cmake/check_guest_registers.cmake`) fails on any access to r12, r14-r31, f14-f31 or v14 and up
+  in `src/`; `CONTRIBUTING.md` states the rule.
+- **SEH funclets.** The game's `__try`/`__finally` funclets run on their owner's frame (92
+  functions, marked as sharing registers: they keep r14-r31 in `ctx`). The 40 that their owner calls
+  directly get the owner's localized r14-r31 copied into `ctx` around the call by the SDK; every
+  call site copies all the registers its funclet reads (checked one by one in the generated code),
+  and none of the 92 reads a non-volatile FPR or vector register of its owner (that copy only covers
+  GPRs). The other 52 are only reachable through exception dispatch, which does not run today
+  (`RtlUnwind` is a stub). If dispatch is ever implemented, upstream or in our crash handling, those
+  52 need the same r14-r31 copy through `ctx` that the direct calls get (upstream notes D17, D26 in
+  `docs/rexglue-upstream.md` on the SDK branch).
+- **`setjmp`/`longjmp`** (`0x82864230`, `0x828636E0`, image decoder error paths, never reached) stay
+  undeclared, as before: the generated `setjmp` restores only `ctx`, so a declared one would leave
+  localized registers indeterminate after a `longjmp` (upstream note D21).
+
+`non_argument_as_local` stays off. The game passes data in r12 outside the ABI: the `__try`/
+`__finally` funclets get their owner's frame in it (88 functions start with `r31 = r12 - N`), and
+the stack probe `0x82861494` its size. With r12 in a local of both caller and callee, the funclet
+sees 0 and a `__finally` does not release the C runtime's heap lock: the game deadlocks about 3 s
+after start (under gdb, the main thread and two others wait in `RtlEnterCriticalSection` from the
+heap functions `0x82719BB8`, `0x8271EBC0`, `0x82881640`). The same build without that option starts
+and plays normally (upstream note D26).
+
+Validation, the same as for the four above plus the two achievements: the 60 tests; a run in the
+emulated GPU mode; a varied session of about 15 minutes in the native mode (a new character,
+inventory, save and reload, dungeon fights, a floor change, fishing, town); PC achievements with the
+observation trace and the developer command `HURTME 40` (the potion given to the pet and the
+maximum damage count as on develop); and the fixed-floor save loaded and saved again: it differs
+from develop's no more than develop's own runs differ from each other (23 bytes where three develop
+runs agree and this build does not, all in AI state, positions and timers). The replays do not run
+guest code and only checked that nothing else changed.
+
+Measurement against develop with the four options above (fixed-floor saved game, step overlay, draw
+skip on, two runs each; "lightning" marks the runs where the bubble monsters cast theirs, whose
+first-use loads set the fight's worst frames):
+
+| | develop | non_volatile_as_local |
+|---|---|---|
+| Standing still, FPS | 191.0, 191.5 | 205.1, 214.2 |
+| Fight, FPS | 146.6 (lightning), 158.0 (none) | 159.9 (lightning), 157.7 (lightning) |
+| Fight, p99 (1 % low) | 11.04, 9.79 ms (90.6, 102.1) | 9.87, 10.88 ms (101.3, 91.9) |
+| Town square, FPS | 123.3, 117.3 | 123.0, 131.3 |
+| Town square, p99 (1 % low) | 11.03, 11.32 ms (90.7, 88.3) | 12.46, 11.18 ms (80.3, 89.4) |
+
+About +10 % standing still, +9 % in the fight (the pair with the lightning in both runs) and +6 %
+in the town square on average; the town square's 1 % low stays inside its run-to-run spread.
