@@ -8,7 +8,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 add_library(torchlight_mods STATIC dat_text.cpp mod_list.cpp save_safety.cpp saved_mod_list.cpp
-    unit_index.cpp unit_cache.cpp mod_files.cpp save_units.cpp
+    unit_index.cpp unit_cache.cpp save_units.cpp
     save_units_notice.cpp)
 target_include_directories(torchlight_mods PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_mods PUBLIC cxx_std_23)
@@ -37,10 +37,6 @@ add_executable(mods_unit_cache_test unit_cache_test.cpp)
 target_link_libraries(mods_unit_cache_test PRIVATE torchlight_mods)
 target_compile_options(mods_unit_cache_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mods_unit_cache_test COMMAND mods_unit_cache_test)
-add_executable(mods_mod_files_test mod_files_test.cpp)
-target_link_libraries(mods_mod_files_test PRIVATE torchlight_mods)
-target_compile_options(mods_mod_files_test PRIVATE -Wall -Wextra -Werror)
-add_test(NAME mods_mod_files_test COMMAND mods_mod_files_test)
 add_executable(mods_save_units_test save_units_test.cpp)
 target_link_libraries(mods_save_units_test PRIVATE torchlight_mods)
 target_compile_definitions(mods_save_units_test PRIVATE
