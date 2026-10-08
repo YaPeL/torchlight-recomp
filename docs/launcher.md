@@ -264,12 +264,14 @@ out of the drawing so that the drawing can be replaced.
    mouse from the SDL3 backend; the pad from ImGui's gamepad navigation (A activates, B goes back,
    as `live/ui_gamepad.h`).
 4. **Texts and font**: the new texts in `data/ui/tl_setup_strings.txt` (de, fr, es) under
-   `setup_text_test`; a redistributable font with the Latin glyphs of those languages (ImGui's
-   built-in one is a small bitmap font that does not scale well).
+   `setup_text_test`. Font (decided 2026-10-08): Noto Sans, Latin subset only (OFL), in
+   `THIRD_PARTY_NOTICES.md` (ImGui's built-in one is a small bitmap font that does not scale
+   well). The install's progress is drawn with it too, so accented letters show as they are (the
+   progress window's ASCII debug font drops the accents today).
 5. **Wiring**: `game_setup::EnsureGameData`/`EnsureAchievementChoice` open the launcher instead of
    the message boxes when something is missing; Play closes the window, destroys the context and
-   returns to `TorchlightApp::Create`, which goes on as now. A command-line option opens it on
-   demand. The SDL message boxes stay only for an error before the launcher's window exists.
+   returns to `TorchlightApp::Create`, which goes on as now. `--launcher` (decided 2026-10-08) opens
+   it on demand. The SDL message boxes stay only for an error before the launcher's window exists.
 6. **Checks by hand**: Windows with an empty set of user folders (package, folder, cancel, a bad
    package, picker fallback); Windows Sandbox; Linux; the Steam Deck in Game Mode (the hand-over
    from the launcher's window to the game's).
@@ -389,8 +391,11 @@ The launcher shows these previews before writing anything, and the user can leav
   `AllowDesktopConfig` and `AllowOverlay` 1. With Flatpak Steam the game must be reachable from
   Steam's sandbox **[not verified]**: detected and explained, not worked around.
 - **Steam closed**: before writing `shortcuts.vdf`, check whether Steam runs (in the platform
-  module, from the process list). If it does, offer "close Steam and add" (`steam -shutdown`, wait,
-  write, start it again) or cancel. Never write while it runs.
+  module, from the process list). If it does, closing it is always the user's explicit choice,
+  never automatic (decided 2026-10-08): a clear notice first ("Steam will close to add the game
+  and open again"), then "close Steam and add" (`steam -shutdown`, wait, write, start it again) or
+  cancel. Never write while it runs. Flatpak Steam and the views marked **[not verified]** above
+  stay open until this stage starts.
 - **Writing**: read the whole file, keep every entry and unknown field as read, replace ours (found
   by `Exe`) or append it, write to a temporary file and rename it; the first previous file is kept
   as `shortcuts.vdf.bak`. A unit test round-trips a file with other entries byte for byte.
