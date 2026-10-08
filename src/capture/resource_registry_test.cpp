@@ -2,6 +2,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <thread>
 
 #include "capture/resource_registry.h"
 
@@ -62,6 +63,28 @@ int main() {
 
   // Kinds do not alias: a program lookup at a texture's address finds nothing.
   Check(!r.Lookup(ResourceKind::kProgram, 0x3000), "kind checked");
+  // ...also once both answers are cached.
+  Check(r.Lookup(ResourceKind::kTexture, 0x3000).has_value(), "kind checked, cached (found)");
+  Check(!r.Lookup(ResourceKind::kProgram, 0x3000), "kind checked, cached (not found)");
+
+  // The lookup cache: repeated lookups give the same answer; a change on another thread is seen
+  // by the next lookup; two registries never answer for each other.
+  ResourceRegistry c;
+  c.Create(ResourceKind::kVertexBuffer, 0x5000, {{}, 32, 10, 0});
+  for (int i = 0; i < 3; ++i)
+    Check(c.Lookup(ResourceKind::kVertexBuffer, 0x5000)->element_size == 32, "cached answer");
+  std::thread([&] { c.Destroy(0x5000); }).join();
+  Check(!c.Lookup(ResourceKind::kVertexBuffer, 0x5000), "a destruction on another thread is seen");
+  std::thread([&] { c.Create(ResourceKind::kVertexBuffer, 0x5000, {{}, 48, 10, 0}); }).join();
+  auto again = c.Lookup(ResourceKind::kVertexBuffer, 0x5000);
+  Check(again && again->element_size == 48 && again->id.generation == 2,
+        "a creation on another thread is seen");
+  ResourceRegistry other;
+  Check(!other.Lookup(ResourceKind::kVertexBuffer, 0x5000), "another registry: not cached across");
+  other.Create(ResourceKind::kVertexBuffer, 0x5000, {{}, 16, 1, 0});
+  Check(other.Lookup(ResourceKind::kVertexBuffer, 0x5000)->element_size == 16 &&
+            c.Lookup(ResourceKind::kVertexBuffer, 0x5000)->element_size == 48,
+        "each registry its own answer");
   std::printf("resource registry test: ok\n");
   return 0;
 }
