@@ -14,6 +14,7 @@ of it is left and says so; it exits with the command's code, or:
   124  stopped at the time limit
   125  stopped at the log size limit
   126  something of the command could not be killed (named in the report)
+  130  the script itself was interrupted (SIGINT, SIGTERM, SIGHUP): the command is stopped first
 
 Usage:
   tools/run_capped/run_capped.py [--timeout SECONDS] [--max-log-mb MB] [--watch PATH ...]
@@ -57,6 +58,7 @@ EXIT_REPEATED_FAULT = 123
 EXIT_TIMEOUT = 124
 EXIT_LOG_LIMIT = 125
 EXIT_NOT_KILLED = 126
+EXIT_INTERRUPTED = 130
 
 POLL_SECONDS = 0.1
 GRACE_SECONDS = 5.0
@@ -341,6 +343,11 @@ def run(command, timeout, max_log_bytes, watched, output_path, stop_on=None, sto
     start = time.monotonic()
     logs = LogWatcher([output_path] + watched, output_path, start_wall, head_path, head_bytes)
     repeats = {}
+    # An interrupted script must still stop the command: without this, Ctrl+C or a kill of the
+    # script ends it at once and leaves the game running in its own session.
+    interrupted = []
+    for sig in [signal.SIGINT, signal.SIGTERM] + ([signal.SIGHUP] if hasattr(signal, "SIGHUP") else []):
+        signal.signal(sig, lambda number, _frame: interrupted.append(number))
     stop_seen = None
     with open(output_path, "wb") as output:
         group = WindowsJob(command, output) if os.name == "nt" else PosixGroup(command, output)
@@ -354,6 +361,9 @@ def run(command, timeout, max_log_bytes, watched, output_path, stop_on=None, sto
             code = group.process.poll()
             if code is not None:
                 reason = f"exited with code {code}"
+                break
+            if interrupted:
+                reason, code = f"interrupted (signal {interrupted[0]})", EXIT_INTERRUPTED
                 break
             if now - start > timeout:
                 reason, code = f"time limit ({timeout:g} s)", EXIT_TIMEOUT

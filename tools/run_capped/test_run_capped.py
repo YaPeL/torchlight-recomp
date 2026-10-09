@@ -188,6 +188,29 @@ class RunCappedTest(unittest.TestCase):
         self.assertEqual(result.returncode, 124, result.stderr)
         self.assert_gone(pid_file)
 
+    @unittest.skipIf(os.name == "nt", "POSIX signals")
+    def test_an_interrupted_script_stops_the_command(self):
+        # Interrupting the runner (Ctrl+C, a kill from a script driving it) once ended it at once and
+        # left the game running in its own session.
+        import signal
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            pid_file = self.dir / f"grandchild{int(sig)}.pid"
+            code = SPAWN_GRANDCHILD.format(rest="time.sleep(600)").replace("sys.argv[1]",
+                                                                           repr(str(pid_file)))
+            runner = subprocess.Popen([sys.executable, str(SCRIPT), "--output",
+                                       str(self.dir / "out.txt"), "--timeout", "60", "--",
+                                       sys.executable, "-c", code],
+                                      stderr=subprocess.PIPE, text=True)
+            deadline = time.monotonic() + 20
+            while not pid_file.exists() and time.monotonic() < deadline:
+                time.sleep(0.1)
+            time.sleep(0.3)  # the pid is written before the file is closed
+            runner.send_signal(sig)
+            _, err = runner.communicate(timeout=60)
+            self.assertEqual(runner.returncode, 130, err)
+            self.assertIn("interrupted", err)
+            self.assert_gone(pid_file)
+
 
 if __name__ == "__main__":
     unittest.main()
