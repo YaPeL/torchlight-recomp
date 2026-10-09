@@ -809,7 +809,19 @@ system, not on the file. A 112 KB file took 1.9 ms with nothing else dirty, 11-3
 16-256 MB of other dirty data pending, and 85 ms as the first file of a new folder.
 
 The flushes stay synchronous, as `XamContentClose` is on the console, so a flush error can reach
-the title. In Torchlight they fall in a zone change's loading screen or at exit.
+the title. Where Torchlight commits, from a guided run with patch 27's log line (2026-10-09):
+- At each zone change, under the loading screen: two files right before the level load and two
+  right after.
+- In the options menu, two files each time, with the menu open.
+- At save-and-exit.
+- Never from the shared stash, the inventory, a vendor, fighting or walking.
+
+The user's criterion: a synchronous commit is fine with a menu or a loading screen open. Only a
+commit in open play (fighting or walking) would need the flushes moved to a worker thread first.
+
+Not verified yet: the event that runs when Alric's quest completes, after the final boss
+(`0x823CEED0`), closes a content package and may write. Whoever has a save that far along should
+play it through with patch 27 and check whether a `Content ...: flushed` line appears in open play.
 
 Our patch 27 (`patches/README.md`), approved by the user on 2026-10-08.
 
