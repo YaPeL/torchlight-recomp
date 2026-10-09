@@ -21,6 +21,24 @@ presented one (present to present on the backend thread, `frame time (presented,
 present)`, with the guest frames dropped because the backend was behind). When the backend is the
 limit, the second is the lower one and is what the player sees; the frame counter (F3) shows both.
 
+**Since 2026-10-09, every measurement also records the machine's state**, because alternated runs
+of the same binaries drifted run after run (develop's town square 130 -> 133 -> 139 -> 146 fps
+while phase A's went 138 -> 137 -> 135 -> 132), which looks thermal. Every 2 s during each run:
+the CPU frequency (mean, min and max over the cores), the package and hottest core temperatures,
+the fan, whether the charger is plugged in, the kernel's thermal throttle counters (per core and
+package, from `/sys/devices/system/cpu/cpu*/thermal_throttle`), and the GPU's temperature, clock,
+power and utilisation (`nvidia-smi`). The power profile (`powerprofilesctl`), the governor and the
+energy performance preference go in its header. Each run's report puts them next to the frame
+rates of every step: mean frequency, mean and highest package temperature, throttle events during
+the step. Measurements run with the power profile set to **performance** (intel_pstate, EPP
+`performance`) and the charger plugged in. No frequency cap: on this laptop the package sits at
+82-83 C with the CPU near 3.0 GHz while the game runs, throttling all the time (tens of thousands
+of package throttle events per 40 s step), so before each measured run the machine cools until
+the package temperature (`x86_pkg_temp`) stays below **55 C** for 10 s (it idles at 45-50 C).
+Frame rates of such runs still move by several percent between identical runs; decisions on small
+changes also use the profile (the change's share of the thread it runs on), which the drift does
+not move.
+
 **Build** (the Linux release's flags, built locally): the game (`linux-amd64-release`,
 `-O3 -g -DNDEBUG`; `generated/` also `-gline-tables-only -mcmodel=large -msse4.1`), the SDK's
 Release libraries (`librexruntime.so`, `librexgpu-xenos.so`: `-O3 -DNDEBUG -march=x86-64-v2`,
@@ -309,6 +327,49 @@ lightning in all four fights):
 About +6 % in the town square (FPS and 1 % low), +7 % FPS and +9.5 % 1 % low in the fight, and
 +7 % FPS standing still: some 0.5 ms less per frame on the guest's render thread, as the profile
 shares predicted.
+
+### Producer, phase A (2026-10-09)
+
+What was left of the producer after those cuts, from the town square's DWARF profile (develop
+320ee22): 21.9 % of the guest's render thread inside our hooks. Four cuts were tried, each its own
+commit; two are kept. The same profile with them (35 s of the town square, phase A with all four):
+
+| Function (share of the guest's render thread) | Before | Phase A | Cut |
+|---|---|---|---|
+| CaptureVertexDeclaration | 1.63 % | 0.79 % | A4, kept |
+| CaptureDraw | 4.23 % | 3.47 % | A3, kept |
+| ReadVertexBufferBinding | 1.40 % | 0.87 % | A3, kept |
+| ReadConstants | 3.95 % | 4.03 % | A2, dropped |
+| MemoState (the state memos' early out) | 2.55 % | 2.91 % | A1, dropped |
+| All our hooks | 21.9 % | 20.6 % | |
+
+About 3000 samples fall in the producer, so each row moves by about +-0.15 % on its own.
+
+- **A3, kept**: one lookup per buffer of a draw. A draw's vertex and index buffers were looked up
+  in the registry (whose small direct-mapped cache often missed), then twice more in the live
+  buffer table, and the vertex buffer binding looked them up again. `Session::DrawBuffer` keeps the
+  registry's answer and the live state per buffer address while `ResourceRegistry::Stamp` for the
+  address is unchanged; a buffer freed and created again at the address is a new generation and
+  starts from a fresh live state.
+- **A4, kept**: the declaration's registry answer kept the same way, and in the live mode the
+  element bytes the live stream has: the same bytes reuse their hash instead of hashing again (a
+  declaration changed in place has other bytes and is hashed and described again).
+- **A1, dropped**: the state memos (`Session::Unchanged`) were one entry per (slot, sub) pair, 1.7
+  MB, and the assumption was that most lookups missed the cache. Packing the pairs in use behind a
+  32 KiB index changed nothing: `Unchanged` kept 1.3 % of its own plus 0.5 % in `memcmp`. The cost
+  is not in that table; where it is (the shadow entry each memo points to, or simply the number of
+  calls, ~965 per frame for the texture filtering alone) was not measured.
+- **A2, dropped**: every constant range of a `SetConstants` held its own vector, and the
+  assumption was that one array of values per command would take the allocations away. They moved
+  instead: the command's array and its vector of ranges grow as ranges are added, and `AddRange`
+  shows the same `malloc` and `free` as before. Not tried: reserving from the number of ranges,
+  which is only known after walking the guest's map.
+
+In the game (fixed-floor saved game, step overlay, draw skip on, eight runs alternated, all four
+cuts): the dungeon fight +6.5 % FPS (159.3 -> 169.7), +5.5 % presented, standing still +8 %; the
+town square no measurable change (137.0 -> 135.5 FPS), with develop's runs rising run after run
+and phase A's falling, the drift that led to the thermal record above. The profile is what decided
+it.
 
 ### The backend thread (2026-10-09)
 

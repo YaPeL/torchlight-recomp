@@ -217,6 +217,39 @@ class Session {
   void OnCreated(commands::ResourceKind kind, uint32_t guest_address, BufferInfo info = {});
   void OnDestroyed(uint32_t guest_address);
   std::optional<BufferInfo> Lookup(commands::ResourceKind kind, uint32_t guest_address);
+
+  // Live mode, per vertex/index buffer identity (with its generation), so the draws' snapshots of
+  // a buffer already seen take no lookups: whether its description was sent, its last content
+  // version and snapshot (the same version is the same content), and the swap whose live frame
+  // already holds that snapshot. Dropped when the buffer is destroyed.
+  struct LiveBuffer {
+    bool described = false;
+    uint32_t version = 0;
+    live::SnapshotStore::Content content;
+    uint64_t added_at_swap = ~0ull;
+  };
+  // A vertex or index buffer at `guest_address` as a draw uses it (render thread): its registry
+  // entry and its LiveBuffer, from one lookup by address. The registry's answer is kept while
+  // ResourceRegistry::Stamp for the address is unchanged; when it changes the registry is asked
+  // again, and a new generation at the address (the guest freed the buffer and created another
+  // there) starts from a new LiveBuffer. Null when the registry has no `kind` there. Valid until
+  // the next call.
+  struct DrawBufferEntry {
+    BufferInfo info;
+    LiveBuffer* live;
+  };
+  std::optional<DrawBufferEntry> DrawBuffer(commands::ResourceKind kind, uint32_t guest_address);
+  // The vertex declaration at `guest_address` as binds use it (render thread): its registry entry,
+  // kept as DrawBuffer keeps a buffer's. Null when the registry has no declaration there.
+  std::optional<BufferInfo> DrawDeclaration(uint32_t guest_address);
+  // Live mode with no capture armed: the content hash the live stream has for the declaration
+  // `id` when its element list is still exactly `elements` (the guest bytes, compared, so a
+  // declaration changed in place is hashed and described again). RememberLiveDeclaration records
+  // the bytes once the live stream has the declaration with that hash.
+  std::optional<commands::Hash> LiveDeclarationBytesSent(const commands::ResourceId& id,
+                                                         std::span<const uint8_t> elements) const;
+  void RememberLiveDeclaration(const commands::ResourceId& id, std::span<const uint8_t> elements,
+                               commands::Hash content);
   // Programs have no constructor/destructor hooks: the createGpuProgram hook reports the program
   // object the render system binds (the assembler program) with its name; a different program at
   // a reused address gets a new generation (resource_registry.h).
@@ -245,12 +278,13 @@ class Session {
   };
   RecordedContent RecordContent(const commands::ResourceId& id, uint32_t version_address,
                                 const uint8_t* data, size_t size, commands::BlobEndian endian,
-                                uint8_t endian_raw);
+                                uint8_t endian_raw, LiveBuffer* live_buffer = nullptr);
   // Resource descriptions (render thread, while recording).
   commands::Hash AddBlob(const uint8_t* data, size_t size, commands::BlobEndian endian,
                          uint8_t endian_raw);
-  void AddVertexBuffer(const BufferInfo& info);
-  void AddIndexBuffer(const BufferInfo& info);
+  // `live_buffer`: the buffer's LiveBuffer when the caller has it (DrawBuffer), else looked up.
+  void AddVertexBuffer(const BufferInfo& info, LiveBuffer* live_buffer = nullptr);
+  void AddIndexBuffer(const BufferInfo& info, LiveBuffer* live_buffer = nullptr);
   // `live_content` replaces desc.content in the live stream.
   void AddTexture(commands::TextureDesc desc, commands::Hash live_content = 0);
   void AddProgram(commands::ProgramDesc desc);
@@ -340,17 +374,36 @@ class Session {
   live::FrameQueue* live_queue_ = nullptr;
   live::SnapshotStore* live_store_ = nullptr;
   live::LiveFrame live_frame_;
-  // Live mode, per vertex/index buffer (identity with generation), so the draws' snapshots of a
-  // buffer already seen take no lookups: whether its description was sent, its last content
-  // version and snapshot (the same version is the same content), and the swap whose live frame
-  // already holds that snapshot. Dropped when the buffer is destroyed.
-  struct LiveBuffer {
-    bool described = false;
-    uint32_t version = 0;
-    live::SnapshotStore::Content content;
-    uint64_t added_at_swap = ~0ull;
+  // Per buffer address (render thread): the registry's answer and the stamp it was read under,
+  // and the LiveBuffer of the generation `live_generation` (0: none yet).
+  struct BufferSlot {
+    uint64_t stamp = 0;
+    bool looked_up = false;
+    commands::ResourceKind kind = commands::ResourceKind::kVertexBuffer;
+    std::optional<BufferInfo> info;
+    uint32_t live_generation = 0;
+    LiveBuffer live;
   };
-  FlatMap<uint64_t, LiveBuffer> live_buffers_;
+  FlatMap<uint32_t, BufferSlot> buffer_slots_;
+  // Per declaration address (render thread): as BufferSlot, and the element bytes the live stream
+  // has for generation `sent_generation` (0: none) with their hash.
+  struct DeclarationSlot {
+    uint64_t stamp = 0;
+    bool looked_up = false;
+    commands::ResourceKind kind = commands::ResourceKind::kVertexDeclaration;
+    std::optional<BufferInfo> info;
+    uint32_t sent_generation = 0;
+    std::vector<uint8_t> sent_bytes;
+    commands::Hash sent_content = 0;
+  };
+  FlatMap<uint32_t, DeclarationSlot> declaration_slots_;
+  // The registry's answer for `kind` at `guest_address`, kept in `slot` while the address's stamp
+  // is unchanged.
+  template <typename Slot>
+  const std::optional<BufferInfo>& Registered(Slot& slot, commands::ResourceKind kind,
+                                              uint32_t guest_address);
+  // The LiveBuffer of `id`'s generation (a new one if the slot held an older generation's).
+  LiveBuffer& LiveBufferOf(const commands::ResourceId& id);
   static uint64_t BufferKey(const commands::ResourceId& id) {
     return uint64_t(id.generation) << 32 | id.guest_address;
   }
