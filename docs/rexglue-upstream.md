@@ -1150,7 +1150,8 @@ patch, it also asks there for a number.
 There is no direct channel between machines. The user carries messages, and what is meant for
 these agents lives here and in `patches/README.md`.
 
-- **macOS (ARM64).** Base: `sdk/rexglue-next` (series on `bd833a2`, patches 22-25 included).
+- **macOS (ARM64).** Base: `develop` (series on `bd833a2`, patches 22-27 included). `sdk/rexglue-next`
+  and `sdk/guest-file-flush` were merged into `develop` and deleted on 2026-10-09.
   - The PPC test data is on branch `sdk/ppc-test-data`. Build with
     `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=<that checkout>/bin`. To remake it after an
     SDK change, run `tools/deps/build_ppc_test_data.sh` on Linux.
@@ -1164,7 +1165,7 @@ these agents lives here and in `patches/README.md`.
   - **Patches 23-25 (2026-10-08): please run this on ARM64 and write the results back** in
     `docs/macos-port.md`. On x86-64 the tests of 23 and 24 cannot fail, because native SSE2 and
     MXCSR were right there. Only ARM64 shows those two bugs.
-    1. Take `sdk/rexglue-next` at the commit that adds 23-25, and `sdk/ppc-test-data` at the
+    1. Take `develop`, and `sdk/ppc-test-data` at the
        commit that adds `instr_fctix_rounding`, `instr_mffs_rounding` and `instr_mtfsf_fields`
        (169 files of each kind). The configure stops if a `.bin` is missing.
     2. Build the SDK as before with the whole series (`tools/deps/build_sdk.sh`, which applies
@@ -1195,10 +1196,10 @@ these agents lives here and in `patches/README.md`.
        `sudo fs_usage -w -f filesys <pid of the game> | grep -i -E "fsync|fcntl"` and look for the
        `F_FULLFSYNC` calls at the save: one per changed save file plus the save folder, at
        `XamContentClose`. The game log says `Content <root>: flushed N files and M folders to
-       disk`. Note how long each takes,
-       and whether the save stalls visibly. On Linux an `fsync` of a save-sized file takes about 1 ms
-       on an NVMe disk (rare outliers up to 0.23 s). `F_FULLFSYNC` is expected to be slower, since it
-       also empties the drive's cache.
+       disk`. Note how long each takes, and whether the save stalls visibly. On Linux (ext4,
+       NVMe) Torchlight's save-and-exit spent about 140 ms in flushes, 68-69 ms for each of the
+       two larger files (D27). `F_FULLFSYNC` is expected to be slower, since it also empties the
+       drive's cache.
     3. Anything unexpected is a finding: `F_FULLFSYNC` failing on APFS, or the game reporting a
        save error.
 - **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
