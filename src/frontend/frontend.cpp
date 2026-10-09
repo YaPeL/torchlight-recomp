@@ -49,9 +49,9 @@ size_t Counter::total() const {
 std::optional<Frontend::Mat> Frontend::StageConstants::Raw(const AutoConstant& a, uint32_t count) const {
   Mat m{};
   for (uint32_t i = 0; i < count && i < 16; ++i) {
-    auto it = physical.find(a.physical_index + i);
-    if (it == physical.end()) return std::nullopt;
-    m[i] = it->second;
+    const float* v = physical.Get(a.physical_index + i);
+    if (!v) return std::nullopt;
+    m[i] = *v;
   }
   return m;
 }
@@ -72,9 +72,9 @@ std::optional<Frontend::Mat> Frontend::StageConstants::Auto(const std::string& n
 std::optional<std::array<float, 4>> Frontend::StageConstants::Register(uint32_t reg) const {
   std::array<float, 4> v{};
   for (uint32_t i = 0; i < 4; ++i) {
-    auto it = physical.find(reg * 4 + i);
-    if (it == physical.end()) return std::nullopt;
-    v[i] = it->second;
+    const float* value = physical.Get(reg * 4 + i);
+    if (!value) return std::nullopt;
+    v[i] = *value;
   }
   return v;
 }
@@ -346,8 +346,8 @@ void Frontend::Execute(const Command& command) {
         } else if constexpr (std::is_same_v<T, SetConstants>) {
           auto& st = stages_[p.stage.value];
           for (const auto& r : p.floats)
-            for (uint32_t i = 0; i < r.element_count && i < r.data.size(); ++i)
-              st.physical[r.physical_index + i] = std::bit_cast<float>(r.data[i]);
+            st.physical.SetRange(r.physical_index, r.data.data(),
+                                 uint32_t(std::min<size_t>(r.element_count, r.data.size())));
           st.autos = p.autos;
           if (p.transpose_matrices) {
             st.transposed = *p.transpose_matrices;

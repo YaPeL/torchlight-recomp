@@ -20,6 +20,7 @@
 #include "backend/backend_api.h"
 #include "commands/types.h"
 #include "frontend/content_source.h"
+#include "frontend/physical_constants.h"
 
 namespace torchlight::frontend {
 
@@ -86,7 +87,7 @@ class Frontend {
   enum class LayoutSource { kFlag, kInferred, kUnknown };
   using Mat = std::array<float, 16>;
   struct StageConstants {
-    std::unordered_map<uint32_t, float> physical;  // guest float constants by physical index
+    PhysicalConstants physical;  // guest float constants by physical index
     std::vector<commands::AutoConstant> autos;     // from the latest upload
     bool transposed = false;  // GpuProgramParameters::mTransposeMatrices (format 1.2+)
     LayoutSource layout = LayoutSource::kUnknown;
