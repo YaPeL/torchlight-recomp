@@ -256,11 +256,23 @@ int main() {
     s.AddVertexDeclaration(d1);
     Check(s.LiveDeclarationDescribed(d1.id, 0x1234), "the same content: not read again");
     Check(!s.LiveDeclarationDescribed(d1.id, 0x5678), "changed in place: described again");
+    // The element bytes it was sent with: the same bytes skip the hash, others do not.
+    Check(s.DrawDeclaration(decl) && s.DrawDeclaration(decl)->id == d1.id, "declaration found");
+    const uint8_t elements[] = {1, 2, 3, 4}, changed[] = {1, 2, 3, 5};
+    Check(!s.LiveDeclarationBytesSent(d1.id, elements), "bytes not remembered yet");
+    s.RememberLiveDeclaration(d1.id, elements, 0x1234);
+    Check(s.LiveDeclarationBytesSent(d1.id, elements) == 0x1234, "the same bytes: its hash");
+    Check(!s.LiveDeclarationBytesSent(d1.id, changed), "bytes changed in place: hashed again");
+    Check(!s.LiveDeclarationBytesSent(d1.id, std::span(elements, 3)), "shorter list: hashed again");
     s.OnDestroyed(decl);
+    Check(!s.DrawDeclaration(decl), "destroyed declaration: none");
     s.OnCreated(ResourceKind::kVertexDeclaration, decl);
     const ResourceId d2 = s.Lookup(ResourceKind::kVertexDeclaration, decl)->id;
+    Check(s.DrawDeclaration(decl) && s.DrawDeclaration(decl)->id == d2, "new generation found");
     Check(!s.LiveDeclarationDescribed(d2, 0x1234),
           "a new declaration at the same address, even with the same content, is described again");
+    Check(!s.LiveDeclarationBytesSent(d2, elements),
+          "a new declaration at the same address, even with the same bytes, is hashed again");
   }
   // A capture's baseline re-reads shadow entries: early outs recorded before no longer apply.
   {

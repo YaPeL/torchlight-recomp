@@ -212,7 +212,7 @@ commands::SetVertexDeclaration CaptureVertexDeclaration(const uint8_t* m, uint32
   Session& s = Session::Get();
   commands::SetVertexDeclaration c;
   if (declaration == 0) return c;
-  auto info = s.Lookup(commands::ResourceKind::kVertexDeclaration, declaration);
+  auto info = s.DrawDeclaration(declaration);
   if (!info) {
     s.AddUnresolved(UnresolvedReason::kBufferNotRegistered,
                     fmt::format("vertex declaration {:#x} never constructed", declaration));
@@ -226,12 +226,19 @@ commands::SetVertexDeclaration CaptureVertexDeclaration(const uint8_t* m, uint32
   uint32_t stride = ogre::vertex_element::kSize.bytes;
   commands::VertexDeclarationContent content;
   content.id = info->id;
+  std::span<const uint8_t> bytes;
   if (first != 0 && last >= first && (last - first) / stride <= 64) {
+    bytes = {mem::HostAddress(m, first), last - first};
+    // The live stream has it with these very bytes: neither hashed nor read again.
+    if (auto sent = s.LiveDeclarationBytesSent(info->id, bytes)) {
+      c.content = *sent;
+      return c;
+    }
     content.content =
-        commands::HashBytes(mem::HostAddress(m, first), last - first,
-                            commands::BlobEndian::kGuestCpuBigEndian, 0);
+        commands::HashBytes(bytes.data(), bytes.size(), commands::BlobEndian::kGuestCpuBigEndian, 0);
     // Already in the live stream with this content: its elements are not read again (session.h).
     if (s.LiveDeclarationDescribed(info->id, content.content)) {
+      s.RememberLiveDeclaration(info->id, bytes, content.content);
       c.content = content.content;
       return c;
     }
@@ -252,6 +259,7 @@ commands::SetVertexDeclaration CaptureVertexDeclaration(const uint8_t* m, uint32
   }
   c.content = content.content;
   s.AddVertexDeclaration(std::move(content));
+  if (!bytes.empty()) s.RememberLiveDeclaration(info->id, bytes, c.content);
   return c;
 }
 

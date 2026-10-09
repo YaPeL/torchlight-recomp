@@ -494,6 +494,17 @@ std::optional<BufferInfo> Session::Lookup(commands::ResourceKind kind, uint32_t 
 std::optional<Session::DrawBufferEntry> Session::DrawBuffer(commands::ResourceKind kind,
                                                             uint32_t guest_address) {
   BufferSlot& slot = buffer_slots_[guest_address];
+  if (!Registered(slot, kind, guest_address)) return std::nullopt;
+  if (slot.live_generation != slot.info->id.generation) {
+    slot.live = {};
+    slot.live_generation = slot.info->id.generation;
+  }
+  return DrawBufferEntry{*slot.info, &slot.live};
+}
+
+template <typename Slot>
+const std::optional<BufferInfo>& Session::Registered(Slot& slot, commands::ResourceKind kind,
+                                                     uint32_t guest_address) {
   // The stamp first: a change after it is read makes the next call ask the registry again.
   const uint64_t stamp = registry_.Stamp(guest_address);
   if (!slot.looked_up || slot.stamp != stamp || slot.kind != kind) {
@@ -502,12 +513,33 @@ std::optional<Session::DrawBufferEntry> Session::DrawBuffer(commands::ResourceKi
     slot.kind = kind;
     slot.looked_up = true;
   }
-  if (!slot.info) return std::nullopt;
-  if (slot.live_generation != slot.info->id.generation) {
-    slot.live = {};
-    slot.live_generation = slot.info->id.generation;
+  return slot.info;
+}
+
+std::optional<BufferInfo> Session::DrawDeclaration(uint32_t guest_address) {
+  return Registered(declaration_slots_[guest_address], commands::ResourceKind::kVertexDeclaration,
+                    guest_address);
+}
+
+std::optional<commands::Hash> Session::LiveDeclarationBytesSent(
+    const commands::ResourceId& id, std::span<const uint8_t> elements) const {
+  if (!live() || armed()) return std::nullopt;
+  const DeclarationSlot* slot = declaration_slots_.find(id.guest_address);
+  if (!slot || slot->sent_generation != id.generation ||
+      !std::equal(elements.begin(), elements.end(), slot->sent_bytes.begin(),
+                  slot->sent_bytes.end())) {
+    return std::nullopt;
   }
-  return DrawBufferEntry{*slot.info, &slot.live};
+  return slot->sent_content;
+}
+
+void Session::RememberLiveDeclaration(const commands::ResourceId& id,
+                                      std::span<const uint8_t> elements, commands::Hash content) {
+  if (!live()) return;
+  DeclarationSlot& slot = declaration_slots_[id.guest_address];
+  slot.sent_generation = id.generation;
+  slot.sent_bytes.assign(elements.begin(), elements.end());
+  slot.sent_content = content;
 }
 
 Session::LiveBuffer& Session::LiveBufferOf(const commands::ResourceId& id) {

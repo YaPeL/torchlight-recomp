@@ -239,6 +239,17 @@ class Session {
     LiveBuffer* live;
   };
   std::optional<DrawBufferEntry> DrawBuffer(commands::ResourceKind kind, uint32_t guest_address);
+  // The vertex declaration at `guest_address` as binds use it (render thread): its registry entry,
+  // kept as DrawBuffer keeps a buffer's. Null when the registry has no declaration there.
+  std::optional<BufferInfo> DrawDeclaration(uint32_t guest_address);
+  // Live mode with no capture armed: the content hash the live stream has for the declaration
+  // `id` when its element list is still exactly `elements` (the guest bytes, compared, so a
+  // declaration changed in place is hashed and described again). RememberLiveDeclaration records
+  // the bytes once the live stream has the declaration with that hash.
+  std::optional<commands::Hash> LiveDeclarationBytesSent(const commands::ResourceId& id,
+                                                         std::span<const uint8_t> elements) const;
+  void RememberLiveDeclaration(const commands::ResourceId& id, std::span<const uint8_t> elements,
+                               commands::Hash content);
   // Programs have no constructor/destructor hooks: the createGpuProgram hook reports the program
   // object the render system binds (the assembler program) with its name; a different program at
   // a reused address gets a new generation (resource_registry.h).
@@ -374,6 +385,23 @@ class Session {
     LiveBuffer live;
   };
   FlatMap<uint32_t, BufferSlot> buffer_slots_;
+  // Per declaration address (render thread): as BufferSlot, and the element bytes the live stream
+  // has for generation `sent_generation` (0: none) with their hash.
+  struct DeclarationSlot {
+    uint64_t stamp = 0;
+    bool looked_up = false;
+    commands::ResourceKind kind = commands::ResourceKind::kVertexDeclaration;
+    std::optional<BufferInfo> info;
+    uint32_t sent_generation = 0;
+    std::vector<uint8_t> sent_bytes;
+    commands::Hash sent_content = 0;
+  };
+  FlatMap<uint32_t, DeclarationSlot> declaration_slots_;
+  // The registry's answer for `kind` at `guest_address`, kept in `slot` while the address's stamp
+  // is unchanged.
+  template <typename Slot>
+  const std::optional<BufferInfo>& Registered(Slot& slot, commands::ResourceKind kind,
+                                              uint32_t guest_address);
   // The LiveBuffer of `id`'s generation (a new one if the slot held an older generation's).
   LiveBuffer& LiveBufferOf(const commands::ResourceId& id);
   static uint64_t BufferKey(const commands::ResourceId& id) {
