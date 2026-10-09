@@ -299,6 +299,12 @@ out of the drawing so that the drawing can be replaced.
   on the Deck in Game Mode and on Android the switch has to stay one visible window (Android: the
   same activity). To try on the Deck in stage 1.
 - **File pickers**: the Deck's Game Mode may have none; the fallback browser is part of stage 1.
+- **Pending (2026-10-08): the system's pickers block the launcher's frame loop.** Step 3 calls
+  `platform::PickFile`/`PickFolder`, which wait (pumping events) until the picker closes: the
+  launcher's window is not redrawn meanwhile, and some systems may show it as not responding.
+  SDL3's dialogs are asynchronous (`SDL_ShowOpenFileDialog` with a callback, on the main thread):
+  to evaluate in a later step a picker the launcher starts and then polls each frame (a pick in
+  progress as a state of the model), so the window keeps drawing.
 - **Restart into the launcher**: the runtime hard-exits on quit, so "back to the launcher" means
   starting the process again.
 - **Mods are not in `develop`**: stage 3 depends on that branch and on the API above.
