@@ -38,7 +38,7 @@ in number order; a branch adds its own line at its number's place.
 | 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
 | 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
 | 28 | `rexglue-quiet-missing-files.patch` | `develop` | In the series |
-| 29 | `rexglue-case-variants.patch` | `sdk/case-variants` | Pending integration |
+| 29 | `rexglue-case-variants.patch` | `develop` | In the series |
 | 30 | | | Next free number |
 
 ## The patches
@@ -417,7 +417,9 @@ in number order; a branch adds its own line at its number's place.
       one's host file after the rename succeeded, unless it is the same file as the destination.
       That check (`std::filesystem::equivalent`) is what keeps the new save on a case-insensitive
       host (Windows, macOS's default APFS), where the rename already replaced the variant and its
-      path now names the new data. A removed file is reported to patch 27's tracking.
+      path now names the new data. A removed file is reported to patch 27's tracking. If the
+      removal fails, the rename still succeeds and the entry still leaves the tree, so the old
+      file comes back at the next mount, now with the mount's WARN and one from the rename.
     - The mount logs one WARN per group of case variants in a folder. Both stay in the tree.
 
     Tests in `vfs_rename_test.cpp`: a rename onto a case variant (runs on every host, and is the
