@@ -1,18 +1,21 @@
 // A development preview of the launcher (not installed): the real window, view and pickers, with
 // an install that only pretends (about 6 seconds of progress, nothing read or written) and an
-// achievement set that is not saved. English texts.
+// achievement set that is not saved.
 //
-//   launcher_preview            the first start (Install)
-//   launcher_preview --ready    as with --launcher: Ready
-//   launcher_preview --browser  the system's picker "fails": the launcher's own browser
+//   launcher_preview                the first start (Install)
+//   launcher_preview --ready        as with --launcher: Ready
+//   launcher_preview --browser      the system's picker "fails": the launcher's own browser
+//   launcher_preview --language es  the texts in de, fr or es (data/ui/tl_setup_strings.txt)
 
 #include <chrono>
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <thread>
 #include <vector>
 
+#include "game_menu/menu_strings.h"
 #include "game_setup/game_files.h"
 #include "launcher/launcher.h"
 
@@ -43,19 +46,35 @@ game_setup::InstallResult PretendInstall(const game_setup::PhaseProgress& progre
 
 int main(int argc, char** argv) {
   bool ready = false, browser = false;
+  std::string language;
   for (int i = 1; i < argc; ++i) {
     const std::string_view arg = argv[i];
     if (arg == "--ready") {
       ready = true;
     } else if (arg == "--browser") {
       browser = true;
+    } else if (arg == "--language" && i + 1 < argc) {
+      language = argv[++i];
     } else {
-      std::fprintf(stderr, "usage: launcher_preview [--ready] [--browser]\n");
+      std::fprintf(stderr, "usage: launcher_preview [--ready] [--browser] [--language de|fr|es]\n");
       return 2;
     }
   }
+  game_setup::Translate tr;
+  if (!language.empty()) {
+    auto strings = std::make_shared<torchlight::game_menu::MenuStrings>();
+    std::vector<std::string> warnings;
+    std::string load_error;
+    if (!strings->Load(TL_SETUP_STRINGS_FILE, warnings, load_error)) {
+      std::fprintf(stderr, "error: %s\n", load_error.c_str());
+      return 1;
+    }
+    tr = [strings, language](const std::string& english) {
+      return strings->Translate(language, english);
+    };
+  }
   const std::string game_dir = platform::GameDataDir();
-  LauncherServices services = SystemServices(game_dir, {});
+  LauncherServices services = SystemServices(game_dir, tr);
   services.install = [](game_setup::Source, const std::filesystem::path&,
                         const game_setup::PhaseProgress& progress) {
     return PretendInstall(progress);
@@ -73,7 +92,7 @@ int main(int argc, char** argv) {
   if (ready) start = {true, torchlight::settings::AchievementSet::kXbox, true};
   std::vector<platform::StartupMessage> log;
   std::string error;
-  const auto outcome = RunLauncher(start, std::move(services), {}, game_dir, log, error);
+  const auto outcome = RunLauncher(start, std::move(services), tr, game_dir, log, error);
   for (const auto& message : log) {
     std::printf("%s%s\n", message.warning ? "warning: " : "", message.text.c_str());
   }

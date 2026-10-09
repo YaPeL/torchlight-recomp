@@ -33,7 +33,8 @@ inline constexpr std::string_view kTextParentFolder = "Parent folder";
 inline constexpr std::string_view kTextUseFolder = "Use this folder";
 inline constexpr std::string_view kTextEmptyFolder = "This folder is empty.";
 
-// The texts above but the project's name, for the translation check.
+// The texts above but the project's name, and the file browser's error (file_browser_model.h), for
+// the translation check (setup_text_test).
 std::span<const std::string_view> LauncherTexts();
 
 }  // namespace torchlight::launcher

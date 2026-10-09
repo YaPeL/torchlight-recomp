@@ -12,3 +12,5 @@ patches/series text eol=lf
 # Copied byte for byte from Dear ImGui's tag (third_party/imgui_backends/README.md), CRLF included.
 third_party/imgui_backends/imgui_impl_* -text
 third_party/imgui_backends/LICENSE.txt -text
+# The font, embedded in the executable byte for byte (third_party/fonts/noto-sans/README.md).
+*.ttf binary

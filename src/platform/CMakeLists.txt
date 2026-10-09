@@ -23,8 +23,30 @@ endif()
 target_include_directories(torchlight_user_folders PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_user_folders PUBLIC cxx_std_23)
 target_compile_options(torchlight_user_folders PRIVATE -Wall -Wextra)
-# The launcher's window draws with ImGui's SDL3 backends (src/launcher).
+# The launcher's window draws with ImGui's SDL3 backends (src/launcher), in Noto Sans (Latin subset,
+# OFL; third_party/fonts/noto-sans/README.md), embedded as a byte array; regenerated only when the
+# font changes.
 target_link_libraries(torchlight_platform PRIVATE torchlight_imgui_backends)
+set(_font "${CMAKE_SOURCE_DIR}/third_party/fonts/noto-sans/NotoSans-Regular-Latin.ttf")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_font}")
+file(READ "${_font}" _font_hex HEX)
+string(LENGTH "${_font_hex}" _font_size)
+math(EXPR _font_size "${_font_size} / 2")
+string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," _font_bytes "${_font_hex}")
+# 16 bytes a line.
+string(REPEAT "0x[0-9a-f][0-9a-f]," 16 _line)
+string(REGEX REPLACE "(${_line})" "\\1\n" _font_bytes "${_font_bytes}")
+file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/launcher_font.cpp" CONTENT [=[
+// Generated from third_party/fonts/noto-sans/NotoSans-Regular-Latin.ttf by src/platform/CMakeLists.txt.
+#include "platform/launcher_font.h"
+namespace torchlight::platform {
+const unsigned char kLauncherFont[] = {
+@_font_bytes@
+};
+const size_t kLauncherFontSize = @_font_size@;
+}  // namespace torchlight::platform
+]=] @ONLY)
+target_sources(torchlight_platform PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/launcher_font.cpp")
 target_include_directories(torchlight_platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(torchlight_platform PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_features(torchlight_platform PUBLIC cxx_std_23)

@@ -18,9 +18,10 @@ target_link_libraries(game_setup_test PRIVATE torchlight_game_setup)
 target_compile_options(game_setup_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME game_setup_test COMMAND game_setup_test)
 
-# Every text of the first start has its translation in each language of tl_setup_strings.txt.
+# Every text of the first start and the launcher has its translation in each language of tl_setup_strings.txt.
 add_executable(setup_text_test setup_text_test.cpp)
-target_link_libraries(setup_text_test PRIVATE torchlight_game_files torchlight_game_menu_model)
+target_link_libraries(setup_text_test PRIVATE torchlight_game_files torchlight_game_menu_model
+                      torchlight_launcher_model)
 target_compile_definitions(setup_text_test PRIVATE
     TL_SETUP_STRINGS_FILE="${CMAKE_SOURCE_DIR}/data/ui/tl_setup_strings.txt")
 target_compile_options(setup_text_test PRIVATE -Wall -Wextra -Werror)

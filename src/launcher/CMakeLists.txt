@@ -10,7 +10,7 @@ target_link_libraries(torchlight_imgui_backends PUBLIC rex::runtime)
 
 # The launcher's model and its fallback file browser: what it shows and does, without drawing,
 # the platform or the runtime (folders are read with std::filesystem); tested on their own.
-add_library(torchlight_launcher_model STATIC launcher_model.cpp file_browser_model.cpp
+add_library(torchlight_launcher_model STATIC launcher_model.cpp launcher_text.cpp file_browser_model.cpp
             folder_listing.cpp)
 target_include_directories(torchlight_launcher_model PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_launcher_model PUBLIC cxx_std_23)
@@ -37,6 +37,8 @@ add_test(NAME launcher_imgui_test COMMAND launcher_imgui_test)
 add_executable(launcher_window_test launcher_window_test.cpp)
 target_link_libraries(launcher_window_test PRIVATE torchlight_platform)
 target_include_directories(launcher_window_test PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
+target_compile_definitions(launcher_window_test PRIVATE
+    TL_SETUP_STRINGS_FILE="${CMAKE_SOURCE_DIR}/data/ui/tl_setup_strings.txt")
 target_compile_options(launcher_window_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME launcher_window_test COMMAND launcher_window_test)
 
@@ -57,4 +59,6 @@ add_test(NAME launcher_test COMMAND launcher_test)
 # A development preview (not installed): the real launcher with a pretend install.
 add_executable(launcher_preview launcher_preview.cpp)
 target_link_libraries(launcher_preview PRIVATE torchlight_launcher)
+target_compile_definitions(launcher_preview PRIVATE
+    TL_SETUP_STRINGS_FILE="${CMAKE_SOURCE_DIR}/data/ui/tl_setup_strings.txt")
 target_compile_options(launcher_preview PRIVATE -Wall -Wextra -Werror)

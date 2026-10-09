@@ -2,6 +2,7 @@
 // window (SDL's) and its display, and the gamepad. Each platform file adds its native handles
 // (platform_sdl.h) and everything else in platform.h.
 
+#include "platform/launcher_font.h"
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
 #include "platform/text_wrap.h"
@@ -10,6 +11,7 @@
 #include <cctype>
 #include <atomic>
 #include <cstdint>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <string_view>
@@ -209,74 +211,6 @@ PickResult Pick(SDL_FileDialogType type, const std::string& title, std::string& 
   return state.result;
 }
 
-// UTF-8 text for SDL's debug font, which has ASCII only: Latin letters with accents lose them,
-// anything else becomes '?'.
-std::string Ascii(const std::string& utf8) {
-  static const std::pair<const char*, const char*> kFold[] = {
-      {"á", "a"}, {"à", "a"}, {"â", "a"}, {"ä", "a"}, {"é", "e"}, {"è", "e"}, {"ê", "e"},
-      {"ë", "e"}, {"í", "i"}, {"î", "i"}, {"ï", "i"}, {"ó", "o"}, {"ô", "o"}, {"ö", "o"},
-      {"ú", "u"}, {"ù", "u"}, {"û", "u"}, {"ü", "u"}, {"ñ", "n"}, {"ç", "c"}, {"ß", "ss"},
-      {"Á", "A"}, {"É", "E"}, {"Í", "I"}, {"Ó", "O"}, {"Ú", "U"}, {"Ä", "A"}, {"Ö", "O"},
-      {"Ü", "U"}, {"Ñ", "N"}, {"Ç", "C"}, {"À", "A"}, {"È", "E"}, {"«", "\""}, {"»", "\""},
-      {"…", "..."}, {"¡", "!"}, {"¿", "?"}};
-  std::string out;
-  for (size_t i = 0; i < utf8.size();) {
-    const unsigned char c = static_cast<unsigned char>(utf8[i]);
-    if (c < 0x80) {
-      out += char(c);
-      ++i;
-      continue;
-    }
-    const size_t length = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : 2;
-    const std::string_view letter(utf8.data() + i, std::min(length, utf8.size() - i));
-    const char* folded = "?";
-    for (const auto& [from, to] : kFold) {
-      if (letter == from) folded = to;
-    }
-    out += folded;
-    i += length;
-  }
-  return out;
-}
-
-class SdlProgressWindow : public ProgressWindow {
- public:
-  SdlProgressWindow(SDL_Window* window, SDL_Renderer* renderer)
-      : window_(window), renderer_(renderer) {}
-  ~SdlProgressWindow() override {
-    SDL_DestroyRenderer(renderer_);
-    SDL_DestroyWindow(window_);
-  }
-  bool Show(double fraction, const std::string& text) override {
-    SDL_Event event;
-    while (SDL_PollEvent(&event)) {
-      if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED) {
-        closed_ = true;
-      }
-    }
-    int width = 0, height = 0;
-    SDL_GetCurrentRenderOutputSize(renderer_, &width, &height);
-    SDL_SetRenderDrawColor(renderer_, 24, 20, 16, 255);
-    SDL_RenderClear(renderer_);
-    const float margin = 20, bar_top = float(height) / 2, bar_height = 24;
-    const SDL_FRect frame{margin, bar_top, float(width) - 2 * margin, bar_height};
-    const SDL_FRect fill{margin + 2, bar_top + 2,
-                         float(std::clamp(fraction, 0.0, 1.0)) * (frame.w - 4), bar_height - 4};
-    SDL_SetRenderDrawColor(renderer_, 220, 180, 60, 255);
-    SDL_RenderRect(renderer_, &frame);
-    SDL_RenderFillRect(renderer_, &fill);
-    SDL_SetRenderDrawColor(renderer_, 230, 225, 210, 255);
-    SDL_RenderDebugText(renderer_, margin, bar_top - 24, Ascii(text).c_str());
-    SDL_RenderPresent(renderer_);
-    return !closed_;
-  }
-
- private:
-  SDL_Window* window_;
-  SDL_Renderer* renderer_;
-  bool closed_ = false;
-};
-
 }  // namespace
 
 PickResult PickFile(const std::string& title, std::string& path, std::string& error) {
@@ -307,19 +241,13 @@ std::vector<std::string> PreferredLanguages() {
   return languages;
 }
 
-std::unique_ptr<ProgressWindow> ProgressWindow::Open(const std::string& title) {
-  SDL_Window* window = SDL_CreateWindow(title.c_str(), 560, 120, 0);
-  if (!window) return nullptr;
-  SDL_Renderer* renderer = SDL_CreateRenderer(window, SDL_SOFTWARE_RENDERER);
-  if (!renderer) {
-    SDL_DestroyWindow(window);
-    return nullptr;
-  }
-  return std::make_unique<SdlProgressWindow>(window, renderer);
-}
-
 namespace {
 
+// The launcher's font size at 100% (times the display's scale).
+constexpr float kFontSize = 18;
+
+// A window drawn by ImGui (the runtime's, through its SDL3 backends) with SDL's software renderer,
+// in the launcher's font: the launcher's window, and the install's progress window inside.
 class SdlLauncherWindow : public LauncherWindow {
  public:
   SdlLauncherWindow(SDL_Window* window, SDL_Renderer* renderer, SDL_InitFlags subsystems)
@@ -330,6 +258,10 @@ class SdlLauncherWindow : public LauncherWindow {
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
+    ImFontConfig font;
+    font.FontDataOwnedByAtlas = false;  // the embedded bytes stay where they are
+    io.FontDefault = io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(kLauncherFont),
+                                                    int(kLauncherFontSize), kFontSize, &font);
     ImGui_ImplSDL3_InitForSDLRenderer(window_, renderer_);
     ImGui_ImplSDLRenderer3_Init(renderer_);
     ApplyScale();
@@ -342,7 +274,6 @@ class SdlLauncherWindow : public LauncherWindow {
     SDL_DestroyWindow(window_);
     SDL_QuitSubSystem(subsystems_);
   }
-
   bool NewFrame() override {
     bool close = false;
     SDL_Event event;
@@ -383,6 +314,7 @@ class SdlLauncherWindow : public LauncherWindow {
     scale_ = scale > 0 ? scale : 1;
     ImGuiStyle style;
     ImGui::StyleColorsDark(&style);
+    style.FontSizeBase = kFontSize;
     style.ScaleAllSizes(scale_);
     style.FontScaleDpi = scale_;
     ImGui::GetStyle() = style;
@@ -394,10 +326,10 @@ class SdlLauncherWindow : public LauncherWindow {
   float scale_ = 1;
 };
 
-}  // namespace
-
-std::unique_ptr<LauncherWindow> LauncherWindow::Open(const std::string& title,
-                                                     std::string& error) {
+// Opens an SDL window of `width` x `height` at 100% (grown with the display's scale, kept inside
+// its usable area) with the software renderer, as an SdlLauncherWindow.
+std::unique_ptr<SdlLauncherWindow> OpenWindow(const std::string& title, int width, int height,
+                                              SDL_WindowFlags flags, std::string& error) {
   if (ImGui::GetCurrentContext()) {
     error = "another ImGui context is current";
     return nullptr;
@@ -410,8 +342,6 @@ std::unique_ptr<LauncherWindow> LauncherWindow::Open(const std::string& title,
   SDL_InitFlags subsystems = SDL_INIT_VIDEO;
   if (SDL_InitSubSystem(SDL_INIT_GAMEPAD)) subsystems |= SDL_INIT_GAMEPAD;
 
-  // 1280x720 at 100%, grown with the display's scale and kept inside its usable area.
-  int width = 1280, height = 720;
   const SDL_DisplayID display = SDL_GetPrimaryDisplay();
   if (const float scale = SDL_GetDisplayContentScale(display); scale > 0) {
     width = int(float(width) * scale);
@@ -423,8 +353,6 @@ std::unique_ptr<LauncherWindow> LauncherWindow::Open(const std::string& title,
     width = int(float(width) * fit);
     height = int(float(height) * fit);
   }
-  SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
-  if (PreferFullscreenLauncher()) flags |= SDL_WINDOW_FULLSCREEN;
   SDL_Window* window = SDL_CreateWindow(title.c_str(), width, height, flags);
   if (!window) {
     error = std::string("window: ") + SDL_GetError();
@@ -439,6 +367,57 @@ std::unique_ptr<LauncherWindow> LauncherWindow::Open(const std::string& title,
     return nullptr;
   }
   return std::make_unique<SdlLauncherWindow>(window, renderer, subsystems);
+}
+
+// The install's progress: a line of text over a bar, in the launcher's font (accents included).
+class SdlProgressWindow : public ProgressWindow {
+ public:
+  explicit SdlProgressWindow(std::unique_ptr<SdlLauncherWindow> window)
+      : window_(std::move(window)) {}
+
+  bool Show(double fraction, const std::string& text) override {
+    if (window_->NewFrame()) closed_ = true;
+    const float s = window_->scale();
+    const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->WorkPos);
+    ImGui::SetNextWindowSize(viewport->WorkSize);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, ImVec4(24 / 255.f, 20 / 255.f, 16 / 255.f, 1));
+    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(230 / 255.f, 225 / 255.f, 210 / 255.f, 1));
+    ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(54 / 255.f, 46 / 255.f, 38 / 255.f, 1));
+    ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(220 / 255.f, 180 / 255.f, 60 / 255.f, 1));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(20 * s, 20 * s));
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+    ImGui::Begin("##progress", nullptr,
+                 ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                     ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoInputs);
+    ImGui::TextUnformatted(text.c_str());
+    ImGui::ProgressBar(float(std::clamp(fraction, 0.0, 1.0)), ImVec2(-FLT_MIN, 24 * s), "");
+    ImGui::End();
+    ImGui::PopStyleVar(2);
+    ImGui::PopStyleColor(4);
+    window_->Present();
+    return !closed_;
+  }
+
+ private:
+  std::unique_ptr<SdlLauncherWindow> window_;
+  bool closed_ = false;
+};
+
+}  // namespace
+
+std::unique_ptr<ProgressWindow> ProgressWindow::Open(const std::string& title) {
+  std::string error;
+  auto window = OpenWindow(title, 560, 120, 0, error);
+  if (!window) return nullptr;
+  return std::make_unique<SdlProgressWindow>(std::move(window));
+}
+
+std::unique_ptr<LauncherWindow> LauncherWindow::Open(const std::string& title,
+                                                     std::string& error) {
+  SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE;
+  if (PreferFullscreenLauncher()) flags |= SDL_WINDOW_FULLSCREEN;
+  return OpenWindow(title, 1280, 720, flags, error);
 }
 
 }  // namespace torchlight::platform

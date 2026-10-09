@@ -1,5 +1,5 @@
-// Tests for the first start's texts: every English text (setup_text.h, game_files.h, install.h)
-// has a translation in each language of tl_setup_strings.txt with the same {placeholders}, the
+// Tests for the first start's texts: every English text (setup_text.h, game_files.h, install.h,
+// and the launcher's, launcher/launcher_text.h) has a translation in each language of tl_setup_strings.txt with the same {placeholders}, the
 // file has no line for a text that does not exist, messages render, and the language is chosen.
 
 #include <cstdio>
@@ -14,6 +14,7 @@
 #include "game_setup/game_files.h"
 #include "game_setup/install.h"
 #include "game_setup/setup_text.h"
+#include "launcher/launcher_text.h"
 
 namespace {
 
@@ -37,6 +38,7 @@ std::vector<std::string> AllTexts() {
         kTextCannotMoveAside, kTextCannotFinish}) {
     texts.emplace_back(t);
   }
+  for (std::string_view t : torchlight::launcher::LauncherTexts()) texts.emplace_back(t);
   return texts;
 }
 

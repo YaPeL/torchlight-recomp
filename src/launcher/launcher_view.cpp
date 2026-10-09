@@ -1,7 +1,6 @@
 #include "launcher/launcher_view.h"
 
 #include <algorithm>
-#include <array>
 #include <cstdio>
 #include <string_view>
 #include <utility>
@@ -336,16 +335,6 @@ ViewResult LauncherView::Draw(const LauncherModel& model, FileBrowserModel* brow
   ImGui::EndChild();
   ImGui::End();
   return result;
-}
-
-std::span<const std::string_view> LauncherTexts() {
-  static constexpr std::array kTexts = {
-      kTextInstallHeading, kTextInstallingHeading, kTextAchievementsHeading, kTextReadyHeading,
-      kTextPlay,           kTextBack,              kTextCancel,              kTextReinstall,
-      kTextChangeAchievements, kTextCancelling,    kTextReady,               kTextAchievementSet,
-      kTextParentFolder,   kTextUseFolder,         kTextEmptyFolder,
-  };
-  return kTexts;
 }
 
 }  // namespace torchlight::launcher

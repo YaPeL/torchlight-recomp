@@ -1,5 +1,5 @@
 # Translations of the first start's texts (src/game_setup/: setup_text.h, game_files.h, install.h)
-# for the languages the game ships, written for this project in the register of the game's own
+# and the launcher's (src/launcher/launcher_text.h, file_browser_model.h) for the languages the game ships, written for this project in the register of the game's own
 # translations (de: du, fr: vous, es: tú). A section per language code; each line is
 # "English text = translation"; "\n" is a line break and {words} in braces are filled in.
 # setup_text_test checks that every text has a line in every section.
@@ -34,6 +34,22 @@ Cannot write {path}. = {path} kann nicht geschrieben werden.
 Cannot create {path}: {error} = {path} kann nicht erstellt werden: {error}
 Cannot move the previous {path} aside: {error} = Der bisherige Ordner {path} kann nicht beiseitegelegt werden: {error}
 Cannot finish the install in {path}: {error} = Die Installation in {path} kann nicht abgeschlossen werden: {error}
+Install the game files = Spieldateien installieren
+Installing = Installation läuft
+Achievements = Erfolge
+Ready to play = Bereit zum Spielen
+Play = Spielen
+Back = Zurück
+Cancel = Abbrechen
+Install the game files again... = Spieldateien erneut installieren …
+Change achievements... = Erfolge ändern …
+Cancelling... = Wird abgebrochen ...
+The game files are installed in:\n{where} = Die Spieldateien sind installiert in:\n{where}
+Achievements: {set} = Erfolge: {set}
+Parent folder = Übergeordneter Ordner
+Use this folder = Diesen Ordner verwenden
+This folder is empty. = Dieser Ordner ist leer.
+Cannot open {path}: {error} = {path} kann nicht geöffnet werden: {error}
 
 [fr]
 Torchlight setup = Configuration de Torchlight
@@ -65,6 +81,22 @@ Cannot write {path}. = Impossible d'écrire {path}.
 Cannot create {path}: {error} = Impossible de créer {path} : {error}
 Cannot move the previous {path} aside: {error} = Impossible de mettre de côté l'ancien dossier {path} : {error}
 Cannot finish the install in {path}: {error} = Impossible de terminer l'installation dans {path} : {error}
+Install the game files = Installer les fichiers du jeu
+Installing = Installation en cours
+Achievements = Succès
+Ready to play = Prêt à jouer
+Play = Jouer
+Back = Retour
+Cancel = Annuler
+Install the game files again... = Réinstaller les fichiers du jeu...
+Change achievements... = Changer d'ensemble de succès...
+Cancelling... = Annulation...
+The game files are installed in:\n{where} = Les fichiers du jeu sont installés dans :\n{where}
+Achievements: {set} = Succès : {set}
+Parent folder = Dossier parent
+Use this folder = Utiliser ce dossier
+This folder is empty. = Ce dossier est vide.
+Cannot open {path}: {error} = Impossible d'ouvrir {path} : {error}
 
 [es]
 Torchlight setup = Configuración de Torchlight
@@ -96,3 +128,19 @@ Cannot write {path}. = No se puede escribir {path}.
 Cannot create {path}: {error} = No se puede crear {path}: {error}
 Cannot move the previous {path} aside: {error} = No se puede apartar la carpeta anterior {path}: {error}
 Cannot finish the install in {path}: {error} = No se puede terminar la instalación en {path}: {error}
+Install the game files = Instalar los archivos del juego
+Installing = Instalando
+Achievements = Logros
+Ready to play = Listo para jugar
+Play = Jugar
+Back = Atrás
+Cancel = Cancelar
+Install the game files again... = Volver a instalar los archivos del juego...
+Change achievements... = Cambiar los logros...
+Cancelling... = Cancelando...
+The game files are installed in:\n{where} = Los archivos del juego están instalados en:\n{where}
+Achievements: {set} = Logros: {set}
+Parent folder = Carpeta superior
+Use this folder = Usar esta carpeta
+This folder is empty. = Esta carpeta está vacía.
+Cannot open {path}: {error} = No se puede abrir {path}: {error}

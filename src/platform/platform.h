@@ -86,9 +86,9 @@ PickResult PickFile(const std::string& title, std::string& path, std::string& er
 PickResult PickFolder(const std::string& title, std::string& path, std::string& error);
 // The system's preferred languages, most preferred first, as lower-case codes ("de", "pt-br").
 std::vector<std::string> PreferredLanguages();
-// A small window with a progress bar and a line of text (drawn with SDL's ASCII debug font: letters
-// with accents are shown without them). Software rendering: no graphics library is loaded, which
-// would keep the GPU from being chosen afterwards.
+// A small window with a line of text over a progress bar, drawn as the launcher's window (ImGui,
+// its font, accents included). Software rendering: no graphics library is loaded, which would keep
+// the GPU from being chosen afterwards.
 class ProgressWindow {
  public:
   static std::unique_ptr<ProgressWindow> Open(const std::string& title);
