@@ -1,7 +1,8 @@
 // Platform module: everything that depends on the host's window system or video layer lives here,
 // behind this interface (one implementation file per platform, chosen by CMake; no platform
 // #ifdefs elsewhere). Today: Linux (SDL on X11 or Wayland, whichever SDL chose; OGRE GL on the
-// same window system) and Windows (SDL's Win32 windows; OGRE GL drawing on the game window).
+// same window system), Windows (SDL's Win32 windows; OGRE GL drawing on the game window) and macOS
+// (SDL's Cocoa windows; OGRE GL drawing in the game window's content view).
 //
 // Two sides use it: the app (the game window SDL owns, see live/install.cpp) and the render
 // backend (the window OGRE creates, see backend/backend.cpp).
@@ -20,14 +21,14 @@ namespace torchlight::platform {
 // A native window, as the backend's C API carries it (backend_api.h, tl_native_window; same
 // fields and values). X11: `window` is the window id (OGRE opens its own display connection).
 // Wayland: `window` is the wl_surface and `display` the wl_display, both SDL's. Win32: `window`
-// is the HWND.
+// is the HWND. Cocoa: `window` is the window's content view (NSView).
 struct NativeWindow {
-  enum System : uint32_t { kNone = 0, kX11 = 1, kWayland = 2, kWin32 = 3 };
+  enum System : uint32_t { kNone = 0, kX11 = 1, kWayland = 2, kWin32 = 3, kCocoa = 4 };
   uint32_t system = kNone;
   uint64_t window = 0;
   uint64_t display = 0;
 };
-// "x11", "wayland" or "win32", for the log.
+// "x11", "wayland", "win32" or "cocoa", for the log.
 const char* SystemName(const NativeWindow& window);
 
 // ---- the game window (SDL) -------------------------------------------------------------------
@@ -192,6 +193,21 @@ bool HasDirect3D11(const std::string& plugin_dir);
 // OpenGL 1.1, on which OGRE crashes). Linux and macOS: true without probing, GL3+ being the only
 // render system there.
 bool CanCreateGl33Context();
+
+// The backend's own top-level window (offscreen backends keep a hidden one for the GL context, the
+// replay shows one) where OGRE's render system cannot create it itself: macOS, whose OGRE 14 Cocoa
+// GL window only draws in an external view ("Builtin Window creation broken",
+// OgreOSXCocoaWindow.mm). OGRE then draws in this one (OgreWindowParams with native()), which must
+// outlive OGRE's window. Main thread.
+class OgreTopLevelWindow {
+ public:
+  // Null where OGRE creates its own top-level windows (Linux, Windows) and when no window can be
+  // made.
+  static std::unique_ptr<OgreTopLevelWindow> Create(const std::string& title, uint32_t width,
+                                                    uint32_t height, bool visible);
+  virtual ~OgreTopLevelWindow() = default;
+  virtual NativeWindow native() const = 0;
+};
 
 // Keys typed in a top-level window the backend created: OGRE does not read the keyboard.
 class KeyReader {

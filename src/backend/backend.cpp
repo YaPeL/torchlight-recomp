@@ -249,6 +249,9 @@ struct tl_backend {
   Ogre::Root* root = nullptr;
   Ogre::RenderSystem* rs = nullptr;
   Ogre::RenderWindow* window = nullptr;
+  // The native window OGRE draws in where it cannot make its own (platform.h; macOS); outlives
+  // `window`.
+  std::unique_ptr<torchlight::platform::OgreTopLevelWindow> top_level;
   bool visible_window = false;
   bool child_window = false;  // inside another application's window (tl_backend_create_child)
   Ogre::Viewport* window_viewport = nullptr;
@@ -1707,6 +1710,15 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
       }
       window_w = window_width;
       window_h = window_height;
+    } else {
+      b->top_level = torchlight::platform::OgreTopLevelWindow::Create(
+          misc["title"], window_w, window_h, b->visible_window);
+      if (b->top_level) {
+        for (const auto& [key, value] :
+             torchlight::platform::OgreWindowParams(b->top_level->native())) {
+          misc[key] = value;
+        }
+      }
     }
     b->window = b->root->createRenderWindow("tl_backend", window_w, window_h, false, &misc);
     b->window->setAutoUpdated(false);
@@ -1816,6 +1828,7 @@ void tl_backend_destroy(tl_backend* b) {
   for (auto& p : b->projectors) p.reset();
   b->keyboard.reset();
   delete b->root;
+  b->top_level.reset();  // after OGRE's window, which draws in it
   delete b->log_manager;
   delete b;
 }

@@ -214,6 +214,12 @@ std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWi
   return {{"parentWindowHandle", std::to_string(window.window)}};
 }
 
+// OGRE's render systems create their own top-level windows here.
+std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string&, uint32_t,
+                                                               uint32_t, bool) {
+  return nullptr;
+}
+
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
   return plugin_dir;
 }
