@@ -236,10 +236,10 @@ index c5a2c5d..24e4a34 100644
                                                       uint32_t desired_access,
                                                       bool allow_share_delete) {
 diff --git a/src/filesystem/devices/host_path_device.cpp b/src/filesystem/devices/host_path_device.cpp
-index f68b79a..26e57d6 100644
+index f68b79a..3c96514 100644
 --- a/src/filesystem/devices/host_path_device.cpp
 +++ b/src/filesystem/devices/host_path_device.cpp
-@@ -126,4 +126,92 @@ void HostPathDevice::PopulateEntry(HostPathEntry* parent_entry) {
+@@ -126,4 +126,93 @@ void HostPathDevice::PopulateEntry(HostPathEntry* parent_entry) {
    }
  }
  
@@ -270,7 +270,8 @@ index f68b79a..26e57d6 100644
 +      // At or under from: every component of from is a leading component of the path.
 +      auto mismatch = std::mismatch(from.begin(), from.end(), it->begin(), it->end());
 +      if (mismatch.first == from.end()) {
-+        moved.insert(to / it->lexically_relative(from));
++        const auto relative = it->lexically_relative(from);
++        moved.insert(relative == "." ? to : to / relative);
 +        it = paths.erase(it);
 +      } else {
 +        ++it;

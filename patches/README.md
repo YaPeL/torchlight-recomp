@@ -344,7 +344,16 @@ in number order; a branch adds its own line at its number's place.
       closed by then, then the folders) and log `Content <root>: flushed N files and M folders to
       disk` (at WARN with the count that failed); a failed flush is their result, and
       `XamContentClose` unmounts either way; a root that is not open still returns success, as
-      before; a renamed file or folder moves what is remembered at or under it to its new path;
+      before; a renamed file or folder moves what is remembered at or under it to its new path.
+      Returning the failure was checked against what Torchlight does with it (2026-10-09): its one
+      `XamContentClose` (thunk `sub_8287E5D8`) is called only from `sub_823AC7B8`, which turns it
+      into 1 or 0, and none of that wrapper's 20 call sites reads it (17 overwrite `r3` first;
+      `sub_823AC088` and `sub_821FF750`, `CSettingsMenuXenon`'s slot 3, hand it back to callers
+      that do not read it either). Its one `XamContentFlush` is in Microsoft's telemetry library
+      (`DataFile`, `sub_828A00A8`), which logs a failure and passes it to its own completion
+      callback. The "Corrupt/Damaged Save" dialog, whose "Yes" is the game's only
+      `XamContentDelete`, comes from a flag that short reads raise (`docs/saves-research.md`), not
+      from either result. Had a path led there, the failure would have stayed in the log only;
     - `NtFlushBuffersFile` and `FlushFileBuffers` on a handle that is not a file now fail
       (`X_STATUS_INVALID_HANDLE`, 0); they always succeeded before. No case of it in Torchlight;
     - `NtFlushBuffersFile` and `FlushFileBuffers` flush the handle's file (`XFile::Flush`, the VFS

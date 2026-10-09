@@ -790,7 +790,11 @@ Fixes #NNN.
   remembered under it to the new path.
 - A failed flush is the result of `XamContentFlush` and of `XamContentClose`, which unmounts
   either way, and is logged at WARN. On the console the close is the commit, so the title should
-  hear of it.
+  hear of it. Checked first that this cannot cost a player their saves in Torchlight: the game
+  never reads its `XamContentClose` result, and its one `XamContentFlush` is in Microsoft's
+  telemetry library, which only logs the failure. Its "Corrupt/Damaged Save" dialog, whose "Yes"
+  deletes the whole container, comes from short reads. A title that answers a failed close by
+  discarding its save would need the failure kept in the log only.
 - `NtFlushBuffersFile` and `FlushFileBuffers` flush their handle's file. On a handle that is not a
   file they now fail (`X_STATUS_INVALID_HANDLE`, 0) instead of succeeding.
 - `FileHandle::Flush` returns its result. A new `FlushFolder` does the same for a folder: `fsync`,
