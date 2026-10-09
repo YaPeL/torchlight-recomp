@@ -161,9 +161,13 @@ class Session {
   HookCosts& hook_costs() { return hook_costs_; }
   GpuEventCounts& gpu_events() { return gpu_events_; }
 
-  // Slot counters (any thread, always).
+  // Slot counters (always; read by the capture statistics). A plain load and store rather than an
+  // atomic increment: every RenderSystem call comes from the guest's render thread, and the
+  // locked add cost ~1 % of that thread (profile 2026-10-08); a count lost to a call from another
+  // thread would only skew a statistic.
   void CountSlot(uint32_t slot) {
-    slot_counts_[slot].fetch_add(1, std::memory_order_relaxed);
+    auto& count = slot_counts_[slot];
+    count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
   }
 
   // State: always kept in the shadow under `key`; appended to the capture while armed and to the
