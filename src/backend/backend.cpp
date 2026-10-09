@@ -393,6 +393,23 @@ void SetViewport(tl_backend* b, Ogre::Viewport* viewport) {
   b->active = viewport->getTarget();
 }
 
+// Viewport::setDimensions marks the viewport updated even when nothing changed, and the render
+// system then binds its target and sets its rectangle again (GL3PlusRenderSystem::_setViewport
+// skips both for the active viewport while it is not updated). The guest sets its target and
+// viewport for every pass, mostly to what they already were.
+void SetViewportArea(Ogre::Viewport* viewport, Ogre::Real left, Ogre::Real top, Ogre::Real width,
+                     Ogre::Real height) {
+  if (viewport->getLeft() != left || viewport->getTop() != top ||
+      viewport->getWidth() != width || viewport->getHeight() != height) {
+    viewport->setDimensions(left, top, width, height);
+  }
+}
+
+// After reading a target back the render system may have another framebuffer bound: the next
+// SetViewport binds the target again whatever viewport it is (SetViewportArea may leave the
+// viewport not updated).
+void ForgetActiveViewport(tl_backend* b) { b->rs->_setViewport(nullptr); }
+
 // SceneClip16x9: the front end's 3D scene on a frame wider than 16:9 (tl_backend_set_scene_clip).
 // The centred 16:9 strip of the main target, in host pixels; nothing when the clip is off, the
 // target is not the main one or the frame is not wider than 16:9.
@@ -469,7 +486,7 @@ void RemakeTarget(tl_backend* b, tl_backend::Target& t) {
 
 // Reads a target as RGBA8 at its guest size, top row first (filtered down when the render scale
 // made it larger, up when smaller).
-void ReadTarget(const tl_backend::Target& t, void* rgba, uint32_t stride) {
+void ReadTargetPixels(const tl_backend::Target& t, void* rgba, uint32_t stride) {
   const uint32_t host_w = t.rt->getWidth(), host_h = t.rt->getHeight();
   Ogre::PixelBox out(t.guest_width, t.guest_height, 1, Ogre::PF_BYTE_RGBA, rgba);
   out.rowPitch = stride / 4;
@@ -483,6 +500,11 @@ void ReadTarget(const tl_backend::Target& t, void* rgba, uint32_t stride) {
                              Ogre::RenderTarget::FB_AUTO);
   host.resize(t.guest_width, t.guest_height, Ogre::Image::FILTER_BILINEAR);
   Ogre::PixelUtil::bulkPixelConversion(host.getPixelBox(), out);
+}
+
+void ReadTarget(tl_backend* b, const tl_backend::Target& t, void* rgba, uint32_t stride) {
+  ReadTargetPixels(t, rgba, stride);
+  ForgetActiveViewport(b);
 }
 
 bool ToBlendMode(const tl_combine& c, Ogre::LayerBlendType type, Ogre::LayerBlendModeEx& out) {
@@ -1340,6 +1362,7 @@ bool MeasureClearArea(tl_backend* b) {
   Ogre::PixelBox box(1, 1, 1, Ogre::PF_BYTE_RGBA, pixel);
   b->output.rt->copyContentsToMemory(Ogre::Box(x, y, x + 1, y + 1), box,
                                      Ogre::RenderTarget::FB_AUTO);
+  ForgetActiveViewport(b);
   return pixel[0] > 127;
 }
 
@@ -2126,7 +2149,7 @@ int tl_backend_set_target(tl_backend* b, uint64_t target_id) {
     t = &it->second;
   }
   b->current = t;
-  t->viewport->setDimensions(0, 0, 1, 1);
+  SetViewportArea(t->viewport, 0, 0, 1, 1);
   t->viewport_width = int32_t(t->guest_width);
   t->viewport_height = int32_t(t->guest_height);
   SetViewport(b, t->viewport);
@@ -2138,7 +2161,7 @@ void tl_backend_set_viewport(tl_backend* b, int32_t left, int32_t top, int32_t w
   // Relative to the guest's size of the target: the same area at any render scale.
   tl_backend::Target* t = b->current;
   Ogre::Real w = Ogre::Real(t->guest_width), h = Ogre::Real(t->guest_height);
-  t->viewport->setDimensions(left / w, top / h, width / w, height / h);
+  SetViewportArea(t->viewport, left / w, top / h, width / w, height / h);
   t->viewport_width = width;
   t->viewport_height = height;
   SetViewport(b, t->viewport);
@@ -2563,7 +2586,7 @@ uint32_t tl_backend_probe_samples(tl_backend* b) { return b->probe_samples; }
 
 int tl_backend_read_rgba(tl_backend* b, void* rgba, uint32_t stride) {
   try {
-    ReadTarget(b->output, rgba, stride);
+    ReadTarget(b, b->output, rgba, stride);
   } catch (Ogre::Exception&) {
     return 1;
   }
@@ -2576,7 +2599,7 @@ int tl_backend_read_target_rgba(tl_backend* b, uint64_t target_id, uint32_t widt
   if (it == b->targets.end()) return 1;
   if (width != it->second.guest_width || height != it->second.guest_height) return 1;
   try {
-    ReadTarget(it->second, rgba, stride);
+    ReadTarget(b, it->second, rgba, stride);
   } catch (Ogre::Exception&) {
     return 1;
   }
