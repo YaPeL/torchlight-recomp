@@ -572,6 +572,20 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   creation. Attaching the context on the main thread beforehand (OGRE's `externalGLContext`)
   only moved the stop to `update`; no OGRE option avoids it. Fix approved: OGRE's window created,
   resized and destroyed on the main thread (below).
+  **Fixed (`10ce0d3`, for the render agent's review: `backend.cpp`, `live/live_mode.cpp`):**
+  `platform::RunOnWindowThread` runs the window's work on the main thread on macOS (inline on
+  Linux and Windows), `LiveMode::Stop` serves it until the render thread ends
+  (`platform::WaitServingWindowThread`), and Cocoa follows the view's size
+  (`windowMovedOrResized`). The game boots to the menu and plays in only mode, with no visible
+  rendering fault (checked by eye by the user; 2026-10-09).
+- `screencapture -l` (any window capture) gives black images of the only mode window: it does
+  not see an `NSOpenGLContext`'s surface. The image has to be checked by eye or with an F9
+  capture; the window captures only serve Xenos.
+- Resolution: this Mac's two LG 4K monitors run scaled ("looks like 2560 x 1440"), so macOS gives
+  the window a 5120 x 2880 backing store (and scales it down to the panel's 3840 x 2160). With
+  the default internal resolution (the window's), the backend renders 5120 x 2880, four times
+  the guest's 1280 x 720 on each axis. Not a fault; the video menu's internal resolution lowers
+  it. Frame rate at that size: to measure (F3).
 - **Emulated mode (Xenos, `--native_live=off`):** builds and runs on MoltenVK, to the main menu
   and into the game (a dungeon reached; quit by the user after 198 s, exit code 0, nothing left
   behind according to `run_capped`). The 3D geometry looks wrong (as if stray vertices showed) and some textures
