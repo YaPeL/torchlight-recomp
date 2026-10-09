@@ -390,8 +390,23 @@ gaps.
    and nothing reads it again or registers it in a group. The data loader resolves a name in the
    mods first, then (only when the data manager's flag `+16` is set) with OGRE's `resourceExists`
    over its groups and then "General" (`0x8349D568`, the group our `tlunits:` location is in), then
-   with `_stat64` on a folder of its own (`sub_8239D0E8`); which step drops our name is
-   **[to find]**.
+   with `_stat64` on a folder of its own (`sub_8239D0E8`). Read under gdb: `+16` is set, the groups
+   are `0ZIP0` and `ZIP`, and the game asks for `57930ADE12DF44C0.RAW`, **in upper case**, while
+   the file was `57930ade12df44c0.RAW`: not found (3). With an upper-case copy in the cache the
+   game read the whole file (676106 bytes, 3377 units with the mod's sword) and found "Destroyer"
+   at once. The cache's file names are now upper case (`UnitIndexFileName`, `kUnitIndexVersion` 4).
+
+**Rule: files we create for the game.** The data loader asks for every name in upper case, and a
+resource location on a host folder is matched by case on Linux (Windows and macOS ignore case by
+default, so the same mistake would not show there). A file we create for the game to find through
+a resource location is named exactly as the game asks for it: in upper case when the game reaches
+it through the data loader (the unit index), with the game's own spelling when it asks by its own
+name through CEGUI or OGRE (our video layout on `tlhost:`, which we load by our own name; the
+widened layouts on `tlwide:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
+and the rule. **[to verify]** with a mod whose files are named in lower case, as PC mods often
+are (Windows ignores case): the mods' file maps, which the game fills from the folder listing and
+looks up in upper case, and the mods' assets that OGRE finds through the mod folders' locations.
+Those are the player's files, so the fix, if needed, cannot be renaming them.
 
 **What guards against it now.** After the game loads our index, `mods/unit_index_install.cpp`
 reads the size of its GUID map and compares it with what the game keeps of the file we wrote
