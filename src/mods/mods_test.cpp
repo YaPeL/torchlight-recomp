@@ -81,13 +81,17 @@ int main() {
   Write(root / "broken" / "mod.dat", Ascii("[MOD]\n<STRING>NAME:x\n"));
   Write(root / "loose.txt", Ascii("a file, not a folder"));
   ScanResult scan = ScanModsFolder(root);
-  Check(scan.mods.size() == 2, "two mods found");
-  if (scan.mods.size() == 2) {
-    Check(scan.mods[0].folder == "A_mod" && scan.mods[1].folder == "b_mod", "folder-name order, case-insensitive");
+  Check(scan.mods.size() == 3, "three mods found");
+  if (scan.mods.size() == 3) {
+    Check(scan.mods[0].folder == "A_mod" && scan.mods[1].folder == "b_mod" && scan.mods[2].folder == "nodat",
+          "folder-name order, case-insensitive");
     Check(scan.mods[0].name == "Mod A" && scan.mods[1].author == "Test Author", "descriptor fields read");
     Check(scan.mods[0].descriptor_digest != scan.mods[1].descriptor_digest, "digests differ");
+    Check(scan.mods[2].name.empty() && scan.mods[2].descriptor_digest == 0, "a folder without mod.dat is a mod, as on PC");
   }
-  Check(scan.skipped.size() == 2, "a folder without mod.dat and an unreadable one are skipped");
+  Check(scan.skipped.size() == 1 && scan.skipped[0].starts_with("broken"), "an unreadable mod.dat is skipped");
+  fs::remove_all(root / "nodat");  // the plan below counts the mods with a descriptor
+  scan = ScanModsFolder(root);
 
   // mods.dat.
   {

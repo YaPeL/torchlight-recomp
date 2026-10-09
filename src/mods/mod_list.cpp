@@ -83,7 +83,9 @@ ScanResult ScanModsFolder(const std::filesystem::path& mods_folder) {
       }
     }
     if (descriptor.empty()) {
-      result.skipped.push_back(name + ": no " + kDescriptorFile);
+      ModFolder mod;
+      mod.folder = name;
+      result.mods.push_back(std::move(mod));
       continue;
     }
     const auto bytes = ReadFile(descriptor);

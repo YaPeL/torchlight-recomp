@@ -18,8 +18,11 @@ namespace torchlight::mods {
 inline constexpr const char* kDescriptorFile = "mod.dat";
 inline constexpr const char* kListFile = "mods.dat";
 
-// A mod folder: a subfolder of the mods folder with a readable mod.dat (block MOD; NAME, AUTHOR
-// and DESCRIPTION, PC 0x5CD150).
+// A mod folder: a subfolder of the mods folder. Its mod.dat (block MOD; NAME, AUTHOR and
+// DESCRIPTION) is optional, as on PC: the descriptor loader 0x5CD150 checks that the file exists
+// (0x5C5E00 @0x5CD310) and, when it does not, skips reading it (@0x5CD32E) and goes on with the
+// mod. Mods packs ship folders without one (the Ultimate Torchlight Mod-Pack). A mod.dat that
+// exists but does not read is still skipped.
 struct ModFolder {
   std::string folder;  // the subfolder's name
   std::string name, author, description;
