@@ -153,6 +153,14 @@ class Session {
   bool recording() const { return armed() || live(); }
   // What the live consumer holds of the shader constants sent (guest render thread only).
   ConstantMirror& constant_mirror() { return constant_mirror_; }
+  // Timing of the recording cost per hook and section (ProducerTimer, HookTimer and their
+  // summaries), off unless asked for (--native_producer_timing): with it off no frame is measured.
+  // The frame time statistics and the long-frame report do not depend on it.
+  void SetProducerTiming(bool on) {
+    producer_timing_ = on;
+    measure_frame_.store(on, std::memory_order_relaxed);
+  }
+  bool producer_timing() const { return producer_timing_; }
   // Recording, on a frame whose recording cost is timed (kMeasureEveryFrames).
   bool measuring() const {
     return recording() && measure_frame_.load(std::memory_order_relaxed);
@@ -295,6 +303,7 @@ class Session {
   const uint8_t* membase_ = nullptr;
   ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;
+  bool producer_timing_ = true;  // SetProducerTiming
   std::atomic<bool> measure_frame_{true};
   bool finishing_ = false;
   commands::Capture capture_;

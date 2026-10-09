@@ -277,7 +277,8 @@ void Session::OnSwapBegin() {
   }
   const bool ended_frame_measured = measure_frame_.load(std::memory_order_relaxed);
   ++swap_number_;
-  measure_frame_.store(swap_number_ % kMeasureEveryFrames == 0, std::memory_order_relaxed);
+  measure_frame_.store(producer_timing_ && swap_number_ % kMeasureEveryFrames == 0,
+                       std::memory_order_relaxed);
   if (live()) {
     LiveAppend(commands::Present{swap_number_});
     CutLiveFrame(ended_frame_measured);
