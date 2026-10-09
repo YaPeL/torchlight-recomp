@@ -882,8 +882,10 @@ That covers about 1677 to 2262, so 1601 overflows:
 - 1601 plus 2^64 ns (584.55 years) is mid-2185, the date the decomposition gives;
 - 184467440737095516 is 2^64 / 100, the same wrap counted in FILETIME's 100 ns units.
 
-MSVC's `system_clock` counts 100 ns and libc++'s counts microseconds. Both reach 1601, so Windows
-and macOS should pass (macOS to be confirmed by our port). The test came in with `952828d`
+MSVC's `system_clock` counts 100 ns and libc++'s counts microseconds. Both reach 1601. On macOS
+ARM64 (Apple clang, libc++) `chrono_test` passes, the NT epoch included (our macOS port,
+2026-10-09, `docs/macos-port.md`), so the failure is Linux/libstdc++ only. Windows should pass
+too; not run there yet. The test came in with `952828d`
 (2026-02-19), the same day as `4c981fe` ("replace date:: with std::chrono::"). It was not built at
 those commits, so "since then" is a reading.
 
@@ -920,10 +922,19 @@ each `fesetround` mode:
 `fctiwz`/`fctidz` (`cvttsd2si`, truncation) are right on both. `tests/ppc` only covers `fctiwz`, so
 `ppc_tests` passes on ARM64 with this bug.
 
-A second, smaller bug on every architecture, found in review: `fctid` and `fctidz` saturate with
-`> double(LLONG_MAX)`, and `double(LLONG_MAX)` rounds to 2^63. So 2^63 itself is converted and
-gives INT64_MIN instead of INT64_MAX. `fctiw` and `fctiwz` use `>=` with `INT_MAX`, which is exact
-in a double, and are right.
+A second, smaller bug, found in review: `fctid` and `fctidz` saturate with
+`> double(LLONG_MAX)`, and `double(LLONG_MAX)` rounds to 2^63. So 2^63 itself goes to the
+conversion, which is out of range. On x86-64 `cvtsd2si`/`cvttsd2si` give 0x8000000000000000
+(INT64_MIN) instead of INT64_MAX. On ARM64 `fcvtzs` saturates to INT64_MAX by itself, so the
+result happens to be right there, but the check is still wrong and the out-of-range conversion is
+undefined in C++. `fctiw` and `fctiwz` use `>=` with `INT_MAX`, which is exact in a double, and
+are right.
+
+Run on ARM64 by our macOS port (2026-10-09, `docs/macos-port.md`), with patch 23's tests:
+- without the fix, 12 of the 20 `fctix_rounding` cases fail: the rounding cases (2.5 and -2.5 to
+  nearest, 2.7 and -2.7 toward zero, -2.5 up, 2.5 down), each for `fctiw` and `fctid`. The two
+  2^63 cases pass, for the reason above. On x86-64, 2 of 20 fail: only the 2^63 cases;
+- with the fix, `ppc_tests` passes 1492 of 1492.
 
 **PR: `fix(codegen): fctiw/fctid round in the current rounding mode on every architecture`**
 
@@ -934,7 +945,8 @@ Fixes #NNN. Convert with `std::nearbyint` (or `llrint`), which honours the FP en
 generated code must not let the compiler fold the conversion across an `mtfsf`, so either keep it
 behind a call or compile with `-frounding-math`. Saturate `fctid` and `fctidz` with `>=`. Tests:
 `fctiw` and `fctid` of 2.5, -2.5, 3.5 and 2.7 under each of the four modes, set with `mtfsf 0xFF`,
-and `fctid` and `fctidz` of 2^63 (the two fail without the fix on x86-64 too).
+and `fctid` and `fctidz` of 2^63 (the two fail without the fix on x86-64; on ARM64 they pass either
+way).
 
 ---
 
@@ -1238,8 +1250,11 @@ these agents lives here and in `patches/README.md`.
     x86-64. The ARM64 bugs are now drafts D22, D23 and D25. D24 (`mtfsf` mask) was found here on
     the way; it affects every architecture. The `tests/ppc` suite covers none of them, so
     `ppc_tests` passing on ARM64 does not clear them.
-  - **Patches 23-25 (2026-10-08, revised 2026-10-09): please run this on ARM64 and write the
-    results back** in `docs/macos-port.md`. On x86-64 the rounding tests of 23 and the tests of 24
+  - **Patches 23-25 (2026-10-08, revised 2026-10-09): results received** (`docs/macos-port.md`,
+    6927cec): as expected, except `fctix_rounding` without the fixes, 12 of 20 on ARM64 and not
+    14 (the 2^63 cases pass there, D22). With the fixes, `ppc_tests` 1492 of 1492, `unit_tests`
+    only `output_stamp_test.cpp:227-228`, `chrono_test` passes (D29), `[flush]` 6 of 6. The steps
+    stay below for a rerun after a series change. On x86-64 the rounding tests of 23 and the tests of 24
     cannot fail, because native SSE2 and MXCSR were right there. Only ARM64 shows those two bugs.
     1. Take `develop`, and `sdk/ppc-test-data` at `0ffbb64` or later (169 files of each kind, and
        `bin/sources.sha256`). The configure stops if a `.bin` is missing or a test source does not
@@ -1254,17 +1269,16 @@ these agents lives here and in `patches/README.md`.
        Build `ppc_tests` with `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=...` and run
        `ppc_tests "fctix_rounding.*"`, then `"mffs_rounding.*"`, then `"mtfsf_fields.*"`.
        Expected without the fixes:
-       - **`fctix_rounding`: 14 of 20 fail.** These fail: 2.5 and -2.5 to nearest; 2.7 and -2.7
+       - **`fctix_rounding`: 12 of 20 fail.** These fail: 2.5 and -2.5 to nearest; 2.7 and -2.7
          toward zero; -2.5 up; 2.5 down. Each fails for both `fctiw` and `fctid`. The two cases
-         of 2^63 (`fctid` and `fctidz`) fail too, as on x86-64.
+         of 2^63 (`fctid` and `fctidz`) pass on ARM64 and fail on x86-64 (D22).
        - **`mffs_rounding`: 4 of 6 fail.** These fail: up, down, and both save-and-restore cases.
          Nearest and toward zero pass.
        - **`mtfsf_fields`: 4 of 4 fail**, as on x86-64.
     3. Put the fixes back (the same loop without `-R`, in the order 23, 24, 25), rebuild and run all
        of `ppc_tests` (expected: 1492 cases pass) and `unit_tests` (expected: as before, only
        `output_stamp_test.cpp:227-228`). On Linux x86-64, Release, `chrono_test.cpp` also fails at
-       the NT epoch (1601), on a clean `bd833a2` too (D29). Please say whether macOS shows it: the
-       4 cases and lines are in D29, and libc++'s microsecond `system_clock` should reach 1601.
+       the NT epoch (1601), on a clean `bd833a2` too (D29); it passes on macOS.
     4. Anything else is a finding: send the failing cases' output.
   - **Patch 27 (guest file flushes, 2026-10-08): please check on macOS** and write the result
     in `docs/macos-port.md`. On Apple, `FileHandle::Flush` calls `fcntl(F_FULLFSYNC)` and falls
