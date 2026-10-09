@@ -9,6 +9,11 @@ The command is started in its own process group and session. The run is stopped 
 - the script itself is interrupted (exit 130).
 If the command ends on its own, its exit code is returned.
 
+The usual log cap is 20 MB. Temporary exception (approved 2026-10-09): automatic runs with real PC
+mod packs may pass --max-log-mb 150, because with dozens of mods the SDK logs every failed file open
+(about 124,000 lines in the first 45 s with 29 mods). The time limit stays as it is. Until the SDK
+filters repeated log lines, this is not for any other run.
+
 Stopping signals SIGTERM, then SIGKILL, to the whole group and to every descendant (a wrapper or
 gdb may move the game elsewhere). Then it checks that none of them is left. If one is, it says so
 and exits 4. It also counts leftover /dev/shm/xenia_memory_* files.

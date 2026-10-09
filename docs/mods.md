@@ -479,6 +479,14 @@ affected and where the copy is. Validated in a guided run of the failing case (2
 notice showed, the game's save on the way back to the menu was skipped ("character not saved"),
 the character file kept the sword, and the copy was made.
 
+**Test runs with real mod packs: log cap exception (2026-10-09).** With dozens of mods the game
+looks every data file up in each mod's folder, and the SDK logs each failed open as a warning:
+about 124,000 lines (20 MB) in the first 45 s with the Ultimate Torchlight Mod-Pack's 29 mods,
+before the unit index loads. Automatic runs with real mod packs therefore use a 150 MB log cap
+(`tools/run_capped.py --max-log-mb 150`), a temporary exception the user approved; every other run
+keeps 20 MB. The fix belongs to the SDK (a filter for repeated log lines, a per-run cap, and maybe a
+cache of files known not to exist), and the case went to the ReXGlue work as evidence.
+
 **A new-item mod, validated (2026-10-09).** With `tlunits:` mounted once the index exists, the game
 loaded the merged index in the same start it was built (3377 units, the mod's sword among them)
 and with the cached one. In guided runs: the save's item of the mod's unit loaded with the mod's
