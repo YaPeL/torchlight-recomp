@@ -394,8 +394,9 @@ gaps.
    **[to find]**.
 
 **What guards against it now.** After the game loads our index, `mods/unit_index_install.cpp`
-reads the size of its GUID map and compares it with the distinct GUIDs we wrote
-(`CheckLoadedIndex`). Nothing loaded: a clear error in the log, and the game's own index is
+reads the size of its GUID map and compares it with what the game keeps of the file we wrote
+(`CheckLoadedIndex`): the distinct GUIDs of the entries with a NAME (`LoadedUnitCount`; the loader
+drops the 113 Xbox entries without one, so the Xbox file loads as 3376). Nothing loaded: a clear error in the log, and the game's own index is
 loaded instead with its own path (nothing was inserted, so that is the load the game would have
 done), without the mods' units. Part of it loaded: an error, and the index is left as it is, since
 going back after a partial load is not safe (a replaced entry is freed but stays filed under its

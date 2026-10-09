@@ -327,16 +327,17 @@ std::optional<UnitIndex> ReadOurIndex(std::string* error) {
 void CompareWithXboxIndex(uint32_t loaded) {
   std::string error;
   const auto xbox = ReadPakUnitIndex(g.pak, &error);
-  if (xbox && CheckLoadedIndex(loaded, UniqueUnitGuids(*xbox)) == LoadedIndex::kComplete) {
+  if (xbox && CheckLoadedIndex(loaded, LoadedUnitCount(*xbox)) == LoadedIndex::kComplete) {
     CompareWithLoadedUnits(GuidsOf(*xbox));
     return;
   }
   REXLOG_ERROR("mods: the game's own unit index: {} units loaded ({})", loaded,
-               xbox ? std::to_string(UniqueUnitGuids(*xbox)) + " in the file" : error);
+               xbox ? std::to_string(LoadedUnitCount(*xbox)) + " in the file" : error);
   CompareWithLoadedUnits(std::nullopt);
 }
 
-// After the game loaded our index: the size of its GUID map against the distinct GUIDs we wrote.
+// After the game loaded our index: the size of its GUID map against what it keeps of the file we
+// wrote (LoadedUnitCount).
 // Nothing loaded (the file was not read): the game's own index is loaded instead, with its own
 // path; nothing was inserted, so that is the load the game would have done. Part of it: left as it
 // is, since going back is not safe (a replaced entry is freed but stays filed under its other
@@ -352,7 +353,7 @@ void VerifyLoadedIndex(PPCContext& ctx, uint8_t* base, uint32_t index, uint32_t 
     CompareWithLoadedUnits(std::nullopt);
     return;
   }
-  const size_t expected = UniqueUnitGuids(*ours);
+  const size_t expected = LoadedUnitCount(*ours);
   switch (CheckLoadedIndex(loaded, expected)) {
     case LoadedIndex::kComplete:
       REXLOG_INFO("mods: the game loaded the unit index: {} units", loaded);

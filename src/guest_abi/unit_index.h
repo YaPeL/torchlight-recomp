@@ -32,8 +32,10 @@ namespace index {
 // (@0x823293EC, only when that is null) and only then loads it. Its entries by GUID: a std::map at
 // +60, initialised by sub_82258648 (@0x823293A8: +64 the head node, +68 the size, zeroed), looked
 // up by the loader (sub_82259E50 @0x82329AA8, the result compared with the head @0x82329AAC) and
-// set through operator[] (sub_82327718 @0x82329AC4). A GUID already there replaces the entry, so
-// +68 counts the distinct GUIDs loaded. The loader reads the whole file through a reader
+// set through operator[] (sub_82327718 @0x82329AC4). A GUID already there replaces the entry; an
+// entry whose NAME (the first string, read @0x823297C0 into r1+192) is empty is destroyed without
+// being filed (its length @0x82329B10, beq @0x82329B18). So +68 counts the distinct GUIDs that
+// have an entry with a name: 3376 of the Xbox file's 3489, 113 entries having none. The loader reads the whole file through a reader
 // (sub_82398790 @0x823296E4); when that holds nothing (the file was not found) it skips every
 // group (@0x823296F0) and leaves the map empty, with no error.
 inline constexpr uint32_t kSingleton = 0x835594EC;

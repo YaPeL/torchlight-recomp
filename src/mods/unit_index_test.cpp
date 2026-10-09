@@ -129,10 +129,12 @@ int main() {
   // size of its GUID map.
   {
     UnitIndex index = Sample();
-    Check(UniqueUnitGuids(index) == 4, "four entries, four GUIDs");
+    Check(LoadedUnitCount(index) == 3, "four entries, one without a NAME: three kept");
     index.groups[3].push_back(Unit(-2, u"SWORD_PROP", u"MEDIA/UNITS/PROPS/SWORD.DAT"));
-    Check(UniqueUnitGuids(index) == 4, "a GUID repeated in another group counts once");
-    Check(UniqueUnitGuids(UnitIndex{}) == 0, "an empty index");
+    Check(LoadedUnitCount(index) == 3, "a GUID repeated in another group counts once");
+    index.groups[3].push_back(Unit(11, u"BASE_PROP", u"MEDIA/UNITS/PROPS/BASE.DAT"));
+    Check(LoadedUnitCount(index) == 4, "a GUID kept once one of its entries has a NAME");
+    Check(LoadedUnitCount(UnitIndex{}) == 0, "an empty index");
     Check(CheckLoadedIndex(4, 4) == LoadedIndex::kComplete, "all loaded");
     Check(CheckLoadedIndex(0, 4) == LoadedIndex::kEmpty, "nothing loaded: empty");
     Check(CheckLoadedIndex(3, 4) == LoadedIndex::kIncomplete, "fewer: incomplete");

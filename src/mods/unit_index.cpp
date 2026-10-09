@@ -236,10 +236,12 @@ UnitIndex MergeUnitIndex(const UnitIndex& base, const std::vector<UnitEntry>& un
   return out;
 }
 
-size_t UniqueUnitGuids(const UnitIndex& index) {
+size_t LoadedUnitCount(const UnitIndex& index) {
   std::unordered_set<int64_t> guids;
   for (const auto& group : index.groups) {
-    for (const UnitEntry& e : group) guids.insert(e.guid);
+    for (const UnitEntry& e : group) {
+      if (!e.name.empty()) guids.insert(e.guid);
+    }
   }
   return guids.size();
 }
