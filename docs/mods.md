@@ -367,14 +367,43 @@ next to it (section 7b), as on PC. So the game can rewrite a `.ADM` inside a mod
 mod ships older than its text file, or one it compiled itself), exactly as PC does; the project
 does not redirect those writes.
 
-**A guest fault never ends the process.** In each of the four runs where our index build had the
-game load the mod's unit and it was left out (117, 129, 130 and 161), the game soon read guest
-address 0x1AC and then looped on `Unhandled guest access violation`, logging tens of megabytes in
-seconds (run 161: 14 rotated log files) until it was killed; the runs that used a cached index
-did not. Run 161 rules out the item with an unknown unit as the trigger: the save protection had
-already removed it, and the loop came at the title screen, before any character was loaded. What
-reads 0x1AC is **[to find]**. The runtime side (an unhandled guest fault hangs the process instead
-of ending it with an error; `RtlUnwind` is a stub) is in patches/README.md, known gaps.
+**A guest fault never ends the process.** In the runs where our index was loaded (117, 129, 130
+and 161, then every run since), the game soon read guest address 0x1AC and then looped on
+`Unhandled guest access violation`, logging tens of megabytes in seconds (run 161: 14 rotated log
+files) until it was killed. Run 161 rules out the item with an unknown unit as the trigger: the
+save protection had already removed it, and the loop came at the title screen, before any
+character was loaded. Cause 4 below is why. The runtime side (an unhandled guest fault hangs the
+process instead of ending it with an error; `RtlUnwind` is a stub) is in patches/README.md, known
+gaps.
+
+4. **The game never read our index file.** Under gdb (runs capped by `tools/run_capped.py`), the
+   read of 0x1AC is in the game's state update `sub_82212950`: it looks up the default class,
+   "Destroyer", in a `CResourceManager` (`sub_823DE8F0`, returning to 0x822131C4), and when that
+   fails, again with a fallback name (returning to 0x82213210), whose result it does not check
+   (`lwz r11,428(r3)` with r3 = 0). With our index built from the base alone
+   (`--mods_unit_index_base_only`, diagnostics), the file we write is byte for byte the Xbox
+   `media/UNITDATA.RAW`, and the loop still came. The loader's reader then held 0 bytes and the
+   index's GUID map 0 entries: the game looked for `<key>.RAW` in the mod (both misses are in the
+   log) and nowhere else, so the loader skipped the whole file with no error (guest_abi
+   `unit_index.h`, `index`). The loader uses the path for nothing else: its caller passes a
+   temporary string and keeps nothing, the reader splits it into folder and name only to open it,
+   and nothing reads it again or registers it in a group. The data loader resolves a name in the
+   mods first, then (only when the data manager's flag `+16` is set) with OGRE's `resourceExists`
+   over its groups and then "General" (`0x8349D568`, the group our `tlunits:` location is in), then
+   with `_stat64` on a folder of its own (`sub_8239D0E8`); which step drops our name is
+   **[to find]**.
+
+**What guards against it now.** After the game loads our index, `mods/unit_index_install.cpp`
+reads the size of its GUID map and compares it with the distinct GUIDs we wrote
+(`CheckLoadedIndex`). Nothing loaded: a clear error in the log, and the game's own index is
+loaded instead with its own path (nothing was inserted, so that is the load the game would have
+done), without the mods' units. Part of it loaded: an error, and the index is left as it is, since
+going back after a partial load is not safe (a replaced entry is freed but stays filed under its
+other names); **[pending]** resetting the index object for that case. The saves are checked
+before the guest runs, when nothing can be reading or writing them, against the index the game is
+expected to load (the cached one, or the base plus the GUIDs the mods' definitions set). After the
+load only a comparison runs: units the check counted on that the game does not hold are logged
+and told on screen, and the saves are not changed again.
 
 ## 8. Where mods go on our side
 
