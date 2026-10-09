@@ -28,14 +28,14 @@ in number order; a branch adds its own line at its number's place.
 |---|---|---|---|
 | 1-18 | (below) | `develop` | In the series |
 | 11 | `rexglue-delete-on-close.patch` | | Withdrawn |
-| 19 | `rexglue-mnk-keystrokes.patch` | `develop` | In the series on `0c7b01a`; removed on `bd833a2` (`sdk/rexglue-next`) |
+| 19 | `rexglue-mnk-keystrokes.patch` | | Removed with the move to `bd833a2` |
 | 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
 | 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration |
-| 22 | `rexglue-tests-portable.patch` | `sdk/rexglue-next` | Pending integration (needs `bd833a2`) |
-| 23 | `rexglue-fctiw-rounding-mode.patch` | `sdk/rexglue-next` | Pending integration |
-| 24 | `rexglue-arm64-mffs-rounding.patch` | `sdk/rexglue-next` | Pending integration; to confirm on ARM64 |
-| 25 | `rexglue-mtfsf-field-mask.patch` | `sdk/rexglue-next` | Pending integration |
-| 26 | `rexglue-log-rotation.patch` | `sdk/rexglue-next` | Pending integration (needs `bd833a2`) |
+| 22 | `rexglue-tests-portable.patch` | `develop` | In the series |
+| 23 | `rexglue-fctiw-rounding-mode.patch` | `develop` | In the series |
+| 24 | `rexglue-arm64-mffs-rounding.patch` | `develop` | In the series; to confirm on ARM64 |
+| 25 | `rexglue-mtfsf-field-mask.patch` | `develop` | In the series |
+| 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
 | 27 | | | Next free number |
 
 ## The patches
