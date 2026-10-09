@@ -376,7 +376,7 @@ character was loaded. Cause 4 below is why. The runtime side (an unhandled guest
 process instead of ending it with an error; `RtlUnwind` is a stub) is in patches/README.md, known
 gaps.
 
-4. **The game never read our index file.** Under gdb (runs capped by `tools/run_capped.py`), the
+4. **The game never read our index file.** Under gdb (runs capped by `tools/run_capped/run_capped.py`), the
    read of 0x1AC is in the game's state update `sub_82212950`: it looks up the default class,
    "Destroyer", in a `CResourceManager` (`sub_823DE8F0`, returning to 0x822131C4), and when that
    fails, again with a fallback name (returning to 0x82213210), whose result it does not check
@@ -497,9 +497,36 @@ devices are writable for the `.ADM` the game compiles, and OGRE's locations and 
 looks every data file up in each mod's folder, and the SDK logs each failed open as a warning:
 about 124,000 lines (20 MB) in the first 45 s with the Ultimate Torchlight Mod-Pack's 29 mods,
 before the unit index loads. Automatic runs with real mod packs therefore use a 150 MB log cap
-(`tools/run_capped.py --max-log-mb 150`), a temporary exception the user approved; every other run
-keeps 20 MB. The fix belongs to the SDK (a filter for repeated log lines, a per-run cap, and maybe a
-cache of files known not to exist), and the case went to the ReXGlue work as evidence.
+(`tools/run_capped/run_capped.py --max-log-mb 150`), a temporary exception the user approved; every
+other run keeps 20 MB. The fix belongs to the SDK (a filter for repeated log lines, a per-run cap,
+and maybe a cache of files known not to exist), and the case went to the ReXGlue work as evidence.
+
+**A run stuck on one bad pointer, and the capped runner (2026-10-09).** The first Mod-Pack run with
+fixed-width device names froze its window before the unit index loaded: one guest thread repeated
+"Unhandled guest access violation: read of guest 0x000000B4" thousands of times a second (the
+audio went on). The game's log rotates (5 MB parts), so the flood pushed the start of the run, the
+mods and the first fault included, out of the log; the cap counted only the files left, which the
+rotation keeps near 100 MB, so it could not stop the run, and the stop pattern was looked for at a
+position the rotated file no longer had. The runner is now the one the macOS work wrote,
+`tools/run_capped/run_capped.py` (Linux, macOS, Windows; ctest `run_capped_test`), with these
+additions:
+- rotation followed: files are known by device and inode, so a renamed part keeps its read position
+  and the bytes of parts rotated away still count against `--max-log-mb`;
+- `--repeat-pattern`, `--max-repeats`: the same fault line (by default the SDK's guest access
+  violation) seen more than 100 times stops the run (exit 123);
+- `--head`, `--head-mb`: a copy of the first 2 MB of the logs' lines, so the start survives the
+  rotation;
+- `--stop-on`, `--stop-delay` from the old Linux script, read across rotations (exit 0);
+- processes that leave the group (gdb runs the program in a group of its own) followed by parent
+  and killed too; on Linux, the count of `/dev/shm/xenia_memory_*` files left.
+The old `tools/run_capped.py` is gone. Its own pass of the fault is next: the same run under gdb,
+stopped at the first access violation, for the stack.
+
+The macOS work's branch (`feature/macos-game`, `7c59663`) is not in `develop` yet. To keep a single
+script, that branch takes this branch's commit "tools/run_capped: follow rotation, stop at a
+repeated fault, keep the start of the logs" (it applies on top of `7c59663`, which this branch
+cherry-picked unchanged), or merges `develop` after this branch lands; it should not change its
+copy on its own meanwhile.
 
 **A new-item mod, validated (2026-10-09).** With `tlunits:` mounted once the index exists, the game
 loaded the merged index in the same start it was built (3377 units, the mod's sword among them)
