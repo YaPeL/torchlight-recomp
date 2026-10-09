@@ -109,6 +109,11 @@ New patches the port needs: items 2-4 above (generic, upstream candidates). `ser
 
 **For the render agent** (who integrates the macOS branches into `develop`):
 
+- `feature/macos-platform` (MAC.4): `backend.cpp` gets `platform::OgreTopLevelWindow` (commit
+  `7ffed22`; null on Linux and Windows, so nothing changes there), and `src/backend/CMakeLists.txt`
+  the plugin names on macOS. To review when integrating.
+- `feature/durable-writes` (MAC.4b) adds a flush to the settings' and the save import's writes on
+  every platform, and replaces the achievements' Linux `fsync` blocks with the same calls.
 - `feature/guest-memory-view` (MAC.2) changes `guest_abi`, which every platform uses: on Linux the
   offset is 0 and every access is as before, but the Linux tests and the 20 replays are to be run
   before merging (not possible on this Mac). Windows has the 0x1000 offset: the checks for the
@@ -653,6 +658,12 @@ on macOS, hidden or not, with `[NSApplication sharedApplication]` first), whose 
 About 15 lines in `backend.cpp`, no change on Linux or Windows. Until then MAC.4 is done but for
 those two tests, and MAC.5 (the replay) needs it.
 
+Done (decided 2026-10-08, commit `7ffed22` on `feature/macos-platform`, for review by the render
+agent): `platform::OgreTopLevelWindow` (a titled `NSWindow` on macOS, shown or hidden; null on
+Linux and Windows) and its use in `tl_backend_create`. Both GL3+ tests pass on this Mac (Apple M2,
+OpenGL 4.1; OGRE logs "Validation Failed: No vertex array object bound." while validating
+programs, and the tests check what was drawn): **`mac-arm64-nogame` ctest 59 of 59; MAC.4 done.**
+
 **Durable writes on macOS (for the ticket below).** On macOS `fsync` hands the data to the drive
 but does not make the drive write it: only `fcntl(F_FULLFSYNC)` does (Apple's `fsync(2)` man page).
 Where the project writes files that must survive a power cut:
@@ -680,6 +691,19 @@ of the game's saves are the ReXGlue agent's to check (a `F_FULLFSYNC` in `HostPa
 **Ticket MAC.4b (durable writes, before MAC.7):** `platform/durable_file.h` and step 1; step 2
 if the owners agree; done when `service.cpp` has no platform `#if` and a test writes, flushes and
 reads back on each platform.
+
+Decided 2026-10-08: steps 1 and 2, and Windows gets the same guarantee. Done on branch
+`feature/durable-writes` (from `develop`, `durable_file.cmake`, `durable_file_{posix,linux,mac,win}`):
+`FlushFileToDisk` (Linux `fsync`, macOS `F_FULLFSYNC` with `fsync` where a volume lacks it,
+Windows `FlushFileBuffers`) and `CommitReplace` (the rename and a flush of the folder on Linux and
+macOS; `MoveFileExW` with `MOVEFILE_WRITE_THROUGH` on Windows). Used by the achievements' state
+(same `fsync`s as before on Linux; the `#if defined(__linux__)` is gone), `settings.toml` and the
+save import's `WriteAtomic` (`.RAW` files, import state). Checked here, merged with
+`feature/macos-platform`: ctest 60 of 60 (`durable_file_test`, `host_settings_test`, the save
+import tests), the achievements built on their own. **To check on Linux and Windows** (not built
+there): `durable_file_test`, `host_settings_test`, the `save_import_*` tests and the achievements'
+tests; on Windows `durable_file_win.cpp` is new code. The game's saves (the SDK's `HostPathFile`)
+are the ReXGlue agent's.
 
 **`feature/launcher-imgui` on macOS (for the Windows agent; branch `feature/launcher-imgui-macos`
 = that branch, merged with `feature/macos-platform`, plus one fix):**
