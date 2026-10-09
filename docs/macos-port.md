@@ -585,7 +585,18 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   the window a 5120 x 2880 backing store (and scales it down to the panel's 3840 x 2160). With
   the default internal resolution (the window's), the backend renders 5120 x 2880, four times
   the guest's 1280 x 720 on each axis. Not a fault; the video menu's internal resolution lowers
-  it. Frame rate at that size: to measure (F3).
+  it.
+- First frame rate numbers (2026-10-09, Mac mini M2, only mode, internal 3840 x 2160, no frame
+  rate cap, vsync off; the log's 10 s periods, guest swap to swap; a 5-minute run through the
+  town and a dungeon): menu about 500-540 fps; in game 170-360 fps, typically 230-320, p99 4-9 ms
+  outside the level loads (1.8-3.2 s each, with their own long frames). The backend takes about
+  5 ms per frame in game, 3.5-4 of them in the present (the GPU finishing the 4K frame); the
+  guest's producer side about 1-1.4 ms. So at 4K the M2's GPU sets the pace, and 60 fps leaves
+  it large margins. A first measurement, not under the measurement rules (no cool-down, other
+  applications open).
+- The frame counter (F3) is opened by the run script with a synthetic key press, which macOS
+  allows only to an application with the Accessibility permission (System Settings, Privacy &
+  Security, Accessibility): granted to the terminal on this Mac.
 - **Emulated mode (Xenos, `--native_live=off`):** builds and runs on MoltenVK, to the main menu
   and into the game (a dungeon reached; quit by the user after 198 s, exit code 0, nothing left
   behind according to `run_capped`). The 3D geometry looks wrong (as if stray vertices showed) and some textures
