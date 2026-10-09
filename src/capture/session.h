@@ -23,6 +23,7 @@
 #include <vector>
 
 #include "capture/constant_mirror.h"
+#include "capture/flat_map.h"
 #include "capture/resource_registry.h"
 #include "commands/types.h"
 #include "live/frame_queue.h"
@@ -326,7 +327,7 @@ class Session {
     bool read_only_lock = false;  // the pending lock (HardwareBuffer::lock) does not write
   };
   live::MeasuredMutex versions_mutex_{"content versions"};
-  std::unordered_map<uint32_t, ContentState> versions_;
+  FlatMap<uint32_t, ContentState> versions_;
 
   // Live mode. Render thread: the frame being recorded and what it already announced.
   void LiveAppend(commands::CommandPayload payload);
@@ -349,7 +350,7 @@ class Session {
     live::SnapshotStore::Content content;
     uint64_t added_at_swap = ~0ull;
   };
-  std::unordered_map<uint64_t, LiveBuffer> live_buffers_;
+  FlatMap<uint64_t, LiveBuffer> live_buffers_;
   static uint64_t BufferKey(const commands::ResourceId& id) {
     return uint64_t(id.generation) << 32 | id.guest_address;
   }
@@ -357,16 +358,16 @@ class Session {
   struct SentKeyHash {
     size_t operator()(const std::tuple<uint32_t, uint32_t, uint64_t>& k) const noexcept {
       const uint64_t id = uint64_t(std::get<1>(k)) << 32 | std::get<0>(k);
-      return std::hash<uint64_t>{}(id ^ (std::get<2>(k) * 0x9E3779B97F4A7C15ull));
+      return size_t(MixHash(id ^ (std::get<2>(k) * 0x9E3779B97F4A7C15ull)));
     }
   };
-  std::unordered_set<std::tuple<uint32_t, uint32_t, uint64_t>, SentKeyHash> live_sent_declarations_,
+  FlatSet<std::tuple<uint32_t, uint32_t, uint64_t>, SentKeyHash> live_sent_declarations_,
       live_sent_textures_;
   // Live mode: textures whose description holds no content snapshot, already sent (BufferKey).
-  std::unordered_set<uint64_t> live_described_textures_;
+  FlatSet<uint64_t> live_described_textures_;
   std::unordered_set<uint64_t> live_sent_programs_;  // BufferKey: (generation, address)
   std::unordered_set<std::string> live_sent_sources_;
-  std::unordered_set<commands::Hash> live_frame_contents_;
+  FlatSet<commands::Hash> live_frame_contents_;
   // Capture armed during the live mode: live content already written to it (chunk LIVE).
   std::set<commands::Hash> capture_live_blobs_;
   std::set<std::tuple<uint32_t, uint32_t, uint64_t>> capture_live_textures_;

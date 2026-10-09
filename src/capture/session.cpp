@@ -245,7 +245,7 @@ Session::RecordedContent Session::RecordContent(const commands::ResourceId& id,
     }
     r.live = content->hash;
     if (!cached || cached->added_at_swap != swap_number_) {
-      if (live_frame_contents_.insert(r.live).second) live_frame_.contents.push_back({id, content});
+      if (live_frame_contents_.insert(r.live)) live_frame_.contents.push_back({id, content});
       if (cached) cached->added_at_swap = swap_number_;
     }
     if (armed() && capture_live_blobs_.insert(r.live).second) capture_.live_blobs.push_back(*content);
@@ -464,8 +464,8 @@ void Session::OnContentWritten(uint32_t buffer) {
 
 uint32_t Session::ContentVersion(uint32_t address) {
   std::lock_guard<live::MeasuredMutex> lock(versions_mutex_);
-  auto it = versions_.find(address);
-  return it == versions_.end() ? 0 : it->second.version;
+  const ContentState* state = versions_.find(address);
+  return state ? state->version : 0;
 }
 
 void Session::OnTextureLoaded(const uint8_t* membase, uint32_t texture) {
@@ -545,7 +545,7 @@ void Session::AddIndexBuffer(const BufferInfo& info) {
 void Session::AddTexture(commands::TextureDesc desc, commands::Hash live_content) {
   if (live()) {
     auto sent = std::make_tuple(desc.id.guest_address, desc.id.generation, live_content);
-    if (live_sent_textures_.insert(sent).second) {
+    if (live_sent_textures_.insert(sent)) {
       commands::TextureDesc d = desc;
       d.content = live_content;
       live_frame_.textures.push_back(std::move(d));
@@ -587,18 +587,18 @@ void Session::AddProgram(commands::ProgramDesc desc) {
 }
 
 bool Session::LiveTextureDescribed(const commands::ResourceId& id) const {
-  return live() && !armed() && live_described_textures_.count(BufferKey(id)) != 0;
+  return live() && !armed() && live_described_textures_.contains(BufferKey(id));
 }
 
 bool Session::LiveDeclarationDescribed(const commands::ResourceId& id,
                                        commands::Hash content) const {
   return live() && !armed() &&
-         live_sent_declarations_.count({id.guest_address, id.generation, content}) != 0;
+         live_sent_declarations_.contains({id.guest_address, id.generation, content});
 }
 
 void Session::AddVertexDeclaration(commands::VertexDeclarationContent content) {
   auto key = std::make_tuple(content.id.guest_address, content.id.generation, content.content);
-  if (live() && live_sent_declarations_.insert(key).second) live_frame_.declarations.push_back(content);
+  if (live() && live_sent_declarations_.insert(key)) live_frame_.declarations.push_back(content);
   if (armed() && declaration_index_.emplace(key, capture_.vertex_declarations.size()).second) {
     capture_.vertex_declarations.push_back(std::move(content));
   }
