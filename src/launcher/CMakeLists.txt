@@ -39,3 +39,22 @@ target_link_libraries(launcher_window_test PRIVATE torchlight_platform)
 target_include_directories(launcher_window_test PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_options(launcher_window_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME launcher_window_test COMMAND launcher_window_test)
+
+# The launcher: its view (ImGui) and the controller that carries out the model's actions through
+# LauncherServices (the system's, or fakes in the tests).
+add_library(torchlight_launcher STATIC launcher_view.cpp launcher.cpp)
+target_link_libraries(torchlight_launcher PUBLIC torchlight_launcher_model torchlight_game_setup
+                      torchlight_platform)
+target_include_directories(torchlight_launcher PUBLIC "${TORCHLIGHT_REX_INCLUDE}")
+target_compile_options(torchlight_launcher PRIVATE -Wall -Wextra)
+
+# The whole launcher on its window with fake services and keys sent as SDL events.
+add_executable(launcher_test launcher_test.cpp)
+target_link_libraries(launcher_test PRIVATE torchlight_launcher)
+target_compile_options(launcher_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME launcher_test COMMAND launcher_test)
+
+# A development preview (not installed): the real launcher with a pretend install.
+add_executable(launcher_preview launcher_preview.cpp)
+target_link_libraries(launcher_preview PRIVATE torchlight_launcher)
+target_compile_options(launcher_preview PRIVATE -Wall -Wextra -Werror)
