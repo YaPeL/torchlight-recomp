@@ -355,6 +355,24 @@ Altogether, base against the last cut on the same frames: backend thread work 6.
 frame (5.40 -> 4.43 leaving out freeing the frames, which these heavy frames inflate; live it was
 ~0.2 ms), commands 4.74 -> 3.95 ms; the whole process's user cycles -7.5 %, instructions -5.2 %.
 
+In the game: fixed-floor saved game, step overlay, draw skip on, two runs each, alternated. The
+town square is the comparison (the dungeon fight is not: its rat came out only in the runs with
+the cuts):
+
+| Town square | develop | Backend cuts |
+|---|---|---|
+| Presented, p99 (1 % low) | 10.49, 10.47 ms (95.3, 95.5) | 10.67, 10.00 ms (93.7, 100.0) |
+| Game, p99 (1 % low) | 10.36, 8.88 ms (96.5, 112.6) | 10.09, 9.03 ms (99.1, 110.7) |
+| Presented FPS | 125.0, 124.3 | 133.2, 134.1 |
+| Game FPS | 138.9, 140.9 | 136.8, 135.6 |
+| Guest frames dropped (backend behind) | 558, 664 | 145, 65 |
+
+What reaches the screen gains about 7 %, and the backend drops a quarter of the frames or fewer;
+the 1 % lows move less than their run-to-run spread. The game's own frame rate falls about 2.6 %.
+A hypothesis, not measured: with the backend presenting nearly every guest frame, it uses more CPU
+(and GPU) than before, when it skipped a frame in nine, and on this laptop that is taken from the
+guest's render thread.
+
 OGRE 14.6's Vulkan render system, tried in the replay (local experiment, OGRE built with the
 Vulkan render system and its glslang plugin): the RTSS programs compile, but the render system
 expects a frame laid out its way. Its window needs one made outside it; a buffer upload inside a
