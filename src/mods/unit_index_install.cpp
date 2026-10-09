@@ -60,7 +60,9 @@ struct State {
   bool check = false;       // diagnostics: compare the base read through our path
   bool base_only = false;   // diagnostics: our index without the mods' units
   bool ready = false;       // the cached index exists for `key`
+  bool mounted = false;     // tlunits: mounted (once the file exists)
   bool located = false;     // tlunits: added as a resource location
+  rex::Runtime* runtime = nullptr;
   std::filesystem::path folder, pak;
   std::string key;
   std::string name;  // the cached index loaded: the key, or IncompleteUnitIndexName when units were left out
@@ -287,16 +289,7 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
   g.name = g.key;
   g.ready = !g.base_only && FindCachedUnitIndex(g.folder, g.key, &log).has_value();
   if (!log.empty()) REXLOG_WARN("mods: {}", log);
-  std::error_code ec;
-  std::filesystem::create_directories(g.folder, ec);
-  auto device = std::make_unique<rex::filesystem::HostPathDevice>(kDeviceMount, g.folder, /*read_only=*/true);
-  if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
-      !runtime->file_system()->RegisterSymbolicLink(kDeviceLink, kDeviceMount)) {
-    REXLOG_ERROR("mods: cannot mount {}; mods' units left out", g.folder.string());
-    g.active = g.check;
-    g.unit_paths.clear();
-    return;
-  }
+  g.runtime = runtime;
   REXLOG_INFO("mods: {} unit definitions from mods; cached index {}", g.unit_paths.size(),
               g.ready ? "found" : "to build");
 }
@@ -379,9 +372,25 @@ void VerifyLoadedIndex(PPCContext& ctx, uint8_t* base, uint32_t index, uint32_t 
   }
 }
 
+// The cache folder as tlunits:, mounted only once the index file is in it. The device reads the
+// folder when it is mounted, and listing it returns what was there then (docs/mods.md, section 7e,
+// folders we mount): mounted before the file was written, the folder listed empty to OGRE and the
+// game never found the index. Registering a device while the guest runs is safe: the file system
+// takes its global lock to register and to resolve.
+bool MountIndexFolder() {
+  if (!g.runtime || !g.runtime->file_system()) return false;
+  auto device = std::make_unique<rex::filesystem::HostPathDevice>(kDeviceMount, g.folder, /*read_only=*/true);
+  if (!device->Initialize() || !g.runtime->file_system()->RegisterDevice(std::move(device)) ||
+      !g.runtime->file_system()->RegisterSymbolicLink(kDeviceLink, kDeviceMount)) {
+    REXLOG_ERROR("mods: cannot mount {}; the game's own unit index is loaded", g.folder.string());
+    return false;
+  }
+  return true;
+}
+
 // The game's unit index loader (guest_abi/unit_index.h kLoadIndex): with mods' units, our index
-// is built if needed and loaded in place of the Xbox file, by a name under tlunits: (added as a
-// resource location once the file exists, since locations are indexed when added), and what the
+// is built if needed and loaded in place of the Xbox file, by a name under tlunits: (mounted and
+// added as a resource location once the file exists, since both list the folder then), and what the
 // game kept is checked (VerifyLoadedIndex). The saves were checked before the guest ran
 // (save_units_install.h); this only compares.
 void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
@@ -398,11 +407,12 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
     if (g.check) CheckBase(call);
 #endif
     if (!g.unit_paths.empty() && !g.ready) BuildIndex(call);
-    if (g.ready && !g.located) {
+    if (g.ready && !g.mounted) g.mounted = MountIndexFolder();
+    if (g.ready && g.mounted && !g.located) {
       g.located = game_menu::AddFileSystemLocation(call, std::string(kDeviceLink) + "\\", false);
       if (!g.located) REXLOG_ERROR("mods: cannot add {} as a resource location", kDeviceLink);
     }
-    if (g.ready && g.located) {
+    if (g.ready && g.mounted && g.located) {
       // On the guest heap: the scratch area is below the stack pointer the loader will use.
       const std::string file = UnitIndexFileName(g.name);
       const std::u16string name(file.begin(), file.end());

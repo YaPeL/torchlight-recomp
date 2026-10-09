@@ -394,7 +394,10 @@ gaps.
    are `0ZIP0` and `ZIP`, and the game asks for `57930ADE12DF44C0.RAW`, **in upper case**, while
    the file was `57930ade12df44c0.RAW`: not found (3). With an upper-case copy in the cache the
    game read the whole file (676106 bytes, 3377 units with the mod's sword) and found "Destroyer"
-   at once. The cache's file names are now upper case (`UnitIndexFileName`, `kUnitIndexVersion` 4).
+   at once. That copy was read because it was in the folder when `tlunits:` was mounted, not
+   because of its case (see "folders we mount" below: a guided run with the upper-case name built
+   in the same start loaded 0 again). The cache's file names are upper case anyway
+   (`UnitIndexFileName`, `kUnitIndexVersion` 4), as the game asks for them.
 
 **Rule: files we create for the game.** The data loader asks for every name in upper case, and a
 resource location on a host folder is matched by case on Linux (Windows and macOS ignore case by
@@ -407,6 +410,26 @@ and the rule. **[to verify]** with a mod whose files are named in lower case, as
 are (Windows ignores case): the mods' file maps, which the game fills from the folder listing and
 looks up in upper case, and the mods' assets that OGRE finds through the mod folders' locations.
 Those are the player's files, so the fix, if needed, cannot be renaming them.
+
+**Rule: folders we mount, and files created in them later.** A host folder mounted as a device
+(`HostPathDevice`) is read into memory when it is mounted. Opening a file by its path still finds
+one created later (the device falls back to the disk, ignoring case), but listing the folder
+returns what was there at the mount, plus what the guest created through the device itself
+(`Entry::CreateEntry` adds it). OGRE indexes a resource location by listing it when the location
+is added, and the game fills a mod's file map by listing it when the mod is registered: both are
+snapshots. So a file the host writes into a mounted folder behind the device's back is never
+listed, and any file created after those snapshots is missing from them until the next start.
+That is what kept our unit index out: written by the host after `tlunits:` was mounted, it was
+never listed (case did not matter: with the file there at the mount, its lower-case name was read
+too). `tlunits:` is now mounted in the index loader's hook, once the file exists
+(`MountIndexFolder`). The other mounts: `tlhost:` holds files shipped with the executable,
+`tlwide:` is written before it is mounted, and the language pack is on the game's own device, so
+none of them is affected. On `tlmods:` the game itself writes the `.ADM` files it compiles, through
+the device, so the device lists them; but a `.ADM` compiled during a session is in neither the
+mod's file map nor OGRE's index until the next start. In that session the game reads and compiles
+the text file again, as it did the first time; PC fills its file maps once at start too. Harmless
+today; noted so that nothing of ours relies on a file created in a mounted folder being found in
+the same session.
 
 **What guards against it now.** After the game loads our index, `mods/unit_index_install.cpp`
 reads the size of its GUID map and compares it with what the game keeps of the file we wrote
