@@ -166,6 +166,47 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   return plugin_dir;
 }
 
+namespace {
+
+// A plain titled window whose content view OGRE's Cocoa GL window draws in.
+class CocoaTopLevelWindow : public OgreTopLevelWindow {
+ public:
+  explicit CocoaTopLevelWindow(NSWindow* window) : window_(window) {}
+  ~CocoaTopLevelWindow() override { [window_ close]; }
+  NativeWindow native() const override {
+    NativeWindow window;
+    window.system = NativeWindow::kCocoa;
+    window.window = uint64_t(uintptr_t([window_ contentView]));
+    return window;
+  }
+
+ private:
+  NSWindow* window_;  // released when closed (releasedWhenClosed, the default)
+};
+
+}  // namespace
+
+std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string& title,
+                                                               uint32_t width, uint32_t height,
+                                                               bool visible) {
+  if (!HasDisplay()) return nullptr;
+  [NSApplication sharedApplication];  // a window needs the application object (no-op under SDL)
+  const NSRect frame = NSMakeRect(0, 0, width, height);
+  NSWindow* window = [[NSWindow alloc]
+      initWithContentRect:frame
+                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                          NSWindowStyleMaskMiniaturizable
+                  backing:NSBackingStoreBuffered
+                    defer:NO];
+  if (!window) return nullptr;
+  [window setTitle:[NSString stringWithUTF8String:title.c_str()]];
+  if (visible) {
+    [window center];
+    [window makeKeyAndOrderFront:nil];
+  }
+  return std::make_unique<CocoaTopLevelWindow>(window);
+}
+
 bool HasDirect3D11(const std::string&) { return false; }
 
 // Not probed: GL3+ is the only render system, so there is nothing to fall back to.

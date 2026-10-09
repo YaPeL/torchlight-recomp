@@ -194,6 +194,21 @@ bool HasDirect3D11(const std::string& plugin_dir);
 // render system there.
 bool CanCreateGl33Context();
 
+// The backend's own top-level window (offscreen backends keep a hidden one for the GL context, the
+// replay shows one) where OGRE's render system cannot create it itself: macOS, whose OGRE 14 Cocoa
+// GL window only draws in an external view ("Builtin Window creation broken",
+// OgreOSXCocoaWindow.mm). OGRE then draws in this one (OgreWindowParams with native()), which must
+// outlive OGRE's window. Main thread.
+class OgreTopLevelWindow {
+ public:
+  // Null where OGRE creates its own top-level windows (Linux, Windows) and when no window can be
+  // made.
+  static std::unique_ptr<OgreTopLevelWindow> Create(const std::string& title, uint32_t width,
+                                                    uint32_t height, bool visible);
+  virtual ~OgreTopLevelWindow() = default;
+  virtual NativeWindow native() const = 0;
+};
+
 // Keys typed in a top-level window the backend created: OGRE does not read the keyboard.
 class KeyReader {
  public:
