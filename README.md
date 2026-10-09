@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/YaPeL/torchlight-recomp/actions/workflows/ci.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/ci.yml)
 [![Release](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-recomp?include_prereleases)](https://github.com/YaPeL/torchlight-recomp/releases)
+[![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-recomp?include_prereleases&filter=v*&sort=semver)](https://github.com/YaPeL/torchlight-recomp/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 [![Platforms: Linux | Windows](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-lightgrey)](#installing)
 
