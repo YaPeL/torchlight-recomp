@@ -355,12 +355,16 @@ in number order; a branch adds its own line at its number's place.
     then forgotten; Torchlight's replace: a temporary written, the old file removed, the temporary
     renamed to `4.TSV`, one file and one folder flushed; a removed file leaves its folder only). The
     exports themselves are one-line calls into those, checked in a game save rather than by a
-    unit test, since they need the kernel state. Cost: an `fsync` of a save-sized file (110-290 KB)
-    on this machine's NVMe disk (ext4) takes 1 ms in the median and under 2 ms at the 90th
-    percentile (50 runs each, quiet machine; 1-6 ms on average with a build running), with rare
-    outliers up to 0.23 s when the journal commits; a save flushes the files it changed (one for
-    Torchlight's character) and their folder, behind the zone change's loading screen. The owner
-    judged that negligible. Not specific to any GPU. Candidate for an upstream report (D27 in
+    unit test, since they need the kernel state. Checked in a guided save-and-exit under `strace`
+    (2026-10-08): the `XamContentFlush` flushed `sharedstash.bin` (`fsync` 68 ms); the game then
+    wrote `save.tmp` and renamed `4.tsv` to `backup.tmp` and `save.tmp` to `4.TSV`; the
+    `XamContentClose` 5 s later flushed 2 files and the folder (`4.TSV` 69 ms, `backup.tmp` 0.04 ms,
+    the folder 1.2 ms), all on the guest's main thread: about 140 ms per save-and-exit. An `fsync`
+    on ext4 commits the journal and waits for the data it orders, so its time depends on what else
+    is dirty on the system, not on the file: a 112 KB file took 1.9 ms with nothing else dirty,
+    11-36 ms with 16-256 MB of other dirty data, 85 ms as the first file of a new folder. Torchlight's
+    flushes fall in a zone change's loading screen or at exit. The owner judged that negligible; a
+    flush on a worker thread is the follow-up if a save ever stalls visibly. Not specific to any GPU. Candidate for an upstream report (D27 in
     `docs/rexglue-upstream.md`): it affects every title that saves.
 
 The observation and diagnostic patches there were before remain in the git history.
