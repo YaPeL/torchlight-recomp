@@ -106,7 +106,8 @@ inline constexpr GuestFunction kActiveModCount{0x823AAC48, Confidence::kConfirme
 // "*.*" (sub_823A0B30; subfolders through sub_823A1010, which asks for the CMod's folder, kept
 // with '/', plus "/*.*", 0x820D2F30: "tlmods:/<mod>//*.*"). The Xbox search splits paths only at
 // '\' and failed on those (status 0xC000000D, as a run's diagnostics showed), so no subfolder of a
-// mod was ever listed; hooks/find_file_hooks.cpp gives it Windows separators.
+// mod was ever listed; hooks/find_file_hooks.cpp gives it Windows separators. (Those runs had
+// every mod under one device, tlmods:<folder>; each mod is now its own device, tlmod<N>:.)
 // Its only caller is the data manager's sub_8239D0E8 (@0x8239D164). PC indexes its list by
 // PRIORITY (0x5CE85B..0x5CE8D2) and takes the first match too: the lowest PRIORITY wins.
 inline constexpr GuestFunction kModFileLookup{0x823AA988, Confidence::kConfirmed};

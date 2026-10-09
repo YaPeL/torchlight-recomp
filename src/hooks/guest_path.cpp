@@ -20,12 +20,21 @@ std::optional<std::string> WindowsSeparators(std::string_view path) {
   return out;
 }
 
-std::optional<std::string> ModsSearchPath(std::string_view path) {
-  static constexpr std::string_view kDevice = "tlmods:";
-  if (path.size() < kDevice.size()) return std::nullopt;
-  for (size_t i = 0; i < kDevice.size(); ++i) {
-    if (std::tolower(static_cast<unsigned char>(path[i])) != kDevice[i]) return std::nullopt;
+std::string ModDeviceLink(size_t index) { return "tlmod" + std::to_string(index) + ":"; }
+
+bool OnModDevice(std::string_view path) {
+  static constexpr std::string_view kPrefix = "tlmod";
+  if (path.size() < kPrefix.size() + 2) return false;
+  for (size_t i = 0; i < kPrefix.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(path[i])) != kPrefix[i]) return false;
   }
+  size_t at = kPrefix.size();
+  while (at < path.size() && std::isdigit(static_cast<unsigned char>(path[at]))) ++at;
+  return at > kPrefix.size() && at < path.size() && path[at] == ':';
+}
+
+std::optional<std::string> ModsSearchPath(std::string_view path) {
+  if (!OnModDevice(path)) return std::nullopt;
   return WindowsSeparators(path);
 }
 

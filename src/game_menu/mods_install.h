@@ -1,6 +1,6 @@
 // The player's PC mods (docs/mods.md): found in <data folder>/mods/ with PC's layout, served to the
-// guest through a writable VFS device (tlmods:, the game compiles a mod's text .DAT into the mod's
-// folder), and registered with the guest's own mod system once its data manager exists, with a mod
+// guest each through its own writable VFS device (tlmod<N>:, hooks/guest_path.h ModDeviceLink; the
+// game compiles a mod's text .DAT into the mod's folder), and registered with the guest's own mod system once its data manager exists, with a mod
 // manager the host builds (guest_abi/mods.h: the Xbox build has none). Without mods nothing is
 // mounted or built and the guest behaves as the original game. The unit save writer is hooked here
 // too: a character saved with mods records their names, and the Xbox writer's bug with that list

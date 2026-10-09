@@ -1,7 +1,7 @@
 // The guest's FindFirstFileA with Windows path semantics on the mods' device. The game, written for
 // Windows, builds a mod's subfolder search with '/' (its folder, kept with '/', plus "/*.*"); the
 // Xbox library's search splits the path only at '\' and fails without one, so no subfolder of a
-// mod was ever listed. A search on tlmods: is given its path with '\' separators (guest_path.h),
+// mod was ever listed. A search on a mod's device (tlmod<N>:) is given its path with '\' separators (guest_path.h),
 // copied below the stack pointer for the call; any other search goes through as it is (guest_abi
 // xapi_files.h says why it is not global). The guest's other file functions need nothing: the
 // kernel takes both separators.
@@ -9,7 +9,7 @@
 // Every search is also timed for the long frame report (live/guest_events.h), as the game's file
 // existence check (guest_abi guest_functions.h kFileAttributes), with the path the game gave.
 //
-// With TORCHLIGHT_MODS_DIAGNOSTICS the searches on tlmods: go to the log, as asked and as answered
+// With TORCHLIGHT_MODS_DIAGNOSTICS the searches on the mods' devices go to the log, as asked and as answered
 // (status, then each entry's name and whether it is a folder).
 
 #include <chrono>
@@ -26,7 +26,6 @@
 #include "live/guest_events.h"
 
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-#include <cctype>
 #include <mutex>
 #include <set>
 #endif
@@ -57,14 +56,7 @@ thread_local uint32_t g_last_status = 0;  // the last native search's NTSTATUS o
 std::mutex g_mutex;
 std::set<uint32_t> g_handles;  // logged searches still open
 
-bool OnModsDevice(const std::string& path) {
-  static constexpr char kDevice[] = "tlmods:";
-  if (path.size() < sizeof(kDevice) - 1) return false;
-  for (size_t i = 0; i + 1 < sizeof(kDevice); ++i) {
-    if (std::tolower(static_cast<unsigned char>(path[i])) != kDevice[i]) return false;
-  }
-  return true;
-}
+bool OnModsDevice(const std::string& path) { return torchlight::hooks::OnModDevice(path); }
 
 void LogEntry(const uint8_t* base, uint32_t find_data) {
   const uint32_t attributes = ReadU32(base, find_data + data::kAttributes.offset);

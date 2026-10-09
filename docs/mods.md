@@ -479,6 +479,20 @@ affected and where the copy is. Validated in a guided run of the failing case (2
 notice showed, the game's save on the way back to the menu was skipped ("character not saved"),
 the character file kept the sword, and the copy was made.
 
+**Each mod its own device (2026-10-09).** The kernel refuses in a path the characters the Xbox
+does not allow in a name (`"`, `+`, `,`, `<`, `>`, `|`; the SDK's `IsValidPath`, status
+0xC0000033). PC mods are named on Windows, which allows them: 5 of the Ultimate Torchlight
+Mod-Pack's 29 folders have a comma ("JCC - Class Skills - Airbender, Paladin and Sorceress"), and
+with every mod under one device (`tlmods:\<folder>\`) the game could open nothing in them (empty
+file maps, the mods inactive, their classes left out of the index). Each mod's folder is now
+mounted as its own device, `tlmod<N>:` with N its place in the plan (`hooks/guest_path.h`
+`ModDeviceLink`), so the folder's name never reaches a guest path; folders whose names are not
+ASCII work the same way. Checked before the change, nothing else depends on the folder's path: a
+mod's name (in the list and in saves) is its `mod.dat` `NAME` (CMod +80, read in `sub_823A9EA0`,
+"MOD" without one), the priorities and the MODS count follow the plan's order as before, the
+devices are writable for the `.ADM` the game compiles, and OGRE's locations and the separators fix
+(`ModsSearchPath`) take the new names.
+
 **Test runs with real mod packs: log cap exception (2026-10-09).** With dozens of mods the game
 looks every data file up in each mod's folder, and the SDK logs each failed open as a warning:
 about 124,000 lines (20 MB) in the first 45 s with the Ultimate Torchlight Mod-Pack's 29 mods,

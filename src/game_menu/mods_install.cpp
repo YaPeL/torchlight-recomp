@@ -20,6 +20,7 @@
 #include "game_setup/game_files.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/mods.h"
+#include "hooks/guest_path.h"
 #include "mods/mod_list.h"
 #include "mods/save_safety.h"
 
@@ -31,8 +32,10 @@ namespace abi = torchlight::guest_abi;
 namespace mods_abi = torchlight::guest_abi::mods;
 namespace ui = torchlight::guest_abi::game_ui;
 
-constexpr const char* kDeviceMount = "\\Device\\TorchlightMods";
-constexpr const char* kDeviceLink = "tlmods:";
+// Each mod's folder is its own device, "\Device\TorchlightMod<N>" linked as "tlmod<N>:"
+// (hooks/guest_path.h ModDeviceLink), N its place in the plan: the guest never sees the folder's
+// name, which may hold characters the kernel refuses in a path, as the Xbox does (a comma).
+std::string DeviceMount(size_t index) { return "\\Device\\TorchlightMod" + std::to_string(index); }
 constexpr const char* kRecordFile = "mod_set.txt";
 
 // Set by InstallMods before the guest runs; read once by RegisterMods on the game's thread.
@@ -51,8 +54,8 @@ bool WriteFile(const std::filesystem::path& path, const std::vector<uint8_t>& by
   return static_cast<bool>(out);
 }
 
-// A guest std::wstring built in the scratch area from ASCII text (folder names are checked to be
-// ASCII by InstallMods), with the game's constructor; destroy it with kWStringDtor.
+// A guest std::wstring built in the scratch area from ASCII text (a mod's device name), with the
+// game's constructor; destroy it with kWStringDtor.
 uint32_t GuestWString(GuestCall& call, uint8_t* base, const std::string& ascii) {
   const uint32_t text = call.Reserve(static_cast<uint32_t>(2 * (ascii.size() + 1)));
   const uint32_t str = call.Reserve(abi::ogre::stl_string::kSize.bytes);
@@ -113,13 +116,6 @@ void LogModFileMaps(const uint8_t* base, uint32_t manager) {
 }
 #endif
 
-bool IsAscii(const std::string& s) {
-  for (unsigned char c : s) {
-    if (c < 0x20 || c >= 0x7F) return false;
-  }
-  return true;
-}
-
 }  // namespace
 
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
@@ -128,12 +124,6 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
   const std::filesystem::path folder = data_dir / "mods";
   mods::ScanResult scan = mods::ScanModsFolder(folder);
   for (const std::string& line : scan.skipped) REXLOG_WARN("mods: skipped {}", line);
-  // The guest sees the folder names through tlmods:, a path made of ASCII here.
-  std::erase_if(scan.mods, [](const mods::ModFolder& m) {
-    if (IsAscii(m.folder)) return false;
-    REXLOG_WARN("mods: skipped a folder whose name is not ASCII");
-    return true;
-  });
   std::optional<mods::ModList> list;
   if (const auto bytes = ReadFile(folder / mods::kListFile)) {
     std::string error;
@@ -174,17 +164,21 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
     g_plan = {};
     return;
   }
-  auto device = std::make_unique<rex::filesystem::HostPathDevice>(kDeviceMount, folder, /*read_only=*/false);
-  if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
-      !runtime->file_system()->RegisterSymbolicLink(kDeviceLink, kDeviceMount)) {
-    REXLOG_ERROR("mods: cannot mount {}; mods off", folder.string());
-    g_plan = {};
-    return;
+  // Writable: the game compiles a mod's text .DAT into a .ADM next to it.
+  for (size_t i = 0; i < g_plan.mods.size(); ++i) {
+    const mods::PlannedMod& mod = g_plan.mods[i];
+    auto device = std::make_unique<rex::filesystem::HostPathDevice>(DeviceMount(i), folder / mod.folder,
+                                                                    /*read_only=*/false);
+    if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
+        !runtime->file_system()->RegisterSymbolicLink(hooks::ModDeviceLink(i), DeviceMount(i))) {
+      REXLOG_ERROR("mods: cannot mount {}; mods off", (folder / mod.folder).string());
+      g_plan = {};
+      return;
+    }
+    REXLOG_INFO("mods: {} as {} (priority {}{})", mod.folder, hooks::ModDeviceLink(i), mod.priority,
+                mod.priority < 0 ? ", disabled" : "");
   }
   g_mounted = true;
-  for (const mods::PlannedMod& mod : g_plan.mods) {
-    REXLOG_INFO("mods: {} (priority {}{})", mod.folder, mod.priority, mod.priority < 0 ? ", disabled" : "");
-  }
 }
 
 const mods::ModPlan* MountedModPlan() {
@@ -204,9 +198,10 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
   mods_abi::InitModManager(base, manager);
   call.WriteU32(mods_abi::kRunicCoreInstances, call.ReadU32(mods_abi::kRunicCoreInstances) + 1);
   mods_abi::PublishModManager(base, data_manager, manager);
-  for (const mods::PlannedMod& mod : g_plan.mods) {
+  for (size_t i = 0; i < g_plan.mods.size(); ++i) {
+    const mods::PlannedMod& mod = g_plan.mods[i];
     const uint32_t mark = call.Mark();
-    const uint32_t folder = GuestWString(call, base, std::string(kDeviceLink) + "\\" + mod.folder + "\\");
+    const uint32_t folder = GuestWString(call, base, hooks::ModDeviceLink(i) + "\\");
     if (!folder) {
       REXLOG_ERROR("mods: no scratch space for {}", mod.folder);
       call.Release(mark);
@@ -230,9 +225,9 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   LogModFileMaps(base, manager);
 #endif
-  for (const mods::PlannedMod& mod : g_plan.mods) {
-    if (mod.priority < 0) continue;
-    const std::string location = std::string(kDeviceLink) + "\\" + mod.folder + "\\";
+  for (size_t i = 0; i < g_plan.mods.size(); ++i) {
+    if (g_plan.mods[i].priority < 0) continue;
+    const std::string location = hooks::ModDeviceLink(i) + "\\";
     if (!AddFileSystemLocation(call, location, true)) REXLOG_ERROR("mods: cannot add {}", location);
   }
 }
