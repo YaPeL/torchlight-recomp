@@ -62,6 +62,7 @@ Other topics:
 | `*.*` in the wildcard engine | Same as patch 20 | See patch 20 |
 | `non_volatile_as_local` with `setjmp` (D21) | The generated `setjmp` saves only `ctx`; the localized r14-r31 are lost across a `longjmp` | Issue, for when we want that flag |
 | `non_argument_as_local` and values passed in r11/r12 (D26) | The funclets' frame in r12 and the stack probe's size are lost: deadlock seen | Issue, with fix directions |
+| Guest file flushes are no-ops (D27) | `NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush` return success without flushing | Issue and PR; a patch of ours if the user agrees |
 | `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
 | `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
@@ -743,6 +744,41 @@ The non-volatile save and restore helpers are already elided under `non_volatile
 are not affected.
 
 We keep `non_argument_as_local` off.
+
+---
+
+### D27. Guest file flushes never reach the disk
+
+From the render work (2026-10-08), checked here on `bd833a2`. The macOS port asked about
+`F_FULLFSYNC` for saves, which is what turned this up.
+
+**Issue: `[Kernel]: NtFlushBuffersFile, FlushFileBuffers and XamContentFlush do not flush`**
+
+A title that flushes its save file asks for durability and gets none:
+- `NtFlushBuffersFile_entry` (`src/kernel/xboxkrnl/xboxkrnl_io.cpp`) only fills the status block
+  with success.
+- The CRT's `FlushFileBuffers_entry` (`src/kernel/crt/file.cpp`) returns 1.
+- `XamContentFlush_entry` (`src/kernel/xam/xam_content.cpp`) completes the overlapped with success.
+
+The host side exists: `FileHandle::Flush` (`fsync` on POSIX, `FlushFileBuffers` on Windows). But
+nothing on a guest path calls it, so a power loss or a crash after a save can lose data the guest
+believes is on disk. Torchlight calls `NtFlushBuffersFile` and `XamContentFlush` once each when
+saving.
+
+**PR: `fix(kernel): guest flushes reach the host file`**
+
+Fixes #NNN.
+- `NtFlushBuffersFile` and `FlushFileBuffers` look up the `XFile`, take its VFS file and call
+  `FileHandle::Flush`. They return the host error if that fails.
+- `XamContentFlush` (and the close of a content package) flushes the files open under that
+  content root, then the root directory itself on POSIX, so renames are durable too.
+- On Apple, `Flush` uses `fcntl(F_FULLFSYNC)`, since `fsync` there does not reach the disk, and
+  falls back to `fsync` where `F_FULLFSYNC` is not supported.
+
+Test: a VFS unit test that writes through a host-path device, calls the flush path, and checks the
+host `Flush` was called. A mock `FileHandle` can count the calls.
+
+Not yet a patch of ours: the render work proposes it to the user first.
 
 ---
 
