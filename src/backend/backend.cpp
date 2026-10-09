@@ -308,7 +308,7 @@ struct tl_backend {
     std::vector<uint8_t> bytes;  // fetch swap applied (vertex) / host order (index)
     uint32_t index_size = 0;
   };
-  std::map<uint64_t, Buffer> vertex_buffers, index_buffers;
+  std::unordered_map<uint64_t, Buffer> vertex_buffers, index_buffers;
   // GPU buffers per guest buffer (tl_draw stream_owners / index_owner), holding one content
   // version at a time: a new version is written over the old one (whole buffer, discarding it, so
   // draws still queued keep the data they were issued with). Vertex buffers also per stride and
@@ -341,8 +341,8 @@ struct tl_backend {
   };
   std::unordered_map<uint64_t, VertexLayout> vertex_layouts;
   uint64_t host_buffer_serial = 0;
-  std::map<uint64_t, HostIndex> host_index;
-  std::map<uint64_t, Ogre::TexturePtr> textures;
+  std::unordered_map<uint64_t, HostIndex> host_index;
+  std::unordered_map<uint64_t, Ogre::TexturePtr> textures;
   std::unordered_map<uint64_t, Ogre::SamplerPtr> samplers;  // by packed state (GetSampler)
   uint32_t texture_serial = 0;
   uint32_t enabled_units = 0;
