@@ -39,6 +39,21 @@ inline constexpr GuestFunction kMountSaves{0x823AC618, Confidence::kConfirmed};
 // [confirmed] Unmounts what kMountSaves mounted.
 inline constexpr GuestFunction kUnmountSaves{0x823AC7B8, Confidence::kConfirmed};
 
+// [confirmed] Saves the current character (r3 = the game, r4 and r5 flags), the only code that
+// writes save data. It writes the shared stash first (kWriteStash @0x8221CCA4, its only caller),
+// mounts the container (@0x8221CD54) and writes the character to "save.tmp" (opened "wb" through
+// sub_823A22A8 @0x8221CE70); when that open fails it builds "Unable to save character to :" with
+// the system error and unmounts (@0x8221CE7C..@0x8221CFC8), with no dialog. On success it deletes
+// "backup.tmp" (sub_8285D068 @0x8221DA64), renames N.TSV to "backup.tmp" and "save.tmp" to N.TSV
+// (sub_8285D0B8 @0x8221DA90, @0x8221DABC). Its seven callers (sub_821E5910, sub_821F5CA0,
+// sub_8220AAD8, sub_82212950, sub_82214818 twice, sub_822D31F8, sub_8234BE20) do not read its
+// result. Of the other kMountSaves callers only the character delete writes (sub_82389FF0, a file
+// delete through sub_8287DE58, on the player's request) and the storage state machine
+// sub_82195AA8 (XamContentDelete, on "Yes" to "Corrupt/Damaged Save"); the rest read or list.
+inline constexpr GuestFunction kSaveCharacter{0x8221CC70, Confidence::kConfirmed};
+// [confirmed] Writes the shared stash (sharedstash.bin); called only by kSaveCharacter.
+inline constexpr GuestFunction kWriteStash{0x82326650, Confidence::kConfirmed};
+
 // [confirmed] Import thunk of XamShowMessageBoxUI (registered at 0x8302675C). Nine arguments: the
 // ninth (the XOVERLAPPED) goes on the stack at r1 + 0x54, as the game's wrapper sub_8287D8E0
 // passes it (lwz r11,180(r1); stw r11,84(r1) before bl 0x8302675C), and the runtime reads

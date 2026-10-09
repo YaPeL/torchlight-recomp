@@ -205,15 +205,11 @@ bool WriteWhole(const std::filesystem::path& path, const std::vector<uint8_t>& b
   return !ec;
 }
 
-}  // namespace
-
-SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
-                             const si::Schema& schema, const KnownUnits& known,
-                             std::chrono::system_clock::time_point now,
-                             const std::function<void(const std::string&)>& log) {
+// Each character file (*.tsv, any case) and shared stash (sharedstash*.bin) in every
+// <user_data_root>/<profile>/<title_folder>/, the backups left out.
+void ForEachSaveFile(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                     const std::function<void(const std::filesystem::path&, bool character)>& visit) {
   namespace fs = std::filesystem;
-  SaveUnitsReport report;
-  std::vector<std::pair<fs::path, UnitCheck>> changes;
   std::error_code ec;
   for (const auto& profile : fs::directory_iterator(user_data_root, ec)) {
     std::error_code type_ec;
@@ -227,20 +223,33 @@ SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const 
       const std::string name = Lower(it->path().filename().string());
       const bool character = name.size() > 4 && name.ends_with(".tsv");
       const bool stash = name.starts_with("sharedstash") && name.ends_with(".bin");
-      if (!character && !stash) continue;
-      const auto bytes = ReadAll(it->path());
-      if (!bytes) {
-        report.left_alone.push_back(it->path().string() + ": cannot read the file");
-        continue;
-      }
-      UnitCheck check = character ? CheckCharacterFile(schema, *bytes, known) : CheckStashFile(schema, *bytes, known);
-      if (check.result == UnitCheck::Result::kLeftAlone) {
-        report.left_alone.push_back(it->path().string() + ": " + check.why);
-      } else if (check.result == UnitCheck::Result::kRemoved) {
-        changes.emplace_back(it->path(), std::move(check));
-      }
+      if (character || stash) visit(it->path(), character);
     }
   }
+}
+
+}  // namespace
+
+SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                             const si::Schema& schema, const KnownUnits& known,
+                             std::chrono::system_clock::time_point now,
+                             const std::function<void(const std::string&)>& log) {
+  namespace fs = std::filesystem;
+  SaveUnitsReport report;
+  std::vector<std::pair<fs::path, UnitCheck>> changes;
+  ForEachSaveFile(user_data_root, title_folder, [&](const fs::path& path, bool character) {
+    const auto bytes = ReadAll(path);
+    if (!bytes) {
+      report.left_alone.push_back(path.string() + ": cannot read the file");
+      return;
+    }
+    UnitCheck check = character ? CheckCharacterFile(schema, *bytes, known) : CheckStashFile(schema, *bytes, known);
+    if (check.result == UnitCheck::Result::kLeftAlone) {
+      report.left_alone.push_back(path.string() + ": " + check.why);
+    } else if (check.result == UnitCheck::Result::kRemoved) {
+      changes.emplace_back(path, std::move(check));
+    }
+  });
   for (const auto& line : report.left_alone) {
     if (log) log("units: left alone " + line);
   }
@@ -268,6 +277,49 @@ SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const 
     report.changed.push_back({path, check.owner, std::move(check.removed)});
   }
   return report;
+}
+
+std::vector<SaveHolding> SavesHoldingUnits(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                                           const si::Schema& schema, const std::unordered_set<int64_t>& guids) {
+  std::vector<SaveHolding> out;
+  ForEachSaveFile(user_data_root, title_folder, [&](const std::filesystem::path& path, bool character) {
+    const auto bytes = ReadAll(path);
+    if (!bytes) return;
+    si::SaveError error;
+    std::unique_ptr<si::Parsed> parsed;
+    if (character) {
+      std::span<const uint8_t> body;
+      if (si::Split360(*bytes, body, error)) parsed = si::ParseBody(schema, *schema.root(), body, si::Endian::kBig, error);
+    } else {
+      parsed = si::Read360Stash(schema, *bytes, error);
+    }
+    if (!parsed) return;
+    for (const si::Ref& ref : parsed->refs) {
+      if (ref.role == "unit_guid" && guids.contains(si::Signed64(ref.value->number))) {
+        out.push_back({path, character ? NameOf(parsed->tree.Find("player")) : std::string()});
+        return;
+      }
+    }
+  });
+  std::sort(out.begin(), out.end(), [](const SaveHolding& a, const SaveHolding& b) { return a.path < b.path; });
+  return out;
+}
+
+void ProtectFromUnitsNotLoaded(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                               const si::Schema& schema, const std::vector<int64_t>& missing,
+                               std::chrono::system_clock::time_point now,
+                               const std::function<void(const std::string&)>& log, SaveUnitsReport& report) {
+  const std::unordered_set<int64_t> guids(missing.begin(), missing.end());
+  const auto holding = SavesHoldingUnits(user_data_root, title_folder, schema, guids);
+  if (holding.empty()) return;
+  report.saving_blocked = true;
+  for (const SaveHolding& h : holding) {
+    report.holding_not_loaded.push_back(h.owner.empty() ? std::string()
+                                                        : h.owner + " (" + h.path.filename().string() + ")");
+    if (log) log("units: " + h.path.string() + " holds units the game did not load");
+  }
+  const SaveBackup backup = BackUpSaves(user_data_root, title_folder, now, log, "units-not-loaded");
+  if (backup.result == SaveBackup::Result::kDone) report.not_loaded_backup = backup.folder;
 }
 
 }  // namespace torchlight::mods

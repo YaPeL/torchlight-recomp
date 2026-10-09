@@ -37,17 +37,39 @@ std::optional<save_import::ImportMessage> SaveUnitsNotice(const SaveUnitsReport&
       risky.push_back(Utf8Path(std::filesystem::path(line.substr(0, colon)).filename()));
     }
   }
-  if (report.changed.empty() && risky.empty() && !report.failed && !report.units_not_loaded) return std::nullopt;
+  if (report.changed.empty() && risky.empty() && !report.failed && !report.units_not_loaded &&
+      !report.saving_blocked) {
+    return std::nullopt;
+  }
 
   save_import::ImportMessage message;
-  message.title = report.changed.empty() && report.units_not_loaded ? Text(tr, "Items from mods not loaded")
-                                                                    : Text(tr, "Items removed from saved characters");
+  if (report.saving_blocked) {
+    message.title = Text(tr, "Nothing will be saved in this session");
+  } else if (report.changed.empty() && report.units_not_loaded) {
+    message.title = Text(tr, "Items from mods not loaded");
+  } else {
+    message.title = Text(tr, "Items removed from saved characters");
+  }
   std::string text;
-  if (report.units_not_loaded) {
-    text += Text(tr, "{count} kinds of items or creatures from mods could not be loaded this time, so the game "
-                     "does not know them. Saved characters that carry them were not changed and may not load "
-                     "(see the log).",
-                 {{"count", std::to_string(report.units_not_loaded)}}) + "\n";
+  const std::string count = std::to_string(report.units_not_loaded);
+  if (report.saving_blocked) {
+    text += Text(tr, "{count} kinds of items or creatures from mods could not be loaded this time, and these saves "
+                     "carry them:",
+                 {{"count", count}}) + "\n";
+    for (const std::string& owner : report.holding_not_loaded) {
+      text += "  " + (owner.empty() ? Text(tr, "Shared stash") : owner) + "\n";
+    }
+    text += Text(tr, "So that they do not lose those items, NOTHING WILL BE SAVED IN THIS SESSION: no progress, no "
+                     "new characters, no changes to the stash. Quit the game and see the log.") + "\n";
+    if (!report.not_loaded_backup.empty()) {
+      text += Text(tr, "A copy of the saves is in:") + "\n  " + Utf8Path(report.not_loaded_backup) + "\n";
+    } else {
+      text += Text(tr, "The saves could not be copied (see the log).") + "\n";
+    }
+  } else if (report.units_not_loaded) {
+    text += Text(tr, "{count} kinds of items or creatures from mods could not be loaded this time, so the game does "
+                     "not know them; no save carries them (see the log).",
+                 {{"count", count}}) + "\n";
   }
   if (!report.changed.empty()) {
     size_t total = 0;

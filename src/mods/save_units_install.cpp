@@ -1,5 +1,6 @@
 #include "mods/save_units_install.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
@@ -29,8 +30,17 @@ struct Assumed {
   bool pending = false;                   // mods' units: compare after the load
   KnownUnits known;
   std::unordered_set<int64_t> base_guids;  // the Xbox index's
+  std::filesystem::path user_data_root;
 };
 Assumed g_assumed;
+// Set on the game's thread by CompareWithLoadedUnits, read by the save hook (save_block_hooks.cpp).
+std::atomic<bool> g_saving_blocked{false};
+
+std::string TitleFolder() {
+  char title[16];
+  std::snprintf(title, sizeof(title), "%08X", game_setup::kTitleId);
+  return title;
+}
 
 void Run(const std::filesystem::path& user_data_root, const KnownUnits& known) {
   std::string error;
@@ -40,9 +50,7 @@ void Run(const std::filesystem::path& user_data_root, const KnownUnits& known) {
     return;
   }
   if (!known.complete) REXLOG_WARN("units: saves not changed: {}", known.incomplete_why);
-  char title[16];
-  std::snprintf(title, sizeof(title), "%08X", game_setup::kTitleId);
-  SaveUnitsReport report = ProtectSaves(user_data_root, title, *schema, known, std::chrono::system_clock::now(),
+  SaveUnitsReport report = ProtectSaves(user_data_root, TitleFolder(), *schema, known, std::chrono::system_clock::now(),
                                         [](const std::string& line) { REXLOG_INFO("{}", line); });
   if (!report.changed.empty() || report.failed) g_changes = std::move(report);
 }
@@ -71,6 +79,7 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
                       const std::filesystem::path& user_data_root, const ModPlan* plan) {
   g_changes.reset();
   g_assumed = {};
+  g_saving_blocked = false;
   if (user_data_root.empty()) return;
   std::string error;
   const auto base = ReadPakUnitIndex(pak, &error);
@@ -81,6 +90,7 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
     return;
   }
   g_assumed.pending = true;
+  g_assumed.user_data_root = user_data_root;
   g_assumed.known = ExpectedUnits(data_dir, pak, files, base);
   if (base) g_assumed.base_guids = KnownUnitsOfIndex(*base).guids;
   REXLOG_INFO("units: mods bring units; saves checked against the {} units the game is expected to load",
@@ -94,12 +104,31 @@ void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& lo
   // Not known what the game holds: every mods' unit the check counted on may be missing.
   const std::vector<int64_t> missing = UnitsNotLoaded(g_assumed.known, loaded ? *loaded : g_assumed.base_guids);
   if (missing.empty()) return;
-  REXLOG_WARN("units: {} units the saves' check counted on are not in the index the game loaded{}; "
-              "saved items of them may stop a character from loading (saves not changed again)",
+  REXLOG_WARN("units: {} units the saves' check counted on are not in the index the game loaded{}; the game "
+              "drops saved items of them when it loads a character",
               missing.size(), loaded ? "" : " (its content is not known)");
   for (size_t i = 0; i < missing.size() && i < 20; ++i) REXLOG_WARN("units:   GUID {}", missing[i]);
   if (!g_changes) g_changes.emplace();
   g_changes->units_not_loaded = missing.size();
+  // No character is loaded yet (the index loads first), so nothing has been dropped or saved.
+  std::string error;
+  const auto schema = save_import::Schema::Embedded(error);
+  if (!schema) {
+    // The saves cannot be read to tell which hold those units: keep them all from being written.
+    REXLOG_ERROR("units: no save schema ({}); saving is off for this session", error);
+    g_changes->saving_blocked = true;
+  } else {
+    ProtectFromUnitsNotLoaded(g_assumed.user_data_root, TitleFolder(), *schema, missing,
+                              std::chrono::system_clock::now(),
+                              [](const std::string& line) { REXLOG_INFO("{}", line); }, *g_changes);
+  }
+  if (g_changes->saving_blocked) {
+    g_saving_blocked = true;
+    REXLOG_ERROR("units: saves hold units the game did not load; NOTHING IS SAVED IN THIS SESSION (copy: {})",
+                 g_changes->not_loaded_backup.empty() ? std::string("none") : g_changes->not_loaded_backup.string());
+  }
 }
+
+bool SavingBlocked() { return g_saving_blocked; }
 
 }  // namespace torchlight::mods

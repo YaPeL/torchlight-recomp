@@ -73,6 +73,7 @@ set(TORCHLIGHT_SOURCES
     src/mods/unit_index_install.cpp
     src/mods/save_units_install.cpp
     src/mods/text_reader_hooks.cpp
+    src/mods/save_block_hooks.cpp
     src/game_menu/save_import_menu.cpp
     src/game_menu/save_indicator.cpp
     src/game_menu/video_menu.cpp

@@ -90,6 +90,11 @@ struct SaveUnitsReport {
   std::vector<std::string> left_alone;     // "<file>: why"
   bool failed = false;                     // the backup or a write failed: nothing (more) written
   size_t units_not_loaded = 0;             // known to the check, missing from the index loaded
+  // When saves hold units the game did not load: "<owner> (<file>)" ("" for a stash), the copy made
+  // then, and whether saving is off for the session (SavesHoldingUnits, ProtectFromUnitsNotLoaded).
+  std::vector<std::string> holding_not_loaded;
+  std::filesystem::path not_loaded_backup;
+  bool saving_blocked = false;
 };
 
 // Every save container under <user_data_root>/<profile>/<title_folder>/: character files (*.tsv)
@@ -101,5 +106,26 @@ SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const 
                              const save_import::Schema& schema, const KnownUnits& known,
                              std::chrono::system_clock::time_point now,
                              const std::function<void(const std::string&)>& log);
+
+// A save file holding some of the units asked for, with its owner ("" for a stash).
+struct SaveHolding {
+  std::filesystem::path path;
+  std::string owner;
+};
+
+// The character files and shared stashes, in the same containers as ProtectSaves, that hold any
+// of `guids` (read only). Unreadable files are not listed: the game cannot load them either.
+std::vector<SaveHolding> SavesHoldingUnits(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                                           const save_import::Schema& schema, const std::unordered_set<int64_t>& guids);
+
+// When the game loaded an index without some units the saves count on (`missing`): the game
+// drops a saved item it does not know when it loads the character, and the next save writes the
+// character without it. So the saves holding those units are found, all saves are copied first
+// (save-backups/<UTC>-units-not-loaded), and saving is to be off for the whole session (the
+// report's saving_blocked), whether or not the copy was made. Nothing in the saves is changed.
+void ProtectFromUnitsNotLoaded(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                               const save_import::Schema& schema, const std::vector<int64_t>& missing,
+                               std::chrono::system_clock::time_point now,
+                               const std::function<void(const std::string&)>& log, SaveUnitsReport& report);
 
 }  // namespace torchlight::mods

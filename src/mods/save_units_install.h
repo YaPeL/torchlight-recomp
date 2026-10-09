@@ -6,7 +6,8 @@
 // units it counts on the index the game is expected to load: the cached one when it exists,
 // otherwise the base plus the GUIDs the mods' definitions set. Once the game has loaded its index,
 // CompareWithLoadedUnits only compares: units the check counted on that the game does not hold are
-// logged and told on screen; the saves are not changed again.
+// logged and told on screen; the saves are not changed again. When saves hold such units, they
+// are copied and saving is off for the session (SavingBlocked).
 //
 // Part of the executable (logging); the checks are torchlight_mods.
 
@@ -29,6 +30,11 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
 // GUIDs it holds, or none when that is not known (it loaded part of a file); then every mods' unit
 // the check counted on is taken as missing.
 void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& loaded);
+
+// True once CompareWithLoadedUnits found saves holding units the game did not load: the game would
+// drop those items when it loads such a character and lose them at the next save, so nothing is
+// saved for the rest of the session (save_block_hooks.cpp). Any thread.
+bool SavingBlocked();
 
 // What the start changed or found, when there is anything to tell (for the notice).
 const std::optional<SaveUnitsReport>& SaveUnitsChanges();

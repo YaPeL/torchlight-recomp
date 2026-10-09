@@ -2,7 +2,8 @@
 // (tests/save_import/fixtures, made by the Python tool; no game data): an unknown item removed and
 // the file still read back, and every safeguard leaving the save alone: an incomplete or broken
 // index, most units unknown, the character's own class unknown, an unreadable file; and, after the
-// game loaded its index, the units the check counted on that it does not hold, with their notice.
+// game loaded its index, the units the check counted on that it does not hold, the saves holding
+// them (copied, saving off for the session) and their notice.
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -242,6 +243,86 @@ int main() {
               with_removed->text.find("2 kinds") != std::string::npos &&
               with_removed->text.find("Ronan: 1 items") != std::string::npos,
           "with items removed: the removal's title, both texts");
+  }
+
+  // Units the game did not load after the check: the saves holding them found (read only), every
+  // save copied, saving off for the session, and nothing in the saves changed; the notice says so.
+  {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() /
+        ("tl_not_loaded_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    const fs::path saves = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav";
+    fs::create_directories(saves);
+    auto write = [](const fs::path& p, const si::Bytes& b) {
+      std::ofstream(p, std::ios::binary).write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
+    };
+    auto read = [](const fs::path& p) {
+      std::ifstream in(p, std::ios::binary);
+      return si::Bytes(std::istreambuf_iterator<char>(in), {});
+    };
+    si::SaveError e;
+    const auto clean = si::ReadPc(*schema, Fixture("pc_save.svt"), e);
+    write(saves / "4.TSV", x360);                       // holds kMod
+    write(saves / "1.tsv", si::Write360(*schema, *clean));  // does not
+    write(saves / "sharedstash.bin", Fixture("pc_stash.expected.bin"));
+    const auto now = std::chrono::system_clock::now();
+    std::vector<std::string> lines;
+    auto log = [&](const std::string& l) { lines.push_back(l); };
+
+    SaveUnitsReport unrelated;
+    ProtectFromUnitsNotLoaded(root, "58410A7E", *schema, {0x0123}, now, log, unrelated);
+    Check(!unrelated.saving_blocked && unrelated.holding_not_loaded.empty() && !fs::exists(root / "save-backups"),
+          "units no save holds: saving stays on, no copy");
+
+    const auto holding = SavesHoldingUnits(root, "58410A7E", *schema, {kMod});
+    Check(holding.size() == 1 && holding[0].path.filename() == "4.TSV" && !holding[0].owner.empty(),
+          "the character holding the unit found, with its owner");
+    const si::Bytes before = read(saves / "4.TSV");
+    SaveUnitsReport report;
+    ProtectFromUnitsNotLoaded(root, "58410A7E", *schema, {kMod}, now, log, report);
+    Check(report.saving_blocked && report.holding_not_loaded.size() == 1 &&
+              report.holding_not_loaded[0].ends_with("(4.TSV)"),
+          "saving off for the session, the save listed as owner (file)");
+    Check(report.not_loaded_backup.filename().string().ends_with("-units-not-loaded") &&
+              fs::exists(report.not_loaded_backup / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav" /
+                         "4.TSV"),
+          "every save copied first, under its own reason");
+    Check(read(saves / "4.TSV") == before && report.changed.empty(), "the saves themselves untouched");
+
+    // A stash holding the unit is listed too, without an owner.
+    auto stash = si::Read360Stash(*schema, Fixture("pc_stash.expected.bin"), e);
+    si::Node* items = stash ? stash->tree.Find("items") : nullptr;
+    si::Node* guid = items && !items->items.empty() ? items->items.front().Find("unit_guid") : nullptr;
+    Check(guid != nullptr, "the stash fixture has an item");
+    if (guid) {
+      guid->number = static_cast<uint64_t>(kMod);
+      write(saves / "sharedstash.bin", si::Write360Stash(*schema, *stash));
+      const auto both = SavesHoldingUnits(root, "58410A7E", *schema, {kMod});
+      Check(both.size() == 2 && both[1].path.filename() == "sharedstash.bin" && both[1].owner.empty(),
+            "the stash holding the unit listed, with no owner");
+    }
+
+    const auto english = [](const std::string& s) { return s; };
+    report.units_not_loaded = 1;
+    report.holding_not_loaded.push_back("");
+    const auto notice = SaveUnitsNotice(report, english);
+    Check(notice && notice->title == "Nothing will be saved in this session" &&
+              notice->text.find("NOTHING WILL BE SAVED IN THIS SESSION") != std::string::npos &&
+              notice->text.find("(4.TSV)") != std::string::npos &&
+              notice->text.find("Shared stash") != std::string::npos &&
+              notice->text.find("-units-not-loaded") != std::string::npos,
+          "the notice: nothing saved, which saves, where the copy is");
+    report.not_loaded_backup.clear();
+    const auto no_copy = SaveUnitsNotice(report, english);
+    Check(no_copy && no_copy->text.find("could not be copied") != std::string::npos, "the notice when no copy was made");
+    SaveUnitsReport not_held;
+    not_held.units_not_loaded = 2;
+    const auto plain = SaveUnitsNotice(not_held, english);
+    Check(plain && plain->title == "Items from mods not loaded" &&
+              plain->text.find("no save carries them") != std::string::npos &&
+              plain->text.find("NOTHING WILL BE SAVED") == std::string::npos,
+          "units not loaded that no save carries: told, saving not off");
+    fs::remove_all(root);
   }
 
   if (failures) return EXIT_FAILURE;
