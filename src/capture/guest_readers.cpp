@@ -1,5 +1,6 @@
 #include "capture/guest_readers.h"
 
+#include <array>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -37,16 +38,19 @@ void ForEachNode(const uint8_t* m, uint32_t tree, F&& f) {
   uint32_t head = U32(m, tree + ogre::stl_tree::kHead.offset);
   if (head == 0) return;
   uint32_t node = U32(m, head + ogre::stl_tree::kNodeParent.offset);
-  std::vector<uint32_t> stack;
-  size_t guard = 0;
-  while ((node != head && node != 0) || !stack.empty()) {
+  // The in-order walk's pending nodes, on the host stack: these maps are visited for every draw.
+  // A red-black tree of fewer than 2^31 nodes is at most 62 levels deep, so a deeper path means a
+  // tree being changed or not a tree, and the walk stops as it does past the node guard.
+  std::array<uint32_t, 64> stack;
+  size_t depth = 0, guard = 0;
+  while ((node != head && node != 0) || depth > 0) {
     while (node != head && node != 0) {
-      stack.push_back(node);
+      if (depth == stack.size()) return;
+      stack[depth++] = node;
       node = U32(m, node + ogre::stl_tree::kNodeLeft.offset);
       if (++guard > (1u << 20)) return;
     }
-    node = stack.back();
-    stack.pop_back();
+    node = stack[--depth];
     f(node);
     node = U32(m, node + ogre::stl_tree::kNodeRight.offset);
   }
