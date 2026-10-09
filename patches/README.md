@@ -37,7 +37,7 @@ in number order; a branch adds its own line at its number's place.
 | 25 | `rexglue-mtfsf-field-mask.patch` | `develop` | In the series |
 | 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
 | 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
-| 28 | `rexglue-quiet-missing-files.patch` | `sdk/series-review` | Pending integration |
+| 28 | `rexglue-quiet-missing-files.patch` | `develop` | In the series |
 | 29 | | | Next free number |
 
 ## The patches
@@ -400,7 +400,9 @@ in number order; a branch adds its own line at its number's place.
     Now `X_STATUS_NO_SUCH_FILE`, `X_STATUS_OBJECT_NAME_NOT_FOUND` and
     `X_STATUS_OBJECT_PATH_NOT_FOUND` are logged at DEBUG (off by default, `log_level` is `info`)
     and every other failure stays at WARN. `NtOpenFile` goes through the same code. No unit test:
-    the export needs the kernel state; the check is the mod pack's startup, whose log loses those
-    lines. Not specific to any GPU. Upstream draft D28.
+    the export needs the kernel state; the check is the mod pack's startup. Checked there on
+    2026-10-09 (the mods agent, ~/rexglue-sdk with 1-28): 1.13 MB of log in the first 45 s instead
+    of 14.5 MB, and 95,675 `[NtCreateFile] FAILED` lines down to one, an access denied
+    (`game:\appdata` -> 0xc0000022) at startup. Not specific to any GPU. Upstream draft D28.
 
 The observation and diagnostic patches there were before remain in the git history.

@@ -855,7 +855,8 @@ startup. They also hide the failures that matter.
 
 Fixes #NNN. `X_STATUS_NO_SUCH_FILE`, `X_STATUS_OBJECT_NAME_NOT_FOUND` and
 `X_STATUS_OBJECT_PATH_NOT_FOUND` go to DEBUG. Every other failure stays at WARN. `NtOpenFile`
-shares the code. Our patch 28 (`patches/README.md`).
+shares the code. Our patch 28 (`patches/README.md`). With it, the same 29-mod startup wrote
+1.13 MB of log in the first 45 s instead of 14.5 MB, and no not-found line at INFO (2026-10-09).
 
 ---
 
@@ -884,8 +885,8 @@ That covers about 1677 to 2262, so 1601 overflows:
 
 MSVC's `system_clock` counts 100 ns and libc++'s counts microseconds. Both reach 1601. On macOS
 ARM64 (Apple clang, libc++) `chrono_test` passes, the NT epoch included (our macOS port,
-2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`), so the failure is Linux/libstdc++ only. Windows should pass
-too; not run there yet. The test came in with `952828d`
+2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`), so the failure is Linux/libstdc++
+only. Windows should pass too; not run there yet. The test came in with `952828d`
 (2026-02-19), the same day as `4c981fe` ("replace date:: with std::chrono::"). It was not built at
 those commits, so "since then" is a reading.
 
@@ -930,8 +931,8 @@ result happens to be right there, but the check is still wrong and the out-of-ra
 undefined in C++. `fctiw` and `fctiwz` use `>=` with `INT_MAX`, which is exact in a double, and
 are right.
 
-Run on ARM64 by our macOS port (2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`), with patch
-23's tests:
+Run on ARM64 by our macOS port (2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`),
+with patch 23's tests:
 - without the fix, 12 of the 20 `fctix_rounding` cases fail: the rounding cases (2.5 and -2.5 to
   nearest, 2.7 and -2.7 toward zero, -2.5 up, 2.5 down), each for `fctiw` and `fctid`. The two
   2^63 cases pass, for the reason above. On x86-64, 2 of 20 fail: only the 2^63 cases;
@@ -1251,12 +1252,13 @@ these agents lives here and in `patches/README.md`.
     x86-64. The ARM64 bugs are now drafts D22, D23 and D25. D24 (`mtfsf` mask) was found here on
     the way; it affects every architecture. The `tests/ppc` suite covers none of them, so
     `ppc_tests` passing on ARM64 does not clear them.
-  - **Patches 23-25 (2026-10-08, revised 2026-10-09): results received** (`docs/macos-port.md`
-    on `docs/macos-port-plan`, 6927cec): as expected, except `fctix_rounding` without the fixes, 12 of 20 on ARM64 and not
-    14 (the 2^63 cases pass there, D22). With the fixes, `ppc_tests` 1492 of 1492, `unit_tests`
-    only `output_stamp_test.cpp:227-228`, `chrono_test` passes (D29), `[flush]` 6 of 6. The steps
-    stay below for a rerun after a series change. On x86-64 the rounding tests of 23 and the tests of 24
-    cannot fail, because native SSE2 and MXCSR were right there. Only ARM64 shows those two bugs.
+  - **Patches 23-25 (2026-10-08, revised 2026-10-09): results received** (`docs/macos-port.md` on
+    `docs/macos-port-plan`, 6927cec): as expected, except `fctix_rounding` without the fixes, 12 of
+    20 on ARM64 and not 14 (the 2^63 cases pass there, D22). With the fixes, `ppc_tests` 1492 of
+    1492, `unit_tests` only `output_stamp_test.cpp:227-228`, `chrono_test` passes (D29), `[flush]` 6
+    of 6. The steps stay below for a rerun after a series change. On x86-64 the rounding tests of 23
+    and the tests of 24 cannot fail, because native SSE2 and MXCSR were right there. Only ARM64
+    shows those two bugs.
     1. Take `develop`, and `sdk/ppc-test-data` at `0ffbb64` or later (169 files of each kind, and
        `bin/sources.sha256`). The configure stops if a `.bin` is missing or a test source does not
        match the binaries.
