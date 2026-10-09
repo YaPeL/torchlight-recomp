@@ -535,6 +535,43 @@ the game saves each item's name), the character saved with it, and two new sword
 game's developer commands (`ITEMGUID <guid>` and `ITEM <name>`, `--dev_guest_command`, development
 builds only) showed the mod's name, "TL Test Sword", and the same damage.
 
+## 7f. A body model without an entity: the wardrobe guard (2026-10-09)
+
+With the Ultimate Torchlight Mod-Pack, the game froze at the title screen: one thread repeated
+"Unhandled guest access violation: read of guest 0x000000B4" (the audio went on). Halving the pack
+left one mod, `JCC - Main`, which faults on its own.
+
+What faults (guest_abi/wardrobe.h). The title screen makes the Destroyer (`sub_823DE8F0`, the unit
+made by name). Its load sets up the body model (`sub_822883F0`, `sub_822CFDE0`, `sub_8228B4B8`):
+the mesh is `<RESOURCEDIRECTORY>/<MESHFILE>.mesh`, each read from the unit's definition with an
+empty default. With the mod both came back empty, so the model asked for "/.mesh"; CGenericModel's
+load (`sub_822BFF48`) could not make an entity and left +92 null. The wardrobe's first build
+(`sub_822DC6B0`) then reads `*(*(wardrobe+12)+92)+180` without testing either pointer.
+
+What is known about the cause. Not the mod's files against Xbox-only units: `JCC - Main` replaces
+the 15 `base_{boots,gloves,helm,shoulders,chest}_{a,d,v}_unique.dat` without their `[WARDROBE]`
+blocks, which leaves the Xbox-only `360_*` items (the title screen's outfit) inheriting the trimmed
+files, but the mod without those 15 files still faulted, and no item is made between the Destroyer
+and its empty mesh. Not a thread race, as far as the code shows: a unit's definition is loaded on
+first use on the thread that asks (`sub_82196960`, +64). Not freed data from our index builder: the
+nodes it loads share the data manager's cached groups, but are marked shared (+53, set by
+`sub_82392C18`) and the group's destructor (`sub_82391950`) then leaves the properties alone. Not
+the mods' compiled `.ADM`: no run wrote any. And the fault is not deterministic: the same 1366 of the
+mod's files faulted in one run and not in the next, which also makes halving the files
+meaningless. With the whole mod it faulted in every run (nine: batchA4 to A8, two halving steps,
+two gdb runs). The cause is open.
+
+The guard (src/mods/wardrobe_hooks.cpp, wardrobe_guard.h). When the build would take its first-build
+path (no rebuild flag at +68, no wardrobe entity at +384, a node at +16) and the model or its entity
+is null, the build returns without calling the game, as the game does itself when there is no node,
+and the log says once per model: `mods: wardrobe not built: model ... has no entity (mesh "...")
+while making unit "..."`. A later rebuild (+68) makes the wardrobe entity from +372, without the
+model. The game's other reads of the wardrobe's entities (its release, `sub_822DC0F8`) test them
+first; `sub_822D9778`, which reads +376/+384 without a test, is a unit's method (slot 61 of
+CTriggerUnit's vtable), not the wardrobe's. It covers any model without an entity, from a mod or
+not. A character without a body model may still fail elsewhere (an animation, for one); the
+validation run with `JCC - Main` shows how far it goes.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:

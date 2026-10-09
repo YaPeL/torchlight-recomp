@@ -9,7 +9,7 @@ endif()
 
 add_library(torchlight_mods STATIC dat_text.cpp mod_list.cpp save_safety.cpp saved_mod_list.cpp
     unit_index.cpp unit_cache.cpp save_units.cpp
-    save_units_notice.cpp text_encoding.cpp)
+    save_units_notice.cpp text_encoding.cpp wardrobe_guard.cpp)
 target_include_directories(torchlight_mods PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_mods PUBLIC cxx_std_23)
 target_link_libraries(torchlight_mods PUBLIC torchlight_save_import)
@@ -47,3 +47,7 @@ add_executable(mods_text_encoding_test text_encoding_test.cpp)
 target_link_libraries(mods_text_encoding_test PRIVATE torchlight_mods)
 target_compile_options(mods_text_encoding_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mods_text_encoding_test COMMAND mods_text_encoding_test)
+add_executable(mods_wardrobe_guard_test wardrobe_guard_test.cpp)
+target_link_libraries(mods_wardrobe_guard_test PRIVATE torchlight_mods)
+target_compile_options(mods_wardrobe_guard_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME mods_wardrobe_guard_test COMMAND mods_wardrobe_guard_test)
