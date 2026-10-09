@@ -521,6 +521,56 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   not allow two sampler types on one unit; OGRE sets the units afterwards. The scenes drawn
   with them give Linux's PSNR. Neither affects anything.
 
+**Ticket MAC.6 (first game run), in progress (2026-10-09, branch `feature/macos-game`):**
+
+- SDK: `develop`'s series (`c584647`: patches up to 26, with 23 fctiw/fctid for D22 and 24 mffs
+  for D23) plus 27 (guest file flush, `sdk/guest-file-flush` `a78c8ce`). `ppc_tests` 1490/1490,
+  `unit_tests` 246/251 (the failures are the known `output_stamp` ones).
+- Codegen 14 s and 220 MB, no warnings; the game's build 364 s and 554 MB, with 19 GB free
+  before it: none of the disk reductions of section 1 were needed.
+- Every game run goes through `tools/run_capped/run_capped.py` (time limit, the whole process
+  group killed and checked, a 20 MB cap on the logs; a Job Object on Windows). No agent had a
+  script of its own in the repository (`feature/pc-mods` and `develop` checked), so this one
+  **replaces the agents' local run scripts**; its test passes on macOS, its Windows path has not
+  been run yet.
+- The game executable did not find OGRE's dylibs: the SDK builds the target with its install
+  RPATH (`@executable_path`). The top `CMakeLists.txt` keeps the build RPATH on Apple, as on Linux
+  (`afdd254`); the bundle's layout is MAC.8's.
+- The first-run achievements choice (the message-box fallback of `EnsureAchievementChoice`) opens
+  behind the other windows when the game starts from a terminal, and the game seems to hang. The
+  launcher replaces that dialog, but the fallback stays, and on macOS it has to come to the
+  front (activate the application before the alert). For the runs here the choice is in the local
+  `settings.toml` only. To fix in MAC.8 at the latest.
+- **Only mode (native):** OGRE's Cocoa GL window attaches its context to the game window's view
+  (`setView`) and calls `-[NSOpenGLContext update]` in `create`, `resize` and
+  `windowMovedOrResized`. With a view, AppKit allows both only on the main thread, and the live
+  mode creates and drives the backend on its render thread: the game stops at the window's
+  creation. Attaching the context on the main thread beforehand (OGRE's `externalGLContext`)
+  only moved the stop to `update`; no OGRE option avoids it. Fix approved: OGRE's window created,
+  resized and destroyed on the main thread (below).
+- **Emulated mode (Xenos, `--native_live=off`):** builds and runs on MoltenVK. The image comes up
+  with a broken background. MoltenVK logs "Metal does not support disabling primitive restart"
+  1701 times; whether that is the cause is being checked with a capture of the game window.
+
+Threads in only mode on macOS, checked for the fix:
+
+- The main thread is the SDK's SDL event loop (`SDLWindowedAppContext::RunMainMessageLoop`,
+  `SDL_WaitEvent`). The setup (`OnPostSetup`, where `live::Install` finds the game window and
+  starts the render thread) runs on it before the loop. While it waits for events, Cocoa runs the
+  main run loop, which also serves the main dispatch queue: in the default mode, while a window
+  is being resized (event tracking) and under a modal alert. So work sent there with
+  `dispatch_sync` runs within one event wait, and the SDL event loop itself is not changed.
+- Where the main thread waits for the render thread: only in `LiveMode::Stop` (`join`), from
+  `OnShutdown` in `ReXApp::OnDestroy`, after the event loop has ended (the guest exited by itself).
+  Closing the window or Cmd+Q ends the process in `ReXApp::OnClosing` (`_Exit`) without stopping
+  the render thread. `Start` does not wait for the backend's creation; the window size goes to the
+  render thread through an atomic (`ResizeWindow`), the video settings through a mutex held only
+  to copy them; the overlay frame is asked of the main thread without waiting
+  (`CallInUIThread`); the frame queue never blocks the guest.
+- So the only deadlock is a render thread waiting for the main thread (a resize, or the window's
+  destruction) while the main thread waits in `Stop`. `Stop` has to keep serving the main
+  thread's queue until the render thread ends.
+
 **Ticket MAC.10 (after the beta): Vulkan on MoltenVK** as a second render system, as WIN.7 did for
 Direct3D 11.
 
@@ -785,7 +835,7 @@ ones that can stop it; the two-failed-hypotheses rule applies to each.
 | 4. Platform module, `nogame` ctest | MAC.4 | No | ctest on this Mac (pure tests, `ui_pass_test` and `render_scale_test` on GL) | AppKit main-thread rules for the backend's window |
 | 5. Backend on macOS GL (done 2026-10-08) | MAC.5 | Captures (local, from the user) | Replay of the 20 captures, PSNR as Linux | Apple GL differences (precision, polygon offset, sRGB, DXT small mips): each through `xbox_to_gl_conventions` |
 | 6. Codegen and game build | MAC.6 | The XEX (from the user) | `rexglue codegen`, a Release and a RelWithDebInfo build link | Build time, memory and the 25 GB of free disk |
-| 7. Game to the main menu | MAC.6 | Game data | Only mode with `null`: boot, title, menu, sound, gamepad; Quit exits | Memory ordering (fences), fault hangs, 16 KB reconcile making a stale access fault, two SDLs, signals (SIGUSR1/2) |
+| 7. Game to the main menu (in progress) | MAC.6 | Game data | Only mode with `null`: boot, title, menu, sound, gamepad; Quit exits | Memory ordering (fences), fault hangs, 16 KB reconcile making a stale access fault, two SDLs, signals (SIGUSR1/2) |
 | 8. Play | MAC.7 | Game data, saves on copies (`--user_data_root`) | Town and a dungeon, saves, an F9 capture replayed on Linux with the same result, frame times against Linux | Performance (GL on Metal, reconcile cost), vblank pacing, Retina sizes |
 | 9. Package and CI | MAC.8, MAC.9 | Game in CI (private XEX) | `.dmg` opens on a quarantined copy; dry-run tag | Runner memory and disk; signing decision |
 | After the beta | MAC.10 | Captures | Vulkan on MoltenVK against GL3+ | OGRE Vulkan's maturity |
