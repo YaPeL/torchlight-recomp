@@ -1698,6 +1698,13 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     // never pace the backend.
     misc["vsync"] = vsync ? "true" : "false";
     if (!b->visible_window) misc["hidden"] = "true";
+    // 8 bits per channel for the window, whatever the platform's default: OGRE's Wayland EGL
+    // window asks for a 16-24 bit colour buffer, where the NVIDIA driver offers RGBA8888 (32, over
+    // the maximum) and RGB565 (16), so it took RGB565 and every presented frame lost colour
+    // precision (banding in gradients). GLX, X11 EGL, WGL and D3D11 already pick 8 bits; they take
+    // these parameters as a minimum too or ignore them.
+    misc["minColourBufferSize"] = "24";
+    misc["maxColourBufferSize"] = "32";
     uint32_t window_w = b->visible_window ? width : 64, window_h = b->visible_window ? height : 64;
     if (b->child_window) {
       // Inside the application's window: that window keeps the focus, so key and pointer events

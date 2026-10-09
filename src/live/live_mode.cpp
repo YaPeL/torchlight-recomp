@@ -16,6 +16,7 @@
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
 #include "live/frame_step.h"
+#include "live/frame_timing.h"
 #include "live/live_content_source.h"
 #include "live/measured_mutex.h"
 #include "live/slow_frames.h"
@@ -268,12 +269,14 @@ void LiveMode::Run() {
   bool window_open = true;
   SlowFrameDetector slow_frames;
   Clock::time_point last_present{};
+  size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
     if (!frame) continue;
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
+    dropped_since_present += frame->dropped_before;
     FrameRecord record;
     record.swap = frame->swap;
     record.guest_ms = frame->producer.guest_ms;
@@ -329,6 +332,10 @@ void LiveMode::Run() {
         auto present_start = Clock::now();
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();
+        if (window_open) {
+          FrameTiming::Get().OnPresent(dropped_since_present);
+          dropped_since_present = 0;
+        }
         record.present_ms = Ms(present_end - present_start);
         present_ms.Add(record.present_ms);
         if (last_present.time_since_epoch().count() != 0) {
