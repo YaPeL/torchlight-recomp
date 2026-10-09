@@ -371,6 +371,32 @@ town square no measurable change (137.0 -> 135.5 FPS), with develop's runs risin
 and phase A's falling, the drift that led to the thermal record above. The profile is what decided
 it.
 
+**Phase B, evaluated and not done**: moving off the guest's render thread what does not read the
+guest's state (the hooks would copy the raw words they read into a ring, and another thread would
+build the commands). From the same profile, of the producer's ~19 % of that thread, ~2.6 % reads
+guest memory (the reads, the walks of its `std::map` trees, the content copies) and ~14.9 % is host
+work. Most of that host work has to stay anyway:
+- the resource identities (registry lookups) must be taken at the call: a buffer freed and created
+  again at the same address would be the wrong object to a thread that looks it up later. That
+  keeps nearly all of CaptureDraw, the texture, program and declaration lookups (~5 %);
+- the content versions decide whether a buffer is copied before the guest writes it again;
+- the state memos' early out (2.9 %) would be replaced by copying every call's words into the
+  ring, which costs about what the comparison saves.
+What could move (the state shadow, building and appending the commands, the constant commands'
+allocations) is ~4-5 % of the thread, ~0.35 ms per frame; the ring costs ~0.1-0.15 ms for some
+5000 calls a frame. Net ~0.2-0.25 ms (~3 % of the thread), with one more busy thread on a machine
+where that already showed in the guest's frame rate (the backend cuts above), and a large, risky
+change: every hook split in two, ordering with the registry's creations and destructions from
+other threads, the F9 capture kept working. Not worth it next to the guest's own hot paths.
+
+If the producer is taken up again, what is left on its own thread:
+- the constant commands' allocations: reserve the command's arrays once (A2 moved the allocations
+  instead of removing them; the range count is only known after walking the guest's map, so count
+  first or reserve from the last command of the same parameters);
+- the state memos' cost: `Session::Unchanged` keeps 1.3 % of its own for a comparison of a few
+  words, which the table's size did not explain (A1). Measure where it goes (the shadow entry each
+  memo points to, or the ~965 calls a frame of the texture filtering alone) before changing it.
+
 ### The backend thread (2026-10-09)
 
 The live mode's backend thread, town square of the DWARF profile with everything integrated
