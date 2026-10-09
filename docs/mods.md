@@ -523,9 +523,9 @@ The old `tools/run_capped.py` is gone. Its own pass of the fault is next: the sa
 stopped at the first access violation, for the stack.
 
 The macOS work's branch (`feature/macos-game`, `7c59663`) is not in `develop` yet. To keep a single
-script, that branch takes this branch's commit "tools/run_capped: follow rotation, stop at a
-repeated fault, keep the start of the logs" (it applies on top of `7c59663`, which this branch
-cherry-picked unchanged), or merges `develop` after this branch lands; it should not change its
+script, that branch takes this branch's commits "tools/run_capped: follow rotation, stop at a
+repeated fault, keep the start of the logs" and "tools/run_capped: an interrupted runner stops the
+command first" (they apply on top of `7c59663`, which this branch cherry-picked unchanged), or merges `develop` after this branch lands; it should not change its
 copy on its own meanwhile.
 
 **A new-item mod, validated (2026-10-09).** With `tlunits:` mounted once the index exists, the game
