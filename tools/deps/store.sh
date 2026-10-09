@@ -112,8 +112,9 @@ old_scheme_keys() {  # the keys of the branches whose CI still downloads deps-<k
 # 1. Migration: each old release deps-<key> (Linux) or deps-windows-<key> whose key main or develop
 #    uses gets its archives copied into the store under the new names; old releases that are gone
 #    are simply not there. 2. The old releases are deleted with their tags, except those a branch
-#    still reads (main keeps the old scheme until the freeze that brings this). 3. The store's
-#    assets whose key neither branch uses are deleted, unless uploaded within the grace period.
+#    still reads (main keeps the old scheme until the freeze that brings this), and so are the
+#    deps-* tags left without a release. 3. The store's assets whose key neither branch uses are
+#    deleted, unless uploaded within the grace period.
 #    The keys are read again right before each deletion step, so a run never deletes what the
 #    branches use at that moment.
 prune() {
@@ -152,6 +153,21 @@ prune() {
     fi
     echo "delete release $tag"
     [ -n "$dry" ] || delete_release "$tag"
+  done
+  # Tags left behind by old releases deleted elsewhere (from the web page a release goes, its tag
+  # stays): deleted unless a branch still reads that release.
+  local tags
+  old=$(old_releases)
+  tags=$(gh api "repos/$REPO/git/matching-refs/tags/deps-" --jq '.[].ref')
+  for tag in $(sed 's|^refs/tags/||' <<< "$tags"); do
+    grep -qxF "$tag" <<< "$old" && continue
+    case $tag in
+      deps-windows-*) platform=windows; key=${tag#deps-windows-} ;;
+      *) platform=linux; key=${tag#deps-} ;;
+    esac
+    grep -qxF "$platform $key" <<< "$keep" && continue
+    echo "delete tag $tag (no release)"
+    [ -n "$dry" ] || gh api -X DELETE "repos/$REPO/git/refs/tags/$tag" > /dev/null
   done
   keys=$(branch_keys)
   list=$(assets)
