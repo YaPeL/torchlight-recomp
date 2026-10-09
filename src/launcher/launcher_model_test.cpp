@@ -158,6 +158,15 @@ void TestOnDemand() {
   Check(m.Press(Button::kQuit) == Action::kQuit, "Quit");
 }
 
+void TestNotOurFolder() {
+  LauncherModel m({true, AchievementSet::kPc, true, false});
+  Check(m.Buttons() == std::vector<Button>{Button::kPlay, Button::kChangeAchievements,
+                                           Button::kQuit},
+        "--game_data_root: no reinstall");
+  Check(m.Press(Button::kReinstall) == Action::kNone && m.page() == Page::kReady,
+        "and the button does nothing");
+}
+
 void TestMissingAchievements() {
   LauncherModel m({true, std::nullopt, false});
   Check(m.page() == Page::kAchievements, "installed without a set: Achievements");
@@ -177,6 +186,7 @@ int main() {
   TestCloseWhileInstalling();
   TestPickerFailed();
   TestOnDemand();
+  TestNotOurFolder();
   TestMissingAchievements();
   if (failures) return 1;
   std::printf("launcher model test: ok\n");

@@ -1,8 +1,8 @@
 // Tests for the whole launcher (launcher.h) on its real window, with fake services and keys sent
 // as SDL events (so they go through ImGui's SDL3 backend as a user's would): the first start from
 // the package to Play, a rejected package, Cancel, closing while installing, the fallback browser
-// when the picker fails, and --launcher's Ready page. Without a display (CI) on SDL's offscreen
-// video driver.
+// when the picker fails, --launcher's Ready page, and Play waiting for the key to be released.
+// Without a display (CI) on SDL's offscreen video driver.
 
 #include <chrono>
 #include <cstdio>
@@ -137,6 +137,8 @@ class Driver {
     Frames(2);
   }
   void Enter() { Press(SDLK_RETURN, SDL_SCANCODE_RETURN); }
+  void EnterDown() { Send(SDLK_RETURN, SDL_SCANCODE_RETURN, true); }
+  void EnterUp() { Send(SDLK_RETURN, SDL_SCANCODE_RETURN, false); }
   void Down() { Press(SDLK_DOWN, SDL_SCANCODE_DOWN); }
   void Escape() { Press(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE); }
   void Push(SDL_EventType type) {
@@ -270,6 +272,19 @@ void TestBrowser() {
         "a file chosen in the browser: installed");
 }
 
+// Play waits until the key that chose it is released, so it does not reach the game.
+void TestPlayWaitsForRelease() {
+  Fakes fakes;
+  Driver d({true, AchievementSet::kXbox, true}, fakes);
+  if (!d.ok()) return;
+  d.EnterDown();
+  d.Frames(10);
+  Check(!d.outcome(), "Enter held on Play: the launcher waits");
+  d.EnterUp();
+  d.Frames(2);
+  Check(d.outcome() == Outcome::kPlay, "released: play");
+}
+
 void TestOnDemand() {
   Fakes fakes;
   Driver d({true, AchievementSet::kXbox, true}, fakes);
@@ -302,6 +317,7 @@ int main() {
   TestCloseWhileInstalling();
   TestBrowser();
   TestOnDemand();
+  TestPlayWaitsForRelease();
   SDL_Quit();
   if (failures) return 1;
   std::printf("launcher test: ok\n");

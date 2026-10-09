@@ -101,9 +101,14 @@ Without the game (libraries, tests and tools only, no `generated/`; what CI buil
 found by itself).
 
 Without `--game_data_root` the game uses its own copy of the game files in
-`~/.local/share/TorchlightRecomp/game/`: on the first start it asks for your Torchlight XBLA package
-(or an extracted folder), checks it against the supported version (1.0.140.0) and installs it
-there. `game_setup_test PACKAGE` checks a package the same way without starting the game. The game
+`~/.local/share/TorchlightRecomp/game/`: on the first start the launcher (`docs/launcher.md`) asks
+for your Torchlight XBLA package (or an extracted folder), checks it against the supported version
+(1.0.140.0) and installs it there, then asks which achievement set to earn. At every start the
+files are checked (each one there with its size, `default.xex` by SHA-256); the launcher opens
+again when they are not whole. `--launcher` opens it even when nothing is missing (to install the
+files again or change the achievement set). With `--game_data_root` the files there are checked
+the same way and never installed into: the game stops with the reason when they are not whole.
+`game_setup_test PACKAGE` checks a package the same way without starting the game. The game
 runs as the full game (`license_mask` 1); `--license_mask=0` gives the demo.
 
 The first configure downloads miniz 3.0.2 (for the save import, `src/save_import/CMakeLists.txt`,

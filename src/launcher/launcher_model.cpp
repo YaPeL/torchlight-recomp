@@ -13,7 +13,9 @@ bool Needed(const Start& start) {
 }
 
 LauncherModel::LauncherModel(const Start& start)
-    : achievements_(start.achievements), installed_(start.game_installed) {
+    : achievements_(start.achievements),
+      installed_(start.game_installed),
+      can_install_(start.can_install) {
   if (!installed_) {
     page_ = Page::kInstall;
   } else if (!achievements_) {
@@ -39,6 +41,7 @@ std::vector<Button> LauncherModel::Buttons() const {
       }
       return {Button::kAchievementsXbox, Button::kAchievementsPc};
     case Page::kReady:
+      if (!can_install_) return {Button::kPlay, Button::kChangeAchievements, Button::kQuit};
       return {Button::kPlay, Button::kChangeAchievements, Button::kReinstall, Button::kQuit};
   }
   return {};

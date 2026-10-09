@@ -21,8 +21,8 @@ namespace {
 
 constexpr const char* kStringsFile = "tl_setup_strings.txt";
 
-// The texts in the language SetupLanguage picks (the host settings and the command line are read
-// directly: the first start runs before the rest of the startup).
+}  // namespace
+
 Translate SetupTranslate(std::vector<platform::StartupMessage>& log) {
   auto strings = std::make_shared<game_menu::MenuStrings>();
   std::vector<std::string> warnings;
@@ -51,6 +51,8 @@ Translate SetupTranslate(std::vector<platform::StartupMessage>& log) {
     return strings->Translate(language, english);
   };
 }
+
+namespace {
 
 std::string Text(const Translate& tr, std::string_view english,
                  std::vector<std::pair<std::string, std::string>> values = {}) {
@@ -99,7 +101,7 @@ InstallResult InstallWithProgress(Source source, const std::filesystem::path& fr
 bool EnsureGameData(const std::filesystem::path& game_dir,
                     std::vector<platform::StartupMessage>& log) {
   const auto info = [&](std::string text) { log.push_back({false, std::move(text)}); };
-  if (XexMatches(game_dir, GameFiles())) return true;
+  if (QuickCheckGameFolder(game_dir, GameFiles()).empty()) return true;
   const Translate tr = SetupTranslate(log);
   const std::string title = Text(tr, kTextTitle);
   const std::string where = game_dir.string();

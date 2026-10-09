@@ -11,13 +11,13 @@ target_link_libraries(torchlight_imgui_backends PUBLIC rex::runtime)
 # The launcher's model and its fallback file browser: what it shows and does, without drawing,
 # the platform or the runtime (folders are read with std::filesystem); tested on their own.
 add_library(torchlight_launcher_model STATIC launcher_model.cpp launcher_text.cpp file_browser_model.cpp
-            folder_listing.cpp)
+            folder_listing.cpp first_start_plan.cpp)
 target_include_directories(torchlight_launcher_model PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_launcher_model PUBLIC cxx_std_23)
 target_compile_options(torchlight_launcher_model PRIVATE -Wall -Wextra)
 target_link_libraries(torchlight_launcher_model PUBLIC torchlight_game_files torchlight_settings)
 
-foreach(_test launcher_model_test file_browser_model_test folder_listing_test)
+foreach(_test launcher_model_test file_browser_model_test folder_listing_test first_start_test)
     add_executable(${_test} ${_test}.cpp)
     target_link_libraries(${_test} PRIVATE torchlight_launcher_model)
     target_compile_options(${_test} PRIVATE -Wall -Wextra -Werror)
@@ -42,9 +42,9 @@ target_compile_definitions(launcher_window_test PRIVATE
 target_compile_options(launcher_window_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME launcher_window_test COMMAND launcher_window_test)
 
-# The launcher: its view (ImGui) and the controller that carries out the model's actions through
-# LauncherServices (the system's, or fakes in the tests).
-add_library(torchlight_launcher STATIC launcher_view.cpp launcher.cpp)
+# The launcher: its view (ImGui), the controller that carries out the model's actions through
+# LauncherServices (the system's, or fakes in the tests), and the game's start (first_start.h).
+add_library(torchlight_launcher STATIC launcher_view.cpp launcher.cpp first_start.cpp)
 target_link_libraries(torchlight_launcher PUBLIC torchlight_launcher_model torchlight_game_setup
                       torchlight_platform)
 target_include_directories(torchlight_launcher PUBLIC "${TORCHLIGHT_REX_INCLUDE}")

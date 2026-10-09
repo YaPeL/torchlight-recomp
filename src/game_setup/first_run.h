@@ -1,6 +1,7 @@
-// The first start (REL.4): when the game's files are not installed yet, ask for the user's
-// Torchlight XBLA package or an extracted folder, check it and install it, with the system's
-// dialogs and a progress window (platform.h). English texts for now.
+// The first start (REL.4) with the system's dialogs: when the game's files are not installed yet,
+// ask for the user's Torchlight XBLA package or an extracted folder, check it and install it, with
+// a progress window (platform.h); then the achievement set. The launcher (launcher/first_start.h)
+// does all this in its own window; these dialogs remain for when that window cannot open.
 
 #pragma once
 
@@ -8,13 +9,19 @@
 #include <string>
 #include <vector>
 
+#include "game_setup/setup_text.h"
 #include "platform/user_folders.h"
 
 namespace torchlight::game_setup {
 
-// True when `game_dir` holds the game (its default.xex checks out, a cheap test done at every
-// start), installing it first if needed; false when the user quit instead. `log` gets what was
-// done, for the runtime's log (logging is not up yet).
+// The first start's texts (tl_setup_strings.txt) in the language SetupLanguage picks: the host
+// settings', then --user_language, then the system's. Read directly: the first start runs before
+// the rest of the startup. `log` gets which language, and any problem with the file.
+Translate SetupTranslate(std::vector<platform::StartupMessage>& log);
+
+// True when `game_dir` holds the game (QuickCheckGameFolder, a cheap test done at every start),
+// installing it first if needed; false when the user quit instead. `log` gets what was done, for
+// the runtime's log (logging is not up yet).
 bool EnsureGameData(const std::filesystem::path& game_dir,
                     std::vector<platform::StartupMessage>& log);
 

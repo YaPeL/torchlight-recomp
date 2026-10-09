@@ -106,6 +106,24 @@ void TestVerifyFolder() {
         "cancelled");
 }
 
+// The check at every start: every file with its size, and default.xex's SHA-256.
+void TestQuickCheck() {
+  Scratch s;
+  Check(QuickCheckGameFolder(s.Source(), kFiles).empty(), "quick check: a whole game");
+  // A half install (the .xex there, the rest not): what the .xex alone would not see.
+  fs::remove(s.root / "source" / "music" / "song.ogg");
+  Check(XexMatches(s.root / "source", kFiles), "the .xex alone looks fine");
+  Check(QuickCheckGameFolder(s.root / "source", kFiles).text == kTextMissing,
+        "quick check: a missing file");
+  Check(QuickCheckGameFolder(s.Source("abc", "xy"), kFiles).text == kTextOtherSize,
+        "quick check: a file of another size");
+  const Message xex = QuickCheckGameFolder(s.Source("abd"), kFiles);
+  Check(xex.text == kTextDiffers && xex.values.at(0).second == "default.xex",
+        "quick check: another default.xex of the same size");
+  Check(QuickCheckGameFolder(s.root / "nowhere", kFiles).text == kTextMissing,
+        "quick check: no folder");
+}
+
 void TestInstallFromFolder() {
   Scratch s;
   const fs::path game = s.root / "game";
@@ -161,6 +179,7 @@ int main(int argc, char** argv) {
   TestCheckPackage();
   TestReadPackageFacts();
   TestVerifyFolder();
+  TestQuickCheck();
   TestInstallFromFolder();
   TestTable();
   std::printf("game_setup_test: ok\n");

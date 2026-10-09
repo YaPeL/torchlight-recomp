@@ -5,6 +5,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 #include <filesystem>
 #include <functional>
 #include <memory>
@@ -58,8 +59,12 @@ class Launcher {
   // Stops a running install and waits for it.
   ~Launcher();
 
-  // One frame: events, the view, the actions. The outcome once the user chose Play or Quit.
+  // One frame: events, the view, the actions. The outcome once the user chose Play or Quit. After
+  // Play the window stays (input ignored) until every key, mouse button and gamepad button held
+  // is released, as the game's dialogs do: the A or Enter that chose Play must not reach the game
+  // as a new press (at most kReleaseWait).
   std::optional<Outcome> Step();
+  static constexpr std::chrono::milliseconds kReleaseWait{3000};
 
   const LauncherModel& model() const { return model_; }
   const FileBrowserModel* browser() const { return browser_.get(); }
@@ -78,6 +83,8 @@ class Launcher {
   std::vector<platform::StartupMessage>& log_;
   std::unique_ptr<FileBrowserModel> browser_;
   std::filesystem::path browse_folder_;  // where the browser was last, to open it there again
+  // Play chosen: waiting for the input held to be released (since when).
+  std::optional<std::chrono::steady_clock::time_point> playing_since_;
 
   // The install's thread and what it shares.
   std::thread worker_;

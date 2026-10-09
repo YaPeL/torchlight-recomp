@@ -25,7 +25,7 @@
 #include "hooks/bucket_cull_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
-#include "game_setup/first_run.h"
+#include "launcher/first_start.h"
 #include "platform/platform.h"
 #include "platform/user_folders.h"
 #include "settings/host_settings.h"
@@ -39,17 +39,17 @@ class TorchlightApp : public rex::ReXApp {
     // First of all, before anything opens or creates the user's folders: the ones with the old
     // name move to the new one (logged once logging is up).
     startup_log() = torchlight::platform::MigrateUserFolders();
-    // The game's files: installed from the user's package on the first start (REL.4), unless
-    // --game_data_root points at them.
-    if (rex::cvar::Query<std::string>("game_data_root").empty()) {
-      const std::string game_dir = torchlight::platform::GameDataDir();
-      if (!game_dir.empty() &&
-          !torchlight::game_setup::EnsureGameData(game_dir, startup_log())) {
-        std::exit(EXIT_SUCCESS);  // the user quit the setup; nothing is running yet
-      }
+    // The game's files (installed from the user's package on the first start, REL.4; checked
+    // in --game_data_root) and the achievement set (asked once, before the host settings are
+    // read): the launcher when something is missing or --launcher asks for it (docs/launcher.md).
+    switch (torchlight::launcher::RunFirstStart(startup_log())) {
+      case torchlight::launcher::FirstStart::kPlay:
+        break;
+      case torchlight::launcher::FirstStart::kQuit:
+        std::exit(EXIT_SUCCESS);  // the user quit; nothing is running yet
+      case torchlight::launcher::FirstStart::kFailed:
+        std::exit(EXIT_FAILURE);
     }
-    // The achievement set, asked once (before the host settings are read).
-    torchlight::game_setup::EnsureAchievementChoice(startup_log());
     torchlight::live::PreCreate();
     return std::unique_ptr<TorchlightApp>(new TorchlightApp(ctx, "torchlight",
         PPCImageConfig));

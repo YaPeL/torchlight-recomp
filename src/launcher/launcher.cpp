@@ -2,6 +2,8 @@
 
 #include <utility>
 
+#include <imgui.h>
+
 #include "game_setup/game_files.h"
 #include "launcher/folder_listing.h"
 
@@ -22,6 +24,18 @@ fs::path FromUtf8(const std::string& text) {
 
 std::string Text(const game_setup::Translate& tr, std::string_view english) {
   return game_setup::Render({std::string(english), {}}, tr);
+}
+
+// Any key (the gamepad's buttons and sticks are ImGui keys too) or mouse button held, in the
+// current frame.
+bool InputHeld() {
+  for (int key = ImGuiKey_NamedKey_BEGIN; key < ImGuiKey_NamedKey_END; ++key) {
+    if (ImGui::IsKeyDown(ImGuiKey(key))) return true;
+  }
+  for (int button = 0; button < ImGuiMouseButton_COUNT; ++button) {
+    if (ImGui::IsMouseDown(button)) return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -89,6 +103,16 @@ Launcher::~Launcher() {
 std::optional<Outcome> Launcher::Step() {
   const bool close = window_.NewFrame();
   const ViewResult view = view_.Draw(model_, browser_.get(), tr_, game_dir_, window_.scale());
+  if (playing_since_) {
+    const bool held = InputHeld();
+    window_.Present();
+    if (!held) return Outcome::kPlay;
+    if (std::chrono::steady_clock::now() - *playing_since_ >= kReleaseWait) {
+      log_.push_back({true, "launcher: input still held after Play; starting the game anyway"});
+      return Outcome::kPlay;
+    }
+    return std::nullopt;
+  }
   window_.Present();
   // After the frame is shown: a picker blocks.
   std::optional<Outcome> outcome;
@@ -183,7 +207,8 @@ std::optional<Outcome> Launcher::Do(Action action) {
       break;
     }
     case Action::kPlay:
-      return Outcome::kPlay;
+      playing_since_ = std::chrono::steady_clock::now();  // Step() waits for the release
+      break;
     case Action::kQuit:
       return Outcome::kQuit;
   }

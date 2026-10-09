@@ -45,12 +45,14 @@ enum class Action {
   kQuit,                          // close the launcher and exit
 };
 
-// What the start knows: whether the game's files are installed, the saved achievement set, and
-// whether --launcher asked for the launcher.
+// What the start knows: whether the game's files are installed, the saved achievement set,
+// whether --launcher asked for the launcher, and whether the game's folder is ours to install into
+// (not with --game_data_root: Ready offers no reinstall then).
 struct Start {
   bool game_installed = false;
   std::optional<settings::AchievementSet> achievements;
   bool on_demand = false;
+  bool can_install = true;
 };
 
 // Whether the launcher opens at all: something is missing, or --launcher.
@@ -107,6 +109,7 @@ class LauncherModel {
   game_setup::Phase phase_ = game_setup::Phase::kCopying;
   uint64_t done_ = 0, total_ = 0;
   bool installed_ = false;  // the game's files are there (Install opened from Ready can go back)
+  bool can_install_ = true;
   bool cancelling_ = false, quit_after_install_ = false;
   bool picker_failed_ = false;  // once failed, the buttons go straight to the browser
 };

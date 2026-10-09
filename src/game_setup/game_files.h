@@ -49,8 +49,14 @@ std::string Sha256File(const std::filesystem::path& file, const Progress& progre
 // there too); else the message for the user; kCancelled when `progress` cancels.
 Message VerifyGameFolder(const std::filesystem::path& dir, std::span<const GameFile> files,
                              const Progress& progress = {});
-// The quick check at every start: `dir`'s default.xex has the table's size and SHA-256.
+// `dir`'s default.xex has the table's size and SHA-256.
 bool XexMatches(const std::filesystem::path& dir, std::span<const GameFile> files);
+// The check at every start: every file of `files` is in `dir` with its size, and default.xex has
+// its SHA-256 (a few milliseconds: the other files are not read). Empty when it holds; else the
+// message (missing, another size, default.xex differs). An install is renamed into place only
+// once complete (install.h), so this finds a folder emptied or damaged afterwards, or a
+// --game_data_root that is not a whole game.
+Message QuickCheckGameFolder(const std::filesystem::path& dir, std::span<const GameFile> files);
 
 // The text of the message a cancelled operation returns (never shown).
 inline constexpr std::string_view kCancelled = "cancelled";

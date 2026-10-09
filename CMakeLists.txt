@@ -162,7 +162,8 @@ add_custom_target(torchlight_data ALL
 add_dependencies(torchlight torchlight_data)
 # The live mode (and through it the frontend) and the backend objects.
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_video_mode
-    torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull)
+    torchlight_game_setup torchlight_launcher torchlight_save_import torchlight_guest_copy
+    torchlight_bucket_cull)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)

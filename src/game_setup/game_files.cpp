@@ -55,12 +55,11 @@ std::string Sha256File(const std::filesystem::path& file, const Progress& progre
   return hash.getHash();
 }
 
-Message VerifyGameFolder(const std::filesystem::path& dir, std::span<const GameFile> files,
-                         const Progress& progress) {
-  uint64_t total = 0, done = 0;
-  for (const GameFile& f : files) total += f.size;
+namespace {
+
+// Every file there with its size; else the message for the first that is not.
+Message CheckSizes(const std::filesystem::path& dir, std::span<const GameFile> files) {
   std::error_code ec;
-  // Sizes first: a missing or truncated file is found without hashing the rest.
   for (const GameFile& f : files) {
     const std::filesystem::path path = dir / std::filesystem::path(std::string(f.path));
     if (!std::filesystem::is_regular_file(path, ec)) {
@@ -70,6 +69,17 @@ Message VerifyGameFolder(const std::filesystem::path& dir, std::span<const GameF
       return {std::string(kTextOtherSize), {{"file", std::string(f.path)}}};
     }
   }
+  return {};
+}
+
+}  // namespace
+
+Message VerifyGameFolder(const std::filesystem::path& dir, std::span<const GameFile> files,
+                         const Progress& progress) {
+  uint64_t total = 0, done = 0;
+  for (const GameFile& f : files) total += f.size;
+  // Sizes first: a missing or truncated file is found without hashing the rest.
+  if (Message sizes = CheckSizes(dir, files); !sizes.empty()) return sizes;
   for (const GameFile& f : files) {
     const std::filesystem::path path = dir / std::filesystem::path(std::string(f.path));
     const std::string digest = Sha256File(path, progress, &done, total);
@@ -93,6 +103,12 @@ bool XexMatches(const std::filesystem::path& dir, std::span<const GameFile> file
     return Sha256File(path) == f.sha256;
   }
   return false;
+}
+
+Message QuickCheckGameFolder(const std::filesystem::path& dir, std::span<const GameFile> files) {
+  if (Message sizes = CheckSizes(dir, files); !sizes.empty()) return sizes;
+  if (!XexMatches(dir, files)) return {std::string(kTextDiffers), {{"file", std::string(kXexPath)}}};
+  return {};
 }
 
 }  // namespace torchlight::game_setup
