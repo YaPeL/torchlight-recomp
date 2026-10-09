@@ -11,7 +11,9 @@
 #                                         neither main nor develop uses (see prune below);
 #                                         --no-delete migrates and only reports the deletions
 #
-# PLATFORM is linux or windows. Needs gh (GH_TOKEN) and GITHUB_REPOSITORY; prune also git.
+# PLATFORM is linux or windows. Needs gh (GH_TOKEN) and GITHUB_REPOSITORY; prune also git. Only
+# `gh api`, `gh release upload` and `gh release download -p` are used: Ubuntu 22.04's gh (2.4) has
+# no --json on release list and no --latest.
 set -euo pipefail
 
 STORE=deps
@@ -33,11 +35,24 @@ assets() {  # the store's assets: id, name, updated_at (tab separated); nothing 
     2> /dev/null || true
 }
 
+store_exists() { gh api "repos/$REPO/releases/tags/$STORE" > /dev/null 2>&1; }
 ensure_store() {  # creates the store; a concurrent run may have created it first
-  gh release view "$STORE" -R "$REPO" > /dev/null 2>&1 && return 0
-  gh release create "$STORE" -R "$REPO" --prerelease --latest=false --title "Dependencies" \
-    --notes "The patched ReXGlue SDK and OGRE 14.6.0 that CI builds with tools/deps/ and tools/build-deps/, one pair of archives per platform and key (tools/deps/key.sh). Nothing of the game. Not a release of the game: CI keeps only what main and develop use." \
-    > /dev/null 2>&1 || gh release view "$STORE" -R "$REPO" > /dev/null
+  store_exists && return 0
+  gh api -X POST "repos/$REPO/releases" -f tag_name="$STORE" -f name="Dependencies" \
+    -F prerelease=true -f make_latest=false \
+    -f body="The patched ReXGlue SDK and OGRE 14.6.0 that CI builds with tools/deps/ and tools/build-deps/, one pair of archives per platform and key (tools/deps/key.sh). Nothing of the game. Not a release of the game: CI keeps only what main and develop use." \
+    > /dev/null 2>&1 || store_exists
+}
+old_releases() {  # the tags of the old per-key releases (deps-<key>, deps-windows-<key>)
+  local tags
+  tags=$(gh api "repos/$REPO/releases?per_page=100" --jq '.[].tag_name')
+  grep -E '^deps-' <<< "$tags" || true
+}
+delete_release() {  # TAG: the release and its tag
+  local id
+  id=$(gh api "repos/$REPO/releases/tags/$1" --jq .id)
+  gh api -X DELETE "repos/$REPO/releases/$id" > /dev/null
+  gh api -X DELETE "repos/$REPO/git/refs/tags/$1" > /dev/null 2>&1 || true
 }
 
 has() {
@@ -53,7 +68,8 @@ fetch() {
   has "$1" "$2" || return 1
   mkdir -p "$3"
   for name in $(names "$1" "$2"); do
-    gh release download "$STORE" -R "$REPO" -p "$name" -D "$3" --clobber
+    rm -f "$3/$name"
+    gh release download "$STORE" -R "$REPO" -p "$name" -D "$3"
   done
 }
 
@@ -101,11 +117,11 @@ old_scheme_keys() {  # the keys of the branches whose CI still downloads deps-<k
 #    The keys are read again right before each deletion step, so a run never deletes what the
 #    branches use at that moment.
 prune() {
-  local dry=${1:-} keys keep tag platform key dir name id updated now age
+  local dry=${1:-} keys keep old tag platform key dir name id updated now age list
   keys=$(branch_keys)
   echo "keys in use:"; sed 's/^/  /' <<< "$keys"
-  for tag in $(gh release list -R "$REPO" --limit 100 --json tagName --jq '.[].tagName' |
-               grep -E '^deps-'); do
+  old=$(old_releases)
+  for tag in $old; do
     case $tag in
       deps-windows-*) platform=windows; key=${tag#deps-windows-} ;;
       *) platform=linux; key=${tag#deps-} ;;
@@ -119,8 +135,8 @@ prune() {
     fi
   done
   keep=$(old_scheme_keys)
-  for tag in $(gh release list -R "$REPO" --limit 100 --json tagName --jq '.[].tagName' |
-               grep -E '^deps-'); do
+  old=$(old_releases)
+  for tag in $old; do
     case $tag in
       deps-windows-*) platform=windows; key=${tag#deps-windows-} ;;
       *) platform=linux; key=${tag#deps-} ;;
@@ -135,9 +151,10 @@ prune() {
       continue
     fi
     echo "delete release $tag"
-    [ -n "$dry" ] || gh release delete "$tag" -R "$REPO" --yes --cleanup-tag
+    [ -n "$dry" ] || delete_release "$tag"
   done
   keys=$(branch_keys)
+  list=$(assets)
   now=$(date -u +%s)
   while IFS=$'\t' read -r id name updated; do
     [ -n "$id" ] || continue
@@ -150,7 +167,7 @@ prune() {
     fi
     echo "delete asset $name"
     [ -n "$dry" ] || gh api -X DELETE "repos/$REPO/releases/assets/$id" > /dev/null
-  done <<< "$(assets)"
+  done <<< "$list"
 }
 
 case ${1:-} in
