@@ -211,6 +211,33 @@ class RunCappedTest(unittest.TestCase):
             self.assertIn("interrupted", err)
             self.assert_gone(pid_file)
 
+    def test_a_file_there_before_counts_only_what_it_grows(self):
+        # A log appended across runs: its old content is not this run's.
+        log = self.dir / "logs" / "shared.log"
+        log.parent.mkdir()
+        log.write_bytes(b"old line\n" * (3 * 2**20 // 9))
+        code = (f"import time\nf = open({str(log)!r}, 'a')\n"
+                "f.write('new line\\n' * 1000); f.flush()\ntime.sleep(600)\n")
+        result = self.run_capped("--timeout", "60", "--max-log-mb", "1", "--watch",
+                                 str(log.parent), "--stop-on", "new line", "--stop-delay", "1",
+                                 code=code)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_a_file_being_read_can_be_renamed(self):
+        # The writer's rotation renames the log while the runner reads it; on Windows a plain
+        # open() keeps that from happening (no FILE_SHARE_DELETE).
+        sys.path.insert(0, str(HERE))
+        import run_capped
+        log = self.dir / "game.log"
+        log.write_bytes(b"line\n" * 100)
+        with run_capped.open_shared(log) as handle:
+            first = handle.read(5)
+            os.replace(log, self.dir / "game.1.log")
+            rest = handle.read()
+        self.assertEqual(first, b"line\n")
+        self.assertEqual(len(rest), 5 * 99)
+        self.assertTrue((self.dir / "game.1.log").exists())
+
 
 if __name__ == "__main__":
     unittest.main()
