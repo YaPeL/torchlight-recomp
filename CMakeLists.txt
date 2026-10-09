@@ -140,6 +140,7 @@ add_subdirectory(tools/capture_dump)
 add_subdirectory(tools/thread_profile)
 add_subdirectory(tools/synthetic_capture)
 add_subdirectory(tools/replay)
+add_subdirectory(tools/run_capped)
 add_subdirectory(tools/translations)
 add_subdirectory(tests/save_convert)
 
