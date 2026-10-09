@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "mods/unit_cache.h"
+#include "save_import/pak.h"
 
 namespace fs = std::filesystem;
 using namespace torchlight::mods;
@@ -86,6 +87,11 @@ int main() {
   Check(PakIdentity(root / "p2.zip") != id1, "another directory: another identity");
   Check(!PakIdentity(root / "p3.zip") && !PakIdentity(root / "missing.zip"), "not a zip: none");
 
+  // File names in upper case, whatever the name: the game asks for them that way and finds them
+  // through a case-sensitive lookup on Linux.
+  Check(UnitIndexFileName("0a1b2c3d4e5f6789") == "0A1B2C3D4E5F6789.RAW", "a key in upper case, then .RAW");
+  Check(UnitIndexFileName(IncompleteUnitIndexName("0a1b")) == "0A1B-INCOMPLETE.RAW", "the incomplete name too");
+
   // Store, find, discard, prune.
   const fs::path cache = root / "cache";
   UnitIndex index;
@@ -95,21 +101,27 @@ int main() {
   Check(!FindCachedUnitIndex(cache, key, &log), "nothing cached yet");
   Write(cache / "0000000000000000.RAW", "an older one");
   Check(StoreCachedUnitIndex(cache, key, index, &error), "stored");
-  Check(FindCachedUnitIndex(cache, key, &log) == cache / (key + ".RAW"), "found");
-  Check(!fs::exists(cache / "0000000000000000.RAW") && !fs::exists(cache / (key + ".RAW.tmp")),
+  Check(FindCachedUnitIndex(cache, key, &log) == cache / UnitIndexFileName(key), "found");
+  {
+    std::vector<std::string> names;
+    for (const auto& entry : fs::directory_iterator(cache)) names.push_back(entry.path().filename().string());
+    Check(names == std::vector<std::string>{torchlight::save_import::Upper(key) + ".RAW"},
+          "the file on disk spelled in upper case (listed, so a case-insensitive file system cannot hide it)");
+  }
+  Check(!fs::exists(cache / "0000000000000000.RAW") && !fs::exists(cache / (UnitIndexFileName(key) + ".tmp")),
         "other cached indexes and the temporary file removed");
   // An index some mod unit could not be read into: loadable under its own name, never found under
   // the key (the next start builds again), and gone once a complete one is stored.
   const std::string incomplete = IncompleteUnitIndexName(key);
-  Check(StoreCachedUnitIndex(cache, incomplete, index, &error) && fs::exists(cache / (incomplete + ".RAW")),
+  Check(StoreCachedUnitIndex(cache, incomplete, index, &error) && fs::exists(cache / UnitIndexFileName(incomplete)),
         "an incomplete index stored under its own name");
-  Check(!fs::exists(cache / (key + ".RAW")) && !FindCachedUnitIndex(cache, key, &log),
+  Check(!fs::exists(cache / UnitIndexFileName(key)) && !FindCachedUnitIndex(cache, key, &log),
         "an incomplete index is not found under the key");
-  Check(StoreCachedUnitIndex(cache, key, index, &error) && !fs::exists(cache / (incomplete + ".RAW")) &&
-            FindCachedUnitIndex(cache, key, &log) == cache / (key + ".RAW"),
+  Check(StoreCachedUnitIndex(cache, key, index, &error) && !fs::exists(cache / UnitIndexFileName(incomplete)) &&
+            FindCachedUnitIndex(cache, key, &log) == cache / UnitIndexFileName(key),
         "a complete index replaces the incomplete one");
-  Write(cache / (key + ".RAW"), "corrupt");
-  Check(!FindCachedUnitIndex(cache, key, &log) && !log.empty() && !fs::exists(cache / (key + ".RAW")),
+  Write(cache / UnitIndexFileName(key), "corrupt");
+  Check(!FindCachedUnitIndex(cache, key, &log) && !log.empty() && !fs::exists(cache / UnitIndexFileName(key)),
         "a corrupt one is discarded, removed and said");
 
   fs::remove_all(root);

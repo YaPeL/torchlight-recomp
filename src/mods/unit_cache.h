@@ -20,9 +20,11 @@
 
 namespace torchlight::mods {
 
-// Bumped whenever what goes into a cached index changes (how entries are read or merged); 3: indexes
-// built with units left out were cached under the key (IncompleteUnitIndexName).
-inline constexpr uint32_t kUnitIndexVersion = 3;
+// Bumped whenever what goes into a cached index changes (how entries are read or merged, or how
+// its file is named); 3: indexes built with units left out were cached under the key
+// (IncompleteUnitIndexName); 4: file names in upper case (UnitIndexFileName), the older ones were
+// never read by the game.
+inline constexpr uint32_t kUnitIndexVersion = 4;
 
 // One unit definition a mod brings: the mod's folder, the path inside it as the game names it
 // ("MEDIA/UNITS/..."; upper case, '/') and a digest of its bytes.
@@ -56,7 +58,13 @@ std::optional<uint64_t> PakIdentity(const std::filesystem::path& pak);
 // The cache key (hex) for the mods' unit files, the base and kUnitIndexVersion.
 std::string UnitCacheKey(const std::vector<ModUnitFile>& files, uint64_t base_identity);
 
-// <folder>/<key>.RAW when it exists and reads back as an index; a file that does not is removed
+// The file an index is stored and loaded under: the name in upper case, then ".RAW". The game asks
+// for files by their name in upper case, and the guest OGRE's lookup in a host folder is
+// case-sensitive on Linux, so a file it is to find must be named that way (docs/mods.md, section
+// 7e: a lower-case name was never read).
+std::string UnitIndexFileName(const std::string& name);
+
+// <folder>/UnitIndexFileName(key) when it exists and reads back as an index; a file that does not is removed
 // (`log` says why) and none is returned, so the caller builds it again.
 std::optional<std::filesystem::path> FindCachedUnitIndex(const std::filesystem::path& folder,
                                                          const std::string& key, std::string* log);
@@ -67,7 +75,7 @@ std::optional<std::filesystem::path> FindCachedUnitIndex(const std::filesystem::
 // StoreCachedUnitIndex removes it.
 std::string IncompleteUnitIndexName(const std::string& key);
 
-// Writes <folder>/<key>.RAW whole (a temporary file, flushed, renamed into place) and removes the
+// Writes <folder>/UnitIndexFileName(key) whole (a temporary file, flushed, renamed into place) and removes the
 // other cached indexes. False (with `error`) when it cannot.
 bool StoreCachedUnitIndex(const std::filesystem::path& folder, const std::string& key,
                           const UnitIndex& index, std::string* error);

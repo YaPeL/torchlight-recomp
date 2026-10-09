@@ -174,8 +174,10 @@ std::string UnitCacheKey(const std::vector<ModUnitFile>& files, uint64_t base_id
   return Hex(h);
 }
 
+std::string UnitIndexFileName(const std::string& name) { return save_import::Upper(name) + ".RAW"; }
+
 std::optional<fs::path> FindCachedUnitIndex(const fs::path& folder, const std::string& key, std::string* log) {
-  const fs::path file = folder / (key + ".RAW");
+  const fs::path file = folder / UnitIndexFileName(key);
   std::error_code ec;
   if (!fs::exists(file, ec)) return std::nullopt;
   const auto bytes = ReadAll(file);
@@ -192,8 +194,8 @@ bool StoreCachedUnitIndex(const fs::path& folder, const std::string& key, const 
                           std::string* error) {
   std::error_code ec;
   fs::create_directories(folder, ec);
-  const fs::path file = folder / (key + ".RAW");
-  const fs::path temp = folder / (key + ".RAW.tmp");
+  const fs::path file = folder / UnitIndexFileName(key);
+  const fs::path temp = folder / (UnitIndexFileName(key) + ".tmp");
   const std::vector<uint8_t> bytes = WriteUnitIndex(index);
   {
     std::ofstream out(temp, std::ios::binary | std::ios::trunc);

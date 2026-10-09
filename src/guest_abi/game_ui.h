@@ -210,6 +210,18 @@ inline constexpr GuestFunction kSettingsMenuOnCommand{0x82380C28, Confidence::kC
 inline constexpr GuestFunction kAddResourceLocation{0x8242AE30, Confidence::kConfirmed};
 inline constexpr GuestFunction kResourcesCfgLoader{0x8239B998, Confidence::kConfirmed};
 
+// [confirmed] How the game's data loader (sub_8239D5F8) finds a file, in sub_8239D0E8: the mods'
+// file maps first; then, when the data manager's +16 is set (it is), OGRE's resourceExists over the
+// groups in its list (+76, count +80: "0ZIP0", "ZIP") and then "General" (the global 0x83424810,
+// copied from OGRE's default group name 0x8349D568); then _stat64 in a folder of its own. It asks
+// with the name in upper case: a name we passed as "57930ade12df44c0.RAW" reached sub_8239D0E8 as
+// "57930ADE12DF44C0.RAW" (gdb, 2026-10-08), and a location on a host folder is matched by case on
+// Linux, so that file was never found (not on Windows or macOS, whose file systems ignore case by
+// default). Rule: a file we create for the game to find through a resource location is named
+// exactly as the game asks for it: in upper case when it goes through this loader (the unit index,
+// mods/unit_cache.h UnitIndexFileName), with the game's own spelling when the game asks by its own
+// name through CEGUI or OGRE (our layout, the widened layouts, which keep the pak's names).
+
 // ---------------------------------------------------------------------------------------------
 // Calling into the guest from a hook (on the game's thread: CEGUI is not thread-safe).
 //

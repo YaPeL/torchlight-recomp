@@ -348,7 +348,7 @@ void VerifyLoadedIndex(PPCContext& ctx, uint8_t* base, uint32_t index, uint32_t 
   std::string error;
   const auto ours = ReadOurIndex(&error);
   if (!ours) {
-    REXLOG_ERROR("mods: the unit index the game loaded ({}.RAW) cannot be read back ({}); {} units loaded", g.name,
+    REXLOG_ERROR("mods: the unit index the game loaded ({}) cannot be read back ({}); {} units loaded", UnitIndexFileName(g.name),
                  error, loaded);
     CompareWithLoadedUnits(std::nullopt);
     return;
@@ -360,9 +360,9 @@ void VerifyLoadedIndex(PPCContext& ctx, uint8_t* base, uint32_t index, uint32_t 
       CompareWithLoadedUnits(GuidsOf(*ours));
       return;
     case LoadedIndex::kEmpty:
-      REXLOG_ERROR("mods: the game loaded 0 of the {} units in {}.RAW (the file was not read); loading the game's "
+      REXLOG_ERROR("mods: the game loaded 0 of the {} units in {} (the file was not read); loading the game's "
                    "own unit index instead, without the mods' units",
-                   expected, g.name);
+                   expected, UnitIndexFileName(g.name));
       ctx.r3.u64 = index;
       ctx.r4.u64 = original_path;
       __imp__sub_823296D0(ctx, base);
@@ -371,9 +371,9 @@ void VerifyLoadedIndex(PPCContext& ctx, uint8_t* base, uint32_t index, uint32_t 
       return;
     case LoadedIndex::kIncomplete:
     case LoadedIndex::kMore:
-      REXLOG_ERROR("mods: the game loaded {} of the {} units in {}.RAW; left as it is (going back to the game's own "
+      REXLOG_ERROR("mods: the game loaded {} of the {} units in {}; left as it is (going back to the game's own "
                    "index after a partial load is not safe)",
-                   loaded, expected, g.name);
+                   loaded, expected, UnitIndexFileName(g.name));
       CompareWithLoadedUnits(std::nullopt);
       return;
   }
@@ -404,7 +404,8 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
     }
     if (g.ready && g.located) {
       // On the guest heap: the scratch area is below the stack pointer the loader will use.
-      const std::u16string name = std::u16string(g.name.begin(), g.name.end()) + u".RAW";
+      const std::string file = UnitIndexFileName(g.name);
+      const std::u16string name(file.begin(), file.end());
       our_text = call.Call(mods_abi::kAlloc.address, {0, static_cast<uint32_t>(2 * (name.size() + 1))});
       our_path = call.Call(mods_abi::kAlloc.address, {0, abi::ogre::stl_string::kSize.bytes});
       if (our_text && our_path) {
