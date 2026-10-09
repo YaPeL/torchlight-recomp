@@ -33,12 +33,13 @@ in number order; a branch adds its own line at its number's place.
 | 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration; a new version keeps Metal on Apple (SDL's software renderer presents through a GPU texture on Cocoa), from the Windows agent |
 | 22 | `rexglue-tests-portable.patch` | `develop` | In the series |
 | 23 | `rexglue-fctiw-rounding-mode.patch` | `develop` | In the series |
-| 24 | `rexglue-arm64-mffs-rounding.patch` | `develop` | In the series; to confirm on ARM64 |
+| 24 | `rexglue-arm64-mffs-rounding.patch` | `develop` | In the series; confirmed on ARM64 |
 | 25 | `rexglue-mtfsf-field-mask.patch` | `develop` | In the series |
 | 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
 | 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
 | 28 | `rexglue-quiet-missing-files.patch` | `develop` | In the series |
-| 29 | | | Next free number |
+| 29 | `rexglue-case-variants.patch` | `sdk/case-variants` | Pending integration |
+| 30 | | | Next free number |
 
 ## The patches
 
@@ -404,5 +405,27 @@ in number order; a branch adds its own line at its number's place.
     2026-10-09 (the mods agent, the local SDK install with 1-28): 1.13 MB of log in the first 45 s
     instead of 14.5 MB, and 95,675 `[NtCreateFile] FAILED` lines down to one, an access denied
     (`game:\appdata` -> 0xc0000022) at startup. Not specific to any GPU. Upstream draft D28.
+29. `rexglue-case-variants.patch`: names in one host folder that differ only in case (`0.tsv` and
+    `0.TSV`, from a copy made by hand or an import with another case) are one name to the guest.
+    `Entry::GetChild` finds the first one the host listed, and an enumeration lists both, so a
+    title can show one save twice and never open the other. Two changes:
+    - `Entry::Rename` with replace took only the first match as the replaced entry. When it was
+      spelled differently from the new name, the host rename wrote the new spelling as a second
+      file on a case-sensitive host, the old file left the tree but stayed on disk, and it came
+      back at the next mount. Now every sibling the new name matches is replaced (each still has
+      to be a file with no open handle), and `HostPathEntry::RenameEntryInternal` removes each
+      one's host file after the rename succeeded, unless it is the same file as the destination.
+      That check (`std::filesystem::equivalent`) is what keeps the new save on a case-insensitive
+      host (Windows, macOS's default APFS), where the rename already replaced the variant and its
+      path now names the new data. A removed file is reported to patch 27's tracking.
+    - The mount logs one WARN per group of case variants in a folder. Both stay in the tree.
+
+    Tests in `vfs_rename_test.cpp`: a rename onto a case variant (runs on every host, and is the
+    real case-insensitive check on Windows and macOS); the same on a simulated case-insensitive
+    host (Linux: after the mount the replaced spelling becomes a link to the destination, so a
+    wrong removal deletes the link and the test fails); two variants at mount, with the WARN, a
+    rename onto both and Torchlight's save sequence. Without the fix, 2 of the 3 Linux cases fail
+    (8 checks); with the equivalence check taken out, the simulated case, the two-variant case and 2
+    older rename cases fail (an ordinary replace would delete the save). Upstream draft D30.
 
 The observation and diagnostic patches there were before remain in the git history.

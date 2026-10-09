@@ -1,0 +1,450 @@
+diff --git a/include/rex/filesystem/devices/host_path_entry.h b/include/rex/filesystem/devices/host_path_entry.h
+index 9445068..2988ee0 100644
+--- a/include/rex/filesystem/devices/host_path_entry.h
++++ b/include/rex/filesystem/devices/host_path_entry.h
+@@ -51,7 +51,8 @@ class HostPathEntry : public Entry {
+                                              uint32_t attributes) override;
+   bool DeleteEntryInternal(Entry* entry) override;
+   X_STATUS RenameEntryInternal(const std::vector<std::string_view>& path_parts,
+-                               bool replace_existing) override;
++                               bool replace_existing,
++                               const std::vector<Entry*>& replaced) override;
+ 
+   std::filesystem::path host_path_;
+ };
+diff --git a/include/rex/filesystem/entry.h b/include/rex/filesystem/entry.h
+index ed01c53..8b1688d 100644
+--- a/include/rex/filesystem/entry.h
++++ b/include/rex/filesystem/entry.h
+@@ -155,10 +155,14 @@ class Entry {
+     (void)entry;
+     return false;
+   }
++  // `replaced` holds the entries of the destination folder the new name matches ignoring case.
++  // The device must leave none of them on the host.
+   virtual X_STATUS RenameEntryInternal(const std::vector<std::string_view>& path_parts,
+-                                       bool replace_existing) {
++                                       bool replace_existing,
++                                       const std::vector<Entry*>& replaced) {
+     (void)path_parts;
+     (void)replace_existing;
++    (void)replaced;
+     return X_STATUS_NOT_SUPPORTED;
+   }
+ 
+diff --git a/src/filesystem/devices/host_path_device.cpp b/src/filesystem/devices/host_path_device.cpp
+index 3c96514..c934b16 100644
+--- a/src/filesystem/devices/host_path_device.cpp
++++ b/src/filesystem/devices/host_path_device.cpp
+@@ -113,8 +113,45 @@ Entry* HostPathDevice::ResolvePath(const std::string_view path) {
+   return current_entry;
+ }
+ 
++namespace {
++
++// Names that differ only in case are one name to the guest: an open finds the first one listed
++// (an order the host decides) and an enumeration lists them all. Both stay in the tree.
++void WarnCaseVariants(const std::filesystem::path& folder,
++                      const std::vector<rex::filesystem::FileInfo>& infos) {
++  if (infos.size() < 2) {
++    return;
++  }
++  std::vector<std::pair<std::string, std::string>> names;  // (folded, as on the host)
++  names.reserve(infos.size());
++  for (const auto& info : infos) {
++    std::string name = rex::path_to_utf8(info.name);
++    names.emplace_back(rex::string::utf8_lower_ascii(name), std::move(name));
++  }
++  std::sort(names.begin(), names.end());
++  for (size_t first = 0; first < names.size();) {
++    size_t last = first + 1;
++    while (last < names.size() && names[last].first == names[first].first) {
++      ++last;
++    }
++    if (last - first > 1) {
++      std::string variants;
++      for (size_t i = first; i < last; ++i) {
++        variants += (i == first ? "'" : ", '") + names[i].second + "'";
++      }
++      REXFS_WARN("Host folder '{}' holds names that differ only in case: {}. The title sees them "
++                 "as one name and opens only one of them",
++                 rex::path_to_utf8(folder), variants);
++    }
++    first = last;
++  }
++}
++
++}  // namespace
++
+ void HostPathDevice::PopulateEntry(HostPathEntry* parent_entry) {
+   auto child_infos = rex::filesystem::ListFiles(parent_entry->host_path());
++  WarnCaseVariants(parent_entry->host_path(), child_infos);
+   for (auto& child_info : child_infos) {
+     auto child = HostPathEntry::Create(this, parent_entry,
+                                        parent_entry->host_path() / child_info.name, child_info);
+diff --git a/src/filesystem/devices/host_path_entry.cpp b/src/filesystem/devices/host_path_entry.cpp
+index 8c2d7db..ba76bf4 100644
+--- a/src/filesystem/devices/host_path_entry.cpp
++++ b/src/filesystem/devices/host_path_entry.cpp
+@@ -148,7 +148,8 @@ bool HostPathEntry::DeleteEntryInternal(Entry* entry) {
+ }
+ 
+ X_STATUS HostPathEntry::RenameEntryInternal(const std::vector<std::string_view>& path_parts,
+-                                            bool replace_existing) {
++                                            bool replace_existing,
++                                            const std::vector<Entry*>& replaced) {
+   auto new_host_path = static_cast<HostPathDevice*>(device_)->host_path();
+   for (const auto& path_part : path_parts) {
+     new_host_path /= rex::to_path(path_part);
+@@ -170,6 +171,28 @@ X_STATUS HostPathEntry::RenameEntryInternal(const std::vector<std::string_view>&
+   }
+ 
+   auto* device = static_cast<HostPathDevice*>(device_);
++  // The host rename replaced the file of the new spelling only. A replaced entry spelled another
++  // way is another file on a case-sensitive host: remove it, or it comes back at the next mount.
++  // On a case-insensitive host it is the file just replaced, which now holds the renamed data, so
++  // anything but a different file that surely exists is kept.
++  for (Entry* entry : replaced) {
++    const auto replaced_path = static_cast<HostPathEntry*>(entry)->host_path();
++    if (!std::filesystem::exists(replaced_path, ec) || ec) {
++      continue;
++    }
++    const bool same_file = std::filesystem::equivalent(replaced_path, new_host_path, ec);
++    if (ec || same_file) {
++      continue;
++    }
++    if (!std::filesystem::remove(replaced_path, ec) || ec) {
++      REXFS_WARN("RenameEntryInternal: '{}' replaced '{}', but its case variant '{}' could not "
++                 "be removed: {}",
++                 rex::path_to_utf8(host_path_), rex::path_to_utf8(new_host_path),
++                 rex::path_to_utf8(replaced_path), ec.message());
++      continue;
++    }
++    device->NoteRemoved(replaced_path);
++  }
+   device->NoteMoved(host_path_, new_host_path);
+   device->NoteFolderChanged(host_path_.parent_path());
+   device->NoteFolderChanged(new_host_path.parent_path());
+diff --git a/src/filesystem/entry.cpp b/src/filesystem/entry.cpp
+index 14b98fd..df15cb6 100644
+--- a/src/filesystem/entry.cpp
++++ b/src/filesystem/entry.cpp
+@@ -197,11 +197,17 @@ X_STATUS Entry::Rename(const std::filesystem::path& file_path, bool replace_exis
+   if (!new_parent || !(new_parent->attributes() & kFileAttributeDirectory)) {
+     return X_STATUS_OBJECT_PATH_NOT_FOUND;
+   }
+-  Entry* existing = new_parent->GetChild(new_name);
+-  if (existing == this) {
+-    existing = nullptr;  // same entry, maybe a change of case
++  // Every sibling the new name matches, not only the first: names that differ only in case are one
++  // name to the guest, and a host folder can hold several of them (a copy made by hand, an import
++  // with another case). This entry itself is not replaced (maybe a change of case).
++  std::vector<Entry*> replaced;
++  for (const auto& child : new_parent->children_) {
++    if (child.get() != this && child->name().size() == new_name.size() &&
++        rex::string::utf8_equal_case(child->name(), new_name)) {
++      replaced.push_back(child.get());
++    }
+   }
+-  if (existing) {
++  for (Entry* existing : replaced) {
+     if (!replace_existing) {
+       return X_STATUS_OBJECT_NAME_COLLISION;
+     }
+@@ -210,17 +216,20 @@ X_STATUS Entry::Rename(const std::filesystem::path& file_path, bool replace_exis
+     }
+   }
+ 
+-  X_STATUS status = RenameEntryInternal(path_parts, replace_existing);
++  X_STATUS status = RenameEntryInternal(path_parts, replace_existing, replaced);
+   if (status != X_STATUS_SUCCESS) {
+     return status;
+   }
+ 
+-  // The host rename already replaced the destination file: drop its entry from the tree (without
+-  // deleting on the host again).
+-  if (existing) {
++  // The device replaced the destination on the host: drop the replaced entries from the tree
++  // (without deleting on the host again).
++  if (!replaced.empty()) {
+     auto& siblings = new_parent->children_;
+     siblings.erase(std::remove_if(siblings.begin(), siblings.end(),
+-                                  [&](const auto& child) { return child.get() == existing; }),
++                                  [&](const auto& child) {
++                                    return std::find(replaced.begin(), replaced.end(),
++                                                     child.get()) != replaced.end();
++                                  }),
+                    siblings.end());
+   }
+   if (new_parent != parent_) {
+diff --git a/tests/unit/core/vfs_rename_test.cpp b/tests/unit/core/vfs_rename_test.cpp
+index fb9e536..e61f234 100644
+--- a/tests/unit/core/vfs_rename_test.cpp
++++ b/tests/unit/core/vfs_rename_test.cpp
+@@ -3,16 +3,21 @@
+ #include <filesystem>
+ #include <memory>
+ #include <span>
++#include <sstream>
+ #include <string>
++#include <utility>
+ #include <vector>
+ 
+ #include <catch2/catch_test_macros.hpp>
++#include <spdlog/logger.h>
++#include <spdlog/sinks/ostream_sink.h>
+ 
+ #include <rex/filesystem.h>
+ #include <rex/filesystem/devices/host_path_device.h>
+ #include <rex/filesystem/entry.h>
+ #include <rex/filesystem/file.h>
+ #include <rex/filesystem/vfs.h>
++#include <rex/logging.h>
+ 
+ using rex::X_STATUS;
+ using rex::filesystem::Entry;
+@@ -25,22 +30,20 @@ using rex::filesystem::VirtualFileSystem;
+ 
+ namespace {
+ 
++using HostFiles = std::vector<std::pair<std::string, std::string>>;
++
+ // A writable host directory mounted as test:, like a title's save container.
+ class RenameStore {
+  public:
+-  RenameStore() {
++  explicit RenameStore(const HostFiles& files = {{"1.TSV", "first save"},
++                                                 {"backup.tmp", "old backup"}}) {
+     root_ = std::filesystem::temp_directory_path() /
+             ("rexglue_vfs_rename_" + std::to_string(counter_++));
+     std::error_code ec;
+     std::filesystem::remove_all(root_, ec);
+     std::filesystem::create_directories(root_ / "sub", ec);
+-    WriteHost("1.TSV", "first save");
+-    WriteHost("backup.tmp", "old backup");
+-
+-    auto device = std::make_unique<HostPathDevice>("\\RenameStore", root_, false, true);
+-    REQUIRE(device->Initialize());
+-    REQUIRE(vfs_.RegisterDevice(std::move(device)));
+-    REQUIRE(vfs_.RegisterSymbolicLink("test:", "\\RenameStore"));
++    for (const auto& [name, text] : files) WriteHost(name, text);
++    Mount();
+   }
+   ~RenameStore() {
+     std::error_code ec;
+@@ -62,12 +65,33 @@ class RenameStore {
+     return text;
+   }
+   bool HostExists(const std::string& name) { return std::filesystem::exists(root_ / name); }
++  const std::filesystem::path& root() const { return root_; }
++
++  // The names in the host folder, as the host spells them.
++  std::vector<std::string> HostNames() {
++    std::vector<std::string> names;
++    for (const auto& item : std::filesystem::directory_iterator(root_)) {
++      names.push_back(rex::path_to_utf8(item.path().filename()));
++    }
++    std::sort(names.begin(), names.end());
++    return names;
++  }
++
++  // Mounts the host folder again, as the next start of the title would.
++  void Mount() {
++    vfs_ = std::make_unique<VirtualFileSystem>();
++    auto device = std::make_unique<HostPathDevice>("\\RenameStore", root_, false, true);
++    REQUIRE(device->Initialize());
++    device_ = device.get();
++    REQUIRE(vfs_->RegisterDevice(std::move(device)));
++    REQUIRE(vfs_->RegisterSymbolicLink("test:", "\\RenameStore"));
++  }
+ 
+   // Writes a file through the VFS (create or overwrite), like the guest's fopen("wb").
+   void Write(const std::string& name, const std::string& text) {
+     File* file = nullptr;
+     FileAction action;
+-    REQUIRE(vfs_.OpenFile(nullptr, "test:\\" + name, FileDisposition::kOverwriteIf,
++    REQUIRE(vfs_->OpenFile(nullptr, "test:\\" + name, FileDisposition::kOverwriteIf,
+                           FileAccess::kGenericWrite, false, true, &file,
+                           &action) == X_STATUS_SUCCESS);
+     size_t written = 0;
+@@ -79,15 +103,15 @@ class RenameStore {
+ 
+   // What NtSetInformationFile(FileRenameInformation) does: the target is the guest path.
+   X_STATUS Rename(const std::string& from, const std::string& to, bool replace) {
+-    Entry* entry = vfs_.ResolvePath("test:\\" + from);
++    Entry* entry = vfs_->ResolvePath("test:\\" + from);
+     REQUIRE(entry != nullptr);
+     return entry->Rename(rex::to_path("test:\\" + to), replace);
+   }
+ 
+-  Entry* Lookup(const std::string& name) { return vfs_.ResolvePath("test:\\" + name); }
++  Entry* Lookup(const std::string& name) { return vfs_->ResolvePath("test:\\" + name); }
+ 
+   std::vector<std::string> Names(const std::string& dir = "") {
+-    Entry* parent = vfs_.ResolvePath(dir.empty() ? "test:" : "test:\\" + dir);
++    Entry* parent = vfs_->ResolvePath(dir.empty() ? "test:" : "test:\\" + dir);
+     REQUIRE(parent != nullptr);
+     std::vector<std::string> names;
+     for (const auto& child : parent->children()) names.push_back(child->name());
+@@ -95,16 +119,66 @@ class RenameStore {
+     return names;
+   }
+ 
+-  VirtualFileSystem& vfs() { return vfs_; }
++  VirtualFileSystem& vfs() { return *vfs_; }
++  HostPathDevice& device() { return *device_; }
+ 
+  private:
+   static int counter_;
+   std::filesystem::path root_;
+-  VirtualFileSystem vfs_;
++  std::unique_ptr<VirtualFileSystem> vfs_;
++  HostPathDevice* device_ = nullptr;
+ };
+ 
+ int RenameStore::counter_ = 0;
+ 
++// Whether names that differ only in case are one file on this host's temporary folder (Windows,
++// and macOS's default APFS) or two (Linux).
++bool HostIgnoresCase() {
++  const auto dir = std::filesystem::temp_directory_path() / "rexglue_vfs_case_probe";
++  std::error_code ec;
++  std::filesystem::remove_all(dir, ec);
++  std::filesystem::create_directories(dir, ec);
++  FILE* file = rex::filesystem::OpenFile(dir / "probe.x", "wb");
++  REQUIRE(file != nullptr);
++  fclose(file);
++  const bool ignores = std::filesystem::exists(dir / "PROBE.X", ec);
++  std::filesystem::remove_all(dir, ec);
++  return ignores;
++}
++
++// Keeps what the filesystem log category writes while it lives.
++class FsLogCapture {
++ public:
++  FsLogCapture()
++      : logger_(rex::GetLogger(rex::log::fs())),
++        sink_(std::make_shared<spdlog::sinks::ostream_sink_mt>(text_)) {
++    REQUIRE(logger_ != nullptr);
++    logger_->sinks().push_back(sink_);
++  }
++  ~FsLogCapture() {
++    auto& sinks = logger_->sinks();
++    sinks.erase(std::remove(sinks.begin(), sinks.end(), sink_), sinks.end());
++  }
++  std::string text() const { return text_.str(); }
++
++ private:
++  std::ostringstream text_;
++  std::shared_ptr<spdlog::logger> logger_;
++  std::shared_ptr<spdlog::sinks::ostream_sink_mt> sink_;
++};
++
++// The names in `names` equal to `name` ignoring ASCII case.
++std::vector<std::string> CaseMatches(const std::vector<std::string>& names,
++                                     const std::string& name) {
++  std::vector<std::string> matches;
++  for (const auto& candidate : names) {
++    if (rex::string::utf8_lower_ascii(candidate) == rex::string::utf8_lower_ascii(name)) {
++      matches.push_back(candidate);
++    }
++  }
++  return matches;
++}
++
+ }  // namespace
+ 
+ TEST_CASE("A renamed entry is found by its new name", "[filesystem][vfs]") {
+@@ -186,3 +260,92 @@ TEST_CASE("A renamed entry can be deleted by its new name", "[filesystem][vfs]")
+   CHECK_FALSE(store.HostExists("2.TSV"));
+   CHECK(store.ReadHost("backup.tmp") == "old backup");
+ }
++
++TEST_CASE("Rename onto a case variant replaces it", "[filesystem][vfs]") {
++  // The guest replaces 1.tsv, and the folder holds 1.TSV. On a case-sensitive host the rename
++  // writes a second file, so the replaced one must be removed; on a case-insensitive host the
++  // rename already replaced it, and nothing else may be removed.
++  RenameStore store;
++  store.Write("save.tmp", "new save");
++  REQUIRE(store.Rename("save.tmp", "1.tsv", true) == X_STATUS_SUCCESS);
++  CHECK(store.Names() == std::vector<std::string>{"1.tsv", "backup.tmp", "sub"});
++  CHECK(CaseMatches(store.HostNames(), "1.tsv").size() == 1);
++  CHECK(store.ReadHost("1.tsv") == "new save");
++  CHECK_FALSE(store.HostExists("save.tmp"));
++  CHECK(store.ReadHost("backup.tmp") == "old backup");
++
++  store.Mount();
++  CHECK(CaseMatches(store.Names(), "1.tsv").size() == 1);
++  Entry* entry = store.Lookup("1.TSV");
++  REQUIRE(entry != nullptr);
++  CHECK(store.ReadHost(entry->name()) == "new save");
++}
++
++TEST_CASE("On a case-insensitive host a replace onto a case variant deletes nothing",
++          "[filesystem][vfs]") {
++  if (HostIgnoresCase()) {
++    SKIP("this host ignores case: the test above runs this case for real");
++  }
++  // Simulated on a case-sensitive host. On a case-insensitive host 1.TSV and 1.tsv are one file,
++  // which the rename replaces with the new save; removing the variant there would remove the new
++  // save. Here 1.TSV becomes a link to 1.tsv after the mount, so both spellings name one file as
++  // they would there. A removal would delete the link, which the checks below see.
++  RenameStore store({{"1.TSV", "first save"}});
++  std::error_code ec;
++  std::filesystem::rename(store.root() / "1.TSV", store.root() / "1.tsv", ec);
++  REQUIRE_FALSE(ec);
++  std::filesystem::create_symlink("1.tsv", store.root() / "1.TSV", ec);
++  if (ec) {
++    SKIP("this host cannot create symbolic links: " + ec.message());
++  }
++  REQUIRE(store.ReadHost("1.TSV") == "first save");
++
++  store.Write("save.tmp", "new save");
++  REQUIRE(store.Rename("save.tmp", "1.tsv", true) == X_STATUS_SUCCESS);
++  CHECK(std::filesystem::is_symlink(std::filesystem::symlink_status(store.root() / "1.TSV")));
++  CHECK(store.ReadHost("1.tsv") == "new save");
++  CHECK(store.ReadHost("1.TSV") == "new save");
++  CHECK(store.Names() == std::vector<std::string>{"1.tsv", "sub"});
++}
++
++TEST_CASE("Two case variants at mount are both listed, with a warning", "[filesystem][vfs]") {
++  if (HostIgnoresCase()) {
++    SKIP("this host ignores case: a folder cannot hold two case variants");
++  }
++  std::string log;
++  {
++    FsLogCapture capture;
++    RenameStore store({{"0.tsv", "hand copy"}, {"0.TSV", "game save"}});
++    log = capture.text();
++    // Both are children, and an open by either spelling finds the same one of them.
++    CHECK(store.Names() == std::vector<std::string>{"0.TSV", "0.tsv", "sub"});
++    CHECK(store.Lookup("0.tsv") == store.Lookup("0.TSV"));
++
++    SECTION("a rename onto the name replaces both") {
++      store.device().EnableChangeTracking();
++      store.Write("save.tmp", "new save");
++      REQUIRE(store.Rename("save.tmp", "0.TSV", true) == X_STATUS_SUCCESS);
++      CHECK(store.Names() == std::vector<std::string>{"0.TSV", "sub"});
++      CHECK(store.HostNames() == std::vector<std::string>{"0.TSV", "sub"});
++      CHECK(store.ReadHost("0.TSV") == "new save");
++      // The flush that follows (XamContentClose) syncs the new save and the folder, and the
++      // removed variant is not one of its files.
++      const auto flushed = store.device().FlushChanges();
++      CHECK(flushed.files == 1);
++      CHECK(flushed.folders == 1);
++      CHECK(flushed.failed == 0);
++    }
++    SECTION("Torchlight's save leaves one save and one backup") {
++      store.Write("save.tmp", "new save");
++      REQUIRE(store.Rename("0.TSV", "backup.tmp", true) == X_STATUS_SUCCESS);
++      REQUIRE(store.Rename("save.tmp", "0.TSV", true) == X_STATUS_SUCCESS);
++      CHECK(store.HostNames() == std::vector<std::string>{"0.TSV", "backup.tmp", "sub"});
++      CHECK(store.ReadHost("0.TSV") == "new save");
++      const std::string backup = store.ReadHost("backup.tmp");
++      CHECK((backup == "hand copy" || backup == "game save"));
++      store.Mount();
++      CHECK(store.Names() == std::vector<std::string>{"0.TSV", "backup.tmp", "sub"});
++    }
++  }
++  CHECK(log.find("differ only in case: '0.TSV', '0.tsv'") != std::string::npos);
++}

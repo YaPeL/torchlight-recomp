@@ -64,6 +64,7 @@ Other topics:
 | `non_argument_as_local` and values passed in r11/r12 (D26) | The funclets' frame in r12 and the stack probe's size are lost: deadlock seen | Issue, with fix directions |
 | Guest file flushes are no-ops (D27) | `NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush` return success without flushing | Issue and PR; our patch 27 |
 | Every missing file is a warning (D28) | `NtCreateFile` logs each not-found open at WARN | Issue and PR; our patch 28 |
+| Case variants of one name in a host folder (D30) | A replace onto another spelling leaves the old file on case-sensitive hosts | Issue and PR; our patch 29 |
 | `chrono_test` fails at the NT epoch on Linux (D29) | 1601 does not fit libstdc++'s nanosecond `system_clock` | Issue |
 | `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
 | `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
@@ -896,6 +897,38 @@ libstdc++, or convert through a `sys_time` with a coarser duration (seconds or 1
 
 ---
 
+### D30. Filesystem: names that differ only in case in a host folder
+
+Asked for by the owner after a reading of the code by the render agent (2026-10-09). Checked on
+`bd833a2` with our series.
+
+**Issue: `[Filesystem]: a rename that replaces a case variant leaves the old file on case-sensitive hosts`**
+
+Host folders mounted by `HostPathDevice` can hold names that differ only in case (`0.tsv` and
+`0.TSV`), for example a save copied by hand. The guest sees one name. `PopulateEntry` adds both,
+`Entry::GetChild` returns the first match in the host's listing order, and an enumeration lists
+both, so a title lists one save twice and never opens the other.
+
+`Entry::Rename` with `replace_existing` takes `GetChild(new_name)` as the replaced entry. When its
+spelling differs from `new_name`, `HostPathEntry::RenameEntryInternal` renames to the new
+spelling, which on a case-sensitive host creates a second file. `Rename` then drops the replaced
+entry from the tree as if the host had replaced it. The old file stays on disk and is back at the
+next mount.
+
+**PR: `fix(filesystem): a replacing rename removes the destination's case variants`**
+
+Fixes #NNN. `Rename` collects every sibling that matches the new name ignoring case (each must
+still be a file with no open handle). `RenameEntryInternal` gets them and, after the host rename
+succeeded, removes the host file of each one that is not `std::filesystem::equivalent` to the
+destination. On a case-insensitive host (Windows, macOS's default APFS) the variant is the file
+just replaced, now holding the new data, so nothing is removed there; an error from `equivalent`
+also keeps the file. The mount logs a warning per group of case variants. Tests: a rename onto a
+case variant (every host), the same with the case-insensitive host simulated on Linux (the
+replaced spelling made a symbolic link to the destination after the mount), and two variants at
+mount. Our patch 29 (`patches/README.md`).
+
+---
+
 ### D22. Codegen: `fctiw`/`fctid` ignore the rounding mode on ARM64
 
 The macOS port found it by reading the code (`docs/macos-port.md` on `docs/macos-port-plan`,
@@ -1215,7 +1248,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 26 | `rexglue-log-rotation.patch` | `sdk/rexglue-next` | `bd833a2` |
 | 27 | `rexglue-guest-file-flush.patch` (D27) | `sdk/guest-file-flush` | `bd833a2` |
 | 28 | `rexglue-quiet-missing-files.patch` (D28) | `sdk/series-review` | `bd833a2` |
-| 29 | next free | | |
+| 29 | `rexglue-case-variants.patch` (D30) | `sdk/case-variants` | `bd833a2` |
+| 30 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
