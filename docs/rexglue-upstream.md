@@ -752,43 +752,59 @@ We keep `non_argument_as_local` off.
 From the render work (2026-10-08), checked here on `bd833a2`. The macOS port asked about
 `F_FULLFSYNC` for saves, which is what turned this up.
 
-**Issue: `[Kernel]: NtFlushBuffersFile, FlushFileBuffers and XamContentFlush do not flush`**
+**Issue: `[Kernel]: saves are never flushed: XamContentClose, XamContentFlush, NtFlushBuffersFile and FlushFileBuffers do not write through`**
 
-A title that flushes its save file asks for durability and gets none:
-- `NtFlushBuffersFile_entry` (`src/kernel/xboxkrnl/xboxkrnl_io.cpp`) only fills the status block
-  with success.
+A title that saves trusts that a closed (or flushed) content package is on the disk. Today it is
+only in the host's cache:
+
+- `XamContentClose_entry` (`src/kernel/xam/xam_content.cpp`) unmounts the package and nothing else.
+- `XamContentFlush_entry` completes the overlapped with success.
+- `NtFlushBuffersFile_entry` (`src/kernel/xboxkrnl/xboxkrnl_io.cpp`) fills the status block with
+  success.
 - The CRT's `FlushFileBuffers_entry` (`src/kernel/crt/file.cpp`) returns 1.
-- `XamContentFlush_entry` (`src/kernel/xam/xam_content.cpp`) completes the overlapped with success.
 
-The host side exists: `FileHandle::Flush` (`fsync` on POSIX, `FlushFileBuffers` on Windows). But
-nothing on a guest path calls it, so a power loss or a crash after a save can lose data the guest
-believes is on disk. Torchlight calls `NtFlushBuffersFile` and `XamContentFlush` once each when
-saving.
+`FileHandle::Flush` (`fsync`, `FlushFileBuffers`) exists, but no guest path calls it. A crash or a
+power loss right after a save can lose it.
 
-**PR: `fix(kernel): guest flushes reach the host file`**
+What a real title does, measured with Torchlight (a guided save under `strace`, with a first
+version that flushed only the handles still open):
+- It writes its save files and closes them, then calls `XamContentFlush` and `XamContentClose`.
+  By then nothing is open, so flushing open handles does nothing: the `strace` showed no `fsync`
+  at all.
+- Its one `NtFlushBuffersFile` call site is not on the save path.
+- The save replaces the character file by name (`4.tsv` before, `4.TSV` after). So the rename and
+  the removal must be durable too, which means the folder.
+
+So the commit point is the content close, as on the console, and it has to cover files written
+through handles closed long before.
+
+**PR: `fix(kernel): closing or flushing a content package writes it through to the disk`**
 
 Fixes #NNN.
-- `NtFlushBuffersFile` and `FlushFileBuffers` look up the `XFile`, take its VFS file and call
-  `FileHandle::Flush`. They return the host error if that fails.
-- `XamContentFlush` (and the close of a content package) flushes the files open under that
-  content root, then the root directory itself on POSIX, so renames are durable too.
-- On Apple, `Flush` uses `fcntl(F_FULLFSYNC)`, since `fsync` there does not reach the disk, and
-  falls back to `fsync` where `F_FULLFSYNC` is not supported.
+- A content package's `HostPathDevice` tracks, from mount, the host files written, created or
+  renamed into place, and the folders whose entries changed. Tracking is opt-in per device, so
+  game data and other writable devices are unaffected.
+- `XamContentFlush` and `XamContentClose` (before the unmount) flush each of those files, reopening
+  it by path, then each folder, and forget them.
+- `NtFlushBuffersFile` and `FlushFileBuffers` flush their handle's file.
+- `FileHandle::Flush` returns its result. A new `FlushFolder` does the same for a folder: `fsync`,
+  with `F_FULLFSYNC` first on Apple because `fsync` there stops at the drive's cache. On Windows,
+  NTFS journals folder entries.
 
-Test: a VFS unit test that writes through a host-path device, calls the flush path, and checks the
-host `Flush` was called. A mock `FileHandle` can count the calls.
+The other design, flushing every written file on close, does not depend on the title closing its
+content. But it would force the disk for every temporary file of every title, which the console
+does not do.
 
-Cost, measured here: an `fsync` of a save-sized file (110-290 KB) on an NVMe disk (ext4) takes 1 ms
-in the median and under 2 ms at the 90th percentile, with rare outliers up to 0.23 s when the
-journal commits. A title flushes once or a few times per save. Torchlight has one
-`NtFlushBuffersFile` and one `XamContentFlush`, and its autosaves happen during zone changes,
-behind a loading screen. So the cost is negligible next to losing a save.
+Test: VFS unit tests with a counting `FileHandle` and a real host folder. The case Torchlight hits
+is in them: a temporary file written, the old one removed, the temporary renamed into place, one
+file and one folder flushed.
 
-Our patch 27 (`patches/README.md`), approved by the user on 2026-10-08. It flushes only the
-package's open files and leaves out the directory flush above.
+Cost: an `fsync` of a 110-290 KB file on an NVMe disk (ext4) takes 1 ms in the median and under
+2 ms at the 90th percentile, with rare outliers up to 0.23 s when the journal commits. A save
+flushes the files it changed and their folder, once per save. Torchlight's autosaves happen
+during zone changes, behind a loading screen.
 
-Why upstream should care: every title that saves calls one of these exports and trusts the
-result. Until now, on every platform, a crash or a power loss right after a save could lose it.
+Our patch 27 (`patches/README.md`), approved by the user on 2026-10-08.
 
 ---
 
@@ -1155,10 +1171,12 @@ these agents lives here and in `patches/README.md`.
     in `docs/macos-port.md`. On Apple, `FileHandle::Flush` calls `fcntl(F_FULLFSYNC)` and falls
     back to `fsync`, and only macOS can show that path.
     1. Build the SDK tests with the series through 27 and run `unit_tests "[flush]"`. Expected: 5
-       cases pass. The last one flushes a real file on APFS through `F_FULLFSYNC`.
+       cases pass. Four of them flush real files and folders on APFS through `F_FULLFSYNC`.
     2. In a game save (any zone change autosaves), run
        `sudo fs_usage -w -f filesys <pid of the game> | grep -i -E "fsync|fcntl"` and look for the
-       `F_FULLFSYNC` calls on the save files: one per flushed file. Note how long each takes,
+       `F_FULLFSYNC` calls at the save: one per changed save file plus the save folder, at
+       `XamContentClose`. The game log says `Content <root>: flushed N files and M folders to
+       disk`. Note how long each takes,
        and whether the save stalls visibly. On Linux an `fsync` of a save-sized file takes about 1 ms
        on an NVMe disk (rare outliers up to 0.23 s). `F_FULLFSYNC` is expected to be slower, since it
        also empties the drive's cache.
