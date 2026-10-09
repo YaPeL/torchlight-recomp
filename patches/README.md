@@ -37,7 +37,8 @@ in number order; a branch adds its own line at its number's place.
 | 25 | `rexglue-mtfsf-field-mask.patch` | `develop` | In the series |
 | 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
 | 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
-| 28 | | | Next free number |
+| 28 | `rexglue-quiet-missing-files.patch` | `sdk/series-review` | Pending integration |
+| 29 | | | Next free number |
 
 ## The patches
 
@@ -380,5 +381,17 @@ in number order; a branch adds its own line at its number's place.
     in open play would need the flushes on a worker thread first. Not specific to any GPU.
     Candidate for an upstream report (D27 in `docs/rexglue-upstream.md`): it affects every title
     that saves.
+
+28. `rexglue-quiet-missing-files.patch`: `NtCreateFile` logged every failed open at WARN, including
+    a path that does not exist, which is how titles probe for optional files. With a PC mod pack
+    (29 mods) Torchlight looks each data file up in every mod's folder: about 124,000 lines
+    `[NtCreateFile] FAILED: path='tlmods:\<mod>\MEDIA\...' -> 0xc000000f` in the first 45 s of
+    startup, 20 MB of log before the game was usable (2026-10-09, the mods agent). The duplicate
+    filter planned in `docs/crash-handling.md` would not catch them: each line has its own path.
+    Now `X_STATUS_NO_SUCH_FILE`, `X_STATUS_OBJECT_NAME_NOT_FOUND` and
+    `X_STATUS_OBJECT_PATH_NOT_FOUND` are logged at DEBUG (off by default, `log_level` is `info`)
+    and every other failure stays at WARN. `NtOpenFile` goes through the same code. No unit test:
+    the export needs the kernel state; the check is the mod pack's startup, whose log loses those
+    lines. Not specific to any GPU. Upstream draft D28.
 
 The observation and diagnostic patches there were before remain in the git history.

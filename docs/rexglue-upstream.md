@@ -62,7 +62,8 @@ Other topics:
 | `*.*` in the wildcard engine | Same as patch 20 | See patch 20 |
 | `non_volatile_as_local` with `setjmp` (D21) | The generated `setjmp` saves only `ctx`; the localized r14-r31 are lost across a `longjmp` | Issue, for when we want that flag |
 | `non_argument_as_local` and values passed in r11/r12 (D26) | The funclets' frame in r12 and the stack probe's size are lost: deadlock seen | Issue, with fix directions |
-| Guest file flushes are no-ops (D27) | `NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush` return success without flushing | Issue and PR; a patch of ours if the user agrees |
+| Guest file flushes are no-ops (D27) | `NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush` return success without flushing | Issue and PR; our patch 27 |
+| Every missing file is a warning (D28) | `NtCreateFile` logs each not-found open at WARN | Issue and PR; our patch 28 |
 | `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
 | `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
@@ -833,6 +834,26 @@ Our patch 27 (`patches/README.md`), approved by the user on 2026-10-08.
 
 ---
 
+### D28. Kernel: every open of a missing file is logged as a warning
+
+Found with a PC mod pack in Torchlight (2026-10-09). Checked on `bd833a2`.
+
+**Issue: `[Kernel]: NtCreateFile logs "file not found" at WARN, which floods the log when a title probes for files`**
+
+`NtCreateFile_entry` (`src/kernel/xboxkrnl/xboxkrnl_io.cpp`) logs every failed open with
+`REXKRNL_IMPORT_FAIL`, which is WARN. A missing path is an ordinary result: titles probe for
+optional files, and a title with mod or patch folders looks each data file up in every folder.
+With a 29-mod pack, Torchlight wrote about 124,000 such lines, 20 MB, in the first 45 s of
+startup. They also hide the failures that matter.
+
+**PR: `fix(kernel): log NtCreateFile's not-found results at debug`**
+
+Fixes #NNN. `X_STATUS_NO_SUCH_FILE`, `X_STATUS_OBJECT_NAME_NOT_FOUND` and
+`X_STATUS_OBJECT_PATH_NOT_FOUND` go to DEBUG. Every other failure stays at WARN. `NtOpenFile`
+shares the code. Our patch 28 (`patches/README.md`).
+
+---
+
 ### D22. Codegen: `fctiw`/`fctid` ignore the rounding mode on ARM64
 
 The macOS port found it by reading the code (`docs/macos-port.md` on `docs/macos-port-plan`,
@@ -1139,7 +1160,11 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 24 | `rexglue-arm64-mffs-rounding.patch` (D23) | `sdk/rexglue-next` | `bd833a2` |
 | 25 | `rexglue-mtfsf-field-mask.patch` (D24) | `sdk/rexglue-next` | `bd833a2` |
 | 26 | `rexglue-log-rotation.patch` | `sdk/rexglue-next` | `bd833a2` |
-| 27 | next free | | |
+| 27 | `rexglue-guest-file-flush.patch` (D27) | `sdk/guest-file-flush` | `bd833a2` |
+| 28 | `rexglue-quiet-missing-files.patch` (D28) | `sdk/series-review` | `bd833a2` |
+| 29 | next free | | |
+
+22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
 Checked with `git apply --check`: 20 and 21 apply on top of the rebased series (`bd833a2`), and so
 does 22; the three touch different files (`src/filesystem`, `thirdparty/CMakeLists.txt`,
