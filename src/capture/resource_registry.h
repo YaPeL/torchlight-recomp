@@ -40,6 +40,12 @@ class ResourceRegistry {
   // since (bucket_versions_): the guest's render thread looks up the same few resources for every
   // draw, and buffers created and destroyed elsewhere do not invalidate the rest of the cache.
   std::optional<BufferInfo> Lookup(commands::ResourceKind kind, uint32_t address) const;
+  // Changes with every creation, destruction or renewal at `address` (and at the other addresses
+  // of its cache bucket): an answer looked up after reading the stamp stays valid while the stamp
+  // reads the same.
+  uint64_t Stamp(uint32_t address) const {
+    return bucket_versions_[Bucket(address)].load(std::memory_order_acquire);
+  }
 
   struct Renewal {
     commands::ResourceId id;                     // current identity

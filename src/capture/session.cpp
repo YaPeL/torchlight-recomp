@@ -193,7 +193,11 @@ void Session::CutLiveFrame(bool measured) {
     for (auto& t : live_pending_textures_) live_frame_.textures.push_back(std::move(t));
     for (const auto& id : live_pending_destroyed_) {
       live_frame_.destroyed.push_back(id);
-      live_buffers_.erase(BufferKey(id));
+      if (BufferSlot* slot = buffer_slots_.find(id.guest_address);
+          slot && slot->live_generation == id.generation) {
+        slot->live = {};
+        slot->live_generation = 0;
+      }
       live_described_textures_.erase(BufferKey(id));
       live_sent_programs_.erase(BufferKey(id));
     }
@@ -214,7 +218,7 @@ void Session::CutLiveFrame(bool measured) {
 Session::RecordedContent Session::RecordContent(const commands::ResourceId& id,
                                                 uint32_t version_address, const uint8_t* data,
                                                 size_t size, commands::BlobEndian endian,
-                                                uint8_t endian_raw) {
+                                                uint8_t endian_raw, LiveBuffer* live_buffer) {
   ProducerTimer timer(producer_times_, ProducerSection::kResources, measuring());
   RecordedContent r;
   if (armed()) r.capture = AddBlob(data, size, endian, endian_raw);
@@ -222,7 +226,7 @@ Session::RecordedContent Session::RecordContent(const commands::ResourceId& id,
     uint32_t version = ContentVersion(version_address);
     bool buffer = id.kind == commands::ResourceKind::kVertexBuffer ||
                   id.kind == commands::ResourceKind::kIndexBuffer;
-    LiveBuffer* cached = buffer ? &live_buffers_[BufferKey(id)] : nullptr;
+    LiveBuffer* cached = live_buffer ? live_buffer : buffer ? &LiveBufferOf(id) : nullptr;
     live::SnapshotStore::Content content;
     if (cached && cached->content && cached->version == version) {
       content = cached->content;
@@ -487,6 +491,34 @@ std::optional<BufferInfo> Session::Lookup(commands::ResourceKind kind, uint32_t 
   return registry_.Lookup(kind, guest_address);
 }
 
+std::optional<Session::DrawBufferEntry> Session::DrawBuffer(commands::ResourceKind kind,
+                                                            uint32_t guest_address) {
+  BufferSlot& slot = buffer_slots_[guest_address];
+  // The stamp first: a change after it is read makes the next call ask the registry again.
+  const uint64_t stamp = registry_.Stamp(guest_address);
+  if (!slot.looked_up || slot.stamp != stamp || slot.kind != kind) {
+    slot.info = registry_.Lookup(kind, guest_address);
+    slot.stamp = stamp;
+    slot.kind = kind;
+    slot.looked_up = true;
+  }
+  if (!slot.info) return std::nullopt;
+  if (slot.live_generation != slot.info->id.generation) {
+    slot.live = {};
+    slot.live_generation = slot.info->id.generation;
+  }
+  return DrawBufferEntry{*slot.info, &slot.live};
+}
+
+Session::LiveBuffer& Session::LiveBufferOf(const commands::ResourceId& id) {
+  BufferSlot& slot = buffer_slots_[id.guest_address];
+  if (slot.live_generation != id.generation) {
+    slot.live = {};
+    slot.live_generation = id.generation;
+  }
+  return slot.live;
+}
+
 bool Session::HasProgramSource(const std::string& name) {
   std::lock_guard<live::MeasuredMutex> lock(registry_mutex_);
   return program_sources_.count(name) != 0;
@@ -512,11 +544,11 @@ commands::Hash Session::AddBlob(const uint8_t* data, size_t size, commands::Blob
   return h;
 }
 
-void Session::AddVertexBuffer(const BufferInfo& info) {
+void Session::AddVertexBuffer(const BufferInfo& info, LiveBuffer* live_buffer) {
   auto key = std::make_tuple(info.id.guest_address, info.id.generation);
   commands::VertexBufferDesc desc{info.id, info.element_size, info.count, info.usage};
   if (live()) {
-    LiveBuffer& cached = live_buffers_[BufferKey(info.id)];
+    LiveBuffer& cached = live_buffer ? *live_buffer : LiveBufferOf(info.id);
     if (!cached.described) {
       cached.described = true;
       live_frame_.vertex_buffers.push_back(desc);
@@ -527,11 +559,11 @@ void Session::AddVertexBuffer(const BufferInfo& info) {
   }
 }
 
-void Session::AddIndexBuffer(const BufferInfo& info) {
+void Session::AddIndexBuffer(const BufferInfo& info, LiveBuffer* live_buffer) {
   auto key = std::make_tuple(info.id.guest_address, info.id.generation);
   commands::IndexBufferDesc desc{info.id, info.element_size, info.count, info.usage};
   if (live()) {
-    LiveBuffer& cached = live_buffers_[BufferKey(info.id)];
+    LiveBuffer& cached = live_buffer ? *live_buffer : LiveBufferOf(info.id);
     if (!cached.described) {
       cached.described = true;
       live_frame_.index_buffers.push_back(desc);

@@ -148,6 +148,52 @@ int main() {
     Check(f2->vertex_buffers.empty(), "description not sent again");
     Check(f2->contents[1].content->bytes[0] == 2, "new version's bytes");
   }
+  // Draw buffers (Session::DrawBuffer): the registry's answer and the live state are kept per
+  // address until the registry changes there; a buffer freed and created again at the same
+  // address is a new generation with a fresh live state, even when its content version restarts.
+  {
+    queue.Pop(std::chrono::milliseconds(0));
+    const uint32_t address = 0xA400;
+    capture::BufferInfo created;
+    created.element_size = 12;
+    created.count = 4;
+    s.OnCreated(ResourceKind::kVertexBuffer, address, created);
+    auto e1 = s.DrawBuffer(ResourceKind::kVertexBuffer, address);
+    Check(e1 && e1->info.id.generation != 0 && e1->info.count == 4, "registered buffer found");
+    Check(!s.DrawBuffer(ResourceKind::kIndexBuffer, address), "another kind at the address: none");
+    const ResourceId gen1 = e1->info.id;
+    const uint8_t bytes1[48] = {1}, bytes2[48] = {2};
+    e1 = s.DrawBuffer(ResourceKind::kVertexBuffer, address);
+    s.AddVertexBuffer(e1->info, e1->live);
+    auto c1 = s.RecordContent(gen1, address, bytes1, sizeof(bytes1), BlobEndian::kVertexFetch, 2,
+                              e1->live);
+    // A change at another address of the same cache bucket only makes it ask again.
+    s.OnCreated(ResourceKind::kVertexBuffer, address + 4 * 256, created);
+    auto again = s.DrawBuffer(ResourceKind::kVertexBuffer, address);
+    Check(again && again->info.id == gen1 && again->live->described, "same buffer, same state");
+    s.OnSwapBegin();
+    auto f1 = queue.Pop(std::chrono::milliseconds(100));
+    Check(f1 && f1->vertex_buffers.size() == 1 && f1->contents.size() == 1, "first generation sent");
+
+    s.OnDestroyed(address);
+    Check(!s.DrawBuffer(ResourceKind::kVertexBuffer, address), "destroyed: none");
+    s.OnCreated(ResourceKind::kVertexBuffer, address, created);
+    auto e2 = s.DrawBuffer(ResourceKind::kVertexBuffer, address);
+    Check(e2 && e2->info.id.generation == gen1.generation + 1, "new generation at the address");
+    Check(!e2->live->described && !e2->live->content, "new generation: fresh live state");
+    s.AddVertexBuffer(e2->info, e2->live);
+    auto c2 = s.RecordContent(e2->info.id, address, bytes2, sizeof(bytes2),
+                              BlobEndian::kVertexFetch, 2, e2->live);
+    Check(c2.live != c1.live, "new generation: its own snapshot, not the old one's");
+    s.OnSwapBegin();
+    auto f2 = queue.Pop(std::chrono::milliseconds(100));
+    Check(f2 && f2->vertex_buffers.size() == 1 && f2->vertex_buffers[0].id == e2->info.id,
+          "new generation described");
+    Check(f2 && f2->contents.size() == 1 && f2->contents[0].content->bytes[0] == 2,
+          "new generation's bytes");
+    s.OnDestroyed(address);
+    s.OnDestroyed(address + 4 * 256);
+  }
   // Descriptions already in the live stream are not read again (LiveTextureDescribed /
   // LiveDeclarationDescribed), and a resource freed and created again at the same address, or a
   // declaration changed in place, is described again.
