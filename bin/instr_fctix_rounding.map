@@ -16,3 +16,5 @@
 000000f0 t test_fctid_rounding_7
 00000100 t test_fctid_rounding_8
 00000110 t test_fctid_rounding_9
+00000120 t test_fctid_rounding_10
+00000130 t test_fctid_rounding_11
