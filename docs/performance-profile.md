@@ -264,6 +264,40 @@ run-to-run spread for the 1 % low. Building the pieces costs 51 ms in total on e
 (27 ms with one box per bucket), spread over the loading frames, which already take 400 ms or
 more; none is built while playing.
 
+### Producer cuts (2026-10-09)
+
+The producer was 22 % of the guest render thread in the town square's DWARF profile (develop with
+per-piece bucket culling, 2026-10-08): reading the guest state for every RenderSystem call has to
+stay on that thread, so the cuts are to what the producer does around those reads. Each is its own
+commit (perf/producer-cuts-2):
+
+| Cut | Profile share before |
+|---|---|
+| RenderSystem call counters: a relaxed load and store, not a locked increment | ~1 % |
+| Per-hook timing (ProducerTimer, HookTimer, their summaries) off unless `--native_producer_timing`; the frame time statistics and the slow and long frame reports stay on | ~2 % |
+| The guest std::map walk (ForEachNode) on a fixed host stack, not a vector per call | ~1 % |
+| The resource registry's lookup cache invalidated per bucket of addresses, not whole on every creation or destruction | ~1.5 % |
+| Flat hash maps (capture/flat_map.h) for the per-draw lookups: content versions, live buffers, the sets of what the live stream holds | ~2.8 % |
+
+The vectors copied into each SetConstants (the constant ranges' data, the auto constants) stay:
+they belong to the command handed to the consumer thread. The state shadow stays a
+std::unordered_map: the argument memos keep pointers into it.
+
+Fixed-floor saved game, step overlay, draw skip on, two runs each (the bubble monsters cast their
+lightning in all four fights):
+
+| | develop | Producer cuts |
+|---|---|---|
+| Town square, p99 (1 % low) | 11.12, 11.10 ms (89.9, 90.1) | 10.49, 10.45 ms (95.3, 95.7) |
+| Town square, FPS | 126.3, 126.7 | 133.9, 134.9 |
+| Fight, p99 (1 % low) | 9.95, 9.72 ms (100.5, 102.9) | 9.20, 8.77 ms (108.7, 114.0) |
+| Fight, FPS | 156.7, 160.8 | 170.8, 167.9 |
+| Standing still, FPS | 194.7, 203.2 | 209.3, 214.9 |
+
+About +6 % in the town square (FPS and 1 % low), +7 % FPS and +9.5 % 1 % low in the fight, and
++7 % FPS standing still: some 0.5 ms less per frame on the guest's render thread, as the profile
+shares predicted.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
