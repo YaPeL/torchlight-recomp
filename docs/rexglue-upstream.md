@@ -884,7 +884,7 @@ That covers about 1677 to 2262, so 1601 overflows:
 
 MSVC's `system_clock` counts 100 ns and libc++'s counts microseconds. Both reach 1601. On macOS
 ARM64 (Apple clang, libc++) `chrono_test` passes, the NT epoch included (our macOS port,
-2026-10-09, `docs/macos-port.md`), so the failure is Linux/libstdc++ only. Windows should pass
+2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`), so the failure is Linux/libstdc++ only. Windows should pass
 too; not run there yet. The test came in with `952828d`
 (2026-02-19), the same day as `4c981fe` ("replace date:: with std::chrono::"). It was not built at
 those commits, so "since then" is a reading.
@@ -930,7 +930,8 @@ result happens to be right there, but the check is still wrong and the out-of-ra
 undefined in C++. `fctiw` and `fctiwz` use `>=` with `INT_MAX`, which is exact in a double, and
 are right.
 
-Run on ARM64 by our macOS port (2026-10-09, `docs/macos-port.md`), with patch 23's tests:
+Run on ARM64 by our macOS port (2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`), with patch
+23's tests:
 - without the fix, 12 of the 20 `fctix_rounding` cases fail: the rounding cases (2.5 and -2.5 to
   nearest, 2.7 and -2.7 toward zero, -2.5 up, 2.5 down), each for `fctiw` and `fctid`. The two
   2^63 cases pass, for the reason above. On x86-64, 2 of 20 fail: only the 2^63 cases;
@@ -1250,8 +1251,8 @@ these agents lives here and in `patches/README.md`.
     x86-64. The ARM64 bugs are now drafts D22, D23 and D25. D24 (`mtfsf` mask) was found here on
     the way; it affects every architecture. The `tests/ppc` suite covers none of them, so
     `ppc_tests` passing on ARM64 does not clear them.
-  - **Patches 23-25 (2026-10-08, revised 2026-10-09): results received** (`docs/macos-port.md`,
-    6927cec): as expected, except `fctix_rounding` without the fixes, 12 of 20 on ARM64 and not
+  - **Patches 23-25 (2026-10-08, revised 2026-10-09): results received** (`docs/macos-port.md`
+    on `docs/macos-port-plan`, 6927cec): as expected, except `fctix_rounding` without the fixes, 12 of 20 on ARM64 and not
     14 (the 2^63 cases pass there, D22). With the fixes, `ppc_tests` 1492 of 1492, `unit_tests`
     only `output_stamp_test.cpp:227-228`, `chrono_test` passes (D29), `[flush]` 6 of 6. The steps
     stay below for a rerun after a series change. On x86-64 the rounding tests of 23 and the tests of 24
@@ -1280,12 +1281,11 @@ these agents lives here and in `patches/README.md`.
        `output_stamp_test.cpp:227-228`). On Linux x86-64, Release, `chrono_test.cpp` also fails at
        the NT epoch (1601), on a clean `bd833a2` too (D29); it passes on macOS.
     4. Anything else is a finding: send the failing cases' output.
-  - **Patch 27 (guest file flushes, 2026-10-08): please check on macOS** and write the result
-    in `docs/macos-port.md`. On Apple, `FileHandle::Flush` calls `fcntl(F_FULLFSYNC)` and falls
-    back to `fsync`, and only macOS can show that path.
-    1. Build the SDK tests with the series through 27 and run `unit_tests "[flush]"`. Expected: 6
-       cases pass. Five of them flush real files and folders on APFS through `F_FULLFSYNC`.
-    2. In a game save (any zone change autosaves), run
+  - **Patch 27 (guest file flushes, 2026-10-08): only the check in a real save is open** (MAC.7).
+    `unit_tests "[flush]"` already passes 6 of 6 on APFS (above). On Apple, `FileHandle::Flush`
+    calls `fcntl(F_FULLFSYNC)` and falls back to `fsync`, and only macOS can show that path. When
+    the game runs there, write the result in `docs/macos-port.md`:
+    1. In a game save (any zone change autosaves), run
        `sudo fs_usage -w -f filesys <pid of the game> | grep -i -E "fsync|fcntl"` and look for the
        `F_FULLFSYNC` calls at the save: one per changed save file plus the save folder, at
        `XamContentClose`. The game log says `Content <root>: flushed N files and M folders to
@@ -1293,7 +1293,7 @@ these agents lives here and in `patches/README.md`.
        NVMe) Torchlight's save-and-exit spent about 140 ms in flushes, 68-69 ms for each of the
        two larger files (D27). `F_FULLFSYNC` is expected to be slower, since it also empties the
        drive's cache.
-    3. Anything unexpected is a finding: `F_FULLFSYNC` failing on APFS, or the game reporting a
+    2. Anything unexpected is a finding: `F_FULLFSYNC` failing on APFS, or the game reporting a
        save error.
 - **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
   22. When you next touch the series, ask for a number here first.
