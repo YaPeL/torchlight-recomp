@@ -44,7 +44,8 @@ int main() {
   SetConstants constants;
   constants.stage = {uint8_t(ProgramStage::kVertex), 0};
   constants.mask = 0xFFFF;
-  constants.floats.push_back({0, 0, 0, 4, 1, {1, 2, 3, 4}});
+  const uint32_t constant_values[] = {1, 2, 3, 4};
+  constants.AddRange(true, {0, 0, 0, 4, 1}, constant_values);
   AutoConstant world;
   world.raw_type = 3;
   world.name = "ACT_WORLDVIEWPROJ_MATRIX";

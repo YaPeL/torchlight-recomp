@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -303,7 +304,10 @@ struct ConstantRange {
   uint32_t physical_index = 0;  // index into the guest constant array (auto constants use it)
   uint32_t element_count = 0;   // floats or ints
   uint16_t variability = 0;
-  std::vector<uint32_t> data;  // raw 32-bit values (float bits or ints), host order
+  // Its raw 32-bit values (float bits or ints, host order): SetConstants::values[first, first +
+  // count). One array per command, not one per range: commands are built hundreds of times per
+  // frame.
+  uint32_t first = 0, count = 0;
   bool operator==(const ConstantRange&) const = default;
 };
 struct AutoConstant {
@@ -323,10 +327,21 @@ struct SetConstants {
   uint32_t parameters_guest_address = 0;
   std::vector<ConstantRange> floats;
   std::vector<ConstantRange> ints;
+  std::vector<uint32_t> values;  // the ranges' values (ConstantRange::first, count)
   std::vector<AutoConstant> autos;
   // GpuProgramParameters::mTransposeMatrices: matrices in `floats` were written transposed.
   // Absent in captures older than 1.2.
   std::optional<bool> transpose_matrices;
+  std::span<const uint32_t> Data(const ConstantRange& r) const {
+    return std::span<const uint32_t>(values).subspan(r.first, r.count);
+  }
+  // Appends `r` to floats or ints with `data` as its values (sets r.first and r.count).
+  void AddRange(bool floats, ConstantRange r, std::span<const uint32_t> data) {
+    r.first = uint32_t(values.size());
+    r.count = uint32_t(data.size());
+    values.insert(values.end(), data.begin(), data.end());
+    (floats ? this->floats : ints).push_back(r);
+  }
   bool operator==(const SetConstants&) const = default;
 };
 struct BufferSnapshot {

@@ -273,11 +273,24 @@ template <typename IO> void S(IO& io, SetVertexBuffers& c) {
 }
 template <typename IO> void S(IO& io, BindProgram& c) { S(io, c.stage); S(io, c.program); }
 template <typename IO> void S(IO& io, UnbindProgram& c) { S(io, c.stage); }
-template <typename IO> void S(IO& io, ConstantRange& r) {
+// A range's values are written after it, as when each range held its own vector; read back into
+// the command's one array.
+template <typename IO> void S(IO& io, SetConstants& c, ConstantRange& r) {
   io.num(r.logical_index); io.num(r.register_index); io.num(r.physical_index);
   io.num(r.element_count);
   io.num(r.variability);
-  Vec(io, r.data, [](IO& io, uint32_t& v) { io.num(v); });
+  uint64_t n = r.count;
+  io.num(n);
+  if constexpr (IO::kReading) {
+    if (n > kMaxElements) {
+      io.take(~0ull);
+      return;
+    }
+    r.first = uint32_t(c.values.size());
+    r.count = uint32_t(n);
+    c.values.resize(c.values.size() + n);
+  }
+  for (uint64_t i = 0; i < n && io.ok(); ++i) io.num(c.values[r.first + i]);
 }
 template <typename IO> void S(IO& io, AutoConstant& a) {
   io.num(a.raw_type); io.name(a.name); io.num(a.physical_index); io.num(a.element_count);
@@ -285,8 +298,9 @@ template <typename IO> void S(IO& io, AutoConstant& a) {
 }
 template <typename IO> void S(IO& io, SetConstants& c) {
   S(io, c.stage); io.num(c.mask); io.num(c.parameters_guest_address);
-  Vec(io, c.floats, [](IO& io, ConstantRange& r) { S(io, r); });
-  Vec(io, c.ints, [](IO& io, ConstantRange& r) { S(io, r); });
+  if constexpr (IO::kReading) c.values.clear();
+  Vec(io, c.floats, [&c](IO& io, ConstantRange& r) { S(io, c, r); });
+  Vec(io, c.ints, [&c](IO& io, ConstantRange& r) { S(io, c, r); });
   Vec(io, c.autos, [](IO& io, AutoConstant& a) { S(io, a); });
   // Added in 1.2 at the end of the payload: older payloads simply end before it.
   if constexpr (IO::kReading) {

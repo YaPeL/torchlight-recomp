@@ -345,9 +345,11 @@ void Frontend::Execute(const Command& command) {
           streams_ = p;
         } else if constexpr (std::is_same_v<T, SetConstants>) {
           auto& st = stages_[p.stage.value];
-          for (const auto& r : p.floats)
-            st.physical.SetRange(r.physical_index, r.data.data(),
-                                 uint32_t(std::min<size_t>(r.element_count, r.data.size())));
+          for (const auto& r : p.floats) {
+            const auto data = p.Data(r);
+            st.physical.SetRange(r.physical_index, data.data(),
+                                 uint32_t(std::min<size_t>(r.element_count, data.size())));
+          }
           st.autos = p.autos;
           if (p.transpose_matrices) {
             st.transposed = *p.transpose_matrices;
