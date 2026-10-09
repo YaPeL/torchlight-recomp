@@ -485,7 +485,7 @@ does not allow in a name (`"`, `+`, `,`, `<`, `>`, `|`; the SDK's `IsValidPath`,
 Mod-Pack's 29 folders have a comma ("JCC - Class Skills - Airbender, Paladin and Sorceress"), and
 with every mod under one device (`tlmods:\<folder>\`) the game could open nothing in them (empty
 file maps, the mods inactive, their classes left out of the index). Each mod's folder is now
-mounted as its own device, `tlmod<N>:` with N its place in the plan (`hooks/guest_path.h`
+mounted as its own device, `tlmod<NNN>:` (three digits: the file system matches devices by prefix, so `tlmod1:` would take `tlmod10:`'s paths) with NNN its place in the plan (`hooks/guest_path.h`
 `ModDeviceLink`), so the folder's name never reaches a guest path; folders whose names are not
 ASCII work the same way. Checked before the change, nothing else depends on the folder's path: a
 mod's name (in the list and in saves) is its `mod.dat` `NAME` (CMod +80, read in `sub_823A9EA0`,

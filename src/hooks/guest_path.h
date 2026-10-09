@@ -13,10 +13,15 @@ namespace torchlight::hooks {
 // "\\" is kept). Nothing when the path is already so (no copy needed).
 std::optional<std::string> WindowsSeparators(std::string_view path);
 
-// The device a mod's folder is mounted as, by its place in the registration order: "tlmod<N>:".
-// One device per mod, so the folder's own name (commas, accents, any script) never reaches the
-// guest's paths, which the kernel checks as the Xbox does (no '"', '+', ',', '<', '>', '|').
+// The device a mod's folder is mounted as, by its place in the registration order: "tlmod<NNN>:",
+// three digits (kMaxModDevices). One device per mod, so the folder's own name (commas, accents, any
+// script) never reaches the guest's paths, which the kernel checks as the Xbox does (no '"', '+',
+// ',', '<', '>', '|'). Fixed width because the file system matches devices and links by prefix,
+// the first registered winning: "tlmod1:" would also take "tlmod10:"'s paths.
+inline constexpr size_t kMaxModDevices = 1000;
 std::string ModDeviceLink(size_t index);
+// The device's mount path, "\Device\TorchlightMod<NNN>", fixed width for the same reason.
+std::string ModDeviceMount(size_t index);
 // Whether `path` is on a mod's device ("tlmod<N>:", any case).
 bool OnModDevice(std::string_view path);
 

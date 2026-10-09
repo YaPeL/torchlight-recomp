@@ -32,10 +32,9 @@ namespace abi = torchlight::guest_abi;
 namespace mods_abi = torchlight::guest_abi::mods;
 namespace ui = torchlight::guest_abi::game_ui;
 
-// Each mod's folder is its own device, "\Device\TorchlightMod<N>" linked as "tlmod<N>:"
-// (hooks/guest_path.h ModDeviceLink), N its place in the plan: the guest never sees the folder's
-// name, which may hold characters the kernel refuses in a path, as the Xbox does (a comma).
-std::string DeviceMount(size_t index) { return "\\Device\\TorchlightMod" + std::to_string(index); }
+// Each mod's folder is its own device (hooks/guest_path.h ModDeviceMount, linked as ModDeviceLink),
+// numbered by its place in the plan: the guest never sees the folder's name, which may hold
+// characters the kernel refuses in a path, as the Xbox does (a comma).
 constexpr const char* kRecordFile = "mod_set.txt";
 
 // Set by InstallMods before the guest runs; read once by RegisterMods on the game's thread.
@@ -165,12 +164,17 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
     return;
   }
   // Writable: the game compiles a mod's text .DAT into a .ADM next to it.
+  if (g_plan.mods.size() > hooks::kMaxModDevices) {
+    REXLOG_ERROR("mods: {} mods, more than {}; mods off", g_plan.mods.size(), hooks::kMaxModDevices);
+    g_plan = {};
+    return;
+  }
   for (size_t i = 0; i < g_plan.mods.size(); ++i) {
     const mods::PlannedMod& mod = g_plan.mods[i];
-    auto device = std::make_unique<rex::filesystem::HostPathDevice>(DeviceMount(i), folder / mod.folder,
+    auto device = std::make_unique<rex::filesystem::HostPathDevice>(hooks::ModDeviceMount(i), folder / mod.folder,
                                                                     /*read_only=*/false);
     if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
-        !runtime->file_system()->RegisterSymbolicLink(hooks::ModDeviceLink(i), DeviceMount(i))) {
+        !runtime->file_system()->RegisterSymbolicLink(hooks::ModDeviceLink(i), hooks::ModDeviceMount(i))) {
       REXLOG_ERROR("mods: cannot mount {}; mods off", (folder / mod.folder).string());
       g_plan = {};
       return;

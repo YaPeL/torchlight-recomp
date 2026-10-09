@@ -20,7 +20,15 @@ std::optional<std::string> WindowsSeparators(std::string_view path) {
   return out;
 }
 
-std::string ModDeviceLink(size_t index) { return "tlmod" + std::to_string(index) + ":"; }
+namespace {
+std::string ThreeDigits(size_t index) {
+  std::string digits = std::to_string(index % kMaxModDevices);
+  return std::string(3 - digits.size(), '0') + digits;
+}
+}  // namespace
+
+std::string ModDeviceLink(size_t index) { return "tlmod" + ThreeDigits(index) + ":"; }
+std::string ModDeviceMount(size_t index) { return "\\Device\\TorchlightMod" + ThreeDigits(index); }
 
 bool OnModDevice(std::string_view path) {
   static constexpr std::string_view kPrefix = "tlmod";
