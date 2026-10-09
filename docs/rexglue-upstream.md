@@ -785,8 +785,13 @@ Fixes #NNN.
   renamed into place, and the folders whose entries changed. Tracking is opt-in per device, so
   game data and other writable devices are unaffected.
 - `XamContentFlush` and `XamContentClose` (before the unmount) flush each of those files, reopening
-  it by path, then each folder, and forget them.
-- `NtFlushBuffersFile` and `FlushFileBuffers` flush their handle's file.
+  it by path, then each folder, and forget them. A renamed file or folder carries what is
+  remembered under it to the new path.
+- A failed flush is the result of `XamContentFlush` and of `XamContentClose`, which unmounts
+  either way, and is logged at WARN. On the console the close is the commit, so the title should
+  hear of it.
+- `NtFlushBuffersFile` and `FlushFileBuffers` flush their handle's file. On a handle that is not a
+  file they now fail (`X_STATUS_INVALID_HANDLE`, 0) instead of succeeding.
 - `FileHandle::Flush` returns its result. A new `FlushFolder` does the same for a folder: `fsync`,
   with `F_FULLFSYNC` first on Apple because `fsync` there stops at the drive's cache. On Windows,
   NTFS journals folder entries.
@@ -797,7 +802,8 @@ does not do.
 
 Test: VFS unit tests with a counting `FileHandle` and a real host folder. The case Torchlight hits
 is in them: a temporary file written, the old one removed, the temporary renamed into place, one
-file and one folder flushed.
+file and one folder flushed. Another writes a file in a folder, renames the folder, and expects
+the file flushed under its new path.
 
 Cost, measured in a Torchlight save-and-exit under `strace`:
 - The `XamContentFlush` flushed one file: 68 ms.
@@ -854,6 +860,11 @@ each `fesetround` mode:
 `fctiwz`/`fctidz` (`cvttsd2si`, truncation) are right on both. `tests/ppc` only covers `fctiwz`, so
 `ppc_tests` passes on ARM64 with this bug.
 
+A second, smaller bug on every architecture, found in review: `fctid` and `fctidz` saturate with
+`> double(LLONG_MAX)`, and `double(LLONG_MAX)` rounds to 2^63. So 2^63 itself is converted and
+gives INT64_MIN instead of INT64_MAX. `fctiw` and `fctiwz` use `>=` with `INT_MAX`, which is exact
+in a double, and are right.
+
 **PR: `fix(codegen): fctiw/fctid round in the current rounding mode on every architecture`**
 
 (Our patch 23, with the tests below; `patches/README.md`.)
@@ -861,8 +872,9 @@ each `fesetround` mode:
 Fixes #NNN. Convert with `std::nearbyint` (or `llrint`), which honours the FP environment that
 `storeFromGuest` sets on both architectures, and keep today's NaN and saturation handling. The
 generated code must not let the compiler fold the conversion across an `mtfsf`, so either keep it
-behind a call or compile with `-frounding-math`. Tests: `fctiw` and `fctid` of 2.5, -2.5, 3.5 and
-2.7 under each of the four modes, set with `mtfsf 0xFF`.
+behind a call or compile with `-frounding-math`. Saturate `fctid` and `fctidz` with `>=`. Tests:
+`fctiw` and `fctid` of 2.5, -2.5, 3.5 and 2.7 under each of the four modes, set with `mtfsf 0xFF`,
+and `fctid` and `fctidz` of 2^63 (the two fail without the fix on x86-64 too).
 
 ---
 
@@ -1162,12 +1174,12 @@ these agents lives here and in `patches/README.md`.
     x86-64. The ARM64 bugs are now drafts D22, D23 and D25. D24 (`mtfsf` mask) was found here on
     the way; it affects every architecture. The `tests/ppc` suite covers none of them, so
     `ppc_tests` passing on ARM64 does not clear them.
-  - **Patches 23-25 (2026-10-08): please run this on ARM64 and write the results back** in
-    `docs/macos-port.md`. On x86-64 the tests of 23 and 24 cannot fail, because native SSE2 and
-    MXCSR were right there. Only ARM64 shows those two bugs.
-    1. Take `develop`, and `sdk/ppc-test-data` at the
-       commit that adds `instr_fctix_rounding`, `instr_mffs_rounding` and `instr_mtfsf_fields`
-       (169 files of each kind). The configure stops if a `.bin` is missing.
+  - **Patches 23-25 (2026-10-08, revised 2026-10-09): please run this on ARM64 and write the
+    results back** in `docs/macos-port.md`. On x86-64 the rounding tests of 23 and the tests of 24
+    cannot fail, because native SSE2 and MXCSR were right there. Only ARM64 shows those two bugs.
+    1. Take `develop`, and `sdk/ppc-test-data` at `0ffbb64` or later (169 files of each kind, and
+       `bin/sources.sha256`). The configure stops if a `.bin` is missing or a test source does not
+       match the binaries.
     2. Build the SDK as before with the whole series (`tools/deps/build_sdk.sh`, which applies
        23-25). Then, in its checkout, take the fixes out but keep their tests:
 
@@ -1178,20 +1190,23 @@ these agents lives here and in `patches/README.md`.
        Build `ppc_tests` with `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=...` and run
        `ppc_tests "fctix_rounding.*"`, then `"mffs_rounding.*"`, then `"mtfsf_fields.*"`.
        Expected without the fixes:
-       - **`fctix_rounding`: 12 of 18 fail.** These fail: 2.5 and -2.5 to nearest; 2.7 and -2.7
-         toward zero; -2.5 up; 2.5 down. Each fails for both `fctiw` and `fctid`.
+       - **`fctix_rounding`: 14 of 20 fail.** These fail: 2.5 and -2.5 to nearest; 2.7 and -2.7
+         toward zero; -2.5 up; 2.5 down. Each fails for both `fctiw` and `fctid`. The two cases
+         of 2^63 (`fctid` and `fctidz`) fail too, as on x86-64.
        - **`mffs_rounding`: 4 of 6 fail.** These fail: up, down, and both save-and-restore cases.
          Nearest and toward zero pass.
        - **`mtfsf_fields`: 4 of 4 fail**, as on x86-64.
     3. Put the fixes back (the same loop without `-R`, in the order 23, 24, 25), rebuild and run all
-       of `ppc_tests` (expected: 1490 cases pass) and `unit_tests` (expected: as before, only
-       `output_stamp_test.cpp:227-228`).
+       of `ppc_tests` (expected: 1492 cases pass) and `unit_tests` (expected: as before, only
+       `output_stamp_test.cpp:227-228`). On Linux x86-64, Release, `chrono_test.cpp` also fails at
+       the NT epoch (1601). The series does not touch that code, so it is not a finding of the
+       series; say whether macOS shows it too.
     4. Anything else is a finding: send the failing cases' output.
   - **Patch 27 (guest file flushes, 2026-10-08): please check on macOS** and write the result
     in `docs/macos-port.md`. On Apple, `FileHandle::Flush` calls `fcntl(F_FULLFSYNC)` and falls
     back to `fsync`, and only macOS can show that path.
-    1. Build the SDK tests with the series through 27 and run `unit_tests "[flush]"`. Expected: 5
-       cases pass. Four of them flush real files and folders on APFS through `F_FULLFSYNC`.
+    1. Build the SDK tests with the series through 27 and run `unit_tests "[flush]"`. Expected: 6
+       cases pass. Five of them flush real files and folders on APFS through `F_FULLFSYNC`.
     2. In a game save (any zone change autosaves), run
        `sudo fs_usage -w -f filesys <pid of the game> | grep -i -E "fsync|fcntl"` and look for the
        `F_FULLFSYNC` calls at the save: one per changed save file plus the save folder, at

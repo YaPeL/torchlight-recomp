@@ -1,3 +1,34 @@
+diff --git a/include/rex/filesystem.h b/include/rex/filesystem.h
+index 2b9a384..8b3c0db 100644
+--- a/include/rex/filesystem.h
++++ b/include/rex/filesystem.h
+@@ -101,8 +101,9 @@ class FileHandle {
+   // Set length of the file in bytes.
+   virtual bool SetLength(size_t length) = 0;
+ 
+-  // Flushes any pending write buffers to the underlying filesystem.
+-  virtual void Flush() = 0;
++  // Flushes the file's written data to the storage device (fsync; F_FULLFSYNC on
++  // Apple, where fsync stops at the drive's cache). Returns false on failure.
++  virtual bool Flush() = 0;
+ 
+  protected:
+   explicit FileHandle(const std::filesystem::path& path) : path_(path) {}
+@@ -110,6 +111,12 @@ class FileHandle {
+   std::filesystem::path path_;
+ };
+ 
++// Flushes a folder's entries (names created, renamed or removed in it) to the
++// storage device, as FileHandle::Flush does for a file's data. On Windows, where
++// NTFS journals that metadata and a folder handle cannot be flushed this way, it
++// does nothing and returns true.
++bool FlushFolder(const std::filesystem::path& path);
++
+ struct FileInfo {
+   enum class Type {
+     kFile,
+diff --git a/include/rex/filesystem/devices/host_path_device.h b/include/rex/filesystem/devices/host_path_device.h
+index 48100be..2fbfed9 100644
 --- a/include/rex/filesystem/devices/host_path_device.h
 +++ b/include/rex/filesystem/devices/host_path_device.h
 @@ -11,6 +11,9 @@
@@ -10,7 +41,7 @@
  #include <string>
  
  #include <rex/filesystem/device.h>
-@@ -46,6 +49,27 @@
+@@ -46,6 +49,29 @@ class HostPathDevice : public Device {
    uint32_t sectors_per_allocation_unit() const override { return 1; }
    uint32_t bytes_per_sector() const override { return 0x200; }
  
@@ -23,6 +54,8 @@
 +  void EnableChangeTracking() { track_changes_ = true; }
 +  void NoteWritten(const std::filesystem::path& host_file);
 +  void NoteRemoved(const std::filesystem::path& host_file);
++  // A file or folder renamed: what is remembered at or under from moves to to.
++  void NoteMoved(const std::filesystem::path& from, const std::filesystem::path& to);
 +  void NoteFolderChanged(const std::filesystem::path& host_folder);
 +
 +  struct FlushedChanges {
@@ -38,7 +71,7 @@
   private:
    void PopulateEntry(HostPathEntry* parent_entry);
  
-@@ -54,6 +78,11 @@
+@@ -54,6 +80,11 @@ class HostPathDevice : public Device {
    std::unique_ptr<Entry> root_entry_;
    bool read_only_;
    bool allow_share_delete_;
@@ -50,9 +83,11 @@
  };
  
  }  // namespace rex::filesystem
+diff --git a/include/rex/filesystem/devices/host_path_file.h b/include/rex/filesystem/devices/host_path_file.h
+index 789315c..7c340cf 100644
 --- a/include/rex/filesystem/devices/host_path_file.h
 +++ b/include/rex/filesystem/devices/host_path_file.h
-@@ -33,8 +33,12 @@
+@@ -33,8 +33,12 @@ class HostPathFile : public File {
    X_STATUS WriteSync(std::span<const uint8_t> buffer, size_t byte_offset,
                       size_t* out_bytes_written) override;
    X_STATUS SetLength(size_t length) override;
@@ -65,9 +100,11 @@
    std::unique_ptr<rex::filesystem::FileHandle> file_handle_;
  };
  
+diff --git a/include/rex/filesystem/file.h b/include/rex/filesystem/file.h
+index 40131b4..aeaac9e 100644
 --- a/include/rex/filesystem/file.h
 +++ b/include/rex/filesystem/file.h
-@@ -59,6 +59,10 @@
+@@ -59,6 +59,10 @@ class File {
      return X_STATUS_NOT_IMPLEMENTED;
    }
  
@@ -78,47 +115,22 @@
    // rex::filesystem::FileAccess
    uint32_t file_access() const { return file_access_; }
    const Entry* entry() const { return entry_; }
---- a/include/rex/filesystem.h
-+++ b/include/rex/filesystem.h
-@@ -101,8 +101,9 @@
-   // Set length of the file in bytes.
-   virtual bool SetLength(size_t length) = 0;
- 
--  // Flushes any pending write buffers to the underlying filesystem.
--  virtual void Flush() = 0;
-+  // Flushes the file's written data to the storage device (fsync; F_FULLFSYNC on
-+  // Apple, where fsync stops at the drive's cache). Returns false on failure.
-+  virtual bool Flush() = 0;
- 
-  protected:
-   explicit FileHandle(const std::filesystem::path& path) : path_(path) {}
-@@ -110,6 +111,12 @@
-   std::filesystem::path path_;
- };
- 
-+// Flushes a folder's entries (names created, renamed or removed in it) to the
-+// storage device, as FileHandle::Flush does for a file's data. On Windows, where
-+// NTFS journals that metadata and a folder handle cannot be flushed this way, it
-+// does nothing and returns true.
-+bool FlushFolder(const std::filesystem::path& path);
-+
- struct FileInfo {
-   enum class Type {
-     kFile,
+diff --git a/include/rex/system/xam/content_manager.h b/include/rex/system/xam/content_manager.h
+index 4f1b134..70d2efe 100644
 --- a/include/rex/system/xam/content_manager.h
 +++ b/include/rex/system/xam/content_manager.h
-@@ -21,6 +21,10 @@
- #include <rex/string.h>
- #include <rex/system/xcontent.h>
+@@ -23,6 +23,10 @@
  #include <rex/system/xtypes.h>
-+
+ #include <rex/thread/mutex.h>
+ 
 +namespace rex::filesystem {
 +class HostPathDevice;
 +}  // namespace rex::filesystem
- #include <rex/thread/mutex.h>
- 
++
  namespace rex {
-@@ -127,6 +131,9 @@
+ namespace system {
+ class KernelState;
+@@ -127,6 +131,9 @@ class ContentPackage {
    const XCONTENT_AGGREGATE_DATA& GetPackageContentData() const { return content_data_; }
  
    const std::filesystem::path& package_path() const { return package_path_; }
@@ -128,7 +140,7 @@
  
    uint32_t GetPackageLicense() const { return license_; }
  
-@@ -134,6 +141,7 @@
+@@ -134,6 +141,7 @@ class ContentPackage {
    KernelState* kernel_state_;
    std::string root_name_;
    std::string device_path_;
@@ -136,7 +148,7 @@
    std::filesystem::path package_path_;
    XCONTENT_AGGREGATE_DATA content_data_;
    uint32_t license_ = 0;
-@@ -157,6 +165,8 @@
+@@ -157,6 +165,8 @@ class ContentManager {
    X_RESULT OpenContent(const std::string_view root_name, uint64_t xuid,
                         const XCONTENT_AGGREGATE_DATA& data, uint32_t& content_license);
    X_RESULT CloseContent(const std::string_view root_name);
@@ -145,9 +157,11 @@
    X_RESULT GetContentThumbnail(uint64_t xuid, const XCONTENT_AGGREGATE_DATA& data,
                                 std::vector<uint8_t>* buffer);
    X_RESULT SetContentThumbnail(uint64_t xuid, const XCONTENT_AGGREGATE_DATA& data,
+diff --git a/include/rex/system/xfile.h b/include/rex/system/xfile.h
+index ed029eb..de62495 100644
 --- a/include/rex/system/xfile.h
 +++ b/include/rex/system/xfile.h
-@@ -100,6 +100,7 @@
+@@ -100,6 +100,7 @@ class XFile : public XObject {
                   uint32_t* out_bytes_written, uint32_t apc_context);
  
    X_STATUS SetLength(size_t length);
@@ -155,9 +169,11 @@
    X_STATUS Rename(const std::filesystem::path& file_path, bool replace_existing);
  
    void RegisterIOCompletionPort(uint32_t key, object_ref<XIOCompletion> port);
+diff --git a/src/core/filesystem_posix.cpp b/src/core/filesystem_posix.cpp
+index ef5bdf4..b42f476 100644
 --- a/src/core/filesystem_posix.cpp
 +++ b/src/core/filesystem_posix.cpp
-@@ -179,6 +179,29 @@
+@@ -179,6 +179,29 @@ bool CreateEmptyFile(const std::filesystem::path& path) {
    return false;
  }
  
@@ -187,7 +203,7 @@
  class PosixFileHandle : public FileHandle {
   public:
    PosixFileHandle(std::filesystem::path path, int handle)
-@@ -208,7 +231,7 @@
+@@ -208,7 +231,7 @@ class PosixFileHandle : public FileHandle {
      return true;
    }
    bool SetLength(size_t length) override { return ftruncate(handle_, length) >= 0 ? true : false; }
@@ -196,9 +212,11 @@
  
   private:
    int handle_ = -1;
+diff --git a/src/core/filesystem_win.cpp b/src/core/filesystem_win.cpp
+index c5a2c5d..24e4a34 100644
 --- a/src/core/filesystem_win.cpp
 +++ b/src/core/filesystem_win.cpp
-@@ -166,12 +166,17 @@
+@@ -166,12 +166,17 @@ class Win32FileHandle : public FileHandle {
      }
      return true;
    }
@@ -217,9 +235,11 @@
  std::unique_ptr<FileHandle> FileHandle::OpenExisting(const std::filesystem::path& path,
                                                       uint32_t desired_access,
                                                       bool allow_share_delete) {
+diff --git a/src/filesystem/devices/host_path_device.cpp b/src/filesystem/devices/host_path_device.cpp
+index f68b79a..26e57d6 100644
 --- a/src/filesystem/devices/host_path_device.cpp
 +++ b/src/filesystem/devices/host_path_device.cpp
-@@ -126,4 +126,68 @@
+@@ -126,4 +126,92 @@ void HostPathDevice::PopulateEntry(HostPathEntry* parent_entry) {
    }
  }
  
@@ -237,6 +257,30 @@
 +  }
 +  std::lock_guard lock(changes_mutex_);
 +  written_files_.erase(host_file);
++}
++
++void HostPathDevice::NoteMoved(const std::filesystem::path& from,
++                               const std::filesystem::path& to) {
++  if (!track_changes_) {
++    return;
++  }
++  auto move_under = [&](std::set<std::filesystem::path>& paths) {
++    std::set<std::filesystem::path> moved;
++    for (auto it = paths.begin(); it != paths.end();) {
++      // At or under from: every component of from is a leading component of the path.
++      auto mismatch = std::mismatch(from.begin(), from.end(), it->begin(), it->end());
++      if (mismatch.first == from.end()) {
++        moved.insert(to / it->lexically_relative(from));
++        it = paths.erase(it);
++      } else {
++        ++it;
++      }
++    }
++    paths.merge(moved);
++  };
++  std::lock_guard lock(changes_mutex_);
++  move_under(written_files_);
++  move_under(changed_folders_);
 +}
 +
 +void HostPathDevice::NoteFolderChanged(const std::filesystem::path& host_folder) {
@@ -288,9 +332,11 @@
 +}
 +
  }  // namespace rex::filesystem
+diff --git a/src/filesystem/devices/host_path_entry.cpp b/src/filesystem/devices/host_path_entry.cpp
+index 353140a..8c2d7db 100644
 --- a/src/filesystem/devices/host_path_entry.cpp
 +++ b/src/filesystem/devices/host_path_entry.cpp
-@@ -91,6 +91,7 @@
+@@ -91,6 +91,7 @@ bool HostPathEntry::Truncate() {
    }
    size_ = 0;
    allocation_size_ = 0;
@@ -298,7 +344,7 @@
    return true;
  }
  
-@@ -112,6 +113,13 @@
+@@ -112,6 +113,13 @@ std::unique_ptr<Entry> HostPathEntry::CreateEntryInternal(const std::string_view
    if (!rex::filesystem::GetInfo(full_path, &file_info)) {
      return nullptr;
    }
@@ -312,7 +358,7 @@
    return std::unique_ptr<Entry>(HostPathEntry::Create(device_, this, full_path, file_info));
  }
  
-@@ -130,7 +138,13 @@
+@@ -130,7 +138,13 @@ bool HostPathEntry::DeleteEntryInternal(Entry* entry) {
        return false;
      }
    }
@@ -327,12 +373,12 @@
  }
  
  X_STATUS HostPathEntry::RenameEntryInternal(const std::vector<std::string_view>& path_parts,
-@@ -155,6 +169,13 @@
+@@ -155,6 +169,13 @@ X_STATUS HostPathEntry::RenameEntryInternal(const std::vector<std::string_view>&
      return X_STATUS_ACCESS_DENIED;
    }
  
 +  auto* device = static_cast<HostPathDevice*>(device_);
-+  device->NoteRemoved(host_path_);
++  device->NoteMoved(host_path_, new_host_path);
 +  device->NoteFolderChanged(host_path_.parent_path());
 +  device->NoteFolderChanged(new_host_path.parent_path());
 +  if (!(attributes_ & kFileAttributeDirectory)) {
@@ -341,6 +387,8 @@
    host_path_ = new_host_path;
    return X_STATUS_SUCCESS;
  }
+diff --git a/src/filesystem/devices/host_path_file.cpp b/src/filesystem/devices/host_path_file.cpp
+index 4c57a18..3f7d5d8 100644
 --- a/src/filesystem/devices/host_path_file.cpp
 +++ b/src/filesystem/devices/host_path_file.cpp
 @@ -9,6 +9,7 @@
@@ -351,7 +399,7 @@
  #include <rex/filesystem/devices/host_path_entry.h>
  #include <rex/filesystem/devices/host_path_file.h>
  
-@@ -45,6 +46,7 @@
+@@ -45,6 +46,7 @@ X_STATUS HostPathFile::WriteSync(std::span<const uint8_t> buffer, size_t byte_of
    }
  
    if (file_handle_->Write(byte_offset, buffer.data(), buffer.size(), out_bytes_written)) {
@@ -359,7 +407,7 @@
      return X_STATUS_SUCCESS;
    } else {
      return X_STATUS_END_OF_FILE;
-@@ -57,10 +59,28 @@
+@@ -57,10 +59,28 @@ X_STATUS HostPathFile::SetLength(size_t length) {
    }
  
    if (file_handle_->SetLength(length)) {
@@ -388,9 +436,11 @@
 +}
 +
  }  // namespace rex::filesystem
+diff --git a/src/kernel/crt/file.cpp b/src/kernel/crt/file.cpp
+index ac1f204..c50fd01 100644
 --- a/src/kernel/crt/file.cpp
 +++ b/src/kernel/crt/file.cpp
-@@ -222,8 +222,10 @@
+@@ -222,8 +222,10 @@ u32 SetEndOfFile_entry(u32 hFile) {
  }
  
  u32 FlushFileBuffers_entry(u32 hFile) {
@@ -403,9 +453,11 @@
  }
  
  u32 DeleteFileA_entry(mapped_string lpFileName) {
+diff --git a/src/kernel/xam/xam_content.cpp b/src/kernel/xam/xam_content.cpp
+index 86c4353..adc6c0f 100644
 --- a/src/kernel/xam/xam_content.cpp
 +++ b/src/kernel/xam/xam_content.cpp
-@@ -264,7 +264,7 @@
+@@ -264,7 +264,7 @@ u32 XamContentOpenFile_entry(u32 user_index, mapped_string root_name, mapped_str
  }
  
  u32 XamContentFlush_entry(mapped_string root_name, mapped_void overlapped_ptr) {
@@ -414,9 +466,11 @@
    if (overlapped_ptr) {
      REX_KERNEL_STATE()->CompleteOverlappedImmediate(overlapped_ptr.guest_address(), result);
      return X_ERROR_IO_PENDING;
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_io.cpp b/src/kernel/xboxkrnl/xboxkrnl_io.cpp
+index cce4f65..b5e35ad 100644
 --- a/src/kernel/xboxkrnl/xboxkrnl_io.cpp
 +++ b/src/kernel/xboxkrnl/xboxkrnl_io.cpp
-@@ -598,7 +598,8 @@
+@@ -598,7 +598,8 @@ u32 NtQueryDirectoryFile_entry(u32 file_handle, u32 event_handle, u32 apc_routin
  }
  
  u32 NtFlushBuffersFile_entry(u32 file_handle, ppc_ptr_t<X_IO_STATUS_BLOCK> io_status_block_ptr) {
@@ -426,9 +480,11 @@
  
    if (io_status_block_ptr) {
      io_status_block_ptr->status = result;
+diff --git a/src/system/xam/content_manager.cpp b/src/system/xam/content_manager.cpp
+index 40b0f93..78a516a 100644
 --- a/src/system/xam/content_manager.cpp
 +++ b/src/system/xam/content_manager.cpp
-@@ -51,10 +51,22 @@
+@@ -51,10 +51,26 @@ ContentPackage::ContentPackage(KernelState* kernel_state, const std::string_view
    auto device = std::make_unique<rex::filesystem::HostPathDevice>(device_path_, package_path, false,
                                                                    /*allow_share_delete=*/true);
    device->Initialize();
@@ -440,18 +496,22 @@
  
 +X_RESULT ContentPackage::Flush() {
 +  const auto flushed = device_->FlushChanges();
-+  if (flushed.files || flushed.folders || flushed.failed) {
-+    REXSYS_INFO("Content {}: flushed {} files and {} folders to disk{}", root_name_, flushed.files,
-+                flushed.folders,
-+                flushed.failed ? fmt::format(", {} failed", flushed.failed) : std::string());
++  if (flushed.failed) {
++    REXSYS_WARN("Content {}: flushed {} files and {} folders to disk, {} failed", root_name_,
++                flushed.files, flushed.folders, flushed.failed);
++    return X_ERROR_FUNCTION_FAILED;
 +  }
-+  return flushed.failed ? X_ERROR_FUNCTION_FAILED : X_ERROR_SUCCESS;
++  if (flushed.files || flushed.folders) {
++    REXSYS_INFO("Content {}: flushed {} files and {} folders to disk", root_name_, flushed.files,
++                flushed.folders);
++  }
++  return X_ERROR_SUCCESS;
 +}
 +
  ContentPackage::~ContentPackage() {
    auto fs = kernel_state_->file_system();
    fs->UnregisterSymbolicLink(root_name_ + ":");
-@@ -316,6 +328,17 @@
+@@ -316,6 +332,17 @@ X_RESULT ContentManager::OpenContent(const std::string_view root_name, uint64_t
    return X_ERROR_SUCCESS;
  }
  
@@ -469,18 +529,24 @@
  X_RESULT ContentManager::CloseContent(const std::string_view root_name) {
    ContentPackage* package = nullptr;
    {
-@@ -327,6 +350,8 @@
+@@ -327,8 +354,11 @@ X_RESULT ContentManager::CloseContent(const std::string_view root_name) {
      }
      package = DetachPackage(it);
    }
-+  // Closing a package confirms the save: what it wrote goes to the disk before it unmounts.
-+  package->Flush();
++  // Closing a package confirms the save: what it wrote goes to the disk before it unmounts. It
++  // unmounts either way, and a failed flush reaches the title as the close's result.
++  const X_RESULT result = package->Flush();
    delete package;
-   return X_ERROR_SUCCESS;
+-  return X_ERROR_SUCCESS;
++  return result;
  }
+ 
+ X_RESULT ContentManager::GetContentThumbnail(uint64_t xuid, const XCONTENT_AGGREGATE_DATA& data,
+diff --git a/src/system/xfile.cpp b/src/system/xfile.cpp
+index 7321de0..7f0e016 100644
 --- a/src/system/xfile.cpp
 +++ b/src/system/xfile.cpp
-@@ -290,6 +290,11 @@
+@@ -290,6 +290,11 @@ X_STATUS XFile::SetLength(size_t length) {
    return file_->SetLength(length);
  }
  
@@ -492,9 +558,11 @@
  X_STATUS XFile::Rename(const std::filesystem::path& file_path, bool replace_existing) {
    std::lock_guard<std::mutex> lock(file_lock_);
    return entry()->Rename(file_path, replace_existing);
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 98f6fd6..e1ef136 100644
 --- a/tests/unit/CMakeLists.txt
 +++ b/tests/unit/CMakeLists.txt
-@@ -10,6 +10,7 @@
+@@ -10,6 +10,7 @@ add_executable(unit_tests
      core/vfs_overwrite_test.cpp
      core/vfs_rename_test.cpp
      core/vfs_delete_on_close_test.cpp
@@ -502,9 +570,12 @@
      core/hash_test.cpp
      core/stream_test.cpp
      core/chrono_test.cpp
+diff --git a/tests/unit/core/vfs_flush_test.cpp b/tests/unit/core/vfs_flush_test.cpp
+new file mode 100644
+index 0000000..9c29703
 --- /dev/null
 +++ b/tests/unit/core/vfs_flush_test.cpp
-@@ -0,0 +1,202 @@
+@@ -0,0 +1,225 @@
 +/**
 + * @file        tests/unit/core/vfs_flush_test.cpp
 + * @brief       Guest flushes reach the disk: a handle's flush (NtFlushBuffersFile,
@@ -621,6 +692,15 @@
 +    return status;
 +  }
 +  bool Delete(const std::string& name) { return vfs_.DeletePath("save:\\" + name); }
++  void CreateFolder(const std::string& name) {
++    REQUIRE(vfs_.CreatePath("save:\\" + name, rex::filesystem::kFileAttributeDirectory) !=
++            nullptr);
++  }
++  X_STATUS RenameFolder(const std::string& from, const std::string& to) {
++    Entry* entry = vfs_.ResolvePath("save:\\" + from);
++    REQUIRE(entry != nullptr);
++    return entry->Rename(rex::to_path("save:\\" + to), false);
++  }
 +  File* CountingFile(uint32_t access, int* flushes, bool fail = false) {
 +    auto* entry = static_cast<HostPathEntry*>(vfs_.ResolvePath("save:\\4.tsv"));
 +    REQUIRE(entry != nullptr);
@@ -706,4 +786,18 @@
 +  const auto flushed = store.device().FlushChanges();
 +  CHECK(flushed.files == 0);
 +  CHECK(flushed.folders == 1);
++}
++
++TEST_CASE("Files written in a folder renamed since are flushed under its new name",
++          "[filesystem][vfs][flush]") {
++  SaveStore store(true);
++  store.CreateFolder("slot");
++  store.Write("slot\\a.tsv", FileDisposition::kCreate, "data");
++  REQUIRE(store.RenameFolder("slot", "slot2") == X_STATUS_SUCCESS);
++  REQUIRE(store.HostExists("slot2/a.tsv"));
++
++  const auto flushed = store.device().FlushChanges();
++  CHECK(flushed.files == 1);    // slot2/a.tsv
++  CHECK(flushed.folders == 2);  // the save folder (slot created and renamed) and slot2 (a.tsv)
++  CHECK(flushed.failed == 0);
 +}
