@@ -351,6 +351,68 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(os.stat(self.destination).st_mode & 0o777, mode)
 
+    def tsv_files(self):
+        return sorted(f for f in os.listdir(self.dir.name) if f.lower().endswith('.tsv'))
+
+    def test_destination_is_written_upper_case(self):
+        code, out, err = self.run_cli(self.source, os.path.join(self.dir.name, '0.tsv'),
+                                      '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.tsv_files(), ['0.TSV'])
+        self.assertIn('0.TSV', out)
+
+    def test_same_name_in_another_case_is_kept_without_force(self):
+        other = os.path.join(self.dir.name, '0.tsv')
+        with open(other, 'wb') as f:
+            f.write(b'keep me')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 1)
+        self.assertIn('--force', err)
+        self.assertEqual(self.tsv_files(), ['0.tsv'])
+        with open(other, 'rb') as f:
+            self.assertEqual(f.read(), b'keep me')
+
+    def test_force_replaces_the_same_name_in_another_case(self):
+        with open(os.path.join(self.dir.name, '0.tsv'), 'wb') as f:
+            f.write(b'old')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak,
+                                    '--force')
+        self.assertEqual(code, 0, err)
+        # Never two spellings of one character: only N.TSV is left, with the new save.
+        self.assertEqual(self.tsv_files(), ['0.TSV'])
+        with open(self.destination, 'rb') as f:
+            self.assertEqual(x360_to_pc(SCHEMA, f.read()), self.source_bytes)
+
+    def test_another_name_with_the_same_number_is_refused(self):
+        # The game numbers its characters as wcstol reads the name: 00.tsv is character 0 too.
+        with open(os.path.join(self.dir.name, '00.tsv'), 'wb') as f:
+            f.write(b'keep me')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak,
+                                    '--force')
+        self.assertEqual(code, 1)
+        self.assertIn('already 00.tsv', err)
+        self.assertEqual(self.tsv_files(), ['00.tsv'])
+
+    def test_other_numbers_do_not_block(self):
+        with open(os.path.join(self.dir.name, '1.tsv'), 'wb') as f:
+            f.write(b'another character')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.tsv_files(), ['0.TSV', '1.tsv'])
+
+    def test_destination_not_named_n_tsv_is_refused(self):
+        code, _, err = self.run_cli(self.source, os.path.join(self.dir.name, 'hero.tsv'),
+                                    '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 1)
+        self.assertIn('N.TSV', err)
+        self.assertEqual(self.tsv_files(), [])
+
+    def test_character_number_reads_like_wcstol(self):
+        self.assertEqual(convert.character_number('12.TSV'), 12)
+        self.assertEqual(convert.character_number(' 7.tsv'), 7)
+        self.assertEqual(convert.character_number('03.tsv'), 3)
+        self.assertEqual(convert.character_number('abc.tsv'), 0)
+
     def test_destination_equal_to_source_is_refused(self):
         code, _, err = self.run_cli(self.source, self.source, '--pak', self.pak, '--pc-pak', self.pc_pak, '--force')
         self.assertEqual(code, 1)
