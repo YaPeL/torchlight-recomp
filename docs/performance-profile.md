@@ -382,6 +382,71 @@ before each upload a capture replays to the end, every draw issued, and the imag
 it work means changes to that render system or a frame recorded the way it wants (uploads first,
 clears as load actions), not a swap of plugins.
 
+### Paused: a two-stage backend pipeline
+
+With the cuts, the backend presents 99 % of the guest's frames in the town square on this laptop
+(5364 of 5426 in one run): the limit there is the guest's render thread, not the backend. The
+design below stays here, not started, until a machine shows the backend falling behind (the
+Windows desktop, the Steam Deck; see the next section for what to measure).
+
+Today one thread translates the commands (the frontend) and runs OGRE and the driver. The pipeline
+splits it in two:
+
+| Stage | Thread | Work | Cost (town square profile, before the cuts) |
+|---|---|---|---|
+| 1. Translation | a new one | `content.Apply`, the frontend, content decoding | ~1.1-1.6 ms |
+| 2. Render | the current one (it holds the GL context) | the recorded calls played into the backend: our backend, OGRE, the driver, the UI, the present | ~3 ms |
+
+- The cut is the backend's C API. The frontend calls a `BackendSink` interface instead of
+  `tl_backend_*`: a direct one (today's behaviour; the replay and the pipeline turned off) and a
+  recording one that writes each call into a `HostFrame` (a per-frame arena, reused). Bulk data
+  (vertices, textures) is not copied: the `HostFrame` carries the `LiveFrame` that holds it, freed by
+  the FrameReclaimer after stage 2.
+- One frame in flight between the stages: stage 1 waits while stage 2 is busy. Frames are still
+  dropped only in the guest's frame queue, which already carries their state forward.
+- Latency: at most one stage (~1-2 ms) more from the guest's swap to the present.
+- Before it, the frontend has to stop deciding on the backend's return values: whether a texture
+  was created (drawn with it or with the fallback), whether a buffer was uploaded, the draw's
+  result and notes (statistics). Those decisions move into the backend (a missing texture draws
+  the fallback, a missing buffer skips the draw, as it does already); the statistics arrive one
+  frame late through a counter, as `tl_backend_take_counters`.
+- Commits: (1) the backend owns the fallback and missing resources; (2) `BackendSink`, direct and
+  recording, with a replay mode that records and plays on one thread (images identical on the 20
+  replays); (3) the live mode on two threads behind a cvar (off to start with), both stages' times
+  in the log and the slow frame report, `--bench` with the pipeline; (4) the measurement, and the
+  cvar's default from it.
+- Risks: copying `tl_draw` (~5 KB with its 8 stages; only the stages and matrices in use would be
+  recorded, ~0.1-0.2 ms per frame), reads of render targets (a sync point; not on the live path),
+  statistics one frame late, and one more busy thread competing with the guest's (see the
+  hypothesis on the game's frame rate above).
+- More buffers instead: a longer frame queue or swap chain trades drops for latency, not more
+  frames; and how many images GL keeps in flight is the driver's choice, not OGRE's.
+
+### Present wait and drops on other machines: what to measure
+
+On this laptop the present's wait is the compositor's and the PRIME copy's pacing, so it says
+nothing about other machines. Whether the pipeline above is worth it there depends on whether the
+backend falls behind. To find out on the Windows desktop (and later the Steam Deck), with the
+settings of these measurements (`fps_cap = 0`, `vsync = false`, the dedicated GPU, 720p render
+resolution, `--native_skip_guest_d3d=true`), develop at dfc354a or later:
+
+1. **The game, about a minute standing still in a dungeon and a minute walking around the town
+   square.** From the log's 10 s summaries:
+   - `frame time (guest swap to swap)` and `frame time (presented, present to present)`: FPS,
+     p99 (1 % low) and `guest frames dropped (backend behind)` of each;
+   - `live consumer (backend thread, ms per frame)`: the phases, and `present` among them;
+   - `present (vsync wait included)` in the `live:` line: mean, p95, p99, max.
+
+   The backend falls behind if the presented FPS is clearly below the guest's, with drops above a
+   few percent of the guest's frames. The present waits if its mean is more than about 1 ms with
+   vsync off; then its p95 and max say whether it is steady or in bursts.
+2. **The bench**, on a session recorded there (`--live_record`) in the town square:
+   `replay --session FILE --bench --bench_frames A-B`, reporting `bench.txt` (the phases, presented
+   p99 and 1 % low) and the distribution of `present_ms` in `bench.csv` (median, p95, max). It runs
+   in a window of its own, so its present is comparable between machines, not with the game's.
+3. What to send back: the machine (CPU, GPU, driver, monitor refresh), the numbers above, and
+   whether the game runs in a window or full screen.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
