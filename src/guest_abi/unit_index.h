@@ -27,6 +27,19 @@ using functions::GuestFunction;
 // registered with it.
 inline constexpr GuestFunction kLoadIndex{0x823296D0, Confidence::kConfirmed};
 
+namespace index {
+// [confirmed] The index object, r3 of kLoadIndex. sub_82329310 builds it, makes it the singleton
+// (@0x823293EC, only when that is null) and only then loads it. Its entries by GUID: a std::map at
+// +60, initialised by sub_82258648 (@0x823293A8: +64 the head node, +68 the size, zeroed), looked
+// up by the loader (sub_82259E50 @0x82329AA8, the result compared with the head @0x82329AAC) and
+// set through operator[] (sub_82327718 @0x82329AC4). A GUID already there replaces the entry, so
+// +68 counts the distinct GUIDs loaded. The loader reads the whole file through a reader
+// (sub_82398790 @0x823296E4); when that holds nothing (the file was not found) it skips every
+// group (@0x823296F0) and leaves the map empty, with no error.
+inline constexpr uint32_t kSingleton = 0x835594EC;
+inline constexpr Field kGuidMapSize{68, Confidence::kConfirmed};
+}  // namespace index
+
 // [confirmed] Loads one unit definition and its BASEFILE chain: r3 = const std::wstring* path,
 // r4 = the node list. Allocates a 56-byte node (@0x82329C44), fills it through the data manager
 // (sub_82392C18 with r5 = 1 @0x82329C74: sub_8239E7D8 on the data manager 0x83559514 when it

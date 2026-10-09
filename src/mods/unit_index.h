@@ -65,4 +65,18 @@ std::vector<std::string> CompareUnitIndexes(const UnitIndex& expected, const Uni
 UnitIndex MergeUnitIndex(const UnitIndex& base, const std::vector<UnitEntry>& units,
                          std::vector<std::u16string>* skipped);
 
+// How many entries the game keeps from `index`: it files them by GUID and an entry whose GUID is
+// already there replaces it (guest_abi unit_index.h kLoadIndex), so each GUID counts once.
+size_t UniqueUnitGuids(const UnitIndex& index);
+
+// What the game holds after loading a file with `expected` unique GUIDs, `loaded` being the size
+// of its GUID map (guest_abi unit_index.h index::kGuidMapSize).
+enum class LoadedIndex {
+  kComplete,    // every unit
+  kEmpty,       // nothing: the file was not read (the loader skips everything, with no error)
+  kIncomplete,  // part of it
+  kMore,        // more than the file holds: something else was loaded too
+};
+LoadedIndex CheckLoadedIndex(size_t loaded, size_t expected);
+
 }  // namespace torchlight::mods

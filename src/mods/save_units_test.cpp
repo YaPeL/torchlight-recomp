@@ -1,7 +1,9 @@
 // Taking unknown units out of saves (save_units.h) on the synthetic PC save of the import tests
 // (tests/save_import/fixtures, made by the Python tool; no game data): an unknown item removed and
 // the file still read back, and every safeguard leaving the save alone: an incomplete or broken
-// index, most units unknown, the character's own class unknown, an unreadable file.
+// index, most units unknown, the character's own class unknown, an unreadable file; and, after the
+// game loaded its index, the units the check counted on that it does not hold, with their notice.
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -210,6 +212,36 @@ int main() {
     const auto spanish = [](const std::string& s) { return s == "OK" ? std::string("Aceptar") : s; };
     const auto translated = SaveUnitsNotice(report, spanish);
     Check(translated && translated->buttons[0] == "Aceptar", "texts go through the translation");
+  }
+
+  // After the game loaded its index: the units the check counted on that it does not hold, and the
+  // notice that says so (alone, or after what was removed).
+  {
+    const KnownUnits assumed = MakeKnownUnits(IndexWith(all), {}, true);
+    Check(UnitsNotLoaded(assumed, assumed.guids).empty(), "everything loaded: nothing missing");
+    std::unordered_set<int64_t> loaded = assumed.guids;
+    loaded.erase(kMod);
+    const auto missing = UnitsNotLoaded(assumed, loaded);
+    Check(missing.size() == 1 && missing[0] == kMod, "the mod's unit missing from the loaded index");
+    const auto none = UnitsNotLoaded(assumed, {});
+    Check(none.size() == assumed.guids.size() && std::is_sorted(none.begin(), none.end()),
+          "nothing loaded: every unit missing, sorted");
+
+    const auto english = [](const std::string& s) { return s; };
+    SaveUnitsReport only;
+    only.units_not_loaded = 3;
+    const auto notice = SaveUnitsNotice(only, english);
+    Check(notice && notice->title == "Items from mods not loaded" &&
+              notice->text.find("3 kinds of items or creatures from mods could not be loaded") != std::string::npos,
+          "units not loaded alone: their own title and text");
+    SaveUnitsReport both;
+    both.changed.push_back({"/saves/a/4.TSV", "Ronan", {{"player/items/item", "", 1}}});
+    both.units_not_loaded = 2;
+    const auto with_removed = SaveUnitsNotice(both, english);
+    Check(with_removed && with_removed->title == "Items removed from saved characters" &&
+              with_removed->text.find("2 kinds") != std::string::npos &&
+              with_removed->text.find("Ronan: 1 items") != std::string::npos,
+          "with items removed: the removal's title, both texts");
   }
 
   if (failures) return EXIT_FAILURE;

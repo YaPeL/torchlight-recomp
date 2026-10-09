@@ -1,5 +1,6 @@
 #include "mods/save_units.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -69,6 +70,15 @@ KnownUnits MakeKnownUnits(const std::optional<UnitIndex>& base, const std::vecto
 }
 
 KnownUnits KnownUnitsOfIndex(const UnitIndex& loaded) { return MakeKnownUnits(loaded, {}, true); }
+
+std::vector<int64_t> UnitsNotLoaded(const KnownUnits& assumed, const std::unordered_set<int64_t>& loaded) {
+  std::vector<int64_t> out;
+  for (int64_t guid : assumed.guids) {
+    if (!loaded.contains(guid)) out.push_back(guid);
+  }
+  std::sort(out.begin(), out.end());
+  return out;
+}
 
 UnitCheck RemoveUnknownUnits(si::Parsed& parsed, const KnownUnits& known) {
   UnitCheck check;

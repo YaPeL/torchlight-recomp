@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <map>
+#include <unordered_set>
 #include <utility>
 
 namespace torchlight::mods {
@@ -233,6 +234,20 @@ UnitIndex MergeUnitIndex(const UnitIndex& base, const std::vector<UnitEntry>& un
     if (!placed) out.groups[static_cast<size_t>(*group)].push_back(unit);
   }
   return out;
+}
+
+size_t UniqueUnitGuids(const UnitIndex& index) {
+  std::unordered_set<int64_t> guids;
+  for (const auto& group : index.groups) {
+    for (const UnitEntry& e : group) guids.insert(e.guid);
+  }
+  return guids.size();
+}
+
+LoadedIndex CheckLoadedIndex(size_t loaded, size_t expected) {
+  if (loaded == expected) return LoadedIndex::kComplete;
+  if (loaded == 0) return LoadedIndex::kEmpty;
+  return loaded < expected ? LoadedIndex::kIncomplete : LoadedIndex::kMore;
 }
 
 }  // namespace torchlight::mods

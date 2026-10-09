@@ -1,6 +1,7 @@
 // The unit index file (unit_index.h) on synthetic indexes: the layout byte for byte, reading back
 // what is written, refusing short or long files, the groups by folder, the entry-by-entry
-// comparison and merging mods' units the way PC builds its table.
+// comparison, merging mods' units the way PC builds its table, and checking what the game kept
+// after loading one.
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -122,6 +123,21 @@ int main() {
     Check(merged.groups[1].size() == 2 && merged.groups[1][1].guid == 600, "new monster at its group's end");
     Check(skipped.size() == 1 && skipped[0] == u"MEDIA/OTHER/X.DAT", "outside: skipped and listed");
     Check(MergeUnitIndex(base, {}, nullptr).groups == base.groups, "no mods: the base unchanged");
+  }
+
+  // What the game should hold after loading an index: one entry per GUID, and the verdict on the
+  // size of its GUID map.
+  {
+    UnitIndex index = Sample();
+    Check(UniqueUnitGuids(index) == 4, "four entries, four GUIDs");
+    index.groups[3].push_back(Unit(-2, u"SWORD_PROP", u"MEDIA/UNITS/PROPS/SWORD.DAT"));
+    Check(UniqueUnitGuids(index) == 4, "a GUID repeated in another group counts once");
+    Check(UniqueUnitGuids(UnitIndex{}) == 0, "an empty index");
+    Check(CheckLoadedIndex(4, 4) == LoadedIndex::kComplete, "all loaded");
+    Check(CheckLoadedIndex(0, 4) == LoadedIndex::kEmpty, "nothing loaded: empty");
+    Check(CheckLoadedIndex(3, 4) == LoadedIndex::kIncomplete, "fewer: incomplete");
+    Check(CheckLoadedIndex(5, 4) == LoadedIndex::kMore, "more than the file holds");
+    Check(CheckLoadedIndex(0, 0) == LoadedIndex::kComplete, "an empty file loaded as empty");
   }
 
   if (failures) return EXIT_FAILURE;

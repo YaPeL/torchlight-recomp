@@ -36,6 +36,8 @@ Shared stash: {count} items = Gemeinsame Truhe: {count} Gegenstände
 A copy of the saves from before is in: = Eine Kopie der vorherigen Spielstände liegt in:
 The saves could not be backed up or written, so not every save was changed; characters holding items of removed mods may not load (see the log). = Die Spielstände konnten nicht gesichert oder geschrieben werden, daher wurde nicht jeder Spielstand geändert; Charaktere mit Gegenständen entfernter Mods laden eventuell nicht (siehe Log).
 These saves hold items the game does not know but were left unchanged, so they may not load (see the log): = Diese Spielstände enthalten Gegenstände, die das Spiel nicht kennt, wurden aber nicht geändert und laden daher eventuell nicht (siehe Log):
+Items from mods not loaded = Gegenstände aus Mods nicht geladen
+{count} kinds of items or creatures from mods could not be loaded this time, so the game does not know them. Saved characters that carry them were not changed and may not load (see the log). = {count} Arten von Gegenständen oder Kreaturen aus Mods konnten diesmal nicht geladen werden, daher kennt das Spiel sie nicht. Gespeicherte Charaktere, die sie tragen, wurden nicht geändert und laden eventuell nicht (siehe Log).
 OK = OK
 
 [fr]
@@ -71,6 +73,8 @@ Shared stash: {count} items = Coffre partagé : {count} objets
 A copy of the saves from before is in: = Une copie des sauvegardes précédentes se trouve dans :
 The saves could not be backed up or written, so not every save was changed; characters holding items of removed mods may not load (see the log). = Les sauvegardes n'ont pas pu être copiées ou écrites, donc toutes n'ont pas été modifiées ; les personnages qui portent des objets de mods retirés risquent de ne pas se charger (voir le journal).
 These saves hold items the game does not know but were left unchanged, so they may not load (see the log): = Ces sauvegardes contiennent des objets que le jeu ne connaît pas mais n'ont pas été modifiées, elles risquent donc de ne pas se charger (voir le journal) :
+Items from mods not loaded = Objets de mods non chargés
+{count} kinds of items or creatures from mods could not be loaded this time, so the game does not know them. Saved characters that carry them were not changed and may not load (see the log). = {count} types d'objets ou de créatures de mods n'ont pas pu être chargés cette fois, le jeu ne les connaît donc pas. Les personnages sauvegardés qui les portent n'ont pas été modifiés et risquent de ne pas se charger (voir le journal).
 OK = OK
 
 [es]
@@ -106,4 +110,6 @@ Shared stash: {count} items = Cofre compartido: {count} objetos
 A copy of the saves from before is in: = Hay una copia de las partidas anteriores en:
 The saves could not be backed up or written, so not every save was changed; characters holding items of removed mods may not load (see the log). = No se pudieron respaldar o escribir las partidas, así que no se cambiaron todas; los personajes con objetos de mods quitados podrían no cargar (ver el log).
 These saves hold items the game does not know but were left unchanged, so they may not load (see the log): = Estas partidas tienen objetos que el juego no conoce pero no se cambiaron, así que podrían no cargar (ver el log):
+Items from mods not loaded = Objetos de mods no cargados
+{count} kinds of items or creatures from mods could not be loaded this time, so the game does not know them. Saved characters that carry them were not changed and may not load (see the log). = {count} tipos de objetos o criaturas de mods no se pudieron cargar esta vez, así que el juego no los conoce. Los personajes guardados que los llevan no se cambiaron y podrían no cargar (ver el log).
 OK = Aceptar

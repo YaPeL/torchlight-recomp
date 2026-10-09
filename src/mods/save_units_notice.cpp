@@ -37,11 +37,18 @@ std::optional<save_import::ImportMessage> SaveUnitsNotice(const SaveUnitsReport&
       risky.push_back(Utf8Path(std::filesystem::path(line.substr(0, colon)).filename()));
     }
   }
-  if (report.changed.empty() && risky.empty() && !report.failed) return std::nullopt;
+  if (report.changed.empty() && risky.empty() && !report.failed && !report.units_not_loaded) return std::nullopt;
 
   save_import::ImportMessage message;
-  message.title = Text(tr, "Items removed from saved characters");
+  message.title = report.changed.empty() && report.units_not_loaded ? Text(tr, "Items from mods not loaded")
+                                                                    : Text(tr, "Items removed from saved characters");
   std::string text;
+  if (report.units_not_loaded) {
+    text += Text(tr, "{count} kinds of items or creatures from mods could not be loaded this time, so the game "
+                     "does not know them. Saved characters that carry them were not changed and may not load "
+                     "(see the log).",
+                 {{"count", std::to_string(report.units_not_loaded)}}) + "\n";
+  }
   if (!report.changed.empty()) {
     size_t total = 0;
     for (const auto& file : report.changed) total += file.removed.size();

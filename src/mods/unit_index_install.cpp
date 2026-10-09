@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <system_error>
+#include <unordered_set>
 #include <vector>
 
 #include <rex/filesystem/devices/host_path_device.h>
@@ -302,32 +303,88 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
 
 namespace {
 
-// The game's unit index loader (guest_abi/unit_index.h kLoadIndex): with mods' units, our index
-// is built if needed and loaded in place of the Xbox file, by a name under tlunits: (added as a
-// resource location once the file exists, since locations are indexed when added).
-// The saves checked against the index the game is about to load (save_units_install.h), when
-// that check waits for it: the merged index in the cache, or the Xbox one.
-void CheckSaves(bool merged) {
-  if (!SavesAwaitLoadedIndex()) return;
-  std::string error;
-  std::optional<UnitIndex> loaded;
-  if (merged) {
-    std::string log;
-    if (const auto path = FindCachedUnitIndex(g.folder, g.name, &log)) {
-      std::ifstream in(*path, std::ios::binary);
-      const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
-      loaded = ParseUnitIndex(bytes, &error);
-    }
-  } else {
-    loaded = ReadPakUnitIndex(g.pak, &error);
+std::unordered_set<int64_t> GuidsOf(const UnitIndex& index) {
+  std::unordered_set<int64_t> guids;
+  for (const auto& group : index.groups) {
+    for (const UnitEntry& e : group) guids.insert(e.guid);
   }
-  if (!loaded) REXLOG_ERROR("mods: the unit index to load could not be read for the saves' check ({})", error);
-  CheckSavesAgainstLoadedIndex(loaded);
+  return guids;
 }
 
+std::optional<UnitIndex> ReadOurIndex(std::string* error) {
+  std::string log;
+  const auto path = FindCachedUnitIndex(g.folder, g.name, &log);
+  if (!path) {
+    *error = log.empty() ? "not in the cache" : log;
+    return std::nullopt;
+  }
+  std::ifstream in(*path, std::ios::binary);
+  const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
+  return ParseUnitIndex(bytes, error);
+}
+
+// The Xbox index loaded by the game (its own path): what the saves' comparison gets.
+void CompareWithXboxIndex(uint32_t loaded) {
+  std::string error;
+  const auto xbox = ReadPakUnitIndex(g.pak, &error);
+  if (xbox && CheckLoadedIndex(loaded, UniqueUnitGuids(*xbox)) == LoadedIndex::kComplete) {
+    CompareWithLoadedUnits(GuidsOf(*xbox));
+    return;
+  }
+  REXLOG_ERROR("mods: the game's own unit index: {} units loaded ({})", loaded,
+               xbox ? std::to_string(UniqueUnitGuids(*xbox)) + " in the file" : error);
+  CompareWithLoadedUnits(std::nullopt);
+}
+
+// After the game loaded our index: the size of its GUID map against the distinct GUIDs we wrote.
+// Nothing loaded (the file was not read): the game's own index is loaded instead, with its own
+// path; nothing was inserted, so that is the load the game would have done. Part of it: left as it
+// is, since going back is not safe (a replaced entry is freed but stays filed under its other
+// names; guest_abi unit_index.h kLoadIndex).
+void VerifyLoadedIndex(PPCContext& ctx, uint8_t* base, uint32_t index, uint32_t original_path) {
+  const auto loaded_count = [&] { return abi::ReadU32(base, index + units_abi::index::kGuidMapSize.offset); };
+  const uint32_t loaded = loaded_count();
+  std::string error;
+  const auto ours = ReadOurIndex(&error);
+  if (!ours) {
+    REXLOG_ERROR("mods: the unit index the game loaded ({}.RAW) cannot be read back ({}); {} units loaded", g.name,
+                 error, loaded);
+    CompareWithLoadedUnits(std::nullopt);
+    return;
+  }
+  const size_t expected = UniqueUnitGuids(*ours);
+  switch (CheckLoadedIndex(loaded, expected)) {
+    case LoadedIndex::kComplete:
+      REXLOG_INFO("mods: the game loaded the unit index: {} units", loaded);
+      CompareWithLoadedUnits(GuidsOf(*ours));
+      return;
+    case LoadedIndex::kEmpty:
+      REXLOG_ERROR("mods: the game loaded 0 of the {} units in {}.RAW (the file was not read); loading the game's "
+                   "own unit index instead, without the mods' units",
+                   expected, g.name);
+      ctx.r3.u64 = index;
+      ctx.r4.u64 = original_path;
+      __imp__sub_823296D0(ctx, base);
+      REXLOG_INFO("mods: the game's own unit index loaded: {} units", loaded_count());
+      CompareWithXboxIndex(loaded_count());
+      return;
+    case LoadedIndex::kIncomplete:
+    case LoadedIndex::kMore:
+      REXLOG_ERROR("mods: the game loaded {} of the {} units in {}.RAW; left as it is (going back to the game's own "
+                   "index after a partial load is not safe)",
+                   loaded, expected, g.name);
+      CompareWithLoadedUnits(std::nullopt);
+      return;
+  }
+}
+
+// The game's unit index loader (guest_abi/unit_index.h kLoadIndex): with mods' units, our index
+// is built if needed and loaded in place of the Xbox file, by a name under tlunits: (added as a
+// resource location once the file exists, since locations are indexed when added), and what the
+// game kept is checked (VerifyLoadedIndex). The saves were checked before the guest ran
+// (save_units_install.h); this only compares.
 void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
   if (!g.active) {
-    CheckSaves(false);
     __imp__sub_823296D0(ctx, base);
     return;
   }
@@ -362,10 +419,14 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
       }
     }
   }
-  CheckSaves(our_path != 0);
   ctx.r3.u64 = index;
   ctx.r4.u64 = our_path ? our_path : original_path;
   __imp__sub_823296D0(ctx, base);
+  if (our_path) {
+    VerifyLoadedIndex(ctx, base, index, original_path);
+  } else if (!g.unit_paths.empty()) {
+    CompareWithXboxIndex(abi::ReadU32(base, index + units_abi::index::kGuidMapSize.offset));
+  }
   if (our_path || our_text) {
     GuestCall call(ctx, base);
     if (our_path) {

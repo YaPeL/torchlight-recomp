@@ -40,6 +40,10 @@ KnownUnits MakeKnownUnits(const std::optional<UnitIndex>& base, const std::vecto
 // whatever its definition says.
 KnownUnits KnownUnitsOfIndex(const UnitIndex& loaded);
 
+// The units the saves' check took as known that the game does not hold (`loaded`: the GUIDs of the
+// index it actually loaded), sorted. Saved items of those units may stop a character from loading.
+std::vector<int64_t> UnitsNotLoaded(const KnownUnits& assumed, const std::unordered_set<int64_t>& loaded);
+
 struct RemovedUnit {
   std::string path;  // e.g. "player/items/item"
   std::string name;  // the save's own text for it, when it has one
@@ -85,6 +89,7 @@ struct SaveUnitsReport {
   std::filesystem::path backup;            // where the saves were copied before
   std::vector<std::string> left_alone;     // "<file>: why"
   bool failed = false;                     // the backup or a write failed: nothing (more) written
+  size_t units_not_loaded = 0;             // known to the check, missing from the index loaded
 };
 
 // Every save container under <user_data_root>/<profile>/<title_folder>/: character files (*.tsv)
