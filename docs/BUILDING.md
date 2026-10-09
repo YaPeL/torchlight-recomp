@@ -21,6 +21,12 @@ OGRE path: cache variable `TORCHLIGHT_OGRE_INSTALL`. `all` builds the SDK's Debu
 RelWithDebInfo libraries, which the debug and relwithdebinfo presets link; without it, Release only
 (what CI and the published game use).
 
+On macOS (Apple Silicon, with the Command Line Tools, and CMake and Ninja from Homebrew),
+`build_ogre.sh` builds the same OGRE for arm64 with deployment target 13.3: GL3+ on Cocoa
+(`OpenGL.framework`), plain dylibs that find each other through `@loader_path`, no Wayland build.
+OGRE's Apple layout puts `Media/` and `CMake/` at the top of the install (`share/OGRE/` on Linux).
+The game itself does not build on macOS yet (docs/macos-port.md).
+
 A build directory configured earlier with the OGRE 1.6.1 backend needs `cmake --fresh --preset ...`
 (the cache keeps the old OGRE path).
 

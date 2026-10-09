@@ -1,0 +1,135 @@
+diff --git a/include/rex/logging/api.h b/include/rex/logging/api.h
+index 3b8f1ae..661d672 100644
+--- a/include/rex/logging/api.h
++++ b/include/rex/logging/api.h
+@@ -78,6 +78,14 @@ void ShutdownLogging();
+  */
+ void FlushLogging();
+ 
++namespace detail {
++/**
++ * The file sink InitLogging() gives a log file: it rotates at log_max_file_size_mb and keeps
++ * log_max_files earlier files, so one run cannot fill the disk. Exposed for tests.
++ */
++spdlog::sink_ptr MakeLogFileSink(const std::filesystem::path& path);
++}  // namespace detail
++
+ /**
+  * Register a new log category at runtime.
+  *
+diff --git a/src/core/logging.cpp b/src/core/logging.cpp
+index e8de147..06e2d8a 100644
+--- a/src/core/logging.cpp
++++ b/src/core/logging.cpp
+@@ -20,7 +20,7 @@
+ #include <unordered_map>
+ #include <vector>
+ 
+-#include <spdlog/sinks/basic_file_sink.h>
++#include <spdlog/sinks/rotating_file_sink.h>
+ #include <spdlog/sinks/stdout_color_sinks.h>
+ 
+ #include <toml++/toml.hpp>
+@@ -51,8 +51,26 @@ REXCVAR_DEFINE_INT32(log_flush_interval, 0, "Log", "Periodic flush interval in s
+     .range(0, 60)
+     .lifecycle(rex::cvar::Lifecycle::kInitOnly);
+ 
++// A run's file rotates so that one run cannot fill the disk (a fault loop logs every retry); the
++// directory budget above only removes whole earlier runs.
++REXCVAR_DEFINE_INT32(log_max_file_size_mb, 5, "Log", "Max log file size in MB before rotation")
++    .range(1, 100)
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++
++REXCVAR_DEFINE_INT32(log_max_files, 20, "Log", "Max number of rotated log files to keep")
++    .range(1, 100)
++    .lifecycle(rex::cvar::Lifecycle::kInitOnly);
++
+ namespace rex {
+ 
++namespace detail {
++spdlog::sink_ptr MakeLogFileSink(const std::filesystem::path& path) {
++  return std::make_shared<spdlog::sinks::rotating_file_sink_mt>(
++      path.string(), static_cast<size_t>(REXCVAR_GET(log_max_file_size_mb)) * 1024 * 1024,
++      static_cast<size_t>(REXCVAR_GET(log_max_files)), false);
++}
++}  // namespace detail
++
+ namespace {
+ 
+ std::vector<LogCategoryEntry> g_registry;
+@@ -268,7 +286,7 @@ void InitLogging(const LogConfig& config) {
+     resolved_path = NextSequentialLogPath(log_dir, config.app_name);
+   }
+   if (!resolved_path.empty()) {
+-    auto sink = std::make_shared<spdlog::sinks::basic_file_sink_mt>(resolved_path.string(), false);
++    auto sink = detail::MakeLogFileSink(resolved_path);
+     sink->set_level(spdlog::level::trace);
+     sink->set_pattern(config.file_pattern);
+     g_file_sink = sink;
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -13,6 +13,7 @@
+     core/hash_test.cpp
+     core/stream_test.cpp
+     core/chrono_test.cpp
++    core/log_rotation_test.cpp
+     ppc/import_function_test.cpp
+     ppc/stack_test.cpp
+     system/guest_path_test.cpp
+--- /dev/null
++++ b/tests/unit/core/log_rotation_test.cpp
+@@ -0,0 +1,54 @@
++/**
++ * @file        tests/unit/core/log_rotation_test.cpp
++ * @brief       The log file sink rotates within log_max_file_size_mb x (1 + log_max_files)
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <cstdint>
++#include <filesystem>
++#include <string>
++
++#include <catch2/catch_test_macros.hpp>
++#include <spdlog/logger.h>
++
++#include <rex/cvar.h>
++#include <rex/logging.h>
++
++namespace fs = std::filesystem;
++
++TEST_CASE("A run's log rotates instead of growing", "[logging]") {
++  const fs::path dir = fs::temp_directory_path() / "rex_log_rotation_test";
++  fs::remove_all(dir);
++  fs::create_directories(dir);
++  const fs::path file = dir / "app_001.log";
++
++  REQUIRE(rex::cvar::SetFlagByName("log_max_file_size_mb", "1"));
++  REQUIRE(rex::cvar::SetFlagByName("log_max_files", "2"));
++  {
++    spdlog::logger logger("log_rotation_test", rex::detail::MakeLogFileSink(file));
++    // About 4 MB: more than the 3 files of 1 MB the run may keep.
++    const std::string line(1000, 'x');
++    for (int i = 0; i < 4000; ++i) {
++      logger.info("{} {}", i, line);
++    }
++    logger.flush();
++  }
++  REQUIRE(rex::cvar::SetFlagByName("log_max_file_size_mb", "5"));
++  REQUIRE(rex::cvar::SetFlagByName("log_max_files", "20"));
++
++  uint64_t total = 0;
++  int files = 0;
++  for (const auto& entry : fs::directory_iterator(dir)) {
++    total += entry.file_size();
++    ++files;
++  }
++  CHECK(fs::exists(file));
++  CHECK(fs::exists(dir / "app_001.1.log"));
++  CHECK(fs::exists(dir / "app_001.2.log"));
++  CHECK_FALSE(fs::exists(dir / "app_001.3.log"));
++  CHECK(files == 3);
++  CHECK(total <= 3u * 1024 * 1024);
++  fs::remove_all(dir);
++}

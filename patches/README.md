@@ -1,6 +1,6 @@
 # Patches
 
-Patches to the ReXGlue SDK (`~/rexglue-sdk`, base `0c7b01a`, v0.10.0.5-dev). They are applied in
+Patches to the ReXGlue SDK (base `bd833a2`, `development` of 2026-10-01; before it, `0c7b01a`). They are applied in
 this order from the SDK checkout with `git apply <patch>`, and then the SDK is rebuilt and installed
 (all configurations). They are functional fixes only; there are no observation hooks.
 
@@ -12,6 +12,33 @@ patches 17 and 18 `windows`; the build scripts apply what their platform takes. 
 files or Windows branches, so on Linux they build nothing new. The SDK's `unit_tests` pass on Windows except
 `codegen/output_stamp_test.cpp` (lines 227-228, the escaping of paths with a space or `#`), which
 fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched by these patches.
+On Linux the same two checks fail, and so do four `core/chrono_test.cpp` cases (the conversions
+of the NT epoch, 1601-01-01), with the old base and with `bd833a2` alike; no patch touches either
+file. Every other case passes on `bd833a2` with this series, the patches' own tests included.
+
+## Numbers
+
+A patch's number is its name in this README, the docs and the commits, and it is never reused: a
+withdrawn or removed patch keeps its number (11, 19). Patches live on several branches before
+they reach `develop`, so numbers are handed out in one place, this table, kept by whoever
+maintains the series (ask there before giving a new patch a number). `series` lists the patches
+in number order; a branch adds its own line at its number's place.
+
+| # | Patch | Branch | State |
+|---|---|---|---|
+| 1-18 | (below) | `develop` | In the series |
+| 11 | `rexglue-delete-on-close.patch` | | Withdrawn |
+| 19 | `rexglue-mnk-keystrokes.patch` | `develop` | In the series on `0c7b01a`; removed on `bd833a2` (`sdk/rexglue-next`) |
+| 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
+| 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration |
+| 22 | `rexglue-tests-portable.patch` | `sdk/rexglue-next` | Pending integration (needs `bd833a2`) |
+| 23 | `rexglue-fctiw-rounding-mode.patch` | `sdk/rexglue-next` | Pending integration |
+| 24 | `rexglue-arm64-mffs-rounding.patch` | `sdk/rexglue-next` | Pending integration; to confirm on ARM64 |
+| 25 | `rexglue-mtfsf-field-mask.patch` | `sdk/rexglue-next` | Pending integration |
+| 26 | `rexglue-log-rotation.patch` | `sdk/rexglue-next` | Pending integration (needs `bd833a2`) |
+| 27 | | | Next free number |
+
+## The patches
 
 1. `rexglue-vulkan-stencil-transfer.patch`: the Vulkan backend's stencil copies (without shader
    stencil export) set every bit of the destination to 1. The minimap reinterprets that EDRAM as
@@ -61,6 +88,9 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
    GPL-3.0, but its `THIRD_PARTY_NOTICES.md` distributes the ReXGlue patches under ReXGlue's terms
    (BSD-3-Clause), and `null_gpu.cpp` states it in its header. The `std::jthread`/`std::stop_token`
    workaround in `src/core/timer_queue.cpp` that came with 0003 was left out (not needed on Linux).
+   Rebased on `bd833a2`: upstream moved the install target list to
+   `cmake/rexglue_export_targets.cmake`, so `rexgpu-null` is added there, and the plugin gets
+   `rexglue_add_version_resource` like `rexgpu-xenos`.
 
 9. `rexglue-imgui-drawer-pending-dialogs.patch`: if the game quit with a XAM dialog open (keyboard or
    message box), the process hung: the "Kernel Dispatch" thread waits in `xeXamDispatchDialogEx` for
@@ -93,7 +123,7 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     two handles, unmarked, mark cleared, entry deleted with a file open), in the SDK's `unit_tests`
     (`-DREXGLUE_BUILD_TESTS=ON`; on base `0c7b01a` the unit tests also need
     `-DCMAKE_CXX_FLAGS=-I<sdk>/thirdparty/xxHash` because `hash_test.cpp` does not find `xxhash.h`, an
-    existing problem unrelated to this patch). Not specific to any GPU or
+    existing problem unrelated to this patch; not needed from `bd833a2`, upstream `b5e0cf8`). Not specific to any GPU or
     render mode. **Candidate for an upstream report to ReXGlue**: the bug is in the base SDK
     (`src/kernel/xboxkrnl/xboxkrnl_io_info.cpp` marks, `src/system/xfile.cpp` never acts on it) and
     affects any title that deletes files.
@@ -227,5 +257,70 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     keystrokes while the emulation is off), in the SDK's `unit_tests`. Checked in the game on
     Windows: the keyboard drives the menus. Not specific to any GPU. Candidate for an upstream
     report to ReXGlue.
+
+    **Removed with the move to `bd833a2`** (the file is in the history): upstream fixed it (issue
+    #310, PR #311) and reworked it in `3f34ffc` (keystrokes for bound keys, released on focus loss,
+    plus a keyboard passthrough mode). Upstream does not repeat a held bound key; if the menus need
+    it, that is an upstream PR on top of patch 16's `keystroke_repeat.h`.
+
+20. Taken by `rexglue-vfs-wildcard-dos-semantics.patch` (the mods' `*.*` wildcard), on branch
+    `feature/pc-mods`: described there.
+
+21. Taken by `rexglue-sdl-software-renderer.patch` (`SDL_Renderer` with the software driver only,
+    for the progress window and the launcher), on branch `feature/launcher-imgui`: described there.
+
+22. `rexglue-tests-portable.patch`: the SDK's tests did not build on ARM64 or macOS.
+    `tests/ppc/CMakeLists.txt` passed `-msse4.1 -mssse3` to `ppc_tests` on every architecture; now
+    only on x86-64, as the root `CMakeLists.txt` already does. The PPC instruction tests assemble
+    `tests/ppc/asm/*.s` with the bundled PowerPC binutils (with VMX128), which exist for Linux and
+    Windows only; the new cache variable `REXGLUE_PPC_TEST_BIN_DIR` points the build at `.bin` and
+    `.map` files assembled elsewhere from the same sources (empty, the default, assembles them as
+    before; a missing file stops the configure). `tools/deps/build_ppc_test_data.sh` makes them on a
+    Linux machine. `codegen_writer_test.cpp` compared two `file_time_type` inside `CHECK`, which
+    makes Catch2 print them; that does not compile with Apple's libc++, so the comparison is made
+    outside. Validated on Linux x86-64: `ppc_tests` passes (1462 cases) both ways, the files
+    assembled by the build and the prebuilt ones are byte identical, and `[codegen_writer]` passes.
+    Not specific to any GPU or to the game. Candidate for an upstream report to ReXGlue.
+
+23. `rexglue-fctiw-rounding-mode.patch`: `fctiw` and `fctid` (convert in the current rounding mode)
+    were emitted as `simde_mm_cvtsd_si32`/`_si64`. Without native SSE2 (ARM64) SIMDe implements
+    them with C `round`, half away from zero whatever the guest's FPSCR[RN]: 2.5 gave 3 under round
+    to nearest, toward zero and down. Now they call `rex::ppc::cvt_f64_s32_current` /
+    `_s64_current` (`include/rex/ppc/intrinsics.h`): the same SSE conversion when SSE2 is native,
+    `std::nearbyint` (which honours the mode `storeFromGuest` set) with the same out-of-range result
+    elsewhere. Test: `tests/ppc/asm/instr_fctix_rounding.s`, 18 cases (2.5, -2.5, 3.5, 2.7 and -2.7
+    under each mode, `fctiw` and `fctid`). On x86-64 they pass with and without the patch (native
+    SSE2 was right); the portable path was checked with a scratch program built with
+    `-DSIMDE_NO_NATIVE` (the old conversion wrong in 4 to 6 of 11 cases, the helper in none), and
+    the PPC tests fail without the patch on ARM64 only (`docs/rexglue-upstream.md`, section 8).
+    Torchlight uses `fctid` in 10 places. Not specific to any GPU. Upstream draft D22.
+
+24. `rexglue-arm64-mffs-rounding.patch`: `mffs` read the rounding mode back with MXCSR's order on
+    every host (`FPSCRRegister::HostToGuest`); ARM64's FPCR has up and down the other way round, so
+    `mffs` reported up as down and down as up, and a save and restore of FPSCR flipped them. The
+    table moved into each `FPSCRPlatform` (`include/rex/platform/fpscr.h`) next to `GuestToHost`,
+    and a `static_assert` in `include/rex/ppc/context.h` checks on every host that reading back
+    gives what was written. Test: `tests/ppc/asm/instr_mffs_rounding.s` (each mode read back; a
+    save, switch and restore of round up and of round down). Found by reading the code; on x86-64
+    the tests pass with and without the patch, and the failure without it is to be seen on ARM64
+    (`docs/rexglue-upstream.md`, section 8). Torchlight has 5 `mffs`. Upstream draft D23.
+
+25. `rexglue-mtfsf-field-mask.patch`: `mtfsf` with a partial field mask wrote the wrong FPSCR fields
+    on every architecture: FM bit 0 (field 0, `0xF0000000`) was mapped to the low nibble, which
+    holds RN, so `mtfsf 1,f1` did not change the rounding mode and `mtfsf 0x80` did. Now the mask
+    follows PowerPC bit order (`src/codegen/builders/system.cpp`, `build_mtfsf`). Test:
+    `tests/ppc/asm/instr_mtfsf_fields.s`, 4 cases, all 4 failing without the patch on x86-64. With
+    patches 22-25 the whole `ppc_tests` passes on Linux x86-64 (1490 cases) and `unit_tests` is as
+    before. Torchlight only uses the full mask (`mtfsf 0xFF`, 5 places). Upstream draft D24.
+
+26. `rexglue-log-rotation.patch` (needs `bd833a2`): upstream `b971840` replaced the rotating log file
+    sink with a plain one and removed `log_max_file_size_mb` and `log_max_files`, so a run's log had
+    no size limit (a fault loop logs every retry; on this machine such runs wrote tens of
+    megabytes in seconds). The cvars and the rotating sink are back as they were on `0c7b01a`
+    (5 MB, 20 files by default), through `rex::detail::MakeLogFileSink`, so that our log limits
+    (`src/live/log_budget.h`: 5 MB x 10 a run) work the same on both bases. The runtime's
+    directory budget is untouched. Test: `tests/unit/core/log_rotation_test.cpp` (4 MB written
+    with 1 MB and 2 rotations: three files, at most 3 MB). Not specific to any GPU. Candidate for
+    an upstream report (the removal looks unintended next to the new directory budget).
 
 The observation and diagnostic patches there were before remain in the git history.
