@@ -7,6 +7,7 @@
 
 #include <climits>
 #include <cstdlib>
+#include <exception>
 #include <filesystem>
 #include <string>
 #include <system_error>
@@ -165,6 +166,46 @@ std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWi
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
   return plugin_dir;
 }
+
+// The main thread runs the main dispatch queue from its run loop, in the run loop's common modes:
+// while SDL waits for events, while a window is resized with the pointer and under a modal alert.
+// OpenGL and its AppKit classes are deprecated on Apple; GL3+ is the render system chosen for macOS
+// anyway (docs/macos-port.md, section 4).
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+void RunOnWindowThread(const std::function<void()>& work) {
+  if ([NSThread isMainThread]) {
+    work();
+    return;
+  }
+  // A GL context is current on one thread at a time: the caller's moves to the main thread for
+  // the work, and the one the work leaves current (OGRE's, after creating the window) moves back.
+  __block NSOpenGLContext* context = [[NSOpenGLContext currentContext] retain];
+  [NSOpenGLContext clearCurrentContext];
+  __block std::exception_ptr failure;
+  dispatch_sync(dispatch_get_main_queue(), ^{
+    [context makeCurrentContext];
+    [context release];
+    try {
+      work();
+    } catch (...) {
+      failure = std::current_exception();  // exceptions must not cross libdispatch
+    }
+    context = [[NSOpenGLContext currentContext] retain];
+    [NSOpenGLContext clearCurrentContext];
+  });
+  [context makeCurrentContext];
+  [context release];
+  if (failure) std::rethrow_exception(failure);
+}
+#pragma clang diagnostic pop
+
+void WaitServingWindowThread(const std::function<bool()>& done) {
+  if (![NSThread isMainThread]) return;  // only the main thread runs that work
+  while (!done()) CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
+}
+
+bool OgreWindowFollowsGameWindow() { return true; }
 
 namespace {
 

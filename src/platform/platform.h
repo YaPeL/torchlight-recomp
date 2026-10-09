@@ -194,6 +194,25 @@ bool HasDirect3D11(const std::string& plugin_dir);
 // render system there.
 bool CanCreateGl33Context();
 
+// Runs `work` on the thread the window system wants OGRE's window created, resized and destroyed
+// on, and returns when it is done (an exception `work` throws is thrown here). macOS: the main
+// thread, since AppKit lets only the main thread attach a GL context to a view and update it
+// (-[NSOpenGLContext setView:] and -update), and the live mode drives the backend from its render
+// thread. The main thread runs it while it waits for events (SDL's loop runs Cocoa's), and in
+// WaitServingWindowThread when it waits for something else. The calling thread's current GL
+// context goes with `work`, and the one `work` leaves current comes back. Linux and Windows: runs
+// `work` on the calling thread.
+void RunOnWindowThread(const std::function<void()>& work);
+// On the main thread, before joining a thread that may be in RunOnWindowThread: returns when
+// `done` is true, running that thread's work meanwhile. Linux and Windows have nothing to run and
+// return at once.
+void WaitServingWindowThread(const std::function<bool()>& done);
+// How OGRE's window drawing in the game window follows a new size of it: false, OGRE resizes it
+// (RenderWindow::resize: X11's child window, Wayland's EGL window, Win32); true, the window system
+// has already sized it and OGRE reads the size (RenderWindow::windowMovedOrResized: Cocoa, whose
+// content view SDL sizes; OGRE's resize would size the view again, in points).
+bool OgreWindowFollowsGameWindow();
+
 // The backend's own top-level window (offscreen backends keep a hidden one for the GL context, the
 // replay shows one) where OGRE's render system cannot create it itself: macOS, whose OGRE 14 Cocoa
 // GL window only draws in an external view ("Builtin Window creation broken",
