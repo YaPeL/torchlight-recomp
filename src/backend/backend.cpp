@@ -352,7 +352,10 @@ struct tl_backend {
     Ogre::MaterialPtr material;
     Ogre::Pass* pass = nullptr;  // the generated pass: programs, colours, texture transforms
     Ogre::GpuProgramParametersSharedPtr vertex_params, fragment_params;
-    std::string alpha_function;  // the generated name of kAlphaFunctionUniform
+    // Where ApplyProgram writes, found once: kAlphaFunctionUniform's physical index, and each
+    // world-view-projection auto constant's (index, element count).
+    std::optional<size_t> alpha_function;
+    std::vector<std::pair<size_t, size_t>> worldviewproj;
     bool failed = false;
   };
   std::unordered_map<std::string, Program> programs;
@@ -1057,9 +1060,14 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
     p.fragment_params = pass->getFragmentProgramParameters();
     // The RTSS appends an index to a resolved uniform's name.
     for (const auto& [name, def] : p.fragment_params->getConstantDefinitions().map) {
-      if (name.rfind(kAlphaFunctionUniform, 0) == 0) p.alpha_function = name;
+      if (name.rfind(kAlphaFunctionUniform, 0) == 0 && def.isFloat())
+        p.alpha_function = def.physicalIndex;
     }
-    if (p.alpha_function.empty()) break;
+    if (!p.alpha_function) break;
+    for (const auto& entry : p.vertex_params->getAutoConstantList()) {
+      if (entry.paramType == Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX)
+        p.worldviewproj.push_back({entry.physicalIndex, entry.elementCount});
+    }
     return;
   }
   p.failed = true;
@@ -1092,7 +1100,7 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   // Values the data source reads from the pass and the scene objects.
   p.pass->setDiffuse(f.diffuse);
   p.pass->setAlphaRejectValue(f.alpha_reference);
-  p.fragment_params->setNamedConstant(p.alpha_function, float(f.alpha_function));
+  p.fragment_params->_writeRawConstant(*p.alpha_function, float(f.alpha_function));
   p.pass->setSelfIllumination(f.emissive);
   for (uint32_t u = 0; u < unit_count && u < p.pass->getNumTextureUnitStates(); ++u) {
     if (units[u].has_matrix) p.pass->getTextureUnitState(u)->setTextureTransform(units[u].matrix);
@@ -1140,10 +1148,8 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   if (b->active && b->active->requiresTextureFlipping()) {
     for (int c = 0; c < 4; ++c) clip[1][c] = -clip[1][c];
   }
-  for (const auto& entry : p.vertex_params->getAutoConstantList()) {
-    if (entry.paramType == Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX) {
-      p.vertex_params->_writeRawConstant(entry.physicalIndex, clip, entry.elementCount);
-    }
+  for (const auto& [index, count] : p.worldviewproj) {
+    p.vertex_params->_writeRawConstant(index, clip, count);
   }
   p.fragment_params->_updateAutoParams(&source, Ogre::GPV_ALL);
   rs->bindGpuProgramParameters(Ogre::GPT_VERTEX_PROGRAM, p.vertex_params, Ogre::GPV_ALL);
