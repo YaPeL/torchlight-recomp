@@ -310,6 +310,60 @@ About +6 % in the town square (FPS and 1 % low), +7 % FPS and +9.5 % 1 % low in 
 +7 % FPS standing still: some 0.5 ms less per frame on the guest's render thread, as the profile
 shares predicted.
 
+### The backend thread (2026-10-09)
+
+The live mode's backend thread, town square of the DWARF profile with everything integrated
+(develop 320ee22, 499 Hz, user mode): ~4.5 ms of CPU per frame, of a ~7.5 ms frame. The rest is
+waiting inside the present (2.7-4.4 ms of present, 0.17 ms of it on the CPU, vsync off).
+
+| Layer | Share | ms per frame |
+|---|---|---|
+| Our frontend (the command translation) | 23.5 % | 1.07 |
+| Our backend (the C API side: conversions, program choice) | 19.7 % | 0.89 |
+| Our frame transport (frame applied, freed, content released) | 11.1 % | 0.50 |
+| OGRE (auto parameters, parameter binding, `_render`, viewports) | 16.9 % | 0.77 |
+| The GL driver (draws, uniforms, viewport and state changes, swap) | 28.7 % | 1.30 |
+
+On this machine the present's wait is the display path's pacing, not the GPU: with frames
+lighter than the refresh, two frames go out per 60 Hz refresh (14.6 + 2.0 ms). That depends on the
+compositor and the PRIME copy (see the topology note above), so it is not pursued here; what reaches
+other platforms is the CPU work in front of it.
+
+`replay --session RECORDING --bench [--bench_frames A-B]` measures the backend without the game:
+it plays a recorded session as the backend thread does (frames read ahead on another thread, each
+one presented in a window with vsync off, then handed over to be freed) and writes per-phase means,
+present to present percentiles and the 1 % low (bench.txt, bench.csv). Its window is a top-level
+X11 one, not the game's Wayland surface, so its present times say nothing about the game's; the CPU
+work does. Its frames are heavier than live ones (the session was recorded with the backend behind,
+so dropped frames' state commands pile into the recorded ones), so it compares changes rather than
+predicting live times. With run-to-run noise of about +-0.15 ms per frame, small cuts are compared
+by the process's user instructions and cycles over the same frames (`perf stat`).
+
+The cuts, each its own commit (perf/backend-cuts), validated with the unit tests, the 20 parity
+replays and 78 frames of the recorded session (images identical):
+
+| Cut | Bench (town square of the session) |
+|---|---|
+| Consumed frames freed on a thread of their own (FrameReclaimer) | work 6.94 -> 5.54 ms (frame freeing 1.56 -> 0.00) |
+| Hashed lookups for the per-draw resource maps (frontend, live content source, backend; the two looked up by prefix stay ordered) | work 5.46 -> 5.01 ms |
+| The viewport left alone when the guest sets it unchanged (setDimensions marked it updated every time) | work 5.08 -> 4.91 ms |
+| The program's alpha function and WVP constants found once, not by name per draw | within the noise |
+| The guest's float constants in a dense array, written a range at a time (PhysicalConstants) | instructions -3.9 %, cycles -4.6 % |
+| Fetch endianness swapped a word at a time | within the noise |
+
+Altogether, base against the last cut on the same frames: backend thread work 6.94 -> 4.43 ms per
+frame (5.40 -> 4.43 leaving out freeing the frames, which these heavy frames inflate; live it was
+~0.2 ms), commands 4.74 -> 3.95 ms; the whole process's user cycles -7.5 %, instructions -5.2 %.
+
+OGRE 14.6's Vulkan render system, tried in the replay (local experiment, OGRE built with the
+Vulkan render system and its glslang plugin): the RTSS programs compile, but the render system
+expects a frame laid out its way. Its window needs one made outside it; a buffer upload inside a
+render pass is an assertion (the backend writes guest buffers between draws); clearFrameBuffer only
+sets the next pass's load colour (the guest clears parts of targets mid-frame). With the pass ended
+before each upload a capture replays to the end, every draw issued, and the image is black. Making
+it work means changes to that render system or a frame recorded the way it wants (uploads first,
+clears as load actions), not a swap of plugins.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
