@@ -14,6 +14,7 @@
 #include "backend/backend_api.h"
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
+#include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
 #include "live/live_content_source.h"
 #include "live/session_file.h"
@@ -289,6 +290,7 @@ int BenchSession(const SessionOptions& o, std::optional<std::pair<uint64_t, uint
   uint64_t index = 0;
   Clock::time_point last_present{};
   {
+    live::FrameReclaimer reclaimer;
     ReadAhead ahead(o.path, last);
     while (window_open) {
       auto frame = ahead.Pop();
@@ -304,7 +306,8 @@ int BenchSession(const SessionOptions& o, std::optional<std::pair<uint64_t, uint
         present_end = Clock::now();
       });
       const auto free_start = Clock::now();
-      frame.reset();  // the live mode frees the consumed frame on the backend thread too
+      reclaimer.Free(std::move(*frame));  // as the live mode hands its consumed frames over
+      frame.reset();
       const auto end = Clock::now();
       b.content = step.content_ms;
       b.commands_ms = step.commands_ms;
