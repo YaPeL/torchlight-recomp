@@ -49,10 +49,18 @@ class LiveContentSource : public frontend::ContentSource {
  private:
   using Identity = std::pair<uint32_t, uint32_t>;  // guest address, generation
   static Identity Of(const commands::ResourceId& id) { return {id.guest_address, id.generation}; }
+  struct IdentityHash {
+    size_t operator()(const Identity& i) const {
+      return std::hash<uint64_t>()(uint64_t(i.first) << 32 | i.second);
+    }
+  };
+  // Looked up for every draw: hashed, not ordered (none is walked in order).
+  template <typename T>
+  using ByIdentity = std::unordered_map<Identity, T, IdentityHash>;
 
   const frontend::ZipArchive& pak_;
   std::unordered_map<commands::Hash, SnapshotStore::Content> contents_;
-  std::map<Identity, commands::Hash> latest_;  // latest content key per resource
+  ByIdentity<commands::Hash> latest_;  // latest content key per resource
   // How many resources have each key as their latest (identical content can be shared): Finish
   // keeps a superseded key that is still someone's latest without scanning latest_.
   std::unordered_map<commands::Hash, uint32_t> current_refs_;
@@ -62,12 +70,12 @@ class LiveContentSource : public frontend::ContentSource {
     auto it = current_refs_.find(key);
     if (it != current_refs_.end() && --it->second == 0) current_refs_.erase(it);
   }
-  std::map<Identity, commands::VertexBufferDesc> vertex_buffers_;
+  ByIdentity<commands::VertexBufferDesc> vertex_buffers_;
   std::map<std::tuple<uint32_t, uint32_t, commands::Hash>, commands::VertexDeclarationContent>
       declarations_;
-  std::map<Identity, commands::TextureDesc> textures_;
+  ByIdentity<commands::TextureDesc> textures_;
   std::map<std::string, Identity> render_targets_;
-  std::map<Identity, std::string> program_names_;
+  ByIdentity<std::string> program_names_;
   std::map<std::string, std::optional<rtss::Program>> programs_;
 };
 

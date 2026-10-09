@@ -15,6 +15,7 @@
 #include "capture/session.h"
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
+#include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
 #include "live/frame_timing.h"
 #include "live/live_content_source.h"
@@ -268,6 +269,7 @@ void LiveMode::Run() {
   auto last_summary = Clock::now();
   bool window_open = true;
   SlowFrameDetector slow_frames;
+  FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
 
@@ -370,6 +372,7 @@ void LiveMode::Run() {
     auto end = Clock::now();
     backend_ms.Add(Ms(end - start));
     latency_ms.Add(Ms(end - frame->cut));
+    reclaimer.Free(std::move(*frame));
     ++frames;
     record.backend_ms = Ms(end - start);
     record.content_ms = step.content_ms;
