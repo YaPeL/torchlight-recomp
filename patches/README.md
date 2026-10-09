@@ -37,7 +37,8 @@ in number order; a branch adds its own line at its number's place.
 | 25 | `rexglue-mtfsf-field-mask.patch` | `develop` | In the series |
 | 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
 | 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
-| 28 | | | Next free number |
+| 28 | `rexglue-quiet-missing-files.patch` | `sdk/series-review` | Pending integration |
+| 29 | | | Next free number |
 
 ## The patches
 
@@ -276,12 +277,14 @@ in number order; a branch adds its own line at its number's place.
     `tests/ppc/asm/*.s` with the bundled PowerPC binutils (with VMX128), which exist for Linux and
     Windows only; the new cache variable `REXGLUE_PPC_TEST_BIN_DIR` points the build at `.bin` and
     `.map` files assembled elsewhere from the same sources (empty, the default, assembles them as
-    before; a missing file stops the configure). `tools/deps/build_ppc_test_data.sh` makes them on a
-    Linux machine. `codegen_writer_test.cpp` compared two `file_time_type` inside `CHECK`, which
+    before; a missing file stops the configure, and so does a source whose SHA-256 is not the one
+    in the folder's `sources.sha256`, so a changed test cannot run against stale binaries).
+    `tools/deps/build_ppc_test_data.sh` makes them, and that list, on a Linux machine. `codegen_writer_test.cpp` compared two `file_time_type` inside `CHECK`, which
     makes Catch2 print them; that does not compile with Apple's libc++, so the comparison is made
     outside. Validated on Linux x86-64: `ppc_tests` passes (1462 cases) both ways, the files
     assembled by the build and the prebuilt ones are byte identical, and `[codegen_writer]` passes.
-    Not specific to any GPU or to the game. Candidate for an upstream report to ReXGlue.
+    The source check (2026-10-09): the data of `sdk/ppc-test-data` configures, and an edited `.s`
+    or a missing `sources.sha256` stops the configure. Not specific to any GPU or to the game. Candidate for an upstream report to ReXGlue.
 
 23. `rexglue-fctiw-rounding-mode.patch`: `fctiw` and `fctid` (convert in the current rounding mode)
     were emitted as `simde_mm_cvtsd_si32`/`_si64`. Without native SSE2 (ARM64) SIMDe implements
@@ -289,9 +292,12 @@ in number order; a branch adds its own line at its number's place.
     to nearest, toward zero and down. Now they call `rex::ppc::cvt_f64_s32_current` /
     `_s64_current` (`include/rex/ppc/intrinsics.h`): the same SSE conversion when SSE2 is native,
     `std::nearbyint` (which honours the mode `storeFromGuest` set) with the same out-of-range result
-    elsewhere. Test: `tests/ppc/asm/instr_fctix_rounding.s`, 18 cases (2.5, -2.5, 3.5, 2.7 and -2.7
-    under each mode, `fctiw` and `fctid`). On x86-64 they pass with and without the patch (native
-    SSE2 was right); the portable path was checked with a scratch program built with
+    elsewhere. `fctid` and `fctidz` also saturated one value late: their bound was
+    `> double(LLONG_MAX)`, and `double(LLONG_MAX)` is 2^63, so 2^63 itself was converted and gave
+    INT64_MIN; the bound is now `>=`, as `fctiw` has with `INT_MAX`. Test:
+    `tests/ppc/asm/instr_fctix_rounding.s`, 20 cases (2.5, -2.5, 3.5, 2.7 and -2.7 under each mode,
+    `fctiw` and `fctid`; `fctid` and `fctidz` of 2^63). On x86-64 the rounding cases pass with and
+    without the patch (native SSE2 was right) and the two of 2^63 fail without it; the portable path was checked with a scratch program built with
     `-DSIMDE_NO_NATIVE` (the old conversion wrong in 4 to 6 of 11 cases, the helper in none), and
     the PPC tests fail without the patch on ARM64 only (`docs/rexglue-upstream.md`, section 8).
     Torchlight uses `fctid` in 10 places. Not specific to any GPU. Upstream draft D22.
@@ -311,8 +317,8 @@ in number order; a branch adds its own line at its number's place.
     holds RN, so `mtfsf 1,f1` did not change the rounding mode and `mtfsf 0x80` did. Now the mask
     follows PowerPC bit order (`src/codegen/builders/system.cpp`, `build_mtfsf`). Test:
     `tests/ppc/asm/instr_mtfsf_fields.s`, 4 cases, all 4 failing without the patch on x86-64. With
-    patches 22-25 the whole `ppc_tests` passes on Linux x86-64 (1490 cases) and `unit_tests` is as
-    before. Torchlight only uses the full mask (`mtfsf 0xFF`, 5 places). Upstream draft D24.
+    patches 22-25 the whole `ppc_tests` passes on Linux x86-64 (1492 cases with 23's two cases of
+    2^63) and `unit_tests` is as before. Torchlight only uses the full mask (`mtfsf 0xFF`, 5 places). Upstream draft D24.
 
 26. `rexglue-log-rotation.patch` (needs `bd833a2`): upstream `b971840` replaced the rotating log file
     sink with a plain one and removed `log_max_file_size_mb` and `log_max_files`, so a run's log had
@@ -321,7 +327,8 @@ in number order; a branch adds its own line at its number's place.
     (5 MB, 20 files by default), through `rex::detail::MakeLogFileSink`, so that our log limits
     (`src/live/log_budget.h`: 5 MB x 10 a run) work the same on both bases. The runtime's
     directory budget is untouched. Test: `tests/unit/core/log_rotation_test.cpp` (4 MB written
-    with 1 MB and 2 rotations: three files, at most 3 MB). Not specific to any GPU. Candidate for
+    with 1 MB and 2 rotations: three files, at most 3 MB; the cvars are put back however the test
+    ends). Not specific to any GPU. Candidate for
     an upstream report (the removal looks unintended next to the new directory budget).
 
 27. `rexglue-guest-file-flush.patch`: a guest's request to write its files through to the disk did
@@ -335,7 +342,20 @@ in number order; a branch adds its own line at its number's place.
       renamed or removed); `XamContentFlush` and `XamContentClose` (before it unmounts) flush them
       (`HostPathDevice::FlushChanges`: each file reopened by path, since its handles are usually
       closed by then, then the folders) and log `Content <root>: flushed N files and M folders to
-      disk`; a root that is not open still returns success, as before;
+      disk` (at WARN with the count that failed); a failed flush is their result, and
+      `XamContentClose` unmounts either way; a root that is not open still returns success, as
+      before; a renamed file or folder moves what is remembered at or under it to its new path.
+      Returning the failure was checked against what Torchlight does with it (2026-10-09): its one
+      `XamContentClose` (thunk `sub_8287E5D8`) is called only from `sub_823AC7B8`, which turns it
+      into 1 or 0, and none of that wrapper's 20 call sites reads it (17 overwrite `r3` first;
+      `sub_823AC088` and `sub_821FF750`, `CSettingsMenuXenon`'s slot 3, hand it back to callers
+      that do not read it either). Its one `XamContentFlush` is in Microsoft's telemetry library
+      (`DataFile`, `sub_828A00A8`), which logs a failure and passes it to its own completion
+      callback. The "Corrupt/Damaged Save" dialog, whose "Yes" is the game's only
+      `XamContentDelete`, comes from a flag that short reads raise (`docs/saves-research.md`), not
+      from either result. Had a path led there, the failure would have stayed in the log only;
+    - `NtFlushBuffersFile` and `FlushFileBuffers` on a handle that is not a file now fail
+      (`X_STATUS_INVALID_HANDLE`, 0); they always succeeded before. No case of it in Torchlight;
     - `NtFlushBuffersFile` and `FlushFileBuffers` flush the handle's file (`XFile::Flush`, the VFS
       `File::Flush`; a handle without write access has written nothing and returns success);
     - `FileHandle::Flush` returns whether it worked, and `rex::filesystem::FlushFolder` flushes a
@@ -353,7 +373,8 @@ in number order; a branch adds its own line at its number's place.
     failure is reported, a read-only handle flushes nothing; without tracking a device flushes
     nothing; files created or rewritten through closed handles are flushed with their folder and
     then forgotten; Torchlight's replace: a temporary written, the old file removed, the temporary
-    renamed to `4.TSV`, one file and one folder flushed; a removed file leaves its folder only). The
+    renamed to `4.TSV`, one file and one folder flushed; a removed file leaves its folder only; a
+    file written in a folder renamed since is flushed under the new name). The
     exports themselves are one-line calls into those, checked in a game save rather than by a
     unit test, since they need the kernel state. Checked in a guided save-and-exit under `strace`
     (2026-10-08): the `XamContentFlush` flushed `sharedstash.bin` (`fsync` 68 ms); the game then
@@ -362,9 +383,24 @@ in number order; a branch adds its own line at its number's place.
     the folder 1.2 ms), all on the guest's main thread: about 140 ms per save-and-exit. An `fsync`
     on ext4 commits the journal and waits for the data it orders, so its time depends on what else
     is dirty on the system, not on the file: a 112 KB file took 1.9 ms with nothing else dirty,
-    11-36 ms with 16-256 MB of other dirty data, 85 ms as the first file of a new folder. Torchlight's
-    flushes fall in a zone change's loading screen or at exit. The owner judged that negligible; a
-    flush on a worker thread is the follow-up if a save ever stalls visibly. Not specific to any GPU. Candidate for an upstream report (D27 in
-    `docs/rexglue-upstream.md`): it affects every title that saves.
+    11-36 ms with 16-256 MB of other dirty data, 85 ms as the first file of a new folder. Torchlight
+    commits at zone changes (under the loading screen), in the options menu and at save-and-exit
+    (a guided run, 2026-10-09), never in open play; Alric's completion event is not verified yet
+    (D27). The owner's criterion: synchronous is fine with a menu or a loading screen open; a commit
+    in open play would need the flushes on a worker thread first. Not specific to any GPU.
+    Candidate for an upstream report (D27 in `docs/rexglue-upstream.md`): it affects every title
+    that saves.
+
+28. `rexglue-quiet-missing-files.patch`: `NtCreateFile` logged every failed open at WARN, including
+    a path that does not exist, which is how titles probe for optional files. With a PC mod pack
+    (29 mods) Torchlight looks each data file up in every mod's folder: about 124,000 lines
+    `[NtCreateFile] FAILED: path='tlmods:\<mod>\MEDIA\...' -> 0xc000000f` in the first 45 s of
+    startup, 20 MB of log before the game was usable (2026-10-09, the mods agent). The duplicate
+    filter planned in `docs/crash-handling.md` would not catch them: each line has its own path.
+    Now `X_STATUS_NO_SUCH_FILE`, `X_STATUS_OBJECT_NAME_NOT_FOUND` and
+    `X_STATUS_OBJECT_PATH_NOT_FOUND` are logged at DEBUG (off by default, `log_level` is `info`)
+    and every other failure stays at WARN. `NtOpenFile` goes through the same code. No unit test:
+    the export needs the kernel state; the check is the mod pack's startup, whose log loses those
+    lines. Not specific to any GPU. Upstream draft D28.
 
 The observation and diagnostic patches there were before remain in the git history.

@@ -66,9 +66,11 @@ index e8de147..06e2d8a 100644
      sink->set_level(spdlog::level::trace);
      sink->set_pattern(config.file_pattern);
      g_file_sink = sink;
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 721fb9f..98f6fd6 100644
 --- a/tests/unit/CMakeLists.txt
 +++ b/tests/unit/CMakeLists.txt
-@@ -13,6 +13,7 @@
+@@ -13,6 +13,7 @@ add_executable(unit_tests
      core/hash_test.cpp
      core/stream_test.cpp
      core/chrono_test.cpp
@@ -76,9 +78,12 @@ index e8de147..06e2d8a 100644
      ppc/import_function_test.cpp
      ppc/stack_test.cpp
      system/guest_path_test.cpp
+diff --git a/tests/unit/core/log_rotation_test.cpp b/tests/unit/core/log_rotation_test.cpp
+new file mode 100644
+index 0000000..c7f073a
 --- /dev/null
 +++ b/tests/unit/core/log_rotation_test.cpp
-@@ -0,0 +1,54 @@
+@@ -0,0 +1,61 @@
 +/**
 + * @file        tests/unit/core/log_rotation_test.cpp
 + * @brief       The log file sink rotates within log_max_file_size_mb x (1 + log_max_files)
@@ -105,6 +110,15 @@ index e8de147..06e2d8a 100644
 +  fs::create_directories(dir);
 +  const fs::path file = dir / "app_001.log";
 +
++  // Put the cvars back however the test ends, so the rest of unit_tests keeps the defaults.
++  struct RestoreFlags {
++    std::string size = rex::cvar::GetFlagByName("log_max_file_size_mb");
++    std::string count = rex::cvar::GetFlagByName("log_max_files");
++    ~RestoreFlags() {
++      rex::cvar::SetFlagByName("log_max_file_size_mb", size);
++      rex::cvar::SetFlagByName("log_max_files", count);
++    }
++  } restore;
 +  REQUIRE(rex::cvar::SetFlagByName("log_max_file_size_mb", "1"));
 +  REQUIRE(rex::cvar::SetFlagByName("log_max_files", "2"));
 +  {
@@ -116,8 +130,6 @@ index e8de147..06e2d8a 100644
 +    }
 +    logger.flush();
 +  }
-+  REQUIRE(rex::cvar::SetFlagByName("log_max_file_size_mb", "5"));
-+  REQUIRE(rex::cvar::SetFlagByName("log_max_files", "20"));
 +
 +  uint64_t total = 0;
 +  int files = 0;

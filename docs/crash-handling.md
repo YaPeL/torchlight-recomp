@@ -152,7 +152,10 @@ if the in-process reports turn out unreliable.
 ## 5. Keeping the log bounded
 
 - **Repeat suppression:** the file sink goes behind spdlog's `dup_filter_sink` (5 s window). A
-  message repeated in a burst is written once, then `Skipped N duplicate messages`.
+  message repeated in a burst is written once, then `Skipped N duplicate messages`. It only
+  catches identical lines: a burst that differs by an argument passes through. The largest one
+  seen, a mod pack's thousands of missing-file opens (a path each), is gone at its source: SDK
+  patch 28 logs them at DEBUG.
 - **Per run, at most 50 MB:** a rotating sink of 5 MB × 10, set through the two cvars
   (`src/live/log_budget.h`). On `bd833a2` the rotation is our SDK patch 26 (section 7).
 - **The folder, at most 200 MB:**

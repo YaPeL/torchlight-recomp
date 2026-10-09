@@ -1,5 +1,5 @@
 diff --git a/tests/ppc/CMakeLists.txt b/tests/ppc/CMakeLists.txt
-index 9933e95..caa8230 100644
+index 9933e95..e695685 100644
 --- a/tests/ppc/CMakeLists.txt
 +++ b/tests/ppc/CMakeLists.txt
 @@ -1,15 +1,23 @@
@@ -30,7 +30,7 @@ index 9933e95..caa8230 100644
  file(MAKE_DIRECTORY ${PPC_GEN_DIR})
  
  # Collect and build all assembly test files
-@@ -23,12 +31,28 @@ endif()
+@@ -23,12 +31,42 @@ endif()
  
  message(STATUS "Found ${NUM_TESTS} PPC instruction test files")
  
@@ -41,10 +41,24 @@ index 9933e95..caa8230 100644
 -get_property(TEST_BINS GLOBAL PROPERTY PPC_TEST_BINS)
 -get_property(TEST_MAPS GLOBAL PROPERTY PPC_TEST_MAPS)
 +if(REXGLUE_PPC_TEST_BIN_DIR)
++    # sources.sha256 lists the SHA-256 of each asm/ source the binaries were
++    # assembled from, so a changed test cannot run against stale binaries.
++    set(PPC_SOURCE_SUMS ${PPC_BIN_DIR}/sources.sha256)
++    if(NOT EXISTS ${PPC_SOURCE_SUMS})
++        message(FATAL_ERROR "sources.sha256 missing in ${PPC_BIN_DIR}")
++    endif()
++    file(STRINGS ${PPC_SOURCE_SUMS} PPC_SOURCE_SUM_LINES)
++    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PPC_SOURCE_SUMS} ${ASM_FILES})
 +    set(TEST_BINS "")
 +    set(TEST_MAPS "")
 +    foreach(ASM_FILE ${ASM_FILES})
 +        get_filename_component(BASE_NAME ${ASM_FILE} NAME_WE)
++        get_filename_component(ASM_NAME ${ASM_FILE} NAME)
++        file(SHA256 ${ASM_FILE} ASM_SUM)
++        list(FIND PPC_SOURCE_SUM_LINES "${ASM_SUM}  ${ASM_NAME}" SUM_INDEX)
++        if(SUM_INDEX EQUAL -1)
++            message(FATAL_ERROR "${ASM_NAME} changed since the binaries in ${PPC_BIN_DIR} were assembled")
++        endif()
 +        foreach(EXT bin map)
 +            if(NOT EXISTS ${PPC_BIN_DIR}/${BASE_NAME}.${EXT})
 +                message(FATAL_ERROR "${BASE_NAME}.${EXT} missing in ${PPC_BIN_DIR}")
@@ -65,7 +79,7 @@ index 9933e95..caa8230 100644
  
  # Generate Catch2 test code from recompiled binaries
  add_custom_command(
-@@ -96,8 +120,10 @@ endif()
+@@ -96,8 +134,10 @@ endif()
  target_compile_options(ppc_tests PRIVATE
      -UTRACY_ENABLE -UREXGLUE_ENABLE_PROFILING
      -UREXGLUE_ENABLE_PERF_COUNTERS -UREXGLUE_PROFILE_GUEST_FUNCTIONS

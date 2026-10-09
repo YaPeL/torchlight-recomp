@@ -24,3 +24,4 @@ rexglue-arm64-mffs-rounding.patch
 rexglue-mtfsf-field-mask.patch
 rexglue-log-rotation.patch
 rexglue-guest-file-flush.patch
+rexglue-quiet-missing-files.patch
