@@ -36,7 +36,8 @@ in number order; a branch adds its own line at its number's place.
 | 24 | `rexglue-arm64-mffs-rounding.patch` | `develop` | In the series; to confirm on ARM64 |
 | 25 | `rexglue-mtfsf-field-mask.patch` | `develop` | In the series |
 | 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
-| 27 | | | Next free number |
+| 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
+| 28 | | | Next free number |
 
 ## The patches
 
@@ -322,5 +323,33 @@ in number order; a branch adds its own line at its number's place.
     directory budget is untouched. Test: `tests/unit/core/log_rotation_test.cpp` (4 MB written
     with 1 MB and 2 rotations: three files, at most 3 MB). Not specific to any GPU. Candidate for
     an upstream report (the removal looks unintended next to the new directory budget).
+
+27. `rexglue-guest-file-flush.patch`: a guest's request to write a file through to the disk did
+    nothing: `NtFlushBuffersFile`, the C library's `FlushFileBuffers` and `XamContentFlush` returned
+    success without flushing, and nothing on a guest path called the host `FileHandle::Flush`. A
+    power loss or a crash right after a save could lose a save the game believed was on disk; that
+    affects every title that saves. Now:
+    - `NtFlushBuffersFile` and `FlushFileBuffers` flush the handle's file (`XFile::Flush`, the VFS
+      `File::Flush`; the host-path file calls its host handle, other devices have nothing to flush;
+      a handle without write access has written nothing and returns success);
+    - `XamContentFlush` and `XamContentClose` flush the open files of that content package
+      (`ContentManager::FlushContent`, `rex::filesystem::FlushFilesOnDevice`: a package is a device
+      of its own); a root that is not open still returns success, as before;
+    - `FileHandle::Flush` returns whether it worked; on POSIX it is `fsync`, on Apple
+      `fcntl(F_FULLFSYNC)` first (`fsync` there stops at the drive's cache) with `fsync` when that
+      fails, on Windows `FlushFileBuffers`.
+    Test: `tests/unit/core/vfs_flush_test.cpp` (a writable file's flush reaches its host handle, a
+    failure is reported, a read-only handle flushes nothing, a content flush reaches the files of its
+    device only and returns the first failure, a real host file flushes after a write). The exports
+    themselves (`NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush`, `XamContentClose`) are
+    one-line calls into those, not covered by a unit test since they need the kernel state. Cost:
+    Torchlight's save calls `NtFlushBuffersFile` once and `XamContentFlush` once (one call site
+    each), so a save does one file flush plus one per package file still open at the content flush.
+    An `fsync` of a save-sized file (110-290 KB) on this machine's NVMe disk (ext4) takes 1 ms in
+    the median and under 2 ms at the 90th percentile (50 runs each, quiet machine; 1-6 ms on
+    average with a build running), with rare outliers up to 0.23 s when the journal commits.
+    Autosaves come with zone changes, behind a loading screen. The owner judged that negligible,
+    and no in-game measurement was made. Not specific to any GPU. Candidate for an upstream report
+    (D27 in `docs/rexglue-upstream.md`): it affects every title that saves.
 
 The observation and diagnostic patches there were before remain in the git history.
