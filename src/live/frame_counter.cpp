@@ -56,6 +56,11 @@ class CounterDialog : public rex::ui::ImGuiDialog {
   void OnDraw(ImGuiIO& io) override {
     const std::vector<float> frames = FrameTiming::Get().Recent();
     const FrameCounterStats s = SummarizeFrames(frames);
+    // In the native mode, what reached the screen too: fewer frames than the game's when the
+    // backend is the limit (it then drops guest frames).
+    size_t dropped = 0;
+    const std::vector<float> shown = FrameTiming::Get().RecentPresented(&dropped);
+    const FrameCounterStats p = SummarizeFrames(shown);
     ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - 20, 20), ImGuiCond_Always, ImVec2(1, 0));
     ImGui::SetNextWindowBgAlpha(0.55f);
     ImGui::Begin("##frame_counter", nullptr,
@@ -63,10 +68,20 @@ class CounterDialog : public rex::ui::ImGuiDialog {
                      ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
                      ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoSavedSettings);
     ImGui::SetWindowFontScale(2.5f);
-    ImGui::Text("%.0f FPS", s.fps);
+    if (shown.empty()) {
+      ImGui::Text("%.0f FPS", s.fps);
+    } else {
+      ImGui::Text("%.0f FPS shown", p.fps);
+    }
     ImGui::SetWindowFontScale(1.3f);
-    ImGui::Text("%.1f ms", s.last_ms);
-    ImGui::Text("1%% low %.0f FPS", s.low_1pct_fps);
+    if (!shown.empty()) {
+      ImGui::Text("game %.0f FPS, %zu dropped", s.fps, dropped);
+      ImGui::Text("shown: 1%% low %.0f FPS", p.low_1pct_fps);
+      ImGui::Text("game: 1%% low %.0f FPS", s.low_1pct_fps);
+    } else {
+      ImGui::Text("%.1f ms", s.last_ms);
+      ImGui::Text("1%% low %.0f FPS", s.low_1pct_fps);
+    }
     ImGui::Text("max %.0f ms  >33 ms %zu  >50 ms %zu", s.max_ms, s.over_33, s.over_50);
     ImGui::SetWindowFontScale(1.0f);
     ImGui::Text("last %lld s", static_cast<long long>(FrameTiming::kRecent.count()));

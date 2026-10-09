@@ -9,6 +9,18 @@ OGRE GL3+) and the SDK's emulated GPU (`--native_live=off`, Xenos on Vulkan). No
 GTX 1050 Ti with Max-Q Design (driver 580.178.04, GL for the native backend, Vulkan for Xenos), 30
 GB RAM, Ubuntu 26.04 (kernel 7.0), Wayland, plugged in, nothing else open, no MangoHud.
 
+This laptop has two GPUs (Optimus). Its panel (eDP-1, 1920x1080 at 60 Hz) is wired to the Intel
+UHD 630; the NVIDIA's own outputs (HDMI, two DisplayPort) are unconnected. The native backend draws
+on the NVIDIA (EGL on Wayland, GNOME), so every presented frame is copied to the Intel to be shown
+(PRIME render offload): part of the present's 2-4 ms in the town square is that copy. Machines with
+one GPU, or the monitor on the GPU that draws, do not pay it, and they are limited by the CPU too.
+
+**Since 2026-10-09 every measurement reports two frame rates**: the game's (guest swap to swap,
+`frame time (guest swap to swap)` in the log, what the step overlay always measured) and the
+presented one (present to present on the backend thread, `frame time (presented, present to
+present)`, with the guest frames dropped because the backend was behind). When the backend is the
+limit, the second is the lower one and is what the player sees; the frame counter (F3) shows both.
+
 **Build** (the Linux release's flags, built locally): the game (`linux-amd64-release`,
 `-O3 -g -DNDEBUG`; `generated/` also `-gline-tables-only -mcmodel=large -msse4.1`), the SDK's
 Release libraries (`librexruntime.so`, `librexgpu-xenos.so`: `-O3 -DNDEBUG -march=x86-64-v2`,
