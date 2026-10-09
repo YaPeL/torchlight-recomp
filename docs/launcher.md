@@ -287,6 +287,14 @@ out of the drawing so that the drawing can be replaced.
    package, picker fallback); Windows Sandbox; Linux; the Steam Deck in Game Mode (the hand-over
    from the launcher's window to the game's).
 
+**Done on `feature/launcher-imgui` (2026-10-08):** steps 0 (`9c2b39c`, SDK patch 21 `ab1319d`,
+its macOS fix `5a98b6f`), 1 (`7e9547c`), 2 (`ddddad7`), 3 (`27ca6a9`, with `launcher_preview`, a
+development executable), 4 (`42382c7`) and 5 (`92636a7`). Decided along the way: the check at
+every start is every file of the table with its size plus `default.xex` by SHA-256
+(`QuickCheckGameFolder`; it also checks `--game_data_root`, never installed into); after Play the
+window waits for the keys and buttons held to be released; the colors are black and phosphor
+green until the design review. Pending: step 6, the design review, the asynchronous pickers.
+
 **Risks**:
 - **ImGui twice in the process**: checked on 2026-10-08, there is one copy and the launcher must
   not add another. The SDK builds ImGui 1.92.5 (`thirdparty/imgui` at `6d910d5`, an OBJECT library
