@@ -154,6 +154,32 @@ dungeon, not only the mine (a session recorded with the culling off and the vali
 the frames replayed without the dropped buckets identical to the whole frames). The validation
 log and its scripts are local; they log the would-drop decisions by guest swap and draw index.
 
+### The other cameras: light map and shadows (2026-10-09)
+
+Besides the main camera, the town square renders two 512x512 render textures per frame, each from
+its own orthographic camera: the light map (`rtt/.../208`) and the shadows (`rtt/.../207`). Measured
+per frame (a local diagnostic timing `SceneManager::_renderScene`, `0x821B07F0`, per camera, frame
+about 7.2 ms):
+
+| Camera | `_renderScene` per frame | What it queues per walk |
+|---|---|---|
+| Main (the window) | 3.3-3.5 ms | ~185 objects |
+| Light map | 1.0-1.1 ms (walk ~0.35, drawing ~0.65) | ~62 renderables, ~38 of them StaticGeometry buckets |
+| Shadows | 0.87-0.91 ms (walk ~0.3, drawing ~0.3, and 0.27 ms of `0x821C8C00`) | ~13 renderables, no buckets |
+
+Bucket and per-piece culling would gain nothing there: counted in the same run (culling off, every
+bucket tested against that walk's own frustum), no light map bucket lies outside the light map
+camera's frustum, and the shadow camera queues no buckets. Their objects' boxes are +-100000, so a
+per-object test drops nothing either. The shadow walk's cost per octree node (~2.4 us) is the main
+camera's; most of its ~125 nodes hold objects the walk rejects by their flags (casters only).
+
+`0x821C8C00`, the 0.27 ms, is not a cost of the shadows: it is a once-per-frame update (it compares
+the frame number at `this+56` with the current one, then walks a `std::map` at `this+8` and, for
+each enabled entry (`+52`), calls three virtuals on the objects at `+8`, `+40` and `+24`), paid by the
+frame's first `_renderScene`, which is the shadow camera's. It looks like the scene's animation
+update (`_applySceneAnimations`); the classes of the three objects are still to be identified. It
+is a candidate for a native reimplementation (3.7 % of the frame).
+
 ## Upstream report (ReXGlue codegen)
 
 For the agent maintaining the ReXGlue patches: in the generated code every PPC register is a field
