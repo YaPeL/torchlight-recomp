@@ -7,8 +7,10 @@
 // change: a PC mark (FF FE) reads as the 0xFFFE it already skips.
 
 #include <cstdint>
+#include <mutex>
 #include <span>
 #include <string>
+#include <unordered_set>
 
 #include <rex/logging.h>
 #include <rex/ppc/context.h>
@@ -42,6 +44,14 @@ std::string ReadWStringUtf8(const uint8_t* base, uint32_t str) {
   return out;
 }
 
+// Each file is logged once: the game reads a base definition again for every unit built on it.
+bool FirstTime(const std::string& path) {
+  static std::mutex mutex;
+  static std::unordered_set<std::string> logged;
+  std::lock_guard lock(mutex);
+  return logged.insert(path).second;
+}
+
 }  // namespace
 
 REX_EXTERN(__imp__sub_82399C00);
@@ -62,10 +72,12 @@ REX_FUNC(sub_82399C00) {
       return;
     case torchlight::mods::Utf16Order::kLittle:
       torchlight::mods::SwapUtf16Units(text);
-      REXLOG_INFO("mods: text file {} read as little-endian UTF-16 ({} units turned around)", path, count - 1);
+      if (FirstTime(path)) {
+        REXLOG_INFO("mods: text file {} read as little-endian UTF-16 ({} units turned around)", path, count - 1);
+      }
       return;
     case torchlight::mods::Utf16Order::kUnclear:
-      REXLOG_WARN("mods: text file {}: byte order unclear, read as it is", path);
+      if (FirstTime(path)) REXLOG_WARN("mods: text file {}: byte order unclear, read as it is", path);
       return;
   }
 }
