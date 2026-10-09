@@ -64,6 +64,7 @@ Other topics:
 | `non_argument_as_local` and values passed in r11/r12 (D26) | The funclets' frame in r12 and the stack probe's size are lost: deadlock seen | Issue, with fix directions |
 | Guest file flushes are no-ops (D27) | `NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush` return success without flushing | Issue and PR; our patch 27 |
 | Every missing file is a warning (D28) | `NtCreateFile` logs each not-found open at WARN | Issue and PR; our patch 28 |
+| `chrono_test` fails at the NT epoch on Linux (D29) | 1601 does not fit libstdc++'s nanosecond `system_clock` | Issue |
 | `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
 | `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
@@ -858,6 +859,40 @@ shares the code. Our patch 28 (`patches/README.md`).
 
 ---
 
+### D29. Tests: `chrono_test` fails at the NT epoch on Linux
+
+Seen while validating the series (2026-10-09). The render agent reproduced it on a clean `bd833a2`
+with no patches, so it is not ours.
+
+**Issue: `[Tests]: chrono_test fails for 1601-01-01 on Linux: the NT epoch is outside system_clock's range`**
+
+On Linux x86-64 (clang, libstdc++, Release), `unit_tests` fails 4 cases of
+`tests/unit/core/chrono_test.cpp`, 11 assertions, all at the NT epoch (FILETIME 0, 1601-01-01):
+- "from_sys then to_sys round-trips for whole-second values" (line 109);
+- "calendar decomposition: NT epoch (1601-01-01)" (lines 150-157): it gives 2185-07-21
+  23:34:33.709, a Thursday;
+- "calendar recomposition: known dates produce correct FILETIMEs" (line 240):
+  `recompose(1601, 1, 1, ...)` gives 184467440737095516;
+- "calendar recomposition: decompose then recompose round-trips" (line 253).
+
+The other dates (1970, 2000, 2000-02-29, 2020, 2021) pass. The wrong values match this cause.
+`WinSystemClock::to_sys` (`include/rex/chrono/chrono.h`) converts to
+`std::chrono::system_clock::duration`, which in libstdc++ is a signed 64-bit count of nanoseconds.
+That covers about 1677 to 2262, so 1601 overflows:
+- 1601 plus 2^64 ns (584.55 years) is mid-2185, the date the decomposition gives;
+- 184467440737095516 is 2^64 / 100, the same wrap counted in FILETIME's 100 ns units.
+
+MSVC's `system_clock` counts 100 ns and libc++'s counts microseconds. Both reach 1601, so Windows
+and macOS should pass (macOS to be confirmed by our port). The test came in with `952828d`
+(2026-02-19), the same day as `4c981fe` ("replace date:: with std::chrono::"). It was not built at
+those commits, so "since then" is a reading.
+
+Fix options for upstream: keep the 1601 cases out of the `system_clock` round trips on
+libstdc++, or convert through a `sys_time` with a coarser duration (seconds or 100 ns) instead of
+`system_clock::duration`. Nothing in the runtime is known to pass FILETIMEs that old to `to_sys`.
+
+---
+
 ### D22. Codegen: `fctiw`/`fctid` ignore the rounding mode on ARM64
 
 The macOS port found it by reading the code (`docs/macos-port.md` on `docs/macos-port-plan`,
@@ -1228,8 +1263,8 @@ these agents lives here and in `patches/README.md`.
     3. Put the fixes back (the same loop without `-R`, in the order 23, 24, 25), rebuild and run all
        of `ppc_tests` (expected: 1492 cases pass) and `unit_tests` (expected: as before, only
        `output_stamp_test.cpp:227-228`). On Linux x86-64, Release, `chrono_test.cpp` also fails at
-       the NT epoch (1601). The series does not touch that code, so it is not a finding of the
-       series; say whether macOS shows it too.
+       the NT epoch (1601), on a clean `bd833a2` too (D29). Please say whether macOS shows it: the
+       4 cases and lines are in D29, and libc++'s microsecond `system_clock` should reach 1601.
     4. Anything else is a finding: send the failing cases' output.
   - **Patch 27 (guest file flushes, 2026-10-08): please check on macOS** and write the result
     in `docs/macos-port.md`. On Apple, `FileHandle::Flush` calls `fcntl(F_FULLFSYNC)` and falls
