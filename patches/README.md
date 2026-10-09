@@ -36,7 +36,8 @@ in number order; a branch adds its own line at its number's place.
 | 24 | `rexglue-arm64-mffs-rounding.patch` | `develop` | In the series; to confirm on ARM64 |
 | 25 | `rexglue-mtfsf-field-mask.patch` | `develop` | In the series |
 | 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
-| 27 | | | Next free number |
+| 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
+| 28 | | | Next free number |
 
 ## The patches
 
@@ -322,5 +323,48 @@ in number order; a branch adds its own line at its number's place.
     directory budget is untouched. Test: `tests/unit/core/log_rotation_test.cpp` (4 MB written
     with 1 MB and 2 rotations: three files, at most 3 MB). Not specific to any GPU. Candidate for
     an upstream report (the removal looks unintended next to the new directory budget).
+
+27. `rexglue-guest-file-flush.patch`: a guest's request to write its files through to the disk did
+    nothing: `NtFlushBuffersFile`, the C library's `FlushFileBuffers` and `XamContentFlush` returned
+    success without flushing, `XamContentClose` only unmounted, and nothing on a guest path called
+    the host `FileHandle::Flush`. A power loss or a crash right after a save could lose a save the
+    game believed was on disk; that affects every title that saves. Now:
+    - a content package is committed as a whole, as on the console: its device
+      (`HostPathDevice::EnableChangeTracking`) remembers the host files written, created or renamed
+      into place since it was mounted, and the folders whose entries changed (a file created,
+      renamed or removed); `XamContentFlush` and `XamContentClose` (before it unmounts) flush them
+      (`HostPathDevice::FlushChanges`: each file reopened by path, since its handles are usually
+      closed by then, then the folders) and log `Content <root>: flushed N files and M folders to
+      disk`; a root that is not open still returns success, as before;
+    - `NtFlushBuffersFile` and `FlushFileBuffers` flush the handle's file (`XFile::Flush`, the VFS
+      `File::Flush`; a handle without write access has written nothing and returns success);
+    - `FileHandle::Flush` returns whether it worked, and `rex::filesystem::FlushFolder` flushes a
+      folder's entries: `fsync` on POSIX, `fcntl(F_FULLFSYNC)` first on Apple (`fsync` there stops
+      at the drive's cache) with `fsync` when it fails; `FlushFileBuffers` on Windows, where folder
+      entries are journaled by NTFS and are not flushed.
+    Torchlight's case, the reason for this design: the first version flushed only the files still
+    open at `XamContentFlush`/`XamContentClose`, and a guided save under `strace` showed no `fsync`
+    at all. The game's one `NtFlushBuffersFile` call site is not on its save path, and by the
+    content flush it has closed what it wrote. Its save replaces the character file by name
+    (`4.tsv` before, `4.TSV` after, nothing else changed). Flushing every file on close was the
+    other option; it does not depend on the game closing the content, but it would force the disk
+    on every temporary file of every title, which the console does not.
+    Test: `tests/unit/core/vfs_flush_test.cpp` (a writable handle's flush reaches its host handle, a
+    failure is reported, a read-only handle flushes nothing; without tracking a device flushes
+    nothing; files created or rewritten through closed handles are flushed with their folder and
+    then forgotten; Torchlight's replace: a temporary written, the old file removed, the temporary
+    renamed to `4.TSV`, one file and one folder flushed; a removed file leaves its folder only). The
+    exports themselves are one-line calls into those, checked in a game save rather than by a
+    unit test, since they need the kernel state. Checked in a guided save-and-exit under `strace`
+    (2026-10-08): the `XamContentFlush` flushed `sharedstash.bin` (`fsync` 68 ms); the game then
+    wrote `save.tmp` and renamed `4.tsv` to `backup.tmp` and `save.tmp` to `4.TSV`; the
+    `XamContentClose` 5 s later flushed 2 files and the folder (`4.TSV` 69 ms, `backup.tmp` 0.04 ms,
+    the folder 1.2 ms), all on the guest's main thread: about 140 ms per save-and-exit. An `fsync`
+    on ext4 commits the journal and waits for the data it orders, so its time depends on what else
+    is dirty on the system, not on the file: a 112 KB file took 1.9 ms with nothing else dirty,
+    11-36 ms with 16-256 MB of other dirty data, 85 ms as the first file of a new folder. Torchlight's
+    flushes fall in a zone change's loading screen or at exit. The owner judged that negligible; a
+    flush on a worker thread is the follow-up if a save ever stalls visibly. Not specific to any GPU. Candidate for an upstream report (D27 in
+    `docs/rexglue-upstream.md`): it affects every title that saves.
 
 The observation and diagnostic patches there were before remain in the git history.
