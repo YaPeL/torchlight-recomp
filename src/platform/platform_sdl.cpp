@@ -35,6 +35,7 @@ const char* SystemName(const NativeWindow& window) {
     case NativeWindow::kX11: return "x11";
     case NativeWindow::kWayland: return "wayland";
     case NativeWindow::kWin32: return "win32";
+    case NativeWindow::kCocoa: return "cocoa";
     default: return "none";
   }
 }

@@ -249,6 +249,9 @@ struct tl_backend {
   Ogre::Root* root = nullptr;
   Ogre::RenderSystem* rs = nullptr;
   Ogre::RenderWindow* window = nullptr;
+  // The native window OGRE draws in where it cannot make its own (platform.h; macOS); outlives
+  // `window`.
+  std::unique_ptr<torchlight::platform::OgreTopLevelWindow> top_level;
   bool visible_window = false;
   bool child_window = false;  // inside another application's window (tl_backend_create_child)
   Ogre::Viewport* window_viewport = nullptr;
@@ -1735,26 +1738,39 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     misc["minColourBufferSize"] = "24";
     misc["maxColourBufferSize"] = "32";
     uint32_t window_w = b->visible_window ? width : 64, window_h = b->visible_window ? height : 64;
-    if (b->child_window) {
-      // Inside the application's window: that window keeps the focus, so key and pointer events
-      // (not selected here) reach the application.
-      for (const auto& [key, value] : torchlight::platform::OgreWindowParams(parent_window)) {
-        misc[key] = value;
+    // The window's own work on the window system's thread (platform::RunOnWindowThread; macOS:
+    // the main thread, the live mode calling from its render thread).
+    torchlight::platform::RunOnWindowThread([&] {
+      if (b->child_window) {
+        // Inside the application's window: that window keeps the focus, so key and pointer events
+        // (not selected here) reach the application.
+        for (const auto& [key, value] : torchlight::platform::OgreWindowParams(parent_window)) {
+          misc[key] = value;
+        }
+        window_w = window_width;
+        window_h = window_height;
+      } else {
+        b->top_level = torchlight::platform::OgreTopLevelWindow::Create(
+            misc["title"], window_w, window_h, b->visible_window);
+        if (b->top_level) {
+          for (const auto& [key, value] :
+               torchlight::platform::OgreWindowParams(b->top_level->native())) {
+            misc[key] = value;
+          }
+        }
       }
-      window_w = window_width;
-      window_h = window_height;
-    }
-    b->window = b->root->createRenderWindow("tl_backend", window_w, window_h, false, &misc);
+      b->window = b->root->createRenderWindow("tl_backend", window_w, window_h, false, &misc);
+      if (b->visible_window && !b->child_window) {
+        Ogre::RenderWindow* window = b->window;
+        b->keyboard = torchlight::platform::KeyReader::ForOgreWindow(
+            [window](const char* name, void* out) { window->getCustomAttribute(name, out); });
+      }
+    });
     b->window->setAutoUpdated(false);
     if (b->visible_window) {
       b->window_viewport = b->window->addViewport(nullptr);
       b->window_viewport->setClearEveryFrame(false);
       b->window_viewport->setOverlaysEnabled(false);
-      if (!b->child_window) {
-        Ogre::RenderWindow* window = b->window;
-        b->keyboard = torchlight::platform::KeyReader::ForOgreWindow(
-            [window](const char* name, void* out) { window->getCustomAttribute(name, out); });
-      }
     }
     if (!MakeTarget(b, "tl_main", width, height, true, b->main)) {
       SetError(error, error_size, "cannot create the main render texture");
@@ -1850,8 +1866,12 @@ void tl_backend_destroy(tl_backend* b) {
   b->guest_lighting.reset();
   if (b->query) b->rs->destroyHardwareOcclusionQuery(b->query);
   for (auto& p : b->projectors) p.reset();
-  b->keyboard.reset();
-  delete b->root;
+  // OGRE's window goes with the root, on the window system's thread.
+  torchlight::platform::RunOnWindowThread([b] {
+    b->keyboard.reset();
+    delete b->root;
+    b->top_level.reset();  // after OGRE's window, which draws in it
+  });
   delete b->log_manager;
   delete b;
 }
@@ -2110,8 +2130,15 @@ void tl_backend_set_vsync(tl_backend* b, int vsync) {
 void tl_backend_resize_window(tl_backend* b, uint32_t width, uint32_t height) {
   if (!b->child_window || !width || !height) return;
   // OGRE 14 resizes the window itself (X11EGLWindow::resize, a child window; WaylandEGLWindow::
-  // resize, the EGL window on the application's surface) and updates its viewports.
-  b->window->resize(width, height);
+  // resize, the EGL window on the application's surface) and updates its viewports; on Cocoa the
+  // view already has its size, which OGRE reads (platform::OgreWindowFollowsGameWindow).
+  torchlight::platform::RunOnWindowThread([&] {
+    if (torchlight::platform::OgreWindowFollowsGameWindow()) {
+      b->window->windowMovedOrResized();
+    } else {
+      b->window->resize(width, height);
+    }
+  });
 }
 
 void tl_backend_release_buffer(tl_backend* b, uint64_t id) {

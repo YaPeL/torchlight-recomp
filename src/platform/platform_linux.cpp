@@ -297,6 +297,19 @@ std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWi
   return {{"parentWindowHandle", std::to_string(window.window)}};
 }
 
+// OGRE's GL window creates its own top-level windows here.
+std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string&, uint32_t,
+                                                               uint32_t, bool) {
+  return nullptr;
+}
+
+// OGRE's windows have no thread of their own here: the work runs where it is asked.
+void RunOnWindowThread(const std::function<void()>& work) { work(); }
+
+void WaitServingWindowThread(const std::function<bool()>&) {}
+
+bool OgreWindowFollowsGameWindow() { return false; }
+
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow* window) {
   if (window && window->system == NativeWindow::kWayland) {
     return plugin_dir + kWaylandRenderSystemSubdir;

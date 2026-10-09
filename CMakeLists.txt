@@ -238,6 +238,16 @@ if(UNIX AND NOT APPLE)
             CONFIGURATIONS Debug RelWithDebInfo)
     # The replay tool, for checking the installed tree without the game.
     install(TARGETS replay RUNTIME DESTINATION bin COMPONENT tools EXCLUDE_FROM_ALL)
+elseif(APPLE)
+    # macOS: in the build tree the game finds the SDK's and OGRE's dylibs through the build RPATH
+    # (their library directories), as on Linux; the SDK's own setting (@executable_path, used for
+    # the build too) only finds the SDK's runtime staged next to it. The app bundle's layout and
+    # install rules are MAC.8's (docs/macos-port.md).
+    if(TORCHLIGHT_GAME)
+        set_target_properties(torchlight PROPERTIES
+            BUILD_WITH_INSTALL_RPATH OFF
+            INSTALL_RPATH "@executable_path")
+    endif()
 elseif(WIN32)
     # Windows zip (packaging/windows/make_zip.ps1): one folder, with the executable next to every DLL
     # it loads (Windows looks next to the executable; there is no rpath), the GPU plugins (the SDK

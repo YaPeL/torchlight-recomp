@@ -88,6 +88,7 @@ class LiveMode {
   SnapshotStore store_;
   std::thread thread_;
   std::atomic<bool> running_{false};
+  std::atomic<bool> finished_{false};  // Run() has returned (Stop)
   std::atomic<uint64_t> pending_window_size_{0};  // width << 32 | height, 0 when none
   struct PendingVideo {
     settings::Resolution render_resolution;

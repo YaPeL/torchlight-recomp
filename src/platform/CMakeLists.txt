@@ -17,6 +17,13 @@ elseif(WIN32)
     # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE dxgi opengl32 gdi32)
+elseif(APPLE)
+    enable_language(OBJCXX)
+    add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_mac.cpp)
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_mac.mm text_wrap.cpp)
+    # AppKit: the game window's view, OGRE's window keys; CoreGraphics: the window server session.
+    target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
+                          PRIVATE "-framework AppKit" "-framework CoreGraphics")
 else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
@@ -30,7 +37,7 @@ target_compile_options(torchlight_platform PRIVATE -Wall -Wextra)
 
 # The GPU choice rules are each platform's: Linux's (PRIME, DRI_PRIME) on machines described by
 # hand; Windows' on this machine (gpu_adapters_test has the made-up ones), with the paths and the
-# key reader.
+# key reader. macOS has one GPU and no rules.
 if(WIN32)
     add_executable(platform_win_test platform_win_test.cpp)
     target_link_libraries(platform_win_test PRIVATE torchlight_platform shell32 ole32 opengl32)
@@ -41,7 +48,7 @@ if(WIN32)
     target_link_libraries(utf8_paths_test PRIVATE shell32)  # CommandLineToArgvW
     target_compile_options(utf8_paths_test PRIVATE -Wall -Wextra -Werror)
     add_test(NAME utf8_paths_test COMMAND utf8_paths_test)
-else()
+elseif(NOT APPLE)
     add_executable(gpu_choice_test gpu_choice_test.cpp)
     target_link_libraries(gpu_choice_test PRIVATE torchlight_platform)
     target_compile_options(gpu_choice_test PRIVATE -Wall -Wextra -Werror)

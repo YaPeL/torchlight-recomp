@@ -109,7 +109,11 @@ void LiveMode::Start(const LiveOptions& options) {
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
   capture::Session::Get().EnableLive(&queue_, &store_);
-  thread_ = std::thread([this] { Run(); });
+  finished_ = false;
+  thread_ = std::thread([this] {
+    Run();
+    finished_ = true;
+  });
   REXLOG_INFO("live: native backend {}{}, {}x{}, frames queued at the guest swap",
               options_.only ? "as the only renderer (Xenos off)" : "in parallel",
               options_.draw ? "" : " WITHOUT DRAWING (diagnostics)", options_.width,
@@ -128,6 +132,9 @@ void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync) {
 void LiveMode::Stop() {
   if (!running_.exchange(false)) return;
   queue_.Close();
+  // The render thread may be waiting for the main thread to create, resize or destroy the
+  // backend's window (macOS, platform::RunOnWindowThread): that work runs until the thread ends.
+  platform::WaitServingWindowThread([this] { return finished_.load(); });
   if (thread_.joinable()) thread_.join();
 }
 
