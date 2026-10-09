@@ -648,6 +648,35 @@ Threads in only mode on macOS, checked for the fix:
   destruction) while the main thread waits in `Stop`. `Stop` has to keep serving the main
   thread's queue until the render thread ends.
 
+**Ticket MAC.7 (play), 2026-10-09:** the playing part is the owner's session of MAC.6 (town and
+a dungeon, internal resolution changed while playing, several minutes without a fault; its
+numbers are the table above). What remained was saving and loading, checked here; no `fs_usage`,
+no 30-minute session and no new performance table (the owner's decision).
+
+- Game built from `develop` (`2231295`, with `fix/macos-f9-atomic`) against an SDK rebuilt with
+  `develop`'s whole series (patch 27 as revised, which logs its flushes, and 28); codegen again
+  (107 files written).
+- On a copy of the saves of the owner's runs (`--user_data_root`, two characters), two capped
+  only-mode runs driven by synthetic key presses (the terminal has the Accessibility permission)
+  and checked on screen. A window capture by id (`screencapture -l`) is black in only mode; a
+  capture of the window's screen region (`screencapture -R`) shows the GL image.
+  1. Continue: the character loads in Torchlight (town). Pause menu, Exit to Title: the game
+     autosaves. The log: `Content SAVE: flushed 1 files and 0 folders to disk`, then
+     `flushed 2 files and 1 folders`, 5 s apart; the character's save file and
+     `sharedstash.bin` rewritten (new contents), the other character's untouched. Return to
+     Game Library: exit to dashboard, exit code 0, nothing left.
+  2. A new process, Continue: the character loads where it was saved, in Torchlight; saved and
+     exited the same way, the same two flushes.
+- Not checked: a save at a zone change and a load in another zone. Walking to the mines'
+  entrance with blind key presses was not reliable, so the save was the one at Exit to Title.
+- The `SAVE:\` lines: 28 `ResolvePath(SAVE:\) failed - device not found` per run, the accesses
+  before the save content is mounted that Linux also logs (about 28, investigated by the render
+  agent). Compared by count; the Linux summary to compare line by line did not arrive.
+- The save file is written back as `0.TSV` where it was `0.tsv`: the game writes the upper-case
+  name, and APFS (case-insensitive, case-preserving) keeps the new spelling. The game reads it
+  back either way here. On Linux (case-sensitive) the SDK's host paths decide which name is
+  used; nothing to change on macOS.
+
 **Ticket MAC.10 (after the beta): Vulkan on MoltenVK** as a second render system, as WIN.7 did for
 Direct3D 11.
 
