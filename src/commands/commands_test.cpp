@@ -95,7 +95,10 @@ Capture MakeCapture() {
   SetConstants consts;
   consts.stage = Known(ProgramStage::kFragment, 1);
   consts.mask = 0xFFFF;
-  consts.floats.push_back({16, 4, 32, 8, 1, {0x3F800000u, 2, 3, 4, 5, 6, 7, 8}});
+  const uint32_t float_values[] = {0x3F800000u, 2, 3, 4, 5, 6, 7, 8};
+  consts.AddRange(true, {16, 4, 32, 8, 1}, float_values);
+  const uint32_t int_values[] = {9, 10, 11, 12};
+  consts.AddRange(false, {0, 0, 0, 4, 1}, int_values);
   consts.autos.push_back({22, "ACT_WORLDVIEWPROJ_MATRIX", 0, 16, 0, 2});
   consts.transpose_matrices = true;
   f0.commands.push_back({0, consts});
@@ -153,6 +156,9 @@ void TestRoundTrip() {
   for (const auto& cmd : read.frames[0].commands) {
     if (const auto* c = std::get_if<SetConstants>(&cmd.payload); c && !c->autos.empty()) {
       Check(c->autos[0].name == "ACT_WORLDVIEWPROJ_MATRIX", "auto constant name read back");
+      Check(c->floats.size() == 1 && c->ints.size() == 1 && c->Data(c->floats[0]).size() == 8 &&
+                c->Data(c->floats[0])[0] == 0x3F800000u && c->Data(c->ints[0])[3] == 12,
+            "constant ranges read back with their values");
     }
   }
   Check(read.frames.size() == 2, "frame count");

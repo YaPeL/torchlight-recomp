@@ -485,8 +485,7 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
   c.parameters_guest_address = parameters;
   if (parameters == 0) return c;
   c.transpose_matrices = abi::ReadBool(m, parameters, gpp::kTransposeMatrices);
-  auto read_ranges = [&](abi::Field logical, abi::Field values, bool floats,
-                         std::vector<commands::ConstantRange>& out) {
+  auto read_ranges = [&](abi::Field logical, abi::Field values, bool floats) {
     uint32_t data = U32(m, parameters + values.offset + ogre::stl_vector::kFirst.offset);
     uint32_t structure = U32(m, parameters + logical.offset + ogre::shared_ptr::kPRep.offset);
     if (structure == 0 || data == 0) return;
@@ -503,19 +502,18 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
       if (r.element_count > 4096) return;
       // Read into a scratch buffer first: a range the backend already holds is left out without
       // allocating (live commands, `filter`).
-      thread_local std::vector<uint32_t> values;
-      values.resize(r.element_count);
-      for (uint32_t i = 0; i < r.element_count; ++i) values[i] = U32(m, data + 4 * (physical + i));
+      thread_local std::vector<uint32_t> scratch;
+      scratch.resize(r.element_count);
+      for (uint32_t i = 0; i < r.element_count; ++i) scratch[i] = U32(m, data + 4 * (physical + i));
       const uint8_t stage = c.stage.value;
-      if (mirror && filter && mirror->Holds(floats, stage, physical, values.data(), r.element_count))
+      if (mirror && filter && mirror->Holds(floats, stage, physical, scratch.data(), r.element_count))
         return;
-      if (mirror) mirror->Store(floats, stage, physical, values.data(), r.element_count);
-      r.data.assign(values.begin(), values.end());
-      out.push_back(std::move(r));
+      if (mirror) mirror->Store(floats, stage, physical, scratch.data(), r.element_count);
+      c.AddRange(floats, r, scratch);
     });
   };
-  read_ranges(gpp::kFloatLogicalToPhysical, gpp::kFloatConstants, true, c.floats);
-  read_ranges(gpp::kIntLogicalToPhysical, gpp::kIntConstants, false, c.ints);
+  read_ranges(gpp::kFloatLogicalToPhysical, gpp::kFloatConstants, true);
+  read_ranges(gpp::kIntLogicalToPhysical, gpp::kIntConstants, false);
 
   uint32_t first = U32(m, parameters + gpp::kAutoConstants.offset + ogre::stl_vector::kFirst.offset);
   uint32_t last = U32(m, parameters + gpp::kAutoConstants.offset + ogre::stl_vector::kLast.offset);
