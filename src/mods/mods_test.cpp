@@ -135,6 +135,16 @@ int main() {
     plan = PlanMods(scan, list);
     Check(plan.mods.size() == 3, "without CHECKFORNEW new folders are not added");
 
+    // mods.dat in another case than the folders (PC writes its paths in upper case): the plan has
+    // the folders as they are on disk, the list keeps what was written.
+    ModList upper;
+    upper.entries = {{"C:/USERS/X/MODS/A_MOD/", 0, true}};
+    upper.check_for_new = false;
+    plan = PlanMods(scan, upper);
+    Check(plan.mods.size() == 1 && plan.mods[0].folder == "A_mod" &&
+              plan.list.entries[0].directory == "C:/USERS/X/MODS/A_MOD/",
+          "the folder's own case in the plan, the written path kept in the list");
+
     // The manager only exists with mods.
     Check(!ModManagerNeeded(PlanMods(ScanResult{}, std::nullopt)), "no mods: no mod manager");
     Check(ModManagerNeeded(plan), "mods (even if disabled): a mod manager");

@@ -163,8 +163,16 @@ ModPlan PlanMods(const ScanResult& scan, const std::optional<ModList>& list) {
       plan.list_changed = true;
     }
   }
+  // The folder as it is on disk: mods.dat may spell it in another case (PC writes the paths it
+  // lists in upper case), and the host's file system may tell cases apart.
+  auto on_disk = [&scan](const std::string& folder) {
+    for (const ModFolder& m : scan.mods) {
+      if (EqualNoCase(m.folder, folder)) return m.folder;
+    }
+    return folder;
+  };
   for (const ModListEntry& entry : plan.list.entries) {
-    plan.mods.push_back(PlannedMod{FolderOf(entry.directory), entry.priority});
+    plan.mods.push_back(PlannedMod{on_disk(FolderOf(entry.directory)), entry.priority});
   }
   std::stable_sort(plan.mods.begin(), plan.mods.end(), [](const PlannedMod& a, const PlannedMod& b) {
     const bool a_on = a.priority >= 0, b_on = b.priority >= 0;
