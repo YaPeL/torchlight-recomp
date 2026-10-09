@@ -493,13 +493,12 @@ mod's name (in the list and in saves) is its `mod.dat` `NAME` (CMod +80, read in
 devices are writable for the `.ADM` the game compiles, and OGRE's locations and the separators fix
 (`ModsSearchPath`) take the new names.
 
-**Test runs with real mod packs: log cap exception (2026-10-09).** With dozens of mods the game
-looks every data file up in each mod's folder, and the SDK logs each failed open as a warning:
-about 124,000 lines (20 MB) in the first 45 s with the Ultimate Torchlight Mod-Pack's 29 mods,
-before the unit index loads. Automatic runs with real mod packs therefore use a 150 MB log cap
-(`tools/run_capped/run_capped.py --max-log-mb 150`), a temporary exception the user approved; every
-other run keeps 20 MB. The fix belongs to the SDK (a filter for repeated log lines, a per-run cap,
-and maybe a cache of files known not to exist), and the case went to the ReXGlue work as evidence.
+**Test runs with real mod packs: the log (2026-10-09).** With dozens of mods the game looks every
+data file up in each mod's folder, and the SDK logged each failed open as a warning: about 124,000
+lines (14.5 MB) in the first 45 s with the Ultimate Torchlight Mod-Pack's 29 mods, before the unit
+index loads. For a while, runs with real mod packs had a 150 MB log cap. SDK patch 28 logs files
+that are not found at debug level: the same run then wrote 1.13 MB in its first 45 s and 2.6 MB in
+all, so every run is back to the 20 MB cap.
 
 **A run stuck on one bad pointer, and the capped runner (2026-10-09).** The first Mod-Pack run with
 fixed-width device names froze its window before the unit index loaded: one guest thread repeated
