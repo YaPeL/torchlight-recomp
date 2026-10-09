@@ -30,7 +30,7 @@ in number order; a branch adds its own line at its number's place.
 | 11 | `rexglue-delete-on-close.patch` | | Withdrawn |
 | 19 | `rexglue-mnk-keystrokes.patch` | `develop` | In the series on `0c7b01a`; removed on `bd833a2` (`sdk/rexglue-next`) |
 | 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
-| 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration |
+| 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration; a new version keeps Metal on Apple (SDL's software renderer presents through a GPU texture on Cocoa), from the Windows agent |
 | 22 | `rexglue-tests-portable.patch` | `sdk/rexglue-next` | Pending integration (needs `bd833a2`) |
 | 23 | `rexglue-fctiw-rounding-mode.patch` | `sdk/rexglue-next` | Pending integration |
 | 24 | `rexglue-arm64-mffs-rounding.patch` | `sdk/rexglue-next` | Pending integration; to confirm on ARM64 |
