@@ -5,6 +5,7 @@
 #include "platform/platform_sdl.h"
 #include "platform/user_folders.h"
 
+#include <atomic>
 #include <climits>
 #include <cstdlib>
 #include <exception>
@@ -272,17 +273,13 @@ class CocoaKeyReader : public KeyReader {
   ~CocoaKeyReader() override {
     if (monitor_) [NSEvent removeMonitor:monitor_];
   }
-  bool TakeF9() override {
-    const bool f9 = f9_;
-    f9_ = false;
-    return f9;
-  }
+  bool TakeF9() override { return f9_.exchange(false); }
 
  private:
   static constexpr unsigned short kF9KeyCode = 0x65;  // kVK_F9, HIToolbox/Events.h
   NSWindow* window_;
   id monitor_ = nil;
-  bool f9_ = false;
+  std::atomic<bool> f9_{false};  // set by the monitor (main thread), taken on the render thread
 };
 
 }  // namespace
