@@ -552,11 +552,15 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   counts nanoseconds in 64 bits, which reach only 1678-2262; libc++'s counts microseconds).
 - Codegen 14 s and 220 MB, no warnings; the game's build 364 s and 554 MB, with 19 GB free
   before it: none of the disk reductions of section 1 were needed.
-- Every game run goes through `tools/run_capped/run_capped.py` (time limit, the whole process
-  group killed and checked, a 20 MB cap on the logs; a Job Object on Windows). No agent had a
-  script of its own in the repository (`feature/pc-mods` and `develop` checked), so this one
-  **replaces the agents' local run scripts**; its test passes on macOS, its Windows path has not
-  been run yet.
+- Every game run goes through a capped run script (time limit, the whole process group killed and
+  checked, a 20 MB cap on the logs). The one written here (`7c59663`, a Job Object on Windows)
+  was left out when `feature/macos-game` was integrated: the mods agent's version stays, which
+  follows the log's rotation (patch 26; this one looked only at the largest file, which rotation
+  keeps below the cap) and stops after repeated failures. When it reaches `develop`, its tests
+  run on macOS and this port's run scripts use it.
+- The render agent's review: the F9 flag of `platform_mac.mm`'s key reader was a plain `bool`
+  set on the main thread and taken on the render thread; now `std::atomic<bool>`
+  (`fix/macos-f9-atomic`, `cc62c6e`).
 - The game executable did not find OGRE's dylibs: the SDK builds the target with its install
   RPATH (`@executable_path`). The top `CMakeLists.txt` keeps the build RPATH on Apple, as on Linux
   (`afdd254`); the bundle's layout is MAC.8's.
