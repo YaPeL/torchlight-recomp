@@ -238,7 +238,19 @@ sums checked). Results:
    `output_stamp_test.cpp:227-228`, as before (the extra case is patch 26's). Nothing else
    failed; nothing to report as a finding.
 
-With D22 and D23 fixed in the series, MAC.6 (the game on ARM64) is no longer blocked by them. The
+With D22 and D23 fixed in the series, MAC.6 (the game on ARM64) is no longer blocked by them.
+
+**Patch 27 on macOS (guest file flushes, D27; 2026-10-08, branch `sdk/guest-file-flush` at
+`a78c8ce`)**, as `docs/rexglue-upstream.md` section 8 asks:
+
+1. Applied on this Mac's SDK checkout (the series through 26 on `bd833a2`, plus the launcher's
+   patch 21 with its Apple fix): it applies cleanly; `unit_tests "[flush]"`: **5 of 5 pass** (52
+   assertions), the last one flushing a real file on this Mac's APFS startup volume. That
+   `F_FULLFSYNC` itself succeeds there, and is not the `fsync` fallback, was checked apart with a
+   small program on the same volume: `fcntl(F_FULLFSYNC)` returns 0, 3-10 ms for a 200 KB file.
+2. The check in a game save (`fs_usage`, the `F_FULLFSYNC` calls per save file and their time)
+   needs the game running: at MAC.6.
+3. Nothing unexpected so far. The
 SDK installed in `~/rexglue-sdk/out/install/mac-arm64` is this series.
 - One SDL: `librexruntime.dylib` exports SDL's functions, and an executable linked with the
   package's `rex::runtime` (which also lists `SDL3::SDL3-static`) binds them to the runtime
@@ -475,6 +487,39 @@ presents in an OGRE window (`--window`) and renders the 20 reference captures, k
 (game-derived: never in the repository), with the PSNR Linux gives. Done when the 20 captures
 match Linux within the tolerance WIN.3 used, and the window creation runs on the thread AppKit
 wants (no main-thread warning).
+
+**MAC.5 results (2026-10-08, Mac mini M2, Apple M2 OpenGL 4.1):** the 20 parity captures and
+their Linux reference (NVIDIA GTX 1050 Ti and Intel UHD 630, `develop` `f4fe0f2`), kept outside
+the repository on this Mac, replayed with `tools/replay` from `feature/macos-platform` (`b4db48e`:
+`f4fe0f2`'s render code plus MAC.4's top-level window), with the game's files installed from the
+user's package by the project's own installer (`game_setup::Install`, every file's SHA-256
+checked) into `~/Library/Application Support/TorchlightRecomp/game/`. The 20 replays take 23
+seconds. Compared as the captures' README asks: (a) the replay's PSNR against the Xenos image
+next to the reference's `psnr.csv`, (b) the macOS `render.png` against the reference's
+(render against render, PSNR computed here). **MAC.5 done.**
+
+| Captures | Draws | (a) macOS PSNR vs NVIDIA | (b) render vs NVIDIA | (b) render vs Intel |
+|---|---|---|---|---|
+| 3D scenes (v14 x5, v17 x2, v19town x5) | all drawn, no fallback texture | -0.03 to +0.34 dB | 45.6-52.9 dB | 42.3-55.6 dB |
+| 2D screens (v16live x2, v17w, v18) | all drawn | 58.9 dB against 69.8 (Intel: 59.3) | 59.0 dB | 63.2 dB |
+| v20townlive x4 (native-only: compared by render only) | all drawn | (12.9-14.6, as Linux) | 44.2-50.0 dB | 43.7-51.7 dB |
+
+- The 3D scenes give Linux's PSNR within 0.34 dB, inside the 1 dB the README allows.
+- The four 2D screens behave as on Mesa, not as on NVIDIA: 58.9 dB (Mesa 59.3, NVIDIA 69.8). Per
+  channel against the Xenos image the M2 is at most 4 levels off (NVIDIA 2, Mesa 5), and 99.99 % of
+  the channels are within 1 level: the driver's filtering and blending arithmetic, the same kind
+  of difference the reference's notes give for Mesa. Nothing to correct.
+- `--window` (v17 swap1193): the result shows in an OGRE window (`platform::OgreTopLevelWindow`,
+  created on the main thread) with the same PSNR as offscreen (39.75 dB); no AppKit main-thread
+  warning.
+- OGRE's log has two kinds of "Validation Failed", both from the `glValidateProgram` OGRE calls
+  right after linking each program (`OgreGLSLMonolithicProgram.cpp:101`), when Apple's GL
+  validates against the current state; OGRE only logs them, and the link status does not depend
+  on them. "No vertex array object bound": once per run, since no VAO is bound at link time.
+  "Sampler error: A sampler's texture unit is out of range": exactly the 4 programs of the 26
+  that mix a 2D and a cube sampler: at link time every sampler is still on unit 0, and GL does
+  not allow two sampler types on one unit; OGRE sets the units afterwards. The scenes drawn
+  with them give Linux's PSNR. Neither affects anything.
 
 **Ticket MAC.10 (after the beta): Vulkan on MoltenVK** as a second render system, as WIN.7 did for
 Direct3D 11.
@@ -738,7 +783,7 @@ ones that can stop it; the two-failed-hypotheses rule applies to each.
 | 2. Guest memory view | MAC.2 | No | Unit tests with the offset on and off; a Linux replay unchanged | Callers that bypass `guest_abi` |
 | 3. OGRE builds (done 2026-10-08) | MAC.3 | No | `build_ogre.sh` on macOS; OGRE's GL3+ plugin loads | Cocoa GL code paths less used upstream |
 | 4. Platform module, `nogame` ctest | MAC.4 | No | ctest on this Mac (pure tests, `ui_pass_test` and `render_scale_test` on GL) | AppKit main-thread rules for the backend's window |
-| 5. Backend on macOS GL | MAC.5 | Captures (local, from the user) | Replay of the 20 captures, PSNR as Linux | Apple GL differences (precision, polygon offset, sRGB, DXT small mips): each through `xbox_to_gl_conventions` |
+| 5. Backend on macOS GL (done 2026-10-08) | MAC.5 | Captures (local, from the user) | Replay of the 20 captures, PSNR as Linux | Apple GL differences (precision, polygon offset, sRGB, DXT small mips): each through `xbox_to_gl_conventions` |
 | 6. Codegen and game build | MAC.6 | The XEX (from the user) | `rexglue codegen`, a Release and a RelWithDebInfo build link | Build time, memory and the 25 GB of free disk |
 | 7. Game to the main menu | MAC.6 | Game data | Only mode with `null`: boot, title, menu, sound, gamepad; Quit exits | Memory ordering (fences), fault hangs, 16 KB reconcile making a stale access fault, two SDLs, signals (SIGUSR1/2) |
 | 8. Play | MAC.7 | Game data, saves on copies (`--user_data_root`) | Town and a dungeon, saves, an F9 capture replayed on Linux with the same result, frame times against Linux | Performance (GL on Metal, reconcile cost), vblank pacing, Retina sizes |
