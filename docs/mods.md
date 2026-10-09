@@ -459,7 +459,17 @@ and the storage state machine's container delete (on "Yes" to "Corrupt/Damaged S
 Refusing writes from the host (a read-only save device) was not taken: it needs an SDK change,
 and the game's storage error paths end in dialogs, one of which deletes the container. The notice
 at the character list says in capitals that nothing is saved in the session, which saves are
-affected and where the copy is. **[to validate]** in a guided run of the failing case.
+affected and where the copy is. Validated in a guided run of the failing case (2026-10-08): the
+notice showed, the game's save on the way back to the menu was skipped ("character not saved"),
+the character file kept the sword, and the copy was made.
+
+**A new-item mod, validated (2026-10-09).** With `tlunits:` mounted once the index exists, the game
+loaded the merged index in the same start it was built (3377 units, the mod's sword among them)
+and with the cached one. In guided runs: the save's item of the mod's unit loaded with the mod's
+damage (180 DPS shown, `DAMAGE_PHYSICAL:777`; it keeps the name stored with it in the save, since
+the game saves each item's name), the character saved with it, and two new swords made with the
+game's developer commands (`ITEMGUID <guid>` and `ITEM <name>`, `--dev_guest_command`, development
+builds only) showed the mod's name, "TL Test Sword", and the same damage.
 
 ## 8. Where mods go on our side
 
