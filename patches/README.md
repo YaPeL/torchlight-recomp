@@ -342,8 +342,14 @@ in number order; a branch adds its own line at its number's place.
     failure is reported, a read-only handle flushes nothing, a content flush reaches the files of its
     device only and returns the first failure, a real host file flushes after a write). The exports
     themselves (`NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush`, `XamContentClose`) are
-    one-line calls into those, checked in a game save (below) rather than by a unit test, since
-    they need the kernel state. Not specific to any GPU. Candidate for an upstream report (D27 in
-    `docs/rexglue-upstream.md`).
+    one-line calls into those, not covered by a unit test since they need the kernel state. Cost:
+    Torchlight's save calls `NtFlushBuffersFile` once and `XamContentFlush` once (one call site
+    each), so a save does one file flush plus one per package file still open at the content flush.
+    An `fsync` of a save-sized file (110-290 KB) on this machine's NVMe disk (ext4) takes 1 ms in
+    the median and under 2 ms at the 90th percentile (50 runs each, quiet machine; 1-6 ms on
+    average with a build running), with rare outliers up to 0.23 s when the journal commits.
+    Autosaves come with zone changes, behind a loading screen. The owner judged that negligible,
+    and no in-game measurement was made. Not specific to any GPU. Candidate for an upstream report
+    (D27 in `docs/rexglue-upstream.md`): it affects every title that saves.
 
 The observation and diagnostic patches there were before remain in the git history.
