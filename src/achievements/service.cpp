@@ -4,10 +4,8 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
-#if defined(__linux__)
-#include <fcntl.h>
-#include <unistd.h>
-#endif
+
+#include "platform/durable_file.h"
 
 namespace torchlight::achievements {
 Service::Service(std::string profile) { state_.profile = std::move(profile); }
@@ -134,26 +132,10 @@ bool Service::Save(const std::filesystem::path& path, std::string& error) const 
   if (!out) { error = "cannot write achievement state"; return false; }
   out.close();
   if (!out) { error = "cannot close achievement state"; return false; }
-#if defined(__linux__)
-  // Make the uncertainty marker durable before Steam can mutate its client cache.
-  const int file=::open(temporary.c_str(),O_RDONLY|O_NOFOLLOW);
-  if (file<0) { error="cannot open state for durable flush"; return false; }
-  const bool synced=::fsync(file)==0;
-  const bool closed=::close(file)==0;
-  if (!synced || !closed) { error="cannot durably flush achievement state"; return false; }
-#endif
-  std::error_code ec;
-  std::filesystem::rename(temporary, path, ec);
-  if (ec) { error = ec.message(); return false; }
-#if defined(__linux__)
-  const auto parent=path.parent_path().empty()?std::filesystem::path("."):path.parent_path();
-  const int directory=::open(parent.c_str(),O_RDONLY|O_DIRECTORY);
-  if (directory<0) { error="cannot open state directory for durable flush"; return false; }
-  const bool directory_synced=::fsync(directory)==0;
-  const bool directory_closed=::close(directory)==0;
-  if (!directory_synced || !directory_closed) { error="cannot durably flush state directory"; return false; }
-#endif
-  return true;
+  // Make the uncertainty marker durable before Steam can mutate its client cache: the file, then
+  // its rename.
+  return platform::FlushFileToDisk(temporary, error) &&
+         platform::CommitReplace(temporary, path, error);
 }
 bool Service::Load(const std::filesystem::path& path, std::string& error) {
   error.clear();

@@ -1,6 +1,8 @@
 # Platform module (platform.h): the plain SDL3 parts (platform_sdl.cpp) plus one implementation
 # file per platform.
 # The user's folders and their migration (user_folders.h): no SDL or runtime, tested on their own.
+# Writes that survive a power cut (durable_file.h), the same.
+include(durable_file.cmake)
 if(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp text_wrap.cpp)
@@ -59,6 +61,11 @@ target_include_directories(text_wrap_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.
 target_compile_features(text_wrap_test PRIVATE cxx_std_23)
 target_compile_options(text_wrap_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME text_wrap_test COMMAND text_wrap_test)
+
+add_executable(durable_file_test durable_file_test.cpp)
+target_link_libraries(durable_file_test PRIVATE torchlight_durable_file)
+target_compile_options(durable_file_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME durable_file_test COMMAND durable_file_test)
 
 add_executable(user_folders_test user_folders_test.cpp)
 target_link_libraries(user_folders_test PRIVATE torchlight_user_folders)
