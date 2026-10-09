@@ -421,6 +421,23 @@ expected to load (the cached one, or the base plus the GUIDs the mods' definitio
 load only a comparison runs: units the check counted on that the game does not hold are logged
 and told on screen, and the saves are not changed again.
 
+**Saves holding units the game did not load.** In the guided run of 2026-10-08 (the index not
+read, the Xbox one loaded instead) the game loaded the character that carried the mod's sword,
+dropped the sword it did not know, and its save on the way back to the menu wrote the character
+without it. A notice is not enough for that. So when the comparison finds units missing, before
+any character is loaded: the saves holding them are found (read only, `SavesHoldingUnits`), every
+save is copied (`save-backups/<UTC>-units-not-loaded`), and **nothing is saved for the rest of the
+session** (`SavingBlocked`, `mods/save_block_hooks.cpp`). The block skips the character save
+(`kSaveCharacter`, guest_abi `save_menu.h`) whole: it is the only code that writes save data (the
+stash is written inside it), its callers do not read its result, and skipping it leaves the files
+as they were (no `save.tmp`, no renames). The rest of the save code was read for this: the other
+users of the save container read or list, except deleting a character (on the player's request)
+and the storage state machine's container delete (on "Yes" to "Corrupt/Damaged Save").
+Refusing writes from the host (a read-only save device) was not taken: it needs an SDK change,
+and the game's storage error paths end in dialogs, one of which deletes the container. The notice
+at the character list says in capitals that nothing is saved in the session, which saves are
+affected and where the copy is. **[to validate]** in a guided run of the failing case.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
