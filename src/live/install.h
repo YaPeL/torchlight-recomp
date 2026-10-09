@@ -20,7 +20,9 @@ bool OnlyMode();
 // which may be read-only (an AppImage): its config in the configuration folder; its user data
 // (and the cache below it) in the data folder unless --user_data_root (--cache_root) came; its log
 // in the log folder, as <app>_NNN.log numbered like the runtime's own, unless --log_file came on
-// the command line (a log_file in the config still wins: it is read afterwards); the game's files
+// the command line (a log_file in the config still wins: it is read afterwards), after removing the
+// oldest runs past the log folder's budget (live/log_budget.h), with the run's rotation within it
+// unless --log_max_file_size_mb or --log_max_files came; the game's files
 // in platform::GameDataDir unless --game_data_root came; and license_mask 1 (the full game, not
 // the demo) unless --license_mask came. OnConfigurePaths.
 void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths);
