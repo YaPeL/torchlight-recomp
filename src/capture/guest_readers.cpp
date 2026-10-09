@@ -263,8 +263,8 @@ commands::SetVertexBuffers ReadVertexBufferBinding(const uint8_t* m, uint32_t bi
     stream.stream = abi::ReadU16(m, node + ogre::stl_tree::kNodeKey.offset);
     uint32_t buffer =
         U32(m, node + ogre::stl_tree::kNodeValue.offset + ogre::shared_ptr::kPRep.offset);
-    if (auto info = Session::Get().Lookup(commands::ResourceKind::kVertexBuffer, buffer)) {
-      stream.buffer = info->id;
+    if (auto entry = Session::Get().DrawBuffer(commands::ResourceKind::kVertexBuffer, buffer)) {
+      stream.buffer = entry->info.id;
     }
     c.streams.push_back(stream);
   });
@@ -343,17 +343,18 @@ commands::BufferSnapshot SnapshotBuffer(const uint8_t* m, commands::ResourceKind
   Session& s = Session::Get();
   commands::BufferSnapshot snap;
   live_keys.push_back(0);
-  auto info = s.Lookup(kind, buffer);
+  auto entry = s.DrawBuffer(kind, buffer);
   bool vertex = kind == commands::ResourceKind::kVertexBuffer;
-  if (!info) {
+  if (!entry) {
     unresolved |= Bit(UnresolvedReason::kBufferNotRegistered);
     s.AddUnresolved(UnresolvedReason::kBufferNotRegistered,
                     fmt::format("{} buffer {:#x}", vertex ? "vertex" : "index", buffer));
     return snap;
   }
-  snap.buffer = info->id;
-  if (vertex) s.AddVertexBuffer(*info);
-  else s.AddIndexBuffer(*info);
+  const BufferInfo& info = entry->info;
+  snap.buffer = info.id;
+  if (vertex) s.AddVertexBuffer(info, entry->live);
+  else s.AddIndexBuffer(info, entry->live);
 
   uint32_t map = buffer + (vertex ? ogre::d3d9_hardware_vertex_buffer::kDeviceToResourcesMap
                                   : ogre::d3d9_hardware_index_buffer::kDeviceToResourcesMap)
@@ -386,8 +387,8 @@ commands::BufferSnapshot SnapshotBuffer(const uint8_t* m, commands::ResourceKind
     snap.source = 1;
     snap.guest_virtual = xd3d::PhysicalToVirtual(physical);
     snap.size = size;
-    auto content = s.RecordContent(info->id, buffer, mem::HostAddress(m, snap.guest_virtual),
-                                   size, endian, endian_raw);
+    auto content = s.RecordContent(info.id, buffer, mem::HostAddress(m, snap.guest_virtual),
+                                   size, endian, endian_raw, entry->live);
     snap.blob = content.capture;
     live_keys.back() = content.live;
     return snap;
@@ -401,8 +402,8 @@ commands::BufferSnapshot SnapshotBuffer(const uint8_t* m, commands::ResourceKind
     snap.source = 2;
     snap.guest_virtual = sysmem;
     snap.size = bytes;
-    auto content = s.RecordContent(info->id, buffer, mem::HostAddress(m, sysmem), bytes,
-                                   commands::BlobEndian::kGuestCpuBigEndian, 0);
+    auto content = s.RecordContent(info.id, buffer, mem::HostAddress(m, sysmem), bytes,
+                                   commands::BlobEndian::kGuestCpuBigEndian, 0, entry->live);
     snap.blob = content.capture;
     live_keys.back() = content.live;
     return snap;
