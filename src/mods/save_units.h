@@ -1,8 +1,10 @@
-// Saved characters and stashes holding units the game cannot resolve (docs/mods.md, section 7f).
+// Saved characters and stashes holding units the game cannot resolve (docs/mods.md, section 7e).
 // An item or creature whose unit GUID is not in the game's unit index (a removed mod's, or an
-// imported PC character's from mods never installed here) stops the game when it loads the save:
-// the guest throws, and the runtime cannot unwind (patches/README.md, known gaps). Before the guest
-// runs, the host takes such entries out of the saves, with safeguards against removing anything
+// imported PC character's from mods never installed here) is dropped by the game when it loads
+// the character, and its next save writes the character without it (guided run, 2026-10-08). The
+// hang once blamed on such items was the game's unit index left empty (docs/mods.md, section 7e,
+// cause 4). Before the guest runs, the host takes such entries out of the saves itself, with a
+// backup first and the player told what went, and with safeguards against removing anything
 // because of a fault of ours. No guest, OGRE or platform types.
 
 #pragma once
