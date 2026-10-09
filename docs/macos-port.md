@@ -669,9 +669,22 @@ no 30-minute session and no new performance table (the owner's decision).
      exited the same way, the same two flushes.
 - Not checked: a save at a zone change and a load in another zone. Walking to the mines'
   entrance with blind key presses was not reliable, so the save was the one at Exit to Title.
-- The `SAVE:\` lines: 28 `ResolvePath(SAVE:\) failed - device not found` per run, the accesses
-  before the save content is mounted that Linux also logs (about 28, investigated by the render
-  agent). Compared by count; the Linux summary to compare line by line did not arrive.
+- The `SAVE:\` lines against the render agent's Linux reference (2026-10-09: start, main menu,
+  load a character, dungeon, stairs to town, quit), by phase, seconds from the first log line:
+
+  | Phase | Linux | macOS run 1 | macOS run 2 |
+  |---|---|---|---|
+  | Start, before the main menu | 2 (+0.7), 11 (+1.9) | 2 (+0.7), 11 (+1.5) | 2 (+0.3), 11 (+1.0) |
+  | Main menu | 13 (+3.1), 1 (+5.6) | 13 (+2.2), 1 (+4.9) | 13 (+1.7), 1 (+4.4) |
+  | Character load and play | 0 | 0 | 0 |
+  | Quit | 1, after the content is closed | 1 (+162.6, at the exit) | 1 (+63.9, at the exit) |
+
+  The same sequence: failures at the start and in the menu, none from the character load on (the
+  save device mounted), one at quit. Not a macOS problem. Each failure logs two lines here
+  (the VFS warning and the `ResolvePath` error) where Linux logged three: the third,
+  `[NtCreateFile] FAILED ... 0xc000000f`, is at debug level since patch 28 (not found), which
+  this build has and the Linux run did not. The patch 27 lines, absent from the Linux run (built
+  before it), are above.
 - The save file is written back as `0.TSV` where it was `0.tsv`: the game writes the upper-case
   name, and APFS (case-insensitive, case-preserving) keeps the new spelling. The game reads it
   back either way here. On Linux (case-sensitive) the SDK's host paths decide which name is
