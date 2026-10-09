@@ -9,6 +9,36 @@ OGRE GL3+) and the SDK's emulated GPU (`--native_live=off`, Xenos on Vulkan). No
 GTX 1050 Ti with Max-Q Design (driver 580.178.04, GL for the native backend, Vulkan for Xenos), 30
 GB RAM, Ubuntu 26.04 (kernel 7.0), Wayland, plugged in, nothing else open, no MangoHud.
 
+This laptop has two GPUs (Optimus). Its panel (eDP-1, 1920x1080 at 60 Hz) is wired to the Intel
+UHD 630; the NVIDIA's own outputs (HDMI, two DisplayPort) are unconnected. The native backend draws
+on the NVIDIA (EGL on Wayland, GNOME), so every presented frame is copied to the Intel to be shown
+(PRIME render offload): part of the present's 2-4 ms in the town square is that copy. Machines with
+one GPU, or the monitor on the GPU that draws, do not pay it, and they are limited by the CPU too.
+
+**Since 2026-10-09 every measurement reports two frame rates**: the game's (guest swap to swap,
+`frame time (guest swap to swap)` in the log, what the step overlay always measured) and the
+presented one (present to present on the backend thread, `frame time (presented, present to
+present)`, with the guest frames dropped because the backend was behind). When the backend is the
+limit, the second is the lower one and is what the player sees; the frame counter (F3) shows both.
+
+**Since 2026-10-09, every measurement also records the machine's state**, because alternated runs
+of the same binaries drifted run after run (develop's town square 130 -> 133 -> 139 -> 146 fps
+while phase A's went 138 -> 137 -> 135 -> 132), which looks thermal. Every 2 s during each run:
+the CPU frequency (mean, min and max over the cores), the package and hottest core temperatures,
+the fan, whether the charger is plugged in, the kernel's thermal throttle counters (per core and
+package, from `/sys/devices/system/cpu/cpu*/thermal_throttle`), and the GPU's temperature, clock,
+power and utilisation (`nvidia-smi`). The power profile (`powerprofilesctl`), the governor and the
+energy performance preference go in its header. Each run's report puts them next to the frame
+rates of every step: mean frequency, mean and highest package temperature, throttle events during
+the step. Measurements run with the power profile set to **performance** (intel_pstate, EPP
+`performance`) and the charger plugged in. No frequency cap: on this laptop the package sits at
+82-83 C with the CPU near 3.0 GHz while the game runs, throttling all the time (tens of thousands
+of package throttle events per 40 s step), so before each measured run the machine cools until
+the package temperature (`x86_pkg_temp`) stays below **55 C** for 10 s (it idles at 45-50 C).
+Frame rates of such runs still move by several percent between identical runs; decisions on small
+changes also use the profile (the change's share of the thread it runs on), which the drift does
+not move.
+
 **Build** (the Linux release's flags, built locally): the game (`linux-amd64-release`,
 `-O3 -g -DNDEBUG`; `generated/` also `-gline-tables-only -mcmodel=large -msse4.1`), the SDK's
 Release libraries (`librexruntime.so`, `librexgpu-xenos.so`: `-O3 -DNDEBUG -march=x86-64-v2`,
@@ -263,6 +293,220 @@ the frame rate differs by 8 fps between them: about +6 % on average, inside the 
 run-to-run spread for the 1 % low. Building the pieces costs 51 ms in total on entering the town
 (27 ms with one box per bucket), spread over the loading frames, which already take 400 ms or
 more; none is built while playing.
+
+### Producer cuts (2026-10-09)
+
+The producer was 22 % of the guest render thread in the town square's DWARF profile (develop with
+per-piece bucket culling, 2026-10-08): reading the guest state for every RenderSystem call has to
+stay on that thread, so the cuts are to what the producer does around those reads. Each is its own
+commit (perf/producer-cuts-2):
+
+| Cut | Profile share before |
+|---|---|
+| RenderSystem call counters: a relaxed load and store, not a locked increment | ~1 % |
+| Per-hook timing (ProducerTimer, HookTimer, their summaries) off unless `--native_producer_timing`; the frame time statistics and the slow and long frame reports stay on | ~2 % |
+| The guest std::map walk (ForEachNode) on a fixed host stack, not a vector per call | ~1 % |
+| The resource registry's lookup cache invalidated per bucket of addresses, not whole on every creation or destruction | ~1.5 % |
+| Flat hash maps (capture/flat_map.h) for the per-draw lookups: content versions, live buffers, the sets of what the live stream holds | ~2.8 % |
+
+The vectors copied into each SetConstants (the constant ranges' data, the auto constants) stay:
+they belong to the command handed to the consumer thread. The state shadow stays a
+std::unordered_map: the argument memos keep pointers into it.
+
+Fixed-floor saved game, step overlay, draw skip on, two runs each (the bubble monsters cast their
+lightning in all four fights):
+
+| | develop | Producer cuts |
+|---|---|---|
+| Town square, p99 (1 % low) | 11.12, 11.10 ms (89.9, 90.1) | 10.49, 10.45 ms (95.3, 95.7) |
+| Town square, FPS | 126.3, 126.7 | 133.9, 134.9 |
+| Fight, p99 (1 % low) | 9.95, 9.72 ms (100.5, 102.9) | 9.20, 8.77 ms (108.7, 114.0) |
+| Fight, FPS | 156.7, 160.8 | 170.8, 167.9 |
+| Standing still, FPS | 194.7, 203.2 | 209.3, 214.9 |
+
+About +6 % in the town square (FPS and 1 % low), +7 % FPS and +9.5 % 1 % low in the fight, and
++7 % FPS standing still: some 0.5 ms less per frame on the guest's render thread, as the profile
+shares predicted.
+
+### Producer, phase A (2026-10-09)
+
+What was left of the producer after those cuts, from the town square's DWARF profile (develop
+320ee22): 21.9 % of the guest's render thread inside our hooks. Four cuts were tried, each its own
+commit; two are kept. The same profile with them (35 s of the town square, phase A with all four):
+
+| Function (share of the guest's render thread) | Before | Phase A | Cut |
+|---|---|---|---|
+| CaptureVertexDeclaration | 1.63 % | 0.79 % | A4, kept |
+| CaptureDraw | 4.23 % | 3.47 % | A3, kept |
+| ReadVertexBufferBinding | 1.40 % | 0.87 % | A3, kept |
+| ReadConstants | 3.95 % | 4.03 % | A2, dropped |
+| MemoState (the state memos' early out) | 2.55 % | 2.91 % | A1, dropped |
+| All our hooks | 21.9 % | 20.6 % | |
+
+About 3000 samples fall in the producer, so each row moves by about +-0.15 % on its own.
+
+- **A3, kept**: one lookup per buffer of a draw. A draw's vertex and index buffers were looked up
+  in the registry (whose small direct-mapped cache often missed), then twice more in the live
+  buffer table, and the vertex buffer binding looked them up again. `Session::DrawBuffer` keeps the
+  registry's answer and the live state per buffer address while `ResourceRegistry::Stamp` for the
+  address is unchanged; a buffer freed and created again at the address is a new generation and
+  starts from a fresh live state.
+- **A4, kept**: the declaration's registry answer kept the same way, and in the live mode the
+  element bytes the live stream has: the same bytes reuse their hash instead of hashing again (a
+  declaration changed in place has other bytes and is hashed and described again).
+- **A1, dropped**: the state memos (`Session::Unchanged`) were one entry per (slot, sub) pair, 1.7
+  MB, and the assumption was that most lookups missed the cache. Packing the pairs in use behind a
+  32 KiB index changed nothing: `Unchanged` kept 1.3 % of its own plus 0.5 % in `memcmp`. The cost
+  is not in that table; where it is (the shadow entry each memo points to, or simply the number of
+  calls, ~965 per frame for the texture filtering alone) was not measured.
+- **A2, dropped**: every constant range of a `SetConstants` held its own vector, and the
+  assumption was that one array of values per command would take the allocations away. They moved
+  instead: the command's array and its vector of ranges grow as ranges are added, and `AddRange`
+  shows the same `malloc` and `free` as before. Not tried: reserving from the number of ranges,
+  which is only known after walking the guest's map.
+
+In the game (fixed-floor saved game, step overlay, draw skip on, eight runs alternated, all four
+cuts): the dungeon fight +6.5 % FPS (159.3 -> 169.7), +5.5 % presented, standing still +8 %; the
+town square no measurable change (137.0 -> 135.5 FPS), with develop's runs rising run after run
+and phase A's falling, the drift that led to the thermal record above. The profile is what decided
+it.
+
+### The backend thread (2026-10-09)
+
+The live mode's backend thread, town square of the DWARF profile with everything integrated
+(develop 320ee22, 499 Hz, user mode): ~4.5 ms of CPU per frame, of a ~7.5 ms frame. The rest is
+waiting inside the present (2.7-4.4 ms of present, 0.17 ms of it on the CPU, vsync off).
+
+| Layer | Share | ms per frame |
+|---|---|---|
+| Our frontend (the command translation) | 23.5 % | 1.07 |
+| Our backend (the C API side: conversions, program choice) | 19.7 % | 0.89 |
+| Our frame transport (frame applied, freed, content released) | 11.1 % | 0.50 |
+| OGRE (auto parameters, parameter binding, `_render`, viewports) | 16.9 % | 0.77 |
+| The GL driver (draws, uniforms, viewport and state changes, swap) | 28.7 % | 1.30 |
+
+On this machine the present's wait is the display path's pacing, not the GPU: with frames
+lighter than the refresh, two frames go out per 60 Hz refresh (14.6 + 2.0 ms). That depends on the
+compositor and the PRIME copy (see the topology note above), so it is not pursued here; what reaches
+other platforms is the CPU work in front of it.
+
+`replay --session RECORDING --bench [--bench_frames A-B]` measures the backend without the game:
+it plays a recorded session as the backend thread does (frames read ahead on another thread, each
+one presented in a window with vsync off, then handed over to be freed) and writes per-phase means,
+present to present percentiles and the 1 % low (bench.txt, bench.csv). Its window is a top-level
+X11 one, not the game's Wayland surface, so its present times say nothing about the game's; the CPU
+work does. Its frames are heavier than live ones (the session was recorded with the backend behind,
+so dropped frames' state commands pile into the recorded ones), so it compares changes rather than
+predicting live times. With run-to-run noise of about +-0.15 ms per frame, small cuts are compared
+by the process's user instructions and cycles over the same frames (`perf stat`).
+
+The cuts, each its own commit (perf/backend-cuts), validated with the unit tests, the 20 parity
+replays and 78 frames of the recorded session (images identical):
+
+| Cut | Bench (town square of the session) |
+|---|---|
+| Consumed frames freed on a thread of their own (FrameReclaimer) | work 6.94 -> 5.54 ms (frame freeing 1.56 -> 0.00) |
+| Hashed lookups for the per-draw resource maps (frontend, live content source, backend; the two looked up by prefix stay ordered) | work 5.46 -> 5.01 ms |
+| The viewport left alone when the guest sets it unchanged (setDimensions marked it updated every time) | work 5.08 -> 4.91 ms |
+| The program's alpha function and WVP constants found once, not by name per draw | within the noise |
+| The guest's float constants in a dense array, written a range at a time (PhysicalConstants) | instructions -3.9 %, cycles -4.6 % |
+| Fetch endianness swapped a word at a time | within the noise |
+
+Altogether, base against the last cut on the same frames: backend thread work 6.94 -> 4.43 ms per
+frame (5.40 -> 4.43 leaving out freeing the frames, which these heavy frames inflate; live it was
+~0.2 ms), commands 4.74 -> 3.95 ms; the whole process's user cycles -7.5 %, instructions -5.2 %.
+
+In the game: fixed-floor saved game, step overlay, draw skip on, two runs each, alternated. The
+town square is the comparison (the dungeon fight is not: its rat came out only in the runs with
+the cuts):
+
+| Town square | develop | Backend cuts |
+|---|---|---|
+| Presented, p99 (1 % low) | 10.49, 10.47 ms (95.3, 95.5) | 10.67, 10.00 ms (93.7, 100.0) |
+| Game, p99 (1 % low) | 10.36, 8.88 ms (96.5, 112.6) | 10.09, 9.03 ms (99.1, 110.7) |
+| Presented FPS | 125.0, 124.3 | 133.2, 134.1 |
+| Game FPS | 138.9, 140.9 | 136.8, 135.6 |
+| Guest frames dropped (backend behind) | 558, 664 | 145, 65 |
+
+What reaches the screen gains about 7 %, and the backend drops a quarter of the frames or fewer;
+the 1 % lows move less than their run-to-run spread. The game's own frame rate falls about 2.6 %.
+A hypothesis, not measured: with the backend presenting nearly every guest frame, it uses more CPU
+(and GPU) than before, when it skipped a frame in nine, and on this laptop that is taken from the
+guest's render thread.
+
+OGRE 14.6's Vulkan render system, tried in the replay (local experiment, OGRE built with the
+Vulkan render system and its glslang plugin): the RTSS programs compile, but the render system
+expects a frame laid out its way. Its window needs one made outside it; a buffer upload inside a
+render pass is an assertion (the backend writes guest buffers between draws); clearFrameBuffer only
+sets the next pass's load colour (the guest clears parts of targets mid-frame). With the pass ended
+before each upload a capture replays to the end, every draw issued, and the image is black. Making
+it work means changes to that render system or a frame recorded the way it wants (uploads first,
+clears as load actions), not a swap of plugins.
+
+### Paused: a two-stage backend pipeline
+
+With the cuts, the backend presents 99 % of the guest's frames in the town square on this laptop
+(5364 of 5426 in one run): the limit there is the guest's render thread, not the backend. The
+design below stays here, not started, until a machine shows the backend falling behind (the
+Windows desktop, the Steam Deck; see the next section for what to measure).
+
+Today one thread translates the commands (the frontend) and runs OGRE and the driver. The pipeline
+splits it in two:
+
+| Stage | Thread | Work | Cost (town square profile, before the cuts) |
+|---|---|---|---|
+| 1. Translation | a new one | `content.Apply`, the frontend, content decoding | ~1.1-1.6 ms |
+| 2. Render | the current one (it holds the GL context) | the recorded calls played into the backend: our backend, OGRE, the driver, the UI, the present | ~3 ms |
+
+- The cut is the backend's C API. The frontend calls a `BackendSink` interface instead of
+  `tl_backend_*`: a direct one (today's behaviour; the replay and the pipeline turned off) and a
+  recording one that writes each call into a `HostFrame` (a per-frame arena, reused). Bulk data
+  (vertices, textures) is not copied: the `HostFrame` carries the `LiveFrame` that holds it, freed by
+  the FrameReclaimer after stage 2.
+- One frame in flight between the stages: stage 1 waits while stage 2 is busy. Frames are still
+  dropped only in the guest's frame queue, which already carries their state forward.
+- Latency: at most one stage (~1-2 ms) more from the guest's swap to the present.
+- Before it, the frontend has to stop deciding on the backend's return values: whether a texture
+  was created (drawn with it or with the fallback), whether a buffer was uploaded, the draw's
+  result and notes (statistics). Those decisions move into the backend (a missing texture draws
+  the fallback, a missing buffer skips the draw, as it does already); the statistics arrive one
+  frame late through a counter, as `tl_backend_take_counters`.
+- Commits: (1) the backend owns the fallback and missing resources; (2) `BackendSink`, direct and
+  recording, with a replay mode that records and plays on one thread (images identical on the 20
+  replays); (3) the live mode on two threads behind a cvar (off to start with), both stages' times
+  in the log and the slow frame report, `--bench` with the pipeline; (4) the measurement, and the
+  cvar's default from it.
+- Risks: copying `tl_draw` (~5 KB with its 8 stages; only the stages and matrices in use would be
+  recorded, ~0.1-0.2 ms per frame), reads of render targets (a sync point; not on the live path),
+  statistics one frame late, and one more busy thread competing with the guest's (see the
+  hypothesis on the game's frame rate above).
+- More buffers instead: a longer frame queue or swap chain trades drops for latency, not more
+  frames; and how many images GL keeps in flight is the driver's choice, not OGRE's.
+
+### Present wait and drops on other machines: what to measure
+
+On this laptop the present's wait is the compositor's and the PRIME copy's pacing, so it says
+nothing about other machines. Whether the pipeline above is worth it there depends on whether the
+backend falls behind. To find out on the Windows desktop (and later the Steam Deck), with the
+settings of these measurements (`fps_cap = 0`, `vsync = false`, the dedicated GPU, 720p render
+resolution, `--native_skip_guest_d3d=true`), develop at dfc354a or later:
+
+1. **The game, about a minute standing still in a dungeon and a minute walking around the town
+   square.** From the log's 10 s summaries:
+   - `frame time (guest swap to swap)` and `frame time (presented, present to present)`: FPS,
+     p99 (1 % low) and `guest frames dropped (backend behind)` of each;
+   - `live consumer (backend thread, ms per frame)`: the phases, and `present` among them;
+   - `present (vsync wait included)` in the `live:` line: mean, p95, p99, max.
+
+   The backend falls behind if the presented FPS is clearly below the guest's, with drops above a
+   few percent of the guest's frames. The present waits if its mean is more than about 1 ms with
+   vsync off; then its p95 and max say whether it is steady or in bursts.
+2. **The bench**, on a session recorded there (`--live_record`) in the town square:
+   `replay --session FILE --bench --bench_frames A-B`, reporting `bench.txt` (the phases, presented
+   p99 and 1 % low) and the distribution of `present_ms` in `bench.csv` (median, p95, max). It runs
+   in a window of its own, so its present is comparable between machines, not with the game's.
+3. What to send back: the machine (CPU, GPU, driver, monitor refresh), the numbers above, and
+   whether the game runs in a window or full screen.
 
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 

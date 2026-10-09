@@ -33,4 +33,11 @@ struct SessionOptions {
 
 int ReplaySession(const SessionOptions& options);
 
+// replay --bench: plays the recording as the live mode's backend thread does (frames read ahead on
+// another thread, each one presented in a window with vsync off and then handed over to be
+// freed) and times the frames in `timed` (default: all). Uses path, data_root, out_dir,
+// render_system, gpu.
+int BenchSession(const SessionOptions& options,
+                 std::optional<std::pair<uint64_t, uint64_t>> timed);
+
 }  // namespace torchlight::replay

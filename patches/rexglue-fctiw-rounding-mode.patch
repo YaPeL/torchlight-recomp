@@ -36,19 +36,34 @@ index 3c2fe09..a6efa8d 100644
  // SIMD Helper Functions
  //=============================================================================
 diff --git a/src/codegen/builders/floating_point.cpp b/src/codegen/builders/floating_point.cpp
-index 1702241..7e6c04c 100644
+index 1702241..0533970 100644
 --- a/src/codegen/builders/floating_point.cpp
 +++ b/src/codegen/builders/floating_point.cpp
-@@ -61,7 +61,7 @@ bool build_fctid(BuilderContext& ctx) {
+@@ -57,11 +57,12 @@ bool build_fcfid(BuilderContext& ctx) {
+ }
+ 
+ bool build_fctid(BuilderContext& ctx) {
++  // double(LLONG_MAX) is 2^63, already out of range, so it saturates too (>=).
+   ctx.emit_set_flush_mode(false);
    ctx.println(
        "\t{0}.s64 = std::isnan({1}.f64) ? int64_t(0x8000000000000000ULL) : "
-       "({1}.f64 > double(LLONG_MAX)) ? LLONG_MAX : "
+-      "({1}.f64 > double(LLONG_MAX)) ? LLONG_MAX : "
 -      "simde_mm_cvtsd_si64(simde_mm_load_sd(&{1}.f64));",
++      "({1}.f64 >= double(LLONG_MAX)) ? LLONG_MAX : "
 +      "rex::ppc::cvt_f64_s64_current({1}.f64);",
        ctx.f(ctx.insn.operands[0]), ctx.f(ctx.insn.operands[1]));
    return true;
  }
-@@ -81,7 +81,7 @@ bool build_fctiw(BuilderContext& ctx) {
+@@ -70,7 +71,7 @@ bool build_fctidz(BuilderContext& ctx) {
+   ctx.emit_set_flush_mode(false);
+   ctx.println(
+       "\t{0}.s64 = std::isnan({1}.f64) ? int64_t(0x8000000000000000ULL) : "
+-      "({1}.f64 > double(LLONG_MAX)) ? LLONG_MAX : "
++      "({1}.f64 >= double(LLONG_MAX)) ? LLONG_MAX : "
+       "simde_mm_cvttsd_si64(simde_mm_load_sd(&{1}.f64));",
+       ctx.f(ctx.insn.operands[0]), ctx.f(ctx.insn.operands[1]));
+   return true;
+@@ -81,7 +82,7 @@ bool build_fctiw(BuilderContext& ctx) {
    ctx.println(
        "\t{0}.s64 = std::isnan({1}.f64) ? int64_t(0x80000000U) : "
        "({1}.f64 >= double(INT_MAX)) ? INT_MAX : "
@@ -59,10 +74,10 @@ index 1702241..7e6c04c 100644
  }
 diff --git a/tests/ppc/asm/instr_fctix_rounding.s b/tests/ppc/asm/instr_fctix_rounding.s
 new file mode 100644
-index 0000000..ec123a0
+index 0000000..5923d1a
 --- /dev/null
 +++ b/tests/ppc/asm/instr_fctix_rounding.s
-@@ -0,0 +1,218 @@
+@@ -0,0 +1,238 @@
 +# fctiw and fctid convert in the rounding mode FPSCR[RN] selects, set with
 +# mtfsf 0xFF (f1). Each test puts the mode back to round to nearest (f0 = 0).
 +
@@ -281,3 +296,23 @@ index 0000000..ec123a0
 +  blr
 +  #_ REGISTER_OUT f2 0xC004000000000000
 +  #_ REGISTER_OUT f3 0xFFFFFFFFFFFFFFFD
++
++# fctid 2^63, the first value past INT64_MAX: saturates to INT64_MAX
++test_fctid_rounding_10:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000000
++  #_ REGISTER_IN f2 0x43E0000000000000
++  mtfsf 0xFF, f1
++  fctid f3, f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x43E0000000000000
++  #_ REGISTER_OUT f3 0x7FFFFFFFFFFFFFFF
++
++# fctidz 2^63: saturates to INT64_MAX
++test_fctid_rounding_11:
++  #_ REGISTER_IN f2 0x43E0000000000000
++  fctidz f3, f2
++  blr
++  #_ REGISTER_OUT f2 0x43E0000000000000
++  #_ REGISTER_OUT f3 0x7FFFFFFFFFFFFFFF

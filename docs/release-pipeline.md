@@ -509,11 +509,21 @@ announces it.
 - **Hotfix**: a branch from `main` with the fix, merged into `main` and tagged there, then merged
   back into `develop` so the fix is not lost at the next freeze.
 - **CI** (`ci.yml`) runs on pushes to `develop` and `main`, on pull requests into either, and by
-  hand. The SDK and OGRE builds (`deps-<key>`, `deps-windows-<key>`) are published from pushes to
-  either branch, at the commit that built them (`--target`), and every run first looks for a
-  published one with its key. After a freeze merge both branches point at the same commit and two
-  runs may build the same key at once: the second `gh release create` fails, and the step then
-  counts the release it finds as published.
+  hand. The SDK and OGRE builds are published from pushes to either branch as assets of one
+  prerelease, `deps`, never marked latest (since 2026-10-09; before, one release per key,
+  `deps-<key>` and `deps-windows-<key>`, which filled the release page): `sdk-` and
+  `ogre-linux-amd64-<key>.tar.zst`, and `-windows-amd64-<key>.zip` (`tools/deps/store.sh`). Every
+  run first looks for its key's assets. After a freeze merge both branches point at the same commit
+  and two runs may build the same key at once; both upload the same archives (`--clobber`). On
+  pushes the Linux deps job prunes the store: it reads the keys of `main` and `develop` (each with
+  its own `key.sh`, both platforms), copies the old per-key releases those keys still need into the
+  store, deletes the old releases (with their tags) except those a branch whose `ci.yml` still
+  downloads `deps-<key>` reads (`main` until the freeze that brings the store), and deletes the
+  assets of any other key. The keys are read again right before the deletions, and an asset
+  uploaded in the last 24 hours is never deleted, so a run does not remove what a concurrent run on
+  the other branch has just published. Run by hand (`workflow_dispatch`), it copies but only
+  reports what it would delete. The README's release badge filters `v*` tags, so the store never
+  shows as the latest version.
 - **Release** (`release.yml`): only from `v*` tags whose commit is on `main`. The `release`
   environment allows deployments from `v*` tags but cannot tell which branch a tag is on, so the
   first job, *Tag on main*, checks that the tagged commit is an ancestor of `origin/main` and stops
@@ -531,8 +541,8 @@ announces it.
   covers the configurations since 2026-10-07: `tools/deps/key.sh` holds the ones CI builds for
   Windows, hashes them into `key.sh windows`, and prints them with `key.sh windows-configs`, which
   `ci.yml`'s deps-windows passes to `windows.ps1 -Configs` and `-SdkConfigs`. Changing them there
-  changes the Windows key (and not the Linux one), so CI builds and publishes a new
-  `deps-windows-<key>` instead of reusing the RelWithDebInfo one.
+  changes the Windows key (and not the Linux one), so CI builds and publishes new Windows archives
+  instead of reusing the RelWithDebInfo ones.
 
 ## Sources
 

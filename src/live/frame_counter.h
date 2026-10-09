@@ -2,7 +2,9 @@
 // corner, with a graph of the last frames, to see drops and stutters while playing. Every mode: the
 // native backend draws it with the runtime's dialogs, Xenos with the SDK's overlays (it takes F3
 // from the SDK's debug overlay, which has no frame times of its own here). It never takes input.
-// The numbers are the guest's swap to swap (live/frame_timing.h), as the log's.
+// The numbers are the guest's swap to swap (live/frame_timing.h), as the log's; in the native mode
+// the counter leads with what reached the screen (present to present) and the guest frames dropped
+// because the backend was behind.
 
 #pragma once
 

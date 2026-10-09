@@ -62,7 +62,9 @@ Other topics:
 | `*.*` in the wildcard engine | Same as patch 20 | See patch 20 |
 | `non_volatile_as_local` with `setjmp` (D21) | The generated `setjmp` saves only `ctx`; the localized r14-r31 are lost across a `longjmp` | Issue, for when we want that flag |
 | `non_argument_as_local` and values passed in r11/r12 (D26) | The funclets' frame in r12 and the stack probe's size are lost: deadlock seen | Issue, with fix directions |
-| Guest file flushes are no-ops (D27) | `NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush` return success without flushing | Issue and PR; a patch of ours if the user agrees |
+| Guest file flushes are no-ops (D27) | `NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush` return success without flushing | Issue and PR; our patch 27 |
+| Every missing file is a warning (D28) | `NtCreateFile` logs each not-found open at WARN | Issue and PR; our patch 28 |
+| `chrono_test` fails at the NT epoch on Linux (D29) | 1601 does not fit libstdc++'s nanosecond `system_clock` | Issue |
 | `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
 | `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
@@ -752,33 +754,144 @@ We keep `non_argument_as_local` off.
 From the render work (2026-10-08), checked here on `bd833a2`. The macOS port asked about
 `F_FULLFSYNC` for saves, which is what turned this up.
 
-**Issue: `[Kernel]: NtFlushBuffersFile, FlushFileBuffers and XamContentFlush do not flush`**
+**Issue: `[Kernel]: saves are never flushed: XamContentClose, XamContentFlush, NtFlushBuffersFile and FlushFileBuffers do not write through`**
 
-A title that flushes its save file asks for durability and gets none:
-- `NtFlushBuffersFile_entry` (`src/kernel/xboxkrnl/xboxkrnl_io.cpp`) only fills the status block
-  with success.
+A title that saves trusts that a closed (or flushed) content package is on the disk. Today it is
+only in the host's cache:
+
+- `XamContentClose_entry` (`src/kernel/xam/xam_content.cpp`) unmounts the package and nothing else.
+- `XamContentFlush_entry` completes the overlapped with success.
+- `NtFlushBuffersFile_entry` (`src/kernel/xboxkrnl/xboxkrnl_io.cpp`) fills the status block with
+  success.
 - The CRT's `FlushFileBuffers_entry` (`src/kernel/crt/file.cpp`) returns 1.
-- `XamContentFlush_entry` (`src/kernel/xam/xam_content.cpp`) completes the overlapped with success.
 
-The host side exists: `FileHandle::Flush` (`fsync` on POSIX, `FlushFileBuffers` on Windows). But
-nothing on a guest path calls it, so a power loss or a crash after a save can lose data the guest
-believes is on disk. Torchlight calls `NtFlushBuffersFile` and `XamContentFlush` once each when
-saving.
+`FileHandle::Flush` (`fsync`, `FlushFileBuffers`) exists, but no guest path calls it. A crash or a
+power loss right after a save can lose it.
 
-**PR: `fix(kernel): guest flushes reach the host file`**
+What a real title does, measured with Torchlight (a guided save under `strace`, with a first
+version that flushed only the handles still open):
+- It writes its save files and closes them, then calls `XamContentFlush` and `XamContentClose`.
+  By then nothing is open, so flushing open handles does nothing: the `strace` showed no `fsync`
+  at all.
+- Its one `NtFlushBuffersFile` call site is not on the save path.
+- The save replaces the character file by name (`4.tsv` before, `4.TSV` after). So the rename and
+  the removal must be durable too, which means the folder.
+
+So the commit point is the content close, as on the console, and it has to cover files written
+through handles closed long before.
+
+**PR: `fix(kernel): closing or flushing a content package writes it through to the disk`**
 
 Fixes #NNN.
-- `NtFlushBuffersFile` and `FlushFileBuffers` look up the `XFile`, take its VFS file and call
-  `FileHandle::Flush`. They return the host error if that fails.
-- `XamContentFlush` (and the close of a content package) flushes the files open under that
-  content root, then the root directory itself on POSIX, so renames are durable too.
-- On Apple, `Flush` uses `fcntl(F_FULLFSYNC)`, since `fsync` there does not reach the disk, and
-  falls back to `fsync` where `F_FULLFSYNC` is not supported.
+- A content package's `HostPathDevice` tracks, from mount, the host files written, created or
+  renamed into place, and the folders whose entries changed. Tracking is opt-in per device, so
+  game data and other writable devices are unaffected.
+- `XamContentFlush` and `XamContentClose` (before the unmount) flush each of those files, reopening
+  it by path, then each folder, and forget them. A renamed file or folder carries what is
+  remembered under it to the new path.
+- A failed flush is the result of `XamContentFlush` and of `XamContentClose`, which unmounts
+  either way, and is logged at WARN. On the console the close is the commit, so the title should
+  hear of it. Checked first that this cannot cost a player their saves in Torchlight: the game
+  never reads its `XamContentClose` result, and its one `XamContentFlush` is in Microsoft's
+  telemetry library, which only logs the failure. Its "Corrupt/Damaged Save" dialog, whose "Yes"
+  deletes the whole container, comes from short reads. A title that answers a failed close by
+  discarding its save would need the failure kept in the log only.
+- `NtFlushBuffersFile` and `FlushFileBuffers` flush their handle's file. On a handle that is not a
+  file they now fail (`X_STATUS_INVALID_HANDLE`, 0) instead of succeeding.
+- `FileHandle::Flush` returns its result. A new `FlushFolder` does the same for a folder: `fsync`,
+  with `F_FULLFSYNC` first on Apple because `fsync` there stops at the drive's cache. On Windows,
+  NTFS journals folder entries.
 
-Test: a VFS unit test that writes through a host-path device, calls the flush path, and checks the
-host `Flush` was called. A mock `FileHandle` can count the calls.
+The other design, flushing every written file on close, does not depend on the title closing its
+content. But it would force the disk for every temporary file of every title, which the console
+does not do.
 
-Not yet a patch of ours: the render work proposes it to the user first.
+Test: VFS unit tests with a counting `FileHandle` and a real host folder. The case Torchlight hits
+is in them: a temporary file written, the old one removed, the temporary renamed into place, one
+file and one folder flushed. Another writes a file in a folder, renames the folder, and expects
+the file flushed under its new path.
+
+Cost, measured in a Torchlight save-and-exit under `strace`:
+- The `XamContentFlush` flushed one file: 68 ms.
+- The `XamContentClose` flushed two files and the folder: 69 ms, 0.04 ms and 1.2 ms.
+- Total: about 140 ms on the game thread per save-and-exit.
+
+On ext4 an `fsync` waits for the journal commit, so its time depends on what else is dirty on the
+system, not on the file. A 112 KB file took 1.9 ms with nothing else dirty, 11-36 ms with
+16-256 MB of other dirty data pending, and 85 ms as the first file of a new folder.
+
+The flushes stay synchronous, as `XamContentClose` is on the console, so a flush error can reach
+the title. Where Torchlight commits, from a guided run with patch 27's log line (2026-10-09):
+- At each zone change, under the loading screen: two files right before the level load and two
+  right after.
+- In the options menu, two files each time, with the menu open.
+- At save-and-exit.
+- Never from the shared stash, the inventory, a vendor, fighting or walking.
+
+The user's criterion: a synchronous commit is fine with a menu or a loading screen open. Only a
+commit in open play (fighting or walking) would need the flushes moved to a worker thread first.
+
+Not verified yet: the event that runs when Alric's quest completes, after the final boss
+(`0x823CEED0`), closes a content package and may write. Whoever has a save that far along should
+play it through with patch 27 and check whether a `Content ...: flushed` line appears in open play.
+
+Our patch 27 (`patches/README.md`), approved by the user on 2026-10-08.
+
+---
+
+### D28. Kernel: every open of a missing file is logged as a warning
+
+Found with a PC mod pack in Torchlight (2026-10-09). Checked on `bd833a2`.
+
+**Issue: `[Kernel]: NtCreateFile logs "file not found" at WARN, which floods the log when a title probes for files`**
+
+`NtCreateFile_entry` (`src/kernel/xboxkrnl/xboxkrnl_io.cpp`) logs every failed open with
+`REXKRNL_IMPORT_FAIL`, which is WARN. A missing path is an ordinary result: titles probe for
+optional files, and a title with mod or patch folders looks each data file up in every folder.
+With a 29-mod pack, Torchlight wrote about 124,000 such lines, 20 MB, in the first 45 s of
+startup. They also hide the failures that matter.
+
+**PR: `fix(kernel): log NtCreateFile's not-found results at debug`**
+
+Fixes #NNN. `X_STATUS_NO_SUCH_FILE`, `X_STATUS_OBJECT_NAME_NOT_FOUND` and
+`X_STATUS_OBJECT_PATH_NOT_FOUND` go to DEBUG. Every other failure stays at WARN. `NtOpenFile`
+shares the code. Our patch 28 (`patches/README.md`).
+
+---
+
+### D29. Tests: `chrono_test` fails at the NT epoch on Linux
+
+Seen while validating the series (2026-10-09). The render agent reproduced it on a clean `bd833a2`
+with no patches, so it is not ours.
+
+**Issue: `[Tests]: chrono_test fails for 1601-01-01 on Linux: the NT epoch is outside system_clock's range`**
+
+On Linux x86-64 (clang, libstdc++, Release), `unit_tests` fails 4 cases of
+`tests/unit/core/chrono_test.cpp`, 11 assertions, all at the NT epoch (FILETIME 0, 1601-01-01):
+- "from_sys then to_sys round-trips for whole-second values" (line 109);
+- "calendar decomposition: NT epoch (1601-01-01)" (lines 150-157): it gives 2185-07-21
+  23:34:33.709, a Thursday;
+- "calendar recomposition: known dates produce correct FILETIMEs" (line 240):
+  `recompose(1601, 1, 1, ...)` gives 184467440737095516;
+- "calendar recomposition: decompose then recompose round-trips" (line 253).
+
+The other dates (1970, 2000, 2000-02-29, 2020, 2021) pass. The wrong values match this cause.
+`WinSystemClock::to_sys` (`include/rex/chrono/chrono.h`) converts to
+`std::chrono::system_clock::duration`, which in libstdc++ is a signed 64-bit count of nanoseconds.
+That covers about 1677 to 2262, so 1601 overflows:
+- 1601 plus 2^64 ns (584.55 years) is mid-2185, the date the decomposition gives;
+- 184467440737095516 is 2^64 / 100, the same wrap counted in FILETIME's 100 ns units.
+
+MSVC's `system_clock` counts 100 ns and libc++'s counts microseconds. Both reach 1601. On macOS
+ARM64 (Apple clang, libc++) `chrono_test` passes, the NT epoch included (our macOS port,
+2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`), so the failure is Linux/libstdc++ only. Windows should pass
+too; not run there yet. The test came in with `952828d`
+(2026-02-19), the same day as `4c981fe` ("replace date:: with std::chrono::"). It was not built at
+those commits, so "since then" is a reading.
+
+Fix options for upstream: keep the 1601 cases out of the `system_clock` round trips on
+libstdc++, or convert through a `sys_time` with a coarser duration (seconds or 100 ns) instead of
+`system_clock::duration`. Nothing in the runtime is known to pass FILETIMEs that old to `to_sys`.
 
 ---
 
@@ -809,6 +922,21 @@ each `fesetround` mode:
 `fctiwz`/`fctidz` (`cvttsd2si`, truncation) are right on both. `tests/ppc` only covers `fctiwz`, so
 `ppc_tests` passes on ARM64 with this bug.
 
+A second, smaller bug, found in review: `fctid` and `fctidz` saturate with
+`> double(LLONG_MAX)`, and `double(LLONG_MAX)` rounds to 2^63. So 2^63 itself goes to the
+conversion, which is out of range. On x86-64 `cvtsd2si`/`cvttsd2si` give 0x8000000000000000
+(INT64_MIN) instead of INT64_MAX. On ARM64 `fcvtzs` saturates to INT64_MAX by itself, so the
+result happens to be right there, but the check is still wrong and the out-of-range conversion is
+undefined in C++. `fctiw` and `fctiwz` use `>=` with `INT_MAX`, which is exact in a double, and
+are right.
+
+Run on ARM64 by our macOS port (2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`), with patch
+23's tests:
+- without the fix, 12 of the 20 `fctix_rounding` cases fail: the rounding cases (2.5 and -2.5 to
+  nearest, 2.7 and -2.7 toward zero, -2.5 up, 2.5 down), each for `fctiw` and `fctid`. The two
+  2^63 cases pass, for the reason above. On x86-64, 2 of 20 fail: only the 2^63 cases;
+- with the fix, `ppc_tests` passes 1492 of 1492.
+
 **PR: `fix(codegen): fctiw/fctid round in the current rounding mode on every architecture`**
 
 (Our patch 23, with the tests below; `patches/README.md`.)
@@ -816,8 +944,10 @@ each `fesetround` mode:
 Fixes #NNN. Convert with `std::nearbyint` (or `llrint`), which honours the FP environment that
 `storeFromGuest` sets on both architectures, and keep today's NaN and saturation handling. The
 generated code must not let the compiler fold the conversion across an `mtfsf`, so either keep it
-behind a call or compile with `-frounding-math`. Tests: `fctiw` and `fctid` of 2.5, -2.5, 3.5 and
-2.7 under each of the four modes, set with `mtfsf 0xFF`.
+behind a call or compile with `-frounding-math`. Saturate `fctid` and `fctidz` with `>=`. Tests:
+`fctiw` and `fctid` of 2.5, -2.5, 3.5 and 2.7 under each of the four modes, set with `mtfsf 0xFF`,
+and `fctid` and `fctidz` of 2^63 (the two fail without the fix on x86-64; on ARM64 they pass either
+way).
 
 ---
 
@@ -1082,7 +1212,11 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 24 | `rexglue-arm64-mffs-rounding.patch` (D23) | `sdk/rexglue-next` | `bd833a2` |
 | 25 | `rexglue-mtfsf-field-mask.patch` (D24) | `sdk/rexglue-next` | `bd833a2` |
 | 26 | `rexglue-log-rotation.patch` | `sdk/rexglue-next` | `bd833a2` |
-| 27 | next free | | |
+| 27 | `rexglue-guest-file-flush.patch` (D27) | `sdk/guest-file-flush` | `bd833a2` |
+| 28 | `rexglue-quiet-missing-files.patch` (D28) | `sdk/series-review` | `bd833a2` |
+| 29 | next free | | |
+
+22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
 Checked with `git apply --check`: 20 and 21 apply on top of the rebased series (`bd833a2`), and so
 does 22; the three touch different files (`src/filesystem`, `thirdparty/CMakeLists.txt`,
@@ -1105,7 +1239,8 @@ patch, it also asks there for a number.
 There is no direct channel between machines. The user carries messages, and what is meant for
 these agents lives here and in `patches/README.md`.
 
-- **macOS (ARM64).** Base: `sdk/rexglue-next` (series on `bd833a2`, patches 22-25 included).
+- **macOS (ARM64).** Base: `develop` (series on `bd833a2`, patches 22-27 included). `sdk/rexglue-next`
+  and `sdk/guest-file-flush` were merged into `develop` and deleted on 2026-10-09.
   - The PPC test data is on branch `sdk/ppc-test-data`. Build with
     `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=<that checkout>/bin`. To remake it after an
     SDK change, run `tools/deps/build_ppc_test_data.sh` on Linux.
@@ -1116,12 +1251,15 @@ these agents lives here and in `patches/README.md`.
     x86-64. The ARM64 bugs are now drafts D22, D23 and D25. D24 (`mtfsf` mask) was found here on
     the way; it affects every architecture. The `tests/ppc` suite covers none of them, so
     `ppc_tests` passing on ARM64 does not clear them.
-  - **Patches 23-25 (2026-10-08): please run this on ARM64 and write the results back** in
-    `docs/macos-port.md`. On x86-64 the tests of 23 and 24 cannot fail, because native SSE2 and
-    MXCSR were right there. Only ARM64 shows those two bugs.
-    1. Take `sdk/rexglue-next` at the commit that adds 23-25, and `sdk/ppc-test-data` at the
-       commit that adds `instr_fctix_rounding`, `instr_mffs_rounding` and `instr_mtfsf_fields`
-       (169 files of each kind). The configure stops if a `.bin` is missing.
+  - **Patches 23-25 (2026-10-08, revised 2026-10-09): results received** (`docs/macos-port.md`
+    on `docs/macos-port-plan`, 6927cec): as expected, except `fctix_rounding` without the fixes, 12 of 20 on ARM64 and not
+    14 (the 2^63 cases pass there, D22). With the fixes, `ppc_tests` 1492 of 1492, `unit_tests`
+    only `output_stamp_test.cpp:227-228`, `chrono_test` passes (D29), `[flush]` 6 of 6. The steps
+    stay below for a rerun after a series change. On x86-64 the rounding tests of 23 and the tests of 24
+    cannot fail, because native SSE2 and MXCSR were right there. Only ARM64 shows those two bugs.
+    1. Take `develop`, and `sdk/ppc-test-data` at `0ffbb64` or later (169 files of each kind, and
+       `bin/sources.sha256`). The configure stops if a `.bin` is missing or a test source does not
+       match the binaries.
     2. Build the SDK as before with the whole series (`tools/deps/build_sdk.sh`, which applies
        23-25). Then, in its checkout, take the fixes out but keep their tests:
 
@@ -1132,15 +1270,31 @@ these agents lives here and in `patches/README.md`.
        Build `ppc_tests` with `-DREXGLUE_BUILD_TESTS=ON -DREXGLUE_PPC_TEST_BIN_DIR=...` and run
        `ppc_tests "fctix_rounding.*"`, then `"mffs_rounding.*"`, then `"mtfsf_fields.*"`.
        Expected without the fixes:
-       - **`fctix_rounding`: 12 of 18 fail.** These fail: 2.5 and -2.5 to nearest; 2.7 and -2.7
-         toward zero; -2.5 up; 2.5 down. Each fails for both `fctiw` and `fctid`.
+       - **`fctix_rounding`: 12 of 20 fail.** These fail: 2.5 and -2.5 to nearest; 2.7 and -2.7
+         toward zero; -2.5 up; 2.5 down. Each fails for both `fctiw` and `fctid`. The two cases
+         of 2^63 (`fctid` and `fctidz`) pass on ARM64 and fail on x86-64 (D22).
        - **`mffs_rounding`: 4 of 6 fail.** These fail: up, down, and both save-and-restore cases.
          Nearest and toward zero pass.
        - **`mtfsf_fields`: 4 of 4 fail**, as on x86-64.
     3. Put the fixes back (the same loop without `-R`, in the order 23, 24, 25), rebuild and run all
-       of `ppc_tests` (expected: 1490 cases pass) and `unit_tests` (expected: as before, only
-       `output_stamp_test.cpp:227-228`).
+       of `ppc_tests` (expected: 1492 cases pass) and `unit_tests` (expected: as before, only
+       `output_stamp_test.cpp:227-228`). On Linux x86-64, Release, `chrono_test.cpp` also fails at
+       the NT epoch (1601), on a clean `bd833a2` too (D29); it passes on macOS.
     4. Anything else is a finding: send the failing cases' output.
+  - **Patch 27 (guest file flushes, 2026-10-08): only the check in a real save is open** (MAC.7).
+    `unit_tests "[flush]"` already passes 6 of 6 on APFS (above). On Apple, `FileHandle::Flush`
+    calls `fcntl(F_FULLFSYNC)` and falls back to `fsync`, and only macOS can show that path. When
+    the game runs there, write the result in `docs/macos-port.md`:
+    1. In a game save (any zone change autosaves), run
+       `sudo fs_usage -w -f filesys <pid of the game> | grep -i -E "fsync|fcntl"` and look for the
+       `F_FULLFSYNC` calls at the save: one per changed save file plus the save folder, at
+       `XamContentClose`. The game log says `Content <root>: flushed N files and M folders to
+       disk`. Note how long each takes, and whether the save stalls visibly. On Linux (ext4,
+       NVMe) Torchlight's save-and-exit spent about 140 ms in flushes, 68-69 ms for each of the
+       two larger files (D27). `F_FULLFSYNC` is expected to be slower, since it also empties the
+       drive's cache.
+    2. Anything unexpected is a finding: `F_FULLFSYNC` failing on APFS, or the game reporting a
+       save error.
 - **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
   22. When you next touch the series, ask for a number here first.
 

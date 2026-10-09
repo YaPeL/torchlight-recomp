@@ -2,8 +2,9 @@
 # Assembles the ReXGlue SDK's PPC instruction tests (tests/ppc/asm/*.s) into the .bin and .map files
 # ppc_tests is generated from, with the PowerPC binutils bundled in the SDK (Linux and Windows
 # only). Hosts without them (macOS) build the tests with -DREXGLUE_PPC_TEST_BIN_DIR=<OUT_DIR>
-# (patches/README.md, patch 22). Same commands as the SDK's cmake/ppc_test_pipeline.cmake. Test data
-# of the SDK only; nothing of the game is involved.
+# (patches/README.md, patch 22), which checks each source against the sources.sha256 written here.
+# Same commands as the SDK's cmake/ppc_test_pipeline.cmake. Test data of the SDK only; nothing of
+# the game is involved.
 #
 # Usage: tools/deps/build_ppc_test_data.sh SDK_CHECKOUT OUT_DIR
 set -eu
@@ -24,4 +25,5 @@ for asm in "$sdk"/tests/ppc/asm/*.s; do
     --oformat=binary -Ttext=0x82010000 -e 0x82010000 -o "$out/$name.bin" "$obj/$name.o"
   "$tools/powerpc-none-elf-nm" --numeric-sort "$obj/$name.o" > "$out/$name.map"
 done
+(cd "$sdk/tests/ppc/asm" && sha256sum -- *.s) > "$out/sources.sha256"
 echo "$(ls "$out"/*.bin | wc -l) test binaries in $out"
