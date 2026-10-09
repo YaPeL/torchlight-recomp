@@ -438,11 +438,27 @@ drops the 113 Xbox entries without one, so the Xbox file loads as 3376). Nothing
 loaded instead with its own path (nothing was inserted, so that is the load the game would have
 done), without the mods' units. Part of it loaded: an error, and the index is left as it is, since
 going back after a partial load is not safe (a replaced entry is freed but stays filed under its
-other names); **[pending]** resetting the index object for that case. The saves are checked
+other names); see "a partial load" below for why the index is not reset. The saves are checked
 before the guest runs, when nothing can be reading or writing them, against the index the game is
 expected to load (the cached one, or the base plus the GUIDs the mods' definitions set). After the
 load only a comparison runs: units the check counted on that the game does not hold are logged
 and told on screen, and the saves are not changed again.
+
+**A partial load: no reset (decided 2026-10-09).** Going back to the Xbox index after a partial
+load would mean destroying the index object in place and building it again. The object is a
+`CUnitResourceList` (vtable `0x820C7A08`; slot 0, `sub_82329448`, the deleting destructor). Its
+destructor `sub_82329588` destroys every entry in a list at `+76` through the entry's own deleting
+destructor, frees the objects at `+116` and `+92`, clears the singleton `0x835594EC`
+(@0x8232966C) and destroys the maps at `+60` (by GUID), `+44`, `+28` and `+12`. After that,
+`sub_82329310` would build it in place and load `MEDIA/UNITDATA.RAW`. The risk: in a partial load
+the loader has freed each entry it replaced, and if such an entry is still in the `+76` list the
+destructor frees it a second time, corrupting the guest's heap. The loader does not touch `+76`
+in the code read, so what fills that list is not known. Not reset, because a partial load is
+practically impossible (the loader reads the whole file at once, our writer gives the Xbox file
+byte for byte, and the one failure seen gave 0, not part), and because the protection already keeps
+items from being lost: a partial load is logged as an error, the comparison then counts every
+mod unit as missing, and if a save holds one, the saves are copied and nothing is saved for the
+session.
 
 **Saves holding units the game did not load.** In the guided run of 2026-10-08 (the index not
 read, the Xbox one loaded instead) the game loaded the character that carried the mod's sword,
