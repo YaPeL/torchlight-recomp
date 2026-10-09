@@ -799,10 +799,17 @@ Test: VFS unit tests with a counting `FileHandle` and a real host folder. The ca
 is in them: a temporary file written, the old one removed, the temporary renamed into place, one
 file and one folder flushed.
 
-Cost: an `fsync` of a 110-290 KB file on an NVMe disk (ext4) takes 1 ms in the median and under
-2 ms at the 90th percentile, with rare outliers up to 0.23 s when the journal commits. A save
-flushes the files it changed and their folder, once per save. Torchlight's autosaves happen
-during zone changes, behind a loading screen.
+Cost, measured in a Torchlight save-and-exit under `strace`:
+- The `XamContentFlush` flushed one file: 68 ms.
+- The `XamContentClose` flushed two files and the folder: 69 ms, 0.04 ms and 1.2 ms.
+- Total: about 140 ms on the game thread per save-and-exit.
+
+On ext4 an `fsync` waits for the journal commit, so its time depends on what else is dirty on the
+system, not on the file. A 112 KB file took 1.9 ms with nothing else dirty, 11-36 ms with
+16-256 MB of other dirty data pending, and 85 ms as the first file of a new folder.
+
+The flushes stay synchronous, as `XamContentClose` is on the console, so a flush error can reach
+the title. In Torchlight they fall in a zone change's loading screen or at exit.
 
 Our patch 27 (`patches/README.md`), approved by the user on 2026-10-08.
 
