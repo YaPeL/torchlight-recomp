@@ -16,6 +16,12 @@ target_link_libraries(resource_registry_test PRIVATE torchlight_registry)
 target_compile_options(resource_registry_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME resource_registry_test COMMAND resource_registry_test)
 
+add_executable(flat_map_test flat_map_test.cpp)
+target_include_directories(flat_map_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(flat_map_test PRIVATE cxx_std_23)
+target_compile_options(flat_map_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME flat_map_test COMMAND flat_map_test)
+
 # The session's produced commands (live path), without the recompiled code: the hooks' slot table
 # is stubbed in the test.
 add_executable(session_test session_test.cpp session.cpp guest_readers.cpp)

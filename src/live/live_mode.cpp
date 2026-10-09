@@ -74,6 +74,7 @@ void LogMeasurements(uint64_t cuts, uint64_t measured) {
   }
   std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.ns > b.ns; });
   std::string hooks;
+  if (!session.producer_timing()) hooks = " not timed (--native_producer_timing)";
   for (size_t i = 0; i < rows.size() && i < 8; ++i) {
     hooks += fmt::format("\n    {:.3f} ms  {:7.1f} calls  {}", rows[i].ns / 1e6 / measured_frames,
                          rows[i].calls / measured_frames, capture::HookName(rows[i].hook));
@@ -104,6 +105,7 @@ LiveMode& LiveMode::Get() {
 void LiveMode::Start(const LiveOptions& options) {
   options_ = options;
   running_ = true;
+  capture::Session::Get().SetProducerTiming(options.producer_timing);
   capture::Session::Get().EnableLive(&queue_, &store_);
   thread_ = std::thread([this] { Run(); });
   REXLOG_INFO("live: native backend {}{}, {}x{}, frames queued at the guest swap",
@@ -422,7 +424,7 @@ void LiveMode::Run() {
       double constants = per_frame(ns[size_t(PS::kConstants)]);
       double resources = per_frame(ns[size_t(PS::kResources)]);
       double commands = per_frame(ns[size_t(PS::kCommands)]) - constants - resources;
-      REXLOG_INFO(
+      if (capture::Session::Get().producer_timing()) REXLOG_INFO(
           "live producer (guest threads, ms per frame over {} measured frames): constants {:.2f}, other "
           "commands {:.2f}, resource snapshots {:.2f}, version marking {:.2f}, frame cut {:.2f}; "
           "total {:.2f}",
