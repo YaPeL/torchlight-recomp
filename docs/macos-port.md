@@ -603,6 +603,16 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   (the present waits for the GPU) and shows about 180 fps; at 720p it shows nearly every guest
   frame. Either way far above 60. A first measurement, not under the measurement rules (no
   cool-down, other applications open).
+- `develop`'s frame counter shows both rates ("shown", the presented frames, and "game"),
+  recorded on the render thread after each present (`FrameTiming::OnPresent`): nothing of the
+  platform. Merged into `feature/macos-game` (`d42b3f4`); it builds and its tests pass on macOS
+  (66 of 66); seen in the game at MAC.7. Measurements read the presented frames.
+- Optional, for later: the automatic internal resolution (the window's size) capped at 4K;
+  today a scaled 4K display gives a 5120 x 2880 window and renders at that size.
+- Windows (2026-10-09, the Windows agent): MAC.2 validated with the real 0x1000 offset, MAC.4b
+  built and tested with `FlushFileBuffers`, and patch 21 has the Metal fix (`5a98b6f`).
+  `feature/launcher-imgui-macos` was deleted: its patch 21 and README matched
+  `feature/launcher-imgui`.
 - The frame counter (F3) is opened by the run script with a synthetic key press, which macOS
   allows only to an application with the Accessibility permission (System Settings, Privacy &
   Security, Accessibility): granted to the terminal on this Mac.
