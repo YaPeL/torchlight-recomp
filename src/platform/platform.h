@@ -27,6 +27,10 @@ struct NativeWindow {
   uint64_t window = 0;
   uint64_t display = 0;
 };
+// Experiment (OGRE's Vulkan render system needs a window made outside it): an X11 window of the
+// given size, mapped if `visible`; kNone where not implemented.
+NativeWindow CreateStandaloneWindow(uint32_t width, uint32_t height, bool visible);
+
 // "x11", "wayland" or "win32", for the log.
 const char* SystemName(const NativeWindow& window);
 

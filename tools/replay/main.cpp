@@ -144,6 +144,8 @@ int main(int argc, char** argv) {
         render_system = TL_RENDER_SYSTEM_GL3PLUS;
       } else if (name == "d3d11") {
         render_system = TL_RENDER_SYSTEM_D3D11;
+      } else if (name == "vulkan") {
+        render_system = TL_RENDER_SYSTEM_VULKAN;
       } else {
         std::fprintf(stderr, "error: --render_system gl3plus|d3d11\n");
         return 2;

@@ -19,6 +19,7 @@ typedef struct tl_backend tl_backend;
 typedef enum tl_render_system {
   TL_RENDER_SYSTEM_GL3PLUS = 0,
   TL_RENDER_SYSTEM_D3D11 = 1,
+  TL_RENDER_SYSTEM_VULKAN = 2, /* experiment: OGRE's Vulkan render system with its glslang plugin */
 } tl_render_system;
 
 /* Backend rendering to a width x height colour target with `render_system`, on the GPU `gpu` (a

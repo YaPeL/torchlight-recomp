@@ -359,6 +359,7 @@ struct tl_backend {
     bool failed = false;
   };
   std::unordered_map<std::string, Program> programs;
+  bool vulkan = false;  // experiment
   uint32_t program_serial = 0;
   std::vector<Ogre::Affine3> world_matrices;  // ApplyProgram's world + bone palette
   std::unique_ptr<Ogre::RTShader::SubRenderStateFactory> guest_texgen_factory, guest_pixel_fog,
@@ -1220,10 +1221,11 @@ Ogre::HighLevelGpuProgramPtr MakeProgram(const char* name, Ogre::GpuProgramType 
                                           const char* source) {
   auto& programs = Ogre::HighLevelGpuProgramManager::getSingleton();
   const bool glsl = programs.isLanguageSupported("glsl");
+  const bool glslang = !glsl && programs.isLanguageSupported("glslang");
   auto program =
       programs.createProgram(name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME,
-                             glsl ? "glsl" : "hlsl", type);
-  if (!glsl) {
+                             glsl ? "glsl" : glslang ? "glslang" : "hlsl", type);
+  if (!glsl && !glslang) {
     program->setParameter("entry_point", "main");
     program->setParameter("target", type == Ogre::GPT_VERTEX_PROGRAM ? "vs_4_0" : "ps_4_0");
   }
@@ -1659,6 +1661,16 @@ void CreateProgramGenerator(tl_backend* b) {
 void SelectGpu(Ogre::RenderSystem* rs, const char* gpu) {
   if (!gpu || !*gpu) return;
   const Ogre::ConfigOptionMap& options = rs->getConfigOptions();
+  // Experiment: Vulkan's "Device" option, the first device whose name contains `gpu`.
+  if (const auto vk = options.find("Device"); vk != options.end()) {
+    for (const auto& name : vk->second.possibleValues) {
+      if (name.find(gpu) != std::string::npos) {
+        rs->setConfigOption("Device", name);
+        Ogre::LogManager::getSingleton().logMessage(std::string("tl_backend: Vulkan device ") + name);
+        return;
+      }
+    }
+  }
   const auto device = options.find("Rendering Device");
   if (device == options.end()) {
     Ogre::LogManager::getSingleton().logMessage(
@@ -1700,7 +1712,11 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     b->root = new Ogre::Root("", "", "");
     std::string plugins = torchlight::platform::OgrePluginDir();
     if (!plugins.empty() && plugins.back() == '/') plugins.pop_back();
-    if (render_system == TL_RENDER_SYSTEM_D3D11) {
+    if (render_system == TL_RENDER_SYSTEM_VULKAN) {
+      b->vulkan = true;
+      b->root->loadPlugin(plugins + "/RenderSystem_Vulkan");
+      b->root->loadPlugin(plugins + "/Plugin_GLSLangProgramManager");
+    } else if (render_system == TL_RENDER_SYSTEM_D3D11) {
       b->root->loadPlugin(plugins + "/RenderSystem_Direct3D11");
       b->depth_bias_factor = conv::kD3D11DepthBiasFactor;
     } else {
@@ -1735,6 +1751,12 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     misc["minColourBufferSize"] = "24";
     misc["maxColourBufferSize"] = "32";
     uint32_t window_w = b->visible_window ? width : 64, window_h = b->visible_window ? height : 64;
+    if (render_system == TL_RENDER_SYSTEM_VULKAN && !b->child_window) {
+      // Experiment: OGRE's Vulkan window draws on a window made outside it.
+      const auto native =
+          torchlight::platform::CreateStandaloneWindow(window_w, window_h, b->visible_window);
+      misc["externalWindowHandle"] = std::to_string(native.window);
+    }
     if (b->child_window) {
       // Inside the application's window: that window keeps the focus, so key and pointer events
       // (not selected here) reach the application.
@@ -1778,6 +1800,8 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
                   caps->getDriverVersion().toString();
   } catch (Ogre::Exception& e) {
     SetError(error, error_size, e.getFullDescription());
+    Ogre::LogManager::getSingleton().logMessage("tl_backend: " + e.getFullDescription(),
+                                                Ogre::LML_CRITICAL);  // experiment
     tl_backend_destroy(b);
     return nullptr;
   }
@@ -2384,6 +2408,7 @@ static int Draw(tl_backend* b, const tl_draw* d) {
           host.serial = ++b->host_buffer_serial;
           ++b->counters.gpu_buffers_created;
         }
+        if (b->vulkan) b->rs->_endFrame();  // experiment: no upload inside a Vulkan render pass
         host.buffer->writeData(0, converted.size(), converted.data(), true);
         host.content = content;
       }
@@ -2424,6 +2449,7 @@ static int Draw(tl_backend* b, const tl_draw* d) {
               type, count, rewritten ? Ogre::HBU_CPU_TO_GPU : Ogre::HBU_GPU_ONLY);
           ++b->counters.gpu_buffers_created;
         }
+        if (b->vulkan) b->rs->_endFrame();  // experiment: no upload inside a Vulkan render pass
         host.buffer->writeData(0, count * it->second.index_size, it->second.bytes.data(), true);
         host.content = d->index_buffer;
       }

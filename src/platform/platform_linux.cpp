@@ -304,6 +304,17 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   return plugin_dir;
 }
 
+NativeWindow CreateStandaloneWindow(uint32_t width, uint32_t height, bool visible) {
+  Display* display = XOpenDisplay(nullptr);
+  if (!display) return {};
+  Window window = XCreateSimpleWindow(display, DefaultRootWindow(display), 0, 0, width, height, 0,
+                                      0, 0);
+  XStoreName(display, window, "torchlight replay");
+  if (visible) XMapWindow(display, window);
+  XFlush(display);
+  return {NativeWindow::kX11, uint64_t(window), uint64_t(reinterpret_cast<uintptr_t>(display))};
+}
+
 bool HasDirect3D11(const std::string&) { return false; }
 
 // Not probed: GL3+ is the only render system, so there is nothing to fall back to.

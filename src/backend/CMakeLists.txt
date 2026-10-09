@@ -34,6 +34,9 @@ target_link_libraries(torchlight_backend PUBLIC OgreMain OgreRTShaderSystem torc
 # the unversioned name links to.
 set(_plugins "")
 set(_plugin_names RenderSystem_GL3Plus Codec_STBI)
+if(EXISTS "${OGRE_PLUGIN_DIR}/RenderSystem_Vulkan${CMAKE_SHARED_MODULE_SUFFIX}")
+    list(APPEND _plugin_names RenderSystem_Vulkan Plugin_GLSLangProgramManager)  # experiment
+endif()
 if(WIN32 AND EXISTS "${OGRE_PLUGIN_DIR}/RenderSystem_Direct3D11.dll")
     # The Direct3D 11 render system (tools/build-deps/windows.ps1), chosen per run.
     list(APPEND _plugin_names RenderSystem_Direct3D11)
