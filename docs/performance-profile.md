@@ -21,6 +21,18 @@ presented one (present to present on the backend thread, `frame time (presented,
 present)`, with the guest frames dropped because the backend was behind). When the backend is the
 limit, the second is the lower one and is what the player sees; the frame counter (F3) shows both.
 
+**Since 2026-10-09, every measurement also records the machine's state**, because alternated runs
+of the same binaries drifted run after run (develop's town square 130 -> 133 -> 139 -> 146 fps
+while phase A's went 138 -> 137 -> 135 -> 132), which looks thermal. Every 2 s during each run:
+the CPU frequency (mean, min and max over the cores), the package and hottest core temperatures,
+the fan, whether the charger is plugged in, the kernel's thermal throttle counters (per core and
+package, from `/sys/devices/system/cpu/cpu*/thermal_throttle`), and the GPU's temperature, clock,
+power and utilisation (`nvidia-smi`). The power profile (`powerprofilesctl`), the governor and the
+energy performance preference go in its header. Each run's report puts them next to the frame
+rates of every step: mean frequency, mean and highest package temperature, throttle events during
+the step. Measurements run with the power profile set to **performance** (intel_pstate, EPP
+`performance`) and the charger plugged in.
+
 **Build** (the Linux release's flags, built locally): the game (`linux-amd64-release`,
 `-O3 -g -DNDEBUG`; `generated/` also `-gline-tables-only -mcmodel=large -msse4.1`), the SDK's
 Release libraries (`librexruntime.so`, `librexgpu-xenos.so`: `-O3 -DNDEBUG -march=x86-64-v2`,
