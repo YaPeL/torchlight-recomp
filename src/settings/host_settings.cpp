@@ -1,5 +1,7 @@
 #include "settings/host_settings.h"
 
+#include "platform/durable_file.h"
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -468,10 +470,9 @@ bool Save(const std::string& path, const HostSettings& settings, std::string& er
       return false;
     }
   }
-  std::error_code ec;
-  std::filesystem::rename(temp, path, ec);
-  if (ec) {
-    error = "cannot replace " + path + ": " + ec.message();
+  // On the disk before it replaces the old file, so a power cut leaves one or the other whole.
+  if (!platform::FlushFileToDisk(temp, error) || !platform::CommitReplace(temp, path, error)) {
+    std::error_code ec;
     std::filesystem::remove(temp, ec);
     return false;
   }

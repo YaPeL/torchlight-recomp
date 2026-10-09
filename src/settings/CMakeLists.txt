@@ -1,6 +1,7 @@
 # Host settings (host_settings.h): the model and its file, with no platform or OGRE dependencies.
 add_library(torchlight_settings STATIC host_settings.cpp)
 target_include_directories(torchlight_settings PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_link_libraries(torchlight_settings PRIVATE torchlight_durable_file)  # settings.toml's write
 target_compile_features(torchlight_settings PUBLIC cxx_std_23)
 target_compile_options(torchlight_settings PRIVATE -Wall -Wextra)
 
