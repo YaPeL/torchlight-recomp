@@ -240,6 +240,27 @@ sums checked). Results:
 
 With D22 and D23 fixed in the series, MAC.6 (the game on ARM64) is no longer blocked by them.
 
+**Patches 22-27 after review, on ARM64 (2026-10-09, same Mac):** as `docs/rexglue-upstream.md`
+section 8 asks (`sdk/series-review` at `abba9a7`, its whole series on `bd833a2`, so with 28
+too; `sdk/ppc-test-data` at `0ffbb64`, 169 `.bin`/`.map` and `bin/sources.sha256`, checked by
+the configure). In a checkout of its own (`~/macos-port-work/sdk-review`), not the game's SDK.
+
+1. Without the fixes of 23-25 (`git apply -R --exclude='tests/*'` of 25, 24, 23):
+   - `fctix_rounding`: 20 cases, **12 fail, not the expected 14**. The 12 are the rounding
+     cases: `test_fctiw_rounding_` and `test_fctid_rounding_` 1, 2 (2.5 and -2.5 to nearest),
+     4, 5 (2.7 and -2.7 toward zero), 7 (-2.5 up) and 8 (2.5 down). The two 2^63 cases
+     (`test_fctid_rounding_10`, `fctid`, and `_11`, `fctidz`) pass without the fix: ARM64's
+     conversion (`fcvtzs`) saturates to INT64_MAX by itself, where x86-64's `cvttsd2si` gives
+     0x8000000000000000. So 14 is x86-64's count; on ARM64 it is 12. Not a fault of the series.
+   - `mffs_rounding`: 6 cases, 4 fail (up, down and both save-and-restore cases), as expected.
+   - `mtfsf_fields`: 4 of 4 fail, as expected.
+2. With the fixes back (23, 24, 25): **`ppc_tests` 1492 of 1492** (5815 assertions);
+   `unit_tests` 252 cases, 247 passed, 4 skipped, 1 failed: only `output_stamp_test.cpp:227-228`.
+   `chrono_test` passes (the NT epoch included; see MAC.6 below for the likely Linux cause).
+3. Patch 27: `unit_tests "[flush]"` **6 of 6 pass** (70 assertions). Its step 2 (the
+   `F_FULLFSYNC` calls in a game save, `fs_usage`) stays for MAC.7.
+4. Nothing else failed: no other finding.
+
 **Patch 27 on macOS (guest file flushes, D27; 2026-10-08, branch `sdk/guest-file-flush` at
 `a78c8ce`)**, as `docs/rexglue-upstream.md` section 8 asks:
 
@@ -525,7 +546,10 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
 
 - SDK: `develop`'s series (`c584647`: patches up to 26, with 23 fctiw/fctid for D22 and 24 mffs
   for D23) plus 27 (guest file flush, `sdk/guest-file-flush` `a78c8ce`). `ppc_tests` 1490/1490,
-  `unit_tests` 246/251 (the failures are the known `output_stamp` ones).
+  `unit_tests` 246 of 251 pass, 4 skipped, and the one failure is the known
+  `output_stamp_test.cpp:227-228`. `chrono_test` passes, the NT epoch (1601) included, unlike
+  Linux x86-64 Release: probably the standard library, not the SDK (libstdc++'s `system_clock`
+  counts nanoseconds in 64 bits, which reach only 1678-2262; libc++'s counts microseconds).
 - Codegen 14 s and 220 MB, no warnings; the game's build 364 s and 554 MB, with 19 GB free
   before it: none of the disk reductions of section 1 were needed.
 - Every game run goes through `tools/run_capped/run_capped.py` (time limit, the whole process
@@ -548,9 +572,14 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   creation. Attaching the context on the main thread beforehand (OGRE's `externalGLContext`)
   only moved the stop to `update`; no OGRE option avoids it. Fix approved: OGRE's window created,
   resized and destroyed on the main thread (below).
-- **Emulated mode (Xenos, `--native_live=off`):** builds and runs on MoltenVK. The image comes up
-  with a broken background. MoltenVK logs "Metal does not support disabling primitive restart"
-  1701 times; whether that is the cause is being checked with a capture of the game window.
+- **Emulated mode (Xenos, `--native_live=off`):** builds and runs on MoltenVK, to the main menu
+  and into the game (a dungeon reached; quit by the user after 198 s, exit code 0, nothing left
+  behind according to `run_capped`). The 3D geometry looks wrong (as if stray vertices showed) and some textures
+  look corrupted; the 2D screens look right. MoltenVK logs "Metal does not support disabling
+  primitive restart" thousands of times (5427 in that run): Xenos draws with restart off, Metal
+  always restarts on the all-ones index, which fits broken strips and fans; not confirmed. The
+  owner's decision: Xenos only serves diagnostics, so it stays as it is on macOS; what matters is
+  only mode.
 
 Threads in only mode on macOS, checked for the fix:
 
