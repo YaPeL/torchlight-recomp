@@ -93,6 +93,19 @@ int main() {
     Check(s.Unchanged(44, 5, raw_a), "same raw words: early out");
     Check(!s.Unchanged(44, 5, raw_b), "other raw words: built again");
     Check(!s.Unchanged(44, 6, raw_a), "another sub of the slot is separate");
+    Check(!s.Unchanged(45, 5, raw_a), "another slot with the same sub is separate");
+    // Many pairs in use: each keeps its own words.
+    for (uint32_t sub = 0; sub < torchlight::capture::Session::kMemoSubs; ++sub) {
+      const uint32_t words[] = {sub};
+      s.Remember(43, sub, key, words);
+    }
+    bool each_kept = true;
+    for (uint32_t sub = 0; sub < torchlight::capture::Session::kMemoSubs; ++sub) {
+      const uint32_t words[] = {sub}, other[] = {sub + 1};
+      each_kept = each_kept && s.Unchanged(43, sub, words) && !s.Unchanged(43, sub, other);
+    }
+    Check(each_kept, "every pair keeps its own words");
+    Check(s.Unchanged(44, 5, raw_a), "earlier pairs are kept as more are added");
     // Another hook writes the same shadow entry (e.g. separate blending after plain blending).
     s.State(key, SetSamplerFilter{5, {1, 0}, {3, 0}});
     Check(!s.Unchanged(44, 5, raw_a), "entry rewritten by another hook: no early out");

@@ -136,7 +136,9 @@ void Session::EraseState(uint32_t key) {
 
 bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> raw) const {
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return false;
-  const ArgsMemo& m = memos_[slot * kMemoSubs + sub];
+  const uint16_t index = memo_index_[slot * kMemoSubs + sub];
+  if (index == 0) return false;
+  const ArgsMemo& m = memos_[index - 1];
   return m.entry && m.entry->present && m.entry->version == m.version &&
          m.count == raw.size() && std::equal(raw.begin(), raw.end(), m.raw.begin());
 }
@@ -145,7 +147,12 @@ void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<cons
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return;
   auto it = shadow_.find(key);
   if (it == shadow_.end()) return;
-  ArgsMemo& m = memos_[slot * kMemoSubs + sub];
+  uint16_t& index = memo_index_[slot * kMemoSubs + sub];
+  if (index == 0) {
+    memos_.emplace_back();
+    index = uint16_t(memos_.size());
+  }
+  ArgsMemo& m = memos_[index - 1];
   m.entry = &it->second;
   m.version = it->second.version;
   m.count = uint32_t(raw.size());

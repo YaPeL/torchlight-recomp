@@ -300,7 +300,12 @@ class Session {
     uint32_t count = 0;
     std::array<uint32_t, kMaxRawArgs> raw{};
   };
-  std::vector<ArgsMemo> memos_ = std::vector<ArgsMemo>(kRenderSystemSlotCount * kMemoSubs);
+  // Only the (slot, sub) pairs in use get a memo (a few hundred), packed together: a table with
+  // one per pair (1.7 MB) missed the cache on most state hooks. memo_index_ holds 1 + the memo's
+  // position for slot * kMemoSubs + sub, 0 while that pair has none.
+  static_assert(kRenderSystemSlotCount * kMemoSubs < 0xFFFF);
+  std::vector<uint16_t> memo_index_ = std::vector<uint16_t>(kRenderSystemSlotCount * kMemoSubs);
+  std::vector<ArgsMemo> memos_;
   const uint8_t* membase_ = nullptr;
   ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;
