@@ -116,6 +116,15 @@ namespace mod {
 // [confirmed] A CMod (vtable 0x820D30AC, RTTI .?AVCMod@@), as sub_823A9EA0 builds it.
 inline constexpr Size kSize{200, Confidence::kConfirmed};
 inline constexpr Field kFiles{36, Confidence::kConfirmed};     // file map, filled by sub_823AA340
+// [confirmed] The mod's OGRE resource group, a std::string: the constructor narrows the mod's
+// NAME (+80, "MOD" without one) into it (r21 = mod + 0x34 @0x823A9EFC; @0x823AA1A8..@0x823AA1B4).
+// The mods' file lookup (kModFileLookup) hands it out with a match (@0x823AAAF4..@0x823AAAFC); the
+// data manager's lookup sub_8239D0E8 stores it as the found file's group (+0x5C @0x8239D1F4, kind
+// 2 @0x8239D1E8), and the loader's OGRE path sub_8239E670 opens a compiled .ADM with
+// ResourceGroupManager::openResource(file, that group) (@0x8239E6DC, @0x8239E6F8; sub_8242B070
+// throws "Cannot locate a resource group called '" when it does not exist). PC makes the group
+// when it registers the mod; this build never does, so the host adds the mod's folder to it.
+inline constexpr Field kResourceGroup{52, Confidence::kConfirmed};
 inline constexpr Field kFolder{164, Confidence::kConfirmed};   // std::wstring, ends in '\'
 inline constexpr Field kActive{192, Confidence::kConfirmed};   // u8, set to 1
 inline constexpr Field kPriority{196, Confidence::kConfirmed}; // s32, < 0 = disabled

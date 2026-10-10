@@ -210,12 +210,12 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
 }
 
 // One FileSystem location in the default group; false on failure (video_menu.h).
-bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive) {
+bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive, const std::string& group_name) {
   const uint32_t manager = call.ReadU32(ui::kResourceGroupManagerGlobal);
   const uint32_t mark = call.Mark();
   const uint32_t name = call.StdString(path);
   const uint32_t type = call.StdString(kResourceType);
-  const uint32_t group = call.StdString(kResourceGroup);
+  const uint32_t group = call.StdString(group_name);
   const bool ok = manager && name && type && group;
   if (ok) {
     call.Call(ui::kAddResourceLocation.address, {manager, name, type, group, recursive ? 1u : 0u});

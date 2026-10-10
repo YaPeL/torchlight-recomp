@@ -233,6 +233,16 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
     if (g_plan.mods[i].priority < 0) continue;
     const std::string location = hooks::ModDeviceLink(i) + "\\";
     if (!AddFileSystemLocation(call, location, true)) REXLOG_ERROR("mods: cannot add {}", location);
+    // The mod's own resource group, which the data loader opens a mod's compiled .ADM in (guest_abi
+    // mods.h, mod::kResourceGroup); OGRE makes the group when a location is added to it.
+    const uint32_t mod = i < count ? call.ReadU32(list + 4 * i) : 0;
+    const std::string group = mod ? abi::ogre::ReadString(base, mod + mods_abi::mod::kResourceGroup.offset, 256) : "";
+    if (group.empty() || group == "General") continue;
+    if (AddFileSystemLocation(call, location, true, group)) {
+      REXLOG_INFO("mods: {} also in resource group \"{}\"", location, group);
+    } else {
+      REXLOG_ERROR("mods: cannot add {} to resource group \"{}\"", location, group);
+    }
   }
 }
 
