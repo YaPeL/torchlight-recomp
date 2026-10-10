@@ -420,8 +420,14 @@ and a measured run.
   (`0x82775DF8`): the same pattern as `SetStreamSource` and `SetIndices`, whose skip is validated.
   Its other callers are `0x821B76C0` (the `_endFrame` wrapper's full-screen pass, from
   `0x821B8738`), the unbind-all `0x821CECF0` (`_beginFrame`), and the runtime's `0x827746B0` and
-  `0x8277FB78` (from `0x82780620`, `0x82780550`, `0x827802E8`), which were not read. **Candidate**
-  for a device call skip like the draws and bindings, after those three are read; not done.
+  `0x8277FB78` (from `0x82780620`, `0x82780550`, `0x827802E8`). Read since: `0x827746B0` unbinds
+  everything (render targets, declaration, indices, 16 streams, 26 textures), `0x8277FB78` sets the
+  device's default state at its creation or reset (every render and sampler state, then
+  `SetTexture(null)` on the 26 samplers), and `0x821B76C0` is the `_endFrame` wrapper's full-screen
+  pass with its own textures; none reads back what `SetTexture` stored, and nothing of the game
+  reads the device's bound textures. **Candidate** for a device call skip like the draws and
+  bindings (about 0.3 % of the game thread). Not done (2026-10-10, the user): while the backend does
+  not present what the game produces (step b's fight), a gain on the game thread does not show.
 - Slots 40, 33 and 34 (`_setVertexTexture`, `_disableTextureUnit`, `_disableTextureUnitsFrom`):
   the same members and the same device call; still to be read.
 
