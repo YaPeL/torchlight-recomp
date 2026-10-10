@@ -1,6 +1,7 @@
 #include "mods/unit_index.h"
 
 #include <algorithm>
+#include <limits>
 #include <map>
 #include <unordered_set>
 #include <utility>
@@ -234,6 +235,33 @@ UnitIndex MergeUnitIndex(const UnitIndex& base, const std::vector<UnitEntry>& un
     if (!placed) out.groups[static_cast<size_t>(*group)].push_back(unit);
   }
   return out;
+}
+
+std::optional<int64_t> ParseUnitGuid(std::string_view text) {
+  size_t i = 0;
+  while (i < text.size() && (text[i] == ' ' || text[i] == '\t')) ++i;
+  bool negative = false;
+  if (i < text.size() && (text[i] == '-' || text[i] == '+')) negative = text[i++] == '-';
+  if (i == text.size()) return std::nullopt;
+  // Accumulated as a negative number, which reaches INT64_MIN.
+  constexpr int64_t kMin = std::numeric_limits<int64_t>::min();
+  int64_t value = 0;
+  bool clamped = false;
+  for (; i < text.size(); ++i) {
+    const char c = text[i];
+    if (c < '0' || c > '9') return std::nullopt;
+    const int digit = c - '0';
+    if (clamped) continue;
+    if (value < (kMin + digit) / 10) {
+      clamped = true;
+      continue;
+    }
+    value = value * 10 - digit;
+  }
+  if (clamped) return negative ? kMin : std::numeric_limits<int64_t>::max();
+  if (negative) return value;
+  if (value == kMin) return std::numeric_limits<int64_t>::max();
+  return -value;
 }
 
 size_t LoadedUnitCount(const UnitIndex& index) {

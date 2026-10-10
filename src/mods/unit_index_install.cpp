@@ -113,11 +113,7 @@ std::optional<int64_t> ParseGuid(const std::u16string& text) {
     if (c > 0x7F) return std::nullopt;
     ascii.push_back(static_cast<char>(c));
   }
-  if (ascii.empty()) return std::nullopt;
-  char* end = nullptr;
-  const long long v = std::strtoll(ascii.c_str(), &end, 10);
-  if (!end || *end != '\0') return std::nullopt;
-  return static_cast<int64_t>(v);
+  return ParseUnitGuid(ascii);
 }
 
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS

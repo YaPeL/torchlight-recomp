@@ -16,6 +16,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace torchlight::mods {
@@ -64,6 +65,12 @@ std::vector<std::string> CompareUnitIndexes(const UnitIndex& expected, const Uni
 // left out and listed in `skipped`.
 UnitIndex MergeUnitIndex(const UnitIndex& base, const std::vector<UnitEntry>& units,
                          std::vector<std::u16string>* skipped);
+
+// A definition's UNIT_GUID text as a GUID, read the way the index builder reads it (strtoll): optional
+// leading spaces and sign, then decimal digits to the end; a value past the 64-bit range is clamped
+// to its end (INT64_MIN or INT64_MAX), so a mod's out-of-range GUID (the Mod-Pack's gunblade.dat:
+// -3373373373374444373370) gives the same number wherever it is read. None for anything else.
+std::optional<int64_t> ParseUnitGuid(std::string_view text);
 
 // How many entries the game keeps from `index`: it drops an entry without a NAME and files the
 // rest by GUID, an entry whose GUID is already there replacing it (guest_abi unit_index.h, index),

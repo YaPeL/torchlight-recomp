@@ -1,6 +1,5 @@
 #include "mods/unit_cache.h"
 
-#include <charconv>
 
 #include "mods/dat_text.h"
 #include "save_import/pak.h"
@@ -105,13 +104,12 @@ std::optional<std::vector<int64_t>> ModUnitGuids(const std::vector<ModUnitFile>&
     std::string error;
     const auto blocks = bytes ? ParseDatText(*bytes, &error) : std::nullopt;
     const DatValue* guid = blocks && !blocks->empty() ? blocks->front().Find("UNIT_GUID") : nullptr;
-    int64_t value = 0;
-    const char* first = guid ? guid->value.data() : nullptr;
-    if (!guid || std::from_chars(first, first + guid->value.size(), value).ec != std::errc()) {
+    const auto value = guid ? ParseUnitGuid(guid->value) : std::nullopt;
+    if (!value) {
       if (why) *why = "no UNIT_GUID read from " + f.mod_folder + " " + f.file.filename().string();
       return std::nullopt;
     }
-    guids.push_back(value);
+    guids.push_back(*value);
   }
   return guids;
 }

@@ -4,6 +4,7 @@
 // after loading one.
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -140,6 +141,20 @@ int main() {
     Check(CheckLoadedIndex(3, 4) == LoadedIndex::kIncomplete, "fewer: incomplete");
     Check(CheckLoadedIndex(5, 4) == LoadedIndex::kMore, "more than the file holds");
     Check(CheckLoadedIndex(0, 0) == LoadedIndex::kComplete, "an empty file loaded as empty");
+  }
+
+  // UNIT_GUID text: read as the builder reads it (strtoll), the same in the save check.
+  {
+    constexpr int64_t kMin = std::numeric_limits<int64_t>::min();
+    constexpr int64_t kMax = std::numeric_limits<int64_t>::max();
+    Check(ParseUnitGuid("-3195029503589936674") == -3195029503589936674LL, "a GUID in range");
+    Check(ParseUnitGuid("42") == 42 && ParseUnitGuid("+42") == 42 && ParseUnitGuid("  7") == 7, "sign and leading spaces");
+    Check(ParseUnitGuid("-9223372036854775808") == kMin, "the smallest GUID");
+    Check(ParseUnitGuid("9223372036854775807") == kMax, "the largest GUID");
+    Check(ParseUnitGuid("-3373373373374444373370") == kMin, "below the range: clamped (the Mod-Pack's gunblade)");
+    Check(ParseUnitGuid("9223372036854775808") == kMax, "above the range: clamped");
+    Check(!ParseUnitGuid("") && !ParseUnitGuid("-") && !ParseUnitGuid("12x") && !ParseUnitGuid("1 "),
+          "not a number: none");
   }
 
   if (failures) return EXIT_FAILURE;
