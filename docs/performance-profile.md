@@ -428,6 +428,33 @@ some of those lines itself (`dcbt` on the node, its controller and two more addr
 node, at the top of each step), which the recompiled code drops; whether honouring the game's
 `dcbt` in the codegen is worth it is evaluated separately.
 
+### The game's own prefetches (`dcbt`): evaluated, not done (2026-10-09)
+
+The recompiled code drops the guest's cache hints: ReXGlue's codegen emits nothing for `dcbt` and
+`dcbtst` (`build_dcbt` and `build_dcbtst` in `src/codegen/builders/system.cpp`, "no semantic
+effect"), with no option to change it (`dcbz`/`dcbzl` do become a `memset` of the line). Turning them
+into host prefetches would be an SDK codegen patch: the effective address through `REX_RAW_ADDR`
+(which applies the physical offset on Windows and macOS) into `__builtin_prefetch`, with the write
+hint for `dcbtst`. That would be safe, since a prefetch of an invalid or unmapped address faults
+neither on x86 (`PREFETCHh`) nor on ARM64 (`PRFM`) and changes no result.
+
+The game has few of them: 182 `dcbt` and 6 `dcbtst` in 52 functions. Those functions are hot,
+though, ~11 % of the guest's render thread in the town square: the octree walk of the culling
+(`0x821C7158`, 13, 3.3 % of its own), the frustum test (`0x821C74A0`, 1, 2.8 %), `0x821C28D8` (2,
+1.1 %), the animation controllers (`0x821C8C00`, 5, 1.0 %), `0x821C9F68` (4, 0.6 %), and the CRT
+memcpy (7 plus the 6 `dcbtst`), which already runs as a host memcpy.
+
+Read in place, nearly all of them ask for the line one to three instructions before the load that
+uses it (`dcbt r10,r21` then `lwz r9,96(r21)`; the controller walk prefetches the current node and
+controller at the top of each step, not the next ones). On the Xenon, which runs in order with long
+memory latency, that pays. On the hosts' out-of-order cores (x86 on PC and the Steam Deck, Apple's
+ARM) the load itself starts the miss at the same moment, so a prefetch issued just before it saves
+nothing. Only a prefetch issued well ahead helps, and the game has a few: a loop of the octree walk
+that asks for the next iteration's element, some child pointers read later, and one clearly useful
+case, a loop in `0x821C28D8` that prefetches a block 128 bytes at a time before processing it.
+Estimated gain under 0.5 % of the thread, possibly none: not done. Honouring the game's hints cannot
+add lookahead where the game has none either, so it would not fix waits like the controller walk's.
+
 ### The backend thread (2026-10-09)
 
 The live mode's backend thread, town square of the DWARF profile with everything integrated
