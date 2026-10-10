@@ -1,0 +1,30 @@
+# Create a new character with the defaults (first class, default names and pet, default
+# difficulty) and stand in the town. On a copy of the user data: it adds a character to the saves.
+press A every 3s until menu MainMenu timeout 90s
+idle 2s
+# New Character: the menu's second entry.
+press DOWN
+idle 1s
+press A every 3s until menu NewGameMenu timeout 15s
+idle 2s
+# Class, player name, pet, pet name, OK: four steps down to OK.
+press DOWN
+idle 0.5s
+press DOWN
+idle 0.5s
+press DOWN
+idle 0.5s
+press DOWN
+idle 0.5s
+press A every 3s until menu DifficultyMenu timeout 15s
+idle 2s
+# The default difficulty starts the game in the town.
+press A every 3s until level_loaded timeout 60s
+idle 4s
+# Close the town's welcome tip.
+press B
+idle 3s
+mark IN TOWN
+capture
+idle 1s
+quit
