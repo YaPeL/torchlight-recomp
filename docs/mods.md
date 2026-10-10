@@ -680,6 +680,22 @@ in the game: each of the three mods alone, then all three, build the unit index 
 and play the load script to the end. The text mods of the Mod-Pack never went this way: their text
 files are read without OGRE.
 
+## 7j. A texture mod: TNNR's textures are not used yet (2026-10-10, open)
+
+TNNR (Torchlight Neural Network Remastered v0.9.5, 2.7 GB) is meant to be dropped into PC's
+`Pak.zip`; as a mod it is one folder, `mods/TNNR/media`, with 3206 meshes, 1318 `.dds`, 889
+materials and 255 compiled layouts at the same paths as the game's. Checked in automatic runs
+(the load script on the mine's first floor): the game runs with it, named after its folder (no
+`mod.dat`), and its compiled level layouts (`.LAYOUT.CMP`, 193 opened from `TLMOD000:` through the
+mod's resource group) are used; the level loads in 26 s instead of 6.5. Its textures are not: the
+92 textures of that level that TNNR has (2048x2048 where the game's are 256x256) loaded with the
+game's sizes, including the 15 whose TNNR version is 2x or 4x larger, which would have changed
+size. Textures do not go through the data loader (none of the 1113 opens it recorded was a `.dds`);
+OGRE resolves them by name in a resource group. Adding the mod's folder to the game's groups
+("0ZIP0", "ZIP") after the pak did not change that, and was not kept. Why OGRE's index does not
+give the mod's file (the group a material asks in, the index's keys) is the next reading. The
+Mod-Pack and Enhanced Edition, the other real mods tried, are data mods and did not depend on it.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
