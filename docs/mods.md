@@ -650,6 +650,25 @@ Not checked by these runs: that quests given by a replaced or unknown unit go on
 saves had one), and trading with Tarn. If quests show a problem, their units go back to the
 player's side.
 
+## 7i. Mods that ship PC-compiled `.ADM` files crash at startup (2026-10-10, open)
+
+Enhanced Edition v1.0 (three mods: `Enhanced`, `BasementMiniDungeon`, `Charm_to_Stun`) ends the
+game seconds after the mods are registered, before the unit index is built, each mod on its own.
+The Ultimate Torchlight Mod-Pack, which ships no `.ADM`, does not. Under gdb: the global data
+loader (`sub_8231FF28` -> `sub_8232D6E8`) loads a definition (`sub_82392C18`, then the file load
+`sub_82395CE0` -> `sub_823A2B88`), the data loader takes its OGRE path (`sub_8239E670`), and
+`ResourceGroupManager::openResource` (`sub_8242B070`: "Cannot locate a resource group called '",
+"' for resource '") throws; with no unwinding in the runtime the process ends (SDK patch 30: by
+SIGSEGV; the log shows a read at 0x34). The files: `Charm_to_Stun`
+`media/units/items/spells/charmspell9.dat` (text, 2020-12-30, lower case) next to
+`CHARMSPELL9.DAT.adm` (compiled by PC, 2021-01-01, upper case), and
+`BasementMiniDungeon` `media/unitthemes/ALCHBLUEHAND.dat` (2010) next to
+`ALCHBLUEHAND.DAT.adm` (2020). Each `.ADM` is newer than its text file, so the game prefers it.
+Why the mods' own file map does not serve it, and what OGRE is asked for, is the next reading
+(the data loader's `.ADM` path, the map's key case, the group name at `0x83582A4C`). PC's and
+the Xbox's `.ADM` headers match (version 1, a string table of id, length, UTF-16LE text), so the
+format alone does not explain it yet.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
