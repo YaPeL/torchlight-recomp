@@ -38,6 +38,14 @@ Changes take effect the next time the game starts.
 
 ## What happens to your saves
 
+- **At every start, with or without mods**, the game checks your saves before it loads them. It
+  looks for items and creatures whose unit the game does not know: a removed mod's, or a mod's
+  items in a PC save you copied in by hand. Without that check, the game would drop them silently
+  at the next save. Saves with nothing unknown are not touched, copied or rewritten, so without
+  mods the check normally changes nothing. When it does find unknown units, it handles them as
+  described below. It also leaves a save as it is when it cannot read the game's unit table, or
+  when more than half of a save's units are unknown, because that does not look like a removed
+  mod.
 - **Every time the set of mods changes**, your saves are copied first, to `save-backups` in the
   saves folder.
 - **Items from a mod you removed**: the game cannot keep an item it no longer knows, so those items
