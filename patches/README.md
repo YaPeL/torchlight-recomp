@@ -29,7 +29,7 @@ in number order; a branch adds its own line at its number's place.
 | 1-18 | (below) | `develop` | In the series |
 | 11 | `rexglue-delete-on-close.patch` | | Withdrawn |
 | 19 | `rexglue-mnk-keystrokes.patch` | | Removed with the move to `bd833a2` |
-| 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
+| 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `develop` | In the series (after 30; not yet in the installed SDK) |
 | 21 | `rexglue-sdl-software-renderer.patch` | `develop` | In the series (the version with Metal on Apple, `5a98b6f`) |
 | 22 | `rexglue-tests-portable.patch` | `develop` | In the series |
 | 23 | `rexglue-fctiw-rounding-mode.patch` | `develop` | In the series |
@@ -39,8 +39,8 @@ in number order; a branch adds its own line at its number's place.
 | 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
 | 28 | `rexglue-quiet-missing-files.patch` | `develop` | In the series |
 | 29 | `rexglue-case-variants.patch` | `develop` | In the series |
-| 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `sdk/fault-chain` | Pending integration |
-| 31 | `rexglue-guest-fatal-hook.patch` | `sdk/fatal-errors` | Pending integration |
+| 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `develop` | In the series |
+| 31 | `rexglue-guest-fatal-hook.patch` | `develop` | In the series (not yet in the installed SDK) |
 | 32 | | | Next free number |
 
 ## The patches
