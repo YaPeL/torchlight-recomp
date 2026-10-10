@@ -360,7 +360,8 @@ Device offsets are from the device pointer in the global `0x8355A2E4` (`guest_ab
 - **Slot 64** `_setDepthBufferCheckEnabled` (`0x821C2F38`): state 40. **Device only.**
 - **Slot 65** `_setDepthBufferWriteEnabled` (`0x821C4E88`): state 48. **Device only.**
 - **Slot 66** `_setDepthBufferFunction` (`0x821C3010`): state 44, the function remapped in place
-  (a Runic difference: the inverted depth; @0x821C301C..@0x821C305C) and then by `0x821C2FA0`.
+  first (@0x821C301C..@0x821C305C; OGRE 1.7 maps it directly, so a Runic difference whose meaning
+  the skip does not need) and then by `0x821C2FA0`.
   **Device only.**
 - **Slot 67** `_setColourBufferWriteEnabled` (`0x821C3520`): state 212, the four channel bits.
   **Device only.**
