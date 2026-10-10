@@ -383,3 +383,28 @@ condition: slot 37's count-only hook becomes a recording hook. Slots 52, 82, 83,
 follow the same pattern through `0x821C5480`, but they were not read here. Validation as in step
 a: the 20 replays, session recordings with the cvar off and on (the same render state commands),
 and a measured run.
+
+## Texture stage slots: evidence, first part (2026-10-10)
+
+- **Slot 41** `_setTextureCoordSet` (`0x821CAD88`, 7 instructions): stores the coordinate set in
+  `this + 892 + 24 * unit` (@0x821CADA8; with the byte `this + 736` set, the unit's own index
+  instead). **Members only, no device call**: nothing to skip, and the members are read by slot
+  50 and `_setTexture`. Keep.
+- **Slot 42** `_setTextureCoordCalculation` (`0x821CB0F0`, 7 instructions): stores the
+  calculation and the frustum in `this + 896 + 24 * unit` and `+900` (@0x821CB100, @0x821CB104).
+  **Members only, no device call.** Keep.
+- **Slot 50** `_setTextureMatrix` (`0x821CA930`): copies the matrix, then by the unit's calculation
+  (`this + 896 + 24 * unit`: 1, 3, 5, 0) multiplies it with the view matrix's inverse
+  (`0x821BE948` on `this + 2196`), constant matrices and, for projective texturing (5), the unit's
+  frustum's matrices (virtual getters at its vtable `+332`, `+336`, `+340`). It transposes the
+  result (`0x824639B8`) and compares it with the identity (vector compares @0x821CACC0..@0x821CACDC).
+  After that it computes an address and returns: **no store outside its stack frame and no device
+  call** (a Runic difference: OGRE 1.7's D3D9 sets the texture transform and the stage's
+  `TEXTURETRANSFORMFLAGS`, and the Xbox D3D has no fixed-function texture transform). The
+  matrix products (`0x821C2CC8`, `0x821BE948`) write only into its stack frame. The frustum getters
+  update the frustum's own lazily computed matrices, which any later reader recomputes the same
+  way. **Nothing to keep: skippable**, about 305 calls per frame, each with up to six matrix
+  products. Our slot 50 hook records the matrix from its arguments before the skip.
+- Slots 39, 40, 33 and 34 (`_setTexture`, `_setVertexTexture`, `_disableTextureUnit`,
+  `_disableTextureUnitsFrom`) write the render system's stage members and call the device's
+  `SetTexture`: class B, still to be read.

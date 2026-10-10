@@ -19,7 +19,9 @@ namespace torchlight::hooks {
 // our slot 44 hook records) nor 43 (it writes render system members). Step b (render states,
 // "Step b: class A render states, evidence"): 36 _setPointSpritesEnabled, 37 _setPointParameters,
 // 51 _setSceneBlending, 53 _setAlphaRejectSettings, 64-67 depth check, depth write, depth function
-// and colour write, 68 _setDepthBias, 81 _setPolygonMode, 84 setVertexDeclaration.
+// and colour write, 68 _setDepthBias, 81 _setPolygonMode, 84 setVertexDeclaration. And 50
+// _setTextureMatrix, which computes a matrix and stores it nowhere ("Texture stage slots:
+// evidence").
 constexpr bool SkippableSlot(uint32_t slot) {
   switch (slot) {
     case 44:
@@ -37,6 +39,7 @@ constexpr bool SkippableSlot(uint32_t slot) {
     case 68:
     case 81:
     case 84:
+    case 50:
       return true;
     default:
       return false;
