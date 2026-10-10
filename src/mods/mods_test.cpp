@@ -61,6 +61,12 @@ int main() {
     Check(ParseDatText(Ascii("[A]\n<STRING>K:v:w\n[/A]\n"), &error).value()[0].Find("K")->value == "v:w",
           "UTF-8: the value keeps later colons");
     Check(!ParseDatText(Ascii("[A]\n"), &error), "unclosed block rejected");
+    const auto lone_cr = ParseDatText(Ascii("[UNIT]\r\n<STRING>UNIT_GUID:-5\r\n[EFFECTS]\r\n[EFFECT]\r\n"
+                                            "[/EFFECT]\r[/EFFECTS]\r\n[/UNIT]\r\n"),
+                                      &error);
+    Check(lone_cr && lone_cr->size() == 1 && (*lone_cr)[0].Find("UNIT_GUID")->value == "-5" &&
+              (*lone_cr)[0].children.size() == 1,
+          "a lone CR ends a line, as the game reads it (JCC - Vindicator's MisersRing1.dat)");
     Check(!ParseDatText(Ascii("[A]\n[/B]\n"), &error), "mismatched closing tag rejected");
     Check(!ParseDatText(Ascii("<STRING>K:v\n"), &error), "value outside a block rejected");
     Check(!ParseDatText(Ascii("[A]\njunk\n[/A]\n"), &error), "stray line rejected");

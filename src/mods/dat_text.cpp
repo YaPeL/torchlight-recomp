@@ -121,11 +121,17 @@ std::optional<std::vector<DatBlock>> ParseDatText(const std::vector<uint8_t>& by
   };
   size_t start = 0;
   while (start <= text.size()) {
-    size_t end = text.find('\n', start);
+    // A line ends at LF, CR LF or a lone CR: PC tools left lone CRs between tags
+    // ("[/EFFECT]\r[/EFFECTS]" in the Mod-Pack's JCC - Vindicator), and the game reads those as
+    // two lines (its own index build loads such files).
+    size_t end = text.find_first_of("\r\n", start);
     if (end == std::string::npos) end = text.size();
+    const size_t next = end < text.size() && text[end] == '\r' && end + 1 < text.size() && text[end + 1] == '\n'
+                            ? end + 2
+                            : end + 1;
     ++line_number;
     const std::string_view line = Trim(std::string_view(text).substr(start, end - start));
-    start = end + 1;
+    start = next;
     if (line.empty()) continue;
     if (line.size() >= 3 && line.front() == '[' && line.back() == ']') {
       if (line[1] == '/') {
