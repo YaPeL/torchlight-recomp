@@ -48,9 +48,21 @@ void LiveFrame::AbsorbDropped(LiveFrame&& older) {
   producer.snapshot_bytes += older.producer.snapshot_bytes;
 }
 
+void FrameQueue::SetBackpressure(std::chrono::milliseconds cap) {
+  std::lock_guard<MeasuredMutex> lock(mutex_);
+  backpressure_ = cap;
+}
+
 void FrameQueue::Push(LiveFrame frame) {
   {
-    std::lock_guard<MeasuredMutex> lock(mutex_);
+    std::unique_lock<MeasuredMutex> lock(mutex_);
+    if (backpressure_ && !frames_.empty() && !closed_) {
+      const auto start = std::chrono::steady_clock::now();
+      const bool taken = taken_.wait_for(lock, *backpressure_, [&] { return frames_.empty() || closed_; });
+      ++waits_.count;
+      if (!taken) ++waits_.timeouts;
+      waits_.ms += std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    }
     ++pushed_;
     frames_.push_back(std::move(frame));
     while (frames_.size() > capacity_) {
@@ -69,6 +81,8 @@ std::optional<LiveFrame> FrameQueue::Pop(std::chrono::milliseconds timeout) {
   if (frames_.empty()) return std::nullopt;
   LiveFrame f = std::move(frames_.front());
   frames_.pop_front();
+  lock.unlock();
+  taken_.notify_one();
   return f;
 }
 
@@ -78,6 +92,7 @@ void FrameQueue::Close() {
     closed_ = true;
   }
   ready_.notify_all();
+  taken_.notify_all();
 }
 
 uint64_t FrameQueue::pushed() const {
@@ -88,6 +103,15 @@ uint64_t FrameQueue::pushed() const {
 uint64_t FrameQueue::dropped() const {
   std::lock_guard<MeasuredMutex> lock(mutex_);
   return dropped_;
+}
+
+}  // namespace torchlight::live
+
+namespace torchlight::live {
+
+FrameQueue::Waits FrameQueue::waits() const {
+  std::lock_guard<MeasuredMutex> lock(mutex_);
+  return waits_;
 }
 
 }  // namespace torchlight::live

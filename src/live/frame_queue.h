@@ -1,9 +1,14 @@
 // Frames of the live mode, cut at the guest's swap, handed from the guest render thread to the
 // backend thread.
 //
-// The producer never waits: with the queue full, the oldest queued frame is dropped. Dropping
-// keeps continuity: its state commands and resources are carried into the next frame, only its
-// draws and clears are discarded (counted).
+// By default the producer never waits: with the queue full, the oldest queued frame is dropped.
+// Dropping keeps continuity: its state commands and resources are carried into the next frame, only
+// its draws and clears are discarded (counted).
+//
+// With backpressure (--live_backpressure) the producer waits at Push while a frame is queued that
+// the consumer has not taken yet, so the guest makes no frame that would be dropped; after `cap`
+// (a consumer that stopped: a minimized window, a lost device) it pushes anyway, dropping as
+// above.
 
 #pragma once
 
@@ -61,7 +66,9 @@ class FrameQueue {
  public:
   explicit FrameQueue(size_t capacity = 2) : capacity_(capacity) {}
 
-  // Producer: never blocks.
+  // Before the producer starts. Without it, Push never blocks.
+  void SetBackpressure(std::chrono::milliseconds cap);
+  // Producer: with backpressure, blocks up to the cap while a queued frame is not taken.
   void Push(LiveFrame frame);
   // Consumer: waits up to `timeout` for a frame.
   std::optional<LiveFrame> Pop(std::chrono::milliseconds timeout);
@@ -69,11 +76,20 @@ class FrameQueue {
 
   uint64_t pushed() const;
   uint64_t dropped() const;
+  // Backpressure: the producer's waits, their total time and how many reached the cap.
+  struct Waits {
+    uint64_t count = 0, timeouts = 0;
+    double ms = 0;
+  };
+  Waits waits() const;
 
  private:
   size_t capacity_;
   mutable MeasuredMutex mutex_{"frame queue"};
   std::condition_variable_any ready_;
+  std::condition_variable_any taken_;  // the consumer took a frame
+  std::optional<std::chrono::milliseconds> backpressure_;
+  Waits waits_;
   std::deque<LiveFrame> frames_;
   bool closed_ = false;
   uint64_t pushed_ = 0, dropped_ = 0;

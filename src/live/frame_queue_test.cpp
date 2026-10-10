@@ -74,6 +74,49 @@ int main() {
   std::this_thread::sleep_for(std::chrono::milliseconds(20));
   q.Close();
   consumer.join();
+  // Backpressure: the producer waits for the consumer to take the queued frame, and nothing drops.
+  {
+    using namespace std::chrono;
+    FrameQueue bp(2);
+    bp.SetBackpressure(milliseconds(5000));
+    bp.Push(MakeFrame(1, store));  // nothing queued: no wait
+    std::thread taker([&] {
+      std::this_thread::sleep_for(milliseconds(50));
+      Check(bp.Pop(milliseconds(1000)).has_value(), "the consumer takes the queued frame");
+    });
+    const auto start = steady_clock::now();
+    bp.Push(MakeFrame(2, store));
+    const double waited = duration<double, std::milli>(steady_clock::now() - start).count();
+    taker.join();
+    Check(waited >= 40 && waited < 4000, "the producer waited until the frame was taken");
+    Check(bp.waits().count == 1 && bp.waits().timeouts == 0 && bp.dropped() == 0,
+          "one wait, no timeout, nothing dropped");
+  }
+  // A consumer that stopped: after the cap the producer goes on and frames drop as without it.
+  {
+    using namespace std::chrono;
+    FrameQueue stuck(2);
+    stuck.SetBackpressure(milliseconds(20));
+    for (uint64_t swap = 1; swap <= 3; ++swap) stuck.Push(MakeFrame(swap, store));
+    Check(stuck.waits().count == 2 && stuck.waits().timeouts == 2, "two waits reached the cap");
+    Check(stuck.dropped() == 1, "past the capacity the oldest frame drops");
+  }
+  // Closing wakes a waiting producer.
+  {
+    using namespace std::chrono;
+    FrameQueue closing(2);
+    closing.SetBackpressure(milliseconds(5000));
+    closing.Push(MakeFrame(1, store));
+    std::thread closer([&] {
+      std::this_thread::sleep_for(milliseconds(30));
+      closing.Close();
+    });
+    const auto start = steady_clock::now();
+    closing.Push(MakeFrame(2, store));
+    closer.join();
+    Check(duration<double, std::milli>(steady_clock::now() - start).count() < 4000,
+          "close ends the producer's wait");
+  }
   std::printf("frame queue test: ok\n");
   return 0;
 }

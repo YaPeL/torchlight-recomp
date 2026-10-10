@@ -43,6 +43,10 @@ REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
                     "Live mode: time the recording cost per hook and section and log it (live "
                     "producer, live measurements); off by default, it costs the guest's render "
                     "thread about 2 %. The frame time statistics are always on");
+REXCVAR_DEFINE_BOOL(live_backpressure, false, "Torchlight",
+                    "Live mode: the guest waits at its swap while the backend has not taken the "
+                    "previous frame, instead of making frames that are dropped (up to 50 ms, for a "
+                    "backend that stopped); off by default");
 REXCVAR_DEFINE_UINT32(live_record_max_mb, 4096, "Torchlight",
                       "Live mode: the session recording stops (well formed) at this size in MiB");
 
@@ -522,6 +526,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
+  options.backpressure = REXCVAR_GET(live_backpressure);
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);
