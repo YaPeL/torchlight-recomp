@@ -318,3 +318,68 @@ In the fight, both runs with the skip beat both without on the frame rate (113.5
 
 The first step is a (sampler and texture stage states of the device), on its own branch, with the
 whole evidence of this plan written before any code.
+
+## Step b: class A render states, evidence (2026-10-10)
+
+Recompiled code read for slots 36, 37, 51, 53, 64-68, 81 and 84, and every helper they call.
+Device offsets are from the device pointer in the global `0x8355A2E4` (`guest_abi`
+`xbox_d3d::kActiveDeviceGlobal`).
+
+- **The render state setter** `0x821C5480`, OGRE's `__SetRenderState` (r3 = state, r4 = value).
+  It reads the current value through the device's getter table (`device + 548 + state`, `bctrl`
+  @0x821C54A8) and, when it differs, writes it through the setter table (`device + 64 + state`,
+  @0x821C54C8). It always returns 0 (@0x821C54CC), so the exception paths after every call in the
+  slots below (`0x821BE290` message, `0x8287D560` `OGRE_EXCEPT`) are never taken. No store to the
+  render system or to any global.
+- **Other readers of that device state.** The getter table at `device + 548` is called only by
+  `0x821C5480`. The only other indirect call through a `+548` table entry in the image,
+  `0x827DD920`, is through a COM-style object's own vtable (`*(r3) + 548`), not the device. The
+  other callers of `0x821C5480` are slots 52, 61, 82, 83, 106 and 124 (separate blending, culling
+  and stencil), which keep running; skipping some writers of a state only changes whether a later
+  writer finds the device value equal. Nothing saves and restores render states the way the
+  `_endFrame` wrapper `0x821B1000` does for sampler 0 (it does not call `0x821C5480`). Whatever
+  else reads the device's render state builds GPU packets, which the `null` plugin drops.
+- **Slot 36** `_setPointSpritesEnabled` (`0x821D2530`): state 184, 1 or 0 (tail calls
+  @0x821D2544, @0x821D254C). **Device only.**
+- **Slot 37** `_setPointParameters` (`0x821C56A0`): states 176, 180 and 188 (@0x821C56D0,
+  @0x821C56E0, @0x821C570C). It reads the caps' maximum point size (`this + 764`, `+128`,
+  @0x821C56F8) when the maximum passed is the default. No store. **Device only.** It has no hook
+  today, so skipping it needs one (a `RECORD_HOOK` with an empty body: the backend takes point
+  sizes from nothing else).
+- **Slot 51** `_setSceneBlending` (`0x821C52B0`): never reads `this`. ONE/ZERO sets state 60 to 0
+  and goes to the blend operation; otherwise state 60 = 1, state 64 = 0, states 72 and 76 the
+  mapped factors (`0x82201750`, a jump table) and states 80 and 92 the mapped operation
+  (`0x821BF8B0`). Both mapping helpers are pure: no call, no store. **Device only.**
+- **Slot 53** `_setAlphaRejectSettings` (`0x821C54D8`): states 96, 104 (the compare function
+  mapped by the pure `0x821C2FA0`) and 100; with the alpha-to-coverage capability (`this + 764`,
+  `+36` bit, @0x821C55E8) and the vendor at caps `+20`, state 176 with a vendor FOURCC
+  (@0x821C5628, @0x821C5660). One store, the byte global `0x83582ADC` (@0x821C5694): OGRE 1.7's
+  `static bool lasta2c`. Its only access in the image is that store (no load with that base and
+  offset): a Runic difference, the comparison that read it was dropped. Skipping leaves a value
+  nobody reads. **Device only.**
+- **Slot 64** `_setDepthBufferCheckEnabled` (`0x821C2F38`): state 40. **Device only.**
+- **Slot 65** `_setDepthBufferWriteEnabled` (`0x821C4E88`): state 48. **Device only.**
+- **Slot 66** `_setDepthBufferFunction` (`0x821C3010`): state 44, the function remapped in place
+  (a Runic difference: the inverted depth; @0x821C301C..@0x821C305C) and then by `0x821C2FA0`.
+  **Device only.**
+- **Slot 67** `_setColourBufferWriteEnabled` (`0x821C3520`): state 212, the four channel bits.
+  **Device only.**
+- **Slot 68** `_setDepthBias` (`0x821D14B8`): states 208 and 204 when the caps allow
+  (`this + 2184`, `+16`, `+72` bits 5 and 6). No store. **Device only.** The D3D9 `_render` calls
+  it through the vtable (`vt + 0x110`); our slot 68 hook records the bias before the skip.
+- **Slot 81** `_setPolygonMode` (`0x821C5228`): state 52, the mode mapped in place. **Device only.**
+- **Slot 84** `setVertexDeclaration` (`0x821CE5A0`): two calls. `0x821CE5E0`
+  (`D3D9VertexDeclaration::getD3DVertexDeclaration`) looks the device up in the declaration's map
+  (`declaration + 24`, @0x821CE60C) and, when missing, builds the Xbox declaration (allocation
+  `0x821CD7F8`, creation `0x8276DBC0`) and files it in that map (@0x821CE914). `0x821CE588` stores
+  it in the device (`device + 12120`, the dirty mask at `device + 16`). `0x821CE5E0` has no other
+  caller, so the map is only filled here; skipped, it stays empty, and the declaration's release and
+  destruction walk an empty map. The other callers of `0x821CE588` (`0x821B1000`'s full-screen pass
+  and two more) keep setting their own declarations. **Device only**, plus the Xbox declaration
+  objects the guest no longer builds: guest heap allocations, not read by game logic.
+
+Conclusion: in the native mode all eleven slots can skip the guest implementation, with one
+condition: slot 37 needs a hook. Slots 52, 82, 83, 106 and 124 (separate blending and stencil)
+follow the same pattern through `0x821C5480`, but they were not read here. Validation as in step
+a: the 20 replays, session recordings with the cvar off and on (the same render state commands),
+and a measured run.
