@@ -32,7 +32,15 @@ def alive(pid):
         os.kill(pid, 0)
     except ProcessLookupError:
         return False
-    # A zombie no one reaps (the grandchild's parent is gone, init reaps it soon) is not running.
+    # A zombie no one reaps (the grandchild's parent is gone; a container's PID 1 may never reap
+    # it) is not running. /proc where there is one: a minimal container has no ps.
+    stat = pathlib.Path(f"/proc/{pid}/stat")
+    if stat.parent.parent.joinpath("self", "stat").exists():
+        try:
+            text = stat.read_text()
+        except OSError:
+            return False
+        return text[text.rindex(")") + 2:].split()[0] != "Z"
     state = subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True,
                            text=True).stdout.strip()
     return bool(state) and not state.startswith("Z")
@@ -173,6 +181,27 @@ class RunCappedTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("stop pattern seen", result.stderr)
         self.assertLess(time.monotonic() - start, 30)
+        self.assert_gone(pid_file)
+
+    @unittest.skipUnless(sys.platform.startswith("linux"), "PR_SET_CHILD_SUBREAPER is Linux's")
+    def test_zombies_left_unreaped_do_not_count_as_alive(self):
+        # As in a container whose PID 1 never reaps orphans (CI's ubuntu:22.04 job): the runner is
+        # made the subreaper of what it starts, so the killed grandchild is left a zombie of the
+        # runner, which only waits for the command itself. A zombie-only group is gone; the runner
+        # used to report it NOT KILLED (126).
+        pid_file = self.dir / "grandchild.pid"
+        code = SPAWN_GRANDCHILD.format(rest="time.sleep(600)").replace("sys.argv[1]",
+                                                                       repr(str(pid_file)))
+        wrapper = ("import ctypes, os, sys\n"
+                   "if ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) != 0:\n"
+                   "    sys.exit('prctl(PR_SET_CHILD_SUBREAPER) failed')\n"
+                   "os.execv(sys.executable, [sys.executable] + sys.argv[1:])\n")
+        result = subprocess.run([sys.executable, "-c", wrapper, str(SCRIPT), "--output",
+                                 str(self.dir / "out.txt"), "--timeout", "2", "--",
+                                 sys.executable, "-c", code],
+                                capture_output=True, text=True, timeout=120)
+        self.assertEqual(result.returncode, 124, result.stderr)
+        self.assertIn("nothing of the command is left", result.stderr)
         self.assert_gone(pid_file)
 
     @unittest.skipIf(os.name == "nt", "process groups are POSIX")

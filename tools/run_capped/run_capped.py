@@ -62,11 +62,16 @@ EXIT_NOT_KILLED = 126
 EXIT_INTERRUPTED = 130
 
 POLL_SECONDS = 0.1
+# What one check reads of one log for the patterns and the head copy. A log written at disk speed
+# is not read in full in each check: the cap is checked on the files' sizes before any reading, and
+# the reading catches up later (or the cap stops the run first).
+READ_BYTES_PER_CHECK = 4 * 2**20
 GRACE_SECONDS = 5.0
 
 
 def process_table():
-    """{pid: (parent pid, is a zombie)} of every process: /proc on Linux, ps elsewhere."""
+    """{pid: (parent pid, is a zombie, process group)} of every process: /proc on Linux, ps
+    elsewhere."""
     table = {}
     proc = pathlib.Path("/proc")
     if (proc / "self" / "stat").exists():
@@ -77,15 +82,15 @@ def process_table():
                 stat = (entry / "stat").read_text()
             except OSError:
                 continue
-            fields = stat[stat.rindex(")") + 2:].split()
-            table[int(entry.name)] = (int(fields[1]), fields[0] == "Z")
+            fields = stat[stat.rindex(")") + 2:].split()  # state, ppid, pgrp, ...
+            table[int(entry.name)] = (int(fields[1]), fields[0] == "Z", int(fields[2]))
         return table
-    out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,stat="], capture_output=True,
+    out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid=,stat="], capture_output=True,
                          text=True).stdout
     for line in out.splitlines():
         fields = line.split()
-        if len(fields) >= 3:
-            table[int(fields[0])] = (int(fields[1]), fields[2].startswith("Z"))
+        if len(fields) >= 4:
+            table[int(fields[0])] = (int(fields[1]), fields[3].startswith("Z"), int(fields[2]))
     return table
 
 
@@ -102,7 +107,7 @@ class PosixGroup:
     def follow(self):
         table = process_table()
         children = {}
-        for pid, (ppid, _) in table.items():
+        for pid, (ppid, _, _) in table.items():
             children.setdefault(ppid, []).append(pid)
         stack = [self.process.pid, *self.known]
         while stack:
@@ -116,6 +121,12 @@ class PosixGroup:
         return [pid for pid in self.known if pid in table and not table[pid][1]]
 
     def group_alive(self):
+        # A member that is only a zombie is gone: in a container whose PID 1 does not reap orphans,
+        # a killed grandchild stays a zombie, and killpg(group, 0) still finds it.
+        table = process_table()
+        if table:
+            return any(pgrp == self.group and not zombie
+                       for _, zombie, pgrp in table.values())
         try:
             os.killpg(self.group, 0)
             return True
@@ -319,8 +330,14 @@ class LogWatcher:
                 yield from (f for f in path.rglob("*") if f.is_file())
 
     def poll(self):
-        """The lines finished since the last poll, as (path, line) pairs."""
-        lines = []
+        """measure() then read(): the lines finished since the last poll, as (path, line) pairs."""
+        self.measure()
+        return self.read()
+
+    def measure(self):
+        """Counts what the watched files grew by (`written`) from their sizes alone, reading nothing,
+        and notes what read() has to read."""
+        self.pending = []
         for f in self.candidates():
             try:
                 stat = f.stat()
@@ -335,12 +352,17 @@ class LogWatcher:
                 entry[:] = [0, 0, b""]
             self.written += stat.st_size - entry[1]
             entry[1] = stat.st_size
-            if stat.st_size <= entry[0]:
-                continue
+            if stat.st_size > entry[0]:
+                self.pending.append((f, entry))
+
+    def read(self):
+        """The lines finished in what measure() found, up to READ_BYTES_PER_CHECK per file."""
+        lines = []
+        for f, entry in getattr(self, "pending", []):
             try:
                 with open_shared(f) as handle:
                     handle.seek(entry[0])
-                    data = handle.read(stat.st_size - entry[0])
+                    data = handle.read(min(entry[1] - entry[0], READ_BYTES_PER_CHECK))
             except OSError:
                 continue
             entry[0] += len(data)
@@ -404,7 +426,12 @@ def run(command, timeout, max_log_bytes, watched, output_path, stop_on=None, sto
             if now - start > timeout:
                 reason, code = f"time limit ({timeout:g} s)", EXIT_TIMEOUT
                 break
-            for path, line in logs.poll():
+            logs.measure()
+            if logs.written > max_log_bytes:
+                reason = f"log size limit: {logs.written / 2**20:.1f} MB written to the watched files"
+                code = EXIT_LOG_LIMIT
+                break
+            for path, line in logs.read():
                 if stop_on and stop_seen is None and stop_on.search(line):
                     stop_seen = now
                     print(f"run_capped: stop pattern seen in {path}; stopping in {stop_delay:g} s",
@@ -417,10 +444,6 @@ def run(command, timeout, max_log_bytes, watched, output_path, stop_on=None, sto
                         reason = f"repeated more than {max_repeats} times: {fault}"
                         code = EXIT_REPEATED_FAULT
             if code is not None:
-                break
-            if logs.written > max_log_bytes:
-                reason = f"log size limit: {logs.written / 2**20:.1f} MB written to the watched files"
-                code = EXIT_LOG_LIMIT
                 break
             if stop_seen is not None and now - stop_seen >= stop_delay:
                 reason, code = "stop pattern seen", EXIT_STOP_PATTERN
