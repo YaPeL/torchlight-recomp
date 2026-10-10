@@ -405,6 +405,22 @@ and a measured run.
   update the frustum's own lazily computed matrices, which any later reader recomputes the same
   way. **Nothing to keep: skippable**, about 305 calls per frame, each with up to six matrix
   products. Our slot 50 hook records the matrix from its arguments before the skip.
-- Slots 39, 40, 33 and 34 (`_setTexture`, `_setVertexTexture`, `_disableTextureUnit`,
-  `_disableTextureUnitsFrom`) write the render system's stage members and call the device's
-  `SetTexture`: class B, still to be read.
+- **Slot 39** `_setTexture` (`0x821C8E40`), read for the next step. It holds a reference to the
+  texture (the shared pointer's count, @0x821C8EA4, released @0x821C8FB4), and when enabling a unit
+  it calls the texture's vtable `+84` with 1 (@0x821C8ED4: the load on first use, which the game
+  observes), gets the Xbox texture (`0x821C9058`) and, when it differs from the stage's
+  (`this + 904 + 24 * unit`), calls the device's `SetTexture` (`0x821CEB60`) and stores it
+  (@0x821C8F28), with the texture type at `this + 888 + 24 * unit` (@0x821C8F8C). Disabling clears
+  those members and `+892`, `+896` (@0x821C9034..@0x821C904C). **Members and the load stay**; only
+  the device call could go.
+- **The device's `SetTexture`** (`0x821CEB60`): merges the texture's fetch constant into the
+  sampler's (`device + 1152 + 24 * sampler`, keeping the sampler state that step a no longer
+  writes), sets the dirty bits (`device + 24`), stores the texture in `device + 4 * (3198 +
+  sampler)` and stamps the replaced texture's fence (`+8`) or queues a pending fence entry
+  (`0x82775DF8`): the same pattern as `SetStreamSource` and `SetIndices`, whose skip is validated.
+  Its other callers are `0x821B76C0` (the `_endFrame` wrapper's full-screen pass, from
+  `0x821B8738`), the unbind-all `0x821CECF0` (`_beginFrame`), and the runtime's `0x827746B0` and
+  `0x8277FB78` (from `0x82780620`, `0x82780550`, `0x827802E8`), which were not read. **Candidate**
+  for a device call skip like the draws and bindings, after those three are read; not done.
+- Slots 40, 33 and 34 (`_setVertexTexture`, `_disableTextureUnit`, `_disableTextureUnitsFrom`):
+  the same members and the same device call; still to be read.
