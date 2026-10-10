@@ -35,6 +35,9 @@ the step. Measurements run with the power profile set to **performance** (intel_
 82-83 C with the CPU near 3.0 GHz while the game runs, throttling all the time (tens of thousands
 of package throttle events per 40 s step), so before each measured run the machine cools until
 the package temperature (`x86_pkg_temp`) stays below **55 C** for 10 s (it idles at 45-50 C).
+Even after the cool-down the package reaches 82 C within every measured step (the step-b runs of
+2026-10-10: 82 C in all of them, thousands of throttle events per step): this laptop measures under
+its thermal limit, so the CPU clock follows the temperature, and small gains stay within the noise.
 Frame rates of such runs still move by several percent between identical runs; decisions on small
 changes also use the profile (the change's share of the thread it runs on), which the drift does
 not move.
