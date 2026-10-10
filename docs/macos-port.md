@@ -568,7 +568,7 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   behind the other windows when the game starts from a terminal, and the game seems to hang. The
   launcher replaces that dialog, but the fallback stays, and on macOS it has to come to the
   front (activate the application before the alert). For the runs here the choice is in the local
-  `settings.toml` only. To fix in MAC.8 at the latest.
+  `settings.toml` only. Fixed in MAC.8 (`6bfe7d3`).
 - **Only mode (native):** OGRE's Cocoa GL window attaches its context to the game window's view
   (`setView`) and calls `-[NSOpenGLContext update]` in `create`, `resize` and
   `windowMovedOrResized`. With a view, AppKit allows both only on the main thread, and the live
@@ -775,13 +775,47 @@ not before, so no release announces a download it does not have:
 > once. To check a download, compare its SHA-256 (`shasum -a 256 FILE` in Terminal) with the
 > release's `SHA256SUMS`.
 
-The exact wording of macOS' dialogs is checked on this Mac with the first `.dmg` (MAC.8).
+The wording was checked on this Mac with the first `.dmg` (MAC.8, macOS 26.6, Spanish system): the
+first dialog says the app was not opened because Apple could not verify it is free of malware,
+with **Move to Trash** and **Done**; after Open Anyway in Privacy & Security, the same text comes
+back with an **Open Anyway** button. The steps above match.
 
 **Ticket MAC.8 (package):** `cmake --install` into a `.app` layout, `packaging/macos/make_app.sh`,
 `make_dmg.sh` and `check_app.sh`, symbols split (`dsymutil`, kept private like the Linux `.debug`
 files). Done when the `.dmg` copied to another user account of this Mac (quarantined, as a
 download) opens through "Open Anyway" and reaches the first start's setup, and `check_app.sh`
 finds no dependency outside the bundle and the system.
+
+**MAC.8 results (branch `feature/macos-package`, 2026-10-09):**
+
+- `platform::ResourceDir()` (`Contents/Resources/` in a bundle, the executable's folder elsewhere)
+  for `data/ui`; `OgrePluginDir` and `OgreMediaDir` follow the bundle (`Contents/PlugIns/ogre/`,
+  `Contents/Resources/ogre/media/`). The macOS install rules write `Contents/` directly:
+  `MacOS/` (the executable and the null GPU plugin), `Frameworks/` (OGRE, `librexruntime`),
+  `PlugIns/ogre/`, `Resources/` (`6bfe7d3`, `d784784`).
+- `packaging/macos/`: `make_app.sh` (rpaths, `Info.plist` with `io.github.yapel.torchlight-recomp`
+  and macOS 13.3, the icon from the Linux SVG, ad-hoc signatures), `check_app.sh`,
+  `split_symbols.sh`, `make_dmg.sh` (`c465b3f`). The Release `.dmg` is 31 MB. With `-g`, the
+  executable's `.dSYM` is 116 MB; its UUID matches the signed binary and `atos` resolves addresses
+  (`LiveMode::Stop()`, `live_mode.cpp:132`).
+- Xenos is not in the package: the SDK looks for MoltenVK in `Contents/lib`, which a signed bundle
+  cannot hold. The emulated GPU stays a build-tree diagnostic on macOS (MAC.10).
+- The message-box dialogs (the achievements choice, errors, the package picker) activate the
+  application first (`platform::BringToFront`), so they no longer open behind the terminal or
+  Finder.
+- Quarantine test: no second account; instead, `com.apple.quarantine` set on the `.dmg` as a
+  browser download writes it (the app dragged to `/Applications` inherits it). Gatekeeper blocked
+  the app (the process waits suspended until the dialog is dismissed and writes nothing); after
+  Open Anyway it ran its first start with an empty `Application Support/TorchlightRecomp`: the
+  achievements choice, the game files installed from the package folder, the main menu at a
+  steady 60 fps, and a clean exit.
+- Started from Finder the app gets no arguments, so `--mnk_mode=true` is off and the keyboard does
+  not drive the game; without a gamepad the game cannot be played from a double-click. Until
+  there is a setting for it (to agree on separately: it is a new option for every platform),
+  the README (MAC.9) tells keyboard players to start it from Terminal with
+  `open -a "Torchlight Recomp" --args --mnk_mode=true`.
+- The README's Installing text and `release.yml`'s notes go in with MAC.9, with the first release
+  that ships the `.dmg`.
 
 ## 7. CI
 
