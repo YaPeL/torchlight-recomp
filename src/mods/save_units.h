@@ -16,6 +16,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <string_view>
 #include <unordered_set>
 #include <vector>
 
@@ -60,6 +61,16 @@ struct RemovedUnit {
   int64_t guid = 0;
 };
 
+// Whether a unit reference in a save is the player's, something the player can lose: the
+// character's class, inventory and equipment (player/...), the pet and what it carries (pets/...),
+// items lying in a saved level (levels/level/items/..., which may be ones the player dropped),
+// and everything in a shared stash file (`stash_file`). Not the player's: the creatures and
+// characters of a saved level and what they carry (levels/level/units/..., a merchant's goods
+// among them), a quest's units (quests/...) and the GUID list guids2/. Anything else is taken as
+// the player's. Unknown units of the player's are removed or protect the saves; the others are
+// only logged (docs/mods.md 7h).
+bool PlayerOwnedUnitRef(std::string_view path, bool stash_file);
+
 struct UnitCheck {
   enum class Result {
     kClean,      // nothing unknown
@@ -68,18 +79,23 @@ struct UnitCheck {
   };
   Result result = Result::kClean;
   std::vector<RemovedUnit> removed;
+  // Unknown units that are not the player's (PlayerOwnedUnitRef): left in the file, for the log.
+  std::vector<RemovedUnit> kept_level;
   std::vector<uint8_t> bytes;
   std::string why;
   std::string owner;  // the character's name (a character file)
 };
 
-// The checks on a parsed save (character or stash), changing its tree when entries are removed:
-// - an item, a pet or a creature (an item or unit element of a list) whose unit GUID is unknown is
-//   removed, and so is an unknown GUID in a list of GUIDs;
-// - left alone when the known units are incomplete, when an unknown GUID is not in a list (the
-//   character's own class, a quest's unit), or when most of the save's units are unknown (almost
+// The checks on a parsed save (character, or a shared stash with `stash_file`), changing its tree
+// when entries are removed:
+// - an item, a pet or a creature of the player's (PlayerOwnedUnitRef; an item or unit element of
+//   a list) whose unit GUID is unknown is removed, and so is an unknown GUID in a list of GUIDs;
+// - an unknown unit that is not the player's (a saved level's creatures and what they carry, a
+//   quest's unit, guids2/) is left in the file and listed in `kept_level`;
+// - left alone when the known units are incomplete, when an unknown GUID of the player's is not in
+//   a list (the character's own class), or when most of the save's units are unknown (almost
 //   surely a fault of ours, not a removed mod).
-UnitCheck RemoveUnknownUnits(save_import::Parsed& parsed, const KnownUnits& known);
+UnitCheck RemoveUnknownUnits(save_import::Parsed& parsed, const KnownUnits& known, bool stash_file = false);
 
 // The same on a recomp character file (N.TSV) or shared stash (sharedstash.bin): parsed with the
 // schema (unreadable: left alone) and, when entries are removed, written back with its digest.
