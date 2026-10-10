@@ -397,6 +397,36 @@ If the producer is taken up again, what is left on its own thread:
   words, which the table's size did not explain (A1). Measure where it goes (the shadow entry each
   memo points to, or the ~965 calls a frame of the texture filtering alone) before changing it.
 
+### Animation controllers walked on the host: tried, no gain (2026-10-09)
+
+`0x821C8C00` is OGRE's `ControllerManager::updateAllControllers`: once a frame it walks the
+`std::set` of controllers (~860-920, all enabled) and makes three virtual calls for each, the
+source's `getValue`, the function's `calculate` and the destination's `setValue` (by RTTI in a run:
+frame time sources; passthrough, scale, animation and waveform functions; ParticleUniverse's
+particle system update, texture coordinate and texture frame destinations). In the town square it
+took 3.65 % of the guest's render thread: the walk itself (0.99 %) and the set iterator's increment
+(0x824C6960, 0.51-0.64 %), and the rest in the controllers' own code, mostly ParticleUniverse's
+`setValue` (0x821C8A58) and the particle update it calls (0x821C8618).
+
+The assumption was that the walk's cost was the recompiled code's (registers kept in memory,
+indirect dispatch), so the walk was moved to host code (branch `feature/native-controllers`, not
+merged): the same frame test, the set in order with the next node found after each update, the
+three calls left to the guest's own functions. Same binary with `--native_controllers` on and off,
+the town square's profile (~17,400 samples of the guest's thread each):
+
+| | Guest walk | Host walk |
+|---|---|---|
+| `0x821C8C00` with everything it calls | 3.66 % | 3.61 % |
+| The walk (loop and iterator) | 1.63 % | 1.34 % |
+| ParticleUniverse's `setValue` and below | 1.90 % | 2.17 % |
+
+No gain past the noise. The host walk's own time lands on the guest memory loads (0.46 %,
+attributed to their byte swaps) and on stepping through the tree (0.41 %): the cost is waiting for
+memory, ~900 tree nodes, each with a controller and three objects and their vtables scattered over
+the heap, which the host code reads just as the guest's did. Not merged. The guest's walk already
+asks for those lines ahead (`dcbt` on the next node, its controller and two objects), which the
+recompiled code drops; making the codegen honour them would help every such walk, not only this one.
+
 ### The backend thread (2026-10-09)
 
 The live mode's backend thread, town square of the DWARF profile with everything integrated
