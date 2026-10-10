@@ -487,11 +487,16 @@ with every mod under one device (`tlmods:\<folder>\`) the game could open nothin
 file maps, the mods inactive, their classes left out of the index). Each mod's folder is now
 mounted as its own device, `tlmod<NNN>:` (three digits: the file system matches devices by prefix, so `tlmod1:` would take `tlmod10:`'s paths) with NNN its place in the plan (`hooks/guest_path.h`
 `ModDeviceLink`), so the folder's name never reaches a guest path; folders whose names are not
-ASCII work the same way. Checked before the change, nothing else depends on the folder's path: a
-mod's name (in the list and in saves) is its `mod.dat` `NAME` (CMod +80, read in `sub_823A9EA0`,
-"MOD" without one), the priorities and the MODS count follow the plan's order as before, the
+ASCII work the same way. The priorities and the MODS count follow the plan's order as before, the
 devices are writable for the `.ADM` the game compiles, and OGRE's locations and the separators fix
-(`ModsSearchPath`) take the new names.
+(`ModsSearchPath`) take the new names. One thing did depend on the folder's path, against what was
+checked before the change: a mod without a `NAME` in a `mod.dat` (or without a `mod.dat`, as the
+Mod-Pack's) is named after the last part of its folder's path (CMod +80, `sub_823A9EA0`), so for
+a while every such mod was named "tlmod000:", "tlmod001:"... in the game's list and in the saves'
+mod lists (seen in a save the game wrote with the Mod-Pack, 2026-10-10). The host now names such a
+mod after its real folder right after registering it, and narrows that into its resource group
+with the constructor's own calls (`NameModAfterFolder`, guest_abi mods.h `mod::kName`); a save
+written after the fix holds "JCC - Abomination" and the others.
 
 **Test runs with real mod packs: the log (2026-10-09).** With dozens of mods the game looks every
 data file up in each mod's folder, and the SDK logged each failed open as a warning: about 124,000
@@ -610,6 +615,86 @@ move. Two other ways were weighed and set aside: keeping only the names while fr
 traced), and restarting the game once after a build so that the session played never ran the
 builder (sure, but a restart for the player and process handling on three systems, with Steam on
 Windows).
+
+## 7h. Whose units: the save protection only for what the player can lose (2026-10-10)
+
+With the 29-mod pack, every session refused to save. `JCC - Map` replaces
+`MEDIA/UNITS/MONSTERS/MERCHANT/MERCHANT_GOODS.DAT` (Tarn the Merchant) with a unit of another GUID,
+and the saves keep Tarn in their saved town (`levels/level/units/unit`). The check expected the
+base GUIDs plus the mods' ones, the game did not load the replaced base GUID, and the saves holding
+it turned saving off.
+
+Two changes. The check now expects the units merged as the index builder merges them
+(`MakeExpectedUnits`, `ModUnitEntries`): a mod's unit at a base unit's path replaces that GUID.
+And the protection now looks at whose a unit is (`PlayerOwnedUnitRef`). The player's: the
+character's class, inventory and equipment (`player/...`), the pet and what it carries
+(`pets/...`), the items lying in a saved level (`levels/level/items/...`, which may be ones the
+player dropped) and the shared stash. An unknown one of those is still removed with a copy, or
+turns saving off when the game failed to load it. Not the player's: the creatures and characters of
+a saved level and what they carry (`levels/level/units/...`, a merchant's goods among them), a
+quest's units (`quests/...`) and `guids2/`. An unknown one of those stays in the save, and the log
+says so (`units: ...: unknown ... left in the save: not the player's`). Anything else is taken as the
+player's. The guard against a fault of ours (most of a save's units unknown: leave it alone) still
+counts every unknown unit.
+
+Checked in the game on 2026-10-10 with the 29-mod pack, in automatic runs with input scripts:
+- **The game handles it.** A save holding the old Tarn in its saved town, loaded with the pack:
+  the game entered the town, and when it next saved (on the way to the mines) the saved town held
+  Tarn with the mod's GUID. It dropped the creature it did not know and made Tarn again from the
+  level, with no fault, no warning of ours and saving on. The save's four active quests were the
+  same before and after.
+- **Every save checked against the merged units** (5337 expected, the index's own number): Tarn
+  left in each of the seven saves and logged, the sword of the new-item mod that this set no longer
+  has removed from the one save holding it (with a copy), saving on.
+- To get there, our reader of the mods' text files (`ParseDatText`) had to be as tolerant as the
+  game: four of the pack's files have a lone CR between tags, an extra closing tag, `//` comment
+  lines or a block never closed, and any one of them made the check give up on the mods' units.
+- The PC achievement "Played with 10 mods" unlocked with the pack in one of these runs.
+
+Not checked by these runs: that quests given by a replaced or unknown unit go on (none of these
+saves had one), and trading with Tarn. If quests show a problem, their units go back to the
+player's side.
+
+## 7i. Mods that ship PC-compiled `.ADM` files crashed at startup (2026-10-10, fixed)
+
+Enhanced Edition v1.0 (three mods: `Enhanced`, `BasementMiniDungeon`, `Charm_to_Stun`) ends the
+game seconds after the mods are registered, before the unit index is built, each mod on its own.
+The Ultimate Torchlight Mod-Pack, which ships no `.ADM`, does not. Under gdb: the global data
+loader (`sub_8231FF28` -> `sub_8232D6E8`) loads a definition (`sub_82392C18`, then the file load
+`sub_82395CE0` -> `sub_823A2B88`), the data loader takes its OGRE path (`sub_8239E670`), and
+`ResourceGroupManager::openResource` (`sub_8242B070`: "Cannot locate a resource group called '",
+"' for resource '") throws; with no unwinding in the runtime the process ends (SDK patch 30: by
+SIGSEGV; the log shows a read at 0x34). The files: `Charm_to_Stun`
+`media/units/items/spells/charmspell9.dat` (text, 2020-12-30, lower case) next to
+`CHARMSPELL9.DAT.adm` (compiled by PC, 2021-01-01, upper case), and
+`BasementMiniDungeon` `media/unitthemes/ALCHBLUEHAND.dat` (2010) next to
+`ALCHBLUEHAND.DAT.adm` (2020). Each `.ADM` is newer than its text file, so the game prefers it.
+The cause (gdb on the record `sub_8239E670` receives): the mods' file map does serve it, as a
+mod's file (kind 2, "TLMOD000:/MEDIA/UNITS/ITEMS/SPELLS/CHARMSPELL9.DAT.ADM"), and the loader then
+opens a compiled `.ADM` with `ResourceGroupManager::openResource(file, the mod's group)`, the group
+being the mod's name narrowed (CMod +52, guest_abi mods.h `mod::kResourceGroup`). PC makes that
+group when it registers a mod; this build never did, so OGRE threw "Cannot locate a resource group
+called 'Charm_to_Stun'". Each enabled mod's folder is now also added to its own group (OGRE makes
+the group with the first location), and the absolute `TLMOD<N>:/...` name opens through it. Checked
+in the game: each of the three mods alone, then all three, build the unit index (1984 mods' units)
+and play the load script to the end. The text mods of the Mod-Pack never went this way: their text
+files are read without OGRE.
+
+## 7j. A texture mod: TNNR's textures are not used yet (2026-10-10, open)
+
+TNNR (Torchlight Neural Network Remastered v0.9.5, 2.7 GB) is meant to be dropped into PC's
+`Pak.zip`; as a mod it is one folder, `mods/TNNR/media`, with 3206 meshes, 1318 `.dds`, 889
+materials and 255 compiled layouts at the same paths as the game's. Checked in automatic runs
+(the load script on the mine's first floor): the game runs with it, named after its folder (no
+`mod.dat`), and its compiled level layouts (`.LAYOUT.CMP`, 193 opened from `TLMOD000:` through the
+mod's resource group) are used; the level loads in 26 s instead of 6.5. Its textures are not: the
+92 textures of that level that TNNR has (2048x2048 where the game's are 256x256) loaded with the
+game's sizes, including the 15 whose TNNR version is 2x or 4x larger, which would have changed
+size. Textures do not go through the data loader (none of the 1113 opens it recorded was a `.dds`);
+OGRE resolves them by name in a resource group. Adding the mod's folder to the game's groups
+("0ZIP0", "ZIP") after the pak did not change that, and was not kept. Why OGRE's index does not
+give the mod's file (the group a material asks in, the index's keys) is the next reading. The
+Mod-Pack and Enhanced Edition, the other real mods tried, are data mods and did not depend on it.
 
 ## 8. Where mods go on our side
 

@@ -382,7 +382,7 @@ void InstallSaveImport(rex::Runtime* runtime, const fs::path& game_data_root,
   std::string error;
   {
     std::vector<std::string> warnings;
-    const fs::path strings = fs::path(platform::ExecutableDir()) / "data" / "ui" / kStringsFile;
+    const fs::path strings = fs::path(platform::ResourceDir()) / "data" / "ui" / kStringsFile;
     if (!g.strings.Load(strings.string(), warnings, error)) {
       REXLOG_WARN("save import: {}; messages in English", error);
     }

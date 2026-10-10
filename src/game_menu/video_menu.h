@@ -25,6 +25,7 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
 
 // One OGRE FileSystem resource location in the default group, added through the guest (game's
 // thread); false on failure. Also used for the player's mods (mods_install.h).
-bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive);
+bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive,
+                           const std::string& group = "General");
 
 }  // namespace torchlight::game_menu

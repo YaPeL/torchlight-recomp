@@ -121,24 +121,36 @@ std::optional<std::vector<DatBlock>> ParseDatText(const std::vector<uint8_t>& by
   };
   size_t start = 0;
   while (start <= text.size()) {
-    size_t end = text.find('\n', start);
+    // A line ends at LF, CR LF or a lone CR: PC tools left lone CRs between tags
+    // ("[/EFFECT]\r[/EFFECTS]" in the Mod-Pack's JCC - Vindicator), and the game reads those as
+    // two lines (its own index build loads such files).
+    size_t end = text.find_first_of("\r\n", start);
     if (end == std::string::npos) end = text.size();
+    const size_t next = end < text.size() && text[end] == '\r' && end + 1 < text.size() && text[end + 1] == '\n'
+                            ? end + 2
+                            : end + 1;
     ++line_number;
     const std::string_view line = Trim(std::string_view(text).substr(start, end - start));
-    start = end + 1;
-    if (line.empty()) continue;
+    start = next;
+    if (line.empty() || line.starts_with("//")) continue;  // a comment, as PC mods' files have
     if (line.size() >= 3 && line.front() == '[' && line.back() == ']') {
       if (line[1] == '/') {
+        // Tolerant, as the game is with PC mods' files (its own loading keeps them): a closing tag
+        // that matches no open block is skipped (an extra "[/EFFECT]" in the Mod-Pack's JCC - Pets
+        // dfb_pet_lich.dat), and one that matches an outer block closes the inner ones with it.
         const std::string_view name = line.substr(2, line.size() - 3);
-        if (open.empty() || !EqualNoCase(open.back().name, name)) {
-          return fail("[/" + std::string(name) + "] does not close the open block");
-        }
-        DatBlock done = std::move(open.back());
-        open.pop_back();
-        if (open.empty()) {
-          roots.push_back(std::move(done));
-        } else {
-          open.back().children.push_back(std::move(done));
+        const auto match = std::find_if(open.rbegin(), open.rend(),
+                                        [&](const DatBlock& b) { return EqualNoCase(b.name, name); });
+        if (match == open.rend()) continue;
+        const size_t depth = static_cast<size_t>(match - open.rbegin()) + 1;
+        for (size_t i = 0; i < depth; ++i) {
+          DatBlock done = std::move(open.back());
+          open.pop_back();
+          if (open.empty()) {
+            roots.push_back(std::move(done));
+          } else {
+            open.back().children.push_back(std::move(done));
+          }
         }
       } else {
         open.push_back(DatBlock{std::string(line.substr(1, line.size() - 2)), {}, {}});
@@ -163,11 +175,37 @@ std::optional<std::vector<DatBlock>> ParseDatText(const std::vector<uint8_t>& by
     }
     return fail("not a block tag or a value line");
   }
-  if (!open.empty()) {
-    line_number = 0;
-    return fail("[" + open.back().name + "] is never closed");
+  // Blocks left open at the end are closed there (a set file of the Mod-Pack ends without its
+  // "[/SET]"), as the game, which loads it, does.
+  while (!open.empty()) {
+    DatBlock done = std::move(open.back());
+    open.pop_back();
+    if (open.empty()) {
+      roots.push_back(std::move(done));
+    } else {
+      open.back().children.push_back(std::move(done));
+    }
   }
   return roots;
+}
+
+std::optional<std::string> FindDatValueAnywhere(const std::vector<uint8_t>& bytes, std::string_view key) {
+  const std::string text = Decode(bytes);
+  size_t start = 0;
+  while (start < text.size()) {
+    size_t end = text.find_first_of("\r\n", start);
+    if (end == std::string::npos) end = text.size();
+    const std::string_view line = Trim(std::string_view(text).substr(start, end - start));
+    start = end + 1;
+    if (line.empty() || line.front() != '<') continue;
+    const size_t close = line.find('>');
+    const size_t colon = close == std::string_view::npos ? close : line.find(':', close);
+    if (colon == std::string_view::npos) continue;
+    if (EqualNoCase(Trim(line.substr(close + 1, colon - close - 1)), key)) {
+      return std::string(line.substr(colon + 1));
+    }
+  }
+  return std::nullopt;
 }
 
 std::vector<uint8_t> WriteDatText(const std::vector<DatBlock>& blocks) {

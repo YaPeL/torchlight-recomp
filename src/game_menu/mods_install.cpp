@@ -22,6 +22,7 @@
 #include "guest_abi/mods.h"
 #include "hooks/guest_path.h"
 #include "mods/mod_list.h"
+#include "save_import/pak.h"
 #include "mods/save_safety.h"
 
 namespace torchlight::game_menu {
@@ -51,6 +52,44 @@ bool WriteFile(const std::filesystem::path& path, const std::vector<uint8_t>& by
   std::ofstream out(path, std::ios::binary | std::ios::trunc);
   out.write(reinterpret_cast<const char*>(bytes.data()), static_cast<std::streamsize>(bytes.size()));
   return static_cast<bool>(out);
+}
+
+// A mod's name when it has no NAME: its folder (guest_abi mods.h, mod::kName). The constructor took
+// the last part of the folder's path, which is the mod's device (tlmod<N>:); a name the game read
+// from mod.dat is kept. The group (+52) is narrowed again from the name with the constructor's own
+// calls, so it is what the game would have made. True when the name changed.
+bool NameModAfterFolder(GuestCall& call, uint8_t* base, uint32_t mod, size_t index, const std::string& folder) {
+  const uint32_t name = mod + mods_abi::mod::kName.offset;
+  const uint32_t length = abi::ReadU32(base, name + abi::ogre::stl_string::kLength.offset);
+  const uint32_t capacity = abi::ReadU32(base, name + abi::ogre::stl_string::kCapacity.offset);
+  const uint32_t text = capacity > mods_abi::manager::kWStringInlineCapacity ? abi::ReadU32(base, name) : name;
+  const std::string device = hooks::ModDeviceLink(index);
+  if (length != device.size()) return false;
+  for (uint32_t i = 0; i < length; ++i) {
+    if (abi::ReadU16(base, text + 2 * i) != static_cast<uint8_t>(device[i])) return false;
+  }
+  const std::u16string wide = save_import::Utf16(folder);
+  const uint32_t mark = call.Mark();
+  const uint32_t chars = call.Reserve(static_cast<uint32_t>(2 * (wide.size() + 1)));
+  const uint32_t source = call.Reserve(abi::ogre::stl_string::kSize.bytes);
+  const uint32_t narrow = call.Reserve(abi::ogre::stl_string::kSize.bytes);
+  if (!chars || !source || !narrow) {
+    call.Release(mark);
+    return false;
+  }
+  for (size_t i = 0; i <= wide.size(); ++i) {  // big-endian UTF-16, with its terminator
+    const char16_t c = i < wide.size() ? wide[i] : u'\0';
+    base[chars + 2 * i] = static_cast<uint8_t>(c >> 8);
+    base[chars + 2 * i + 1] = static_cast<uint8_t>(c & 0xFF);
+  }
+  call.Call(ui::kWStringFromText.address, {source, chars});
+  call.Call(mods_abi::mod::kWStringAssign.address, {name, source, 0, 0xFFFFFFFFu});
+  call.Call(ui::kWStringDtor.address, {source});
+  call.Call(mods_abi::mod::kNarrowWString.address, {narrow, name});
+  call.Call(mods_abi::mod::kStringAssignString.address, {mod + mods_abi::mod::kResourceGroup.offset, narrow});
+  call.Call(mods_abi::mod::kStringDtor.address, {narrow});
+  call.Release(mark);
+  return true;
 }
 
 // A guest std::wstring built in the scratch area from ASCII text (a mod's device name), with the
@@ -214,6 +253,13 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
     call.Call(mods_abi::kAddMod.address, {manager, folder});
     call.Call(ui::kWStringDtor.address, {folder});
     call.Release(mark);
+    // The CMod just made is the list's last.
+    const uint32_t made = call.ReadU32(manager + mods_abi::manager::kListCount.offset);
+    const uint32_t cmod = made ? call.ReadU32(call.ReadU32(manager + mods_abi::manager::kListData.offset) + 4 * (made - 1))
+                               : 0;
+    if (cmod && NameModAfterFolder(call, base, cmod, i, mod.folder)) {
+      REXLOG_INFO("mods: {} has no NAME in its mod.dat: named after its folder", mod.folder);
+    }
   }
   // The guest numbered the mods in registration order; the disabled ones get their priority.
   const uint32_t list = call.ReadU32(manager + mods_abi::manager::kListData.offset);
@@ -233,6 +279,16 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
     if (g_plan.mods[i].priority < 0) continue;
     const std::string location = hooks::ModDeviceLink(i) + "\\";
     if (!AddFileSystemLocation(call, location, true)) REXLOG_ERROR("mods: cannot add {}", location);
+    // The mod's own resource group, which the data loader opens a mod's compiled .ADM in (guest_abi
+    // mods.h, mod::kResourceGroup); OGRE makes the group when a location is added to it.
+    const uint32_t mod = i < count ? call.ReadU32(list + 4 * i) : 0;
+    const std::string group = mod ? abi::ogre::ReadString(base, mod + mods_abi::mod::kResourceGroup.offset, 256) : "";
+    if (group.empty() || group == "General") continue;
+    if (AddFileSystemLocation(call, location, true, group)) {
+      REXLOG_INFO("mods: {} also in resource group \"{}\"", location, group);
+    } else {
+      REXLOG_ERROR("mods: cannot add {} to resource group \"{}\"", location, group);
+    }
   }
 }
 

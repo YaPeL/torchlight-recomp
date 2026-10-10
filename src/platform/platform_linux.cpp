@@ -250,6 +250,10 @@ std::string LogDir() {
   return UserDir(UserFolderKind::kState, "logs");
 }
 
+void BringToFront() {}
+
+std::string ResourceDir() { return ExecutableDir(); }
+
 std::string OgrePluginDir() {
   const std::string exe = ExecutableDir();
   return exe.empty() ? "" : exe + "ogre/plugins/";

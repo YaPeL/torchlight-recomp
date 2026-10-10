@@ -27,9 +27,9 @@ Translate SetupTranslate(std::vector<platform::StartupMessage>& log) {
   auto strings = std::make_shared<game_menu::MenuStrings>();
   std::vector<std::string> warnings;
   std::string error;
-  const std::string exe_dir = platform::ExecutableDir();
-  if (exe_dir.empty() ||
-      !strings->Load(exe_dir + "data/ui/" + kStringsFile, warnings, error)) {
+  const std::string resources = platform::ResourceDir();
+  if (resources.empty() ||
+      !strings->Load(resources + "data/ui/" + kStringsFile, warnings, error)) {
     log.push_back({true, "game setup: " + error + "; texts in English"});
   }
   for (const std::string& warning : warnings) log.push_back({true, "game setup: " + warning});

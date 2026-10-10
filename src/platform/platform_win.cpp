@@ -173,6 +173,10 @@ std::string ExecutableDir() {
   return Utf8(std::filesystem::path(path).parent_path().wstring()) + "\\";
 }
 
+void BringToFront() {}
+
+std::string ResourceDir() { return ExecutableDir(); }
+
 std::string OgrePluginDir() {
   const std::string exe = ExecutableDir();
   return exe.empty() ? "" : exe + "ogre\\plugins\\";
