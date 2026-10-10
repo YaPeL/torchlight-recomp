@@ -54,8 +54,6 @@ bool WriteFile(const std::filesystem::path& path, const std::vector<uint8_t>& by
   return static_cast<bool>(out);
 }
 
-// A guest std::wstring built in the scratch area from ASCII text (a mod's device name), with the
-// game's constructor; destroy it with kWStringDtor.
 // A mod's name when it has no NAME: its folder (guest_abi mods.h, mod::kName). The constructor took
 // the last part of the folder's path, which is the mod's device (tlmod<N>:); a name the game read
 // from mod.dat is kept. The group (+52) is narrowed again from the name with the constructor's own
@@ -94,6 +92,8 @@ bool NameModAfterFolder(GuestCall& call, uint8_t* base, uint32_t mod, size_t ind
   return true;
 }
 
+// A guest std::wstring built in the scratch area from ASCII text (a mod's device name), with the
+// game's constructor; destroy it with kWStringDtor.
 uint32_t GuestWString(GuestCall& call, uint8_t* base, const std::string& ascii) {
   const uint32_t text = call.Reserve(static_cast<uint32_t>(2 * (ascii.size() + 1)));
   const uint32_t str = call.Reserve(abi::ogre::stl_string::kSize.bytes);
