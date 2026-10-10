@@ -189,6 +189,25 @@ std::optional<std::vector<DatBlock>> ParseDatText(const std::vector<uint8_t>& by
   return roots;
 }
 
+std::optional<std::string> FindDatValueAnywhere(const std::vector<uint8_t>& bytes, std::string_view key) {
+  const std::string text = Decode(bytes);
+  size_t start = 0;
+  while (start < text.size()) {
+    size_t end = text.find_first_of("\r\n", start);
+    if (end == std::string::npos) end = text.size();
+    const std::string_view line = Trim(std::string_view(text).substr(start, end - start));
+    start = end + 1;
+    if (line.empty() || line.front() != '<') continue;
+    const size_t close = line.find('>');
+    const size_t colon = close == std::string_view::npos ? close : line.find(':', close);
+    if (colon == std::string_view::npos) continue;
+    if (EqualNoCase(Trim(line.substr(close + 1, colon - close - 1)), key)) {
+      return std::string(line.substr(colon + 1));
+    }
+  }
+  return std::nullopt;
+}
+
 std::vector<uint8_t> WriteDatText(const std::vector<DatBlock>& blocks) {
   std::vector<uint8_t> out = {0xFF, 0xFE};
   for (const DatBlock& block : blocks) WriteBlock(out, block, 0);

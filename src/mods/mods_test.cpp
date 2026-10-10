@@ -67,6 +67,10 @@ int main() {
     Check(comment && (*comment)[0].Find("K")->value == "v" && (*comment)[0].children.empty(),
           "// comment lines are skipped");
     Check(!ParseDatText(Ascii("[A]\nnot a value\n[/A]\n"), &error), "any other line is still rejected");
+    const auto typo = Ascii("cryptic[UNIT]\r\n<STRING>NAME:x\r\n<STRING>UNIT_GUID:-42\r\n[/UNIT]\r\n");
+    Check(!ParseDatText(typo, &error) && FindDatValueAnywhere(typo, "unit_guid") == "-42" &&
+              !FindDatValueAnywhere(typo, "LEVEL"),
+          "a refused file's single value found anyway (Enhanced Edition's \"cryptic[UNIT]\")");
     const auto lone_cr = ParseDatText(Ascii("[UNIT]\r\n<STRING>UNIT_GUID:-5\r\n[EFFECTS]\r\n[EFFECT]\r\n"
                                             "[/EFFECT]\r[/EFFECTS]\r\n[/UNIT]\r\n"),
                                       &error);

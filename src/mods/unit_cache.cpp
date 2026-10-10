@@ -107,7 +107,9 @@ std::optional<std::vector<UnitEntry>> ModUnitEntries(const std::vector<ModUnitFi
     std::string error;
     const auto blocks = bytes ? ParseDatText(*bytes, &error) : std::nullopt;
     const DatValue* guid = blocks && !blocks->empty() ? blocks->front().Find("UNIT_GUID") : nullptr;
-    const auto value = guid ? ParseUnitGuid(guid->value) : std::nullopt;
+    // A file the reader refuses (a mod's typo) may still have its GUID, which is all the check needs.
+    const std::optional<std::string> loose = !guid && bytes ? FindDatValueAnywhere(*bytes, "UNIT_GUID") : std::nullopt;
+    const auto value = guid ? ParseUnitGuid(guid->value) : loose ? ParseUnitGuid(*loose) : std::nullopt;
     if (!value) {
       if (why) *why = "no UNIT_GUID read from " + f.mod_folder + " " + f.file.filename().string();
       return std::nullopt;
