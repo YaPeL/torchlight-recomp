@@ -866,8 +866,15 @@ comes out on Linux, Windows (Git Bash has `sha256sum`) and macOS.
   dependencies on the next develop run, nothing else.
 - `ci.yml`: `deps-macos` and `test-macos` on `macos-26` (`2ebd1be`), same triggers as Linux and
   Windows. Here the `mac-arm64-nogame` preset from the branch passes 66/66, the GL tests included.
-  The first run on the runner (by hand from Actions) is to show whether its virtual GPU gives
-  OpenGL 3.3 and how long `deps-macos` takes.
+  On the runner (2026-10-10): `deps-macos` builds the SDK and OGRE in 11 minutes (then cached);
+  the store's prune test passes. The runner's virtual GPU gives no OpenGL 3 context: the backend's
+  creation failed and its error path crashed (OGRE 14.6's GL3+ unregisters the half-made window's
+  context through a buffer manager it never made). Fixed in `5a2ac48` (the window is detached on
+  that path; OGRE's Cocoa window is registered under its title, not its name) and checked here
+  with a GL3+ plugin built to fail the same check: the tests now fail with "OpenGL 3.0 is not
+  supported in initialiseContext", also in OGRE's log. Both are candidates to report to OGRE. The
+  GL3+ runs (label `opengl33`) are left out on the macOS runners as on Windows (`ef5a6df`); with
+  that the whole CI passes (64/64 on macOS).
 - `release.yml`: `game-macos` (XEX check with `shasum`, codegen, Release with `-g`, ctest,
   `split_symbols.sh`, `make_app.sh` with the tag's numbers as version, `check_app.sh`,
   `make_dmg.sh`, `.dSYM`s to `<tag>/macos-arm64/`), `check-macos` (`check_app.sh` on the app inside
