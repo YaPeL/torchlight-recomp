@@ -343,9 +343,8 @@ Device offsets are from the device pointer in the global `0x8355A2E4` (`guest_ab
   @0x821D2544, @0x821D254C). **Device only.**
 - **Slot 37** `_setPointParameters` (`0x821C56A0`): states 176, 180 and 188 (@0x821C56D0,
   @0x821C56E0, @0x821C570C). It reads the caps' maximum point size (`this + 764`, `+128`,
-  @0x821C56F8) when the maximum passed is the default. No store. **Device only.** It has no hook
-  today, so skipping it needs one (a `RECORD_HOOK` with an empty body: the backend takes point
-  sizes from nothing else).
+  @0x821C56F8) when the maximum passed is the default. No store. **Device only.** Its hook only
+  counts today (`COUNT_HOOK`), so skipping it needs a `RECORD_HOOK` with an empty body.
 - **Slot 51** `_setSceneBlending` (`0x821C52B0`): never reads `this`. ONE/ZERO sets state 60 to 0
   and goes to the blend operation; otherwise state 60 = 1, state 64 = 0, states 72 and 76 the
   mapped factors (`0x82201750`, a jump table) and states 80 and 92 the mapped operation
@@ -380,7 +379,7 @@ Device offsets are from the device pointer in the global `0x8355A2E4` (`guest_ab
   objects the guest no longer builds: guest heap allocations, not read by game logic.
 
 Conclusion: in the native mode all eleven slots can skip the guest implementation, with one
-condition: slot 37 needs a hook. Slots 52, 82, 83, 106 and 124 (separate blending and stencil)
+condition: slot 37's count-only hook becomes a recording hook. Slots 52, 82, 83, 106 and 124 (separate blending and stencil)
 follow the same pattern through `0x821C5480`, but they were not read here. Validation as in step
 a: the 20 replays, session recordings with the cvar off and on (the same render state commands),
 and a measured run.

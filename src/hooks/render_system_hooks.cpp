@@ -368,6 +368,9 @@ RECORD_HOOK(124, 82573870, ({
   }
   s.State(Key<cmd::SetClipPlanes>(), c);
 }))
+// Slot 37 records nothing (it was count-only); a recording hook with an empty body so the guest's
+// render states can be skipped (guest_d3d_skip.h).
+RECORD_HOOK(37, 821C56A0, (void)0)
 RECORD_HOOK(36, 821D2530,
             MemoState(s, 36, 0, Key<cmd::SetPointSprites>(), {R(ctx.r4) & 0xFF},
                       [&] { return cmd::SetPointSprites{(R(ctx.r4) & 0xFF) != 0}; }))
@@ -482,7 +485,6 @@ COUNT_HOOK(25, 82572938)  // getErrorDescription
 COUNT_HOOK(26, 82572A50)  // _useLights
 COUNT_HOOK(32, 821C93A0)  // _setTextureUnitSettings
 COUNT_HOOK(34, 821BF850)  // _disableTextureUnitsFrom
-COUNT_HOOK(37, 821C56A0)  // _setPointParameters
 COUNT_HOOK(38, 824C39D8)  // _setTexture
 COUNT_HOOK(45, 821CA3F0)  // _setTextureUnitFiltering
 COUNT_HOOK(54, 8219B038)  // _setTextureProjectionRelativeTo
