@@ -582,6 +582,39 @@ splits it in two:
 - More buffers instead: a longer frame queue or swap chain trades drops for latency, not more
   frames; and how many images GL keeps in flight is the driver's choice, not OGRE's.
 
+### Backpressure at the guest's swap: synthetic runs (2026-10-10)
+
+`--live_backpressure` (off by default): the guest waits at its swap while the backend has not taken
+the previous frame (up to 50 ms, for a backend that stopped), instead of making frames that are
+dropped (`live/frame_queue.h`). Measured with automatic runs of `measure-fight-town`, three each,
+alternated, cool-down and thermal record as in the method. **These numbers are synthetic, not the
+final word**: the script's "fight" has no real fight and its walk does not reach the slow part of
+the town square, so they compare off against on in the same conditions and are not frame rates of
+the game. The hand run on the reference route decides.
+
+No frame cap, vsync off (means of three runs):
+
+| Step | Presented fps off -> on | Presented 1 % low | Dropped | Swap-to-presented latency | Game process CPU |
+|---|---|---|---|---|---|
+| Dungeon, still | 196.7 -> 189.1 | 132.8 -> 124.7 | 66 -> 0 | 13.3 -> 13.0 ms | 2.60 -> 2.56 cores |
+| Dungeon, "fight" | 175.5 -> 178.3 | 116.5 -> 121.1 | 544 -> 0 | 16.7 -> 13.9 ms | 2.55 -> 2.52 cores |
+| Town square | 168.1 -> 166.7 | 114.3 -> 110.2 | 151 -> 0 | 15.2 -> 12.8 ms | 2.48 -> 2.47 cores |
+
+The guest waited 0.1-1.4 ms per frame; the 50 ms cap was reached only at the start. The package
+stayed at 82 C either way: under the thermal limit, the CPU time the guest no longer spends goes
+to the clock, not to a lower temperature.
+
+Vsync at 60 Hz: the guest already makes 60 frames a second without backpressure (the SDK's
+`--vsync` paces its swap: "fps cap left to --vsync=true"), with 0-6 frames dropped per step, so
+there is nothing to save: presented 59.9 and 0.8 cores either way, the package 1-2 C lower with
+backpressure (noise). The swap-to-presented latency with vsync is 42-49 ms (about three refreshes)
+with or without backpressure (1-2 ms lower with it): worth its own look.
+
+The game's pace does not depend on how many frames it makes: walking 5 s from the town spot where
+`ASCEND` lands moved the camera 4.73 units without backpressure and 4.71 with it (two runs each,
+captures' view matrices), with about 100 frames fewer with it. Backpressure adds no frame of
+latency: the swap-to-presented latency is lower with it.
+
 ### Present wait and drops on other machines: what to measure
 
 On this laptop the present's wait is the compositor's and the PRIME copy's pacing, so it says
