@@ -23,14 +23,20 @@ void Check(bool ok, const char* what, uint32_t value = 0) {
 }  // namespace
 
 int main() {
-  // Exactly the slots of step a; every other slot of the table (0-126) runs the guest's code.
+  // Exactly the slots of steps a and b; every other slot of the table (0-126) runs the guest's code.
   for (uint32_t slot = 0; slot < 127; ++slot) {
-    bool want = slot == 44 || slot == 46 || slot == 47 || slot == 49;
+    bool want = slot == 44 || slot == 46 || slot == 47 || slot == 49 ||  // step a
+                slot == 36 || slot == 37 || slot == 51 || slot == 53 || (slot >= 64 && slot <= 68) ||
+                slot == 81 || slot == 84 ||  // step b
+                slot == 50;                  // the texture matrix: computed, stored nowhere
     Check(SkippableSlot(slot) == want, "skippable slot", slot);
   }
   // The dispatcher and the member writer stay, by the evidence.
   Check(!SkippableSlot(45), "45 records through 44");
   Check(!SkippableSlot(43), "43 writes members");
+  Check(!SkippableSlot(41) && !SkippableSlot(42), "41 and 42 write members only");
+  // Render state writers not read for step b, and the culling mode the guest reads back (slot 62).
+  for (uint32_t slot : {52u, 61u, 82u, 83u, 106u, 124u}) Check(!SkippableSlot(slot), "kept render state slot", slot);
   // Only the native mode with the cvar on: Xenos and parallel never skip.
   Check(SkipGuestD3D(true, true), "native, on");
   Check(!SkipGuestD3D(true, false), "native, off");

@@ -13,16 +13,33 @@
 
 namespace torchlight::hooks {
 
-// RenderSystem slots whose guest implementation only programs the device ("Step a: evidence"):
-// 44 _setTextureUnitFiltering (one filter), 46 _setTextureLayerAnisotropy,
+// RenderSystem slots whose guest implementation only programs the device. Step a (sampler state,
+// "Step a: evidence"): 44 _setTextureUnitFiltering (one filter), 46 _setTextureLayerAnisotropy,
 // 47 _setTextureAddressingMode, 49 _setTextureMipmapBias. Not 45 (its three calls to 44 are what
-// our slot 44 hook records) nor 43 (it writes render system members).
+// our slot 44 hook records) nor 43 (it writes render system members). Step b (render states,
+// "Step b: class A render states, evidence"): 36 _setPointSpritesEnabled, 37 _setPointParameters,
+// 51 _setSceneBlending, 53 _setAlphaRejectSettings, 64-67 depth check, depth write, depth function
+// and colour write, 68 _setDepthBias, 81 _setPolygonMode, 84 setVertexDeclaration. And 50
+// _setTextureMatrix, which computes a matrix and stores it nowhere ("Texture stage slots:
+// evidence").
 constexpr bool SkippableSlot(uint32_t slot) {
   switch (slot) {
     case 44:
     case 46:
     case 47:
     case 49:
+    case 36:
+    case 37:
+    case 51:
+    case 53:
+    case 64:
+    case 65:
+    case 66:
+    case 67:
+    case 68:
+    case 81:
+    case 84:
+    case 50:
       return true;
     default:
       return false;

@@ -318,3 +318,137 @@ In the fight, both runs with the skip beat both without on the frame rate (113.5
 
 The first step is a (sampler and texture stage states of the device), on its own branch, with the
 whole evidence of this plan written before any code.
+
+## Step b: class A render states, evidence (2026-10-10)
+
+Recompiled code read for slots 36, 37, 51, 53, 64-68, 81 and 84, and every helper they call.
+Device offsets are from the device pointer in the global `0x8355A2E4` (`guest_abi`
+`xbox_d3d::kActiveDeviceGlobal`).
+
+- **The render state setter** `0x821C5480`, OGRE's `__SetRenderState` (r3 = state, r4 = value).
+  It reads the current value through the device's getter table (`device + 548 + state`, `bctrl`
+  @0x821C54A8) and, when it differs, writes it through the setter table (`device + 64 + state`,
+  @0x821C54C8). It always returns 0 (@0x821C54CC), so the exception paths after every call in the
+  slots below (`0x821BE290` message, `0x8287D560` `OGRE_EXCEPT`) are never taken. No store to the
+  render system or to any global.
+- **Other readers of that device state.** The getter table at `device + 548` is called only by
+  `0x821C5480`. The only other indirect call through a `+548` table entry in the image,
+  `0x827DD920`, is through a COM-style object's own vtable (`*(r3) + 548`), not the device. The
+  other callers of `0x821C5480` are slots 52, 61, 82, 83, 106 and 124 (separate blending, culling
+  and stencil), which keep running; skipping some writers of a state only changes whether a later
+  writer finds the device value equal. Nothing saves and restores render states the way the
+  `_endFrame` wrapper `0x821B1000` does for sampler 0 (it does not call `0x821C5480`). Whatever
+  else reads the device's render state builds GPU packets, which the `null` plugin drops.
+- **Slot 36** `_setPointSpritesEnabled` (`0x821D2530`): state 184, 1 or 0 (tail calls
+  @0x821D2544, @0x821D254C). **Device only.**
+- **Slot 37** `_setPointParameters` (`0x821C56A0`): states 176, 180 and 188 (@0x821C56D0,
+  @0x821C56E0, @0x821C570C). It reads the caps' maximum point size (`this + 764`, `+128`,
+  @0x821C56F8) when the maximum passed is the default. No store. **Device only.** Its hook only
+  counts today (`COUNT_HOOK`), so skipping it needs a `RECORD_HOOK` with an empty body.
+- **Slot 51** `_setSceneBlending` (`0x821C52B0`): never reads `this`. ONE/ZERO sets state 60 to 0
+  and goes to the blend operation; otherwise state 60 = 1, state 64 = 0, states 72 and 76 the
+  mapped factors (`0x82201750`, a jump table) and states 80 and 92 the mapped operation
+  (`0x821BF8B0`). Both mapping helpers are pure: no call, no store. **Device only.**
+- **Slot 53** `_setAlphaRejectSettings` (`0x821C54D8`): states 96, 104 (the compare function
+  mapped by the pure `0x821C2FA0`) and 100; with the alpha-to-coverage capability (`this + 764`,
+  `+36` bit, @0x821C55E8) and the vendor at caps `+20`, state 176 with a vendor FOURCC
+  (@0x821C5628, @0x821C5660). One store, the byte global `0x83582ADC` (@0x821C5694): OGRE 1.7's
+  `static bool lasta2c`. Its only access in the image is that store (no load with that base and
+  offset): a Runic difference, the comparison that read it was dropped. Skipping leaves a value
+  nobody reads. **Device only.**
+- **Slot 64** `_setDepthBufferCheckEnabled` (`0x821C2F38`): state 40. **Device only.**
+- **Slot 65** `_setDepthBufferWriteEnabled` (`0x821C4E88`): state 48. **Device only.**
+- **Slot 66** `_setDepthBufferFunction` (`0x821C3010`): state 44, the function remapped in place
+  first (@0x821C301C..@0x821C305C; OGRE 1.7 maps it directly, so a Runic difference whose meaning
+  the skip does not need) and then by `0x821C2FA0`.
+  **Device only.**
+- **Slot 67** `_setColourBufferWriteEnabled` (`0x821C3520`): state 212, the four channel bits.
+  **Device only.**
+- **Slot 68** `_setDepthBias` (`0x821D14B8`): states 208 and 204 when the caps allow
+  (`this + 2184`, `+16`, `+72` bits 5 and 6). No store. **Device only.** The D3D9 `_render` calls
+  it through the vtable (`vt + 0x110`); our slot 68 hook records the bias before the skip.
+- **Slot 81** `_setPolygonMode` (`0x821C5228`): state 52, the mode mapped in place. **Device only.**
+- **Slot 84** `setVertexDeclaration` (`0x821CE5A0`): two calls. `0x821CE5E0`
+  (`D3D9VertexDeclaration::getD3DVertexDeclaration`) looks the device up in the declaration's map
+  (`declaration + 24`, @0x821CE60C) and, when missing, builds the Xbox declaration (allocation
+  `0x821CD7F8`, creation `0x8276DBC0`) and files it in that map (@0x821CE914). `0x821CE588` stores
+  it in the device (`device + 12120`, the dirty mask at `device + 16`). `0x821CE5E0` has no other
+  caller, so the map is only filled here; skipped, it stays empty, and the declaration's release and
+  destruction walk an empty map. The other callers of `0x821CE588` (`0x821B1000`'s full-screen pass
+  and two more) keep setting their own declarations. **Device only**, plus the Xbox declaration
+  objects the guest no longer builds: guest heap allocations, not read by game logic.
+
+Conclusion: in the native mode all eleven slots can skip the guest implementation, with one
+condition: slot 37's count-only hook becomes a recording hook. Slots 52, 82, 83, 106 and 124 (separate blending and stencil)
+follow the same pattern through `0x821C5480`, but they were not read here. Validation as in step
+a: the 20 replays, session recordings with the cvar off and on (the same render state commands),
+and a measured run.
+
+## Texture stage slots: evidence, first part (2026-10-10)
+
+- **Slot 41** `_setTextureCoordSet` (`0x821CAD88`, 7 instructions): stores the coordinate set in
+  `this + 892 + 24 * unit` (@0x821CADA8; with the byte `this + 736` set, the unit's own index
+  instead). **Members only, no device call**: nothing to skip, and the members are read by slot
+  50 and `_setTexture`. Keep.
+- **Slot 42** `_setTextureCoordCalculation` (`0x821CB0F0`, 7 instructions): stores the
+  calculation and the frustum in `this + 896 + 24 * unit` and `+900` (@0x821CB100, @0x821CB104).
+  **Members only, no device call.** Keep.
+- **Slot 50** `_setTextureMatrix` (`0x821CA930`): copies the matrix, then by the unit's calculation
+  (`this + 896 + 24 * unit`: 1, 3, 5, 0) multiplies it with the view matrix's inverse
+  (`0x821BE948` on `this + 2196`), constant matrices and, for projective texturing (5), the unit's
+  frustum's matrices (virtual getters at its vtable `+332`, `+336`, `+340`). It transposes the
+  result (`0x824639B8`) and compares it with the identity (vector compares @0x821CACC0..@0x821CACDC).
+  After that it computes an address and returns: **no store outside its stack frame and no device
+  call** (a Runic difference: OGRE 1.7's D3D9 sets the texture transform and the stage's
+  `TEXTURETRANSFORMFLAGS`, and the Xbox D3D has no fixed-function texture transform). The
+  matrix products (`0x821C2CC8`, `0x821BE948`) write only into its stack frame. The frustum getters
+  update the frustum's own lazily computed matrices, which any later reader recomputes the same
+  way. **Nothing to keep: skippable**, about 305 calls per frame, each with up to six matrix
+  products. Our slot 50 hook records the matrix from its arguments before the skip.
+- **Slot 39** `_setTexture` (`0x821C8E40`), read for the next step. It holds a reference to the
+  texture (the shared pointer's count, @0x821C8EA4, released @0x821C8FB4), and when enabling a unit
+  it calls the texture's vtable `+84` with 1 (@0x821C8ED4: the load on first use, which the game
+  observes), gets the Xbox texture (`0x821C9058`) and, when it differs from the stage's
+  (`this + 904 + 24 * unit`), calls the device's `SetTexture` (`0x821CEB60`) and stores it
+  (@0x821C8F28), with the texture type at `this + 888 + 24 * unit` (@0x821C8F8C). Disabling clears
+  those members and `+892`, `+896` (@0x821C9034..@0x821C904C). **Members and the load stay**; only
+  the device call could go.
+- **The device's `SetTexture`** (`0x821CEB60`): merges the texture's fetch constant into the
+  sampler's (`device + 1152 + 24 * sampler`, keeping the sampler state that step a no longer
+  writes), sets the dirty bits (`device + 24`), stores the texture in `device + 4 * (3198 +
+  sampler)` and stamps the replaced texture's fence (`+8`) or queues a pending fence entry
+  (`0x82775DF8`): the same pattern as `SetStreamSource` and `SetIndices`, whose skip is validated.
+  Its other callers are `0x821B76C0` (the `_endFrame` wrapper's full-screen pass, from
+  `0x821B8738`), the unbind-all `0x821CECF0` (`_beginFrame`), and the runtime's `0x827746B0` and
+  `0x8277FB78` (from `0x82780620`, `0x82780550`, `0x827802E8`), which were not read. **Candidate**
+  for a device call skip like the draws and bindings, after those three are read; not done.
+- Slots 40, 33 and 34 (`_setVertexTexture`, `_disableTextureUnit`, `_disableTextureUnitsFrom`):
+  the same members and the same device call; still to be read.
+
+## Step b and slot 50: validated and measured (2026-10-10)
+
+Same binary (develop 8989c15 plus the branch; SDK 1-30, 20, 31), cvar off and on, automatic runs
+with the input scripts on the fixed-floor saved game:
+
+- The 20 replays: byte for byte as before.
+- Session recordings (`--live_record`) of the stretches without randomness: the main menu, the
+  load of the fixed-floor saved game and four seconds standing after it (two runs off, one on).
+  The commands of the skipped slots are identical: the same distinct `SetBlend`,
+  `SetAlphaReject`, `SetDepthCheck`, `SetDepthWrite`, `SetDepthFunc`, `SetDepthBias`,
+  `SetColourWrite`, `SetPolygonMode` and `SetPointSprites`, at the same count per guest frame. The
+  other differences show between the two runs off too (resource ids), except the render target
+  names, which carry the address of the guest's texture: with slot 84 skipped the guest no longer
+  allocates the Xbox declarations, so later allocations land elsewhere (same sizes, same counts).
+- Measured with `measure-fight-town`, three runs each, alternated, power profile performance and
+  the 55 C cool-down (package at 82 C during every step); mean of the runs, 1 % low as the 99th
+  percentile frame time:
+
+| Step | Game fps off -> on | Game 1 % low | Presented fps off -> on | Presented 1 % low |
+|---|---|---|---|---|
+| Dungeon, still | 208.7 -> 225.8 (+8 %) | 163.6 -> 167.5 | 196.3 -> 203.3 (+4 %) | 133.9 -> 129.5 |
+| Dungeon, fighting | 190.1 -> 211.1 (+11 %) | 140.1 -> 154.2 | 177.4 -> 178.1 (0 %) | 122.6 -> 117.8 |
+| Town square, walking | 170.2 -> 184.3 (+8 %) | 123.9 -> 133.1 | 167.0 -> 175.9 (+5 %) | 111.6 -> 121.0 |
+
+The game thread gains 8-11 % everywhere. Where the backend is the limit (the fight, where the game
+now makes more frames than it presents: 1319 dropped against 508 per step) the presented rate does
+not move; in the town square, where the game was the limit, it gains 5 % and its 1 % low 8 %.
