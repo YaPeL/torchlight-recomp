@@ -39,8 +39,8 @@ in number order; a branch adds its own line at its number's place.
 | 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
 | 28 | `rexglue-quiet-missing-files.patch` | `develop` | In the series |
 | 29 | `rexglue-case-variants.patch` | `develop` | In the series |
-| 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `sdk/fatal-errors` | Pending integration |
-| 31 | `rexglue-guest-fatal-hook.patch` | `sdk/fatal-errors` | Pending integration |
+| 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `sdk/fault-chain` | Pending integration |
+| 31 | `rexglue-guest-fatal-hook.patch` | `sdk/fatal-errors` | Pending a check in the game |
 | 32 | | | Next free number |
 
 ## The patches
@@ -495,5 +495,22 @@ in number order; a branch adds its own line at its number's place.
     first test fails and the second break kills `unit_tests` by SIGTRAP. The C++ throw path reads
     the thrown object through the kernel's memory, which the unit tests lack, so it is checked by
     reading only. Upstream draft D31.
+
+30. `rexglue-posix-chain-unclaimed-faults.patch`: on Linux and macOS, a fault no SDK handler
+    claimed made `ExceptionHandlerCallback` return, so the instruction ran again and faulted
+    again, forever: a crash became a hang at 100 % of a core. For a guest address outside the
+    physical heaps, `Memory::AccessViolationCallback` logged `Unhandled guest access violation` on
+    every retry (a mods run wrote 6010 such lines in 89 s, `docs/crash-handling.md` section 1).
+    Now an unclaimed fault goes to the handler installed before the SDK's (`sa_sigaction` or
+    `sa_handler`), which is where our crash reporter goes (CR.3). With none, or with `SIG_IGN`,
+    the signal's default action is restored, so the instruction faults once more and the process
+    ends with that signal. The SDK's handler stays installed (restoring the old `sigaction`
+    instead would leave the next MMIO access unhandled). Windows needs nothing: the vectored
+    handler already returns `EXCEPTION_CONTINUE_SEARCH`. Tests in `unclaimed_fault_test.cpp`,
+    each case in a new process (`tests/unit/child_process.h` runs a hidden case of `unit_tests`,
+    so no handler an earlier test installed is in it; no core file): an unclaimed read of
+    address 16 ends by SIGSEGV; a previous handler gets the fault after the SDK's handlers saw it
+    once; a handler that fixes the page and claims the fault still lets the write succeed.
+    Without the fix the first two hang until a 3 s alarm. POSIX only. Upstream draft D25.
 
 The observation and diagnostic patches there were before remain in the git history.

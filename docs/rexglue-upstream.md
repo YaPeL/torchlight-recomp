@@ -1302,8 +1302,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 27 | `rexglue-guest-file-flush.patch` (D27) | `sdk/guest-file-flush` | `bd833a2` |
 | 28 | `rexglue-quiet-missing-files.patch` (D28) | `sdk/series-review` | `bd833a2` |
 | 29 | `rexglue-case-variants.patch` (D30) | `sdk/case-variants` | `bd833a2` |
-| 30 | `rexglue-posix-chain-unclaimed-faults.patch` (D25) | `sdk/fatal-errors` | `bd833a2` |
-| 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2` |
+| 30 | `rexglue-posix-chain-unclaimed-faults.patch` (D25) | `sdk/fault-chain` | `bd833a2` |
+| 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2`, after 30 |
 | 32 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.

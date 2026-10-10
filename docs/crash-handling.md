@@ -203,7 +203,9 @@ common interface), following CLAUDE.md's platform rule:
 1. **D25, unclaimed faults chain to the previous handler** (patch 30), without uninstalling the SDK's (the
    draft was revised so). This is what makes section 2.A possible on POSIX. Windows needs nothing:
    `EXCEPTION_CONTINUE_SEARCH` already reaches our filter.
-2. **A guest fatal-error hook** (patch 31, draft D31; `DbgBreakPoint` included).
+2. **A guest fatal-error hook** (patch 31, draft D31, `DbgBreakPoint` included; on
+   `sdk/fatal-errors`, it waits for a check in the game that normal play hits none of the paths it
+   makes fatal).
    - `RtlRaiseException` (every code but SetThreadName), the C++ throw path and `KeBugCheckEx` call
      a handler the app registers, with the exception record and the thread's `PPCContext`.
    - Without a registered handler: log the record and `abort()`, never return to the guest.
@@ -248,8 +250,8 @@ D17's local unwind, once implemented, removes the only stub the game hits on a n
    ends the disk problem first. **Done** (`fix/log-budget`): the folder pruning and the rotation
    cvars, on both bases, with SDK patch 26 on `bd833a2`; the duplicate filter is left for patch 3's
    follow-up.
-2. **CR.2:** SDK patches 1 and 2 (with D25's test). **Written** (2026-10-10, `sdk/fatal-errors`):
-   SDK patches 30 and 31, with their tests.
+2. **CR.2:** SDK patches 1 and 2 (with D25's test). Patch 1 is SDK patch 30 (2026-10-10). Patch 2
+   is SDK patch 31, written, and held until the game check of patch 2 above.
 3. **CR.3:** the POSIX handler, the reporter and the report (Linux), with the child-process tests.
 4. **CR.4:** Windows: the filter, `StackWalk64` and the PDB identity.
 5. **CR.5:** the helper mode and the next-start notice.
