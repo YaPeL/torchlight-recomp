@@ -23,8 +23,9 @@ Usage:
                                  [--head FILE] [--head-mb MB] -- COMMAND [ARGS ...]
 
   --watch    a file, or a folder whose files are each watched (recursively; only files written
-             since the start count); repeatable. --output is always watched. Checked every 0.1 s:
-             a log written at disk speed may pass a limit by what is written in that time.
+             since the start count, and a file already there only by what it grows); repeatable.
+             --output is always watched. Checked every 0.1 s: a log written at disk speed may pass
+             a limit by what is written in that time.
   --output   where the command's stdout and stderr go (default: run_capped.out in the current
              folder).
   --max-log-mb  the bytes written to all watched files together during the run. Rotation is
@@ -41,7 +42,7 @@ Usage:
              rotation of its log (default: the --output path plus ".head"). A part written and
              rotated away between two checks (0.1 s) is counted but not read.
 
-This replaces the agents' local run scripts (docs/macos-port.md, MAC.6).
+This replaces the agents' local run scripts.
 """
 
 import argparse
@@ -61,11 +62,16 @@ EXIT_NOT_KILLED = 126
 EXIT_INTERRUPTED = 130
 
 POLL_SECONDS = 0.1
+# What one check reads of one log for the patterns and the head copy. A log written at disk speed
+# is not read in full in each check: the cap is checked on the files' sizes before any reading, and
+# the reading catches up later (or the cap stops the run first).
+READ_BYTES_PER_CHECK = 4 * 2**20
 GRACE_SECONDS = 5.0
 
 
 def process_table():
-    """{pid: (parent pid, is a zombie)} of every process: /proc on Linux, ps elsewhere."""
+    """{pid: (parent pid, is a zombie, process group)} of every process: /proc on Linux, ps
+    elsewhere."""
     table = {}
     proc = pathlib.Path("/proc")
     if (proc / "self" / "stat").exists():
@@ -76,15 +82,15 @@ def process_table():
                 stat = (entry / "stat").read_text()
             except OSError:
                 continue
-            fields = stat[stat.rindex(")") + 2:].split()
-            table[int(entry.name)] = (int(fields[1]), fields[0] == "Z")
+            fields = stat[stat.rindex(")") + 2:].split()  # state, ppid, pgrp, ...
+            table[int(entry.name)] = (int(fields[1]), fields[0] == "Z", int(fields[2]))
         return table
-    out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,stat="], capture_output=True,
+    out = subprocess.run(["ps", "-A", "-o", "pid=,ppid=,pgid=,stat="], capture_output=True,
                          text=True).stdout
     for line in out.splitlines():
         fields = line.split()
-        if len(fields) >= 3:
-            table[int(fields[0])] = (int(fields[1]), fields[2].startswith("Z"))
+        if len(fields) >= 4:
+            table[int(fields[0])] = (int(fields[1]), fields[3].startswith("Z"), int(fields[2]))
     return table
 
 
@@ -101,7 +107,7 @@ class PosixGroup:
     def follow(self):
         table = process_table()
         children = {}
-        for pid, (ppid, _) in table.items():
+        for pid, (ppid, _, _) in table.items():
             children.setdefault(ppid, []).append(pid)
         stack = [self.process.pid, *self.known]
         while stack:
@@ -115,6 +121,12 @@ class PosixGroup:
         return [pid for pid in self.known if pid in table and not table[pid][1]]
 
     def group_alive(self):
+        # A member that is only a zombie is gone: in a container whose PID 1 does not reap orphans,
+        # a killed grandchild stays a zombie, and killpg(group, 0) still finds it.
+        table = process_table()
+        if table:
+            return any(pgrp == self.group and not zombie
+                       for _, zombie, pgrp in table.values())
         try:
             os.killpg(self.group, 0)
             return True
@@ -260,11 +272,40 @@ class WindowsJob:
         return f"job object ({self.active_processes()} process(es) active)"
 
 
+def open_shared(path):
+    """Opens a file to read without keeping its writer from renaming or deleting it. On Windows,
+    Python's open() leaves out FILE_SHARE_DELETE, and a rotating log's rename then fails with a
+    sharing violation while the file is open here (spdlog retries once, then throws)."""
+    if os.name != "nt":
+        return open(path, "rb")
+    import ctypes
+    import msvcrt
+    from ctypes import wintypes
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.CreateFileW.restype = wintypes.HANDLE
+    kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
+                                     wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
+    GENERIC_READ = 0x80000000
+    FILE_SHARE_ALL = 0x1 | 0x2 | 0x4  # read, write, delete
+    OPEN_EXISTING = 3
+    handle = kernel32.CreateFileW(str(path), GENERIC_READ, FILE_SHARE_ALL, None, OPEN_EXISTING, 0, None)
+    if handle in (None, wintypes.HANDLE(-1).value):
+        raise OSError(ctypes.get_last_error(), "CreateFileW", str(path))
+    try:
+        fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | os.O_BINARY)
+    except OSError:
+        kernel32.CloseHandle(wintypes.HANDLE(handle))
+        raise
+    return os.fdopen(fd, "rb")
+
+
 class LogWatcher:
     """The watched files written since the run started, read as they grow.
 
     A file is known by its identity (device and inode), not its name, so a log renamed by its
     rotation keeps its count and read position, and the bytes of a part deleted later still count.
+    A file already there at the start counts and is read from its size then: what it held before
+    the run is not this run's.
     """
 
     def __init__(self, paths, output_path, since, head_path, head_bytes):
@@ -274,6 +315,12 @@ class LogWatcher:
         self.files = {}  # (device, inode) -> [read offset, size seen, unfinished last line]
         self.written = 0
         self.head_path, self.head_left, self.head, self.head_source = head_path, head_bytes, None, None
+        for f in self.candidates():
+            try:
+                stat = f.stat()
+            except OSError:
+                continue
+            self.files[(stat.st_dev, stat.st_ino)] = [stat.st_size, stat.st_size, b""]
 
     def candidates(self):
         for path in self.paths:
@@ -283,8 +330,14 @@ class LogWatcher:
                 yield from (f for f in path.rglob("*") if f.is_file())
 
     def poll(self):
-        """The lines finished since the last poll, as (path, line) pairs."""
-        lines = []
+        """measure() then read(): the lines finished since the last poll, as (path, line) pairs."""
+        self.measure()
+        return self.read()
+
+    def measure(self):
+        """Counts what the watched files grew by (`written`) from their sizes alone, reading nothing,
+        and notes what read() has to read."""
+        self.pending = []
         for f in self.candidates():
             try:
                 stat = f.stat()
@@ -299,12 +352,17 @@ class LogWatcher:
                 entry[:] = [0, 0, b""]
             self.written += stat.st_size - entry[1]
             entry[1] = stat.st_size
-            if stat.st_size <= entry[0]:
-                continue
+            if stat.st_size > entry[0]:
+                self.pending.append((f, entry))
+
+    def read(self):
+        """The lines finished in what measure() found, up to READ_BYTES_PER_CHECK per file."""
+        lines = []
+        for f, entry in getattr(self, "pending", []):
             try:
-                with open(f, "rb") as handle:
+                with open_shared(f) as handle:
                     handle.seek(entry[0])
-                    data = handle.read(stat.st_size - entry[0])
+                    data = handle.read(min(entry[1] - entry[0], READ_BYTES_PER_CHECK))
             except OSError:
                 continue
             entry[0] += len(data)
@@ -368,7 +426,12 @@ def run(command, timeout, max_log_bytes, watched, output_path, stop_on=None, sto
             if now - start > timeout:
                 reason, code = f"time limit ({timeout:g} s)", EXIT_TIMEOUT
                 break
-            for path, line in logs.poll():
+            logs.measure()
+            if logs.written > max_log_bytes:
+                reason = f"log size limit: {logs.written / 2**20:.1f} MB written to the watched files"
+                code = EXIT_LOG_LIMIT
+                break
+            for path, line in logs.read():
                 if stop_on and stop_seen is None and stop_on.search(line):
                     stop_seen = now
                     print(f"run_capped: stop pattern seen in {path}; stopping in {stop_delay:g} s",
@@ -381,10 +444,6 @@ def run(command, timeout, max_log_bytes, watched, output_path, stop_on=None, sto
                         reason = f"repeated more than {max_repeats} times: {fault}"
                         code = EXIT_REPEATED_FAULT
             if code is not None:
-                break
-            if logs.written > max_log_bytes:
-                reason = f"log size limit: {logs.written / 2**20:.1f} MB written to the watched files"
-                code = EXIT_LOG_LIMIT
                 break
             if stop_seen is not None and now - stop_seen >= stop_delay:
                 reason, code = "stop pattern seen", EXIT_STOP_PATTERN
