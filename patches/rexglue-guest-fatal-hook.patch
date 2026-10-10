@@ -1,0 +1,374 @@
+diff --git a/include/rex/system/guest_fatal.h b/include/rex/system/guest_fatal.h
+new file mode 100644
+index 0000000..cb0a6a0
+--- /dev/null
++++ b/include/rex/system/guest_fatal.h
+@@ -0,0 +1,46 @@
++/**
++ * @file        rex/system/guest_fatal.h
++ * @brief       Fatal guest errors: a hook the app registers, and an end that never returns
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#pragma once
++
++#include <cstdint>
++
++struct PPCContext;
++
++namespace rex::system {
++
++// What the guest did that it cannot come back from. On the console each of these ends the title
++// (nothing dispatches a raised exception to a handler here), so returning into the guest would
++// run code past a call that does not return.
++enum class GuestFatalKind {
++  kException,     // RtlRaiseException with a code other than SetThreadName's
++  kCppException,  // RtlRaiseException with the C++ throw code (0xE06D7363)
++  kBugCheck,      // KeBugCheck, KeBugCheckEx
++  kDebugBreak,    // DbgBreakPoint
++};
++
++struct GuestFatalError {
++  GuestFatalKind kind = GuestFatalKind::kException;
++  uint32_t code = 0;  // the exception or bug check code; 0x80000003 for a break
++  uint32_t parameter_count = 0;
++  uint32_t parameters[15] = {};  // the record's information, or the bug check's four
++  uint32_t record_address = 0;   // the guest X_EXCEPTION_RECORD, 0 if none
++  uint32_t thread_id = 0;        // the guest thread, 0 if not on one
++  const PPCContext* context = nullptr;  // that thread's context, null if not on one
++};
++
++// Called on the thread that raised the error. It should not return (it may end the process, or
++// throw to a test); if it does, the process aborts anyway. nullptr unregisters.
++using GuestFatalHandler = void (*)(const GuestFatalError& error);
++void SetGuestFatalHandler(GuestFatalHandler handler);
++
++// Logs the error, calls the registered handler, and aborts: with a debugger attached it breaks
++// into it first.
++[[noreturn]] void RaiseGuestFatal(const GuestFatalError& error);
++
++}  // namespace rex::system
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_debug.cpp b/src/kernel/xboxkrnl/xboxkrnl_debug.cpp
+index 670c446..d37c69a 100644
+--- a/src/kernel/xboxkrnl/xboxkrnl_debug.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_debug.cpp
+@@ -12,12 +12,16 @@
+ // Disable warnings about unused parameters for kernel functions
+ #pragma GCC diagnostic ignored "-Wunused-parameter"
+ 
++#include <algorithm>
++
+ #include <rex/dbg.h>
+ #include <rex/kernel/xboxkrnl/private.h>
+ #include <rex/logging.h>
+ #include <rex/hook.h>
+ #include <rex/types.h>
++#include <rex/system/guest_fatal.h>
+ #include <rex/system/kernel_state.h>
++#include <rex/system/thread_state.h>
+ #include <rex/system/xexception.h>
+ #include <rex/system/xthread.h>
+ #include <rex/system/xtypes.h>
+@@ -25,8 +29,33 @@
+ namespace rex::kernel::xboxkrnl {
+ using namespace rex::system;
+ 
++// The fatal error as seen from the calling guest thread.
++GuestFatalError FatalOnThisThread(GuestFatalKind kind, uint32_t code) {
++  GuestFatalError error;
++  error.kind = kind;
++  error.code = code;
++  if (auto* state = rex::runtime::ThreadState::Get()) {
++    error.thread_id = state->thread_id();
++    error.context = state->context();
++  }
++  return error;
++}
++
++[[noreturn]] void RaiseFatalRecord(GuestFatalKind kind, ppc_ptr_t<X_EXCEPTION_RECORD> record) {
++  GuestFatalError error = FatalOnThisThread(kind, record->code);
++  error.record_address = record.guest_address();
++  error.parameter_count = std::min<uint32_t>(record->number_parameters, 15);
++  for (uint32_t i = 0; i < error.parameter_count; ++i) {
++    error.parameters[i] = record->exception_information[i];
++  }
++  RaiseGuestFatal(error);
++}
++
++// A breakpoint with no debugger ends a title on the console. Titles reach it on paths they do not
++// come back from: Torchlight's OGRE raises its errors (OGRE_EXCEPT) through it, then runs on with
++// the state the error was about.
+ void DbgBreakPoint_entry() {
+-  rex::debug::Break();
++  RaiseGuestFatal(FatalOnThisThread(GuestFatalKind::kDebugBreak, 0x80000003));
+ }
+ 
+ // https://msdn.microsoft.com/en-us/library/xcb2z8hs.aspx
+@@ -123,7 +152,8 @@ void HandleCppException(ppc_ptr_t<X_EXCEPTION_RECORD> record) {
+   auto catchable_types = REX_KERNEL_MEMORY()->TranslateVirtual<x_s__CatchableTypeArray*>(
+       throw_info->catchable_type_array_ptr);
+ 
+-  rex::debug::Break();
++  // Nothing dispatches the throw to a catch, so it ends the title.
++  RaiseFatalRecord(GuestFatalKind::kCppException, record);
+ }
+ 
+ void RtlRaiseException_entry(ppc_ptr_t<X_EXCEPTION_RECORD> record) {
+@@ -139,16 +169,21 @@ void RtlRaiseException_entry(ppc_ptr_t<X_EXCEPTION_RECORD> record) {
+   }
+ 
+   // TODO(benvanik): unwinding.
+-  // This is going to suck.
+-  rex::debug::Break();
++  // This is going to suck. Until then no guest handler sees the exception, so it ends the title.
++  RaiseFatalRecord(GuestFatalKind::kException, record);
+ }
+ 
+ void KeBugCheckEx_entry(u32 code, u32 param1, u32 param2, u32 param3, u32 param4) {
+   REXKRNL_DEBUG("*** STOP: 0x{:08X} (0x{:08X}, 0x{:08X}, 0x{:08X}, 0x{:08X})", code, param1, param2,
+                 param3, param4);
+   fflush(stdout);
+-  rex::debug::Break();
+-  assert_always();
++  GuestFatalError error = FatalOnThisThread(GuestFatalKind::kBugCheck, code);
++  error.parameter_count = 4;
++  error.parameters[0] = param1;
++  error.parameters[1] = param2;
++  error.parameters[2] = param3;
++  error.parameters[3] = param4;
++  RaiseGuestFatal(error);
+ }
+ 
+ void KeBugCheck_entry(u32 code) {
+diff --git a/src/system/CMakeLists.txt b/src/system/CMakeLists.txt
+index 05979a3..1b70573 100644
+--- a/src/system/CMakeLists.txt
++++ b/src/system/CMakeLists.txt
+@@ -44,6 +44,7 @@ set(REXSYSTEM_SOURCES
+     function_dispatcher.cpp
+     gpu_plugin_loader.cpp
+     thread.cpp
++    guest_fatal.cpp
+     thread_state.cpp
+     xex_module.cpp
+ )
+diff --git a/src/system/guest_fatal.cpp b/src/system/guest_fatal.cpp
+new file mode 100644
+index 0000000..f7bc96a
+--- /dev/null
++++ b/src/system/guest_fatal.cpp
+@@ -0,0 +1,61 @@
++/**
++ * @file        system/guest_fatal.cpp
++ * @brief       Fatal guest errors: a hook the app registers, and an end that never returns
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <rex/system/guest_fatal.h>
++
++#include <atomic>
++#include <cstdlib>
++
++#include <rex/dbg.h>
++#include <rex/logging.h>
++#include <rex/ppc/context.h>
++
++namespace rex::system {
++
++namespace {
++
++std::atomic<GuestFatalHandler> fatal_handler{nullptr};
++
++const char* KindName(GuestFatalKind kind) {
++  switch (kind) {
++    case GuestFatalKind::kException:
++      return "exception";
++    case GuestFatalKind::kCppException:
++      return "C++ exception";
++    case GuestFatalKind::kBugCheck:
++      return "bug check";
++    case GuestFatalKind::kDebugBreak:
++      return "debug break";
++  }
++  return "unknown";
++}
++
++}  // namespace
++
++void SetGuestFatalHandler(GuestFatalHandler handler) {
++  fatal_handler.store(handler);
++}
++
++void RaiseGuestFatal(const GuestFatalError& error) {
++  const uint32_t lr = error.context ? static_cast<uint32_t>(error.context->lr) : 0;
++  REXSYS_ERROR(
++      "Fatal guest {}: code {:#010x}, {} parameters ({:#x}, {:#x}, {:#x}, {:#x}), record {:#x}, "
++      "thread {:#x}, called from {:#010x}",
++      KindName(error.kind), error.code, error.parameter_count, error.parameters[0],
++      error.parameters[1], error.parameters[2], error.parameters[3], error.record_address,
++      error.thread_id, lr);
++  if (GuestFatalHandler handler = fatal_handler.load()) {
++    handler(error);
++  }
++  if (rex::debug::IsDebuggerAttached()) {
++    rex::debug::Break();
++  }
++  std::abort();
++}
++
++}  // namespace rex::system
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 5ae48b1..8b2624b 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -22,6 +22,7 @@ add_executable(unit_tests
+     system/content_delete_backup_test.cpp
+     system/achievement_manager_test.cpp
+     system/function_dispatcher_test.cpp
++    system/guest_fatal_test.cpp
+     input/input_assignment_test.cpp
+     input/keystroke_repeat_test.cpp
+     codegen/codegen_writer_test.cpp
+diff --git a/tests/unit/system/guest_fatal_test.cpp b/tests/unit/system/guest_fatal_test.cpp
+new file mode 100644
+index 0000000..51b2c3c
+--- /dev/null
++++ b/tests/unit/system/guest_fatal_test.cpp
+@@ -0,0 +1,133 @@
++/**
++ * @file        tests/unit/system/guest_fatal_test.cpp
++ * @brief       Fatal guest errors reach the app's handler and never return into the guest
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <csignal>
++#include <cstdint>
++#include <optional>
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <rex/system/guest_fatal.h>
++#include <rex/system/xexception.h>
++#include <rex/types.h>
++
++#include "child_process.h"
++
++namespace rex::kernel::xboxkrnl {
++void DbgBreakPoint_entry();
++void RtlRaiseException_entry(ppc_ptr_t<rex::system::X_EXCEPTION_RECORD> record);
++void KeBugCheckEx_entry(u32 code, u32 param1, u32 param2, u32 param3, u32 param4);
++}  // namespace rex::kernel::xboxkrnl
++
++using rex::system::GuestFatalError;
++using rex::system::GuestFatalKind;
++using rex::system::SetGuestFatalHandler;
++namespace krnl = rex::kernel::xboxkrnl;
++
++namespace {
++
++// The handler a test registers keeps the error and leaves by throwing: the guest must not
++// continue, and a test cannot end its process.
++struct LeftTheGuest {};
++std::optional<GuestFatalError> received;
++
++void KeepAndLeave(const GuestFatalError& error) {
++  received = error;
++  throw LeftTheGuest{};
++}
++
++// Registers KeepAndLeave for one test, unregisters after it.
++struct HandlerScope {
++  HandlerScope() {
++    received.reset();
++    SetGuestFatalHandler(KeepAndLeave);
++  }
++  ~HandlerScope() { SetGuestFatalHandler(nullptr); }
++};
++
++}  // namespace
++
++TEST_CASE("RtlRaiseException is fatal and reports its record", "[guest_fatal]") {
++  HandlerScope scope;
++  rex::system::X_EXCEPTION_RECORD record = {};
++  record.code = 0xC0000005u;
++  record.number_parameters = 2;
++  record.exception_information[0] = 1;
++  record.exception_information[1] = 0x1234;
++  CHECK_THROWS_AS(krnl::RtlRaiseException_entry(
++                      ppc_ptr_t<rex::system::X_EXCEPTION_RECORD>(&record, 0x70001000)),
++                  LeftTheGuest);
++  REQUIRE(received);
++  CHECK(received->kind == GuestFatalKind::kException);
++  CHECK(received->code == 0xC0000005u);
++  CHECK(received->record_address == 0x70001000);
++  CHECK(received->parameter_count == 2);
++  CHECK(received->parameters[0] == 1);
++  CHECK(received->parameters[1] == 0x1234);
++  CHECK(received->context == nullptr);  // not called on a guest thread
++}
++
++TEST_CASE("SetThreadName through RtlRaiseException is not fatal", "[guest_fatal]") {
++  HandlerScope scope;
++  rex::system::X_EXCEPTION_RECORD record = {};
++  record.code = 0x406D1388u;
++  record.number_parameters = 4;
++  record.exception_information[0] = 0x1000;  // type
++  record.exception_information[1] = 0;       // no name: the handler returns at once
++  krnl::RtlRaiseException_entry(ppc_ptr_t<rex::system::X_EXCEPTION_RECORD>(&record, 0));
++  CHECK_FALSE(received);
++}
++
++TEST_CASE("KeBugCheckEx is fatal and reports its code and parameters", "[guest_fatal]") {
++  HandlerScope scope;
++  CHECK_THROWS_AS(krnl::KeBugCheckEx_entry(0xF4, 1, 2, 3, 4), LeftTheGuest);
++  REQUIRE(received);
++  CHECK(received->kind == GuestFatalKind::kBugCheck);
++  CHECK(received->code == 0xF4);
++  CHECK(received->parameter_count == 4);
++  CHECK(received->parameters[3] == 4);
++}
++
++TEST_CASE("DbgBreakPoint is fatal", "[guest_fatal]") {
++  HandlerScope scope;
++  CHECK_THROWS_AS(krnl::DbgBreakPoint_entry(), LeftTheGuest);
++  REQUIRE(received);
++  CHECK(received->kind == GuestFatalKind::kDebugBreak);
++  CHECK(received->code == 0x80000003u);
++}
++
++#if !defined(_WIN32)
++
++namespace {
++void ReturnsAnyway(const GuestFatalError&) {}
++}  // namespace
++
++TEST_CASE("child: a fatal guest error with no handler", "[.][fault_child]") {
++  krnl::KeBugCheckEx_entry(0xF4, 0, 0, 0, 0);
++  _exit(0);
++}
++
++TEST_CASE("child: a fatal guest error whose handler returns", "[.][fault_child]") {
++  SetGuestFatalHandler(ReturnsAnyway);
++  krnl::DbgBreakPoint_entry();
++  _exit(0);
++}
++
++TEST_CASE("A fatal guest error aborts the process", "[guest_fatal]") {
++  SECTION("with no handler") {
++    const int status = rex::testing::RunTestInChild("child: a fatal guest error with no handler");
++    CHECK((WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT));
++  }
++  SECTION("when the handler returns") {
++    const int status =
++        rex::testing::RunTestInChild("child: a fatal guest error whose handler returns");
++    CHECK((WIFSIGNALED(status) && WTERMSIG(status) == SIGABRT));
++  }
++}
++
++#endif  // !defined(_WIN32)
