@@ -275,7 +275,9 @@ class WindowsJob:
 def open_shared(path):
     """Opens a file to read without keeping its writer from renaming or deleting it. On Windows,
     Python's open() leaves out FILE_SHARE_DELETE, and a rotating log's rename then fails with a
-    sharing violation while the file is open here (spdlog retries once, then throws)."""
+    sharing violation while the file is open here (spdlog retries once, then throws). Even with it,
+    Windows keeps the name of an open file: a rotation that replaces the part being read at that
+    moment fails until the read ends (a few milliseconds; READ_BYTES_PER_CHECK bounds it)."""
     if os.name != "nt":
         return open(path, "rb")
     import ctypes
