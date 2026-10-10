@@ -611,6 +611,30 @@ traced), and restarting the game once after a build so that the session played n
 builder (sure, but a restart for the player and process handling on three systems, with Steam on
 Windows).
 
+## 7h. Whose units: the save protection only for what the player can lose (2026-10-10)
+
+With the 29-mod pack, every session refused to save. `JCC - Map` replaces
+`MEDIA/UNITS/MONSTERS/MERCHANT/MERCHANT_GOODS.DAT` (Tarn the Merchant) with a unit of another GUID,
+and the saves keep Tarn in their saved town (`levels/level/units/unit`). The check expected the
+base GUIDs plus the mods' ones, the game did not load the replaced base GUID, and the saves holding
+it turned saving off.
+
+Two changes. The check now expects the units merged as the index builder merges them
+(`MakeExpectedUnits`, `ModUnitEntries`): a mod's unit at a base unit's path replaces that GUID.
+And the protection now looks at whose a unit is (`PlayerOwnedUnitRef`). The player's: the
+character's class, inventory and equipment (`player/...`), the pet and what it carries
+(`pets/...`), the items lying in a saved level (`levels/level/items/...`, which may be ones the
+player dropped) and the shared stash. An unknown one of those is still removed with a copy, or
+turns saving off when the game failed to load it. Not the player's: the creatures and characters of
+a saved level and what they carry (`levels/level/units/...`, a merchant's goods among them), a
+quest's units (`quests/...`) and `guids2/`. An unknown one of those stays in the save, and the log
+says so (`units: ...: unknown ... left in the save: not the player's`). Anything else is taken as the
+player's. The guard against a fault of ours (most of a save's units unknown: leave it alone) still
+counts every unknown unit.
+
+What the game does with a saved level creature it does not know is checked in the game (below).
+If quests show a problem, their units go back to the player's side.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:

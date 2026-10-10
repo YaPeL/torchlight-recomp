@@ -89,7 +89,15 @@ std::vector<int64_t> UnitsNotLoaded(const KnownUnits& assumed, const std::unorde
   return out;
 }
 
-UnitCheck RemoveUnknownUnits(si::Parsed& parsed, const KnownUnits& known) {
+bool PlayerOwnedUnitRef(std::string_view path, bool stash_file) {
+  if (stash_file) return true;
+  for (std::string_view other : {"levels/level/units/", "quests/", "guids2/"}) {
+    if (path.starts_with(other)) return false;
+  }
+  return true;
+}
+
+UnitCheck RemoveUnknownUnits(si::Parsed& parsed, const KnownUnits& known, bool stash_file) {
   UnitCheck check;
   Parents parents;
   MapParents(parsed.tree, parents);
@@ -105,6 +113,10 @@ UnitCheck RemoveUnknownUnits(si::Parsed& parsed, const KnownUnits& known) {
     }
     ++units;
     if (known.guids.contains(guid)) continue;
+    if (!PlayerOwnedUnitRef(ref.path, stash_file)) {
+      check.kept_level.push_back({ref.path, NameOf(ref.element), guid});
+      continue;
+    }
     // The entry to remove: an item or a unit in a list, or the GUID itself in a list of GUIDs.
     // Anything else (the character's own class, a quest's unit) cannot go.
     const bool in_guid_list = parents.contains(ref.value);
@@ -117,16 +129,18 @@ UnitCheck RemoveUnknownUnits(si::Parsed& parsed, const KnownUnits& known) {
     }
     unknown.emplace_back(&ref, target);
   }
+  // Every unknown unit counts here, the player's or not: most of a save unknown is a fault of ours.
+  const size_t all_unknown = unknown.size() + check.kept_level.size();
+  if (all_unknown && 2 * all_unknown > units) {
+    check.result = UnitCheck::Result::kLeftAlone;
+    check.why = std::to_string(all_unknown) + " of " + std::to_string(units) +
+                " units unknown: too many to be a removed mod's";
+    return check;
+  }
   if (unknown.empty()) return check;
   if (!known.complete) {
     check.result = UnitCheck::Result::kLeftAlone;
     check.why = std::to_string(unknown.size()) + " unknown units, but " + known.incomplete_why;
-    return check;
-  }
-  if (2 * unknown.size() > units) {
-    check.result = UnitCheck::Result::kLeftAlone;
-    check.why = std::to_string(unknown.size()) + " of " + std::to_string(units) +
-                " units unknown: too many to be a removed mod's";
     return check;
   }
   for (const auto& [ref, target] : unknown) {
@@ -164,7 +178,7 @@ UnitCheck CheckCharacterFile(const si::Schema& schema, std::span<const uint8_t> 
     check.why = "unreadable: " + error.message;
     return check;
   }
-  check = RemoveUnknownUnits(*parsed, known);
+  check = RemoveUnknownUnits(*parsed, known, false);
   check.owner = NameOf(parsed->tree.Find("player"));
   if (check.result == UnitCheck::Result::kRemoved) check.bytes = si::Write360(schema, *parsed);
   return check;
@@ -179,7 +193,7 @@ UnitCheck CheckStashFile(const si::Schema& schema, std::span<const uint8_t> file
     check.why = "unreadable: " + error.message;
     return check;
   }
-  check = RemoveUnknownUnits(*parsed, known);
+  check = RemoveUnknownUnits(*parsed, known, true);
   if (check.result == UnitCheck::Result::kRemoved) check.bytes = si::Write360Stash(schema, *parsed);
   return check;
 }
@@ -253,6 +267,12 @@ SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const 
       return;
     }
     UnitCheck check = character ? CheckCharacterFile(schema, *bytes, known) : CheckStashFile(schema, *bytes, known);
+    for (const RemovedUnit& r : check.kept_level) {
+      if (log) {
+        log("units: " + path.string() + ": unknown " + r.path + " " + std::to_string(r.guid) +
+            (r.name.empty() ? "" : " (" + r.name + ")") + " left in the save: not the player's");
+      }
+    }
     if (check.result == UnitCheck::Result::kLeftAlone) {
       report.left_alone.push_back(path.string() + ": " + check.why);
     } else if (check.result == UnitCheck::Result::kRemoved) {
@@ -304,7 +324,8 @@ std::vector<SaveHolding> SavesHoldingUnits(const std::filesystem::path& user_dat
     }
     if (!parsed) return;
     for (const si::Ref& ref : parsed->refs) {
-      if (ref.role == "unit_guid" && guids.contains(si::Signed64(ref.value->number))) {
+      if (ref.role == "unit_guid" && guids.contains(si::Signed64(ref.value->number)) &&
+          PlayerOwnedUnitRef(ref.path, !character)) {
         out.push_back({path, character ? NameOf(parsed->tree.Find("player")) : std::string()});
         return;
       }

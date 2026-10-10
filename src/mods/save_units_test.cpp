@@ -325,6 +325,68 @@ int main() {
     fs::remove_all(root);
   }
 
+  // Whose units: the player's are removed or protect the saves; a saved level's creatures (Tarn
+  // the Merchant, whose GUID a mod replaced), a quest's units and guids2/ are only logged.
+  {
+    Check(PlayerOwnedUnitRef("player/items/item/unit_guid", false) && PlayerOwnedUnitRef("player/unit_guid", false) &&
+              PlayerOwnedUnitRef("pets/unit/unit_guid", false) &&
+              PlayerOwnedUnitRef("levels/level/items/item/unit_guid", false) &&
+              PlayerOwnedUnitRef("items/item/unit_guid", true),
+          "the player's: character, items, pet, items on a level's floor, a stash");
+    Check(!PlayerOwnedUnitRef("levels/level/units/unit/unit_guid", false) &&
+              !PlayerOwnedUnitRef("levels/level/units/unit/items/item/unit_guid", false) &&
+              !PlayerOwnedUnitRef("quests/active/quest/giver_unit_guid", false) &&
+              !PlayerOwnedUnitRef("guids2/g", false),
+          "not the player's: a level's creatures and their items, quests, guids2");
+    Check(PlayerOwnedUnitRef("something/new/unit_guid", false), "anything else: taken as the player's");
+
+    si::SaveError e;
+    auto level = si::ReadPc(*schema, Fixture("pc_save.svt"), e);
+    si::Node* levels = level ? level->tree.Find("levels") : nullptr;
+    si::Node* units = levels && !levels->items.empty() ? levels->items.front().Find("units") : nullptr;
+    si::Node* creature = units && !units->items.empty() ? units->items.front().Find("unit_guid") : nullptr;
+    Check(creature != nullptr, "the fixture has a creature in a saved level");
+    if (creature) {
+      const int64_t kLevel = 0x0777000000000002;  // a level creature whose GUID a mod replaced
+      creature->number = static_cast<uint64_t>(kLevel);
+      si::Bytes with_level = si::Write360(*schema, *level);
+      auto p = Parse(*schema, with_level);
+      std::set<int64_t> known_set = UnitGuids(*p);
+      known_set.erase(kLevel);
+      const auto only_level = RemoveUnknownUnits(*p, MakeKnownUnits(IndexWith(known_set), {}, true));
+      Check(only_level.result == UnitCheck::Result::kClean && only_level.removed.empty() &&
+                only_level.kept_level.size() == 1 && only_level.kept_level[0].guid == kLevel &&
+                only_level.kept_level[0].path == "levels/level/units/unit/unit_guid",
+            "an unknown level creature: left in the save and listed, nothing removed");
+
+      PlayerItem(*level)->Find("unit_guid")->number = static_cast<uint64_t>(kMod);
+      si::Bytes both_unknown = si::Write360(*schema, *level);
+      auto q = Parse(*schema, both_unknown);
+      known_set = UnitGuids(*q);
+      known_set.erase(kLevel);
+      known_set.erase(kMod);
+      const auto mixed = RemoveUnknownUnits(*q, MakeKnownUnits(IndexWith(known_set), {}, true));
+      Check(mixed.result == UnitCheck::Result::kRemoved && mixed.removed.size() == 1 &&
+                mixed.removed[0].guid == kMod && mixed.kept_level.size() == 1,
+            "with the player's item unknown too: the item removed, the creature kept");
+
+      namespace fs = std::filesystem;
+      const fs::path root = fs::temp_directory_path() /
+          ("tl_level_units_" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+      const fs::path saves = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav";
+      fs::create_directories(saves);
+      std::ofstream(saves / "0.TSV", std::ios::binary)
+          .write(reinterpret_cast<const char*>(with_level.data()), std::streamsize(with_level.size()));
+      Check(SavesHoldingUnits(root, "58410A7E", *schema, {kLevel}).empty(),
+            "a save holding only a level creature the game did not load: not holding, saving stays on");
+      SaveUnitsReport report;
+      ProtectFromUnitsNotLoaded(root, "58410A7E", *schema, {kLevel}, std::chrono::system_clock::now(),
+                                [](const std::string&) {}, report);
+      Check(!report.saving_blocked && !fs::exists(root / "save-backups"), "no copy, saving on");
+      fs::remove_all(root);
+    }
+  }
+
   // Expected units with mods: merged as the index builder merges, so a mod's unit at a base
   // unit's path replaces that GUID (JCC - Map's Tarn the Merchant) instead of adding to it.
   {
