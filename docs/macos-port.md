@@ -867,14 +867,19 @@ comes out on Linux, Windows (Git Bash has `sha256sum`) and macOS.
 - `ci.yml`: `deps-macos` and `test-macos` on `macos-26` (`2ebd1be`), same triggers as Linux and
   Windows. Here the `mac-arm64-nogame` preset from the branch passes 66/66, the GL tests included.
   On the runner (2026-10-10): `deps-macos` builds the SDK and OGRE in 11 minutes (then cached);
-  the store's prune test passes. The runner's virtual GPU gives no OpenGL 3 context: the backend's
-  creation failed and its error path crashed (OGRE 14.6's GL3+ unregisters the half-made window's
-  context through a buffer manager it never made). Fixed in `5a2ac48` (the window is detached on
-  that path; OGRE's Cocoa window is registered under its title, not its name) and checked here
-  with a GL3+ plugin built to fail the same check: the tests now fail with "OpenGL 3.0 is not
-  supported in initialiseContext", also in OGRE's log. Both are candidates to report to OGRE. The
-  GL3+ runs (label `opengl33`) are left out on the macOS runners as on Windows (`ef5a6df`); with
-  that the whole CI passes (64/64 on macOS).
+  the store's prune test passes. The backend's creation failed on the runner and its error path
+  crashed: OGRE 14.6's GL3+ unregisters the half-made window's context through a buffer manager it
+  never made. Fixed in `5a2ac48` (the window is detached on that path; OGRE's Cocoa window is
+  registered under its title, not its name), checked here with a GL3+ plugin built to fail its
+  OpenGL 3.3 check (exit 139 before, exit 1 with the reason after). Both OGRE behaviours are
+  candidates to report upstream.
+- Why the backend does not start on the runner, as it now reports (in the test's output and in
+  OGRE's log): `RenderingAPIException: OpenGL 3.0 is not supported in initialiseContext`
+  (`OgreGL3PlusRenderSystem.cpp`, line 1384). The macos-26 runner's virtual GPU gives no OpenGL 3
+  context at all: OGRE stops at its first version check, before logging `GL_VERSION`. So the GL3+
+  runs of `ui_pass_test` and `render_scale_test` (label `opengl33`) are left out on the macOS
+  runners, in `test-macos` and `game-macos`, as on Windows (`ef5a6df`); they pass on Apple Silicon
+  Macs (GL 4.1). With that the whole CI passes (64/64 on macOS).
 - `release.yml`: `game-macos` (XEX check with `shasum`, codegen, Release with `-g`, ctest,
   `split_symbols.sh`, `make_app.sh` with the tag's numbers as version, `check_app.sh`,
   `make_dmg.sh`, `.dSYM`s to `<tag>/macos-arm64/`), `check-macos` (`check_app.sh` on the app inside
@@ -886,8 +891,11 @@ comes out on Linux, Windows (Git Bash has `sha256sum`) and macOS.
 - README: the macOS section (Apple Silicon, macOS 13.3+, tested on 26; the Gatekeeper steps; the
   keyboard through `open -a "Torchlight Recomp" --args --mnk_mode=true`; where files are kept).
   The wording of the dialogs was seen in Spanish; the English text is Apple's for the same dialog.
-- Done when the dry-run tag on main leaves the `.dmg` in the draft with its checksum: the tag is
-  the integrator's.
+- MAC.9 done for develop (2026-10-10). The release side is validated at the next freeze, not
+  before: main has nothing of macOS until then, so a test tag on main now would build no `.dmg`.
+  At that freeze, the release's draft has to hold the `.dmg` with its checksum and attestation,
+  and the `.dSYM`s have to be in `<tag>/macos-arm64/`. Tags and releases are the integrator's and
+  the owner's.
 
 ## 8. Platform module
 
