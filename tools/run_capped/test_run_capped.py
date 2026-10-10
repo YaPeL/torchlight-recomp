@@ -14,13 +14,18 @@ import unittest
 HERE = pathlib.Path(__file__).resolve().parent
 SCRIPT = HERE / "run_capped.py"
 
-# A child that starts a grandchild sleeping and writes the grandchild's pid to `pid_file`.
+# A child that starts a grandchild sleeping, writes the grandchild's pid to `pid_file` and then
+# prints READY. Tests that stop the run once the grandchild exists stop on READY (--stop-on), not
+# at a time limit: on a loaded machine starting two Pythons can take longer than any short limit.
+READY = "grandchild started"
 SPAWN_GRANDCHILD = """
 import subprocess, sys, time
 grandchild = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'])
-open(sys.argv[1], 'w').write(str(grandchild.pid))
-{rest}
-"""
+with open(sys.argv[1], 'w') as f:
+    f.write(str(grandchild.pid))
+print({ready!r}, flush=True)
+{{rest}}
+""".format(ready=READY)
 
 
 def alive(pid):
@@ -69,20 +74,30 @@ class RunCappedTest(unittest.TestCase):
         self.assertIn("hello", (self.dir / "out.txt").read_text())
         self.assertIn("nothing of the command is left", result.stderr)
 
-    def test_time_limit_kills_the_whole_tree(self):
-        pid_file = self.dir / "grandchild.pid"
-        code = SPAWN_GRANDCHILD.format(rest="time.sleep(600)")
-        result = self.run_capped("--timeout", "2", code=code.replace("sys.argv[1]",
-                                                                      repr(str(pid_file))))
+    def test_time_limit_stops_the_command(self):
+        result = self.run_capped("--timeout", "2", code="import time; time.sleep(600)")
         self.assertEqual(result.returncode, 124, result.stderr)
         self.assertIn("time limit", result.stderr)
+        self.assertIn("nothing of the command is left", result.stderr)
+
+    def test_a_stop_kills_the_whole_tree(self):
+        # Every way a run ends goes through the same stop; it is triggered once the grandchild
+        # exists, so the check does not depend on how fast the machine starts it.
+        pid_file = self.dir / "grandchild.pid"
+        code = SPAWN_GRANDCHILD.format(rest="time.sleep(600)")
+        result = self.run_capped("--timeout", "120", "--stop-on", READY,
+                                 code=code.replace("sys.argv[1]", repr(str(pid_file))))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("stop pattern seen", result.stderr)
         self.assert_gone(pid_file)
 
     def test_log_limit_stops_a_runaway_log(self):
         log = self.dir / "logs" / "game.log"
         log.parent.mkdir()
-        code = (f"f = open({str(log)!r}, 'w')\n"
-                "while True:\n    f.write('x' * 65536); f.flush()\n")
+        # About 30 MB/s: far past the limit within a check, yet a loaded machine whose check comes
+        # late does not fill the disk (an unthrottled writer did, under a load of 20).
+        code = (f"import time\nf = open({str(log)!r}, 'w')\n"
+                "while True:\n    f.write('x' * 65536); f.flush(); time.sleep(0.002)\n")
         start = time.monotonic()
         result = self.run_capped("--timeout", "60", "--max-log-mb", "2", "--watch",
                                  str(log.parent), code=code)
@@ -93,7 +108,8 @@ class RunCappedTest(unittest.TestCase):
         self.assertLess(log.stat().st_size, 512 * 2**20)
 
     def test_stdout_is_watched_too(self):
-        code = "import sys\nwhile True:\n    sys.stdout.write('y' * 65536); sys.stdout.flush()\n"
+        code = ("import sys, time\nwhile True:\n"
+                "    sys.stdout.write('y' * 65536); sys.stdout.flush(); time.sleep(0.002)\n")
         result = self.run_capped("--timeout", "60", "--max-log-mb", "1", code=code)
         self.assertEqual(result.returncode, 125, result.stderr)
 
@@ -204,10 +220,10 @@ class RunCappedTest(unittest.TestCase):
                    "    sys.exit('prctl(PR_SET_CHILD_SUBREAPER) failed')\n"
                    "os.execv(sys.executable, [sys.executable] + sys.argv[1:])\n")
         result = subprocess.run([sys.executable, "-c", wrapper, str(SCRIPT), "--output",
-                                 str(self.dir / "out.txt"), "--timeout", "2", "--",
-                                 sys.executable, "-c", code],
-                                capture_output=True, text=True, timeout=120)
-        self.assertEqual(result.returncode, 124, result.stderr)
+                                 str(self.dir / "out.txt"), "--timeout", "120", "--stop-on", READY,
+                                 "--", sys.executable, "-c", code],
+                                capture_output=True, text=True, timeout=180)
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("nothing of the command is left", result.stderr)
         self.assert_gone(pid_file)
 
@@ -218,10 +234,11 @@ class RunCappedTest(unittest.TestCase):
         code = ("import subprocess, sys, time\n"
                 "g = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(600)'],\n"
                 "                     start_new_session=True)\n"
-                f"open({str(pid_file)!r}, 'w').write(str(g.pid))\n"
+                f"with open({str(pid_file)!r}, 'w') as f:\n    f.write(str(g.pid))\n"
+                f"print({READY!r}, flush=True)\n"
                 "time.sleep(600)")
-        result = self.run_capped("--timeout", "3", code=code)
-        self.assertEqual(result.returncode, 124, result.stderr)
+        result = self.run_capped("--timeout", "120", "--stop-on", READY, code=code)
+        self.assertEqual(result.returncode, 0, result.stderr)
         self.assert_gone(pid_file)
 
     @unittest.skipIf(os.name == "nt", "POSIX signals")
