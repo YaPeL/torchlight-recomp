@@ -1,6 +1,7 @@
 #include "live/frame_timing.h"
 
 #include <algorithm>
+#include <atomic>
 
 #include <fmt/format.h>
 #include <rex/logging.h>
@@ -64,6 +65,12 @@ std::vector<float> FrameSeries::Recent(size_t* dropped) {
   return out;
 }
 
+namespace {
+std::atomic<FrameObserver*> g_observer{nullptr};
+}  // namespace
+
+void SetFrameObserver(FrameObserver* observer) { g_observer.store(observer); }
+
 FrameTiming& FrameTiming::Get() {
   static FrameTiming timing;
   return timing;
@@ -73,15 +80,19 @@ void FrameTiming::OnSwap() {
   const auto now = FrameSeries::Clock::now();
   // The guest's events of the frame ending now (guest_events.h), logged when it was long.
   const GuestFrameEvents events = GuestEvents::Get().Take();
-  if (const auto ms = guest_.Add(now); ms && *ms > kLongFrameMs)
-    REXLOG_INFO("long frame: {}", DescribeLongFrame(*ms, events));
+  const auto ms = guest_.Add(now);
+  if (ms && *ms > kLongFrameMs) REXLOG_INFO("long frame: {}", DescribeLongFrame(*ms, events));
+  if (FrameObserver* observer = g_observer.load()) observer->OnGuestFrame(ms.value_or(0.0));
   if (auto summary = guest_.TakeSummary(now))
     REXLOG_INFO("frame time (guest swap to swap): {}", *summary);
 }
 
 void FrameTiming::OnPresent(size_t dropped) {
   const auto now = FrameSeries::Clock::now();
-  presented_.Add(now, dropped);
+  const auto ms = presented_.Add(now, dropped);
+  if (FrameObserver* observer = g_observer.load(); observer && ms) {
+    observer->OnPresentedFrame(*ms, dropped);
+  }
   size_t period_dropped = 0;
   if (auto summary = presented_.TakeSummary(now, &period_dropped)) {
     REXLOG_INFO("frame time (presented, present to present): {}; {} guest frames dropped "
@@ -92,6 +103,7 @@ void FrameTiming::OnPresent(size_t dropped) {
 
 void LogLevelLoad(std::chrono::milliseconds duration) {
   REXLOG_INFO("level load: {} ms", duration.count());
+  if (FrameObserver* observer = g_observer.load()) observer->OnLevelLoaded();
 }
 
 }  // namespace torchlight::live

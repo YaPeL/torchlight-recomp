@@ -74,4 +74,18 @@ class FrameTiming {
 // "level load: N ms" in the log: one call of the guest's level load (guest_abi kLevelLoad).
 void LogLevelLoad(std::chrono::milliseconds duration);
 
+// For the development tools that follow the game frame by frame (dev/script_input.cpp): called on
+// the threads FrameTiming's own calls come from (the guest's render thread at its swap, the live
+// mode's backend thread after a present, the guest thread that loaded a level).
+class FrameObserver {
+ public:
+  virtual ~FrameObserver() = default;
+  // Every guest swap; `ms` is the frame's time (0 for the first).
+  virtual void OnGuestFrame(double ms) = 0;
+  virtual void OnPresentedFrame(double ms, size_t dropped) = 0;
+  virtual void OnLevelLoaded() = 0;
+};
+// Before the guest runs; null removes it.
+void SetFrameObserver(FrameObserver* observer);
+
 }  // namespace torchlight::live

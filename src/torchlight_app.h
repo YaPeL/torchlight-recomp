@@ -25,6 +25,7 @@
 #include "hooks/bucket_cull_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
+#include "dev/script_input.h"
 #include "game_setup/first_run.h"
 #include "platform/platform.h"
 #include "platform/user_folders.h"
@@ -106,6 +107,13 @@ class TorchlightApp : public rex::ReXApp {
     // PC saves from the game files' import/ folder: the part confirmed before is applied here,
     // before the guest runs; old save backups are pruned too.
     torchlight::game_menu::InstallSaveImport(runtime(), game_data_root(), user_data_root());
+    // Development builds: a controller script (before live::Install sets the input's active
+    // callback, which the script's controller follows too).
+    torchlight::dev::InstallInputScript(runtime(), [this] {
+      app_context().CallInUIThread([this] {
+        if (window()) window()->RequestClose();
+      });
+    });
     torchlight::live::Install(
         game_data_root(),
         {&app_context(), window(), runtime(),
