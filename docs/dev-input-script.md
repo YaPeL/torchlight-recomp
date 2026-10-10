@@ -46,6 +46,16 @@ python3 tools/run_capped/run_capped.py --timeout 300 --watch <the game's log fol
   command (needs `TORCHLIGHT_DEV_COMMANDS`). **`quit`** closes the game window as the player would.
 - **What stays random.** The game's own randomness (monsters, drops) is not fixed by the script.
   Compare several runs, not one.
+- **Deterministic runs: tried, closed (2026-10-10).** The game seeds the C runtime's `rand()`
+  (directly and through `Ogre::Math::RangeRandom`) with `time()`, and takes its frame times from
+  `QueryPerformanceCounter` and `GetTickCount`. A fixed `time()` and a clock moving 1/60 s per guest
+  frame (branch `feature/dev-deterministic-time`, behind this build option) still did not make two
+  runs of a script equal: the background loading threads decide how many guest frames a load
+  takes, so the runs reach the main menu one frame apart and the level two frames apart, and from
+  there they differ (another draw order, one more draw after walking). The branch's
+  `docs/dev-input-script.md` has the details and the next step (stopping the clock and the script
+  while a load runs). For validations, compare stretches without randomness instead (the menus, a
+  load, the first seconds after it).
 
 ## The script
 
