@@ -41,9 +41,6 @@ REX_EXTERN(__imp__sub_823296D0);
 REXCVAR_DEFINE_BOOL(mods_unit_index_check, false, "Torchlight",
                     "Diagnostics: read every base unit through the mods' path and compare with the "
                     "Xbox unit index (log only)");
-REXCVAR_DEFINE_BOOL(mods_index_release_nodes, false, "Torchlight",
-                    "Diagnostics: empty each definition the index build reads, as before the fix "
-                    "(breaks names; only to measure the memory keeping them costs)");
 REXCVAR_DEFINE_BOOL(mods_unit_index_base_only, false, "Torchlight",
                     "Diagnostics: build the index the game loads from the base alone (no mods' units), "
                     "written by us, under its own name in the cache");
@@ -66,7 +63,6 @@ struct State {
   bool active = false;      // the hook does something
   bool check = false;       // diagnostics: compare the base read through our path
   bool base_only = false;   // diagnostics: our index without the mods' units
-  bool release_nodes = false;  // diagnostics: empty what the build reads, as before (to measure)
   bool ready = false;       // the cached index exists for `key`
   bool mounted = false;     // tlunits: mounted (once the file exists)
   bool located = false;     // tlunits: added as a resource location
@@ -259,8 +255,6 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
   }
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   CountRetained(base, list);
-  // For a comparison only: empty the list as before the fix, to measure what keeping costs.
-  if (g.release_nodes) call.Call(units_abi::kClearNodeList.address, {list});
 #endif
   // The nodes are kept, not emptied with kClearNodeList as the game's own builder does: emptying
   // them released the names of their properties, and later definitions went on using names the
@@ -312,7 +306,7 @@ void BuildIndex(GuestCall& call) {
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   const MemoryNow after = MeasureMemory(call.base());
   REXLOG_INFO("mods: build memory: {}; names {} -> {}; {} {} definitions: {} nodes, {} properties, {} subgroups",
-              MemoryChange(before, after), before.names, after.names, g.release_nodes ? "released" : "kept",
+              MemoryChange(before, after), before.names, after.names, "kept",
               g_retained.lists, g_retained.nodes, g_retained.properties, g_retained.subgroups);
 #endif
   g.ready = true;
@@ -360,7 +354,6 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   g.check = REXCVAR_GET(mods_unit_index_check);
   g.base_only = REXCVAR_GET(mods_unit_index_base_only);
-  g.release_nodes = REXCVAR_GET(mods_index_release_nodes);
 #endif
   g.pak = pak;
   g.folder = data_dir / "cache" / "unitdata";

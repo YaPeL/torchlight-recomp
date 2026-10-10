@@ -595,6 +595,19 @@ physical pages and virtual heaps, the name table's size, and the nodes, properti
 kept). The wardrobe guard of 7f stays as a net; the player notice planned for a class without a
 model is dropped if the fix holds.
 
+Validated on 2026-10-09, building the index in the session: `JCC - Main` twice and the
+Ultimate Torchlight Mod-Pack (29 mods) twice, no wardrobe guard warning and no fault in any. What
+keeping costs, with the 29 mods (the worst real case): the game's object heap (`0x40000000`,
+1008 MB) went from 61 to 82 MB during the build, against 61 to 61 MB in the same run releasing
+as before (a diagnostics switch, removed after the comparison; that run lost the Destroyer's
+mesh again and then faulted elsewhere, a read at 0x34); about 21 MB, at the heap's 64 KB page
+granularity, and the name table kept 29,533 names instead of 17,408. The other heaps did not
+move. Two other ways were weighed and set aside: keeping only the names while freeing the rest
+(needs the reference the game takes on a name, and which object kept using a released key, neither
+traced), and restarting the game once after a build so that the session played never ran the
+builder (sure, but a restart for the player and process handling on three systems, with Steam on
+Windows).
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
