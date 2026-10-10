@@ -41,6 +41,9 @@ REX_EXTERN(__imp__sub_823296D0);
 REXCVAR_DEFINE_BOOL(mods_unit_index_check, false, "Torchlight",
                     "Diagnostics: read every base unit through the mods' path and compare with the "
                     "Xbox unit index (log only)");
+REXCVAR_DEFINE_BOOL(mods_index_release_nodes, false, "Torchlight",
+                    "Diagnostics: empty each definition the index build reads, as before the fix "
+                    "(breaks names; only to measure the memory keeping them costs)");
 REXCVAR_DEFINE_BOOL(mods_unit_index_base_only, false, "Torchlight",
                     "Diagnostics: build the index the game loads from the base alone (no mods' units), "
                     "written by us, under its own name in the cache");
@@ -63,6 +66,7 @@ struct State {
   bool active = false;      // the hook does something
   bool check = false;       // diagnostics: compare the base read through our path
   bool base_only = false;   // diagnostics: our index without the mods' units
+  bool release_nodes = false;  // diagnostics: empty what the build reads, as before (to measure)
   bool ready = false;       // the cached index exists for `key`
   bool mounted = false;     // tlunits: mounted (once the file exists)
   bool located = false;     // tlunits: added as a resource location
@@ -145,32 +149,44 @@ void CountRetained(const uint8_t* base, uint32_t list) {
   for (uint32_t i = 0; data && i < count && i < 64; ++i) CountGroup(base, abi::ReadU32(base, data + 4 * i), 0);
 }
 
-// The game's memory as MmQueryStatistics sees it (used physical pages) and the virtual heaps the
-// game's allocator draws from (used 4 KB and 64 KB pages), in MB; and the global name table's size.
+// The address space the game holds in each guest heap, in MB (pages reserved; the SDK's page
+// counts are in 4 KB units whatever the heap's page size), against the heap's size; and the global
+// name table's size.
+struct HeapNow {
+  const char* name;
+  double used_mb, size_mb;
+};
 struct MemoryNow {
-  double physical_mb = 0, virtual_mb = 0;
+  std::vector<HeapNow> heaps;
   uint32_t names = 0;
 };
 
 MemoryNow MeasureMemory(const uint8_t* base) {
   MemoryNow m;
   auto* memory = REX_KERNEL_MEMORY();
-  auto used = [&](bool physical, std::initializer_list<uint32_t> sizes) {
-    double mb = 0;
-    for (uint32_t page : sizes) {
-      const rex::memory::BaseHeap* heap = memory->LookupHeapByType(physical, page);
-      if (!heap) continue;
-      uint32_t unreserved = 0, reserved = 0, used_pages = 0, reserved_bytes = 0;
-      memory->GetHeapsPageStatsSummary(&heap, 1, unreserved, reserved, used_pages, reserved_bytes);
-      mb += double(used_pages) * page / (1024.0 * 1024.0);
-    }
-    return mb;
+  auto add = [&](const char* name, uint32_t address) {
+    rex::memory::BaseHeap* heap = memory->LookupHeap(address);
+    if (!heap) return;
+    const rex::memory::BaseHeap* heaps[] = {heap};
+    uint32_t unreserved = 0, reserved = 0, used_pages = 0, reserved_bytes = 0;
+    memory->GetHeapsPageStatsSummary(heaps, 1, unreserved, reserved, used_pages, reserved_bytes);
+    m.heaps.push_back({name, used_pages * 4096.0 / (1024 * 1024), heap->heap_size() / (1024.0 * 1024.0)});
   };
-  m.physical_mb = used(true, {0x1000, 0x10000, 0x1000000});
-  m.virtual_mb = used(false, {0x1000, 0x10000});
+  add("v00000000", 0x00001000);
+  add("v40000000", 0x40000000);
+  add("physical", 0xA0000000);
   const uint32_t head = abi::ReadU32(base, units_abi::names::kTable + units_abi::names::kTableHead.offset);
   m.names = head ? abi::ReadU32(base, units_abi::names::kTable + units_abi::names::kTableSize.offset) : 0;
   return m;
+}
+
+std::string MemoryChange(const MemoryNow& before, const MemoryNow& after) {
+  std::string out;
+  for (size_t i = 0; i < before.heaps.size() && i < after.heaps.size(); ++i) {
+    out += fmt::format("{}{} {:.1f} -> {:.1f} of {:.0f} MB", out.empty() ? "" : ", ", before.heaps[i].name,
+                       before.heaps[i].used_mb, after.heaps[i].used_mb, after.heaps[i].size_mb);
+  }
+  return out;
 }
 #endif
 
@@ -243,6 +259,8 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
   }
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   CountRetained(base, list);
+  // For a comparison only: empty the list as before the fix, to measure what keeping costs.
+  if (g.release_nodes) call.Call(units_abi::kClearNodeList.address, {list});
 #endif
   // The nodes are kept, not emptied with kClearNodeList as the game's own builder does: emptying
   // them released the names of their properties, and later definitions went on using names the
@@ -293,9 +311,8 @@ void BuildIndex(GuestCall& call) {
               merged.size(), g.key, g.base_only ? ", diagnostics: base only" : "");
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   const MemoryNow after = MeasureMemory(call.base());
-  REXLOG_INFO("mods: build memory: physical {:.1f} -> {:.1f} MB, virtual heaps {:.1f} -> {:.1f} MB, names {} -> {}; "
-              "kept {} definitions: {} nodes, {} properties, {} subgroups",
-              before.physical_mb, after.physical_mb, before.virtual_mb, after.virtual_mb, before.names, after.names,
+  REXLOG_INFO("mods: build memory: {}; names {} -> {}; {} {} definitions: {} nodes, {} properties, {} subgroups",
+              MemoryChange(before, after), before.names, after.names, g.release_nodes ? "released" : "kept",
               g_retained.lists, g_retained.nodes, g_retained.properties, g_retained.subgroups);
 #endif
   g.ready = true;
@@ -343,6 +360,7 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   g.check = REXCVAR_GET(mods_unit_index_check);
   g.base_only = REXCVAR_GET(mods_unit_index_base_only);
+  g.release_nodes = REXCVAR_GET(mods_index_release_nodes);
 #endif
   g.pak = pak;
   g.folder = data_dir / "cache" / "unitdata";
