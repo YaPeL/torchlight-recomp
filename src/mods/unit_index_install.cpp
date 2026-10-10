@@ -18,7 +18,11 @@
 #include <rex/runtime.h>
 
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+#include <initializer_list>
+
 #include <rex/cvar.h>
+#include <rex/system/kernel_state.h>
+#include <rex/system/xmemory.h>
 #endif
 
 #include "game_menu/guest_call.h"
@@ -116,6 +120,60 @@ std::optional<int64_t> ParseGuid(const std::u16string& text) {
   return static_cast<int64_t>(v);
 }
 
+#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+// What the kept definitions hold (diagnostics): nodes, their properties and their subgroups.
+struct Retained {
+  uint64_t lists = 0, nodes = 0, properties = 0, subgroups = 0;
+};
+Retained g_retained;
+
+void CountGroup(const uint8_t* base, uint32_t group, int depth) {
+  if (!group || depth > 8) return;
+  const uint32_t properties = abi::ReadU32(base, group + units_abi::group::kPropertyCount.offset);
+  const uint32_t subgroups = abi::ReadU32(base, group + units_abi::group::kSubgroupCount.offset);
+  g_retained.properties += properties;
+  g_retained.subgroups += subgroups;
+  const uint32_t data = abi::ReadU32(base, group + units_abi::group::kSubgroupData.offset);
+  for (uint32_t i = 0; data && i < subgroups && i < 4096; ++i) CountGroup(base, abi::ReadU32(base, data + 4 * i), depth + 1);
+}
+
+void CountRetained(const uint8_t* base, uint32_t list) {
+  const uint32_t data = abi::ReadU32(base, list + units_abi::node_list::kData.offset);
+  const uint32_t count = abi::ReadU32(base, list + units_abi::node_list::kCount.offset);
+  ++g_retained.lists;
+  g_retained.nodes += count;
+  for (uint32_t i = 0; data && i < count && i < 64; ++i) CountGroup(base, abi::ReadU32(base, data + 4 * i), 0);
+}
+
+// The game's memory as MmQueryStatistics sees it (used physical pages) and the virtual heaps the
+// game's allocator draws from (used 4 KB and 64 KB pages), in MB; and the global name table's size.
+struct MemoryNow {
+  double physical_mb = 0, virtual_mb = 0;
+  uint32_t names = 0;
+};
+
+MemoryNow MeasureMemory(const uint8_t* base) {
+  MemoryNow m;
+  auto* memory = REX_KERNEL_MEMORY();
+  auto used = [&](bool physical, std::initializer_list<uint32_t> sizes) {
+    double mb = 0;
+    for (uint32_t page : sizes) {
+      const rex::memory::BaseHeap* heap = memory->LookupHeapByType(physical, page);
+      if (!heap) continue;
+      uint32_t unreserved = 0, reserved = 0, used_pages = 0, reserved_bytes = 0;
+      memory->GetHeapsPageStatsSummary(&heap, 1, unreserved, reserved, used_pages, reserved_bytes);
+      mb += double(used_pages) * page / (1024.0 * 1024.0);
+    }
+    return mb;
+  };
+  m.physical_mb = used(true, {0x1000, 0x10000, 0x1000000});
+  m.virtual_mb = used(false, {0x1000, 0x10000});
+  const uint32_t head = abi::ReadU32(base, units_abi::names::kTable + units_abi::names::kTableHead.offset);
+  m.names = head ? abi::ReadU32(base, units_abi::names::kTable + units_abi::names::kTableSize.offset) : 0;
+  return m;
+}
+#endif
+
 // One unit definition read the way the game's index builder reads it (guest_abi/unit_index.h):
 // the definition and its BASEFILE chain loaded by the game, each value through the game's
 // property reads with the defaults the Xbox index shows (docs/mods.md, 7e).
@@ -183,7 +241,13 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
       entry = e;
     }
   }
-  call.Call(units_abi::kClearNodeList.address, {list});
+#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+  CountRetained(base, list);
+#endif
+  // The nodes are kept, not emptied with kClearNodeList as the game's own builder does: emptying
+  // them released the names of their properties, and later definitions went on using names the
+  // global table no longer had (guest_abi unit_index.h, names; docs/mods.md 7g). The memory they
+  // hold stays with the game for the session.
   call.Call(ui::kWStringDtor.address, {path});
   call.Release(mark);
   return entry;
@@ -197,6 +261,10 @@ void BuildIndex(GuestCall& call) {
     REXLOG_ERROR("mods: cannot read the game's unit index ({}); mods' units left out", error);
     return;
   }
+#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+  g_retained = {};
+  const MemoryNow before = MeasureMemory(call.base());
+#endif
   std::vector<UnitEntry> units;
   size_t left_out = 0;
   for (const std::u16string& path : g.unit_paths) {
@@ -223,6 +291,13 @@ void BuildIndex(GuestCall& call) {
   const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
   REXLOG_INFO("mods: unit index built in {} ms: {} mods' units, {} entries ({}){}", ms.count(), units.size(),
               merged.size(), g.key, g.base_only ? ", diagnostics: base only" : "");
+#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+  const MemoryNow after = MeasureMemory(call.base());
+  REXLOG_INFO("mods: build memory: physical {:.1f} -> {:.1f} MB, virtual heaps {:.1f} -> {:.1f} MB, names {} -> {}; "
+              "kept {} definitions: {} nodes, {} properties, {} subgroups",
+              before.physical_mb, after.physical_mb, before.virtual_mb, after.virtual_mb, before.names, after.names,
+              g_retained.lists, g_retained.nodes, g_retained.properties, g_retained.subgroups);
+#endif
   g.ready = true;
 }
 

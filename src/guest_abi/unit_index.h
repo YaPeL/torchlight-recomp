@@ -64,10 +64,51 @@ inline constexpr GuestFunction kReadString{0x82329D38, Confidence::kConfirmed};
 
 // [confirmed] Empties a node list: r3 = list. Destroys each node through slot 0 of its vtable
 // (r4 = 1, @0x823D403C..@0x823D404C), frees the buffer (@0x823D4088) and zeroes data, count and
-// capacity; the builder calls it after each definition (@0x8232AC20). Not sub_82392B50, which the
-// builder calls just before: that one writes the definition back to a file (the build tool's
-// compile step).
+// capacity; the game's builder calls it after each definition (@0x8232AC20). Not sub_82392B50,
+// which the builder calls just before: that one writes the definition back to a file (the build
+// tool's compile step). Our builder does not call it (names, below; docs/mods.md 7g).
 inline constexpr GuestFunction kClearNodeList{0x823D3FF8, Confidence::kConfirmed};
+
+namespace names {
+// [confirmed] Property and group names are numbers into one global table, a std::map at +4 from a
+// key (node +12) to the name, a std::wstring (node +16) (sub_821A1608 @0x821A1640, 0x821A164C);
+// a property keeps its key at +0x10 and the table at +0x14 (sub_821A1510 @0x821A1570,
+// @0x821A155C), and a lookup by name compares every property's name (sub_821A1510): a property
+// whose key is no longer in the table is not found, and the read returns its default. The same
+// address in every run (gdb, 2026-10-09), also the default table a group's destructor compares
+// with (@0x82391AA4).
+inline constexpr uint32_t kTable = 0x8355C2D0;
+// [confirmed] The map's head node (compared with the lookup's result @0x821A1648) and size.
+inline constexpr Field kTableHead{8, Confidence::kConfirmed};
+inline constexpr Field kTableSize{12, Confidence::kConfirmed};
+// [confirmed] Releases a name: r3 = table, r4 = key; gets the name (@0x823932C4) and, unless it is
+// the table's default (+0x50, @0x82393314), hands it to sub_823933E8 (@0x8239333C), which takes
+// the key out of the table once nothing uses it. Called by CDataGroup's destructor for the group's
+// own name (@0x8239198C) and by the properties' destructors (sub_82393B80, sub_82393C28,
+// sub_82393D00, sub_82393E10) and sub_82392080. The destructor (sub_82391950) releases nothing
+// and leaves the properties alone for a node that shares another group's (+0x35 set, bne
+// @0x82391978), which kLoadUnitDefinition makes when the unit index already has the file
+// (sub_82392C18: sub_8239E7D8 looks it up in the index, singleton 0x835594EC, @0x82392C58, and the
+// node is marked shared @0x82392C6C). While our builder runs the index is still empty, so every
+// definition is read from its file into nodes of their own (@0x82392E38, sub_8239D5F8), and
+// emptying the list released their names. Which object went on using a released key was not
+// traced; keeping the nodes keeps every name the build made. Measured (gdb, 2026-10-09,
+// JCC - Main): during the build the table kept ~17,300 names while its largest key went from
+// 17,830 to 90,576; the title screen's Destroyer then had 44 of its 72 properties with keys no
+// longer in the table (40583..41050, RESOURCEDIRECTORY and MESHFILE among them), so it got an
+// empty mesh. With the index from the cache (no build) and without mods, 0.
+inline constexpr GuestFunction kReleaseName{0x823932A8, Confidence::kConfirmed};
+}  // namespace names
+
+namespace group {
+// [confirmed] A CDataGroup (vtable 0x820D2808): its properties, data +16 and count +20 (sub_821A1510
+// @0x821A1538, @0x821A151C), and its subgroups, data +32 and count +36 (its destructor
+// sub_82391950 @0x823919A0, @0x82391990).
+inline constexpr Field kPropertyData{16, Confidence::kConfirmed};
+inline constexpr Field kPropertyCount{20, Confidence::kConfirmed};
+inline constexpr Field kSubgroupData{32, Confidence::kConfirmed};
+inline constexpr Field kSubgroupCount{36, Confidence::kConfirmed};
+}  // namespace group
 
 namespace node_list {
 // [confirmed] The builder's list on its stack (@0x8232A170..@0x8232A17C): data, count, capacity,

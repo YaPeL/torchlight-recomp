@@ -559,7 +559,7 @@ nodes it loads share the data manager's cached groups, but are marked shared (+5
 the mods' compiled `.ADM`: no run wrote any. And the fault is not deterministic: the same 1366 of the
 mod's files faulted in one run and not in the next, which also makes halving the files
 meaningless. With the whole mod it faulted in every run (nine: batchA4 to A8, two halving steps,
-two gdb runs). The cause is open.
+two gdb runs). The cause was found later: section 7g.
 
 The guard (src/mods/wardrobe_hooks.cpp, wardrobe_guard.h). When the build would take its first-build
 path (no rebuild flag at +68, no wardrobe entity at +384, a node at +16) and the model or its entity
@@ -571,6 +571,29 @@ first; `sub_822D9778`, which reads +376/+384 without a test, is a unit's method 
 CTriggerUnit's vtable), not the wardrobe's. It covers any model without an entity, from a mod or
 not. A character without a body model may still fail elsewhere (an animation, for one); the
 validation run with `JCC - Main` shows how far it goes.
+
+## 7g. Our index build released names other definitions use (2026-10-09)
+
+The empty mesh of 7f was ours. Property names are keys into one global table (guest_abi
+unit_index.h, names). The title screen's Destroyer had the same 72 properties with and without
+`JCC - Main`, but with it 44 of them had keys the table no longer held (40583..41050,
+RESOURCEDIRECTORY and MESHFILE among them), so the game's lookups by name returned the empty
+default. Measured with gdb at three moments: while our builder read the 1652 definitions of the
+mod, the table kept about 17,300 names but its largest key went from 17,830 to 90,576 (names made
+and released again); with the index from the cache, so no build in that session, the same mod gave
+a Destroyer with every name. The builder read each definition with the game's own loading into a
+node list and emptied it with kClearNodeList, as the game's build tool does. While it runs the
+game's unit index is still empty, so the definitions are read from their files into nodes of their
+own, and their destruction releases their names (kReleaseName). Which object went on using a
+released key was not traced. It also explains why halving the mod's files gave no answer: what
+breaks depends on which definitions the build reads and which names end up released.
+
+The fix: the builder keeps the nodes. Nothing it reads is released, so every name it made stays.
+The memory they hold stays with the game for the session; a diagnostics build
+(`TORCHLIGHT_MODS_DIAGNOSTICS`) logs it after each build (`mods: build memory: ...`: the used
+physical pages and virtual heaps, the name table's size, and the nodes, properties and subgroups
+kept). The wardrobe guard of 7f stays as a net; the player notice planned for a class without a
+model is dropped if the fix holds.
 
 ## 8. Where mods go on our side
 
