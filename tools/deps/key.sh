@@ -1,8 +1,8 @@
 #!/bin/sh
-# The key of the prebuilt SDK and OGRE of a platform (linux, the default, or windows): what decides
-# their contents (the system they are built on, the build scripts, the patches, the toolchain
-# script, the configurations built). CI publishes and looks them up as release deps-<key> on Linux
-# and deps-windows-<key> on Windows (REL.5), and caches them under it.
+# The key of the prebuilt SDK and OGRE of a platform (linux, the default, windows or macos): what
+# decides their contents (the system they are built on, the build scripts, the patches, the
+# toolchain script, the configurations built). CI publishes and looks them up under it in the
+# dependency store (tools/deps/store.sh), and caches them under it.
 #
 # `key.sh windows-configs` prints the configurations CI builds for Windows, OGRE's then the SDK's
 # (windows.ps1 -Configs, -SdkConfigs): ci.yml reads them from here, so a change of configuration
@@ -24,10 +24,20 @@ case "${1:-linux}" in
 ogre configs $windows_ogre_configs
 sdk configs $windows_sdk_configs"
     scripts="tools/deps/build_sdk.sh tools/build-deps/windows.ps1 tools/build-deps/windows_toolchain.ps1" ;;
+  # macOS on Apple Silicon: the runner image; the Command Line Tools come with it.
+  macos)
+    system="runner macos-26"
+    scripts="tools/deps/build_sdk.sh tools/deps/build_ogre.sh" ;;
   windows-configs)
     echo "$windows_ogre_configs $windows_sdk_configs"
     exit 0 ;;
-  *) echo "usage: $0 [linux|windows|windows-configs]" >&2; exit 2 ;;
+  *) echo "usage: $0 [linux|windows|macos|windows-configs]" >&2; exit 2 ;;
 esac
+# macOS before 26 has no sha256sum, only shasum; both print the digest first.
+if command -v sha256sum > /dev/null; then
+  sha256() { sha256sum; }
+else
+  sha256() { shasum -a 256; }
+fi
 # shellcheck disable=SC2086
-{ printf '%s\n' "$system"; cat $scripts patches/series patches/*.patch; } | sha256sum | cut -c1-16
+{ printf '%s\n' "$system"; cat $scripts patches/series patches/*.patch; } | sha256 | cut -c1-16
