@@ -17,6 +17,9 @@
 //                                            name contains NAME opens); default timeout 120 s
 //   mark TEXT                                a step of the run, in the log as the step overlay's
 //   capture                                  an F9 capture of the next frame
+//   command TEXT                             a guest developer command (dev/guest_command.h, e.g.
+//                                            ASCEND to the town), in development builds with
+//                                            TORCHLIGHT_DEV_COMMANDS too
 //   quit                                     the game exits as when its window is closed
 //
 // Events count from the moment the command starts: a menu that opened before it does not satisfy
@@ -56,9 +59,9 @@ struct ScriptEvents {
 };
 
 struct ScriptAction {
-  enum class Kind { kMark, kCapture, kQuit, kFailed, kFinished };
+  enum class Kind { kMark, kCapture, kCommand, kQuit, kFailed, kFinished };
   Kind kind;
-  std::string text;  // kMark: the step's name; kFailed: why
+  std::string text;  // kMark: the step's name; kCommand: the command; kFailed: why
 };
 
 class InputScript {
@@ -74,7 +77,7 @@ class InputScript {
   size_t size() const { return commands_.size(); }
 
  private:
-  enum class Op { kPress, kPressUntil, kHold, kStick, kIdle, kWait, kMark, kCapture, kQuit };
+  enum class Op { kPress, kPressUntil, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kQuit };
   enum class Event { kNone, kLevelLoaded, kMenu };
   struct Duration {
     double value = 0;

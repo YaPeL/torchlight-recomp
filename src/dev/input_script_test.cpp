@@ -88,15 +88,16 @@ void TestHoldStickAndTriggers() {
 }
 
 void TestWaitLevelLoad() {
-  Run r("wait level_loaded timeout 1s\nmark DUNGEON: stand still\ncapture\n");
+  Run r("wait level_loaded timeout 1s\nmark DUNGEON: stand still\ncapture\ncommand ASCEND\n");
   r.e.level_loads = 4;  // loads before the command do not count
   r.Frames(10);
   Check(!r.Has(Kind::kMark), "still waiting");
   r.e.level_loads = 5;
   r.Frames(1);
-  Check(r.actions.size() >= 2 && r.actions[0].kind == Kind::kMark &&
-            r.actions[0].text == "DUNGEON: stand still" && r.actions[1].kind == Kind::kCapture,
-        "the load ends the wait; mark and capture in the same frame");
+  Check(r.actions.size() >= 3 && r.actions[0].kind == Kind::kMark &&
+            r.actions[0].text == "DUNGEON: stand still" && r.actions[1].kind == Kind::kCapture &&
+            r.actions[2].kind == Kind::kCommand && r.actions[2].text == "ASCEND",
+        "the load ends the wait; mark, capture and command in the same frame");
 }
 
 void TestWaitTimeout() {

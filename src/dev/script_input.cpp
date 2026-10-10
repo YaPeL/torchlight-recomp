@@ -40,6 +40,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <rex/runtime.h>
 
 #include "capture/session.h"
+#include "dev/guest_command.h"
 #include "dev/input_script.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/ogre_layout.h"
@@ -246,6 +247,17 @@ class ScriptRunner : public live::FrameObserver {
       case ScriptAction::Kind::kCapture:
         REXLOG_INFO("dev input script: capture");
         capture::Session::Get().RequestCapture();
+        break;
+      case ScriptAction::Kind::kCommand:
+        if (QueueGuestCommand(a.text)) {
+          REXLOG_INFO("dev input script: guest command \"{}\" queued", a.text);
+        } else {
+          REXLOG_ERROR("dev input script FAILED: \"command {}\" needs TORCHLIGHT_DEV_COMMANDS too; "
+                       "closing the game", a.text);
+          finished_ = true;
+          driver_->Disconnect();
+          if (close_) close_();
+        }
         break;
       case ScriptAction::Kind::kQuit:
         segment_.Log();

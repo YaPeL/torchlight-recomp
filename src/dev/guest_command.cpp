@@ -29,6 +29,8 @@ namespace {
 std::once_flag g_parsed;
 std::deque<std::vector<std::string>> g_pending;  // steps; game thread after parsing
 std::atomic<bool> g_armed{false};
+std::mutex g_queued_mutex;
+std::deque<std::string> g_queued;  // QueueGuestCommand
 
 void Parse() {
   const std::string value = REXCVAR_GET(dev_guest_command);
@@ -72,6 +74,17 @@ void Run(PPCContext& ctx, uint8_t* base, uint32_t console, const std::string& co
 #endif
 }  // namespace
 
+bool QueueGuestCommand(std::string command) {
+#ifndef TORCHLIGHT_DEV_COMMANDS
+  (void)command;
+  return false;
+#else
+  std::lock_guard lock(g_queued_mutex);
+  g_queued.push_back(std::move(command));
+  return true;
+#endif
+}
+
 void OnGameLevelLoaded() {
   std::call_once(g_parsed, Parse);
   g_armed = true;
@@ -81,7 +94,12 @@ void OnGameUiUpdate(PPCContext& ctx, uint8_t* base, uint32_t game_ui, uint32_t c
 #ifndef TORCHLIGHT_DEV_COMMANDS
   (void)ctx; (void)base; (void)game_ui; (void)context;
 #else
-  if (!g_armed || g_pending.empty() || !game_ui) return;
+  bool queued = false;
+  {
+    std::lock_guard lock(g_queued_mutex);
+    queued = !g_queued.empty();
+  }
+  if (!game_ui || ((!g_armed || g_pending.empty()) && !queued)) return;
   namespace sheet = torchlight::guest_abi::game_ui_sheet;
   namespace console_abi = torchlight::guest_abi::dev_console;
   // CGameUI::Update's own state test: context +5124 == 1 is the in-game HUD (game_ui_sheet.h).
@@ -94,6 +112,15 @@ void OnGameUiUpdate(PPCContext& ctx, uint8_t* base, uint32_t game_ui, uint32_t c
   if (!console) {
     REXLOG_ERROR("dev: no guest console object; commands dropped");
     g_pending.clear();
+    return;
+  }
+  if (queued) {
+    std::deque<std::string> commands;
+    {
+      std::lock_guard lock(g_queued_mutex);
+      commands.swap(g_queued);
+    }
+    for (const auto& command : commands) Run(ctx, base, console, command);
     return;
   }
   g_armed = false;

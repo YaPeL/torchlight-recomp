@@ -168,13 +168,13 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       }
       if (!timeout()) return fail("expected timeout DURATION");
       c.op = Op::kWait;
-    } else if (verb == "mark") {
-      if (w.size() < 2) return fail("mark TEXT");
+    } else if (verb == "mark" || verb == "command") {
+      if (w.size() < 2) return fail(std::string(verb) + " TEXT");
       const size_t from = line.find(w[1]);
       std::string_view rest = line.substr(from);
       while (!rest.empty() && (rest.back() == ' ' || rest.back() == '\t')) rest.remove_suffix(1);
       c.text = std::string(rest);
-      c.op = Op::kMark;
+      c.op = verb == "mark" ? Op::kMark : Op::kCommand;
     } else if (verb == "capture" || verb == "quit") {
       if (w.size() != 1) return fail(std::string(verb) + " takes nothing");
       c.op = verb == "capture" ? Op::kCapture : Op::kQuit;
@@ -224,6 +224,10 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         continue;
       case Op::kCapture:
         actions.push_back({ScriptAction::Kind::kCapture, {}});
+        advance();
+        continue;
+      case Op::kCommand:
+        actions.push_back({ScriptAction::Kind::kCommand, c.text});
         advance();
         continue;
       case Op::kQuit:
