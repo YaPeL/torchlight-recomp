@@ -28,6 +28,12 @@
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
 #include <mutex>
 #include <set>
+
+#include <rex/cvar.h>
+
+REXCVAR_DEFINE_BOOL(mods_find_log, false, "Torchlight",
+                    "Diagnostics: log every file search on the mods' devices and its entries (a lot of "
+                    "lines: thousands in seconds with a big mod)");
 #endif
 
 namespace {
@@ -104,7 +110,7 @@ REX_FUNC(sub_8287E0C8) {
       path, ctx.r3.u32 != 0xFFFFFFFFu,
       std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-  if (!windows && !OnModsDevice(path)) return;
+  if (!REXCVAR_GET(mods_find_log) || (!windows && !OnModsDevice(path))) return;
   const uint32_t handle = ctx.r3.u32;
   REXLOG_INFO("mods: diagnostics: find first \"{}\"{} (from 0x{:08X}) -> handle 0x{:08X}, status 0x{:08X}", path,
               windows ? " as \"" + *windows + "\"" : std::string(), caller, handle, g_last_status);
