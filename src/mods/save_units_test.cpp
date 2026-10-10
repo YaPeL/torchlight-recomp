@@ -389,7 +389,8 @@ int main() {
       ProtectFromUnitsNotLoaded(root, "58410A7E", *schema, {kLevel}, std::chrono::system_clock::now(),
                                 [](const std::string&) {}, report);
       Check(!report.saving_blocked && !fs::exists(root / "save-backups"), "no copy, saving on");
-      fs::remove_all(root);
+      std::error_code ignored;
+      fs::remove_all(root, ignored);  // error_code: a failed cleanup must not throw (Windows)
     }
   }
 
