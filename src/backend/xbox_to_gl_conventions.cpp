@@ -2,27 +2,36 @@
 
 #include <string.h>
 
+#include <bit>
+
 namespace torchlight {
 namespace backend {
+
+// Word at a time (memcpy keeps it alignment-safe; the compilers vectorise these loops). Bytes
+// past the last whole word stay as they are.
+template <typename Word, Word (*Swap)(Word)>
+void SwapWords(uint8_t* d, size_t size) {
+  for (size_t i = 0; i + sizeof(Word) <= size; i += sizeof(Word)) {
+    Word w;
+    memcpy(&w, d + i, sizeof(Word));
+    w = Swap(w);
+    memcpy(d + i, &w, sizeof(Word));
+  }
+}
+uint16_t Swap8In16(uint16_t w) { return std::byteswap(w); }
+uint32_t Swap8In32(uint32_t w) { return std::byteswap(w); }
+uint32_t Swap16In32(uint32_t w) { return std::rotl(w, 16); }
 
 void SwapFetchEndian(uint8_t* d, size_t size, uint32_t mode) {
   switch (mode) {
     case kEndian8In16:
-      for (size_t i = 0; i + 1 < size; i += 2) {
-        uint8_t t = d[i]; d[i] = d[i + 1]; d[i + 1] = t;
-      }
+      SwapWords<uint16_t, Swap8In16>(d, size);
       break;
     case kEndian8In32:
-      for (size_t i = 0; i + 3 < size; i += 4) {
-        uint8_t a = d[i], b = d[i + 1];
-        d[i] = d[i + 3]; d[i + 1] = d[i + 2]; d[i + 2] = b; d[i + 3] = a;
-      }
+      SwapWords<uint32_t, Swap8In32>(d, size);
       break;
     case kEndian16In32:
-      for (size_t i = 0; i + 3 < size; i += 4) {
-        uint8_t a = d[i], b = d[i + 1];
-        d[i] = d[i + 2]; d[i + 1] = d[i + 3]; d[i + 2] = a; d[i + 3] = b;
-      }
+      SwapWords<uint32_t, Swap16In32>(d, size);
       break;
     default:
       break;

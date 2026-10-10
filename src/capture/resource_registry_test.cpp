@@ -85,6 +85,57 @@ int main() {
   Check(other.Lookup(ResourceKind::kVertexBuffer, 0x5000)->element_size == 16 &&
             c.Lookup(ResourceKind::kVertexBuffer, 0x5000)->element_size == 48,
         "each registry its own answer");
+  // The cache is invalidated per bucket of addresses (Bucket: (address >> 2) & 255), so these
+  // addresses share one cache slot and one version: a change at one of them must never leave a
+  // stale answer valid for the other, and a reused address never answers with its old resource.
+  {
+    ResourceRegistry b;
+    const uint32_t a1 = 0x10000, a2 = 0x10000 + 256 * 4;  // same bucket
+    const uint32_t far = 0x10004;                          // another bucket
+    b.Create(ResourceKind::kVertexBuffer, a1, {{}, 8, 1, 0});
+    b.Create(ResourceKind::kVertexBuffer, a2, {{}, 12, 1, 0});
+    b.Create(ResourceKind::kVertexBuffer, far, {{}, 20, 1, 0});
+    Check(b.Lookup(ResourceKind::kVertexBuffer, a1)->element_size == 8, "bucket: first address");
+    // A change at the other address of the bucket: the first one still answers right.
+    b.Destroy(a2);
+    Check(b.Lookup(ResourceKind::kVertexBuffer, a1)->element_size == 8,
+          "bucket: a change at another address keeps the right answer");
+    Check(!b.Lookup(ResourceKind::kVertexBuffer, a2), "bucket: the destroyed address is gone");
+    // The slot now holds a2 (not found); a1 created again under it must be seen.
+    b.Destroy(a1);
+    b.Create(ResourceKind::kVertexBuffer, a1, {{}, 16, 1, 0});
+    auto reused = b.Lookup(ResourceKind::kVertexBuffer, a1);
+    Check(reused && reused->element_size == 16 && reused->id.generation == 2,
+          "bucket: a reused address answers with its new resource");
+    // Cache a1, then recreate a2 in the same bucket: a2 is seen, a1 keeps its answer.
+    Check(b.Lookup(ResourceKind::kVertexBuffer, a1)->id.generation == 2, "bucket: cached again");
+    b.Create(ResourceKind::kVertexBuffer, a2, {{}, 24, 1, 0});
+    auto a2_again = b.Lookup(ResourceKind::kVertexBuffer, a2);
+    Check(a2_again && a2_again->element_size == 24 && a2_again->id.generation == 2,
+          "bucket: a creation at an address cached as missing is seen");
+    Check(b.Lookup(ResourceKind::kVertexBuffer, a1)->id.generation == 2,
+          "bucket: the other address is right after the slot moved");
+    // Destroyed and recreated at the same address with no lookup in between: no stale answer.
+    Check(b.Lookup(ResourceKind::kVertexBuffer, far)->element_size == 20, "other bucket: cached");
+    b.Destroy(far);
+    b.Create(ResourceKind::kVertexBuffer, far, {{}, 28, 1, 0});
+    auto far_again = b.Lookup(ResourceKind::kVertexBuffer, far);
+    Check(far_again && far_again->element_size == 28 && far_again->id.generation == 2,
+          "same address destroyed and recreated between lookups: the new resource");
+    // A texture reload (new generation, same address) is seen through the cache.
+    b.Create(ResourceKind::kTexture, 0x20000);
+    b.TextureLoaded(0x20000);
+    Check(b.Lookup(ResourceKind::kTexture, 0x20000)->id.generation == 1, "texture: cached");
+    b.TextureLoaded(0x20000);
+    Check(b.Lookup(ResourceKind::kTexture, 0x20000)->id.generation == 2,
+          "texture reload seen through the cache");
+    // A program renewed at its address is seen through the cache.
+    b.Program(0x30000, "1_VS");
+    Check(b.Lookup(ResourceKind::kProgram, 0x30000)->id.generation == 1, "program: cached");
+    b.Program(0x30000, "2_VS");
+    Check(b.Lookup(ResourceKind::kProgram, 0x30000)->id.generation == 2,
+          "program renewal seen through the cache");
+  }
   std::printf("resource registry test: ok\n");
   return 0;
 }

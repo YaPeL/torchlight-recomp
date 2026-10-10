@@ -45,6 +45,8 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
        replay --session RECORDING.tlses --game_data_root DIR [--out DIR] [--session_frame N]
               [--session_frames A-B] [--draws LIST] [--region ...] [--dump_targets]
               [--render_system NAME] [--gpu ID]
+       replay --session RECORDING.tlses --game_data_root DIR --bench [--bench_frames A-B]
+              [--out DIR] [--render_system NAME] [--gpu ID]
        replay --list_gpus
   --draws limits the draws issued to LIST, comma-separated indices or inclusive ranges
   (e.g. 0-120,150,190-194); the others are counted as excluded.
@@ -67,6 +69,12 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
   step: the state the backend accumulated in the session is reproduced. --session_frame picks
   the frame reported on (default: the last), --session_frames A-B[/STEP] writes
   frame_<index>.png for a range (every STEP-th frame); --draws, --region and --dump_targets apply to the reported frame.
+  --bench plays the session as the live mode's backend thread does, presenting every frame in a
+  window with vsync off and the frames read ahead on another thread, and times the frames in
+  --bench_frames A-B (default: all; the frames before A are played untimed, to build the state):
+  per-phase means, frame time percentiles and the 1 % low, printed and in bench.txt, every frame
+  in bench.csv. For backend measurements without the game; the window is a top-level one, not
+  the live mode's child of the game window.
 )";
 
 int UsageError(const std::string& message) {
@@ -85,6 +93,8 @@ int main(int argc, char** argv) {
   std::optional<uint64_t> session_frame;
   std::optional<std::pair<uint64_t, uint64_t>> session_frames;
   uint64_t session_frames_step = 1;
+  bool bench = false;
+  std::optional<std::pair<uint64_t, uint64_t>> bench_frames;
   float render_scale = 1;
   tl_render_system render_system = TL_RENDER_SYSTEM_GL3PLUS;
   std::string gpu;
@@ -111,6 +121,13 @@ int main(int argc, char** argv) {
       }
       session_frames = std::make_pair(uint64_t(first), uint64_t(last));
       session_frames_step = step;
+    } else if (a == "--bench") {
+      bench = true;
+    } else if (a == "--bench_frames" && i + 1 < argc) {
+      unsigned long long first = 0, last = 0;
+      if (std::sscanf(argv[++i], "%llu-%llu", &first, &last) != 2 || last < first)
+        return UsageError("--bench_frames A-B, with A <= B");
+      bench_frames = std::make_pair(uint64_t(first), uint64_t(last));
     } else if (a == "--render_scale" && i + 1 < argc) {
       render_scale = std::stof(argv[++i]);
     } else if (a == "--live_content") {
@@ -163,6 +180,10 @@ int main(int argc, char** argv) {
     }
   }
   if (!session_path.empty() && data_root.empty()) return UsageError("--session needs --game_data_root");
+  if ((bench || bench_frames) && session_path.empty()) return UsageError("--bench needs --session");
+  if (bench_frames && !bench) return UsageError("--bench_frames needs --bench");
+  if (bench && (session_frame || session_frames || !draw_ranges.empty() || region || dump_targets))
+    return UsageError("--bench takes no --session_frame(s), --draws, --region or --dump_targets");
   if (!session_path.empty()) {
     torchlight::replay::SessionOptions o;
     o.path = session_path;
@@ -186,6 +207,7 @@ int main(int argc, char** argv) {
     o.dump_targets = dump_targets;
     o.render_system = render_system;
     o.gpu = gpu;
+    if (bench) return torchlight::replay::BenchSession(o, bench_frames);
     return torchlight::replay::ReplaySession(o);
   }
   if (capture_path.empty()) return UsageError("no capture given");

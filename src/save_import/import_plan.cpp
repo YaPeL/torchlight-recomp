@@ -8,6 +8,7 @@
 #include <set>
 #include <sstream>
 
+#include "platform/durable_file.h"
 #include "save_import/pak.h"
 #include "save_import/stash.h"
 
@@ -55,11 +56,13 @@ bool WriteAtomic(const fs::path& path, const Bytes& data, std::string& error) {
       return false;
     }
   }
-  std::error_code ec;
-  fs::rename(temporary, path, ec);
-  if (ec) {
-    error = "could not replace " + NameOf(path) + ": " + ec.message();
-    fs::remove(temporary, ec);
+  // On the disk before it replaces the old file, so a power cut leaves one or the other whole.
+  std::string reason;
+  if (!platform::FlushFileToDisk(temporary, reason) ||
+      !platform::CommitReplace(temporary, path, reason)) {
+    error = "could not replace " + NameOf(path) + ": " + reason;
+    std::error_code ignored;
+    fs::remove(temporary, ignored);
     return false;
   }
   return true;

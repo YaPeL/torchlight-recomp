@@ -7,10 +7,16 @@
 # GL3+ plugin asked for libSM, libICE and libXext and used none). One recipe for CI and developers
 # (docs/BUILDING.md; docs/release-pipeline.md, REL.5).
 #
+# On macOS (arm64, deployment target 13.3, the SDK's): GL3+ on Cocoa (OpenGL.framework), no Wayland
+# build; plain dylibs, not frameworks; the libraries find each other through @loader_path (the
+# plugins in lib/OGRE/ find libOgreMain in lib/), and -dead_strip_dylibs does what --as-needed does.
+# OGRE installs Media/ and CMake/ at the prefix's top there (share/OGRE/ on Linux); consumers take
+# them from OGRE_MEDIA_DIR and OGRE_PLUGIN_DIR.
+#
 # Usage: tools/deps/build_ogre.sh PREFIX [WORK_DIR] [BUILD_TYPE]
 #   BUILD_TYPE  Release (default; what CI and the published game use) or RelWithDebInfo
-# Needs: git, cmake >= 3.25, ninja, clang/clang++ (CC/CXX pick others), libX11/libXrandr, EGL,
-# Wayland and zlib development packages.
+# Needs: git, cmake >= 3.25, ninja, clang/clang++ (CC/CXX pick others); on Linux libX11/libXrandr,
+# EGL, Wayland and zlib development packages; on macOS the Command Line Tools.
 set -eu
 
 OGRE_REPOSITORY=https://github.com/OGRECave/ogre.git
@@ -30,13 +36,28 @@ if [ ! -d "$src/.git" ]; then
   git clone --quiet --depth 1 --branch "$OGRE_TAG" "$OGRE_REPOSITORY" "$src"
 fi
 
+case "$(uname -s)" in
+  Linux) host=linux ;;
+  Darwin) host=macos ;;
+  *) echo "unsupported host: $(uname -s)" >&2; exit 2 ;;
+esac
+
 configure() {  # BUILD_DIR [extra options...]
   dir=$1
   shift
+  if [ "$host" = macos ]; then
+    set -- -DCMAKE_OSX_SYSROOT=macosx -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 \
+      -DCMAKE_OSX_ARCHITECTURES=arm64 -DOGRE_BUILD_LIBS_AS_FRAMEWORKS=OFF \
+      -DCMAKE_INSTALL_RPATH='@loader_path;@loader_path/..' \
+      -DCMAKE_SHARED_LINKER_FLAGS=-Wl,-dead_strip_dylibs \
+      -DCMAKE_MODULE_LINKER_FLAGS=-Wl,-dead_strip_dylibs "$@"
+  else
+    set -- -DCMAKE_INSTALL_RPATH='$ORIGIN;$ORIGIN/..;$ORIGIN/../..' \
+      -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--as-needed -DCMAKE_MODULE_LINKER_FLAGS=-Wl,--as-needed "$@"
+  fi
   cmake -S "$src" -B "$dir" -G Ninja -DCMAKE_BUILD_TYPE="$build_type" \
     -DCMAKE_C_COMPILER="${CC:-clang}" -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
-    -DCMAKE_INSTALL_PREFIX="$prefix" -DCMAKE_INSTALL_RPATH='$ORIGIN;$ORIGIN/..;$ORIGIN/../..' \
-    -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--as-needed -DCMAKE_MODULE_LINKER_FLAGS=-Wl,--as-needed \
+    -DCMAKE_INSTALL_PREFIX="$prefix" \
     -DOGRE_BUILD_DEPENDENCIES=OFF \
     -DOGRE_BUILD_RENDERSYSTEM_GL=OFF -DOGRE_BUILD_RENDERSYSTEM_GL3PLUS=ON \
     -DOGRE_BUILD_RENDERSYSTEM_GLES2=OFF -DOGRE_BUILD_RENDERSYSTEM_VULKAN=OFF \
@@ -59,6 +80,15 @@ configure() {  # BUILD_DIR [extra options...]
 configure "$work/build"
 cmake --build "$work/build" --parallel
 cmake --install "$work/build"
+if [ "$host" = macos ]; then
+  # OGRE appends its install's lib/ to every rpath (its CMakeLists.txt, after ConfigureBuild): an
+  # absolute path of this machine, which @loader_path makes unnecessary.
+  find "$prefix/lib" -name '*.dylib' -type f | while read -r library; do
+    install_name_tool -delete_rpath "$prefix/lib" "$library"
+  done
+  echo "OGRE installed in $prefix"
+  exit 0
+fi
 # The GL3+ plugin for Wayland windows; the rest of OGRE does not change with OGRE_USE_WAYLAND.
 # Built with its install RUNPATH, since it is copied out of the build tree.
 configure "$work/build-wayland" -DOGRE_USE_WAYLAND=ON -DCMAKE_BUILD_WITH_INSTALL_RPATH=ON

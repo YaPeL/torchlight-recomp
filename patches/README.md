@@ -1,6 +1,6 @@
 # Patches
 
-Patches to the ReXGlue SDK (`~/rexglue-sdk`, base `0c7b01a`, v0.10.0.5-dev). They are applied in
+Patches to the ReXGlue SDK (base `bd833a2`, `development` of 2026-10-01; before it, `0c7b01a`). They are applied in
 this order from the SDK checkout with `git apply <patch>`, and then the SDK is rebuilt and installed
 (all configurations). They are functional fixes only; there are no observation hooks.
 
@@ -12,6 +12,36 @@ patches 17 and 18 `windows`; the build scripts apply what their platform takes. 
 files or Windows branches, so on Linux they build nothing new. The SDK's `unit_tests` pass on Windows except
 `codegen/output_stamp_test.cpp` (lines 227-228, the escaping of paths with a space or `#`), which
 fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched by these patches.
+On Linux the same two checks fail, and so do four `core/chrono_test.cpp` cases (the conversions
+of the NT epoch, 1601-01-01), with the old base and with `bd833a2` alike; no patch touches either
+file. Every other case passes on `bd833a2` with this series, the patches' own tests included.
+
+## Numbers
+
+A patch's number is its name in this README, the docs and the commits, and it is never reused: a
+withdrawn or removed patch keeps its number (11, 19). Patches live on several branches before
+they reach `develop`, so numbers are handed out in one place, this table, kept by whoever
+maintains the series (ask there before giving a new patch a number). `series` lists the patches
+in number order; a branch adds its own line at its number's place.
+
+| # | Patch | Branch | State |
+|---|---|---|---|
+| 1-18 | (below) | `develop` | In the series |
+| 11 | `rexglue-delete-on-close.patch` | | Withdrawn |
+| 19 | `rexglue-mnk-keystrokes.patch` | | Removed with the move to `bd833a2` |
+| 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
+| 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration; a new version keeps Metal on Apple (SDL's software renderer presents through a GPU texture on Cocoa), from the Windows agent |
+| 22 | `rexglue-tests-portable.patch` | `develop` | In the series |
+| 23 | `rexglue-fctiw-rounding-mode.patch` | `develop` | In the series |
+| 24 | `rexglue-arm64-mffs-rounding.patch` | `develop` | In the series; confirmed on ARM64 |
+| 25 | `rexglue-mtfsf-field-mask.patch` | `develop` | In the series |
+| 26 | `rexglue-log-rotation.patch` | `develop` | In the series |
+| 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
+| 28 | `rexglue-quiet-missing-files.patch` | `develop` | In the series |
+| 29 | `rexglue-case-variants.patch` | `develop` | In the series |
+| 30 | | | Next free number |
+
+## The patches
 
 1. `rexglue-vulkan-stencil-transfer.patch`: the Vulkan backend's stencil copies (without shader
    stencil export) set every bit of the destination to 1. The minimap reinterprets that EDRAM as
@@ -61,6 +91,9 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
    GPL-3.0, but its `THIRD_PARTY_NOTICES.md` distributes the ReXGlue patches under ReXGlue's terms
    (BSD-3-Clause), and `null_gpu.cpp` states it in its header. The `std::jthread`/`std::stop_token`
    workaround in `src/core/timer_queue.cpp` that came with 0003 was left out (not needed on Linux).
+   Rebased on `bd833a2`: upstream moved the install target list to
+   `cmake/rexglue_export_targets.cmake`, so `rexgpu-null` is added there, and the plugin gets
+   `rexglue_add_version_resource` like `rexgpu-xenos`.
 
 9. `rexglue-imgui-drawer-pending-dialogs.patch`: if the game quit with a XAM dialog open (keyboard or
    message box), the process hung: the "Kernel Dispatch" thread waits in `xeXamDispatchDialogEx` for
@@ -93,7 +126,7 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     two handles, unmarked, mark cleared, entry deleted with a file open), in the SDK's `unit_tests`
     (`-DREXGLUE_BUILD_TESTS=ON`; on base `0c7b01a` the unit tests also need
     `-DCMAKE_CXX_FLAGS=-I<sdk>/thirdparty/xxHash` because `hash_test.cpp` does not find `xxhash.h`, an
-    existing problem unrelated to this patch). Not specific to any GPU or
+    existing problem unrelated to this patch; not needed from `bd833a2`, upstream `b5e0cf8`). Not specific to any GPU or
     render mode. **Candidate for an upstream report to ReXGlue**: the bug is in the base SDK
     (`src/kernel/xboxkrnl/xboxkrnl_io_info.cpp` marks, `src/system/xfile.cpp` never acts on it) and
     affects any title that deletes files.
@@ -228,6 +261,11 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     Windows: the keyboard drives the menus. Not specific to any GPU. Candidate for an upstream
     report to ReXGlue.
 
+    **Removed with the move to `bd833a2`** (the file is in the history): upstream fixed it (issue
+    #310, PR #311) and reworked it in `3f34ffc` (keystrokes for bound keys, released on focus loss,
+    plus a keyboard passthrough mode). Upstream does not repeat a held bound key; if the menus need
+    it, that is an upstream PR on top of patch 16's `keystroke_repeat.h`.
+
 20. `rexglue-vfs-wildcard-dos-semantics.patch`: the VFS wildcard (`WildcardEngine`, used by the
     guest's directory queries) read `*.*` as "the name contains a dot", so a query with `*.*`
     never returned names without one, folders among them; Windows and the Xbox (FindFirstFile)
@@ -247,27 +285,165 @@ fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched
     renumbers them and orders them in `series`. They are independent; this one touches only
     `wildcard.h`, `filesystem_wildcard.cpp` and the tests.*
 
-## Known gaps, not patched
+21. Taken by `rexglue-sdl-software-renderer.patch` (`SDL_Renderer` with the software driver only,
+    for the progress window and the launcher), on branch `feature/launcher-imgui`: described there.
 
-- **`RtlUnwind` is a stub** (the kernel logs `[STUB] RtlUnwind called - not implemented`). A guest
-  C++ exception that the game catches needs it to unwind the frames between the throw and the
-  handler; without it the game goes on in a broken state. Every start already hits it once (after
-  the first reads of `SAVE:\` at the title screen) with no visible effect. Candidate for an
-  upstream report to ReXGlue.
-- **An unhandled guest fault never ends the process.** The runtime logs `Unhandled guest access
-  violation` and resumes the faulting code, which faults again: the process loops forever and
-  fills the disk with logs (run 161 of 2026-10-08: 14 rotated log files of 5 MB in seconds) instead
-  of ending with an error. Seen in four mods validation runs (2026-10-07/08), always a read of
-  guest address 0x1AC soon after our unit index build had the game load a mod's unit that it could
-  not read (docs/mods.md, section 7e). An earlier note here
-  blamed a saved item with an unknown unit; run 161 had that item removed and still looped, so the
-  trigger in the game is not established. The macOS port hit the same on the runtime side (an
-  unhandled memory fault hangs the process). Cause in the SDK (on `0c7b01a` and on `bd833a2`
-  alike): `Memory::AccessViolationCallback` (`src/system/xmemory.cpp:547`) logs the line and
-  declines a fault outside the guest's physical heaps (such as 0x1AC), and the POSIX
-  `ExceptionHandlerCallback` (`src/core/exception_handler_posix.cpp`) then returns without
-  chaining to the previous handler or the default action, so the instruction runs and faults
-  again. Upstream draft D25 (`docs/rexglue-upstream.md` on `sdk/rexglue-next`, `0980c6f`) proposes
-  making such a fault an ordinary crash (SIGSEGV); not an SDK patch here unless decided.
+22. `rexglue-tests-portable.patch`: the SDK's tests did not build on ARM64 or macOS.
+    `tests/ppc/CMakeLists.txt` passed `-msse4.1 -mssse3` to `ppc_tests` on every architecture; now
+    only on x86-64, as the root `CMakeLists.txt` already does. The PPC instruction tests assemble
+    `tests/ppc/asm/*.s` with the bundled PowerPC binutils (with VMX128), which exist for Linux and
+    Windows only; the new cache variable `REXGLUE_PPC_TEST_BIN_DIR` points the build at `.bin` and
+    `.map` files assembled elsewhere from the same sources (empty, the default, assembles them as
+    before; a missing file stops the configure, and so does a source whose SHA-256 is not the one
+    in the folder's `sources.sha256`, so a changed test cannot run against stale binaries).
+    `tools/deps/build_ppc_test_data.sh` makes them, and that list, on a Linux machine. `codegen_writer_test.cpp` compared two `file_time_type` inside `CHECK`, which
+    makes Catch2 print them; that does not compile with Apple's libc++, so the comparison is made
+    outside. Validated on Linux x86-64: `ppc_tests` passes (1462 cases) both ways, the files
+    assembled by the build and the prebuilt ones are byte identical, and `[codegen_writer]` passes.
+    The source check (2026-10-09): the data of `sdk/ppc-test-data` configures, and an edited `.s`
+    or a missing `sources.sha256` stops the configure. Not specific to any GPU or to the game. Candidate for an upstream report to ReXGlue.
+
+23. `rexglue-fctiw-rounding-mode.patch`: `fctiw` and `fctid` (convert in the current rounding mode)
+    were emitted as `simde_mm_cvtsd_si32`/`_si64`. Without native SSE2 (ARM64) SIMDe implements
+    them with C `round`, half away from zero whatever the guest's FPSCR[RN]: 2.5 gave 3 under round
+    to nearest, toward zero and down. Now they call `rex::ppc::cvt_f64_s32_current` /
+    `_s64_current` (`include/rex/ppc/intrinsics.h`): the same SSE conversion when SSE2 is native,
+    `std::nearbyint` (which honours the mode `storeFromGuest` set) with the same out-of-range result
+    elsewhere. `fctid` and `fctidz` also saturated one value late: their bound was
+    `> double(LLONG_MAX)`, and `double(LLONG_MAX)` is 2^63, so 2^63 itself was converted and gave
+    INT64_MIN; the bound is now `>=`, as `fctiw` has with `INT_MAX`. Test:
+    `tests/ppc/asm/instr_fctix_rounding.s`, 20 cases (2.5, -2.5, 3.5, 2.7 and -2.7 under each mode,
+    `fctiw` and `fctid`; `fctid` and `fctidz` of 2^63). On x86-64 the rounding cases pass with and
+    without the patch (native SSE2 was right) and the two of 2^63 fail without it; the portable path was checked with a scratch program built with
+    `-DSIMDE_NO_NATIVE` (the old conversion wrong in 4 to 6 of 11 cases, the helper in none), and
+    the PPC tests fail without the patch on ARM64 only (`docs/rexglue-upstream.md`, section 8).
+    Torchlight uses `fctid` in 10 places. Not specific to any GPU. Upstream draft D22.
+
+24. `rexglue-arm64-mffs-rounding.patch`: `mffs` read the rounding mode back with MXCSR's order on
+    every host (`FPSCRRegister::HostToGuest`); ARM64's FPCR has up and down the other way round, so
+    `mffs` reported up as down and down as up, and a save and restore of FPSCR flipped them. The
+    table moved into each `FPSCRPlatform` (`include/rex/platform/fpscr.h`) next to `GuestToHost`,
+    and a `static_assert` in `include/rex/ppc/context.h` checks on every host that reading back
+    gives what was written. Test: `tests/ppc/asm/instr_mffs_rounding.s` (each mode read back; a
+    save, switch and restore of round up and of round down). Found by reading the code; on x86-64
+    the tests pass with and without the patch, and the failure without it is to be seen on ARM64
+    (`docs/rexglue-upstream.md`, section 8). Torchlight has 5 `mffs`. Upstream draft D23.
+
+25. `rexglue-mtfsf-field-mask.patch`: `mtfsf` with a partial field mask wrote the wrong FPSCR fields
+    on every architecture: FM bit 0 (field 0, `0xF0000000`) was mapped to the low nibble, which
+    holds RN, so `mtfsf 1,f1` did not change the rounding mode and `mtfsf 0x80` did. Now the mask
+    follows PowerPC bit order (`src/codegen/builders/system.cpp`, `build_mtfsf`). Test:
+    `tests/ppc/asm/instr_mtfsf_fields.s`, 4 cases, all 4 failing without the patch on x86-64. With
+    patches 22-25 the whole `ppc_tests` passes on Linux x86-64 (1492 cases with 23's two cases of
+    2^63) and `unit_tests` is as before. Torchlight only uses the full mask (`mtfsf 0xFF`, 5 places). Upstream draft D24.
+
+26. `rexglue-log-rotation.patch` (needs `bd833a2`): upstream `b971840` replaced the rotating log file
+    sink with a plain one and removed `log_max_file_size_mb` and `log_max_files`, so a run's log had
+    no size limit (a fault loop logs every retry; on this machine such runs wrote tens of
+    megabytes in seconds). The cvars and the rotating sink are back as they were on `0c7b01a`
+    (5 MB, 20 files by default), through `rex::detail::MakeLogFileSink`, so that our log limits
+    (`src/live/log_budget.h`: 5 MB x 10 a run) work the same on both bases. The runtime's
+    directory budget is untouched. Test: `tests/unit/core/log_rotation_test.cpp` (4 MB written
+    with 1 MB and 2 rotations: three files, at most 3 MB; the cvars are put back however the test
+    ends). Not specific to any GPU. Candidate for
+    an upstream report (the removal looks unintended next to the new directory budget).
+
+27. `rexglue-guest-file-flush.patch`: a guest's request to write its files through to the disk did
+    nothing: `NtFlushBuffersFile`, the C library's `FlushFileBuffers` and `XamContentFlush` returned
+    success without flushing, `XamContentClose` only unmounted, and nothing on a guest path called
+    the host `FileHandle::Flush`. A power loss or a crash right after a save could lose a save the
+    game believed was on disk; that affects every title that saves. Now:
+    - a content package is committed as a whole, as on the console: its device
+      (`HostPathDevice::EnableChangeTracking`) remembers the host files written, created or renamed
+      into place since it was mounted, and the folders whose entries changed (a file created,
+      renamed or removed); `XamContentFlush` and `XamContentClose` (before it unmounts) flush them
+      (`HostPathDevice::FlushChanges`: each file reopened by path, since its handles are usually
+      closed by then, then the folders) and log `Content <root>: flushed N files and M folders to
+      disk` (at WARN with the count that failed); a failed flush is their result, and
+      `XamContentClose` unmounts either way; a root that is not open still returns success, as
+      before; a renamed file or folder moves what is remembered at or under it to its new path.
+      Returning the failure was checked against what Torchlight does with it (2026-10-09): its one
+      `XamContentClose` (thunk `sub_8287E5D8`) is called only from `sub_823AC7B8`, which turns it
+      into 1 or 0, and none of that wrapper's 20 call sites reads it (17 overwrite `r3` first;
+      `sub_823AC088` and `sub_821FF750`, `CSettingsMenuXenon`'s slot 3, hand it back to callers
+      that do not read it either). Its one `XamContentFlush` is in Microsoft's telemetry library
+      (`DataFile`, `sub_828A00A8`), which logs a failure and passes it to its own completion
+      callback. The "Corrupt/Damaged Save" dialog, whose "Yes" is the game's only
+      `XamContentDelete`, comes from a flag that short reads raise (`docs/saves-research.md`), not
+      from either result. Had a path led there, the failure would have stayed in the log only;
+    - `NtFlushBuffersFile` and `FlushFileBuffers` on a handle that is not a file now fail
+      (`X_STATUS_INVALID_HANDLE`, 0); they always succeeded before. No case of it in Torchlight;
+    - `NtFlushBuffersFile` and `FlushFileBuffers` flush the handle's file (`XFile::Flush`, the VFS
+      `File::Flush`; a handle without write access has written nothing and returns success);
+    - `FileHandle::Flush` returns whether it worked, and `rex::filesystem::FlushFolder` flushes a
+      folder's entries: `fsync` on POSIX, `fcntl(F_FULLFSYNC)` first on Apple (`fsync` there stops
+      at the drive's cache) with `fsync` when it fails; `FlushFileBuffers` on Windows, where folder
+      entries are journaled by NTFS and are not flushed.
+    Torchlight's case, the reason for this design: the first version flushed only the files still
+    open at `XamContentFlush`/`XamContentClose`, and a guided save under `strace` showed no `fsync`
+    at all. The game's one `NtFlushBuffersFile` call site is not on its save path, and by the
+    content flush it has closed what it wrote. Its save replaces the character file by name
+    (`4.tsv` before, `4.TSV` after, nothing else changed). Flushing every file on close was the
+    other option; it does not depend on the game closing the content, but it would force the disk
+    on every temporary file of every title, which the console does not.
+    Test: `tests/unit/core/vfs_flush_test.cpp` (a writable handle's flush reaches its host handle, a
+    failure is reported, a read-only handle flushes nothing; without tracking a device flushes
+    nothing; files created or rewritten through closed handles are flushed with their folder and
+    then forgotten; Torchlight's replace: a temporary written, the old file removed, the temporary
+    renamed to `4.TSV`, one file and one folder flushed; a removed file leaves its folder only; a
+    file written in a folder renamed since is flushed under the new name). The
+    exports themselves are one-line calls into those, checked in a game save rather than by a
+    unit test, since they need the kernel state. Checked in a guided save-and-exit under `strace`
+    (2026-10-08): the `XamContentFlush` flushed `sharedstash.bin` (`fsync` 68 ms); the game then
+    wrote `save.tmp` and renamed `4.tsv` to `backup.tmp` and `save.tmp` to `4.TSV`; the
+    `XamContentClose` 5 s later flushed 2 files and the folder (`4.TSV` 69 ms, `backup.tmp` 0.04 ms,
+    the folder 1.2 ms), all on the guest's main thread: about 140 ms per save-and-exit. An `fsync`
+    on ext4 commits the journal and waits for the data it orders, so its time depends on what else
+    is dirty on the system, not on the file: a 112 KB file took 1.9 ms with nothing else dirty,
+    11-36 ms with 16-256 MB of other dirty data, 85 ms as the first file of a new folder. Torchlight
+    commits at zone changes (under the loading screen), in the options menu and at save-and-exit
+    (a guided run, 2026-10-09), never in open play; Alric's completion event is not verified yet
+    (D27). The owner's criterion: synchronous is fine with a menu or a loading screen open; a commit
+    in open play would need the flushes on a worker thread first. Not specific to any GPU.
+    Candidate for an upstream report (D27 in `docs/rexglue-upstream.md`): it affects every title
+    that saves.
+
+28. `rexglue-quiet-missing-files.patch`: `NtCreateFile` logged every failed open at WARN, including
+    a path that does not exist, which is how titles probe for optional files. With a PC mod pack
+    (29 mods) Torchlight looks each data file up in every mod's folder: about 124,000 lines
+    `[NtCreateFile] FAILED: path='tlmods:\<mod>\MEDIA\...' -> 0xc000000f` in the first 45 s of
+    startup, 20 MB of log before the game was usable (2026-10-09, the mods agent). The duplicate
+    filter planned in `docs/crash-handling.md` would not catch them: each line has its own path.
+    Now `X_STATUS_NO_SUCH_FILE`, `X_STATUS_OBJECT_NAME_NOT_FOUND` and
+    `X_STATUS_OBJECT_PATH_NOT_FOUND` are logged at DEBUG (off by default, `log_level` is `info`)
+    and every other failure stays at WARN. `NtOpenFile` goes through the same code. No unit test:
+    the export needs the kernel state; the check is the mod pack's startup. Checked there on
+    2026-10-09 (the mods agent, the local SDK install with 1-28): 1.13 MB of log in the first 45 s
+    instead of 14.5 MB, and 95,675 `[NtCreateFile] FAILED` lines down to one, an access denied
+    (`game:\appdata` -> 0xc0000022) at startup. Not specific to any GPU. Upstream draft D28.
+29. `rexglue-case-variants.patch`: names in one host folder that differ only in case (`0.tsv` and
+    `0.TSV`, from a copy made by hand or an import with another case) are one name to the guest.
+    `Entry::GetChild` finds the first one the host listed, and an enumeration lists both, so a
+    title can show one save twice and never open the other. Two changes:
+    - `Entry::Rename` with replace took only the first match as the replaced entry. When it was
+      spelled differently from the new name, the host rename wrote the new spelling as a second
+      file on a case-sensitive host, the old file left the tree but stayed on disk, and it came
+      back at the next mount. Now every sibling the new name matches is replaced (each still has
+      to be a file with no open handle), and `HostPathEntry::RenameEntryInternal` removes each
+      one's host file after the rename succeeded, unless it is the same file as the destination.
+      That check (`std::filesystem::equivalent`) is what keeps the new save on a case-insensitive
+      host (Windows, macOS's default APFS), where the rename already replaced the variant and its
+      path now names the new data. A removed file is reported to patch 27's tracking. If the
+      removal fails, the rename still succeeds and the entry still leaves the tree, so the old
+      file comes back at the next mount, now with the mount's WARN and one from the rename.
+    - The mount logs one WARN per group of case variants in a folder. Both stay in the tree.
+
+    Tests in `vfs_rename_test.cpp`: a rename onto a case variant (runs on every host, and is the
+    real case-insensitive check on Windows and macOS); the same on a simulated case-insensitive
+    host (Linux: after the mount the replaced spelling becomes a link to the destination, so a
+    wrong removal deletes the link and the test fails); two variants at mount, with the WARN, a
+    rename onto both and Torchlight's save sequence. Without the fix, 2 of the 3 Linux cases fail
+    (8 checks); with the equivalence check taken out, the simulated case, the two-variant case and 2
+    older rename cases fail (an ordinary replace would delete the save). Upstream draft D30.
 
 The observation and diagnostic patches there were before remain in the git history.

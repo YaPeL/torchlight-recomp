@@ -22,6 +22,7 @@
 #include "hooks/video_mode.h"
 #include "live/deferred_check.h"
 #include "live/live_mode.h"
+#include "live/log_budget.h"
 #include "live/ui_gamepad.h"
 #include "live/ui_overlay.h"
 #include "platform/platform.h"
@@ -38,6 +39,10 @@ REXCVAR_DEFINE_STRING(native_live, "only", "Torchlight",
 REXCVAR_DEFINE_STRING(live_record, "", "Torchlight",
                       "Live mode: record every frame the native backend consumes to this file "
                       "(session recording, replay --session); empty does not record");
+REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
+                    "Live mode: time the recording cost per hook and section and log it (live "
+                    "producer, live measurements); off by default, it costs the guest's render "
+                    "thread about 2 %. The frame time statistics are always on");
 REXCVAR_DEFINE_UINT32(live_record_max_mb, 4096, "Torchlight",
                       "Live mode: the session recording stops (well formed) at this size in MiB");
 
@@ -405,10 +410,26 @@ void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths) {
       paths.cache_root = paths.user_data_root / "cache";
     }
   }
+  // A run's log rotates within the budget (the runtime's rotating file sink; on bd833a2 through
+  // SDK patch 26, which brought it back).
+  const LogBudget budget;
+  const auto set_unless_command_line = [](const char* name, const std::string& value) {
+    const rex::cvar::FlagEntry* entry = rex::cvar::GetFlagInfo(name);
+    if (entry && entry->source != rex::cvar::Source::kCommandLine) {
+      rex::cvar::SetFlagByName(name, value);
+    }
+  };
+  set_unless_command_line("log_max_file_size_mb", std::to_string(budget.file_bytes >> 20));
+  set_unless_command_line("log_max_files", std::to_string(RotatedFilesPerRun(budget)));
+
   const rex::cvar::FlagEntry* flag = rex::cvar::GetFlagInfo("log_file");
   if (!flag || flag->source == rex::cvar::Source::kCommandLine) return;
   const std::string dir = platform::LogDir();
   if (dir.empty()) return;  // the runtime's default, next to the executable
+  if (const size_t removed = PruneLogFolder(dir, app_name, budget); removed > 0) {
+    std::printf("torchlight: removed %zu old log files to keep the log folder under %llu MB\n",
+                removed, static_cast<unsigned long long>(budget.folder_bytes >> 20));
+  }
   rex::cvar::SetFlagByName("log_file", NextLogPath(dir, app_name).string());
 }
 
@@ -500,6 +521,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.draw = !ParallelNoDraw();
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
+  options.producer_timing = REXCVAR_GET(native_producer_timing);
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);

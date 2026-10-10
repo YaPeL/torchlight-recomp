@@ -15,7 +15,9 @@
 #include "capture/session.h"
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
+#include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
+#include "live/frame_timing.h"
 #include "live/live_content_source.h"
 #include "live/measured_mutex.h"
 #include "live/slow_frames.h"
@@ -74,6 +76,7 @@ void LogMeasurements(uint64_t cuts, uint64_t measured) {
   }
   std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.ns > b.ns; });
   std::string hooks;
+  if (!session.producer_timing()) hooks = " not timed (--native_producer_timing)";
   for (size_t i = 0; i < rows.size() && i < 8; ++i) {
     hooks += fmt::format("\n    {:.3f} ms  {:7.1f} calls  {}", rows[i].ns / 1e6 / measured_frames,
                          rows[i].calls / measured_frames, capture::HookName(rows[i].hook));
@@ -104,8 +107,13 @@ LiveMode& LiveMode::Get() {
 void LiveMode::Start(const LiveOptions& options) {
   options_ = options;
   running_ = true;
+  capture::Session::Get().SetProducerTiming(options.producer_timing);
   capture::Session::Get().EnableLive(&queue_, &store_);
-  thread_ = std::thread([this] { Run(); });
+  finished_ = false;
+  thread_ = std::thread([this] {
+    Run();
+    finished_ = true;
+  });
   REXLOG_INFO("live: native backend {}{}, {}x{}, frames queued at the guest swap",
               options_.only ? "as the only renderer (Xenos off)" : "in parallel",
               options_.draw ? "" : " WITHOUT DRAWING (diagnostics)", options_.width,
@@ -124,6 +132,9 @@ void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync) {
 void LiveMode::Stop() {
   if (!running_.exchange(false)) return;
   queue_.Close();
+  // The render thread may be waiting for the main thread to create, resize or destroy the
+  // backend's window (macOS, platform::RunOnWindowThread): that work runs until the thread ends.
+  platform::WaitServingWindowThread([this] { return finished_.load(); });
   if (thread_.joinable()) thread_.join();
 }
 
@@ -265,13 +276,16 @@ void LiveMode::Run() {
   auto last_summary = Clock::now();
   bool window_open = true;
   SlowFrameDetector slow_frames;
+  FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
+  size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
     if (!frame) continue;
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
+    dropped_since_present += frame->dropped_before;
     FrameRecord record;
     record.swap = frame->swap;
     record.guest_ms = frame->producer.guest_ms;
@@ -327,6 +341,10 @@ void LiveMode::Run() {
         auto present_start = Clock::now();
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();
+        if (window_open) {
+          FrameTiming::Get().OnPresent(dropped_since_present);
+          dropped_since_present = 0;
+        }
         record.present_ms = Ms(present_end - present_start);
         present_ms.Add(record.present_ms);
         if (last_present.time_since_epoch().count() != 0) {
@@ -361,6 +379,7 @@ void LiveMode::Run() {
     auto end = Clock::now();
     backend_ms.Add(Ms(end - start));
     latency_ms.Add(Ms(end - frame->cut));
+    reclaimer.Free(std::move(*frame));
     ++frames;
     record.backend_ms = Ms(end - start);
     record.content_ms = step.content_ms;
@@ -422,7 +441,7 @@ void LiveMode::Run() {
       double constants = per_frame(ns[size_t(PS::kConstants)]);
       double resources = per_frame(ns[size_t(PS::kResources)]);
       double commands = per_frame(ns[size_t(PS::kCommands)]) - constants - resources;
-      REXLOG_INFO(
+      if (capture::Session::Get().producer_timing()) REXLOG_INFO(
           "live producer (guest threads, ms per frame over {} measured frames): constants {:.2f}, other "
           "commands {:.2f}, resource snapshots {:.2f}, version marking {:.2f}, frame cut {:.2f}; "
           "total {:.2f}",

@@ -1,0 +1,19 @@
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_io.cpp b/src/kernel/xboxkrnl/xboxkrnl_io.cpp
+index b5e35ad..7257989 100644
+--- a/src/kernel/xboxkrnl/xboxkrnl_io.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_io.cpp
+@@ -168,7 +168,13 @@ u32 NtCreateFile_entry(mapped_u32 handle_out, u32 desired_access,
+   }
+ 
+   *handle_out = handle;
+-  if (XFAILED(result)) {
++  if (result == X_STATUS_NO_SUCH_FILE || result == X_STATUS_OBJECT_NAME_NOT_FOUND ||
++      result == X_STATUS_OBJECT_PATH_NOT_FOUND) {
++    // An open of a path that does not exist is how titles probe for optional files, often by
++    // the thousand (one lookup per data file in each of several folders): a result, not a
++    // warning.
++    REXKRNL_DEBUG("[NtCreateFile] not found: path='{}' -> {:#x}", target_path, result);
++  } else if (XFAILED(result)) {
+     REXKRNL_IMPORT_FAIL("NtCreateFile", "path='{}' -> {:#x}", target_path, result);
+   } else {
+     REXKRNL_IMPORT_RESULT("NtCreateFile", "{:#x} handle={:#x}", result, handle);

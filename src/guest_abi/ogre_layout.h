@@ -29,6 +29,8 @@
 #include <cstring>
 #include <string>
 
+#include "guest_abi/xbox_memory.h"
+
 namespace torchlight::guest_abi {
 
 enum class Confidence : uint8_t {
@@ -66,25 +68,28 @@ struct SlotInfo {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Big-endian guest memory reads. `membase` is the host address of guest address 0.
+// Big-endian guest memory reads. `membase` is the host address of guest address 0; addresses are
+// translated by xbox_memory::HostAddress.
 
-inline uint8_t ReadU8(const uint8_t* membase, uint32_t addr) { return membase[addr]; }
+inline uint8_t ReadU8(const uint8_t* membase, uint32_t addr) {
+  return *xbox_memory::HostAddress(membase, addr);
+}
 
 inline uint16_t ReadU16(const uint8_t* membase, uint32_t addr) {
   uint16_t v;
-  std::memcpy(&v, membase + addr, sizeof(v));
+  std::memcpy(&v, xbox_memory::HostAddress(membase, addr), sizeof(v));
   return std::endian::native == std::endian::big ? v : std::byteswap(v);
 }
 
 inline uint32_t ReadU32(const uint8_t* membase, uint32_t addr) {
   uint32_t v;
-  std::memcpy(&v, membase + addr, sizeof(v));
+  std::memcpy(&v, xbox_memory::HostAddress(membase, addr), sizeof(v));
   return std::endian::native == std::endian::big ? v : std::byteswap(v);
 }
 
 inline uint64_t ReadU64(const uint8_t* membase, uint32_t addr) {
   uint64_t v;
-  std::memcpy(&v, membase + addr, sizeof(v));
+  std::memcpy(&v, xbox_memory::HostAddress(membase, addr), sizeof(v));
   return std::endian::native == std::endian::big ? v : std::byteswap(v);
 }
 
@@ -98,10 +103,10 @@ inline bool ReadBool(const uint8_t* membase, uint32_t addr) { return ReadU8(memb
 // function reads it).
 inline void WriteU32(uint8_t* membase, uint32_t addr, uint32_t value) {
   if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
-  std::memcpy(membase + addr, &value, sizeof(value));
+  std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
 }
 inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
-  std::memcpy(membase + addr, data, size);
+  std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
 }
 
 inline uint8_t ReadU8(const uint8_t* membase, uint32_t obj, Field f) {
@@ -199,7 +204,8 @@ inline std::string ReadString(const uint8_t* membase, uint32_t str, uint32_t max
   uint32_t capacity = ReadU32(membase, str + stl_string::kCapacity.offset);
   if (length > max_length) length = max_length;
   uint32_t data = capacity > stl_string::kInlineCapacity ? ReadU32(membase, str) : str;
-  return std::string(reinterpret_cast<const char*>(membase + data), length);
+  const uint8_t* text = xbox_memory::HostAddress(membase, data);
+  return std::string(reinterpret_cast<const char*>(text), length);
 }
 
 // A NUL-terminated guest char string at `address` (bytes as they are in memory), at most
@@ -208,8 +214,8 @@ inline std::string ReadCString(const uint8_t* membase, uint32_t address,
                                uint32_t max_length = 4096) {
   std::string s;
   if (!address) return s;
-  for (uint32_t i = 0; i < max_length && membase[address + i]; ++i)
-    s.push_back(static_cast<char>(membase[address + i]));
+  const uint8_t* text = xbox_memory::HostAddress(membase, address);
+  for (uint32_t i = 0; i < max_length && text[i]; ++i) s.push_back(static_cast<char>(text[i]));
   return s;
 }
 

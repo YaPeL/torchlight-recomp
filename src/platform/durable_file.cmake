@@ -1,0 +1,16 @@
+# torchlight_durable_file (durable_file.h): no SDL or runtime. Included by src/platform and by the
+# libraries that also build on their own (src/achievements); defined once.
+if(NOT TARGET torchlight_durable_file)
+    if(WIN32)
+        set(_durable_sources durable_file_win.cpp)
+    elseif(APPLE)
+        set(_durable_sources durable_file_posix.cpp durable_file_mac.cpp)
+    else()
+        set(_durable_sources durable_file_posix.cpp durable_file_linux.cpp)
+    endif()
+    list(TRANSFORM _durable_sources PREPEND "${CMAKE_CURRENT_LIST_DIR}/")
+    add_library(torchlight_durable_file STATIC ${_durable_sources})
+    target_include_directories(torchlight_durable_file PUBLIC "${CMAKE_CURRENT_LIST_DIR}/..")
+    target_compile_features(torchlight_durable_file PUBLIC cxx_std_23)
+    target_compile_options(torchlight_durable_file PRIVATE -Wall -Wextra)
+endif()

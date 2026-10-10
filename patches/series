@@ -1,5 +1,5 @@
 # The SDK patches in the order they apply (patches/README.md describes each), on rexglue-sdk
-# 0c7b01a. A second word limits a patch to one kind of platform: "posix" (not on Windows) or
+# bd833a2 (development, 2026-10-01). A second word limits a patch to one kind of platform: "posix" (not on Windows) or
 # "windows" (only there). Read by tools/deps/build_sdk.sh.
 rexglue-vulkan-stencil-transfer.patch
 rexglue-shutdown-window-lifecycle.patch
@@ -18,5 +18,12 @@ rexglue-shm-unlink-on-create.patch posix
 rexglue-sdl-keystroke-repeat.patch
 rexglue-win-timer-resolution.patch windows
 rexglue-win-sdl3-shared.patch windows
-rexglue-mnk-keystrokes.patch
+rexglue-tests-portable.patch
+rexglue-fctiw-rounding-mode.patch
+rexglue-arm64-mffs-rounding.patch
+rexglue-mtfsf-field-mask.patch
+rexglue-log-rotation.patch
+rexglue-guest-file-flush.patch
+rexglue-quiet-missing-files.patch
+rexglue-case-variants.patch
 rexglue-vfs-wildcard-dos-semantics.patch

@@ -54,7 +54,9 @@ add_library(torchlight_save_import STATIC
 target_include_directories(torchlight_save_import PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_save_import PUBLIC cxx_std_23)
 target_compile_options(torchlight_save_import PRIVATE -Wall -Wextra)
-target_link_libraries(torchlight_save_import PRIVATE torchlight_miniz torchlight_sha256)
+# torchlight_durable_file: the imported files' write (WriteAtomic).
+target_link_libraries(torchlight_save_import PRIVATE torchlight_miniz torchlight_sha256
+                      torchlight_durable_file)
 
 add_executable(save_import_deps_test deps_test.cpp)
 target_link_libraries(save_import_deps_test PRIVATE torchlight_save_import)

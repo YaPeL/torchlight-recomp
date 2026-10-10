@@ -108,11 +108,13 @@ std::string Tr(const std::string& english) { return g.strings.Translate(g.langua
 uint32_t PutText(uint8_t* base, uint32_t address, const std::string& utf8) {
   const std::u16string text = si::Utf16(utf8);
   for (char16_t unit : text) {
-    base[address] = static_cast<uint8_t>(unit >> 8);
-    base[address + 1] = static_cast<uint8_t>(unit);
+    uint8_t* bytes = abi::xbox_memory::HostAddress(base, address);
+    bytes[0] = static_cast<uint8_t>(unit >> 8);
+    bytes[1] = static_cast<uint8_t>(unit);
     address += 2;
   }
-  base[address] = base[address + 1] = 0;
+  uint8_t* end = abi::xbox_memory::HostAddress(base, address);
+  end[0] = end[1] = 0;
   return address + 2;
 }
 
@@ -132,7 +134,7 @@ bool ShowBox(PPCContext& ctx, uint8_t* base, const si::ImportMessage& message) {
   for (const auto& button : message.buttons) size += TextBytes(button);
   const uint32_t block = g.runtime->memory()->SystemHeapAlloc(static_cast<uint32_t>(size + 16));
   if (!block) return false;
-  std::memset(base + block, 0, size + 16);
+  std::memset(abi::xbox_memory::HostAddress(base, block), 0, size + 16);
   g.box = {block, block, block + 4};
   abi::WriteU32(base, g.box.overlapped, X_ERROR_IO_PENDING);  // XOVERLAPPED.result
   const uint32_t buttons = block + 32;

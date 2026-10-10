@@ -9,10 +9,17 @@ Pak.zip of the PC game the save comes from: the save's quest state follows the P
 definitions, which differ from the 360 ones in a few quests, and some quest GUIDs changed. The
 source is only read; the destination is created exclusively (or swapped in atomically with
 --force) and never replaced unless --force is given.
+
+The destination is named N.TSV, upper case, as the game and the in-game import name their saves
+(a .tsv in another case is written as .TSV). The game finds its characters by name ignoring case
+and numbers them as wcstol reads the name, so the folder must not already hold N in any spelling:
+another case of the same name is the destination itself (replaced with --force, never left next to
+it), and any other name with the same number is refused.
 """
 
 import argparse
 import os
+import re
 import sys
 import tempfile
 
@@ -32,14 +39,47 @@ PC_PAK_MISSING = (
     'libraries and GOG installs have it in their own Torchlight folder).')
 
 
+def character_number(name):
+    """The character number the game reads from a save's file name: wcstol on the name without its
+    extension (spaces, an optional sign, then digits; 0 when there are none)."""
+    match = re.match(r'\s*([+-]?\d+)', name[:-4] if name.lower().endswith('.tsv') else name)
+    return int(match.group(1)) if match else 0
+
+
+def character_destination(destination_path):
+    """The path the save is written to (N.TSV, upper case) and the files of its folder that already
+    hold that character number, as (path, [(file name, same name in another case)])."""
+    folder, name = os.path.split(os.path.abspath(destination_path))
+    if not re.fullmatch(r'\d+\.tsv', name, re.IGNORECASE):
+        raise SaveError('the destination must be named N.TSV (N the character number, as the game '
+                        'names its saves): %s' % name)
+    name = name[:-4] + '.TSV'
+    number = character_number(name)
+    taken = []
+    for other in sorted(os.listdir(folder)) if os.path.isdir(folder) else []:
+        if other.lower().endswith('.tsv') and character_number(other) == number:
+            taken.append((other, other.lower() == name.lower()))
+    return os.path.join(folder, name), taken
+
+
 def convert(source_path, destination_path, pak_path, pc_pak_path, force=False, log=print):
     """Convert one file. Returns the replacements applied; raises SaveError with a user message."""
     if not pc_pak_path:
         raise SaveError(PC_PAK_MISSING)
     if os.path.exists(destination_path) and os.path.samefile(source_path, destination_path):
         raise SaveError('the destination is the same file as the source')
-    if os.path.exists(destination_path) and not force:
-        raise SaveError('%s already exists; it is not replaced without --force' % destination_path)
+    destination_path, taken = character_destination(destination_path)
+    folder = os.path.dirname(destination_path)
+    for other, same_name in taken:
+        if os.path.samefile(source_path, os.path.join(folder, other)):
+            raise SaveError('the destination is the same file as the source')
+        if not same_name:
+            raise SaveError('character number %d is already %s in %s; the game would see two '
+                            'characters with one number. Choose another N, or move that file away '
+                            'first' % (character_number(other), other, folder))
+        if not force:
+            raise SaveError('%s already exists; it is not replaced without --force'
+                            % os.path.join(folder, other))
 
     schema = load_schema()
     with open(source_path, 'rb') as f:
@@ -89,6 +129,7 @@ def convert(source_path, destination_path, pak_path, pc_pak_path, force=False, l
                             'game data' % quest['name'])
 
     _write_new(destination_path, output, force)
+    _drop_case_variants(destination_path)
     for offset, guid in sorted(replacements.items()):
         log('quest GUID at offset %d replaced with %d' % (offset, guid))
     for path, name, guid in dialog['removed']:
@@ -97,6 +138,20 @@ def convert(source_path, destination_path, pak_path, pc_pak_path, force=False, l
         log('adapted %s' % change)
     log('Wrote %s (%d bytes). The source was not modified.' % (destination_path, len(output)))
     return replacements
+
+
+def _drop_case_variants(path):
+    """After writing N.TSV, no other spelling of it may stay in the folder (the game would list the
+    character twice and open either one): on a case-sensitive file system the old file is removed,
+    on a case-insensitive one it is the file just written, whose name is set to N.TSV."""
+    folder, name = os.path.split(path)
+    for other in os.listdir(folder):
+        if other != name and other.lower() == name.lower():
+            other_path = os.path.join(folder, other)
+            if os.path.samefile(other_path, path):
+                os.rename(other_path, path)
+            else:
+                os.unlink(other_path)
 
 
 def _write_new(path, data, force):

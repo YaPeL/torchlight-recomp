@@ -56,7 +56,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           key=$(tools/deps/key.sh)
-          gh release download "deps-$key" -R "$GITHUB_REPOSITORY" -D /tmp/deps || {
+          tools/deps/store.sh fetch linux "$key" /tmp/deps || {
             echo "No published dependencies for key $key: let CI run on main first." >&2; exit 1; }
           mkdir -p "$DEPS_DIR"
           for f in /tmp/deps/*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
@@ -176,7 +176,7 @@ jobs:
           packaging/linux/check_appimage.sh Torchlight-Recomp-*-x86_64.AppImage
 
   # Windows: the same rules (no cache, nothing of the game uploaded but the zip). The dependencies
-  # are CI's deps-windows-<key>; LLVM comes from windows_toolchain.ps1, MSVC from the runner.
+  # are CI's, from the store (tools/deps/store.sh); LLVM comes from windows_toolchain.ps1, MSVC from the runner.
   game-windows:
     name: Game (Windows)
     needs: on-main
@@ -193,21 +193,22 @@ jobs:
         name: Dependency key
         shell: bash
         run: echo "key=$(tools/deps/key.sh windows)" >> "$GITHUB_OUTPUT"
-      # In pwsh, as CI's test-windows: there `tar` is Windows' own (bsdtar), which made the zips and
-      # reads them. Git Bash's is GNU tar, which reads no zip and takes "D:" in a path for a host.
+      # Downloaded in Git Bash, unpacked in pwsh, as CI's test-windows: there `tar` is Windows' own
+      # (bsdtar), which made the zips; Git Bash's is GNU tar, which reads no zip.
       - name: Dependencies (published by CI for this key)
-        shell: pwsh
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          $key = '${{ steps.key.outputs.key }}'
-          gh release download "deps-windows-$key" -R $env:GITHUB_REPOSITORY -D "$env:RUNNER_TEMP\deps"
-          if ($LASTEXITCODE) {
-            Write-Error "No published Windows dependencies for key ${key}: let CI run on main first."
-            exit 1
-          }
+          key=${{ steps.key.outputs.key }}
+          tools/deps/store.sh fetch windows "$key" deps-download || {
+            echo "No published Windows dependencies for key $key: let CI run on main first." >&2
+            exit 1; }
+      - name: Unpack the dependencies
+        shell: pwsh
+        run: |
           New-Item -ItemType Directory -Force $env:DEPS_DIR | Out-Null
-          foreach ($f in Get-ChildItem "$env:RUNNER_TEMP\deps\*.zip") {
+          foreach ($f in Get-ChildItem "deps-download\*.zip") {
             tar -xf $f.FullName -C $env:DEPS_DIR
             if ($LASTEXITCODE) { exit 1 }
           }
