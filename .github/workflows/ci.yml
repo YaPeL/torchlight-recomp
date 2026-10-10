@@ -389,6 +389,22 @@ jobs:
         run: cmake --build --preset mac-arm64-nogame --parallel
       - name: Test
         run: ctest --test-dir out/build/mac-arm64-nogame --output-on-failure
+      # A test that crashed leaves macOS's crash report (the stack of every thread) in the user's
+      # DiagnosticReports; nothing of the game is built here.
+      - name: Crash reports
+        if: failure()
+        run: |
+          mkdir -p "$RUNNER_TEMP/crash-reports"
+          find "$HOME/Library/Logs/DiagnosticReports" -maxdepth 1 -name '*.ips' -newer CMakePresets.json \
+            -exec cp {} "$RUNNER_TEMP/crash-reports/" \; 2> /dev/null || true
+          ls -la "$RUNNER_TEMP/crash-reports"
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: macos-crash-reports
+          path: ${{ runner.temp }}/crash-reports
+          if-no-files-found: warn
+          retention-days: 7
 
   package-check:
     name: Packaged replay on ${{ matrix.image }}
