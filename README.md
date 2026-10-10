@@ -4,12 +4,12 @@
 [![Release](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-recomp?include_prereleases&filter=v*&sort=semver)](https://github.com/YaPeL/torchlight-recomp/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![Platforms: Linux | Windows](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-lightgrey)](#installing)
+[![Platforms: Linux | Windows | macOS](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)](#installing)
 
 An unofficial native PC port of Torchlight for Xbox LIVE Arcade (Xbox 360), made by static
 recompilation with the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk). The game's PowerPC
-code is translated to C++ and compiled for x86-64; instead of emulating the Xbox 360 GPU, every draw
-is rebuilt with [OGRE 14](https://www.ogre3d.org/) on OpenGL 3.3 (or Direct3D 11 on Windows).
+code is translated to C++ and compiled for x86-64 and, on macOS, ARM64 (Apple Silicon); instead of
+emulating the Xbox 360 GPU, every draw is rebuilt with [OGRE 14](https://www.ogre3d.org/) on OpenGL 3.3 (or Direct3D 11 on Windows).
 
 > [!IMPORTANT]
 > The releases contain no game assets and no original game files. The executable is built from the
@@ -60,6 +60,35 @@ The zip is not code-signed. The first time, Windows SmartScreen may show "Window
 PC": that is Windows being cautious with programs it has not seen downloaded often, not a detection
 of anything harmful. Click **More info**, then **Run anyway**; Windows remembers the choice for
 that copy. To check a download, compare its SHA-256 with the release's `SHA256SUMS`.
+
+### macOS
+
+Requirements: a Mac with Apple Silicon (M1 or later) and macOS 13.3 or later; tested on macOS 26.
+There is no build for Intel Macs.
+
+Open `Torchlight-Recomp-*-arm64.dmg` and drag **Torchlight Recomp** to **Applications**.
+
+The app is not signed or notarized by Apple, so the first time macOS refuses to open it. That is
+macOS refusing apps from developers without a paid Apple account, not a detection of anything
+harmful. To open it:
+
+1. Double-click **Torchlight Recomp** in Applications. macOS says "Apple could not verify
+   “Torchlight Recomp.app” is free of malware that may harm your Mac or compromise your privacy."
+   Click **Done** (not **Move to Trash**).
+2. Open **System Settings → Privacy & Security** and scroll down to the message about
+   "Torchlight Recomp". Click **Open Anyway** (it stays there for about an hour after step 1).
+3. The same warning comes back, now with an **Open Anyway** button: click it and confirm with your
+   password or Touch ID.
+
+macOS remembers the choice; later starts open it directly. A new version needs the same steps
+once. To check a download, compare its SHA-256 (`shasum -a 256 FILE` in Terminal) with the
+release's `SHA256SUMS`.
+
+To play with the keyboard (see [First start](#first-start)), start it from Terminal:
+
+```sh
+open -a "Torchlight Recomp" --args --mnk_mode=true
+```
 
 ## First start
 
@@ -132,7 +161,8 @@ Other languages can be added as language packs, including translations made for 
 - **Xbox LIVE** features (sign-in, leaderboards) are not available.
 - **Steam Deck**: the AppImage is meant to work in Desktop Mode but has not been tested on the
   device yet.
-- **macOS** is not supported in this beta; a macOS version is planned for the next release.
+- **macOS**: the app is not signed or notarized (see Gatekeeper, above), and started from Finder
+  it has no keyboard controls: without a gamepad, start it from Terminal as shown there.
 - **Ultrawide**: at 32:9, the story screens shown inside a level can show a few rows of the level at
   the top right.
 - **Mods** made for the PC version are not supported. Language packs for scripts written right to
@@ -150,6 +180,15 @@ Other languages can be added as language packs, including translations made for 
 | Shader cache | `~/.cache/TorchlightRecomp/` | `%LOCALAPPDATA%\TorchlightRecomp\ogre\` |
 
 On Linux the `XDG_*_HOME` variables are honored.
+
+On macOS, in `~/Library/`:
+
+| | macOS |
+|---|---|
+| Settings (`settings.toml`) and saves | `Application Support/TorchlightRecomp/` |
+| Game data, with `import` for PC saves | `Application Support/TorchlightRecomp/game/` |
+| Logs | `Logs/TorchlightRecomp/` |
+| Shader cache | `Caches/TorchlightRecomp/ogre/` |
 
 ## Building
 

@@ -1,6 +1,7 @@
-# Release of the Linux and Windows beta (docs/release-pipeline.md 5.4): the game built from the XEX
-# in the private assets repository, packaged as an AppImage and a Windows zip, checked in clean
-# containers (Linux) and on a second runner (Windows) and left as a draft release for the owner to
+# Release of the Linux, Windows and macOS beta (docs/release-pipeline.md 5.4): the game built from
+# the XEX in the private assets repository, packaged as an AppImage, a Windows zip and a macOS .dmg,
+# checked in clean containers (Linux) and on a second runner (Windows, macOS) and left as a draft
+# release for the owner to
 # try and publish. Only from v* tags on main (or by hand on such a tag), after the owner approves
 # the `release` environment. The environment's rule only sees the tag's name, so the on-main job
 # first stops a tag whose commit is not on main (a tag on develop), before the approval is asked
@@ -8,7 +9,7 @@
 #
 # Rules for the job that touches the game (decision 3): no actions/cache, no compiler cache, no
 # upload of generated/, of the build directory or of the symbols; nothing of the game printed. The
-# only artifacts are the AppImage and the zip, which are what get published.
+# only artifacts are the AppImage, the zip and the .dmg, which are what get published.
 name: Release
 
 on:
@@ -317,9 +318,126 @@ jobs:
         shell: pwsh
         run: packaging/windows/check_zip.ps1 (Get-Item Torchlight-Recomp-*-x86_64.zip).FullName
 
+  # macOS (Apple Silicon): the same rules. The dependencies are CI's (deps-macos), the compiler the
+  # runner's Command Line Tools. The .app is signed ad hoc only (docs/macos-port.md, section 6).
+  game-macos:
+    name: Game (macOS)
+    needs: on-main
+    runs-on: macos-26
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+      - name: Locations
+        run: echo "DEPS_DIR=$RUNNER_TEMP/deps" >> "$GITHUB_ENV"
+      - name: Tools
+        run: |
+          command -v ninja > /dev/null || brew install ninja
+          command -v zstd > /dev/null || brew install zstd
+      - name: Dependencies (published by CI for this key)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          key=$(tools/deps/key.sh macos)
+          tools/deps/store.sh fetch macos "$key" "$RUNNER_TEMP/deps-download" || {
+            echo "No published macOS dependencies for key $key: let CI run on main first." >&2
+            exit 1; }
+          mkdir -p "$DEPS_DIR"
+          for f in "$RUNNER_TEMP"/deps-download/*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
+      - name: Game executable (private repository)
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.ASSETS_REPOSITORY }}
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          persist-credentials: false
+          path: _assets
+      - name: Check the XEX
+        run: |
+          expected=$(sed -nE 's/^\{"default\.xex", [0-9]+, "([0-9a-f]{64})"\},$/\1/p' \
+            src/game_setup/game_files_table.inc)
+          actual=$(shasum -a 256 _assets/default.xex | cut -d' ' -f1)
+          [ -n "$expected" ] && [ "$expected" = "$actual" ] || {
+            echo "default.xex is not the supported version (1.0.140.0)" >&2; exit 1; }
+          mkdir -p ../360tools/extracted/extracted
+          mv _assets/default.xex ../360tools/extracted/extracted/default.xex
+          rm -rf _assets
+      - name: Codegen
+        run: |
+          "$DEPS_DIR/sdk/bin/rexglue" codegen torchlight_manifest.toml > "$RUNNER_TEMP/codegen.log" 2>&1 || {
+            tail -20 "$RUNNER_TEMP/codegen.log"; exit 1; }
+      # The runner has 3 cores and 7 GB: the build with 3 jobs peaked at 1.4 GB on an M2 (2026-10-10).
+      - name: Build (Release with debug information)
+        run: |
+          cmake --preset mac-arm64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
+            -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g"
+          cmake --build --preset mac-arm64-release --parallel
+          ctest --test-dir out/build/mac-arm64-release --output-on-failure
+      # Symbols split before make_app.sh signs; the version is the tag's numbers (v0.2.0-beta: 0.2.0),
+      # what Info.plist's version strings hold.
+      - name: App and disk image
+        run: |
+          install="$RUNNER_TEMP/install"
+          cmake --install out/build/mac-arm64-release --prefix "$install"
+          packaging/macos/split_symbols.sh "$install" "$RUNNER_TEMP/symbols"
+          version=${GITHUB_REF_NAME#v}
+          packaging/macos/make_app.sh "$install" "$RUNNER_TEMP/app" "${version%%-*}"
+          packaging/macos/check_app.sh "$RUNNER_TEMP/app/Torchlight Recomp.app"
+          packaging/macos/make_dmg.sh "$RUNNER_TEMP/app/Torchlight Recomp.app" \
+            "Torchlight-Recomp-$GITHUB_REF_NAME-arm64.dmg"
+      - name: Symbols (private repository)
+        env:
+          SYMBOLS_KEY: ${{ secrets.SYMBOLS_DEPLOY_KEY }}
+          SYMBOLS_REPOSITORY: ${{ vars.SYMBOLS_REPOSITORY }}
+        run: |
+          umask 077
+          key_file="$RUNNER_TEMP/symbols_key"
+          printf '%s\n' "$SYMBOLS_KEY" > "$key_file"
+          export GIT_SSH_COMMAND="ssh -i '$key_file' -o StrictHostKeyChecking=accept-new"
+          repo="$RUNNER_TEMP/symbols-repo"
+          git clone --depth 1 "git@github.com:$SYMBOLS_REPOSITORY.git" "$repo"
+          mkdir -p "$repo/$GITHUB_REF_NAME/macos-arm64"
+          cp -R "$RUNNER_TEMP/symbols/." "$repo/$GITHUB_REF_NAME/macos-arm64/"
+          cd "$repo"
+          git config user.name "release workflow"
+          git config user.email "release@localhost"
+          git add -A
+          git commit -q -m "Symbols of $GITHUB_REF_NAME, macos-arm64 ($GITHUB_SHA)"
+          # The Linux and Windows jobs push to the same repository: on a race, rebase onto theirs.
+          for attempt in 1 2 3; do
+            git push -q origin HEAD && break
+            [ "$attempt" = 3 ] && exit 1
+            git pull -q --rebase origin HEAD
+          done
+          rm -f "$key_file"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: macos-dmg
+          path: Torchlight-Recomp-*-arm64.dmg
+          retention-days: 7
+
+  # A second runner: the app's libraries and signature on a Mac that did not build it.
+  check-macos:
+    name: Disk image on a clean runner
+    needs: game-macos
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          sparse-checkout: packaging/macos
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-dmg
+      - name: Check
+        run: |
+          mount="$RUNNER_TEMP/dmg"
+          hdiutil attach -quiet -readonly -nobrowse -mountpoint "$mount" Torchlight-Recomp-*-arm64.dmg
+          result=0
+          packaging/macos/check_app.sh "$mount/Torchlight Recomp.app" || result=$?
+          hdiutil detach -quiet "$mount"
+          exit $result
+
   publish:
     name: Draft release
-    needs: [check, check-windows]
+    needs: [check, check-windows, check-macos]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -332,10 +450,13 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: windows-zip
+      - uses: actions/download-artifact@v8
+        with:
+          name: macos-dmg
       - name: Checksums
         run: |
           sha256sum Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.zip \
-            gcc-*-source-*.tar > SHA256SUMS
+            Torchlight-Recomp-*-arm64.dmg gcc-*-source-*.tar > SHA256SUMS
       # Build attestations need a public repository: skipped while it is private.
       - name: Attestation
         if: ${{ !github.event.repository.private }}
@@ -344,16 +465,22 @@ jobs:
           subject-path: |
             Torchlight-Recomp-*-x86_64.AppImage
             Torchlight-Recomp-*-x86_64.zip
+            Torchlight-Recomp-*-arm64.dmg
       - name: Draft
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           cat > notes.md <<'NOTES'
-          Linux and Windows beta. Needs your own copy of Torchlight for Xbox Live Arcade (asked for on the first start).
+          Linux, Windows and macOS (Apple Silicon) beta. Needs your own copy of Torchlight for Xbox Live Arcade (asked for on the first start).
 
-          **Windows:** the zip is not code-signed, so the first start may show SmartScreen's "Windows protected your PC". That is Windows being cautious with programs it has not seen downloaded often, not a detection of anything harmful: click **More info**, then **Run anyway**. `SHA256SUMS` lists the checksum of every file.
+          **Windows:** the zip is not code-signed, so the first start may show SmartScreen's "Windows protected your PC". That is Windows being cautious with programs it has not seen downloaded often, not a detection of anything harmful: click **More info**, then **Run anyway**.
+
+          **macOS:** the app is not signed or notarized by Apple, so the first start says "Apple could not verify “Torchlight Recomp.app” is free of malware". That is macOS refusing apps from developers without a paid Apple account, not a detection of anything harmful: click **Done**, then in **System Settings → Privacy & Security** click **Open Anyway**, and **Open Anyway** again in the warning that follows. Step by step, and how to play with the keyboard: [README](https://github.com/YaPeL/torchlight-recomp#macos).
+
+          `SHA256SUMS` lists the checksum of every file.
           NOTES
           gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft \
             --title "Torchlight Recomp $GITHUB_REF_NAME" \
             --notes-file notes.md \
-            Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.zip gcc-*-source-*.tar SHA256SUMS
+            Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.zip \
+            Torchlight-Recomp-*-arm64.dmg gcc-*-source-*.tar SHA256SUMS

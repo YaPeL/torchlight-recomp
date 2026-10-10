@@ -25,7 +25,9 @@ On macOS (Apple Silicon, with the Command Line Tools, and CMake and Ninja from H
 `build_ogre.sh` builds the same OGRE for arm64 with deployment target 13.3: GL3+ on Cocoa
 (`OpenGL.framework`), plain dylibs that find each other through `@loader_path`, no Wayland build.
 OGRE's Apple layout puts `Media/` and `CMake/` at the top of the install (`share/OGRE/` on Linux).
-The game itself does not build on macOS yet (docs/macos-port.md).
+The game builds with the `mac-arm64-*` presets (`mac-arm64-nogame` without it, as CI); the app
+bundle and the `.dmg` come from `cmake --install` and `packaging/macos/` (`make_app.sh`,
+`check_app.sh`, `split_symbols.sh`, `make_dmg.sh`; their order is `release.yml`'s `game-macos`).
 
 A build directory configured earlier with the OGRE 1.6.1 backend needs `cmake --fresh --preset ...`
 (the cache keeps the old OGRE path).
