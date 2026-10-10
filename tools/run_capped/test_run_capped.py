@@ -121,13 +121,20 @@ class RunCappedTest(unittest.TestCase):
                 f"folder, parts = {str(folder)!r}, {parts}\n"
                 "f = open(os.path.join(folder, 'game.log'), 'w')\n"
                 "def log(text):\n    f.write(text + '\\n'); f.flush()\n"
+                # Windows: replacing a part the runner is reading fails until it closes it (a
+                # handle, even one sharing deletion, keeps the name); a writer retries, as here.
+                "def replace(old, new):\n"
+                "    for _ in range(200):\n"
+                "        try:\n            os.replace(old, new); return\n"
+                "        except PermissionError:\n            time.sleep(0.005)\n"
+                "    os.replace(old, new)\n"
                 "def rotate():\n"
                 "    global f\n"
                 "    f.close()\n"
                 "    for k in range(parts, 0, -1):\n"
                 "        old = os.path.join(folder, f'game.{k - 1}.log' if k > 1 else 'game.log')\n"
                 "        if os.path.exists(old):\n"
-                "            os.replace(old, os.path.join(folder, f'game.{k}.log'))\n"
+                "            replace(old, os.path.join(folder, f'game.{k}.log'))\n"
                 "    f = open(os.path.join(folder, 'game.log'), 'w')\n"
                 f"{body}\n"), folder
 
