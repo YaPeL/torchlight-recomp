@@ -627,6 +627,47 @@ Windows).
   An in-game import like the saves' (which reads `<game_data_root>/import/`) is cheap to add later:
   copy, never move, and keep PC's `mods.dat` priorities. Not needed to start.
 
+## 8b. For the launcher's mods page (2026-10-09)
+
+What the launcher needs from `src/mods/` to list, turn on or off and order the player's mods. Every
+piece is host-only (no guest, OGRE or platform types), works on any system, and is tested in
+`mods_test.cpp`. The game reads the result at its next start: nothing has to be told to a running
+game.
+
+What exists today (`mods/mod_list.h`):
+- The folder: `std::filesystem::path(platform::DataDir()) / "mods"`, with `kListFile` (`mods.dat`)
+  in it.
+- `ScanModsFolder(folder)` gives the mods found (`ModFolder`: the folder's name, and `name`, `author`,
+  `description` from its `mod.dat`, empty without one) in folder-name order, plus `skipped` lines
+  for subfolders that are not mods.
+- `ParseModList(bytes, &error)` and `WriteModList(list)` read and write `mods.dat` in PC's format
+  (`CHECKFORNEW`, then `DIRECTORY`, `PRIORITY`, `COMPRESSED` per mod). A negative `PRIORITY` turns a
+  mod off; the lower number wins when two mods change the same file.
+- `PlanMods(scan, list)` gives what the game will do: the load order (`ModPlan::mods`, the enabled
+  ones by priority, then the disabled ones) and the list to keep (`ModPlan::list`: folders gone are
+  dropped, new ones added at the end). `list_changed` says it differs from the file.
+
+What the launcher would add on top, kept in the launcher (a thin layer over the above, no new state in
+`src/mods/`):
+- **List:** scan, read `mods.dat` (missing or unreadable: none), `PlanMods`; show `ModPlan::mods` in
+  order, each with its `ModFolder` details and on or off from its priority.
+- **Turn on or off, reorder:** from the order the player sets, write a `ModList` with
+  `CHECKFORNEW` kept, the enabled mods given priorities 0, 1, 2... in that order, and the disabled
+  ones -1 (any negative value), then `WriteModList` to `mods.dat`. Write it whole, to a temporary
+  file renamed over the old one.
+- **Install a mod:** copy its folder into the mods folder as it is; it shows up at the end at the
+  next scan. The launcher should not unpack archives itself unless asked to later.
+
+What the game does at its next start with a changed set (nothing for the launcher to do): it copies
+the saves before using it (`save-backups/...-mods`), rebuilds its unit table when the mods' units
+changed (the first start can take up to a minute with a large pack, then it is cached), and protects
+saves holding items it cannot load. A line in the launcher saying "changes take effect when the game
+starts; your saves are copied first" covers it.
+
+Not decided, for the launcher's author and the user: whether a mod with a `mod.dat` that does not
+read (skipped by the scan) is shown as broken, and whether `COMPRESSED` is shown at all (it is kept as
+read; this build loads only unpacked folders).
+
 ## 9. Future work: UI and input crossover
 
 Two ideas, outside the mods task, recorded for later:
