@@ -423,9 +423,10 @@ the town square's profile (~17,400 samples of the guest's thread each):
 No gain past the noise. The host walk's own time lands on the guest memory loads (0.46 %,
 attributed to their byte swaps) and on stepping through the tree (0.41 %): the cost is waiting for
 memory, ~900 tree nodes, each with a controller and three objects and their vtables scattered over
-the heap, which the host code reads just as the guest's did. Not merged. The guest's walk already
-asks for those lines ahead (`dcbt` on the next node, its controller and two objects), which the
-recompiled code drops; making the codegen honour them would help every such walk, not only this one.
+the heap, which the host code reads just as the guest's did. Not merged. The guest's walk asks for
+some of those lines itself (`dcbt` on the node, its controller and two more addresses read from the
+node, at the top of each step), which the recompiled code drops; whether honouring the game's
+`dcbt` in the codegen is worth it is evaluated separately.
 
 ### The backend thread (2026-10-09)
 
