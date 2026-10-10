@@ -1,0 +1,9 @@
+# Load the saved character (the main menu's Continue), stand a few seconds, capture, quit.
+press A every 3s until menu MainMenu timeout 90s
+idle 2s
+press A every 3s until level_loaded timeout 60s
+idle 5s
+mark LOADED
+capture
+idle 1s
+quit
