@@ -14,12 +14,12 @@ Mac today (section 6).
 | SDK | ReXGlue keeps Xenia's Android code (`REX_PLATFORM_ANDROID`: `ASharedMemory`, threads), but has no Android preset or toolchain, and it was never built for Android | Yes: a `android-arm64` preset and the NDK toolchain, as a patch |
 | Render | OGRE's GLES2 render system (GLES 3.x when available) with RTSS's GLSL ES writer; Vulkan later. The backend uploads DXT1/3/5 as they come from the guest; Mali and Adreno have no BCn | Yes: DXT must be decoded or transcoded in the backend's conventions module |
 | Window and lifecycle | SDL3 has Android support (SDLActivity, lifecycle events, `ANativeWindow`); OGRE's Android EGL window takes an `ANativeWindow` and can keep its context when the surface goes | No, but surface loss is the main risk (section 4) |
-| Controls | The game is built for a gamepad, which helps: a touch overlay emulates one. The closest precedent, UnleashedRecomp-Android, draws it in-engine and hides it on gamepad input | No; gamepad first |
+| Controls | The game is built for a gamepad, which helps: a touch overlay emulates one. The closest precedent, UnleashedRecomp-Android, draws it in-engine and hides it on gamepad input. A setting Auto / Always / Never (A5) | No; gamepad first |
 | Game data | Pick the XBLA package with Android's document picker, copy it into app storage, install as today | No |
 | Packaging | Signed arm64 APK on GitHub Releases; no Play (single commercial game, user-supplied data; precedent below) | No |
 | Performance | CPU-bound on desktop (the guest's own code); a mid-range phone is slower per core: 30 fps is the realistic target, 60 to be measured | Unknown until measured |
 | Memory | Never measured on desktop; to measure before any device work | Unknown |
-| Devices | None here; a physical arm64 phone is needed for performance, the Apple Silicon emulator for bring-up | Yes: tools to install (section 6) |
+| Devices | A Galaxy Tab S5e and a POCO phone (the owner's); the Apple Silicon emulator with a 16 KB image for bring-up; the tools (9.7 GB) approved | Yes: tools to install (section 6) |
 
 Recommendation: the same order as macOS, each stage validated before the next: SDK on Android with
 its tests on a device, then OGRE GLES 3 with the backend's replays, then a skeleton APK with the
@@ -108,7 +108,7 @@ first version takes the package file only.
 
 For this port: a signed APK (arm64-v8a, targetSdk 35+, 16 KB aligned) on GitHub Releases with the
 other platforms' downloads and in `SHA256SUMS`. The signing key is a new secret of the `release`
-environment, owned by the owner; losing it means users cannot update in place.
+environment, generated and kept by the owner (A7); losing it means users cannot update in place.
 
 ## 2. NDK, toolchain and what ARM64 work carries over
 
@@ -284,37 +284,107 @@ dungeon (Activity Monitor's footprint, or `footprint`), and the texture memory w
 
 ## 6. Devices and emulators to test on
 
-Nothing for Android is installed on this Mac (no SDK, NDK, `adb` or emulator), and the disk has
-about 18 GB free.
+Nothing for Android is installed on this Mac (no SDK, NDK, `adb` or emulator); the disk has about
+22 GB free (2026-10-10).
 
-- **Emulator on the M2**: the Android emulator runs arm64 system images natively on Apple Silicon,
-  with GLES and Vulkan translated to the host's Metal/GL, and there are 16 KB page images. Good for
-  bring-up, the SDK's tests, lifecycle and the package; not for performance or GPU behaviour (its
-  GPU is a translation, and the surface/context behaviour may differ from real drivers). Needs the
-  command-line tools, the NDK, platform tools and one system image: about 6–8 GB on disk with a
-  build tree each for the SDK, OGRE and the game (*estimate*), which the 18 GB free allows but
-  tightly.
-- **A physical phone** is needed for performance, memory, thermals, real GPU drivers (Mali or
-  Adreno) and the controls. Ideally mid-range (Snapdragon 7-series or Dimensity 7000/8000 class,
-  6–8 GB), on Android 14 or later; a Pixel 8 or later also offers the 16 KB boot option. A gamepad
-  that pairs with it (any Bluetooth Xbox or PlayStation pad) for stages A4–A5.
+**What the tools take** (installed sizes, summed from each package's zip directory in Google's
+repository, 2026-10-10):
 
-To decide: which phone (if any is at hand), and whether to install the Android command-line tools,
-the NDK and the emulator here (Homebrew: `android-commandlinetools`, then `sdkmanager`), proposed
-before installing.
+| Package | Download | Installed |
+|---|---|---|
+| `cmdline-tools;latest` | 0.16 GB | 0.18 GB |
+| `platform-tools` (`adb`) | 0.02 GB | 0.04 GB |
+| `platforms;android-36` | 0.07 GB | 0.11 GB |
+| `build-tools;36.1.0` (`apksigner`, `zipalign`) | 0.08 GB | 0.20 GB |
+| `ndk;29.0.14206865` | 1.05 GB | 3.29 GB |
+| `emulator` (macOS arm64) | 0.42 GB | 1.32 GB |
+| `system-images;android-36;google_apis_ps16k;arm64-v8a` | 1.88 GB | 4.56 GB |
+| **Total** | 3.68 GB | **9.70 GB** |
+
+On top of that: one virtual device (its data partition and snapshots grow with use; created with
+snapshots off and a 4 GB data partition, it stays near 2-3 GB), the downloads while they unpack
+(up to 1.9 GB, freed afterwards), and the Android build trees of the SDK, OGRE and later the game
+(a few GB, *estimate*). About 13 GB in all, which leaves about 9 GB of the 22. What is left out to
+fit: the 4 KB system image (another 4.6 GB), since the physical devices below have 4 KB pages, so
+the emulator only needs the 16 KB one; Homebrew's `android-commandlinetools` (the same tools under
+`/opt/homebrew`), installing everything with `sdkmanager` into one folder (`~/android-sdk`) that
+can be deleted whole.
+
+**Emulator on the M2**: the Android emulator runs arm64 system images natively on Apple Silicon,
+with GLES and Vulkan translated to the host's GL/Metal. Good for bring-up, the SDK's tests on 16 KB
+pages, lifecycle and the package; not for performance or GPU behaviour (its GPU is a translation,
+and the surface/context behaviour may differ from real drivers).
+
+**Physical devices** (the owner's, 2026-10-10):
+
+- **Samsung Galaxy Tab S5e**: Snapdragon 670 (2 Cortex-A75 at 2.0 GHz, 6 Cortex-A55), Adreno 615
+  (GLES 3.2, Vulkan 1.1), 4 or 6 GB, 2560x1600; its last update is Android 11 (API 30), with 4 KB
+  pages (*from its specifications; to confirm on the device with `adb shell getprop` and
+  `getconf PAGESIZE`*). Below the mid-range target in CPU, and on an older Android: it sets the
+  minimum API if it is to be supported (minSdk 30 or lower), and it is the low end the frame-rate
+  levers are tried on. Adreno: no DXT, ETC2 and ASTC present.
+- **A POCO phone**: model to be named by the owner; it decides the mid-range measurements (A6).
+
+A Bluetooth pad for stages A4-A5 (any Xbox or PlayStation pad), and the Auto mode of the touch
+controls is tested with it connected at start and connected later.
 
 ## 7. Plan by stages
 
 | Stage | Tickets | Needs | Validated by | Risks |
 |---|---|---|---|---|
-| A0. Tools | AND.0 | Approval to install; a device | `adb devices`; the emulator boots a 16 KB image | Disk (18 GB free) |
-| A1. SDK on Android | AND.1 | NDK | The SDK builds with an `android-arm64` preset and the 0x1000 host offset (patches); its PPC tests (`ppc_tests`) and unit tests pass through `adb shell` on a 4 KB and a 16 KB emulator image and on the phone | `ASharedMemory` path never run in ReXGlue; the offset on 4 KB devices |
+| A0. Tools | AND.0 | Approved 2026-10-10: command-line tools, NDK, one arm64 emulator image (section 6) | `adb devices` lists the tablet and the phone; the emulator boots the 16 KB image | Disk (about 9 GB left after) |
+| A1. SDK on Android | AND.1 | NDK | The SDK builds with an `android-arm64` preset and the 0x1000 host offset (patches); its PPC tests (`ppc_tests`) and unit tests pass through `adb shell` on the 16 KB emulator image and on the 4 KB tablet and phone | `ASharedMemory` path never run in ReXGlue; the offset on 4 KB devices |
 | A2. OGRE GLES 3 and the backend | AND.2 | A1's toolchain | OGRE 14.6 GLES2/GLES3 builds; the backend's tests and the 20 captures replayed on the phone against Linux (PSNR); DXT decoded by capability | Precision (`mediump`), GLES format gaps, DXT memory |
 | A3. Skeleton APK and lifecycle | AND.3 | A2 | An APK (SDLActivity, `libmain.so`) that replays a capture in a loop and survives background/foreground, screen off/on and low memory without losing the picture | Surface loss with an OGRE-owned EGL; a lost context |
 | A4. Game to the main menu | AND.4 | A1–A3; the XBLA package on the phone | First start: package picked with SAF, installed; the main menu with a gamepad; saves on app storage | Memory; file paths and case |
-| A5. Touch controls | AND.5 | A4 | An overlay drawn by the backend's UI pass, a layout editor, Auto hiding on pad input; a dungeon played by touch | Design for a pad-built ARPG on a phone screen |
+| A5. Touch controls | AND.5 | A4 | An overlay drawn by the backend's UI pass, a layout editor, the Auto / Always / Never setting (below); a dungeon played by touch | Design for a pad-built ARPG on a phone screen |
 | A6. Play and measure | AND.6 | A4 | Town and dungeon frame times, memory, thermals on the mid-range phone; 30 fps held | CPU too slow; throttling |
-| A7. Package and CI | AND.7 | A1–A6 | A signed, 16 KB-aligned APK (`check_elf_alignment.sh`); CI builds the deps and the tests without the game; the release job builds the APK at a freeze | Signing key custody; developer verification (2027) |
+| A7. Package and CI | AND.7 | A1–A6; the owner's signing key (below) | A signed, 16 KB-aligned APK (`check_elf_alignment.sh`, `apksigner verify`); CI builds the deps and the tests without the game; the release job builds and signs the APK at a freeze and publishes it on GitHub Releases only | Developer verification (2027) |
+
+**A5, the touch controls setting** (owner's decision, 2026-10-10). A setting with three values,
+in the settings file and, once it exists, in the launcher:
+
+- **Auto** (the default): if a pad is connected at start, the built-in pad of an Android handheld
+  included, the touch controls are not shown; the first touch on the screen shows them, and the
+  first input from a pad hides them again. With no pad at start they are shown.
+- **Always**: shown, whatever pads are connected.
+- **Never**: never shown, for the Android handhelds with a built-in pad (Retroid, AYN Odin,
+  Anbernic and the like), where a touch on the screen must not bring them up.
+
+A pad is what SDL reports as a gamepad (`SDL_EVENT_GAMEPAD_ADDED`, its button and axis events); the
+built-in pad of a handheld reports as one. Validated on the phone with a Bluetooth pad connected
+before start and after start, and with none.
+
+**A7, the signing key** (owner's decision, 2026-10-10). The owner generates and keeps the key; the
+agents never generate, see or copy it. The CI uses it only as secrets of the `release`
+environment. Generated once, on the owner's machine, with the JDK's `keytool` (the Android build
+tools need a JDK anyway):
+
+```
+keytool -genkeypair -v -storetype PKCS12 -keystore torchlight-release.p12 \
+  -alias torchlight -keyalg RSA -keysize 4096 -validity 10000 \
+  -dname "CN=Torchlight Recomp"
+```
+
+`keytool` asks for the keystore password (with PKCS12 the key's password is the same). Validity
+10000 days (27 years): Google asks for at least 25. Then
+`keytool -list -v -keystore torchlight-release.p12` prints the certificate's SHA-256 fingerprint.
+
+What to keep:
+
+- The keystore file `torchlight-release.p12` and its password, in at least two places offline (a
+  password manager that holds files, and an encrypted copy on another device). Lost, no update can
+  install over a version already installed: users would have to uninstall, and their saves live
+  in the app's storage (A4). Leaked, anyone can publish an APK that installs over ours.
+- The alias (`torchlight`) and the certificate's SHA-256 fingerprint, which is not secret: the
+  README publishes it so users can check a download (`apksigner verify --print-certs`), and
+  Android's developer verification (2027) registers the package name with it.
+
+The secrets of the `release` environment (Settings, Environments, `release`), set by the owner:
+`ANDROID_KEYSTORE_BASE64` (the file, `base64 -i torchlight-release.p12`),
+`ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_ALIAS`. The release job writes the file to the
+runner's temporary folder, signs with `apksigner` (schemes v2 and v3), and deletes it; no other
+job and no pull request sees them.
 
 Order and reasons: A1 first because nothing runs without the SDK, and its tests run without the
 game; A2 before any app because replays isolate the renderer, as MAC.5 did; A3 before the game
@@ -338,8 +408,11 @@ release.
 6. **Controls**: a pad overlay on a phone screen for a game designed for a pad; the layout needs
    play-testing (A5).
 
-**Owner decisions.** A test phone (and a pad for it); installing the Android tools here; the
-signing key (who keeps it, where); GitHub Releases only, no Play.
+**Owner decisions** (2026-10-10). The Android tools installed here (section 6, measured first);
+the touch controls setting Auto / Always / Never (A5); the signing key generated and kept by the
+owner, used by CI as a `release` environment secret (A7); GitHub Releases only, no Play; test
+devices: a Samsung Galaxy Tab S5e and a POCO phone (model to be named). Proposed to the ReXGlue
+agent: the 0x1000 host offset on Android as a patch of the series (section 2).
 
 ## Sources
 
