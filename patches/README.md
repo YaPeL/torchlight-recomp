@@ -40,7 +40,7 @@ in number order; a branch adds its own line at its number's place.
 | 28 | `rexglue-quiet-missing-files.patch` | `develop` | In the series |
 | 29 | `rexglue-case-variants.patch` | `develop` | In the series |
 | 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `sdk/fault-chain` | Pending integration |
-| 31 | `rexglue-guest-fatal-hook.patch` | `sdk/fatal-errors` | Pending a check in the game |
+| 31 | `rexglue-guest-fatal-hook.patch` | `sdk/fatal-errors` | Pending integration |
 | 32 | | | Next free number |
 
 ## The patches
@@ -494,7 +494,10 @@ in number order; a branch adds its own line at its number's place.
     a handler that returns, the process aborts (in a new process, POSIX). Without the change the
     first test fails and the second break kills `unit_tests` by SIGTRAP. The C++ throw path reads
     the thrown object through the kernel's memory, which the unit tests lack, so it is checked by
-    reading only. Upstream draft D31.
+    reading only. Checked in the game before it went in (2026-10-10, the render agent): logging
+    hooks on the four imports, confirmed in the binary's disassembly to catch every call site, saw
+    no call in three scripted runs (load and quit, a new character, a fight and the town), so
+    normal play reaches none of these paths. Upstream draft D31.
 
 30. `rexglue-posix-chain-unclaimed-faults.patch`: on Linux and macOS, a fault no SDK handler
     claimed made `ExceptionHandlerCallback` return, so the instruction ran again and faulted
