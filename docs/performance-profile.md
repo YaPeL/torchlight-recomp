@@ -39,6 +39,18 @@ Frame rates of such runs still move by several percent between identical runs; d
 changes also use the profile (the change's share of the thread it runs on), which the drift does
 not move.
 
+**The reference route (since 2026-10-10)** is played by hand, on the fixed-floor saved game, with
+the step overlay giving the steps: the main menu with hands off; Continue; the mine's first floor
+standing still (10 s), then fighting west over the bridge to the spiders and the NPC (40 s); the
+stairs up to the town; the town square walked around on the player's usual route (40 s). It is
+more demanding than the scripted `measure-fight-town` (the town square at 138 fps by hand against
+higher figures scripted), so scripted runs are only compared with scripted runs. A recording of
+the hand route played back as an input script does not replace it: the game's randomness (where
+the monsters move during the fight) leaves the character elsewhere when the fight ends, and from
+there the recorded input no longer does the same thing. In the one playback tried, the dungeon
+steps came close (fight 166 fps against 170 by hand), but the character never reached the stairs,
+and the recorded town input ended up in the menus.
+
 **Build** (the Linux release's flags, built locally): the game (`linux-amd64-release`,
 `-O3 -g -DNDEBUG`; `generated/` also `-gline-tables-only -mcmodel=large -msse4.1`), the SDK's
 Release libraries (`librexruntime.so`, `librexgpu-xenos.so`: `-O3 -DNDEBUG -march=x86-64-v2`,
