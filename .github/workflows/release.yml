@@ -370,7 +370,9 @@ jobs:
           cmake --preset mac-arm64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
             -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g"
           cmake --build --preset mac-arm64-release --parallel
-          ctest --test-dir out/build/mac-arm64-release --output-on-failure
+          # The GL3+ runs (label opengl33) need OpenGL 3.3, which the runner's virtual GPU lacks, as
+          # in ci.yml's test-macos.
+          ctest --test-dir out/build/mac-arm64-release --output-on-failure -LE opengl33
       # Symbols split before make_app.sh signs; the version is the tag's numbers (v0.2.0-beta: 0.2.0),
       # what Info.plist's version strings hold.
       - name: App and disk image

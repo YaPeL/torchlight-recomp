@@ -132,9 +132,10 @@ add_test(NAME conventions_test COMMAND conventions_test)
 # and skip (code 77) without a display. Each runs with GL3+ everywhere and, on Windows, also with
 # Direct3D 11 (`<name>_d3d11`). GL3+ needs OpenGL 3.3: Windows CI and release runners have no GPU,
 # only Windows' own OpenGL 1.1, on which OGRE crashes before the test can tell (no display to probe
-# first, unlike Linux), so the GL3+ runs carry the label `opengl33` and the runners' ctest leaves
-# it out (`-LE opengl33`, .github/workflows/ci.yml and release.yml); they run on machines with a
-# GPU. The Direct3D 11 runs need no GPU (Windows' software adapter, WARP) and run there too.
+# first, unlike Linux), and the macOS runners' virtual GPU gives no OpenGL 3 context (the backend
+# reports it and the test fails), so the GL3+ runs carry the label `opengl33` and the runners'
+# ctest leaves it out (`-LE opengl33`, .github/workflows/ci.yml and release.yml); they run on
+# machines with a GPU. The Direct3D 11 runs need no GPU (Windows' software adapter, WARP) and run there too.
 # The host UI pass on an offscreen backend; the internal render scale and the guest's frame size.
 foreach(_test ui_pass_test render_scale_test)
     add_executable(${_test} ${_test}.cpp)

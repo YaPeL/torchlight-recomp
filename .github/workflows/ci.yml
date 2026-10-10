@@ -387,8 +387,12 @@ jobs:
           -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre"
       - name: Build
         run: cmake --build --preset mac-arm64-nogame --parallel
+      # Tests labeled opengl33 are the GL3+ runs of the backend tests: the runner's virtual GPU gives
+      # no OpenGL 3 context ("OpenGL 3.0 is not supported in initialiseContext", 2026-10-10), so
+      # they are left out here as on Windows (the label and the reason are with the tests,
+      # src/backend/CMakeLists.txt). They pass on Apple Silicon Macs (GL 4.1).
       - name: Test
-        run: ctest --test-dir out/build/mac-arm64-nogame --output-on-failure
+        run: ctest --test-dir out/build/mac-arm64-nogame --output-on-failure -LE opengl33
       # A test that crashed leaves macOS's crash report (the stack of every thread) in the user's
       # DiagnosticReports; nothing of the game is built here.
       - name: Crash reports
