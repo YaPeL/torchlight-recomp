@@ -13,9 +13,15 @@
 //   press BUTTON... every DUR for DUR        press again every DUR, for that long
 //   hold BUTTON... for DUR
 //   stick left|right X Y for DUR             X, Y from -1 to 1 (Y up is positive)
+//   state [BUTTON...] [lstick X Y] [rstick X Y] [lt N] [rt N] for DUR
+//                                            the whole controller (what a recording writes;
+//                                            triggers 0-255)
 //   idle DUR
 //   wait EVENT [timeout DUR]                 EVENT: level_loaded, or menu NAME (a menu whose class
 //                                            name contains NAME opens); default timeout 120 s
+//   wait level_loads N [timeout DUR]         until the game has completed N level loads since the
+//                                            start (a recording's waits: one load may come before
+//                                            the command starts)
 //   mark TEXT                                a step of the run, in the log as the step overlay's
 //   capture                                  an F9 capture of the next frame
 //   command TEXT                             a guest developer command (dev/guest_command.h, e.g.
@@ -78,8 +84,8 @@ class InputScript {
   size_t size() const { return commands_.size(); }
 
  private:
-  enum class Op { kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kQuit };
-  enum class Event { kNone, kLevelLoaded, kMenu };
+  enum class Op { kState, kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kQuit };
+  enum class Event { kNone, kLevelLoaded, kLevelLoads, kMenu };
   struct Duration {
     double value = 0;
     bool frames = false;
@@ -92,6 +98,7 @@ class InputScript {
     Duration duration, every, timeout{120, false};
     Event event = Event::kNone;
     std::string text;  // mark text, menu name
+    uint32_t count = 0;  // kLevelLoads
   };
   struct Start {
     uint64_t frame = 0;

@@ -128,6 +128,19 @@ void TestPressFor() {
   Check(r.Has(Kind::kMark), "then the next command, after 30 frames");
 }
 
+void TestStateAndLoadCount() {
+  Run r("state A lstick 0.5 -1 rt 128 for 3f\nwait level_loads 2 timeout 1s\nmark loaded\n");
+  r.e.level_loads = 2;  // the second load came before the wait started: it still counts
+  r.Frames(4);
+  Check(r.pads[0].buttons == pad::kA && r.pads[0].left_x == 16384 && r.pads[0].left_y == -32767 &&
+            r.pads[0].right_trigger == 128,
+        "state sets the whole controller");
+  Check(r.Has(Kind::kMark), "level_loads counts from the start");
+  std::string error;
+  Check(!InputScript::Parse("state lstick 2 0 for 1s\n", error), "state stick out of range");
+  Check(!InputScript::Parse("state A\n", error), "state needs for");
+}
+
 void TestKeystrokes() {
   PadState up, down;
   down.buttons = pad::kA | pad::kDown;
@@ -152,6 +165,7 @@ int main() {
   TestWaitTimeout();
   TestPressUntilMenu();
   TestPressFor();
+  TestStateAndLoadCount();
   TestKeystrokes();
   if (failures) {
     std::printf("%d failure(s)\n", failures);

@@ -157,6 +157,31 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       (w[1] == "left" ? c.pad.left_x : c.pad.right_x) = Axis(*x);
       (w[1] == "left" ? c.pad.left_y : c.pad.right_y) = Axis(*y);
       c.op = Op::kStick;
+    } else if (verb == "state") {
+      while (i < w.size() && w[i] != "for") {
+        if (AddButton(w[i], c.pad)) {
+          ++i;
+          continue;
+        }
+        if ((w[i] == "lstick" || w[i] == "rstick") && i + 2 < w.size()) {
+          const auto x = Number(w[i + 1]), y = Number(w[i + 2]);
+          if (!x || !y || std::abs(*x) > 1 || std::abs(*y) > 1) return fail("stick X and Y go from -1 to 1");
+          (w[i] == "lstick" ? c.pad.left_x : c.pad.right_x) = Axis(*x);
+          (w[i] == "lstick" ? c.pad.left_y : c.pad.right_y) = Axis(*y);
+          i += 3;
+          continue;
+        }
+        if ((w[i] == "lt" || w[i] == "rt") && i + 1 < w.size()) {
+          const auto v = Number(w[i + 1]);
+          if (!v || *v < 0 || *v > 255) return fail("a trigger goes from 0 to 255");
+          (w[i] == "lt" ? c.pad.left_trigger : c.pad.right_trigger) = uint8_t(*v);
+          i += 2;
+          continue;
+        }
+        return fail("state: unknown '" + std::string(w[i]) + "'");
+      }
+      if (i + 2 != w.size() || !duration(w[i + 1], c.duration)) return fail("state ... for DURATION");
+      c.op = Op::kState;
     } else if (verb == "idle") {
       if (w.size() != 2 || !duration(w[1], c.duration)) return fail("idle DURATION");
       c.op = Op::kIdle;
@@ -164,12 +189,18 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       if (i < w.size() && w[i] == "level_loaded") {
         c.event = Event::kLevelLoaded;
         ++i;
+      } else if (i + 1 < w.size() && w[i] == "level_loads") {
+        const auto n = Number(w[i + 1]);
+        if (!n || *n < 1) return fail("wait level_loads N");
+        c.event = Event::kLevelLoads;
+        c.count = uint32_t(*n);
+        i += 2;
       } else if (i + 1 < w.size() && w[i] == "menu") {
         c.event = Event::kMenu;
         c.text = std::string(w[i + 1]);
         i += 2;
       } else {
-        return fail("wait level_loaded | wait menu NAME [timeout DURATION]");
+        return fail("wait level_loaded | wait level_loads N | wait menu NAME [timeout DURATION]");
       }
       if (!timeout()) return fail("expected timeout DURATION");
       c.op = Op::kWait;
@@ -201,6 +232,7 @@ bool InputScript::Elapsed(const Duration& d, const ScriptEvents& e, const Start&
 
 bool InputScript::EventSeen(const Command& c, const ScriptEvents& e) const {
   if (c.event == Event::kLevelLoaded) return e.level_loads > start_.level_loads;
+  if (c.event == Event::kLevelLoads) return e.level_loads >= c.count;
   for (size_t i = start_.menus; i < e.menus_opened.size(); ++i) {
     if (e.menus_opened[i].find(c.text) != std::string::npos) return true;
   }
@@ -245,6 +277,7 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         }
         advance();
         continue;
+      case Op::kState:
       case Op::kHold:
       case Op::kStick:
         if (!Elapsed(c.duration, e, start_)) return c.pad;
@@ -270,8 +303,8 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         if (Elapsed(c.timeout, e, start_)) {
           actions.push_back({ScriptAction::Kind::kFailed,
                              "line " + std::to_string(c.line) + ": timed out waiting for " +
-                                 (c.event == Event::kLevelLoaded ? std::string("a level load")
-                                                                 : "menu " + c.text)});
+                                 (c.event == Event::kMenu ? "menu " + c.text
+                                                          : std::string("a level load"))});
           next_ = commands_.size();
           ended_ = true;
           return {};
