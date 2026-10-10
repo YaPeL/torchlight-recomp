@@ -424,3 +424,31 @@ and a measured run.
   for a device call skip like the draws and bindings, after those three are read; not done.
 - Slots 40, 33 and 34 (`_setVertexTexture`, `_disableTextureUnit`, `_disableTextureUnitsFrom`):
   the same members and the same device call; still to be read.
+
+## Step b and slot 50: validated and measured (2026-10-10)
+
+Same binary (develop 8989c15 plus the branch; SDK 1-30, 20, 31), cvar off and on, automatic runs
+with the input scripts on the fixed-floor saved game:
+
+- The 20 replays: byte for byte as before.
+- Session recordings (`--live_record`) of the stretches without randomness: the main menu, the
+  load of the fixed-floor saved game and four seconds standing after it (two runs off, one on).
+  The commands of the skipped slots are identical: the same distinct `SetBlend`,
+  `SetAlphaReject`, `SetDepthCheck`, `SetDepthWrite`, `SetDepthFunc`, `SetDepthBias`,
+  `SetColourWrite`, `SetPolygonMode` and `SetPointSprites`, at the same count per guest frame. The
+  other differences show between the two runs off too (resource ids), except the render target
+  names, which carry the address of the guest's texture: with slot 84 skipped the guest no longer
+  allocates the Xbox declarations, so later allocations land elsewhere (same sizes, same counts).
+- Measured with `measure-fight-town`, three runs each, alternated, power profile performance and
+  the 55 C cool-down (package at 82 C during every step); mean of the runs, 1 % low as the 99th
+  percentile frame time:
+
+| Step | Game fps off -> on | Game 1 % low | Presented fps off -> on | Presented 1 % low |
+|---|---|---|---|---|
+| Dungeon, still | 208.7 -> 225.8 (+8 %) | 163.6 -> 167.5 | 196.3 -> 203.3 (+4 %) | 133.9 -> 129.5 |
+| Dungeon, fighting | 190.1 -> 211.1 (+11 %) | 140.1 -> 154.2 | 177.4 -> 178.1 (0 %) | 122.6 -> 117.8 |
+| Town square, walking | 170.2 -> 184.3 (+8 %) | 123.9 -> 133.1 | 167.0 -> 175.9 (+5 %) | 111.6 -> 121.0 |
+
+The game thread gains 8-11 % everywhere. Where the backend is the limit (the fight, where the game
+now makes more frames than it presents: 1319 dropped against 508 per step) the presented rate does
+not move; in the town square, where the game was the limit, it gains 5 % and its 1 % low 8 %.
