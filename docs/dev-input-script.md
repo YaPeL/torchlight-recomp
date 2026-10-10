@@ -54,6 +54,18 @@ python3 tools/run_capped/run_capped.py --timeout 300 --watch <the game's log fol
   and the script's seconds are these virtual ones. Threads that load in the background still finish
   when they finish, in real time.
 
+  **It does not make two runs equal** (checked 2026-10-10: two runs of the same script, four F9
+  captures each, compared with `capture_dump --draws`, guest addresses ignored). The runs part at
+  the first load: the main menu came one guest frame later in one run (the capture two seconds
+  later at swap 305 against 306: the same 57 draws and 655 commands, but the animated title model
+  one frame further), and after the level load two frames later (swap 580 against 582: the same
+  textures and 159 draws, in another order with other ranges, 1259 against 1264 commands); after
+  three seconds walking one run drew one more thing (160 against 161 draws). The background loading
+  threads decide how many guest frames a load takes, and everything after a load starts at another
+  frame. Closed there: the deterministic time stays on its branch (`feature/dev-deterministic-time`),
+  not in `develop`. Making loads take the same frames (stopping the clock and the script while a
+  load runs) would be the next step if this is taken up again.
+
 ## The script
 
 One command per line; `#` starts a comment. Durations are `N` or `Ns` (seconds), `Nms`, or `Nf`
