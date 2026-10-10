@@ -817,6 +817,13 @@ Cost, measured in a Torchlight save-and-exit under `strace`:
 - The `XamContentClose` flushed two files and the folder: 69 ms, 0.04 ms and 1.2 ms.
 - Total: about 140 ms on the game thread per save-and-exit.
 
+On macOS ARM64 (APFS) our port saved and loaded a character twice in the game with patch 27
+(2026-10-09, `docs/macos-port.md` on `docs/macos-port-plan`, 2078e54). Each Exit to Title logged
+`flushed 1 files and 0 folders`, then `flushed 2 files and 1 folders` 5 s later. The save file and
+the shared stash were rewritten, and the next start loaded the character where it was saved. The
+`F_FULLFSYNC` calls were not timed in the game (no `fs_usage`); on that volume
+`fcntl(F_FULLFSYNC)` took 3-10 ms for a 200 KB file in a separate program.
+
 On ext4 an `fsync` waits for the journal commit, so its time depends on what else is dirty on the
 system, not on the file. A 112 KB file took 1.9 ms with nothing else dirty, 11-36 ms with
 16-256 MB of other dirty data pending, and 85 ms as the first file of a new folder.
@@ -1326,22 +1333,14 @@ these agents lives here and in `patches/README.md`.
        `output_stamp_test.cpp:227-228`). On Linux x86-64, Release, `chrono_test.cpp` also fails at
        the NT epoch (1601), on a clean `bd833a2` too (D29); it passes on macOS.
     4. Anything else is a finding: send the failing cases' output.
-  - **Patch 27 (guest file flushes, 2026-10-08): only the check in a real save is open** (MAC.7).
-    `unit_tests "[flush]"` already passes 6 of 6 on APFS (above). On Apple, `FileHandle::Flush`
-    calls `fcntl(F_FULLFSYNC)` and falls back to `fsync`, and only macOS can show that path. When
-    the game runs there, write the result in `docs/macos-port.md`:
-    1. In a game save (any zone change autosaves), run
-       `sudo fs_usage -w -f filesys <pid of the game> | grep -i -E "fsync|fcntl"` and look for the
-       `F_FULLFSYNC` calls at the save: one per changed save file plus the save folder, at
-       `XamContentClose`. The game log says `Content <root>: flushed N files and M folders to
-       disk`. Note how long each takes, and whether the save stalls visibly. On Linux (ext4,
-       NVMe) Torchlight's save-and-exit spent about 140 ms in flushes, 68-69 ms for each of the
-       two larger files (D27). `F_FULLFSYNC` is expected to be slower, since it also empties the
-       drive's cache.
-    2. Anything unexpected is a finding: `F_FULLFSYNC` failing on APFS, or the game reporting a
-       save error.
+  - **Patch 27 (guest file flushes): done on macOS** (MAC.7, `docs/macos-port.md` on
+    `docs/macos-port-plan`, 2078e54). `[flush]` 6 of 6 on APFS, and in the game two saves and
+    loads, each with its flush lines (D27). The `F_FULLFSYNC` timing in a game save
+    (`fs_usage`) was left out by the owner's decision.
 - **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
-  22. When you next touch the series, ask for a number here first.
+  22. Your version of 21 with Metal on Apple (`5a98b6f`) is now the last line of the `bd833a2`
+  series (2026-10-09); it applies after the two Windows patches. When you next touch the series,
+  ask for a number here first.
 
 Cost: the series is done; what remains is builds (SDK in all configurations, three game builds
 for the fence measurement), the measurement runs and the game validation. About a day, most of it
