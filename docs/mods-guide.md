@@ -32,7 +32,7 @@ Changes take effect the next time the game starts.
   with a new set of mods takes longer, up to about a minute with a large pack; later starts use a
   saved copy. New classes are added to the table too, but picking one when creating a character has
   not been tested yet.
-- Replaced textures. Replaced models load the same way, but have been checked less.
+- Replaced models (checked less than data).
 - The PC achievements for mods (Played with a mod, 5 mods, 10 mods), in the PC achievement set.
 - Large packs: the Ultimate Torchlight Mod-Pack (29 mods) loads.
 
@@ -59,6 +59,7 @@ Changes take effect the next time the game starts.
 
 - New affixes (the extra properties of magic items) and new level pieces from mods: the game ships
   these tables prebuilt and they are not rebuilt yet.
+- Replaced textures: the game loads them, but the screen still shows the original ones.
 - Mods that are compressed archives instead of folders.
 - Choosing which mods to use from inside the game: edit `mods.dat` for now.
 

@@ -680,21 +680,52 @@ in the game: each of the three mods alone, then all three, build the unit index 
 and play the load script to the end. The text mods of the Mod-Pack never went this way: their text
 files are read without OGRE.
 
-## 7j. A texture mod: TNNR's textures are not used yet (2026-10-10, open)
+## 7j. A mod's textures never reach the screen (2026-10-10, open)
 
 TNNR (Torchlight Neural Network Remastered v0.9.5, 2.7 GB) is meant to be dropped into PC's
 `Pak.zip`; as a mod it is one folder, `mods/TNNR/media`, with 3206 meshes, 1318 `.dds`, 889
 materials and 255 compiled layouts at the same paths as the game's. Checked in automatic runs
 (the load script on the mine's first floor): the game runs with it, named after its folder (no
 `mod.dat`), and its compiled level layouts (`.LAYOUT.CMP`, 193 opened from `TLMOD000:` through the
-mod's resource group) are used; the level loads in 26 s instead of 6.5. Its textures are not: the
-92 textures of that level that TNNR has (2048x2048 where the game's are 256x256) loaded with the
-game's sizes, including the 15 whose TNNR version is 2x or 4x larger, which would have changed
-size. Textures do not go through the data loader (none of the 1113 opens it recorded was a `.dds`);
-OGRE resolves them by name in a resource group. Adding the mod's folder to the game's groups
-("0ZIP0", "ZIP") after the pak did not change that, and was not kept. Why OGRE's index does not
-give the mod's file (the group a material asks in, the index's keys) is the next reading. The
-Mod-Pack and Enhanced Edition, the other real mods tried, are data mods and did not depend on it.
+mod's resource group) are used. Its textures are not: the 92 textures of that level that TNNR has
+were drawn with the game's sizes and formats.
+
+**Cause: the host, not the guest.** The guest resolves a texture through OGRE as for any asset:
+the name it asks for is the full path in upper case (`MEDIA/LEVELSETS/MINE/RUBBLE_ROCKS_01.DDS`),
+which misses the case-sensitive index of every archive (the pak stores `media/levelSets/...`, a
+mod whatever case its author used) and hits the case-insensitive one, where the location added
+last wins (OGRE 1.7 `ResourceGroup::addToIndex` overwrites; `openResource` tries the
+case-sensitive index, then the case-insensitive one). The mods' folders are added after the pak,
+so the guest gets the mod's file. **[read]** But the live frontend does not use what the guest
+loaded for a named texture: `Frontend::PrepareTexture` takes the texture's name and reads the
+file again from the game's `pak.zip` (`LiveContentSource::GameFile`, the same as replay's
+`CaptureContentSource::GameFile`). A mod's texture therefore never reaches the screen, whatever
+its name, case, extension or folder. **[read]**
+
+The run logs agree. The synthetic mod's `path_center.dds` is uncompressed A8R8G8B8 without
+mipmaps; the first validation run (2026-10-07) loaded `MEDIA/LEVELSETS/TOWN1/PATH_CENTER.DDS`
+twice, both times as the pak's DXT3 with mipmaps. The magenta seen in that run on a cart was
+therefore not this texture, and the "texture replacement" recorded for that run (section 11) was
+wrong. In the TNNR runs, every TNNR texture was loaded with the pak's size and format.
+
+The first hypothesis (OGRE's index gave the pak's file, so the mod's folder was added to the
+game's groups "0ZIP0" and "ZIP") changed nothing and was not kept: the guest side was never the
+problem.
+
+**Also to check when this is fixed:** which mod wins when two replace the same asset. The data
+loader picks the lowest `PRIORITY`, while OGRE's index keeps the location added last, and the
+locations are added in priority order, so for assets the highest `PRIORITY` would win. **[read,
+to verify in a run]**
+
+**Level load time with TNNR.** One run each, same build and load script: 5.0 s without mods
+(`tnnr0`), 6.5 s with TNNR (`tnnr1`). Over the load's long frames, TNNR adds about 5,900 file reads
+(7,232 against 1,323; 85 ms against 4 ms): the larger meshes and the compiled layouts. Time spent
+on file checks, allocations and the rest is the same within noise, so the extra 1.5 s is spread
+over normal-length frames and one sample each cannot place it. A third run (`tnnr2`, 26 s) is not
+comparable: it carried the reverted "0ZIP0"/"ZIP" experiment, and every operation in it was 5 to
+9 times slower than in `tnnr1` (reads 0.064 ms against 0.012 ms each, file checks 0.46 ms against
+0.05 ms), including the startup before the mods were registered (14 s against 3.4 s), which
+points at a loaded machine rather than at the mod.
 
 ## 8. Where mods go on our side
 
@@ -798,7 +829,8 @@ ModDrop has no direct link, the community site did not answer):
   earnable.
 - Save mod list (section 7d): the unit writer's bug repaired as the save is written; tests of the
   repair on synthetic stream bytes and of the PC import with a filled list.
-- Validation run 1 (synthetic mods): mount, backup, manager, MODS toasts, texture replacement and
+- Validation run 1 (synthetic mods): mount, backup, manager, MODS toasts (the texture replacement it
+  recorded was wrong, section 7j) and
   the achievement list confirmed; it also found the save bug of section 7d.
 - Validation of the repair (2026-10-07, saves restored from before run 1, default settings):
   with 10 mods, a character loaded, saved on the way back to the menu and loaded again, with no
