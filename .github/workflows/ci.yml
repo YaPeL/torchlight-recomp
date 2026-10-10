@@ -1,8 +1,9 @@
 # Public CI, without the game (docs/release-pipeline.md 5.3): the patched SDK and OGRE, the
 # libraries and tests (preset linux-amd64-nogame), and the packaged replay checked in clean
-# containers; on Windows the SDK and OGRE, and the libraries and tests (preset win-amd64-nogame).
-# No secrets. To save Actions minutes it runs on pushes to and pull requests into develop (where
-# the work is integrated) and main (releases), and by hand; the SDK and OGRE are built once per key
+# containers; on Windows the SDK and OGRE, and the libraries and tests (preset win-amd64-nogame);
+# on macOS (Apple Silicon) the same with preset mac-arm64-nogame. No secrets. To save Actions
+# minutes it runs on pushes to and pull requests into develop (where the work is integrated) and
+# main (releases), and by hand; the SDK and OGRE are built once per key
 # (tools/deps/key.sh), published from either branch as assets of the one prerelease "deps"
 # (tools/deps/store.sh), and reused (docs/release-pipeline.md, 5.9).
 name: CI
@@ -44,6 +45,9 @@ jobs:
       - id: key
         name: Key
         run: echo "key=$(tools/deps/key.sh)" >> "$GITHUB_OUTPUT"
+      # The prune below deletes from the store: its tests (fake store, fake branches) go first.
+      - name: Test the store's prune
+        run: bash tools/deps/test_store.sh
       # The store keeps only what main and develop use: old deps-<key> releases are moved into it,
       # and what neither branch uses is removed (tools/deps/store.sh prune). By hand it moves but
       # only reports what it would remove.
@@ -288,6 +292,103 @@ jobs:
       - name: Test
         shell: pwsh
         run: ctest --test-dir out/build/win-amd64-nogame --output-on-failure -LE opengl33
+
+  # macOS on Apple Silicon: the same scheme on the macos-26 runner (pinned, as ubuntu-24.04 is), with
+  # Apple's clang from the runner's Command Line Tools; keyed by `key.sh macos`, published as
+  # tar.zst like Linux. The Linux job prunes for all three platforms.
+  deps-macos:
+    name: SDK and OGRE (macOS)
+    runs-on: macos-26
+    permissions:
+      contents: write
+    outputs:
+      key: ${{ steps.key.outputs.key }}
+    steps:
+      - uses: actions/checkout@v7
+      # Outside the workspace, which actions/checkout cleans; set here because a job's env cannot
+      # read the runner context.
+      - name: Locations
+        run: echo "DEPS_DIR=$RUNNER_TEMP/deps" >> "$GITHUB_ENV"
+      - id: key
+        name: Key
+        run: echo "key=$(tools/deps/key.sh macos)" >> "$GITHUB_OUTPUT"
+      - id: published
+        name: Already published?
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if tools/deps/store.sh has macos "${{ steps.key.outputs.key }}"; then
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - id: cache
+        if: steps.published.outputs.found != 'true'
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.DEPS_DIR }}
+          key: deps-macos-arm64-macos26-${{ steps.key.outputs.key }}
+      - name: Tools
+        run: |
+          command -v ninja > /dev/null || brew install ninja
+          command -v zstd > /dev/null || brew install zstd
+      - name: Build
+        if: steps.published.outputs.found != 'true' && steps.cache.outputs.cache-hit != 'true'
+        run: |
+          tools/deps/build_sdk.sh "$DEPS_DIR/sdk"
+          tools/deps/build_ogre.sh "$DEPS_DIR/ogre"
+      # As the Linux job's: a concurrent run with the same key may have published it first.
+      - name: Publish
+        if: >-
+          steps.published.outputs.found != 'true' && github.event_name == 'push' &&
+          (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tar -C "$DEPS_DIR" -cf - sdk | zstd -19 -T0 > sdk-macos-arm64.tar.zst
+          tar -C "$DEPS_DIR" -cf - ogre | zstd -19 -T0 > ogre-macos-arm64.tar.zst
+          tools/deps/store.sh publish macos "${{ steps.key.outputs.key }}" \
+            sdk-macos-arm64.tar.zst ogre-macos-arm64.tar.zst
+
+  test-macos:
+    name: Build and test (macOS, no game)
+    needs: deps-macos
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Locations
+        run: echo "DEPS_DIR=$RUNNER_TEMP/deps" >> "$GITHUB_ENV"
+      - name: Tools
+        run: |
+          command -v ninja > /dev/null || brew install ninja
+          command -v zstd > /dev/null || brew install zstd
+      - id: published
+        name: Published dependencies
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$DEPS_DIR"
+          download=$RUNNER_TEMP/deps-download
+          if tools/deps/store.sh fetch macos "${{ needs.deps-macos.outputs.key }}" "$download"; then
+            for f in "$download"/*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.published.outputs.found != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.DEPS_DIR }}
+          key: deps-macos-arm64-macos26-${{ needs.deps-macos.outputs.key }}
+          fail-on-cache-miss: true
+      - name: Configure
+        run: >-
+          cmake --preset mac-arm64-nogame -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk"
+          -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre"
+      - name: Build
+        run: cmake --build --preset mac-arm64-nogame --parallel
+      - name: Test
+        run: ctest --test-dir out/build/mac-arm64-nogame --output-on-failure
 
   package-check:
     name: Packaged replay on ${{ matrix.image }}
