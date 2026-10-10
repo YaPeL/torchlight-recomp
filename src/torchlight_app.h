@@ -28,6 +28,7 @@
 #include "hooks/bucket_cull_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
+#include "dev/script_input.h"
 #include "game_setup/first_run.h"
 #include "platform/platform.h"
 #include "platform/user_folders.h"
@@ -119,6 +120,13 @@ class TorchlightApp : public rex::ReXApp {
     // first, so a save never stops the game.
     torchlight::mods::InstallSaveUnits(torchlight::platform::DataDir(), game_data_root() / "pak.zip",
                                        user_data_root(), torchlight::game_menu::MountedModPlan());
+    // Development builds: a controller script (before live::Install sets the input's active
+    // callback, which the script's controller follows too).
+    torchlight::dev::InstallInputScript(runtime(), [this] {
+      app_context().CallInUIThread([this] {
+        if (window()) window()->RequestClose();
+      });
+    });
     torchlight::live::Install(
         game_data_root(),
         {&app_context(), window(), runtime(),

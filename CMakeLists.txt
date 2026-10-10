@@ -55,6 +55,8 @@ set(TORCHLIGHT_SOURCES
     src/achievements/achievement_list.cpp
     # Development only: guest developer commands (--dev_guest_command).
     src/dev/guest_command.cpp
+    # Development only: controller input scripts (--dev_input_script).
+    src/dev/script_input.cpp
     # Guest RenderSystem hooks and frame capture (F9, --capture_dir).
     src/capture/guest_readers.cpp
     src/capture/install.cpp
@@ -173,6 +175,13 @@ if(TORCHLIGHT_MODS_DIAGNOSTICS)
         src/hooks/find_file_hooks.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_MODS_DIAGNOSTICS=1)
 endif()
+# Controller input scripts for unattended runs (dev/script_input.h). Off by default; the release
+# workflows never set it, so release builds ignore --dev_input_script.
+option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_script" OFF)
+if(TORCHLIGHT_DEV_INPUT)
+    set_source_files_properties(src/dev/script_input.cpp PROPERTIES
+        COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+endif()
 # Our layouts for the game's UI (game_menu/video_menu.h), next to the executable; copied on every
 # build (an edited layout needs no relink).
 add_custom_target(torchlight_data ALL
@@ -182,7 +191,8 @@ add_dependencies(torchlight torchlight_data)
 # The live mode (and through it the frontend) and the backend objects.
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods
     torchlight_save_mod_list torchlight_video_mode torchlight_guest_path
-    torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull)
+    torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull
+    torchlight_dev_input_script)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)
