@@ -705,7 +705,8 @@ its name, case, extension or folder. **[read]**
 The run logs agree. The synthetic mod's `path_center.dds` is uncompressed A8R8G8B8 without
 mipmaps; the first validation run (2026-10-07) loaded `MEDIA/LEVELSETS/TOWN1/PATH_CENTER.DDS`
 twice, both times as the pak's DXT3 with mipmaps. The magenta seen in that run on a cart was
-therefore not this texture, and the "texture replacement" recorded for that run (section 11) was
+therefore not this texture: a replay of that run's town capture, which reads only the pak, shows
+the same pink-purple wagon, the game's own, and the "texture replacement" recorded for that run (section 11) was
 wrong. In the TNNR runs, every TNNR texture was loaded with the pak's size and format.
 
 The first hypothesis (OGRE's index gave the pak's file, so the mod's folder was added to the
