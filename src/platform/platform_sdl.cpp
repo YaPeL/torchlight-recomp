@@ -153,11 +153,13 @@ int AskChoice(const std::string& title, const std::string& message,
   box.numbuttons = int(data.size());
   box.buttons = data.data();
   int chosen = -1;
+  BringToFront();
   if (!SDL_ShowMessageBox(&box, &chosen)) return -1;
   return chosen;
 }
 
 void ShowError(const std::string& title, const std::string& message) {
+  BringToFront();
   SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, title.c_str(), WrapText(message).c_str(), nullptr);
 }
 
@@ -194,6 +196,7 @@ PickResult Pick(SDL_FileDialogType type, const std::string& title, std::string& 
   PickState state;
   SDL_PropertiesID props = SDL_CreateProperties();
   SDL_SetStringProperty(props, SDL_PROP_FILE_DIALOG_TITLE_STRING, title.c_str());
+  BringToFront();
   SDL_ShowFileDialogWithProperties(type, PickCallback, &state, props);
   while (!state.done) {
     SDL_PumpEvents();

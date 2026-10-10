@@ -108,9 +108,13 @@ class ProgressWindow {
 std::string ShaderCacheDir();
 // Other files the host generates for this machine (`name` below the cache folder).
 std::string CacheDir(const std::string& name);
-// Directory of the running executable, ending in a separator (the host's data is installed next to
-// it); empty when unknown.
+// Directory of the running executable, ending in a separator; empty when unknown.
 std::string ExecutableDir();
+// The read-only files installed with the game (data/ui; OGRE's media is OgreMediaDir), ending in a
+// separator; empty when unknown. Linux and Windows: the executable's directory. macOS: in the app
+// bundle its Contents/Resources/ (code signing seals data apart from code, which Contents/MacOS
+// holds), else the executable's directory (the build tree).
+std::string ResourceDir();
 // The host's own settings (settings/host_settings.h) and the runtime's config. Linux:
 // $XDG_CONFIG_HOME/TorchlightRecomp/, else ~/.config/TorchlightRecomp/. Windows:
 // %APPDATA%\TorchlightRecomp\.
@@ -130,8 +134,9 @@ std::string GameDataDir();
 std::string LogDir();
 // OGRE's plugins (RenderSystem_GL3Plus, Codec_STBI, the Wayland GL build in wayland/) and the
 // media the backend uses (Main, RTShaderLib): installed next to the executable, in ogre/plugins/
-// and ogre/media/ (the build stages them there too), so the files can live anywhere. Ending in a
-// separator; empty when the executable's directory is unknown.
+// and ogre/media/ (the build stages them there too), so the files can live anywhere; in a macOS
+// app bundle, Contents/PlugIns/ogre/ and Contents/Resources/ogre/media/. Ending in a separator;
+// empty when the executable's directory is unknown.
 std::string OgrePluginDir();
 std::string OgreMediaDir();
 

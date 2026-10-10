@@ -240,15 +240,33 @@ if(UNIX AND NOT APPLE)
     # The replay tool, for checking the installed tree without the game.
     install(TARGETS replay RUNTIME DESTINATION bin COMPONENT tools EXCLUDE_FROM_ALL)
 elseif(APPLE)
-    # macOS: in the build tree the game finds the SDK's and OGRE's dylibs through the build RPATH
-    # (their library directories), as on Linux; the SDK's own setting (@executable_path, used for
-    # the build too) only finds the SDK's runtime staged next to it. The app bundle's layout and
-    # install rules are MAC.8's (docs/macos-port.md).
+    # macOS app bundle (packaging/macos/make_app.sh installs into Torchlight Recomp.app/Contents):
+    # MacOS/ holds the executable and the GPU plugin (the SDK loads it from the executable's
+    # directory), Frameworks/ the shared libraries, PlugIns/ogre/ OGRE's plugins, Resources/ the
+    # data (data/ui, ogre/media): code signing seals code and data apart. In the build tree the game
+    # finds the SDK's and OGRE's dylibs through the build RPATH (their library directories), as on
+    # Linux; the SDK's own setting (@executable_path, used for the build too) only finds the SDK's
+    # runtime staged next to it. Xenos is not packaged: it needs MoltenVK, which the SDK looks for
+    # only where a signed bundle cannot hold it (Contents/lib), and it only serves diagnostics.
     if(TORCHLIGHT_GAME)
         set_target_properties(torchlight PROPERTIES
             BUILD_WITH_INSTALL_RPATH OFF
-            INSTALL_RPATH "@executable_path")
+            INSTALL_RPATH "@executable_path/../Frameworks")
+        install(TARGETS torchlight RUNTIME DESTINATION MacOS)
+        install(FILES "$<TARGET_FILE:rex::gpu-null>" DESTINATION MacOS)
+        install(DIRECTORY "${CMAKE_SOURCE_DIR}/data/ui" DESTINATION Resources/data)
     endif()
+    install(FILES "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" DESTINATION Resources)
+    # The plugins under their unversioned names, which OGRE loads (src/backend), as files.
+    foreach(_plugin IN LISTS TORCHLIGHT_OGRE_PLUGINS)
+        get_filename_component(_name "${_plugin}" NAME)
+        file(REAL_PATH "${_plugin}" _file)
+        install(FILES "${_file}" DESTINATION PlugIns/ogre RENAME "${_name}")
+    endforeach()
+    install(DIRECTORY ${TORCHLIGHT_OGRE_MEDIA} DESTINATION Resources/ogre/media)
+    install(FILES "$<TARGET_FILE:rex::runtime>" DESTINATION Frameworks)  # OGRE's: src/backend
+    install(FILES "$<TARGET_FILE:rex::TracyClient>" DESTINATION Frameworks
+            CONFIGURATIONS Debug RelWithDebInfo)
 elseif(WIN32)
     # Windows zip (packaging/windows/make_zip.ps1): one folder, with the executable next to every DLL
     # it loads (Windows looks next to the executable; there is no rpath), the GPU plugins (the SDK

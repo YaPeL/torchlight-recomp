@@ -65,10 +65,13 @@ endif()
 set(TORCHLIGHT_OGRE_WAYLAND_PLUGIN "${TORCHLIGHT_OGRE_WAYLAND_PLUGIN}" CACHE INTERNAL "")
 set(TORCHLIGHT_OGRE_MEDIA "${OGRE_MEDIA_DIR}/Main" "${OGRE_MEDIA_DIR}/RTShaderLib" CACHE INTERNAL "")
 
-# OGRE's libraries in the install's lib/ (the rest of the install rules: the top CMakeLists.txt;
-# OGRE's targets are only visible here).
+# OGRE's libraries in the install's lib/ (macOS: the bundle's Frameworks/; the rest of the install
+# rules: the top CMakeLists.txt; OGRE's targets are only visible here).
 if(UNIX AND NOT APPLE)
     install(FILES "$<TARGET_FILE:OgreMain>" "$<TARGET_FILE:OgreRTShaderSystem>" DESTINATION lib)
+elseif(APPLE)
+    install(FILES "$<TARGET_FILE:OgreMain>" "$<TARGET_FILE:OgreRTShaderSystem>"
+            DESTINATION Frameworks)
 endif()
 
 function(torchlight_stage_ogre target)

@@ -184,10 +184,10 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
     REXLOG_ERROR("game menu: no runtime file system; video menu off");
     return;
   }
-  const std::string exe_dir = platform::ExecutableDir();
-  const std::filesystem::path data = std::filesystem::path(exe_dir) / "data" / "ui";
+  const std::string resources = platform::ResourceDir();
+  const std::filesystem::path data = std::filesystem::path(resources) / "data" / "ui";
   std::error_code ec;
-  if (exe_dir.empty() || !std::filesystem::exists(data / kVideoLayout, ec)) {
+  if (resources.empty() || !std::filesystem::exists(data / kVideoLayout, ec)) {
     REXLOG_ERROR("game menu: layouts not found in {}; video menu off", data.string());
     return;
   }
