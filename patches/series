@@ -26,3 +26,4 @@ rexglue-log-rotation.patch
 rexglue-guest-file-flush.patch
 rexglue-quiet-missing-files.patch
 rexglue-case-variants.patch
+rexglue-sdl-software-renderer.patch

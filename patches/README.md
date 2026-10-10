@@ -30,7 +30,7 @@ in number order; a branch adds its own line at its number's place.
 | 11 | `rexglue-delete-on-close.patch` | | Withdrawn |
 | 19 | `rexglue-mnk-keystrokes.patch` | | Removed with the move to `bd833a2` |
 | 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
-| 21 | `rexglue-sdl-software-renderer.patch` | `feature/launcher-imgui` | Pending integration; a new version keeps Metal on Apple (SDL's software renderer presents through a GPU texture on Cocoa), from the Windows agent |
+| 21 | `rexglue-sdl-software-renderer.patch` | `sdk/patch21-series` | Pending integration; the version with Metal on Apple (`5a98b6f` on `feature/launcher-imgui`) |
 | 22 | `rexglue-tests-portable.patch` | `develop` | In the series |
 | 23 | `rexglue-fctiw-rounding-mode.patch` | `develop` | In the series |
 | 24 | `rexglue-arm64-mffs-rounding.patch` | `develop` | In the series; confirmed on ARM64 |
@@ -269,8 +269,29 @@ in number order; a branch adds its own line at its number's place.
 20. Taken by `rexglue-vfs-wildcard-dos-semantics.patch` (the mods' `*.*` wildcard), on branch
     `feature/pc-mods`: described there.
 
-21. Taken by `rexglue-sdl-software-renderer.patch` (`SDL_Renderer` with the software driver only,
-    for the progress window and the launcher), on branch `feature/launcher-imgui`: described there.
+21. `rexglue-sdl-software-renderer.patch`: the SDK builds SDL with `SDL_RENDER` off, so
+    `SDL_CreateRenderer` fails ("SDL not built with rendering support") and nothing can draw a
+    window before the runtime's presenter exists. The first start's progress window
+    (`platform::ProgressWindow`) never opened because of it (v0.1.0-beta installs without a
+    progress bar), and the launcher (`docs/launcher.md`) draws ImGui with `SDL_Renderer`. Now
+    `SDL_RENDER` is on with the software driver only: the Direct3D 9/11/12, GPU, Metal and Vulkan
+    render drivers stay off (OpenGL and OpenGL ES were off already), so no graphics library is
+    loaded before the presenter or the backend picks the GPU. Every platform, but for Metal on
+    macOS: Cocoa has no window framebuffer of its own, so SDL shows a software renderer's frames
+    through a GPU texture (`SDL_CreateWindowTexture`), and with every GPU driver off the software
+    renderer fails there ("Window framebuffer support not available"). Apple Silicon has one GPU,
+    so nothing is chosen too early (checked on macOS arm64: `launcher_imgui_test` and
+    `launcher_window_test` pass with Metal on and fail without it). Size (Release):
+    Windows `SDL3.dll` 2 149 888 -> 2 319 360 bytes (+169 472, +7.9%), `rexruntime.dll` unchanged
+    (8 098 304); Linux (ubuntu:22.04, `tools/deps/build_sdk.sh`, where SDL is static and inside
+    the runtime) `libSDL3.a` 5 969 216 -> 6 228 956 bytes (+259 740, +4.4%), `librexruntime.so`
+    15 865 000 -> 16 058 232 (+193 232, +1.2%); the patch applies there without patch 18. Test:
+    the project's `launcher_imgui_test` draws a frame with `SDL_CreateSoftwareRenderer` and reads
+    it back (it failed without this patch); the project's tests pass on Windows. Not specific to any GPU. Touches
+    `thirdparty/CMakeLists.txt` only, after patch 18's SDL lines; patch 20 touches other files, so
+    the two apply in either order.
+    In the `bd833a2` series since 2026-10-09, as its last line, taken from `feature/launcher-imgui`
+    (`5a98b6f`): it applies after 1-29 on Linux and macOS, and after the two Windows patches.
 
 22. `rexglue-tests-portable.patch`: the SDK's tests did not build on ARM64 or macOS.
     `tests/ppc/CMakeLists.txt` passed `-msse4.1 -mssse3` to `ppc_tests` on every architecture; now
