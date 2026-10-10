@@ -40,8 +40,8 @@ changes also use the profile (the change's share of the thread it runs on), whic
 not move.
 
 **The reference route (since 2026-10-10)** is played by hand, on the fixed-floor saved game, with
-the step overlay giving the steps: the main menu with hands off; Continue; the mine's first floor
-standing still (10 s), then fighting west over the bridge to the spiders and the NPC (40 s); the
+the step overlay giving the steps: Continue from the main menu; the mine's first floor standing
+still (5 s), then fighting west over the bridge to the spiders and the NPC (40 s); the
 stairs up to the town; the town square walked around on the player's usual route (40 s). It is
 more demanding than the scripted `measure-fight-town` (the town square at 138 fps by hand against
 higher figures scripted), so scripted runs are only compared with scripted runs. A recording of
