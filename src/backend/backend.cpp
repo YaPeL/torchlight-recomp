@@ -254,6 +254,7 @@ struct tl_backend {
   std::unique_ptr<torchlight::platform::OgreTopLevelWindow> top_level;
   bool visible_window = false;
   bool child_window = false;  // inside another application's window (tl_backend_create_child)
+  std::string window_title;    // OGRE's window's; its name on Cocoa (tl_backend_destroy)
   Ogre::Viewport* window_viewport = nullptr;
   std::unique_ptr<torchlight::platform::KeyReader> keyboard;  // top-level window only
   uint32_t keys = 0;  // tl_key bits pressed since tl_backend_take_keys
@@ -1682,6 +1683,9 @@ void SelectGpu(Ogre::RenderSystem* rs, const char* gpu) {
   Ogre::LogManager::getSingleton().logMessage(std::string("tl_backend: GPU ") + gpu + ": " + name);
 }
 
+// OGRE's name for the backend's window.
+constexpr const char* kWindowName = "tl_backend";
+
 tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint32_t width,
                           uint32_t height, const char* log_path, const char* window_title,
                           const tl_native_window* parent, uint32_t window_width,
@@ -1726,6 +1730,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     b->root->initialise(false);
     Ogre::NameValuePairList misc;
     misc["title"] = window_title ? window_title : "torchlight replay";
+    b->window_title = misc["title"];
     // Only a window that is the game's display waits for vertical sync; otherwise the window must
     // never pace the backend.
     misc["vsync"] = vsync ? "true" : "false";
@@ -1759,7 +1764,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
           }
         }
       }
-      b->window = b->root->createRenderWindow("tl_backend", window_w, window_h, false, &misc);
+      b->window = b->root->createRenderWindow(kWindowName, window_w, window_h, false, &misc);
       if (b->visible_window && !b->child_window) {
         Ogre::RenderWindow* window = b->window;
         b->keyboard = torchlight::platform::KeyReader::ForOgreWindow(
@@ -1793,6 +1798,10 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
                   Ogre::RenderSystemCapabilities::vendorToString(caps->getVendor()) + " | " +
                   caps->getDriverVersion().toString();
   } catch (Ogre::Exception& e) {
+    // In OGRE's log too: a render system that cannot start (OpenGL below 3.3) says why there.
+    if (Ogre::LogManager* log = Ogre::LogManager::getSingletonPtr()) {
+      log->logError("backend creation failed: " + e.getFullDescription());
+    }
     SetError(error, error_size, e.getFullDescription());
     tl_backend_destroy(b);
     return nullptr;
@@ -1869,6 +1878,14 @@ void tl_backend_destroy(tl_backend* b) {
   // OGRE's window goes with the root, on the window system's thread.
   torchlight::platform::RunOnWindowThread([b] {
     b->keyboard.reset();
+    // A render system whose first window was made but whose context then failed to initialise (GL3+
+    // below OpenGL 3.3) has no buffer manager, and OGRE 14.6's GL3+ unregisters a window's context
+    // through it: destroying that window crashes. On that path the window is detached and left to
+    // the process, which is about to report the error. OGRE's Cocoa window is registered under
+    // its title, the others under their name.
+    if (b->rs && !Ogre::HardwareBufferManager::getSingletonPtr()) {
+      if (!b->rs->detachRenderTarget(kWindowName)) b->rs->detachRenderTarget(b->window_title);
+    }
     delete b->root;
     b->top_level.reset();  // after OGRE's window, which draws in it
   });
