@@ -84,7 +84,11 @@ class FrameObserver {
   virtual void OnGuestFrame(double ms) = 0;
   virtual void OnPresentedFrame(double ms, size_t dropped) = 0;
   virtual void OnLevelLoaded() = 0;
+  // A step of a guided run began (MarkStep): what a recording marks.
+  virtual void OnStepMark(const std::string& /*text*/) {}
 };
+// A guided run's step began (a step overlay of a development build calls it): passed to the observer.
+void MarkStep(const std::string& text);
 // Before the guest runs; null removes it.
 void SetFrameObserver(FrameObserver* observer);
 

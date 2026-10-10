@@ -71,6 +71,10 @@ std::atomic<FrameObserver*> g_observer{nullptr};
 
 void SetFrameObserver(FrameObserver* observer) { g_observer.store(observer); }
 
+void MarkStep(const std::string& text) {
+  if (FrameObserver* observer = g_observer.load()) observer->OnStepMark(text);
+}
+
 FrameTiming& FrameTiming::Get() {
   static FrameTiming timing;
   return timing;

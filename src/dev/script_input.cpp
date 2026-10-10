@@ -6,14 +6,17 @@
 REXCVAR_DEFINE_STRING(dev_input_script, "", "Torchlight",
                       "Development builds only: a file of controller commands played into the game "
                       "(docs/dev-input-script.md)");
+REXCVAR_DEFINE_STRING(dev_input_record, "", "Torchlight",
+                      "Development builds only: write the player's controller, from the first level "
+                      "load on, to this file as an input script (docs/dev-input-script.md)");
 
 #ifndef TORCHLIGHT_DEV_INPUT
 
 namespace torchlight::dev {
 void InstallInputScript(rex::Runtime*, std::function<void()>) {
-  if (!REXCVAR_GET(dev_input_script).empty()) {
-    REXLOG_WARN("dev: --dev_input_script ignored: this build has no input scripts "
-                "(CMake option TORCHLIGHT_DEV_INPUT)");
+  if (!REXCVAR_GET(dev_input_script).empty() || !REXCVAR_GET(dev_input_record).empty()) {
+    REXLOG_WARN("dev: --dev_input_script / --dev_input_record ignored: this build has no input "
+                "scripts (CMake option TORCHLIGHT_DEV_INPUT)");
   }
 }
 }  // namespace torchlight::dev
@@ -23,6 +26,8 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <cstdio>
 #include <cstring>
 #include <deque>
 #include <fstream>
@@ -296,9 +301,149 @@ class ScriptRunner : public live::FrameObserver {
 
 std::unique_ptr<ScriptRunner> g_runner;
 
+// --dev_input_record: the player's controller as an input script. The menus are written as the
+// standard scripts do them (the first level load ends them); from then on, the controller as it
+// was, a `state` (or `idle`) line per change, timed in milliseconds (characters move by time, not
+// by frames); each later level load as a wait for that load count; and a guided run's steps
+// (live::MarkStep, the step overlay) as marks, the last one ("Done...") as quit. Every line is
+// flushed as it is written: the game ends without running destructors.
+class InputRecorder : public live::FrameObserver {
+ public:
+  InputRecorder(rex::input::InputSystem* input, std::FILE* file) : input_(input), file_(file) {
+    std::fputs(
+        "# Recorded with --dev_input_record (docs/dev-input-script.md): the menus as the standard\n"
+        "# scripts do them, then the player's controller from the first level load on.\n"
+        "press A every 3s until menu MainMenu timeout 90s\n"
+        "mark MAIN MENU: hands off\n"
+        "idle 10s\n"
+        "press A every 3s until level_loaded timeout 60s\n",
+        file_);
+    std::fflush(file_);
+  }
+
+  void OnGuestFrame(double) override {
+    std::lock_guard lock(mutex_);
+    if (!recording_) return;
+    rex::input::X_INPUT_STATE state;
+    PadState pad;
+    if (input_->GetStateForUI(0, &state) == X_ERROR_SUCCESS) pad = Quantize(state);
+    if (pad == current_) return;
+    Flush(Clock::now());
+    current_ = pad;
+  }
+  void OnPresentedFrame(double, size_t) override {}
+  void OnLevelLoaded() override {
+    std::lock_guard lock(mutex_);
+    ++loads_;
+    const auto now = Clock::now();
+    if (!recording_) {
+      recording_ = true;  // the prefix's "until level_loaded" covers this first load
+      since_ = now;
+      REXLOG_INFO("dev input record: recording the controller from the first level load on");
+      return;
+    }
+    Flush(now);
+    std::fprintf(file_, "wait level_loads %u timeout 90s\n", loads_);
+    std::fflush(file_);
+  }
+  void OnStepMark(const std::string& text) override {
+    std::lock_guard lock(mutex_);
+    if (!recording_ || ended_) return;
+    Flush(Clock::now());
+    if (text.rfind("Done", 0) == 0) {
+      std::fputs("quit\n", file_);
+      ended_ = true;
+    } else {
+      std::fprintf(file_, "mark %s\n", text.c_str());
+    }
+    std::fflush(file_);
+  }
+
+ private:
+  // Sticks to 1/32 with a small dead zone and triggers to 1/16 of their range: an analog stick
+  // never holds one raw value, and a line per frame would be no script.
+  static PadState Quantize(const rex::input::X_INPUT_STATE& s) {
+    auto axis = [](int16_t raw) -> int16_t {
+      const double v = std::clamp(raw / 32767.0, -1.0, 1.0);
+      if (std::abs(v) < 0.12) return 0;
+      return int16_t(std::lround(std::round(v * 32) / 32 * 32767));
+    };
+    auto trigger = [](uint8_t raw) -> uint8_t { return raw < 16 ? 0 : uint8_t((raw / 16) * 16 + 15); };
+    PadState p;
+    p.buttons = s.gamepad.buttons;
+    p.left_trigger = trigger(s.gamepad.left_trigger);
+    p.right_trigger = trigger(s.gamepad.right_trigger);
+    p.left_x = axis(s.gamepad.thumb_lx);
+    p.left_y = axis(s.gamepad.thumb_ly);
+    p.right_x = axis(s.gamepad.thumb_rx);
+    p.right_y = axis(s.gamepad.thumb_ry);
+    return p;
+  }
+  // Writes the controller held since since_ (with the mutex held).
+  void Flush(Clock::time_point now) {
+    const long ms = long(std::chrono::duration<double, std::milli>(now - since_).count() + 0.5);
+    since_ = now;
+    if (ms <= 0 || ended_) return;
+    if (current_ == PadState{}) {
+      std::fprintf(file_, "idle %ldms\n", ms);
+    } else {
+      std::string line = "state";
+      static constexpr std::pair<uint16_t, const char*> kNames[] = {
+          {pad::kA, "A"},         {pad::kB, "B"},          {pad::kX, "X"},
+          {pad::kY, "Y"},         {pad::kStart, "START"},  {pad::kBack, "BACK"},
+          {pad::kLeftShoulder, "LB"}, {pad::kRightShoulder, "RB"}, {pad::kUp, "UP"},
+          {pad::kDown, "DOWN"},   {pad::kLeft, "LEFT"},    {pad::kRight, "RIGHT"},
+          {pad::kLeftThumb, "LS"}, {pad::kRightThumb, "RS"}};
+      for (const auto& [bit, name] : kNames) {
+        if (current_.buttons & bit) line += std::string(" ") + name;
+      }
+      char buf[96];
+      if (current_.left_x || current_.left_y) {
+        std::snprintf(buf, sizeof(buf), " lstick %.4g %.4g", current_.left_x / 32767.0,
+                      current_.left_y / 32767.0);
+        line += buf;
+      }
+      if (current_.right_x || current_.right_y) {
+        std::snprintf(buf, sizeof(buf), " rstick %.4g %.4g", current_.right_x / 32767.0,
+                      current_.right_y / 32767.0);
+        line += buf;
+      }
+      if (current_.left_trigger) line += " lt " + std::to_string(current_.left_trigger);
+      if (current_.right_trigger) line += " rt " + std::to_string(current_.right_trigger);
+      std::fprintf(file_, "%s for %ldms\n", line.c_str(), ms);
+    }
+    std::fflush(file_);
+  }
+
+  std::mutex mutex_;
+  rex::input::InputSystem* input_;
+  std::FILE* file_;
+  bool recording_ = false, ended_ = false;
+  uint32_t loads_ = 0;
+  PadState current_;
+  Clock::time_point since_{};
+};
+
+std::unique_ptr<InputRecorder> g_recorder;
+
 }  // namespace
 
 void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_close) {
+  if (const std::string record = REXCVAR_GET(dev_input_record); !record.empty()) {
+    auto* input = runtime ? static_cast<rex::input::InputSystem*>(runtime->input_system()) : nullptr;
+    std::FILE* file = input ? std::fopen(record.c_str(), "w") : nullptr;
+    if (!file) {
+      REXLOG_ERROR("dev input record: cannot write {}", record);
+      return;
+    }
+    g_recorder = std::make_unique<InputRecorder>(input, file);
+    live::SetFrameObserver(g_recorder.get());
+    REXLOG_INFO("dev input record: the controller goes to {}", record);
+    if (!REXCVAR_GET(dev_input_script).empty()) {
+      REXLOG_WARN("dev input record: --dev_input_script ignored while recording");
+    }
+    return;
+  }
   const std::string path = REXCVAR_GET(dev_input_script);
   if (path.empty()) return;
   std::ifstream file(path, std::ios::binary);
