@@ -29,7 +29,7 @@ in number order; a branch adds its own line at its number's place.
 | 1-18 | (below) | `develop` | In the series |
 | 11 | `rexglue-delete-on-close.patch` | | Withdrawn |
 | 19 | `rexglue-mnk-keystrokes.patch` | | Removed with the move to `bd833a2` |
-| 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `feature/pc-mods` | Pending integration |
+| 20 | `rexglue-vfs-wildcard-dos-semantics.patch` | `develop` | In the series (after 30; not yet in the installed SDK) |
 | 21 | `rexglue-sdl-software-renderer.patch` | `develop` | In the series (the version with Metal on Apple, `5a98b6f`) |
 | 22 | `rexglue-tests-portable.patch` | `develop` | In the series |
 | 23 | `rexglue-fctiw-rounding-mode.patch` | `develop` | In the series |
@@ -39,8 +39,8 @@ in number order; a branch adds its own line at its number's place.
 | 27 | `rexglue-guest-file-flush.patch` | `develop` | In the series |
 | 28 | `rexglue-quiet-missing-files.patch` | `develop` | In the series |
 | 29 | `rexglue-case-variants.patch` | `develop` | In the series |
-| 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `sdk/fault-chain` | Pending integration |
-| 31 | `rexglue-guest-fatal-hook.patch` | `sdk/fatal-errors` | Pending a check in the game |
+| 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `develop` | In the series |
+| 31 | `rexglue-guest-fatal-hook.patch` | `develop` | In the series (not yet in the installed SDK) |
 | 32 | | | Next free number |
 
 ## The patches
@@ -468,6 +468,52 @@ in number order; a branch adds its own line at its number's place.
     rename onto both and Torchlight's save sequence. Without the fix, 2 of the 3 Linux cases fail
     (8 checks); with the equivalence check taken out, the simulated case, the two-variant case and 2
     older rename cases fail (an ordinary replace would delete the save). Upstream draft D30.
+30. `rexglue-posix-chain-unclaimed-faults.patch`: on Linux and macOS, a fault no SDK handler
+    claimed made `ExceptionHandlerCallback` return, so the instruction ran again and faulted
+    again, forever: a crash became a hang at 100 % of a core. For a guest address outside the
+    physical heaps, `Memory::AccessViolationCallback` logged `Unhandled guest access violation` on
+    every retry (a mods run wrote 6010 such lines in 89 s, `docs/crash-handling.md` section 1).
+    Now an unclaimed fault goes to the handler installed before the SDK's (`sa_sigaction` or
+    `sa_handler`), which is where our crash reporter goes (CR.3). With none, or with `SIG_IGN`,
+    the signal's default action is restored, so the instruction faults once more and the process
+    ends with that signal. The SDK's handler stays installed (restoring the old `sigaction`
+    instead would leave the next MMIO access unhandled). Windows needs nothing: the vectored
+    handler already returns `EXCEPTION_CONTINUE_SEARCH`. Tests in `unclaimed_fault_test.cpp`,
+    each case in a new process (`tests/unit/child_process.h` runs a hidden case of `unit_tests`,
+    so no handler an earlier test installed is in it; no core file): an unclaimed read of
+    address 16 ends by SIGSEGV; a previous handler gets the fault after the SDK's handlers saw it
+    once; a handler that fixes the page and claims the fault still lets the write succeed.
+    Without the fix the first two hang until a 3 s alarm. POSIX only. Upstream draft D25.
+
+31. `rexglue-guest-fatal-hook.patch`: the guest's fatal paths called `rex::debug::Break()`. On
+    POSIX its first call returns (its SIGTRAP handler only resets the signal), so the guest ran on
+    past a call that does not return; a second one killed the process by SIGTRAP with no message.
+    Now `RtlRaiseException` (every code but SetThreadName's, the C++ throw included),
+    `KeBugCheck`/`KeBugCheckEx` and `DbgBreakPoint` call `rex::system::RaiseGuestFatal`
+    (`include/rex/system/guest_fatal.h`). It logs the error (kind, code, parameters, record,
+    guest thread, the caller's `lr`), calls the handler the app registered with
+    `SetGuestFatalHandler`, with the error and the thread's `PPCContext`, and then aborts, after
+    `Break()` if a debugger is attached. It never returns to the guest. On Windows `Break()` was
+    `__debugbreak()`, which ends the process through WER; now it goes through the same path.
+    `DbgBreakPoint` is fatal because of what Torchlight does with it: its only caller is a
+    one-instruction wrapper (`sub_8287D560`) called from 1114 places, and they are OGRE's
+    `OGRE_EXCEPT` calls (their description and source strings), so Runic's OGRE breaks where
+    OGRE 1.7's `OgreException.h` throws. Each site builds the message ("Index out of bounds.",
+    "No viewport with given zorder : ", "Bad cast from type '..."), drops it, calls the break and
+    runs on with the state the error was about. In `RenderTarget::getViewportByZOrder` it then
+    returns the map's end node as a viewport. 211 of the sites have no code after the call (the
+    compiler took the error as the end of the path), so a return from it leaves through code the
+    source never reaches. Today a first such error goes unseen and
+    a second one kills the game by SIGTRAP; now the first one ends it with the call site in the
+    log. Tests in `guest_fatal_test.cpp`: each export reports its kind, code and parameters to a
+    registered handler (which leaves by throwing); SetThreadName is not fatal; with no handler, or
+    a handler that returns, the process aborts (in a new process, POSIX). Without the change the
+    first test fails and the second break kills `unit_tests` by SIGTRAP. The C++ throw path reads
+    the thrown object through the kernel's memory, which the unit tests lack, so it is checked by
+    reading only. Checked in the game before it went in (2026-10-10, the render agent): logging
+    hooks on the four imports, confirmed in the binary's disassembly to catch every call site, saw
+    no call in three scripted runs (load and quit, a new character, a fight and the town), so
+    normal play reaches none of these paths. Upstream draft D31.
 
 30. `rexglue-posix-chain-unclaimed-faults.patch`: on Linux and macOS, a fault no SDK handler
     claimed made `ExceptionHandlerCallback` return, so the instruction ran again and faulted
