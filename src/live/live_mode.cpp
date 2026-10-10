@@ -100,6 +100,10 @@ void LogMeasurements(uint64_t cuts, uint64_t measured) {
 
 }  // namespace
 
+// How long the guest waits for the backend to take a frame before it goes on and the frame drops
+// (a minimized window, a lost device): 20 frames a second at worst.
+constexpr std::chrono::milliseconds kBackpressureCap{50};
+
 LiveMode& LiveMode::Get() {
   static LiveMode mode;
   return mode;
@@ -110,12 +114,17 @@ void LiveMode::Start(const LiveOptions& options) {
   queue_.SetCapacity(options.frame_queue);
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
+  if (options.backpressure) queue_.SetBackpressure(kBackpressureCap);
   capture::Session::Get().EnableLive(&queue_, &store_);
   finished_ = false;
   thread_ = std::thread([this] {
     Run();
     finished_ = true;
   });
+  if (options_.backpressure) {
+    REXLOG_INFO("live: backpressure on: the guest waits at its swap for the backend (up to {} ms)",
+                kBackpressureCap.count());
+  }
   REXLOG_INFO("live: native backend {}{}, {}x{}, frames queued at the guest swap",
               options_.only ? "as the only renderer (Xenos off)" : "in parallel",
               options_.draw ? "" : " WITHOUT DRAWING (diagnostics)", options_.width,
@@ -283,6 +292,7 @@ void LiveMode::Run() {
   FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
+  FrameQueue::Waits waits_before;     // backpressure, at the last summary
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
@@ -431,6 +441,14 @@ void LiveMode::Run() {
         REXLOG_INFO("mods: texture check: {} named textures compared with what the game opened, {} differ, "
                     "{} not reported by the game",
                     c.compared, c.differing, c.unreported);
+      }
+      if (options_.backpressure) {
+        const FrameQueue::Waits w = queue_.waits();
+        REXLOG_INFO("live backpressure: the guest waited {:.2f} ms per rendered frame ({} waits, {} "
+                    "reached the cap) this period",
+                    (w.ms - waits_before.ms) / per, w.count - waits_before.count,
+                    w.timeouts - waits_before.timeouts);
+        waits_before = w;
       }
       REXLOG_INFO("live consumer (backend thread, ms per frame): content and textures {:.2f}, "
                   "commands {:.2f} (frontend {:.2f}, backend draws {:.2f}), frame end {:.2f}, "

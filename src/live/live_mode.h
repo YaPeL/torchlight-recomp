@@ -61,6 +61,8 @@ struct LiveOptions {
   size_t frame_queue = 2;
   // Backend thread, right after each present that waited for vsync (the display's vblank).
   std::function<void()> on_vsynced_present;
+  // The guest waits at its swap while a queued frame is not taken (frame_queue.h backpressure).
+  bool backpressure = false;
   // OGRE's log file; empty: none (debugger output only).
   std::string ogre_log_path;
   // Session recording (session_file.h): every consumed frame to this file, up to the cap.
