@@ -848,6 +848,40 @@ Also for MAC.9: `tools/deps/key.sh` pipes into `sha256sum`, which macOS does not
 exists (`sha256sum`, else `shasum -a 256`; both print the same digest first), so the same key
 comes out on Linux, Windows (Git Bash has `sha256sum`) and macOS.
 
+**MAC.9 results (branch `feature/macos-ci`, 2026-10-10):**
+
+- `key.sh macos` (system `runner macos-26`, the two build scripts) and the `sha256sum`/`shasum`
+  fallback: the Linux and Windows keys are unchanged (`b3e4b9c396c849d8`, `0a48ff83642d5e91`, the
+  ones CI published). macOS 26 has `/sbin/sha256sum`; older macOS only `shasum` (`d60e132`).
+- `store.sh`: `sdk/ogre-macos-arm64-<key>.tar.zst`. The prune read every branch's keys as Linux and
+  Windows only and deleted any asset whose name it could not parse: develop's macOS archives
+  would have gone at the first prune. Now each branch's platforms come from its own `key.sh`; an
+  asset is deleted only if some branch has a key for its platform, and a name of no known platform
+  never. `tools/deps/test_store.sh` (fake store, fake branches) covers macOS on one branch, on both,
+  on neither, and the dry run; against develop's `store.sh` the first three fail. The Linux deps
+  job runs it before the prune.
+- Left open: until main has this `store.sh`, a push to main runs main's own prune, which still
+  deletes macOS archives older than its 24-hour grace. Pushes to main are the freezes, which bring
+  this `store.sh` with them; a push to main without it costs one rebuild of the macOS
+  dependencies on the next develop run, nothing else.
+- `ci.yml`: `deps-macos` and `test-macos` on `macos-26` (`2ebd1be`), same triggers as Linux and
+  Windows. Here the `mac-arm64-nogame` preset from the branch passes 66/66, the GL tests included.
+  The first run on the runner (by hand from Actions) is to show whether its virtual GPU gives
+  OpenGL 3.3 and how long `deps-macos` takes.
+- `release.yml`: `game-macos` (XEX check with `shasum`, codegen, Release with `-g`, ctest,
+  `split_symbols.sh`, `make_app.sh` with the tag's numbers as version, `check_app.sh`,
+  `make_dmg.sh`, `.dSYM`s to `<tag>/macos-arm64/`), `check-macos` (`check_app.sh` on the app inside
+  the mounted `.dmg`, on a second runner), the `.dmg` in `SHA256SUMS`, the attestation and the
+  draft, and the Gatekeeper paragraph in the notes (`32c568a`). The game's build from scratch with
+  3 jobs (the runner's cores) took 6.4 minutes on the M2 and peaked at 1.4 GB, far below the
+  runner's 7 GB. The packaging and check steps ran here on that build with `v0.2.0-beta`
+  (`0.2.0` in `Info.plist`, a 31 MB `.dmg`, 120 MB of `.dSYM`s).
+- README: the macOS section (Apple Silicon, macOS 13.3+, tested on 26; the Gatekeeper steps; the
+  keyboard through `open -a "Torchlight Recomp" --args --mnk_mode=true`; where files are kept).
+  The wording of the dialogs was seen in Spanish; the English text is Apple's for the same dialog.
+- Done when the dry-run tag on main leaves the `.dmg` in the draft with its checksum: the tag is
+  the integrator's.
+
 ## 8. Platform module
 
 **State.** `platform_linux.cpp` and `platform_win.cpp` implement `platform.h`;
