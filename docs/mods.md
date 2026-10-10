@@ -632,8 +632,23 @@ says so (`units: ...: unknown ... left in the save: not the player's`). Anything
 player's. The guard against a fault of ours (most of a save's units unknown: leave it alone) still
 counts every unknown unit.
 
-What the game does with a saved level creature it does not know is checked in the game (below).
-If quests show a problem, their units go back to the player's side.
+Checked in the game on 2026-10-10 with the 29-mod pack, in automatic runs with input scripts:
+- **The game handles it.** A save holding the old Tarn in its saved town, loaded with the pack:
+  the game entered the town, and when it next saved (on the way to the mines) the saved town held
+  Tarn with the mod's GUID. It dropped the creature it did not know and made Tarn again from the
+  level, with no fault, no warning of ours and saving on. The save's four active quests were the
+  same before and after.
+- **Every save checked against the merged units** (5337 expected, the index's own number): Tarn
+  left in each of the seven saves and logged, the sword of the new-item mod that this set no longer
+  has removed from the one save holding it (with a copy), saving on.
+- To get there, our reader of the mods' text files (`ParseDatText`) had to be as tolerant as the
+  game: four of the pack's files have a lone CR between tags, an extra closing tag, `//` comment
+  lines or a block never closed, and any one of them made the check give up on the mods' units.
+- The PC achievement "Played with 10 mods" unlocked with the pack in one of these runs.
+
+Not checked by these runs: that quests given by a replaced or unknown unit go on (none of these
+saves had one), and trading with Tarn. If quests show a problem, their units go back to the
+player's side.
 
 ## 8. Where mods go on our side
 
