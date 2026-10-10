@@ -132,19 +132,25 @@ std::optional<std::vector<DatBlock>> ParseDatText(const std::vector<uint8_t>& by
     ++line_number;
     const std::string_view line = Trim(std::string_view(text).substr(start, end - start));
     start = next;
-    if (line.empty()) continue;
+    if (line.empty() || line.starts_with("//")) continue;  // a comment, as PC mods' files have
     if (line.size() >= 3 && line.front() == '[' && line.back() == ']') {
       if (line[1] == '/') {
+        // Tolerant, as the game is with PC mods' files (its own loading keeps them): a closing tag
+        // that matches no open block is skipped (an extra "[/EFFECT]" in the Mod-Pack's JCC - Pets
+        // dfb_pet_lich.dat), and one that matches an outer block closes the inner ones with it.
         const std::string_view name = line.substr(2, line.size() - 3);
-        if (open.empty() || !EqualNoCase(open.back().name, name)) {
-          return fail("[/" + std::string(name) + "] does not close the open block");
-        }
-        DatBlock done = std::move(open.back());
-        open.pop_back();
-        if (open.empty()) {
-          roots.push_back(std::move(done));
-        } else {
-          open.back().children.push_back(std::move(done));
+        const auto match = std::find_if(open.rbegin(), open.rend(),
+                                        [&](const DatBlock& b) { return EqualNoCase(b.name, name); });
+        if (match == open.rend()) continue;
+        const size_t depth = static_cast<size_t>(match - open.rbegin()) + 1;
+        for (size_t i = 0; i < depth; ++i) {
+          DatBlock done = std::move(open.back());
+          open.pop_back();
+          if (open.empty()) {
+            roots.push_back(std::move(done));
+          } else {
+            open.back().children.push_back(std::move(done));
+          }
         }
       } else {
         open.push_back(DatBlock{std::string(line.substr(1, line.size() - 2)), {}, {}});
@@ -169,9 +175,16 @@ std::optional<std::vector<DatBlock>> ParseDatText(const std::vector<uint8_t>& by
     }
     return fail("not a block tag or a value line");
   }
-  if (!open.empty()) {
-    line_number = 0;
-    return fail("[" + open.back().name + "] is never closed");
+  // Blocks left open at the end are closed there (a set file of the Mod-Pack ends without its
+  // "[/SET]"), as the game, which loads it, does.
+  while (!open.empty()) {
+    DatBlock done = std::move(open.back());
+    open.pop_back();
+    if (open.empty()) {
+      roots.push_back(std::move(done));
+    } else {
+      open.back().children.push_back(std::move(done));
+    }
   }
   return roots;
 }

@@ -60,14 +60,28 @@ int main() {
     }
     Check(ParseDatText(Ascii("[A]\n<STRING>K:v:w\n[/A]\n"), &error).value()[0].Find("K")->value == "v:w",
           "UTF-8: the value keeps later colons");
-    Check(!ParseDatText(Ascii("[A]\n"), &error), "unclosed block rejected");
+    const auto unclosed = ParseDatText(Ascii("[A]\n<STRING>K:v\n"), &error);
+    Check(unclosed && unclosed->size() == 1 && (*unclosed)[0].Find("K")->value == "v",
+          "a block left open is closed at the end (a Mod-Pack set file)");
+    const auto comment = ParseDatText(Ascii("[A]\n// [SKILL] notes\n<STRING>K:v\n[/A]\n"), &error);
+    Check(comment && (*comment)[0].Find("K")->value == "v" && (*comment)[0].children.empty(),
+          "// comment lines are skipped");
+    Check(!ParseDatText(Ascii("[A]\nnot a value\n[/A]\n"), &error), "any other line is still rejected");
     const auto lone_cr = ParseDatText(Ascii("[UNIT]\r\n<STRING>UNIT_GUID:-5\r\n[EFFECTS]\r\n[EFFECT]\r\n"
                                             "[/EFFECT]\r[/EFFECTS]\r\n[/UNIT]\r\n"),
                                       &error);
     Check(lone_cr && lone_cr->size() == 1 && (*lone_cr)[0].Find("UNIT_GUID")->value == "-5" &&
               (*lone_cr)[0].children.size() == 1,
           "a lone CR ends a line, as the game reads it (JCC - Vindicator's MisersRing1.dat)");
-    Check(!ParseDatText(Ascii("[A]\n[/B]\n"), &error), "mismatched closing tag rejected");
+    const auto extra = ParseDatText(Ascii("[UNIT]\n<STRING>UNIT_GUID:7\n[SKILL]\n[/SKILL]\n[/EFFECT]\n[/UNIT]\n"),
+                                    &error);
+    Check(extra && extra->size() == 1 && (*extra)[0].Find("UNIT_GUID")->value == "7" &&
+              (*extra)[0].children.size() == 1,
+          "a closing tag that matches no open block is skipped (JCC - Pets' dfb_pet_lich.dat)");
+    const auto outer = ParseDatText(Ascii("[A]\n[B]\n<STRING>K:v\n[/A]\n"), &error);
+    Check(outer && outer->size() == 1 && (*outer)[0].children.size() == 1 &&
+              (*outer)[0].children[0].Find("K")->value == "v",
+          "an outer block's closing tag closes the inner ones with it");
     Check(!ParseDatText(Ascii("<STRING>K:v\n"), &error), "value outside a block rejected");
     Check(!ParseDatText(Ascii("[A]\njunk\n[/A]\n"), &error), "stray line rejected");
     const std::vector<DatBlock> written = {DatBlock{"X", {{"STRING", "NAME", "Ünïcode"}}, {DatBlock{"Y", {}, {}}}}};
@@ -84,7 +98,7 @@ int main() {
   Write(root / "b_mod" / "mod.dat", Utf16(Descriptor("Mod B")));
   Write(root / "A_mod" / "MOD.DAT", Ascii(Descriptor("Mod A")));
   Write(root / "nodat" / "media" / "x.dds", Ascii("not a descriptor"));
-  Write(root / "broken" / "mod.dat", Ascii("[MOD]\n<STRING>NAME:x\n"));
+  Write(root / "broken" / "mod.dat", Ascii("[MOD]\nnot a value line\n[/MOD]\n"));
   Write(root / "loose.txt", Ascii("a file, not a folder"));
   ScanResult scan = ScanModsFolder(root);
   Check(scan.mods.size() == 3, "three mods found");
