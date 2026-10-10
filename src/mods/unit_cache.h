@@ -44,9 +44,11 @@ std::vector<ModUnitFile> ScanModUnitFiles(const std::filesystem::path& mods_fold
 // search order last (so merging in this order lets that mod's unit win a GUID clash).
 std::vector<std::u16string> UnitPathsByPriority(const std::vector<ModUnitFile>& files);
 
-// The UNIT_GUID each file sets (text definitions, the format mods ship), or none (with `why`)
-// when any file cannot be read or sets none: then the mods' units are not all known.
-std::optional<std::vector<int64_t>> ModUnitGuids(const std::vector<ModUnitFile>& files, std::string* why);
+// The mods' units as the index builder merges them: for each path in UnitPathsByPriority order, the
+// winning mod's file (the first in the search order) with the UNIT_GUID it sets (text definitions,
+// the format mods ship; ParseUnitGuid) and its game path; no name or other fields. None (with `why`)
+// when any of those files cannot be read or sets none: then the mods' units are not all known.
+std::optional<std::vector<UnitEntry>> ModUnitEntries(const std::vector<ModUnitFile>& files, std::string* why);
 
 // The base index from the game's pak (media/UNITDATA.RAW), or none (with `error`).
 std::optional<UnitIndex> ReadPakUnitIndex(const std::filesystem::path& pak, std::string* error);

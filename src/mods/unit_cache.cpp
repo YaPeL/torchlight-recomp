@@ -97,9 +97,12 @@ std::vector<std::u16string> UnitPathsByPriority(const std::vector<ModUnitFile>& 
   return out;
 }
 
-std::optional<std::vector<int64_t>> ModUnitGuids(const std::vector<ModUnitFile>& files, std::string* why) {
-  std::vector<int64_t> guids;
-  for (const ModUnitFile& f : files) {
+std::optional<std::vector<UnitEntry>> ModUnitEntries(const std::vector<ModUnitFile>& files, std::string* why) {
+  std::map<std::u16string, const ModUnitFile*> winner;  // the first file of each path
+  for (const ModUnitFile& f : files) winner.try_emplace(f.game_path, &f);
+  std::vector<UnitEntry> entries;
+  for (const std::u16string& path : UnitPathsByPriority(files)) {
+    const ModUnitFile& f = *winner.at(path);
     const auto bytes = ReadAll(f.file);
     std::string error;
     const auto blocks = bytes ? ParseDatText(*bytes, &error) : std::nullopt;
@@ -109,9 +112,12 @@ std::optional<std::vector<int64_t>> ModUnitGuids(const std::vector<ModUnitFile>&
       if (why) *why = "no UNIT_GUID read from " + f.mod_folder + " " + f.file.filename().string();
       return std::nullopt;
     }
-    guids.push_back(*value);
+    UnitEntry e;
+    e.guid = *value;
+    e.file = f.game_path;
+    entries.push_back(std::move(e));
   }
-  return guids;
+  return entries;
 }
 
 std::optional<UnitIndex> ReadPakUnitIndex(const fs::path& pak, std::string* error) {

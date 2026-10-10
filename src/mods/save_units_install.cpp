@@ -56,8 +56,9 @@ void Run(const std::filesystem::path& user_data_root, const KnownUnits& known) {
 }
 
 // The units of the index the game is expected to load with the mods' units: the cached one when
-// it exists (exactly what the game will load), otherwise the base plus the GUIDs the mods'
-// definitions set (a unit the game then cannot load shows in the comparison after the load).
+// it exists (exactly what the game will load), otherwise the base merged with the mods' units as
+// the builder merges them (a unit the game then cannot load shows in the comparison after the
+// load).
 KnownUnits ExpectedUnits(const std::filesystem::path& data_dir, const std::filesystem::path& pak,
                          const std::vector<ModUnitFile>& files, const std::optional<UnitIndex>& base) {
   if (const auto identity = PakIdentity(pak)) {
@@ -69,8 +70,7 @@ KnownUnits ExpectedUnits(const std::filesystem::path& data_dir, const std::files
     }
   }
   std::string why;
-  const auto guids = ModUnitGuids(files, &why);
-  return MakeKnownUnits(base, guids ? *guids : std::vector<int64_t>{}, guids.has_value(), why);
+  return MakeExpectedUnits(base, ModUnitEntries(files, &why), why);
 }
 
 }  // namespace

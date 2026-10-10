@@ -71,6 +71,15 @@ KnownUnits MakeKnownUnits(const std::optional<UnitIndex>& base, const std::vecto
 
 KnownUnits KnownUnitsOfIndex(const UnitIndex& loaded) { return MakeKnownUnits(loaded, {}, true); }
 
+KnownUnits MakeExpectedUnits(const std::optional<UnitIndex>& base,
+                             const std::optional<std::vector<UnitEntry>>& mod_units, const std::string& mods_why) {
+  if (!base || !mod_units) return MakeKnownUnits(base, {}, mod_units.has_value(), mods_why);
+  KnownUnits known = MakeKnownUnits(base, {}, true);
+  if (!known.complete) return known;
+  std::vector<std::u16string> skipped;
+  return KnownUnitsOfIndex(MergeUnitIndex(*base, *mod_units, &skipped));
+}
+
 std::vector<int64_t> UnitsNotLoaded(const KnownUnits& assumed, const std::unordered_set<int64_t>& loaded) {
   std::vector<int64_t> out;
   for (int64_t guid : assumed.guids) {

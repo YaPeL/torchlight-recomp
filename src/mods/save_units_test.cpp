@@ -325,6 +325,33 @@ int main() {
     fs::remove_all(root);
   }
 
+  // Expected units with mods: merged as the index builder merges, so a mod's unit at a base
+  // unit's path replaces that GUID (JCC - Map's Tarn the Merchant) instead of adding to it.
+  {
+    UnitIndex base;  // real base entries have files: the merge drops entries without one
+    const std::u16string files[] = {u"MEDIA/UNITS/ITEMS/A.DAT", u"MEDIA/UNITS/MONSTERS/MERCHANT/MERCHANT_GOODS.DAT",
+                                    u"MEDIA/UNITS/PLAYERS/P.DAT", u"MEDIA/UNITS/PROPS/C.DAT"};
+    const int64_t guids[] = {1, 10, 3, 4};
+    for (size_t g = 0; g < base.groups.size(); ++g) {
+      UnitEntry e;
+      e.guid = guids[g];
+      e.file = files[g];
+      base.groups[g].push_back(e);
+    }
+    UnitEntry replaced;
+    replaced.guid = 11;
+    replaced.file = u"MEDIA/UNITS/MONSTERS/MERCHANT/MERCHANT_GOODS.DAT";
+    UnitEntry added;
+    added.guid = 12;
+    added.file = u"MEDIA/UNITS/ITEMS/NEW.DAT";
+    const KnownUnits expected = MakeExpectedUnits(base, std::vector<UnitEntry>{replaced, added});
+    Check(expected.complete && expected.guids.contains(11) && expected.guids.contains(12) &&
+              !expected.guids.contains(10) && expected.guids.contains(1),
+          "a mod's unit at a base path replaces the base GUID; a new path adds one");
+    const KnownUnits unread = MakeExpectedUnits(base, std::nullopt, "a mod unreadable");
+    Check(!unread.complete && unread.incomplete_why == "a mod unreadable", "mods' units not all read: incomplete");
+  }
+
   if (failures) return EXIT_FAILURE;
   std::puts("save_units_test: ok");
   return EXIT_SUCCESS;

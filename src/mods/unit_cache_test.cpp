@@ -65,6 +65,22 @@ int main() {
   Check(paths.size() == 2 && paths[0] == u"MEDIA/UNITS/MONSTERS/BAT.DAT" && paths[1] == u"MEDIA/UNITS/ITEMS/AXE.DAT",
         "a path ranks by the first mod that has it; the first mod's paths last");
 
+  // The mods' units as the builder merges them: the first mod's file of each path, with its GUID.
+  {
+    const fs::path defs = root / "defs";
+    Write(defs / "a" / "media" / "units" / "items" / "axe.dat", "[UNIT]\r\n<STRING>UNIT_GUID:5\r\n[/UNIT]\r\n");
+    Write(defs / "a" / "media" / "units" / "monsters" / "bat.dat", "[UNIT]\r\n<STRING>UNIT_GUID:7\r\n[/UNIT]\r\n");
+    Write(defs / "b" / "media" / "units" / "items" / "axe.dat", "[UNIT]\r\n<STRING>UNIT_GUID:6\r\n[/UNIT]\r\n");
+    std::string why;
+    const auto entries = ModUnitEntries(ScanModUnitFiles(defs, Plan({{"a", 1}, {"b", 2}})), &why);
+    Check(entries && entries->size() == 2 && (*entries)[0].guid == 7 && (*entries)[1].guid == 5 &&
+              (*entries)[1].file == u"MEDIA/UNITS/ITEMS/AXE.DAT",
+          "one entry per path, the first mod's GUID, in merge order");
+    Write(defs / "b" / "media" / "units" / "items" / "cow.dat", "[UNIT]\r\n<STRING>NAME:cow\r\n[/UNIT]\r\n");
+    Check(!ModUnitEntries(ScanModUnitFiles(defs, Plan({{"a", 1}, {"b", 2}})), &why) && !why.empty(),
+          "a definition without UNIT_GUID: not all known, and why");
+  }
+
   // The key: the mods' files, the base and the version; nothing else.
   const std::string key = UnitCacheKey(files, 1);
   Check(key.size() == 16 && UnitCacheKey(files, 1) == key, "a stable 64-bit hex key");

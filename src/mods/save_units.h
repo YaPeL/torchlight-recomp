@@ -37,6 +37,14 @@ struct KnownUnits {
 KnownUnits MakeKnownUnits(const std::optional<UnitIndex>& base, const std::vector<int64_t>& mod_guids,
                           bool mods_complete, const std::string& mods_why = {});
 
+// The units the game is expected to hold with the mods' units (`mod_units`: unit_cache.h
+// ModUnitEntries; none when they were not all read, `mods_why` saying why): the base merged with
+// them as the index builder merges (unit_index.h MergeUnitIndex), so a mod's unit at a base unit's
+// path replaces that unit's GUID instead of adding to it. Incomplete as MakeKnownUnits is.
+KnownUnits MakeExpectedUnits(const std::optional<UnitIndex>& base,
+                             const std::optional<std::vector<UnitEntry>>& mod_units,
+                             const std::string& mods_why = {});
+
 // The units of the index the game loads (the merged index when mods' units made it in, the Xbox
 // one otherwise): exactly what it can resolve. A mod's unit that did not get into it is unknown,
 // whatever its definition says.
