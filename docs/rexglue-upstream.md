@@ -69,7 +69,8 @@ Other topics:
 | `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
 | `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
-| An unclaimed host fault hangs instead of crashing on POSIX (D25) | Still there | Issue and PR |
+| An unclaimed host fault hangs instead of crashing on POSIX (D25) | Still there | Issue and PR; our patch 30 |
+| The guest's fatal errors return into the guest on POSIX (D31) | `Break()` returns once; every export calls it | Issue and PR; our patch 31 |
 | Wiki/code mismatches (D19) | The wiki documents the TOML key `enable_exception_handlers` (the code reads `generate_exception_handlers`) and describes `reserved_as_local` and `non_argument_as_local` wrongly | Small docs issue (found during this analysis) |
 
 ## Per patch
@@ -1085,6 +1086,42 @@ the process; a crash reporter installed before the SDK sees every fault the SDK 
 Test: the child above dies by SIGSEGV; with a previous handler that counts calls, that handler is
 called once per unclaimed fault and an MMIO access still works.
 
+Our patch 30 (`patches/README.md`, 2026-10-10). Its tests run each case as a hidden case of
+`unit_tests` in a new process, since the test memory installs the SDK's handler in the test
+process: an unclaimed read ends by SIGSEGV, a previous handler gets the fault after the SDK's
+handlers saw it once, and a handler that unprotects the page still lets the write through.
+
+---
+
+### D31. Kernel: the guest's fatal errors return into the guest on POSIX
+
+From the crash-handling design (`docs/crash-handling.md`, section 7, patch 2). Checked on
+`bd833a2`.
+
+**Issue: `[Kernel]: RtlRaiseException, KeBugCheckEx and DbgBreakPoint return to the guest on POSIX`**
+
+`RtlRaiseException_entry` (every code but SetThreadName's, the C++ throw included),
+`KeBugCheckEx_entry` and `DbgBreakPoint_entry` (`src/kernel/xboxkrnl/xboxkrnl_debug.cpp`) call
+`rex::debug::Break()`. On POSIX its first call installs a SIGTRAP handler that only resets the
+signal to its default, so `raise(SIGTRAP)` returns and the guest runs on past a call that does
+not return on the console. A second `Break()` kills the process by SIGTRAP with no message. On
+Windows, `__debugbreak()` ends the process through Windows Error Reporting; an app has no way to
+report either.
+
+Seen in Torchlight by reading: `DbgBreakPoint` has 1114 callers, OGRE's `OGRE_EXCEPT` sites
+(Runic's OGRE breaks where OGRE 1.7 throws). After the break each site runs on with the state the
+error was about, for example returning a map's end node as a viewport.
+
+**PR: `fix(kernel): fatal guest errors go through a registrable handler and never return`**
+
+Fixes #NNN. A new `include/rex/system/guest_fatal.h`: `RaiseGuestFatal` logs the error (kind,
+code, parameters, record, guest thread, the caller's `lr`), calls the handler set with
+`SetGuestFatalHandler` (with the thread's `PPCContext`, for a crash report), then aborts, after
+`Break()` when a debugger is attached. The four exports call it. Tests: each export reports its
+kind, code and parameters to a handler; SetThreadName is not fatal; without a handler, or with
+one that returns, the process aborts. `Break()` returning on POSIX is a separate report: it no
+longer matters to these paths. Our patch 31 (`patches/README.md`).
+
 ---
 
 Not drafted, from the same port (`docs/macos-port.md`, section 1, items 5-7, and section 2):
@@ -1265,7 +1302,9 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 27 | `rexglue-guest-file-flush.patch` (D27) | `sdk/guest-file-flush` | `bd833a2` |
 | 28 | `rexglue-quiet-missing-files.patch` (D28) | `sdk/series-review` | `bd833a2` |
 | 29 | `rexglue-case-variants.patch` (D30) | `sdk/case-variants` | `bd833a2` |
-| 30 | next free | | |
+| 30 | `rexglue-posix-chain-unclaimed-faults.patch` (D25) | `sdk/fatal-errors` | `bd833a2` |
+| 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2` |
+| 32 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

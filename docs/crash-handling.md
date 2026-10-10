@@ -16,6 +16,7 @@ test; "read" means only the code was read.
 | Host fault that no SDK handler claims | **Endless loop.** `ExceptionHandlerCallback` (`exception_handler_posix.cpp`) returns without chaining to anything, so the instruction faults again. If the address is guest memory outside the physical heaps, `Memory::AccessViolationCallback` logs `Unhandled guest access violation` on every retry. Seen: mods runs 117, 129, 130 and 161 (`docs/mods.md` 7e on `feature/pc-mods`), mods run `torchlight_084` (2026-10-09: a guest read of null+0xB4, 6010 identical lines in 89 s until the run cap stopped it), and a test here (draft D25) | The vectored handler returns `EXCEPTION_CONTINUE_SEARCH`. No filter of ours exists, so the process ends through Windows Error Reporting with no message from us (read) |
 | Guest `RtlRaiseException`: a C++ `throw` (0xE06D7363) or any code but SetThreadName (0x406D1388) | `rex::debug::Break()`. **Its first call returns**: it installs a SIGTRAP handler that only resets the signal to its default, so the guest carries on past a call that never returns. A second `Break()` kills the process with SIGTRAP (core dump, no message) (read) | `__debugbreak()`: unhandled breakpoint, process ends through WER (read) |
 | `KeBugCheck`/`KeBugCheckEx` | Same `Break()`, then `assert_always` | Same |
+| `DbgBreakPoint` | Same `Break()`. Torchlight's 1114 callers are OGRE's `OGRE_EXCEPT` sites, which run on with the state the error was about (read; SDK patch 31) | Same |
 | `RtlUnwind`, `RtlCaptureContext`, `__C_specific_handler` | Stubs: they log `[STUB] ... not implemented` and return. `RtlUnwind` runs once per start at the title screen with no visible effect (draft D17) | Same |
 | Our code, OGRE or the SDK faulting on a host address | Same endless loop as the first row: the SDK returns `false` before any guest check | WER |
 
@@ -57,6 +58,9 @@ stack overflow).**
   Nothing dispatches it to a handler. Continuing runs whatever code follows a call that should not
   return. With a debugger attached, `Break()` comes first, for development.
 - `KeBugCheck`/`KeBugCheckEx` is fatal.
+- `DbgBreakPoint` is fatal. In Torchlight it is how Runic's OGRE raises its errors
+  (`OGRE_EXCEPT`): the code after it runs on with the error's state, and a second one already
+  kills the game today.
 - `RtlUnwind` is **not** fatal. It is the local unwind of a normal path, seen every start without
   effect. Its message is logged once per call site (the guest's `lr`), and the report lists it among
   the recent events if a crash follows. This is revisited when D17 is implemented.
@@ -195,11 +199,11 @@ common interface), following CLAUDE.md's platform rule:
 - the build section, with the version, the series key and the commit added to `build_info.h`;
 - `tools/crash/resolve.py`.
 
-**SDK patches** (series numbers from 26 when they are written; in `sdk/rexglue-next`):
-1. **D25, unclaimed faults chain to the previous handler**, without uninstalling the SDK's (the
+**SDK patches** (in the `bd833a2` series):
+1. **D25, unclaimed faults chain to the previous handler** (patch 30), without uninstalling the SDK's (the
    draft was revised so). This is what makes section 2.A possible on POSIX. Windows needs nothing:
    `EXCEPTION_CONTINUE_SEARCH` already reaches our filter.
-2. **A guest fatal-error hook.**
+2. **A guest fatal-error hook** (patch 31, draft D31; `DbgBreakPoint` included).
    - `RtlRaiseException` (every code but SetThreadName), the C++ throw path and `KeBugCheckEx` call
      a handler the app registers, with the exception record and the thread's `PPCContext`.
    - Without a registered handler: log the record and `abort()`, never return to the guest.
@@ -244,7 +248,8 @@ D17's local unwind, once implemented, removes the only stub the game hits on a n
    ends the disk problem first. **Done** (`fix/log-budget`): the folder pruning and the rotation
    cvars, on both bases, with SDK patch 26 on `bd833a2`; the duplicate filter is left for patch 3's
    follow-up.
-2. **CR.2:** SDK patches 1 and 2 (with D25's test), on `sdk/rexglue-next`.
+2. **CR.2:** SDK patches 1 and 2 (with D25's test). **Written** (2026-10-10, `sdk/fatal-errors`):
+   SDK patches 30 and 31, with their tests.
 3. **CR.3:** the POSIX handler, the reporter and the report (Linux), with the child-process tests.
 4. **CR.4:** Windows: the filter, `StackWalk64` and the PDB identity.
 5. **CR.5:** the helper mode and the next-start notice.
