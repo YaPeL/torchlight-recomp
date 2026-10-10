@@ -1,0 +1,252 @@
+diff --git a/src/core/exception_handler_posix.cpp b/src/core/exception_handler_posix.cpp
+index 8b1c76a..71c33f5 100644
+--- a/src/core/exception_handler_posix.cpp
++++ b/src/core/exception_handler_posix.cpp
+@@ -49,6 +49,45 @@ constexpr size_t kMaxHandlerCount = 8;
+ // Executed in order.
+ std::pair<ExceptionHandler::Handler, void*> handlers_[kMaxHandlerCount];
+ 
++// No handler claimed the fault. Hand it to the handler that was installed before ours, as the
++// system would have. Without one, restore the default action: the faulting instruction runs again
++// on return and ends the process with this signal. Returning alone would fault again, forever.
++// Our handler stays installed while a previous one runs, so it may still retry.
++static void ChainUnclaimedSignal(int signal_number, siginfo_t* signal_info, void* signal_context) {
++  const struct sigaction* previous = nullptr;
++  switch (signal_number) {
++    case SIGILL:
++      previous = &original_sigill_handler_;
++      break;
++    case SIGSEGV:
++      previous = &original_sigsegv_handler_;
++      break;
++#if REX_PLATFORM_MAC
++    case SIGBUS:
++      previous = &original_sigbus_handler_;
++      break;
++#endif
++    default:
++      break;
++  }
++  if (previous) {
++    if (previous->sa_flags & SA_SIGINFO) {
++      if (previous->sa_sigaction) {
++        previous->sa_sigaction(signal_number, signal_info, signal_context);
++        return;
++      }
++    } else if (previous->sa_handler != SIG_DFL && previous->sa_handler != SIG_IGN) {
++      previous->sa_handler(signal_number);
++      return;
++    }
++  }
++  struct sigaction default_action;
++  std::memset(&default_action, 0, sizeof(default_action));
++  default_action.sa_handler = SIG_DFL;
++  sigemptyset(&default_action.sa_mask);
++  sigaction(signal_number, &default_action, nullptr);
++}
++
+ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+                                      void* signal_context) {
+ #if REX_PLATFORM_MAC
+@@ -175,6 +214,7 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+       // On non-Mac POSIX, SIGBUS is a bus error (misaligned access), not a
+       // protection fault — don't handle it here.
+       assert_unhandled_case(signal_number);
++      ChainUnclaimedSignal(signal_number, signal_info, signal_context);
+       return;
+ #endif
+       [[fallthrough]];
+@@ -417,6 +457,7 @@ static void ExceptionHandlerCallback(int signal_number, siginfo_t* signal_info,
+       return;
+     }
+   }
++  ChainUnclaimedSignal(signal_number, signal_info, signal_context);
+ }
+ 
+ void ExceptionHandler::Install(Handler fn, void* data) {
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index e1ef136..5ae48b1 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -15,6 +15,7 @@ add_executable(unit_tests
+     core/stream_test.cpp
+     core/chrono_test.cpp
+     core/log_rotation_test.cpp
++    core/unclaimed_fault_test.cpp
+     ppc/import_function_test.cpp
+     ppc/stack_test.cpp
+     system/guest_path_test.cpp
+diff --git a/tests/unit/child_process.h b/tests/unit/child_process.h
+new file mode 100644
+index 0000000..d136225
+--- /dev/null
++++ b/tests/unit/child_process.h
+@@ -0,0 +1,52 @@
++/**
++ * @file        tests/unit/child_process.h
++ * @brief       Runs one hidden test case of unit_tests in a new process (POSIX)
++ *
++ * Tests of fatal paths end their process. Each runs as a hidden case ("[.]") in a fresh process,
++ * so no signal handler an earlier test installed (the test memory's MMIO handler) is in it.
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#pragma once
++
++#if !defined(_WIN32)
++
++#include <fcntl.h>
++#include <sys/resource.h>
++#include <sys/wait.h>
++#include <unistd.h>
++
++#include <string>
++
++#include <rex/filesystem.h>
++
++namespace rex::testing {
++
++// Runs the hidden case `test_name` of this executable and returns its wait status. Its output is
++// discarded, and it writes no core file when it dies.
++inline int RunTestInChild(const std::string& test_name) {
++  const std::string exe = rex::filesystem::GetExecutablePath().string();
++  const pid_t pid = fork();
++  if (pid == 0) {
++    const struct rlimit no_core = {0, 0};
++    setrlimit(RLIMIT_CORE, &no_core);
++    const int null_fd = open("/dev/null", O_WRONLY);
++    if (null_fd >= 0) {
++      dup2(null_fd, STDOUT_FILENO);
++      dup2(null_fd, STDERR_FILENO);
++    }
++    execl(exe.c_str(), exe.c_str(), test_name.c_str(), static_cast<char*>(nullptr));
++    _exit(127);
++  }
++  int status = 0;
++  if (pid < 0 || waitpid(pid, &status, 0) != pid) {
++    return -1;
++  }
++  return status;
++}
++
++}  // namespace rex::testing
++
++#endif  // !defined(_WIN32)
+diff --git a/tests/unit/core/unclaimed_fault_test.cpp b/tests/unit/core/unclaimed_fault_test.cpp
+new file mode 100644
+index 0000000..53000db
+--- /dev/null
++++ b/tests/unit/core/unclaimed_fault_test.cpp
+@@ -0,0 +1,110 @@
++/**
++ * @file        tests/unit/core/unclaimed_fault_test.cpp
++ * @brief       On POSIX a fault no handler claims ends the process instead of faulting forever
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#if !defined(_WIN32)
++
++#include <signal.h>
++#include <sys/mman.h>
++#include <unistd.h>
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <rex/exception_handler.h>
++
++#include "child_process.h"
++
++using rex::arch::Exception;
++using rex::arch::ExceptionHandler;
++using rex::testing::RunTestInChild;
++
++namespace {
++
++volatile int* const kUnmapped = reinterpret_cast<volatile int*>(16);
++
++int sdk_handler_calls = 0;
++
++bool CountUnclaimed(Exception*, void*) {
++  ++sdk_handler_calls;
++  return false;
++}
++
++// A crash reporter's handler, installed before the SDK's.
++void PreviousHandler(int, siginfo_t*, void*) {
++  _exit(sdk_handler_calls == 1 ? 42 : 43);
++}
++
++void* page = nullptr;
++
++// What the SDK's own handlers do (MMIO, write watches): fix the access and retry it.
++bool UnprotectPage(Exception* ex, void*) {
++  if (ex->code() != Exception::Code::kAccessViolation ||
++      ex->fault_address() != reinterpret_cast<uint64_t>(page)) {
++    return false;
++  }
++  return mprotect(page, getpagesize(), PROT_READ | PROT_WRITE) == 0;
++}
++
++bool KilledByFault(int status) {
++  // An unmapped read is SIGSEGV; macOS may report a protection fault as SIGBUS.
++  return WIFSIGNALED(status) && (WTERMSIG(status) == SIGSEGV || WTERMSIG(status) == SIGBUS);
++}
++
++}  // namespace
++
++// The hidden cases each child runs. alarm() turns a fault loop into SIGALRM.
++
++TEST_CASE("child: an unclaimed fault", "[.][fault_child]") {
++  alarm(3);
++  ExceptionHandler::Install(CountUnclaimed, nullptr);
++  (void)*kUnmapped;
++  _exit(0);
++}
++
++TEST_CASE("child: an unclaimed fault with a previous handler", "[.][fault_child]") {
++  alarm(3);
++  struct sigaction previous = {};
++  previous.sa_sigaction = PreviousHandler;
++  previous.sa_flags = SA_SIGINFO;
++  sigemptyset(&previous.sa_mask);
++  sigaction(SIGSEGV, &previous, nullptr);
++  sigaction(SIGBUS, &previous, nullptr);
++  ExceptionHandler::Install(CountUnclaimed, nullptr);
++  (void)*kUnmapped;
++  _exit(0);
++}
++
++TEST_CASE("child: a claimed fault", "[.][fault_child]") {
++  alarm(3);
++  page = mmap(nullptr, getpagesize(), PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
++  if (page == MAP_FAILED) _exit(2);
++  ExceptionHandler::Install(UnprotectPage, nullptr);
++  *static_cast<volatile int*>(page) = 7;
++  _exit(*static_cast<volatile int*>(page) == 7 ? 0 : 3);
++}
++
++TEST_CASE("An unclaimed fault ends the process with its signal", "[exception_handler]") {
++  const int status = RunTestInChild("child: an unclaimed fault");
++  CHECK(KilledByFault(status));
++  CHECK_FALSE((WIFSIGNALED(status) && WTERMSIG(status) == SIGALRM));
++}
++
++TEST_CASE("An unclaimed fault reaches the handler installed before the SDK's",
++          "[exception_handler]") {
++  // Exit 42: the SDK's handlers saw the fault once, then the previous handler got it.
++  const int status = RunTestInChild("child: an unclaimed fault with a previous handler");
++  REQUIRE(WIFEXITED(status));
++  CHECK(WEXITSTATUS(status) == 42);
++}
++
++TEST_CASE("A fault a handler claims still retries and succeeds", "[exception_handler]") {
++  const int status = RunTestInChild("child: a claimed fault");
++  REQUIRE(WIFEXITED(status));
++  CHECK(WEXITSTATUS(status) == 0);
++}
++
++#endif  // !defined(_WIN32)
