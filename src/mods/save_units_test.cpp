@@ -180,14 +180,19 @@ int main() {
     Check(!done.backup.empty() && done.backup.filename().string().ends_with("-units") &&
               fs::exists(done.backup / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav" / "0.TSV"),
           "the saves backed up first, the file as it was");
-    std::ifstream back(saves / "0.TSV", std::ios::binary);
-    si::Bytes now_bytes((std::istreambuf_iterator<char>(back)), {});
+    si::Bytes now_bytes;
+    {
+      // Closed before the folder is removed: Windows does not delete a file that is open.
+      std::ifstream back(saves / "0.TSV", std::ios::binary);
+      now_bytes.assign(std::istreambuf_iterator<char>(back), {});
+    }
     auto reparsed = Parse(*schema, now_bytes);
     Check(reparsed && !UnitGuids(*reparsed).contains(kMod), "the file on disk no longer has the item");
     Check(!fs::exists(saves / "0.TSV.units.tmp"), "no temporary file left");
     const auto again = ProtectSaves(root, "58410A7E", *schema, MakeKnownUnits(IndexWith(base), {}, true), now, log);
     Check(again.changed.empty() && again.backup.empty(), "a second pass finds nothing and backs nothing up");
-    fs::remove_all(root);
+    std::error_code ec;
+    fs::remove_all(root, ec);
   }
 
   // The player's notice: nothing to tell, the removed items with the backup, risky saves.
@@ -322,7 +327,8 @@ int main() {
               plain->text.find("no save carries them") != std::string::npos &&
               plain->text.find("NOTHING WILL BE SAVED") == std::string::npos,
           "units not loaded that no save carries: told, saving not off");
-    fs::remove_all(root);
+    std::error_code ec;
+    fs::remove_all(root, ec);
   }
 
   // Whose units: the player's are removed or protect the saves; a saved level's creatures (Tarn

@@ -20,3 +20,11 @@ add_executable(guest_abi_mods_test mods_test.cpp)
 target_link_libraries(guest_abi_mods_test PRIVATE guest_abi)
 target_compile_options(guest_abi_mods_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME guest_abi_mods_test COMMAND guest_abi_mods_test)
+# The mod manager's publication on a sparse 4 GiB arena (mmap): Linux only, as the achievement
+# hook tests.
+if(UNIX AND NOT APPLE)
+  add_executable(guest_abi_mods_publish_test mods_publish_test.cpp)
+  target_link_libraries(guest_abi_mods_publish_test PRIVATE guest_abi)
+  target_compile_options(guest_abi_mods_publish_test PRIVATE -Wall -Wextra -Werror)
+  add_test(NAME guest_abi_mods_publish_test COMMAND guest_abi_mods_publish_test)
+endif()
