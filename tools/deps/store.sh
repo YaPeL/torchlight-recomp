@@ -2,7 +2,8 @@
 # The prebuilt SDK and OGRE as assets of one prerelease, "deps", never marked latest, so the
 # repository's release page shows the game's releases (docs/release-pipeline.md, 5.9). Each asset
 # carries its platform and key (tools/deps/key.sh): sdk-linux-amd64-<key>.tar.zst,
-# ogre-linux-amd64-<key>.tar.zst, sdk-windows-amd64-<key>.zip, ogre-windows-amd64-<key>.zip.
+# ogre-linux-amd64-<key>.tar.zst, sdk-windows-amd64-<key>.zip, ogre-windows-amd64-<key>.zip,
+# sdk-macos-arm64-<key>.tar.zst, ogre-macos-arm64-<key>.tar.zst.
 #
 #   store.sh has PLATFORM KEY             exit 0 when both assets of KEY are published
 #   store.sh fetch PLATFORM KEY DIR       download them into DIR (exit 1 when missing)
@@ -11,9 +12,9 @@
 #                                         neither main nor develop uses (see prune below);
 #                                         --no-delete migrates and only reports the deletions
 #
-# PLATFORM is linux or windows. Needs gh (GH_TOKEN) and GITHUB_REPOSITORY; prune also git. Only
-# `gh api`, `gh release upload` and `gh release download -p` are used: Ubuntu 22.04's gh (2.4) has
-# no --json on release list and no --latest.
+# PLATFORM is linux, windows or macos. Needs gh (GH_TOKEN) and GITHUB_REPOSITORY; prune also git.
+# Only `gh api`, `gh release upload` and `gh release download -p` are used: Ubuntu 22.04's gh (2.4)
+# has no --json on release list and no --latest.
 set -euo pipefail
 
 STORE=deps
@@ -26,6 +27,7 @@ names() {  # PLATFORM KEY -> the two asset names
   case $1 in
     linux) echo "sdk-linux-amd64-$2.tar.zst ogre-linux-amd64-$2.tar.zst" ;;
     windows) echo "sdk-windows-amd64-$2.zip ogre-windows-amd64-$2.zip" ;;
+    macos) echo "sdk-macos-arm64-$2.tar.zst ogre-macos-arm64-$2.tar.zst" ;;
     *) echo "unknown platform $1" >&2; exit 2 ;;
   esac
 }
@@ -84,16 +86,26 @@ publish() {  # PLATFORM KEY SDK_ARCHIVE OGRE_ARCHIVE
   rm -rf "$dir"
 }
 
-# The keys main and develop use now, read from each branch's own key.sh ("linux KEY" and
-# "windows KEY" lines), and whether a branch's workflow still reads the old deps-<key> releases.
+# The platforms that have a key ("PLATFORM KEY" lines) in the key.sh of a checkout DIR: a branch
+# whose key.sh does not know a platform yet (macos, on main before the freeze that brings it) has
+# no line for it.
+keys_of() {
+  local platform key
+  for platform in linux windows macos; do
+    key=$(sh "$1/tools/deps/key.sh" "$platform" 2> /dev/null) || continue
+    echo "$platform $key"
+  done
+}
+
+# The keys main and develop use now, read from each branch's own key.sh, and whether a branch's
+# workflow still reads the old deps-<key> releases.
 branch_keys() {
   local ref dir
   git fetch -q --depth=1 origin main:refs/remotes/origin/main develop:refs/remotes/origin/develop
   for ref in origin/main origin/develop; do
     dir=$(mktemp -d)
     git archive "$ref" tools/deps tools/build-deps patches | tar -x -C "$dir"
-    echo "linux $(sh "$dir/tools/deps/key.sh" linux)"
-    echo "windows $(sh "$dir/tools/deps/key.sh" windows)"
+    keys_of "$dir"
     rm -rf "$dir"
   done | sort -u
 }
@@ -103,10 +115,20 @@ old_scheme_keys() {  # the keys of the branches whose CI still downloads deps-<k
     git show "$ref:.github/workflows/ci.yml" | grep -q 'release download "deps-\$key"' || continue
     dir=$(mktemp -d)
     git archive "$ref" tools/deps tools/build-deps patches | tar -x -C "$dir"
-    echo "linux $(sh "$dir/tools/deps/key.sh" linux)"
-    echo "windows $(sh "$dir/tools/deps/key.sh" windows)"
+    keys_of "$dir"
     rm -rf "$dir"
   done | sort -u
+}
+
+# An asset's "PLATFORM KEY", or nothing for a name of no known platform.
+asset_key() {
+  sed -nE 's/^(sdk|ogre)-(linux-amd64|windows-amd64|macos-arm64)-([0-9a-f]+)\..*/\2 \3/p' <<< "$1" |
+    sed -E 's/-(amd64|arm64) / /'
+}
+
+# Seconds since the epoch of an ISO 8601 UTC time (GNU date, else BSD date).
+epoch() {
+  date -u -d "$1" +%s 2> /dev/null || date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$1" +%s
 }
 
 # 1. Migration: each old release deps-<key> (Linux) or deps-windows-<key> whose key main or develop
@@ -114,7 +136,9 @@ old_scheme_keys() {  # the keys of the branches whose CI still downloads deps-<k
 #    are simply not there. 2. The old releases are deleted with their tags, except those a branch
 #    still reads (main keeps the old scheme until the freeze that brings this), and so are the
 #    deps-* tags left without a release. 3. The store's assets whose key neither branch uses are
-#    deleted, unless uploaded within the grace period.
+#    deleted, unless uploaded within the grace period. Only the assets of a platform some branch's
+#    key.sh knows are deleted: a branch without macOS does not remove the macOS archives, and a
+#    name of no known platform is never deleted.
 #    The keys are read again right before each deletion step, so a run never deletes what the
 #    branches use at that moment.
 prune() {
@@ -174,9 +198,17 @@ prune() {
   now=$(date -u +%s)
   while IFS=$'\t' read -r id name updated; do
     [ -n "$id" ] || continue
-    key=$(sed -E 's/^(sdk|ogre)-(linux|windows)-amd64-([0-9a-f]+)\..*/\2 \3/' <<< "$name")
+    key=$(asset_key "$name")
+    if [ -z "$key" ]; then
+      echo "keep $name (no known platform)"
+      continue
+    fi
     grep -qxF "$key" <<< "$keys" && continue
-    age=$((now - $(date -u -d "$updated" +%s)))
+    if ! cut -d' ' -f1 <<< "$keys" | grep -qxF "${key%% *}"; then
+      echo "keep $name (no branch has a ${key%% *} key)"
+      continue
+    fi
+    age=$((now - $(epoch "$updated")))
     if [ "$age" -lt "$GRACE_SECONDS" ]; then
       echo "keep $name (uploaded ${age}s ago)"
       continue
@@ -186,10 +218,13 @@ prune() {
   done <<< "$list"
 }
 
+# Sourced (tools/deps/test_store.sh): the functions only.
+[ "${BASH_SOURCE[0]}" = "$0" ] || return 0
+
 case ${1:-} in
   has) has "$2" "$3" ;;
   fetch) fetch "$2" "$3" "$4" ;;
   publish) publish "$2" "$3" "$4" "$5" ;;
   prune) prune "${2:+no-delete}" ;;
-  *) sed -n '2,15p' "$0" >&2; exit 2 ;;
+  *) sed -n '2,17p' "$0" >&2; exit 2 ;;
 esac

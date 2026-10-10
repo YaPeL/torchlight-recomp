@@ -62,6 +62,11 @@ bool NativeGameWindow(SDL_Window* game, NativeWindow& window) {
   return window.window != 0;
 }
 
+void BringToFront() {
+  [NSApplication sharedApplication];
+  [NSApp activateIgnoringOtherApps:YES];
+}
+
 std::string EmbeddingVideoError() {
   if (VideoDriver() == "cocoa") return "";
   return "SDL video driver " + VideoDriver() + ": the backend draws only in cocoa windows";
@@ -125,14 +130,35 @@ std::string GameDataDir() {
 // ~/Library/Logs/TorchlightRecomp/ itself: Logs is already the logs' place.
 std::string LogDir() { return UserDir(UserFolderKind::kState); }
 
+namespace {
+
+// The app bundle's Contents/ (ending in "/") when the executable runs from one (Contents/MacOS/),
+// else empty (the build tree).
+std::string BundleContentsDir() {
+  const std::string exe = ExecutableDir();
+  const std::string macos = "/Contents/MacOS/";
+  if (!exe.ends_with(macos)) return "";
+  return exe.substr(0, exe.size() - std::string("MacOS/").size());
+}
+
+}  // namespace
+
+std::string ResourceDir() {
+  const std::string contents = BundleContentsDir();
+  return contents.empty() ? ExecutableDir() : contents + "Resources/";
+}
+
+// In the bundle, plugins are code: Contents/PlugIns/ (packaging/macos/make_app.sh).
 std::string OgrePluginDir() {
+  const std::string contents = BundleContentsDir();
+  if (!contents.empty()) return contents + "PlugIns/ogre/";
   const std::string exe = ExecutableDir();
   return exe.empty() ? "" : exe + "ogre/plugins/";
 }
 
 std::string OgreMediaDir() {
-  const std::string exe = ExecutableDir();
-  return exe.empty() ? "" : exe + "ogre/media/";
+  const std::string resources = ResourceDir();
+  return resources.empty() ? "" : resources + "ogre/media/";
 }
 
 // SDL's Cocoa windows are drawn by the window server with the window's background colour until
