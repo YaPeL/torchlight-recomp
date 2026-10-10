@@ -487,11 +487,16 @@ with every mod under one device (`tlmods:\<folder>\`) the game could open nothin
 file maps, the mods inactive, their classes left out of the index). Each mod's folder is now
 mounted as its own device, `tlmod<NNN>:` (three digits: the file system matches devices by prefix, so `tlmod1:` would take `tlmod10:`'s paths) with NNN its place in the plan (`hooks/guest_path.h`
 `ModDeviceLink`), so the folder's name never reaches a guest path; folders whose names are not
-ASCII work the same way. Checked before the change, nothing else depends on the folder's path: a
-mod's name (in the list and in saves) is its `mod.dat` `NAME` (CMod +80, read in `sub_823A9EA0`,
-"MOD" without one), the priorities and the MODS count follow the plan's order as before, the
+ASCII work the same way. The priorities and the MODS count follow the plan's order as before, the
 devices are writable for the `.ADM` the game compiles, and OGRE's locations and the separators fix
-(`ModsSearchPath`) take the new names.
+(`ModsSearchPath`) take the new names. One thing did depend on the folder's path, against what was
+checked before the change: a mod without a `NAME` in a `mod.dat` (or without a `mod.dat`, as the
+Mod-Pack's) is named after the last part of its folder's path (CMod +80, `sub_823A9EA0`), so for
+a while every such mod was named "tlmod000:", "tlmod001:"... in the game's list and in the saves'
+mod lists (seen in a save the game wrote with the Mod-Pack, 2026-10-10). The host now names such a
+mod after its real folder right after registering it, and narrows that into its resource group
+with the constructor's own calls (`NameModAfterFolder`, guest_abi mods.h `mod::kName`); a save
+written after the fix holds "JCC - Abomination" and the others.
 
 **Test runs with real mod packs: the log (2026-10-09).** With dozens of mods the game looks every
 data file up in each mod's folder, and the SDK logged each failed open as a warning: about 124,000
@@ -650,7 +655,7 @@ Not checked by these runs: that quests given by a replaced or unknown unit go on
 saves had one), and trading with Tarn. If quests show a problem, their units go back to the
 player's side.
 
-## 7i. Mods that ship PC-compiled `.ADM` files crash at startup (2026-10-10, open)
+## 7i. Mods that ship PC-compiled `.ADM` files crashed at startup (2026-10-10, fixed)
 
 Enhanced Edition v1.0 (three mods: `Enhanced`, `BasementMiniDungeon`, `Charm_to_Stun`) ends the
 game seconds after the mods are registered, before the unit index is built, each mod on its own.
@@ -664,10 +669,16 @@ SIGSEGV; the log shows a read at 0x34). The files: `Charm_to_Stun`
 `CHARMSPELL9.DAT.adm` (compiled by PC, 2021-01-01, upper case), and
 `BasementMiniDungeon` `media/unitthemes/ALCHBLUEHAND.dat` (2010) next to
 `ALCHBLUEHAND.DAT.adm` (2020). Each `.ADM` is newer than its text file, so the game prefers it.
-Why the mods' own file map does not serve it, and what OGRE is asked for, is the next reading
-(the data loader's `.ADM` path, the map's key case, the group name at `0x83582A4C`). PC's and
-the Xbox's `.ADM` headers match (version 1, a string table of id, length, UTF-16LE text), so the
-format alone does not explain it yet.
+The cause (gdb on the record `sub_8239E670` receives): the mods' file map does serve it, as a
+mod's file (kind 2, "TLMOD000:/MEDIA/UNITS/ITEMS/SPELLS/CHARMSPELL9.DAT.ADM"), and the loader then
+opens a compiled `.ADM` with `ResourceGroupManager::openResource(file, the mod's group)`, the group
+being the mod's name narrowed (CMod +52, guest_abi mods.h `mod::kResourceGroup`). PC makes that
+group when it registers a mod; this build never did, so OGRE threw "Cannot locate a resource group
+called 'Charm_to_Stun'". Each enabled mod's folder is now also added to its own group (OGRE makes
+the group with the first location), and the absolute `TLMOD<N>:/...` name opens through it. Checked
+in the game: each of the three mods alone, then all three, build the unit index (1984 mods' units)
+and play the load script to the end. The text mods of the Mod-Pack never went this way: their text
+files are read without OGRE.
 
 ## 8. Where mods go on our side
 

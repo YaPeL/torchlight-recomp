@@ -116,6 +116,23 @@ namespace mod {
 // [confirmed] A CMod (vtable 0x820D30AC, RTTI .?AVCMod@@), as sub_823A9EA0 builds it.
 inline constexpr Size kSize{200, Confidence::kConfirmed};
 inline constexpr Field kFiles{36, Confidence::kConfirmed};     // file map, filled by sub_823AA340
+// [confirmed] The mod's name, a std::wstring: "MOD" at first (0x820D3080 @0x823A9F18); after
+// mod.dat is read, the last part of the folder's path (sub_823A5F80 split at '/', assigned with
+// kWStringAssign @0x823AA118), and mod.dat's NAME when it has one (@0x823AA168..@0x823AA194). The
+// game shows it in its mod list and writes it in each save's mod list. With each mod on a device of
+// its own (tlmod<N>:\, hooks/guest_path.h), the folder's last part is the device ("tlmod002:"), so
+// a mod without a NAME would be named after it: the host names it after its real folder instead,
+// as PC and the earlier single device did (game_menu/mods_install.cpp).
+inline constexpr Field kName{80, Confidence::kConfirmed};
+// [confirmed] std::wstring assign(dst, src, pos, count): r3, r4, r5 = 0, r6 = npos, as the mod
+// constructor names the mod (@0x823AA110..@0x823AA118).
+inline constexpr GuestFunction kWStringAssign{0x821EDB78, Confidence::kConfirmed};
+// [confirmed] The constructor's narrowing of the name into the group: r3 = a std::string to make,
+// r4 = the std::wstring (@0x823AA1A8); then std::string assign from it, r3 = destination, r4 =
+// source (@0x823AA1B4), and the temporary's destructor (@0x823AA1BC).
+inline constexpr GuestFunction kNarrowWString{0x821AC718, Confidence::kConfirmed};
+inline constexpr GuestFunction kStringAssignString{0x821AC850, Confidence::kConfirmed};
+inline constexpr GuestFunction kStringDtor{0x821B4118, Confidence::kConfirmed};
 // [confirmed] The mod's OGRE resource group, a std::string: the constructor narrows the mod's
 // NAME (+80, "MOD" without one) into it (r21 = mod + 0x34 @0x823A9EFC; @0x823AA1A8..@0x823AA1B4).
 // The mods' file lookup (kModFileLookup) hands it out with a match (@0x823AAAF4..@0x823AAAFC); the
