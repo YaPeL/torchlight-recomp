@@ -10,6 +10,7 @@
 //   press BUTTON... [frames N]               down N frames (default 6), then up as long
 //   press BUTTON... every DUR until EVENT [timeout DUR]
 //                                            press again every DUR until EVENT happens
+//   press BUTTON... every DUR for DUR        press again every DUR, for that long
 //   hold BUTTON... for DUR
 //   stick left|right X Y for DUR             X, Y from -1 to 1 (Y up is positive)
 //   idle DUR
@@ -77,7 +78,7 @@ class InputScript {
   size_t size() const { return commands_.size(); }
 
  private:
-  enum class Op { kPress, kPressUntil, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kQuit };
+  enum class Op { kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kQuit };
   enum class Event { kNone, kLevelLoaded, kMenu };
   struct Duration {
     double value = 0;

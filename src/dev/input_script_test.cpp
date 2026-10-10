@@ -119,6 +119,15 @@ void TestPressUntilMenu() {
   Check(r.Has(Kind::kMark), "the menu ends the presses");
 }
 
+void TestPressFor() {
+  Run r("press X every 10f for 30f\nmark after\n");
+  r.Frames(31);
+  Check(r.pads[0].buttons == pad::kX && r.pads[6].buttons == 0 && r.pads[10].buttons == pad::kX &&
+            r.pads[20].buttons == pad::kX && r.pads[29].buttons == 0,
+        "pressed every 10 frames");
+  Check(r.Has(Kind::kMark), "then the next command, after 30 frames");
+}
+
 void TestKeystrokes() {
   PadState up, down;
   down.buttons = pad::kA | pad::kDown;
@@ -142,6 +151,7 @@ int main() {
   TestWaitLevelLoad();
   TestWaitTimeout();
   TestPressUntilMenu();
+  TestPressFor();
   TestKeystrokes();
   if (failures) {
     std::printf("%d failure(s)\n", failures);

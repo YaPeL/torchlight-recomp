@@ -124,9 +124,14 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
         if (!n || *n < 1) return fail("press BUTTON... frames N");
         c.press_frames = uint32_t(*n);
         c.op = Op::kPress;
+      } else if (w[i] == "every" && i + 4 == w.size() && w[i + 2] == "for") {
+        if (!duration(w[i + 1], c.every) || !duration(w[i + 3], c.duration))
+          return fail("press BUTTON... every DURATION for DURATION");
+        c.op = Op::kPressFor;
       } else if (w[i] == "every") {
         if (i + 4 > w.size() || !duration(w[i + 1], c.every) || w[i + 2] != "until")
-          return fail("press BUTTON... every DURATION until EVENT [timeout DURATION]");
+          return fail("press BUTTON... every DURATION until EVENT [timeout DURATION] | "
+                      "every DURATION for DURATION");
         i += 3;
         if (w[i] == "level_loaded") {
           c.event = Event::kLevelLoaded;
@@ -249,6 +254,13 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         if (!Elapsed(c.duration, e, start_)) return {};
         advance();
         continue;
+      case Op::kPressFor:
+        if (Elapsed(c.duration, e, start_)) {
+          advance();
+          continue;
+        }
+        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0};
+        return e.frame - press_.frame < c.press_frames ? c.pad : PadState{};
       case Op::kWait:
       case Op::kPressUntil:
         if (EventSeen(c, e)) {
