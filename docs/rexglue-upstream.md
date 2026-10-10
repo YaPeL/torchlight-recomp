@@ -1230,6 +1230,15 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   pointing the builds at the new prefix) happens then, agreed with the agents that share it.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
+- The shared SDK copies on the Linux machine (2026-10-09). The live SDK is `bd833a2` with
+  series 1-29. Two older copies stay next to it, with no build tree pointing at either:
+  - `rexglue-sdk-bd833a2-28`, the series through 28: to roll back the last swap (two `mv`). It
+    goes at the next swap, when the copy it replaces becomes the rollback.
+  - `rexglue-sdk-0c7b01a`, the old base: `v0.1.0-beta` on `main` is built on it, to reproduce
+    or fix something of that beta. It can go after the next release.
+
+  The copies of 1-26 and 1-27, an old install prefix and a scratch checkout of patch 20 were
+  deleted (its changes are patch 20 on `feature/pc-mods`).
 
 ### 7. For the integrator: patch numbers (2026-10-08)
 
