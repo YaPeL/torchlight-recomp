@@ -69,7 +69,7 @@ Other topics:
 | `fctiw`/`fctid` round half away from zero on ARM64 (D22) | Still there | Issue and PR |
 | `mffs` swaps round up and down on ARM64 (D23) | Still there | Issue and PR |
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
-| An unclaimed host fault hangs instead of crashing on POSIX (D25) | Still there | Issue and PR |
+| An unclaimed host fault hangs instead of crashing on POSIX (D25) | Still there | Issue and PR; our patch 30 |
 | Wiki/code mismatches (D19) | The wiki documents the TOML key `enable_exception_handlers` (the code reads `generate_exception_handlers`) and describes `reserved_as_local` and `non_argument_as_local` wrongly | Small docs issue (found during this analysis) |
 
 ## Per patch
@@ -1085,6 +1085,11 @@ the process; a crash reporter installed before the SDK sees every fault the SDK 
 Test: the child above dies by SIGSEGV; with a previous handler that counts calls, that handler is
 called once per unclaimed fault and an MMIO access still works.
 
+Our patch 30 (`patches/README.md`, 2026-10-10). Its tests run each case as a hidden case of
+`unit_tests` in a new process, since the test memory installs the SDK's handler in the test
+process: an unclaimed read ends by SIGSEGV, a previous handler gets the fault after the SDK's
+handlers saw it once, and a handler that unprotects the page still lets the write through.
+
 ---
 
 Not drafted, from the same port (`docs/macos-port.md`, section 1, items 5-7, and section 2):
@@ -1265,7 +1270,9 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 27 | `rexglue-guest-file-flush.patch` (D27) | `sdk/guest-file-flush` | `bd833a2` |
 | 28 | `rexglue-quiet-missing-files.patch` (D28) | `sdk/series-review` | `bd833a2` |
 | 29 | `rexglue-case-variants.patch` (D30) | `sdk/case-variants` | `bd833a2` |
-| 30 | next free | | |
+| 30 | `rexglue-posix-chain-unclaimed-faults.patch` (D25) | `sdk/fault-chain` | `bd833a2` |
+| 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2`, after 30 |
+| 32 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
