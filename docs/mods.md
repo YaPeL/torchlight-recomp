@@ -596,7 +596,10 @@ kept). The wardrobe guard of 7f stays as a net; the player notice planned for a 
 model is dropped if the fix holds.
 
 Validated on 2026-10-09, building the index in the session: `JCC - Main` twice and the
-Ultimate Torchlight Mod-Pack (29 mods) twice, no wardrobe guard warning and no fault in any. What
+Ultimate Torchlight Mod-Pack (29 mods) twice, no wardrobe guard warning and no fault in any; then a
+guided run with `JCC - Main`, the index built in that session: the title screen's Destroyer and a
+new Destroyer in town had their bodies, with no warning and no fault. The player notice for a class
+without a model is dropped. What
 keeping costs, with the 29 mods (the worst real case): the game's object heap (`0x40000000`,
 1008 MB) went from 61 to 82 MB during the build, against 61 to 61 MB in the same run releasing
 as before (a diagnostics switch, removed after the comparison; that run lost the Destroyer's
