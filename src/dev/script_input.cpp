@@ -40,6 +40,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <rex/runtime.h>
 
 #include "capture/session.h"
+#include "dev/deterministic_time.h"
 #include "dev/guest_command.h"
 #include "dev/input_script.h"
 #include "guest_abi/game_ui.h"
@@ -213,7 +214,10 @@ class ScriptRunner : public live::FrameObserver {
     std::lock_guard lock(mutex_);
     if (ms > 0) segment_.frames.push_back(ms);
     events_.frame++;
-    events_.seconds = std::chrono::duration<double>(Clock::now() - start_).count();
+    // With --dev_deterministic_time the script's seconds are the game's virtual ones.
+    AdvanceDeterministicTime();
+    events_.seconds = DeterministicTimeOn() ? DeterministicSeconds()
+                                            : std::chrono::duration<double>(Clock::now() - start_).count();
     if (finished_) return;
     std::vector<ScriptAction> actions;
     const PadState pad = script_.Step(events_, actions);
@@ -323,6 +327,7 @@ void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_clo
   auto driver = std::make_unique<ScriptInputDriver>();
   ScriptInputDriver* raw = driver.get();
   input->AddDriver(std::move(driver));
+  InstallDeterministicTime();  // the runner steps its clock
   g_runner = std::make_unique<ScriptRunner>(std::move(*script), raw, std::move(request_close));
   live::SetFrameObserver(g_runner.get());
   REXLOG_INFO("dev input script: {} ({} commands), played as a controller of its own", path,

@@ -57,6 +57,7 @@ set(TORCHLIGHT_SOURCES
     src/dev/guest_command.cpp
     # Development only: controller input scripts (--dev_input_script).
     src/dev/script_input.cpp
+    src/dev/deterministic_time.cpp
     # Guest RenderSystem hooks and frame capture (F9, --capture_dir).
     src/capture/guest_readers.cpp
     src/capture/install.cpp
@@ -179,7 +180,7 @@ endif()
 # workflows never set it, so release builds ignore --dev_input_script.
 option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_script" OFF)
 if(TORCHLIGHT_DEV_INPUT)
-    set_source_files_properties(src/dev/script_input.cpp PROPERTIES
+    set_source_files_properties(src/dev/script_input.cpp src/dev/deterministic_time.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
 endif()
 # Our layouts for the game's UI (game_menu/video_menu.h), next to the executable; copied on every

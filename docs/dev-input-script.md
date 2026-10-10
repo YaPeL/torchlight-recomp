@@ -45,7 +45,14 @@ python3 tools/run_capped/run_capped.py --timeout 300 --watch <the game's log fol
 - **`capture`** requests an F9 capture of the next frame. **`command`** runs a guest developer
   command (needs `TORCHLIGHT_DEV_COMMANDS`). **`quit`** closes the game window as the player would.
 - **What stays random.** The game's own randomness (monsters, drops) is not fixed by the script.
-  Compare several runs, not one.
+  Compare several runs, not one, or use the deterministic time below.
+- **Deterministic time** (`--dev_deterministic_time`, with a script): the C runtime's `time()`
+  returns a fixed date, so `rand()`, which the game seeds with it, gives the same numbers, and the
+  game's counter (`QueryPerformanceCounter`, its frequency, `GetTickCount`) moves 1/60 s per guest
+  frame instead of with real time (`dev/deterministic_time.h`; the functions and their evidence in
+  `guest_abi/xapi_time.h`). The game then runs at its frame rate divided by 60 times real speed,
+  and the script's seconds are these virtual ones. Threads that load in the background still finish
+  when they finish, in real time.
 
 ## The script
 
