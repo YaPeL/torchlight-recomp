@@ -106,9 +106,9 @@ Two sets, chosen at the first start or in the Video column. Each keeps its own p
 
 - **Xbox 360**: the game's original 12 achievements, listed with their icons in the game's
   Achievements screen.
-- **PC (incomplete)**: the 66 achievements of the PC version, with an unlock notification in the
-  game. 63 are implemented; the three for mods (`MODS_1`, `MODS_5`, `MODS_10`) are not available,
-  since this version has no mods. They are kept on this machine: there is no Steam connection.
+- **PC**: the 66 achievements of the PC version, with an unlock notification in the game. The three
+  for mods (`MODS_1`, `MODS_5`, `MODS_10`) are earned by playing with PC mods ([Mods](#mods)). They
+  are kept on this machine: there is no Steam connection.
 
 ### Importing PC saves
 
@@ -116,6 +116,14 @@ Characters, the shared stash and the options of Torchlight for PC can be brought
 together with the PC version's `Pak.zip`, into the `import` folder of the game's data folder. When
 you open the "load character" menu, the game offers the import and explains anything it cannot
 convert. Your PC installation is never touched; the copies in `import` are renamed once imported.
+
+### Mods
+
+Mods made for Torchlight on PC can be used: copy their folders into the `mods` folder next to your
+saves, and order or turn them off in `mods.dat`, as on PC. Large packs such as the Ultimate
+Torchlight Mod-Pack load, and your saves are copied whenever the set of mods changes. See
+[docs/mods-guide.md](docs/mods-guide.md) for how to install them, what works and what does not
+yet.
 
 ### Languages
 
@@ -135,8 +143,11 @@ Other languages can be added as language packs, including translations made for 
 - **macOS** is not supported in this beta; a macOS version is planned for the next release.
 - **Ultrawide**: at 32:9, the story screens shown inside a level can show a few rows of the level at
   the top right.
-- **Mods** made for the PC version are not supported. Language packs for scripts written right to
-  left (Arabic) are not supported, and Chinese and Japanese not yet.
+- **Mods**: new affixes and new level pieces from mods are not loaded yet, mods must be unpacked
+  folders, and the first start with a new set of mods takes longer (up to about a minute with a
+  large pack). The details are in [docs/mods-guide.md](docs/mods-guide.md).
+- **Languages**: language packs for scripts written right to left (Arabic) are not supported, and
+  Chinese and Japanese not yet.
 - The Windows zip is not code-signed (see SmartScreen, above).
 
 ## Where files are kept
@@ -146,6 +157,7 @@ Other languages can be added as language packs, including translations made for 
 | Settings (`settings.toml`) | `~/.config/TorchlightRecomp/` | `%APPDATA%\TorchlightRecomp\` |
 | Game data, with `import` for PC saves | `~/.local/share/TorchlightRecomp/game/` | `%LOCALAPPDATA%\TorchlightRecomp\game\` |
 | Saves | `~/.local/share/TorchlightRecomp/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\` |
+| Mods (with `mods.dat`) | `~/.local/share/TorchlightRecomp/mods/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\mods\` |
 | Logs | `~/.local/state/TorchlightRecomp/logs/` | `%LOCALAPPDATA%\TorchlightRecomp\logs\` |
 | Shader cache | `~/.cache/TorchlightRecomp/` | `%LOCALAPPDATA%\TorchlightRecomp\ogre\` |
 

@@ -1,0 +1,180 @@
+diff --git a/include/rex/filesystem/wildcard.h b/include/rex/filesystem/wildcard.h
+index d4ffdcd..36ff288 100644
+--- a/include/rex/filesystem/wildcard.h
++++ b/include/rex/filesystem/wildcard.h
+@@ -48,11 +48,18 @@ class WildcardEngine {
+  public:
+   void SetRule(const std::string_view pattern);
+ 
+-  // Always ignoring case
++  // Always ignoring case. Windows/Xbox find semantics for the pattern's end: "*.*" matches every
++  // name, with or without a dot, and so does any pattern ending in ".*" whose stem matches a name
++  // without a dot ("a*.*" matches "abc"); a pattern ending in "." matches only names without a dot
++  // ("*." matches "media", not "a.dat").
+   bool Match(const std::string_view str) const;
+ 
+  private:
++  enum class DosEnd { kNone, kDotStar, kDot };
+   std::vector<WildcardRule> rules_;
++  std::vector<WildcardRule> stem_rules_;  // the pattern without its ".*" or "." end
++  DosEnd dos_end_ = DosEnd::kNone;
++  static std::vector<WildcardRule> Rules(const std::string_view pattern);
+   void PreparePattern(const std::string_view pattern);
+ };
+ 
+diff --git a/src/core/filesystem_wildcard.cpp b/src/core/filesystem_wildcard.cpp
+index 7f70b23..dfa9205 100644
+--- a/src/core/filesystem_wildcard.cpp
++++ b/src/core/filesystem_wildcard.cpp
+@@ -62,8 +62,8 @@ bool WildcardRule::Check(const std::string_view lower, std::string::size_type* o
+   return false;
+ }
+ 
+-void WildcardEngine::PreparePattern(const std::string_view pattern) {
+-  rules_.clear();
++std::vector<WildcardRule> WildcardEngine::Rules(const std::string_view pattern) {
++  std::vector<WildcardRule> rules_;
+ 
+   WildcardFlags flags(WildcardFlags::FIRST);
+   size_t n = 0;
+@@ -90,22 +90,54 @@ void WildcardEngine::PreparePattern(const std::string_view pattern) {
+     rules_.push_back(
+         WildcardRule(str_str, last ? WildcardFlags::LAST : WildcardFlags::FIRST_AND_LAST));
+   }
++  return rules_;
++}
++
++void WildcardEngine::PreparePattern(const std::string_view pattern) {
++  rules_ = Rules(pattern);
++  stem_rules_.clear();
++  dos_end_ = DosEnd::kNone;
++  // Windows' find (FindFirstFile: "*.*" becomes "*", and a dot the pattern ends with or that only
++  // wildcards follow matches the end of a name without one): a name without a dot also matches
++  // when the stem before the ".*" does, and a pattern ending in "." matches only names without a
++  // dot. A pattern that is only ".*" or "." keeps its plain meaning.
++  if (pattern.size() > 2 && pattern.substr(pattern.size() - 2) == ".*") {
++    dos_end_ = DosEnd::kDotStar;
++    stem_rules_ = Rules(pattern.substr(0, pattern.size() - 2));
++  } else if (pattern.size() > 1 && pattern.back() == '.') {
++    dos_end_ = DosEnd::kDot;
++    stem_rules_ = Rules(pattern.substr(0, pattern.size() - 1));
++  }
+ }
+ 
+ void WildcardEngine::SetRule(const std::string_view pattern) {
+   PreparePattern(pattern);
+ }
+ 
+-bool WildcardEngine::Match(const std::string_view str) const {
+-  std::string str_lc = rex::string::utf8_lower_ascii(str);
++namespace {
++bool MatchRules(const std::vector<WildcardRule>& rules, const std::string& str_lc) {
+   std::string::size_type offset(0);
+-  for (const auto& rule : rules_) {
++  for (const auto& rule : rules) {
+     if (!(rule.Check(str_lc, &offset))) {
+       return false;
+     }
+   }
+-
+   return true;
+ }
++}  // namespace
++
++bool WildcardEngine::Match(const std::string_view str) const {
++  std::string str_lc = rex::string::utf8_lower_ascii(str);
++  const bool has_dot = str_lc.find('.') != std::string::npos;
++  switch (dos_end_) {
++    case DosEnd::kDotStar:
++      return MatchRules(rules_, str_lc) || (!has_dot && MatchRules(stem_rules_, str_lc));
++    case DosEnd::kDot:
++      return !has_dot && MatchRules(stem_rules_, str_lc);
++    case DosEnd::kNone:
++      break;
++  }
++  return MatchRules(rules_, str_lc);
++}
+ 
+ }  // namespace rex::filesystem
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 859cf37..c77d5c2 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -7,6 +7,7 @@ add_executable(unit_tests
+     core/cvar_test.cpp
+     core/fiber_test.cpp
+     core/filesystem_test.cpp
++    core/filesystem_wildcard_test.cpp
+     core/vfs_overwrite_test.cpp
+     core/vfs_rename_test.cpp
+     core/vfs_delete_on_close_test.cpp
+diff --git a/tests/unit/core/filesystem_wildcard_test.cpp b/tests/unit/core/filesystem_wildcard_test.cpp
+new file mode 100644
+index 0000000..3773aff
+--- /dev/null
++++ b/tests/unit/core/filesystem_wildcard_test.cpp
+@@ -0,0 +1,64 @@
++/**
++ * Unit tests for WildcardEngine against Windows/Xbox find semantics (FindFirstFile).
++ *
++ * "*.*" matches every name, with or without a dot (a game lists folders with it); a pattern
++ * ending in ".*" also matches a name without a dot when its stem does; a pattern ending in "."
++ * matches only names without a dot. Everything else keeps its plain meaning.
++ */
++
++#include <string_view>
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <rex/filesystem/wildcard.h>
++
++using rex::filesystem::WildcardEngine;
++
++namespace {
++
++bool Matches(std::string_view pattern, std::string_view name) {
++  WildcardEngine engine;
++  engine.SetRule(pattern);
++  return engine.Match(name);
++}
++
++}  // namespace
++
++TEST_CASE("Wildcard star dot star matches every name", "[filesystem][wildcard]") {
++  CHECK(Matches("*.*", "mod.dat"));
++  CHECK(Matches("*.*", "media"));  // a folder: no dot
++  CHECK(Matches("*.*", "a.b.c"));
++  CHECK(Matches("*.*", "x."));
++  CHECK(Matches("*.*", "MEDIA"));  // case ignored
++}
++
++TEST_CASE("Wildcard star matches every name", "[filesystem][wildcard]") {
++  CHECK(Matches("*", "media"));
++  CHECK(Matches("*", "mod.dat"));
++}
++
++TEST_CASE("Wildcard trailing dot star also matches names without a dot", "[filesystem][wildcard]") {
++  CHECK(Matches("a*.*", "abc"));
++  CHECK(Matches("a*.*", "abc.dat"));
++  CHECK_FALSE(Matches("a*.*", "bcd"));
++  CHECK(Matches("unit*.*", "units"));
++}
++
++TEST_CASE("Wildcard trailing dot matches only names without a dot", "[filesystem][wildcard]") {
++  CHECK(Matches("*.", "media"));
++  CHECK_FALSE(Matches("*.", "mod.dat"));
++  CHECK(Matches("abc.", "abc"));
++  CHECK_FALSE(Matches("abc.", "abcd"));
++}
++
++TEST_CASE("Wildcard other patterns keep their meaning", "[filesystem][wildcard]") {
++  CHECK(Matches("*.dat", "mod.dat"));
++  CHECK_FALSE(Matches("*.dat", "media"));
++  CHECK_FALSE(Matches("*.dat", "mod.dat.adm"));
++  CHECK(Matches("mod.dat", "MOD.DAT"));
++  CHECK_FALSE(Matches("mod.dat", "mod.da"));
++  CHECK(Matches("m?d.dat", "mod.dat"));
++  CHECK(Matches("*sword*", "tl_test_sword.dat"));
++  CHECK(Matches(".*", ".hidden"));
++  CHECK_FALSE(Matches(".*", "media"));
++}

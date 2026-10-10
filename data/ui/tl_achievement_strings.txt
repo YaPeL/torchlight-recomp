@@ -7,7 +7,6 @@
 [de]
 Achievements (PC, incomplete) = Erfolge (PC, unvollständig)
 Unlocked = Freigeschaltet
-Not available in this version = In dieser Version nicht verfügbar
 Close = Schließen
 Achievement Unlocked = Erfolg freigeschaltet
 Entered the first dungeon = Den ersten Dungeon betreten
@@ -80,7 +79,6 @@ Defeated Ordrak without ever dying = Ordrak besiegt, ohne je zu sterben
 [fr]
 Achievements (PC, incomplete) = Succès (PC, incomplet)
 Unlocked = Débloqués
-Not available in this version = Indisponible dans cette version
 Close = Fermer
 Achievement Unlocked = Succès débloqué
 Entered the first dungeon = Premier donjon atteint
@@ -153,7 +151,6 @@ Defeated Ordrak without ever dying = Ordrak vaincu sans jamais mourir
 [es]
 Achievements (PC, incomplete) = Logros (PC, incompletos)
 Unlocked = Desbloqueados
-Not available in this version = No disponible en esta versión
 Close = Cerrar
 Achievement Unlocked = Logro desbloqueado
 Entered the first dungeon = Entraste en la primera mazmorra

@@ -153,11 +153,69 @@ void TestRejected(const Schema& schema) {
   const ImportFolder folder = ScanImportFolder(scene.import);
   const ImportPlan plan = BuildImportPlan(schema, folder, FixturePath("pak_360_missing_unit.zip"), scene.View());
   Check(plan.characters.size() == 1 && !plan.characters[0].ok(), "rejected");
-  Check(plan.characters[0].problems[0].find("unit (UNIT_GUID)") != std::string::npos, "says why");
+  // That pak lacks a unit the save's items, pet and creatures use: not a reason any more (they go
+  // when imported); its quest dialogs differ in a way that cannot be adapted: that one is.
+  const auto& problems = plan.characters[0].problems;
+  Check(std::none_of(problems.begin(), problems.end(),
+                     [](const std::string& p) { return p.find("unit (UNIT_GUID)") != std::string::npos; }) &&
+            std::any_of(problems.begin(), problems.end(),
+                        [](const std::string& p) { return p.find("dialog") != std::string::npos; }),
+        "says why");
+  const auto& changes = plan.characters[0].changes;
+  Check(std::any_of(changes.begin(), changes.end(),
+                    [](const std::string& c) { return c.starts_with("removed when imported"); }),
+        "the missing unit's entries reported as removed");
   std::string error;
   Check(ConfirmImport(plan, folder, scene.container, {}, scene.Logger(), error), "confirm: " + error);
   Check(fs::exists(scene.import / "0.SVT.rejected"), "renamed .rejected");
-  Check(scene.log.size() >= 2 && scene.log[1].find("unit (UNIT_GUID)") != std::string::npos, "reason logged");
+  Check(std::any_of(scene.log.begin(), scene.log.end(),
+                    [](const std::string& l) { return l.find("dialog") != std::string::npos; }),
+        "reason logged");
+}
+
+// The character's own class missing in the 360 data: refused, whatever its items.
+void TestClassMissing(const Schema& schema) {
+  Scene scene;
+  scene.Copy("pak_pc.zip", scene.import / "Pak.zip");
+  SaveError save_error;
+  auto pc = ReadPc(schema, Read(FixturePath("pc_save.svt")), save_error);
+  Check(pc != nullptr, "fixture: " + save_error.message);
+  pc->tree.Find("player")->Find("unit_guid")->number = 0x0777000000000002ull;
+  Bytes body = WriteBody(schema, *schema.root(), pc->tree, Endian::kLittle);
+  const uint32_t size = static_cast<uint32_t>(body.size() + 4);
+  for (int i = 0; i < 4; ++i) body.push_back(static_cast<uint8_t>(size >> (8 * i)));
+  Write(scene.import / "0.SVT", body);
+  const ImportPlan plan = BuildImportPlan(schema, ScanImportFolder(scene.import), FixturePath("pak_360.zip"), scene.View());
+  const auto& problems = plan.characters[0].problems;
+  Check(plan.characters.size() == 1 && !plan.characters[0].ok() &&
+            std::any_of(problems.begin(), problems.end(),
+                        [](const std::string& p) { return p.find("at player/unit_guid") != std::string::npos; }),
+        "class missing: refused, and says why");
+}
+
+// A PC character holding an item of a unit the 360 game lacks (a PC mod's): imported, the item
+// reported; the recomp takes it out of the save at the start that applies the import
+// (mods/save_units.h).
+void TestItemOfMissingUnit(const Schema& schema) {
+  Scene scene;
+  scene.Copy("pak_pc.zip", scene.import / "Pak.zip");
+  SaveError save_error;
+  auto pc = ReadPc(schema, Read(FixturePath("pc_save.svt")), save_error);
+  Check(pc != nullptr, "fixture: " + save_error.message);
+  Node* item = &pc->tree.Find("player")->Find("items")->items.front();
+  item->Find("unit_guid")->number = 0x0777000000000001ull;
+  Bytes body = WriteBody(schema, *schema.root(), pc->tree, Endian::kLittle);
+  const uint32_t size = static_cast<uint32_t>(body.size() + 4);
+  for (int i = 0; i < 4; ++i) body.push_back(static_cast<uint8_t>(size >> (8 * i)));
+  Write(scene.import / "0.SVT", body);
+  const ImportFolder folder = ScanImportFolder(scene.import);
+  const ImportPlan plan = BuildImportPlan(schema, folder, FixturePath("pak_360.zip"), scene.View());
+  Check(plan.characters.size() == 1 && plan.characters[0].ok(), "imported");
+  const auto& changes = plan.characters[0].changes;
+  Check(std::any_of(changes.begin(), changes.end(),
+                    [](const std::string& c) { return c.starts_with("removed when imported") &&
+                                                      c.find("player/items/item/unit_guid") != std::string::npos; }),
+        "the item reported as removed when imported");
 }
 
 void TestStashReplaced(const Schema& schema) {
@@ -287,6 +345,8 @@ int main() {
   TestMissingPak(*schema);
   TestCharacters(*schema);
   TestRejected(*schema);
+  TestItemOfMissingUnit(*schema);
+  TestClassMissing(*schema);
   TestStashReplaced(*schema);
   TestStashChangedBeforeStart(*schema);
   TestSettings(*schema);

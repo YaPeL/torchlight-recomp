@@ -73,6 +73,20 @@ class FormatTest(unittest.TestCase):
             position += size
         self.assertEqual(position, len(body))
 
+    def test_pc_mod_list_reaches_the_360_save_with_its_lengths(self):
+        # A PC character saved with mods records their names (player/names). The 360 file must
+        # hold each one as the 360 reader takes it (u16 length, then the UTF-16 units, both
+        # big-endian), not with the zero lengths the 360 writer itself leaves (docs/mods.md, 7d).
+        _, parsed = read_pc(SCHEMA, self.save)
+        mods = ['First Mod', 'another_mod', 'Z']
+        parsed.tree['player']['names'] = list(mods)
+        pc_body = write_body(SCHEMA, parsed.tree, 'little')
+        x360 = split_360(pc_to_360(SCHEMA, pc_body + struct.pack('<I', len(pc_body) + 4)))
+        expected = struct.pack('>I', len(mods)) + b''.join(
+            struct.pack('>H', len(m)) + m.encode('utf-16-be') for m in mods)
+        self.assertEqual(x360.count(expected), 1)
+        self.assertEqual(parse_body(SCHEMA, x360, 'big').tree['player']['names'], mods)
+
     def test_synthetic_save_covers_every_struct(self):
         visited = set()
         synthetic.make_save(SCHEMA, visited=visited)
@@ -425,6 +439,25 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('does not exist in the 360 game', err)
         self.assertFalse(os.path.exists(self.destination))
+
+    def test_item_of_a_missing_unit_is_removed_and_reported(self):
+        # A PC mod's item: its unit is in neither game's data. The item is taken out, the rest
+        # converts, and the output says so (docs/mods.md, 7f).
+        _, parsed = read_pc(SCHEMA, self.source_bytes)
+        parsed.tree['player']['items'][0]['unit_guid'] = 0x0777000000000001
+        body = write_body(SCHEMA, parsed.tree, 'little')
+        with open(self.source, 'wb') as f:
+            f.write(body + struct.pack('<I', len(body) + 4))
+        with open(self.source, 'rb') as f:
+            self.source_bytes = f.read()
+        items_before = len(parsed.tree['player']['items'])
+        code, out, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertIn('removed player/items/item %d' % 0x0777000000000001, out)
+        with open(self.destination, 'rb') as f:
+            converted = parse_body(SCHEMA, split_360(f.read()), 'big')
+        self.assertEqual(len(converted.tree['player']['items']), items_before - 1)
+        self.assertNotIn(0x0777000000000001, [i['unit_guid'] for i in converted.tree['player']['items']])
 
     def test_missing_pc_pak_explains_why_and_where(self):
         code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak)

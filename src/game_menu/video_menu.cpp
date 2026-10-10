@@ -15,6 +15,7 @@
 #include <rex/runtime.h>
 
 #include "game_menu/guest_call.h"
+#include "game_menu/mods_install.h"
 #include "game_menu/menu_strings.h"
 #include "game_menu/video_menu_model.h"
 #include "game_menu/wide_layout.h"
@@ -208,9 +209,7 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
   InstallWideLayouts(runtime, game_data_root);
 }
 
-namespace {
-
-// One FileSystem location in the default group; false on failure.
+// One FileSystem location in the default group; false on failure (video_menu.h).
 bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive) {
   const uint32_t manager = call.ReadU32(ui::kResourceGroupManagerGlobal);
   const uint32_t mark = call.Mark();
@@ -227,6 +226,8 @@ bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recurs
   call.Release(mark);
   return ok;
 }
+
+namespace {
 
 // After the game's resources.cfg locations (once): our layouts (only mode), and a language pack's
 // folder (any mode), recursive so its files keep their game paths (media/UI/...). The game's own
@@ -389,8 +390,11 @@ extern "C" {
 FUNCTION_ADDRESS_CHECK(kResourcesCfgLoader, 8239B998);
 REX_EXTERN(__imp__sub_8239B998);
 REX_FUNC(sub_8239B998) {
+  const uint32_t data_manager = ctx.r3.u32;
   __imp__sub_8239B998(ctx, base);
   torchlight::game_menu::AddResourceLocations(ctx, base);
+  // The player's mods (mods_install.h), after the locations above: the last one added wins.
+  torchlight::game_menu::RegisterMods(ctx, base, data_manager);
 }
 
 FUNCTION_ADDRESS_CHECK(kSettingsMenuInit, 823802F8);

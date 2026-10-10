@@ -117,13 +117,13 @@ constexpr const Definition* Event(uint32_t event) {
 }
 // The guest's own completions of BEAST_OF_BURDEN and PET_TRAINER are not PC's checks (the guest
 // never sends them; native mode restores PC's checks in guest_hooks.cpp: the pet's full bag and a
-// spell taught to the pet), and mods are out of scope for the first version (no mod loader is
-// restored, so there is no loaded-mod count: MODS_1/5/10).
+// spell taught to the pet). MODS_1/5/10 are accepted: the guest's own check (global data loader,
+// events 26..28) is PC's, and the host now gives it the player's mods (docs/mods.md).
 // Direct service inputs remain available for isolated rule tests.
 // MAX_FAME is excluded too: the guest's event 6 fires at the last fame title (rank 33), while PC
 // requires the FAMEGATE maximum; native mode restores PC's check at the rank-up (guest_hooks.cpp).
 constexpr bool QualifiedGuestCompletion(std::string_view id) {
   return Find(id) && id!="BEAST_OF_BURDEN" && id!="PET_TRAINER" &&
-      id!="MODS_1" && id!="MODS_5" && id!="MODS_10" && id!="MAX_FAME";
+      id!="MAX_FAME";
 }
 } // namespace torchlight::achievements

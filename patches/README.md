@@ -268,8 +268,24 @@ in number order; a branch adds its own line at its number's place.
     plus a keyboard passthrough mode). Upstream does not repeat a held bound key; if the menus need
     it, that is an upstream PR on top of patch 16's `keystroke_repeat.h`.
 
-20. Taken by `rexglue-vfs-wildcard-dos-semantics.patch` (the mods' `*.*` wildcard), on branch
-    `feature/pc-mods`: described there.
+20. `rexglue-vfs-wildcard-dos-semantics.patch`: the VFS wildcard (`WildcardEngine`, used by the
+    guest's directory queries) read `*.*` as "the name contains a dot", so a query with `*.*`
+    never returned names without one, folders among them; Windows and the Xbox (FindFirstFile)
+    treat `*.*` as every name. Now a pattern ending in `.*` also matches a name without a dot when
+    its stem does (`*.*` matches everything, `a*.*` matches `abc`), and a pattern ending in `.`
+    matches only names without a dot (`*.` matches `media`); the rest is unchanged (`*`, `*.dat`,
+    `?`, exact names, a bare `.*`). In Torchlight it changes no listing seen so far: the game's
+    FindFirstFile turns an exact `*.*` into an empty pattern (every name) before the kernel sees it
+    (guest_abi `xapi_files.h`), and its other patterns (`*`, `*.dat`, `*.layout`) are unchanged. It
+    was written for the mods' missing subfolders, whose cause turned out to be another one (the
+    game's search paths with `/`, fixed in our hooks: `hooks/find_file_hooks.cpp`); it is kept as
+    the runtime's correct semantics. Test: `tests/unit/core/filesystem_wildcard_test.cpp` in the
+    SDK's `unit_tests` (it also adds the file to `tests/unit/CMakeLists.txt`, after
+    `core/filesystem_test.cpp`). Not specific to any GPU or platform. Candidate for an upstream
+    report to ReXGlue. *Numbered 20 on `feature/pc-mods`; another patch made meanwhile on another
+    branch (SDL_Renderer in software, Windows) may take the same number: whoever integrates both
+    renumbers them and orders them in `series`. They are independent; this one touches only
+    `wildcard.h`, `filesystem_wildcard.cpp` and the tests.*
 
 21. `rexglue-sdl-software-renderer.patch`: the SDK builds SDL with `SDL_RENDER` off, so
     `SDL_CreateRenderer` fails ("SDL not built with rendering support") and nothing can draw a
