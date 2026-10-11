@@ -266,6 +266,25 @@ inline constexpr GuestFunction kD3DSetStreamSource{0x821C3D58, Confidence::kConf
 // full-screen pass 0x821B76C0, the unbind-all 0x821CECF0 and 0x827746B0, and the device's default
 // state 0x8277FB78 (docs/native-skip-guest-d3d.md, "Texture stage slots").
 inline constexpr GuestFunction kD3DSetTexture{0x821CEB60, Confidence::kConfirmed};
+// [confirmed] The Xbox D3D shader binds (r3 = device, r4 = shader or 0): store the shader at
+// device + 12944 (vertex, @0x821D1328) or + 12940 (pixel, @0x821BF9C4), set dirty bits and stamp the
+// replaced shader's fence (+8) or queue a pending fence entry (0x82775DF8), as the other bindings.
+// Readers of the bound shaders: these two, the getters with a reference 0x821C0A08/0x821E0088 (the
+// D3D9 _render's depth-only path and the runtime's shader release 0x828A3948, which unbinds a
+// shader it frees), and the draw flushes 0x821CFF38 (the skipped draws) and 0x821E94A0 (null-safe).
+// Callers: bindGpuProgram 0x821C1398, unbindGpuProgram 0x821BE470, _render 0x821C4058, the
+// _endFrame wrapper's full-screen pass (0x821DCF18), the unbind-all 0x827746B0 and 0x828A3948.
+inline constexpr GuestFunction kD3DSetVertexShader{0x821D1288, Confidence::kConfirmed};
+inline constexpr GuestFunction kD3DSetPixelShader{0x821BF940, Confidence::kConfirmed};
+// [confirmed] The Xbox D3D shader constant uploads (r3 = device, then the start register, the
+// values and their count): the values into the device's constant shadow (stvx) and its dirty bits
+// (std @0x821C25A8, @0x821BFC38, @0x8276D9E4, @0x8276DA3C); nothing else. Callers:
+// bindGpuProgramParameters 0x821C2118, the _endFrame wrapper's full-screen pass 0x821B76C0 and the
+// runtime's own entry points (0x827A8C90..0x827A9160).
+inline constexpr GuestFunction kD3DSetVertexShaderConstantF{0x821C24D8, Confidence::kConfirmed};
+inline constexpr GuestFunction kD3DSetPixelShaderConstantF{0x821BFB68, Confidence::kConfirmed};
+inline constexpr GuestFunction kD3DSetVertexShaderConstantOther{0x8276D998, Confidence::kConfirmed};
+inline constexpr GuestFunction kD3DSetPixelShaderConstantOther{0x8276D9F0, Confidence::kConfirmed};
 
 // The guest's file and memory calls timed for the long frame report (live/guest_events.h). From
 // DWARF call stacks of the game's main thread in a native run, every NtOpenFile/NtCreateFile,

@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <initializer_list>
+#include <thread>
 
 #include "hooks/guest_d3d_skip.h"
 
@@ -52,6 +53,30 @@ int main() {
   for (uint32_t address : {0x821C0A08u, 0x821E0088u, 0x821CEDD8u, 0x821BA040u, 0x821D1288u,
                            0x821BF940u, 0x821CE588u, 0x821CFF38u, 0x821C4058u})
     Check(!SkippableDeviceCall(address), "kept device call", address);
+  // Step d: the scoped slots and device calls, and the mark (per thread, nesting).
+  using torchlight::hooks::ScopedSkipDeviceCall;
+  using torchlight::hooks::ScopedSkipMark;
+  using torchlight::hooks::ScopedSkipSlot;
+  for (uint32_t slot = 0; slot < 127; ++slot)
+    Check(ScopedSkipSlot(slot) == (slot == 90 || slot == 91 || slot == 93), "scoped slot", slot);
+  for (uint32_t address : {0x821D1288u, 0x821BF940u, 0x821C24D8u, 0x821BFB68u, 0x8276D998u, 0x8276D9F0u}) {
+    Check(ScopedSkipDeviceCall(address), "scoped device call", address);
+    Check(!SkippableDeviceCall(address), "a scoped call is never skipped as a whole", address);
+  }
+  Check(!ScopedSkipMark::Inside(), "no mark outside a slot");
+  {
+    ScopedSkipMark outer;
+    Check(ScopedSkipMark::Inside(), "inside a slot");
+    {
+      ScopedSkipMark inner;
+      Check(ScopedSkipMark::Inside(), "a slot inside another");
+    }
+    Check(ScopedSkipMark::Inside(), "still inside the outer slot");
+    bool other_thread = true;
+    std::thread([&] { other_thread = ScopedSkipMark::Inside(); }).join();
+    Check(!other_thread, "the mark is the thread's own");
+  }
+  Check(!ScopedSkipMark::Inside(), "the mark ends with the outer slot");
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return 1;

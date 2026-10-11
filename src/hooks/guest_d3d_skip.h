@@ -66,6 +66,40 @@ constexpr bool SkippableDeviceCall(uint32_t address) {
   }
 }
 
+// Step d ("Step d: programs and constants"): the shader and shader constant device calls are
+// skipped only while one of these slots' guest implementation runs, not as a whole: the
+// _endFrame wrapper's full-screen pass and the D3D runtime set their own shaders and constants
+// through the same calls, and the device's draw flush needs a bound vertex shader.
+// 90 bindGpuProgram, 91 bindGpuProgramParameters, 93 unbindGpuProgram.
+constexpr bool ScopedSkipSlot(uint32_t slot) { return slot == 90 || slot == 91 || slot == 93; }
+constexpr bool ScopedSkipDeviceCall(uint32_t address) {
+  switch (address) {
+    case 0x821D1288:  // SetVertexShader
+    case 0x821BF940:  // SetPixelShader
+    case 0x821C24D8:  // SetVertexShaderConstantF
+    case 0x821BFB68:  // SetPixelShaderConstantF
+    case 0x8276D998:  // vertex shader constants (the other kind)
+    case 0x8276D9F0:  // pixel shader constants (the other kind)
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Marks, per thread, that a ScopedSkipSlot's guest implementation is running; nests (a slot
+// called from inside another keeps the mark until the outer one returns).
+class ScopedSkipMark {
+ public:
+  ScopedSkipMark() { ++depth_; }
+  ~ScopedSkipMark() { --depth_; }
+  ScopedSkipMark(const ScopedSkipMark&) = delete;
+  ScopedSkipMark& operator=(const ScopedSkipMark&) = delete;
+  static bool Inside() { return depth_ > 0; }
+
+ private:
+  static inline thread_local int depth_ = 0;
+};
+
 // Before the guest runs: decides once for the session and logs it.
 void InstallGuestD3DSkip(bool native_only);
 

@@ -69,6 +69,11 @@ float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
     if constexpr (torchlight::hooks::SkippableSlot(slot)) { \
       if (g_skip_guest_d3d) return;                  \
     }                                                \
+    if constexpr (torchlight::hooks::ScopedSkipSlot(slot)) { \
+      torchlight::hooks::ScopedSkipMark mark;        \
+      __imp__sub_##addr(ctx, base);                  \
+      return;                                        \
+    }                                                \
     __imp__sub_##addr(ctx, base);                    \
   }
 
@@ -459,6 +464,22 @@ DEVICE_SKIP_HOOK(kD3DDraw, 821D0A10)
 DEVICE_SKIP_HOOK(kD3DSetIndices, 821C39F8)
 DEVICE_SKIP_HOOK(kD3DSetStreamSource, 821C3D58)
 DEVICE_SKIP_HOOK(kD3DSetTexture, 821CEB60)
+
+// Step d: skipped only inside a ScopedSkipSlot's guest implementation (guest_d3d_skip.h).
+#define SCOPED_DEVICE_SKIP_HOOK(entry, addr)                                            \
+  static_assert(torchlight::guest_abi::functions::entry.address == 0x##addr##u);         \
+  static_assert(torchlight::hooks::ScopedSkipDeviceCall(0x##addr##u));                   \
+  REX_EXTERN(__imp__sub_##addr);                                                        \
+  extern "C" REX_FUNC(sub_##addr) {                                                     \
+    if (g_skip_guest_d3d && torchlight::hooks::ScopedSkipMark::Inside()) return;        \
+    __imp__sub_##addr(ctx, base);                                                       \
+  }
+SCOPED_DEVICE_SKIP_HOOK(kD3DSetVertexShader, 821D1288)
+SCOPED_DEVICE_SKIP_HOOK(kD3DSetPixelShader, 821BF940)
+SCOPED_DEVICE_SKIP_HOOK(kD3DSetVertexShaderConstantF, 821C24D8)
+SCOPED_DEVICE_SKIP_HOOK(kD3DSetPixelShaderConstantF, 821BFB68)
+SCOPED_DEVICE_SKIP_HOOK(kD3DSetVertexShaderConstantOther, 8276D998)
+SCOPED_DEVICE_SKIP_HOOK(kD3DSetPixelShaderConstantOther, 8276D9F0)
 
 // ---- count-only slots ------------------------------------------------------------------------
 extern "C" {

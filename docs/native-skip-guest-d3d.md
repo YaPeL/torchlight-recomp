@@ -487,3 +487,30 @@ have nothing to skip; 39 and 40 write the stage's members, load the texture on f
 All their device work is that one call. Step c skips it as a device call, as the draws and
 bindings are (`DEVICE_SKIP_HOOK`), for every caller; the slots keep running, with their members
 and the texture load. Validation and the hand runs as in step b.
+
+## Step d: programs and constants, inside their slots (2026-10-11)
+
+- **Slot 90** `bindGpuProgram` (`0x821C1398`): the program's type (vtable `+200`), the program's
+  Xbox shader for this device, made the first time (`0x82579350`, filed in the program's map at
+  `+400`), the device's `SetVertexShader` (`0x821D1288`) or `SetPixelShader` (`0x821BF940`), then
+  the base `RenderSystem::bindGpuProgram` (`0x821C11B0`: the flags at `this + 736`, `737`, `738`,
+  `756` only).
+- **Slot 93** `unbindGpuProgram` (`0x821BE470`): releases the active parameters (`this + 92` or
+  `+ 60`), the device's shader call with 0, then the base unbind (`0x821BA328`: the same flags).
+- **Slot 91** `bindGpuProgramParameters` (`0x821C2118`): the pass iteration path (vtable `+368`),
+  the shared parameters copied into the parameters (`0x82467600`), the active parameters
+  (`this + 92` / `+ 60`), then the constants uploaded with `0x821C24D8`, `0x821BFB68`, `0x8276D998`
+  and `0x8276D9F0` (device only: the constant shadow and dirty bits). It uses the device only as
+  their argument.
+- Nothing in these three reads the device's shaders or constants after those calls; the shader is
+  made before its bind.
+- **Not skipped as a whole**: the `_endFrame` wrapper's full-screen pass (`0x821DCF18`,
+  `0x821B76C0`) and the runtime set their own shaders and constants with the same calls, and the
+  device's draw flush (`0x821CFF38`) takes another path without a vertex shader. So the six calls
+  are skipped only while slot 90, 91 or 93's guest implementation runs (a mark per thread that
+  nests, `hooks/guest_d3d_skip.h` `ScopedSkipMark`).
+- **The depth-only path's reference**: the D3D9 `_render` takes the bound shaders with a reference
+  (`0x821C0A08`, `0x821E0088`: null-checked, an atomic add) and restores them. With the skip the
+  device only ever holds shaders set by calls not skipped (the full-screen pass, the runtime,
+  `_render`'s own restore) or none: never a slot's. A shader the runtime frees is unbound first
+  (`0x828A3948`), so the device never keeps one that is gone.
