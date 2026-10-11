@@ -477,3 +477,13 @@ Per run, presented: still 197.0, 189.2 off against 207.3, 203.0 on; fight 147.3,
 155.2 (the fight by hand varies from run to run); town square 128.7, 124.0 against 138.0, 136.7. The
 package stayed at 82 C and the process at about 2.4-2.6 cores either way. The cvar is on by default
 since.
+
+## Step c: the device's SetTexture (2026-10-11)
+
+The texture stage slots, read (see "Texture stage slots" above): 41 and 42 write members only and
+have nothing to skip; 39 and 40 write the stage's members, load the texture on first use (vtable
+`+84`, which the game observes) and call the device's `SetTexture` (`0x821CEB60`); 33 calls 39 and
+40 through the vtable (`+156`, `+160`), and 34 stores `this + 660` and calls 33 per unit (`+132`).
+All their device work is that one call. Step c skips it as a device call, as the draws and
+bindings are (`DEVICE_SKIP_HOOK`), for every caller; the slots keep running, with their members
+and the texture load. Validation and the hand runs as in step b.

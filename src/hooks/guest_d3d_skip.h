@@ -49,8 +49,8 @@ constexpr bool SkippableSlot(uint32_t slot) {
 // Whether the hooks skip those implementations: the native mode only, and the cvar on.
 constexpr bool SkipGuestD3D(bool native_only, bool enabled) { return native_only && enabled; }
 
-// Xbox D3D device calls skipped as a whole ("Draw and bindings"): the draws and the index and
-// stream bindings, whatever calls them. They only feed the Xenos GPU; what our hooks need from
+// Xbox D3D device calls skipped as a whole ("Draw and bindings"): the draws and the index, stream
+// and texture bindings, whatever calls them. They only feed the Xenos GPU; what our hooks need from
 // _render (the buffer uploads, the declaration and binding slots, the depth bias and pass
 // iteration calls, the base _render) still runs.
 constexpr bool SkippableDeviceCall(uint32_t address) {
@@ -59,6 +59,7 @@ constexpr bool SkippableDeviceCall(uint32_t address) {
     case 0x821D0A10:  // DrawPrimitive
     case 0x821C39F8:  // SetIndices
     case 0x821C3D58:  // SetStreamSource
+    case 0x821CEB60:  // SetTexture (step c, "Texture stage slots")
       return true;
     default:
       return false;

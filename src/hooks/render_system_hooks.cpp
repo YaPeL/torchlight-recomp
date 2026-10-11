@@ -458,6 +458,7 @@ DEVICE_SKIP_HOOK(kD3DDrawIndexed, 821CF830)
 DEVICE_SKIP_HOOK(kD3DDraw, 821D0A10)
 DEVICE_SKIP_HOOK(kD3DSetIndices, 821C39F8)
 DEVICE_SKIP_HOOK(kD3DSetStreamSource, 821C3D58)
+DEVICE_SKIP_HOOK(kD3DSetTexture, 821CEB60)
 
 // ---- count-only slots ------------------------------------------------------------------------
 extern "C" {

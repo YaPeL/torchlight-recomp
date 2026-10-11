@@ -45,12 +45,12 @@ int main() {
   static_assert(SkippableSlot(44) && !SkippableSlot(45));
   // The device calls: the draws and the bindings, nothing else of the device.
   using torchlight::hooks::SkippableDeviceCall;
-  for (uint32_t address : {0x821CF830u, 0x821D0A10u, 0x821C39F8u, 0x821C3D58u})
+  for (uint32_t address : {0x821CF830u, 0x821D0A10u, 0x821C39F8u, 0x821C3D58u, 0x821CEB60u})
     Check(SkippableDeviceCall(address), "skippable device call", address);
-  // Kept: the render target and reference counting around the draw, the declaration, SetTexture,
+  // Kept: the render target and reference counting around the draw, the declaration,
   // the state flush used by other draws, the D3D9 _render itself.
   for (uint32_t address : {0x821C0A08u, 0x821E0088u, 0x821CEDD8u, 0x821BA040u, 0x821D1288u,
-                           0x821BF940u, 0x821CE588u, 0x821CEB60u, 0x821CFF38u, 0x821C4058u})
+                           0x821BF940u, 0x821CE588u, 0x821CFF38u, 0x821C4058u})
     Check(!SkippableDeviceCall(address), "kept device call", address);
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);

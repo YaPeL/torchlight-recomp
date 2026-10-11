@@ -257,6 +257,15 @@ inline constexpr GuestFunction kD3DSetIndices{0x821C39F8, Confidence::kConfirmed
 // fence like SetIndices (@0x821C3DE8, @0x821C3E38). Callers: setVertexBufferBinding 0x821C3E78,
 // _render (unbinding), the device's unbind-all 0x821CECF0 (from _beginFrame) and 0x827746B0.
 inline constexpr GuestFunction kD3DSetStreamSource{0x821C3D58, Confidence::kConfirmed};
+// [confirmed] The Xbox D3D SetTexture(r3 = device, r4 = sampler, r5 = texture or 0, r6 = dirty
+// bit): merges the texture's fetch constant into the sampler's (device + 1152 + 24 * sampler,
+// @0x821CEBE4..@0x821CEC5C), sets the dirty mask at device + 24 (@0x821CEC60), stores the texture at
+// device + 4 * (3198 + sampler) (@0x821CEC74) and stamps the replaced texture's fence (+8,
+// @0x821CEC8C) or queues a pending fence entry (0x82775DF8, @0x821CECB8). No caller reads r3 after
+// it. Callers: _setTexture 0x821C8E40, _setVertexTexture 0x821CA710, the _endFrame wrapper's
+// full-screen pass 0x821B76C0, the unbind-all 0x821CECF0 and 0x827746B0, and the device's default
+// state 0x8277FB78 (docs/native-skip-guest-d3d.md, "Texture stage slots").
+inline constexpr GuestFunction kD3DSetTexture{0x821CEB60, Confidence::kConfirmed};
 
 // The guest's file and memory calls timed for the long frame report (live/guest_events.h). From
 // DWARF call stacks of the game's main thread in a native run, every NtOpenFile/NtCreateFile,
