@@ -481,7 +481,7 @@ since.
 ## For the Windows agent: the skip on by default (2026-10-11)
 
 `--native_skip_guest_d3d` is on by default since develop `a859bb5`. What the Windows build has to
-show, with Direct3D 11 (host settings `render_system = "d3d11"`) on develop at or after `a859bb5`:
+show, with Direct3D 11 (chosen in the Video column; host settings `render_system = "Direct3D11 Rendering Subsystem"`) on develop at or after `a859bb5`:
 
 1. **It starts and reaches the game**: a short run from the main menu to standing in the mine's
    first floor (the fixed-floor saved game, or `tools/input_scripts/load-and-quit.txt` in a
