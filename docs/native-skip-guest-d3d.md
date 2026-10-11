@@ -477,3 +477,21 @@ Per run, presented: still 197.0, 189.2 off against 207.3, 203.0 on; fight 147.3,
 155.2 (the fight by hand varies from run to run); town square 128.7, 124.0 against 138.0, 136.7. The
 package stayed at 82 C and the process at about 2.4-2.6 cores either way. The cvar is on by default
 since.
+
+## For the Windows agent: the skip on by default (2026-10-11)
+
+`--native_skip_guest_d3d` is on by default since develop `a859bb5`. What the Windows build has to
+show, with Direct3D 11 (host settings `render_system = "d3d11"`) on develop at or after `a859bb5`:
+
+1. **It starts and reaches the game**: a short run from the main menu to standing in the mine's
+   first floor (the fixed-floor saved game, or `tools/input_scripts/load-and-quit.txt` in a
+   development build). The log's first lines say `guest D3D: skipped for the device-only calls
+   ... (--native_skip_guest_d3d=true, native mode on)`; no new errors, no fault.
+2. **A capture compared**: one F9 capture standing still where the player arrives, once with the
+   default and once with `--native_skip_guest_d3d=false`, same binary, same saved game. Replay both
+   with `tools/replay` and compare (`capture_dump --draws`): the same draws and states except what
+   moves (animation) and the render target names, which carry the guest texture's address (with
+   the skip the guest no longer allocates the Xbox vertex declarations, so later allocations land
+   elsewhere: same sizes, same counts). The two images should match apart from what moves.
+3. If either differs, the log and both captures, and `--native_skip_guest_d3d=false` as the way
+   back until it is understood.
