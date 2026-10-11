@@ -615,6 +615,26 @@ The game's pace does not depend on how many frames it makes: walking 5 s from th
 captures' view matrices), with about 100 frames fewer with it. Backpressure adds no frame of
 latency: the swap-to-presented latency is lower with it.
 
+### Backpressure: the hand runs decide (2026-10-11)
+
+Four guided runs on the reference route by hand (off, on, off, on; no frame cap, vsync off, the
+cool-down; same binary):
+
+| Step | Presented fps off -> on | Presented 1 % low | Dropped | Game process CPU |
+|---|---|---|---|---|
+| Dungeon, still | 191.7 -> 198.1 | 132.3 -> 122.0 | 102 -> 0 | 2.56 -> 2.44 cores |
+| Dungeon, fight | 158.3 -> 151.8 (-4 %) | 98.6 -> 93.8 | 81 -> 0 | 2.44 -> 2.45 cores |
+| Town square | 137.9 -> 131.2 (-5 %) | 96.9 -> 89.5 | 94 -> 0 | 2.49 -> 2.44 cores |
+
+Each run with backpressure presented less than each run without in the fight (153.7, 149.8 against
+160.1, 156.6) and in the town square (129.1, 133.3 against 136.6, 139.3); the package stayed at
+82 C either way and the latency was 1-1.5 ms lower. On the real route the backend is not behind:
+without backpressure it drops 1-2 % of the guest's frames in the fight (81 in 40 s), not the third
+of the synthetic runs. Waiting at the swap takes away the overlap between the guest's next frame
+and the backend's current one, and the presented rate falls with it. **Not taken**: the branch
+`feature/backpressure` stays as it is, not in `develop`. For the same reason the two-stage pipeline
+has no case on this laptop yet: the limit on the reference route is the guest's thread.
+
 ### Present wait and drops on other machines: what to measure
 
 On this laptop the present's wait is the compositor's and the PRIME copy's pacing, so it says
