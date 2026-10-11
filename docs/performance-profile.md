@@ -582,6 +582,66 @@ splits it in two:
 - More buffers instead: a longer frame queue or swap chain trades drops for latency, not more
   frames; and how many images GL keeps in flight is the driver's choice, not OGRE's.
 
+### Backpressure at the guest's swap: synthetic runs (2026-10-10)
+
+`--live_backpressure` (branch `feature/backpressure`, not in `develop`): the guest waits at its swap while the backend has not taken
+the previous frame (up to 50 ms, for a backend that stopped), instead of making frames that are
+dropped (`live/frame_queue.h`). Measured with automatic runs of `measure-fight-town`, three each,
+alternated, cool-down and thermal record as in the method. **These numbers are synthetic, not the
+final word**: the script's "fight" has no real fight and its walk does not reach the slow part of
+the town square, so they compare off against on in the same conditions and are not frame rates of
+the game. The hand run on the reference route decides.
+
+No frame cap, vsync off (means of three runs):
+
+| Step | Presented fps off -> on | Presented 1 % low | Dropped | Swap-to-presented latency | Game process CPU |
+|---|---|---|---|---|---|
+| Dungeon, still | 196.7 -> 189.1 | 132.8 -> 124.7 | 66 -> 0 | 13.3 -> 13.0 ms | 2.60 -> 2.56 cores |
+| Dungeon, "fight" | 175.5 -> 178.3 | 116.5 -> 121.1 | 544 -> 0 | 16.7 -> 13.9 ms | 2.55 -> 2.52 cores |
+| Town square | 168.1 -> 166.7 | 114.3 -> 110.2 | 151 -> 0 | 15.2 -> 12.8 ms | 2.48 -> 2.47 cores |
+
+The guest waited 0.1-1.4 ms per frame; the 50 ms cap was reached only at the start. The package
+stayed at 82 C either way: under the thermal limit, the CPU time the guest no longer spends goes
+to the clock, not to a lower temperature.
+
+With `--vsync=true` on the command line (which also paces the guest's swap at the display's rate,
+as the frame rate cap does: "fps cap left to --vsync=true"): the guest already makes 60 frames a
+second without backpressure, with 0-6 frames dropped per step, so there is nothing to save: presented 59.9 and 0.8 cores either way, the package 1-2 C lower with
+backpressure (noise). The swap-to-presented latency with vsync is 42-49 ms (about three refreshes)
+with or without backpressure (1-2 ms lower with it): worth its own look.
+
+The game's pace does not depend on how many frames it makes: walking 5 s from the town spot where
+`ASCEND` lands moved the camera 4.73 units without backpressure and 4.71 with it (two runs each,
+captures' view matrices), with about 100 frames fewer with it. Backpressure adds no frame of
+latency: the swap-to-presented latency is lower with it.
+
+### Backpressure: the hand runs decide (2026-10-11)
+
+Four guided runs on the reference route by hand (off, on, off, on; no frame cap, vsync off, the
+cool-down; same binary):
+
+| Step | Presented fps off -> on | Presented 1 % low | Dropped | Game process CPU |
+|---|---|---|---|---|
+| Dungeon, still | 191.7 -> 198.1 | 132.3 -> 122.0 | 102 -> 0 | 2.56 -> 2.44 cores |
+| Dungeon, fight | 158.3 -> 151.8 (-4 %) | 98.6 -> 93.8 | 81 -> 0 | 2.44 -> 2.45 cores |
+| Town square | 137.9 -> 131.2 (-5 %) | 96.9 -> 89.5 | 94 -> 0 | 2.49 -> 2.44 cores |
+
+Each run with backpressure presented less than each run without in the fight (153.7, 149.8 against
+160.1, 156.6) and in the town square (129.1, 133.3 against 136.6, 139.3); the package stayed at
+82 C either way and the latency was 1-1.5 ms lower. On the real route the backend is not behind:
+without backpressure it drops 1-2 % of the guest's frames in the fight (81 in 40 s), not the third
+of the synthetic runs. Waiting at the swap takes away the overlap between the guest's next frame
+and the backend's current one, and the presented rate falls with it. **Not taken**: the branch
+`feature/backpressure` stays as it is, not in `develop`. For the same reason the two-stage pipeline
+has no case on this laptop yet: the limit on the reference route is the guest's thread.
+
+The frame rate cap (host settings `fps_cap`, 60 by default) paces the guest's swap by itself: it
+sets the guest's vblank rate in the SDK and its `--vsync` (`live/install.cpp` `ApplyFpsCap`).
+With a cap, backpressure has nothing to save. **The one case left that could justify it later**:
+the backend's vsync on with the cap set to unlimited. The guest then runs unpaced while the
+display presents 60 frames a second and drops about two thirds of them; backpressure could save
+CPU and temperature there (battery on the Steam Deck). Not measured.
+
 ### Present wait and drops on other machines: what to measure
 
 On this laptop the present's wait is the compositor's and the PRIME copy's pacing, so it says
