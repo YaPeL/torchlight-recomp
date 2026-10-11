@@ -19,7 +19,7 @@
 #include "guest_abi/ogre_layout.h"
 #include "hooks/guest_d3d_skip.h"
 
-REXCVAR_DEFINE_BOOL(native_skip_guest_d3d, false, "Torchlight",
+REXCVAR_DEFINE_BOOL(native_skip_guest_d3d, true, "Torchlight",
                     "Native mode only: skip the guest's D3D work for RenderSystem calls whose only "
                     "effect is the Xenos device (docs/native-skip-guest-d3d.md)");
 

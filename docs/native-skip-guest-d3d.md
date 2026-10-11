@@ -31,7 +31,7 @@ only effect is on the Xenos device, keeping every effect the guest itself can ob
 - Our recorded commands must not change: the hook body runs before `__imp__` and reads the guest's
   OGRE objects, not the device. A skipped call that changed what the guest does next would show up
   as a different command stream (see Validation).
-- One cvar, off by default (`native_skip_guest_d3d`, see Decisions).
+- One cvar (`native_skip_guest_d3d`), on by default since 2026-10-11 (see Decisions).
 - No probe or trace without agreeing on it first (each one this plan needs is listed under Evidence).
 
 ## What can observe a skipped call
@@ -301,8 +301,9 @@ In the fight, both runs with the skip beat both without on the frame rate (113.5
 ## Decisions (2026-10-07)
 
 - **Cvar**: `native_skip_guest_d3d` (bool, default `false`): in the native mode, the RenderSystem
-  calls whose only effect is the Xenos device do not run the guest's implementation. It stays off
-  by default until the soak of every class it covers passes; the log's first lines say its value.
+  calls whose only effect is the Xenos device do not run the guest's implementation. Off by
+  default until the hand runs of step b (2026-10-11, below), on since; the log's first lines say
+  its value, and `--native_skip_guest_d3d=false` turns it off.
 - **Diagnostics build** (Evidence step 5): approved, behind a CMake option off by default that
   neither the release nor any preset turns on, like `TORCHLIGHT_DEV_COMMANDS`:
   `TORCHLIGHT_DIAG_WRITE_WATCH`.
@@ -458,3 +459,21 @@ with the input scripts on the fixed-floor saved game:
 The game thread gains 8-11 % everywhere. Where the backend is the limit (the fight, where the game
 now makes more frames than it presents: 1319 dropped against 508 per step) the presented rate does
 not move; in the town square, where the game was the limit, it gains 5 % and its 1 % low 8 %.
+
+## On by default: the hand runs (2026-10-11)
+
+The automatic runs of step b showed the guest's thread 8-11 % faster but little more presented,
+which pointed at the backend. Hand runs on the reference route (the user, the step overlay; off,
+on, off, on; no frame cap, vsync off, the cool-down) showed instead that the limit on that route is
+the guest's thread (the backend drops 1-2 % of its frames there), and the skip reaches the screen:
+
+| Step | Presented fps off -> on | Presented 1 % low | Game fps off -> on |
+|---|---|---|---|
+| Dungeon, still | 193.1 -> 205.2 (+6 %) | 133.7 -> 129.7 | 203.4 -> 226.5 |
+| Dungeon, fight | 154.4 -> 160.6 (+4 %) | 93.7 -> 96.5 | 156.4 -> 165.6 |
+| Town square | 126.3 -> 137.3 (+9 %) | 90.6 -> 98.8 | 127.7 -> 142.6 |
+
+Per run, presented: still 197.0, 189.2 off against 207.3, 203.0 on; fight 147.3, 161.6 against 166.0,
+155.2 (the fight by hand varies from run to run); town square 128.7, 124.0 against 138.0, 136.7. The
+package stayed at 82 C and the process at about 2.4-2.6 cores either way. The cvar is on by default
+since.
