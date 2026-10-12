@@ -495,3 +495,36 @@ show, with Direct3D 11 (chosen in the Video column; host settings `render_system
    elsewhere: same sizes, same counts). The two images should match apart from what moves.
 3. If either differs, the log and both captures, and `--native_skip_guest_d3d=false` as the way
    back until it is understood.
+
+## Steps c and d: tried, discarded (2026-10-11)
+
+Step c (the device's `SetTexture`, branch `feature/skip-settexture`) and step d (the shader and
+constant calls inside slots 90, 91 and 93, branch `feature/skip-programs`; the evidence for both
+is above) are not in `develop`.
+
+- **Commands**: identical in the stretches without randomness (per guest frame, `SetTexture`,
+  `BindProgram`, `UnbindProgram`, `SetConstants` within the spread of two runs off), and the 20
+  replays byte for byte.
+- **Hand runs, c and d together** (off, on, off, on): presented 197.3 -> 196.3 still, 167.8 ->
+  161.1 fighting, 151.6 -> 132.8 in the town square.
+- **Profile of the town square** where every run stood at the same place (perf, 10 s, two runs each):
+  the skipped device functions leave the profile (the constant uploads 0.15 % and `SetTexture`
+  0.10 % of the game thread) and nothing grows; no fence or ring waits; the same slot 39 calls
+  (327-332 per frame), draws (172-173) and commands (1543-1578) per frame either way. The game
+  does not repeat binds.
+- **Why the scripted runs dropped**: the scripted town walk forks after ten seconds; one branch
+  passes the vendors with about 30 more draws per frame (211 against 184) and a lower frame rate.
+  In the first batch both runs with c and d took it; in the second, one run without did. The
+  fork does not depend on the skip.
+- **Hand runs, c alone** (with the route checked: captures where the fight and the town square
+  end, the camera at the same place within 3-11 units): presented 193.8 -> 183.7 still, 167.7 ->
+  164.4 fighting (-2 %), 138.9 -> 134.2 in the town square (-3 %; both runs with c below both
+  without).
+- **Decision** (the user): the presented rate does not go up, so neither step goes in. The
+  profile shows no cost, so the cause of the small drop by hand is not known; the gain it could
+  bring is about 0.25 % of the game thread, below what this laptop can measure.
+
+What the validation missed, for next time: commands compared in the stretches without randomness
+cannot tell which way the character went. Comparisons with a loaded scene have to confirm that the
+runs took the same route (the camera's position in captures where each step ends), and the
+scripted town square walk has to be fixed to one branch, or runs on the other dropped.
