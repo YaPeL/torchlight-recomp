@@ -833,9 +833,27 @@ folder next to `mods` in the user data folder (`platform::DataDir()`), with the 
 at TNNR's sizes, and the captures keep those bytes; TNNR as a mod still shows the pak's; a
 synthetic mod with a new material and its own texture shows it (not magenta); a synthetic mod
 repeating a game material's name is ignored; the 29 mods, Enhanced Edition and the sword save load
-as before; a save made with mods loads the same. Also to recheck: whether a mod's model at a pak
-path is still used, since replaced models were checked before the mods left "General". The last
-check is the player's own, by hand.
+as before; a save made with mods loads the same. The last check is the player's own, by hand.
+
+**Validated (2026-10-12): a mod's model at a pak path is still used.** Read first, in both
+builds: a unit's model is not named by a material script. The game asks the data loader for the
+mesh (PC `0x5b7fb0` → `0x5c2370`, Xbox `sub_8238FB60` → `sub_8239D5F8`), which looks in the active
+mods' file maps before the pak's groups. A mod's file comes back as its full path in the mod's
+folder (the map's value, `sub_823AA340`; `tlmod001:\media\...` here), and that is the name
+`createEntity` gets, with the group left to OGRE. OGRE takes that name as absolute (any `:` on
+Xbox, `sub_824B3640`; a drive letter on PC). A folder location only claims an absolute name that
+starts with its own path (`FileSystemArchive::exists`, PC OgreMain `0x100873e0`). So only the
+mod's own folder resolves it, whichever group holds that folder. A skeleton listed in a
+`.animation` file comes through the data loader the same way and is loaded in "General". OGRE then
+searches the other groups, so the skeleton still resolves to the mod's file. A skeleton that a
+`.mesh` names inside itself is looked up by its relative name in the mesh's group, now the mod's,
+then in the others in creation order, as on PC.
+Then checked in two automatic runs on copies of the test sword's save: a synthetic mod puts a
+two-hander's mesh at the base sword's path (`media/models/weapons/hacker/hacker.MESH`). With this
+branch and with develop (9877dc8, the mods also in "General"), both equipped swords are drawn with
+the two-hander's mesh (1188 vertices; the pak's sword has 432), the same draws in both captures.
+The swapped mesh is drawn without a texture in both builds. That comes from the test content, not
+from the groups: the mesh names its own material, which the item does not resolve.
 
 ## 8. Where mods go on our side
 
