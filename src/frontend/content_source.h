@@ -38,6 +38,11 @@ class ContentSource {
   virtual const rtss::Program* Program(const std::string& name) const = 0;
   // A file of the game data (pak.zip), e.g. a named texture.
   virtual std::optional<std::vector<uint8_t>> GameFile(const std::string& name) const = 0;
+  // A named texture's file: the one the guest's OGRE takes with the player's mods and the
+  // replacements folder (mods/texture_files.h); without them, the pak's.
+  virtual std::optional<std::vector<uint8_t>> NamedTexture(const commands::TextureDesc& t) const {
+    return GameFile(t.name);
+  }
 };
 
 // Everything from a capture file and the game's pak.zip.
@@ -54,6 +59,9 @@ class CaptureContentSource : public ContentSource {
   std::string ProgramName(const commands::ResourceId& id) const override;
   const rtss::Program* Program(const std::string& name) const override;
   std::optional<std::vector<uint8_t>> GameFile(const std::string& name) const override;
+  // The file's bytes the capture kept (TextureDesc::file: a mod's or the replacements folder's),
+  // else the pak's.
+  std::optional<std::vector<uint8_t>> NamedTexture(const commands::TextureDesc& t) const override;
 
  private:
   const ZipArchive& pak_;

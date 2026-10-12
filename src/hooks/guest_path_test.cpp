@@ -9,6 +9,7 @@
 #include "hooks/guest_path.h"
 
 using torchlight::hooks::ModsSearchPath;
+using torchlight::hooks::WithoutOurDevice;
 using torchlight::hooks::WindowsSeparators;
 
 namespace {
@@ -51,6 +52,15 @@ int main() {
   Check("SAVE:\\/*.*", std::nullopt, ModsSearchPath);
   Check("tlmod:/x/*", std::nullopt, ModsSearchPath);
   Check("tlmods:/x/*", std::nullopt, ModsSearchPath);
+  Check("tlrepl:/media/x//*.*", "tlrepl:\\media\\x\\*.*", ModsSearchPath);
+
+  // Texture names the game's script listener builds from a script's full path (WithoutOurDevice).
+  Check("TLMOD000:/MEDIA/LEVELSETS/MINE/MINE_FLOOR01.DDS", "MEDIA/LEVELSETS/MINE/MINE_FLOOR01.DDS",
+        WithoutOurDevice);
+  Check("tlmod012:\\media\\x.dds", "media\\x.dds", WithoutOurDevice);
+  Check("TLREPL:/MEDIA/MODELS/BARREL/BARREL.DDS", "MEDIA/MODELS/BARREL/BARREL.DDS", WithoutOurDevice);
+  Check("MEDIA/LEVELSETS/MINE/MINE_FLOOR01.DDS", std::nullopt, WithoutOurDevice);
+  Check("game:\\media\\x.dds", std::nullopt, WithoutOurDevice);
   Check("tlmod3x:/x/*", std::nullopt, ModsSearchPath);
   Check("tlmod7", std::nullopt, ModsSearchPath);
   Check("", std::nullopt, ModsSearchPath);

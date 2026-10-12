@@ -63,6 +63,13 @@ Capture MakeCapture() {
   tex.unresolved = UnresolvedReason::kTextureRenderTarget;
   tex.fetch_constant = {1, 2, 3, 4, 5, 6};
   c.textures.push_back(tex);
+  // A named texture a mod gives (1.7): its group and its file's blob.
+  TextureDesc mod_tex;
+  mod_tex.id = Id(ResourceKind::kTexture, 0x40004100, 2);
+  mod_tex.name = "MEDIA/MODELS/SWORD/NEW_SWORD.DDS";
+  mod_tex.group = "Sword Mod";
+  mod_tex.file = 0x2222;
+  c.textures.push_back(mod_tex);
   c.programs.push_back({Id(ResourceKind::kProgram, 0x40005000, 0), "ui_vs",
                         Known(ProgramStage::kVertex, 0)});
   c.program_sources.push_back({"ui_vs", "hlsl", "main", "vs_3_0", "void main() {}"});
@@ -186,6 +193,9 @@ void TestRoundTrip() {
   Check(read.reference && read.reference->possibly_misaligned && read.reference->rgbx.size() == 8,
         "reference image");
   Check(read.stats.slots[1].note == "shared empty function", "slot note");
+  Check(read.textures.size() == 2 && read.textures[0].group.empty() && read.textures[0].file == 0 &&
+            read.textures[1].group == "Sword Mod" && read.textures[1].file == 0x2222,
+        "a named texture's group and file (chunk TXFL)");
 }
 
 void TestFile() {

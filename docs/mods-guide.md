@@ -18,11 +18,31 @@ folders; unpack any `.zip`, `.rar` or `.7z` first.
 ## Order and turning mods off
 
 The order lives in `mods/mods.dat`, the same file PC writes, and you can copy yours from PC. Each mod
-has a `PRIORITY`: when two mods change the same file, the one with the lower number wins. A negative
-`PRIORITY` turns a mod off without removing it. New folders are added at the end the next time the
-game starts, and entries whose folder is gone are dropped.
+has a `PRIORITY`: when two mods change the same data file, the one with the lower number wins.
+Materials and textures follow the order of the entries in the file, as on PC; in a file PC wrote
+that is the same order. A negative `PRIORITY` turns a mod off without removing it. New folders are
+added at the end the next time the game starts, and entries whose folder is gone are dropped.
 
 Changes take effect the next time the game starts.
+
+## Texture packs: the `replacements` folder
+
+Some PC packs, such as texture remasters, are meant to be copied into the game's `Pak.zip`, not
+installed as mods. As a mod they change nothing, on PC and here: a mod cannot replace a texture or
+material the game already has. A texture or material is known by its name, and the first one
+loaded keeps it.
+
+Put those packs in the `replacements` folder instead, next to `mods`:
+
+| | Linux | Windows |
+|---|---|---|
+| Replacements | `~/.local/share/TorchlightRecomp/replacements/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\replacements\` |
+
+Copy the pack's `media` folder inside it, so the files keep the game's paths (for example
+`replacements/media/levelsets/...`). Files there are used instead of the game's at the same path, as
+if they were inside the game's archive. The folder has no order or priority and is not a mod: it
+does not count for the mod achievements and is not recorded in your saves. Empty the folder to go
+back to the original files.
 
 ## What works
 
@@ -30,8 +50,8 @@ Changes take effect the next time the game starts.
   saved as UTF-16 by PC tools.
 - New items and monsters: the game's unit table is rebuilt with the mods' units. The first start
   with a new set of mods takes longer, up to about a minute with a large pack; later starts use a
-  saved copy. New classes are added to the table too, but picking one when creating a character has
-  not been tested yet.
+  saved copy. New classes are added to the table too, but the character creation screen offers
+  only the game's three classes (see below).
 - Replaced models (checked less than data).
 - The PC achievements for mods (Played with a mod, 5 mods, 10 mods), in the PC achievement set.
 - Large packs: the Ultimate Torchlight Mod-Pack (29 mods) loads.
@@ -55,12 +75,19 @@ Changes take effect the next time the game starts.
   whole session, so those items are not lost, and the notice says so in capitals. Quit, fix the
   mods, and start again.
 
+## If you make mods
+
+- A model (`.MESH`) looks up its materials by name in its own folder. A model moved to another
+  folder must name a material defined in that folder, or bring its `.material` file along next to
+  it. Torchlight on PC works the same way.
+
 ## Not supported yet
 
 - New affixes (the extra properties of magic items) and new level pieces from mods: the game ships
   these tables prebuilt and they are not rebuilt yet.
-- Replaced textures: the screen still shows the original ones.
 - Mods that are compressed archives instead of folders.
+- Playing a mod's new class: the Xbox character creation screen offers only the game's three
+  classes. This waits for the PC interface.
 - Choosing which mods to use from inside the game: edit `mods.dat` for now.
 
 If something goes wrong, the log of the run tells what the game did with each mod

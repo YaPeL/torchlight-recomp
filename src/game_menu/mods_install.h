@@ -29,9 +29,14 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
 
 // The data manager was just built (its constructor's hook, on the game's thread, before the
 // global data loader checks the MODS achievements and loads the data): builds the mod manager,
-// registers the mods in their planned order and adds their folders as resource locations after the
-// game's (the last location added wins). Nothing when there are no mods.
+// registers the mods in their planned order, and puts each active mod's folder in the mod's own
+// resource group, initialised after the game's groups in mods.dat's order, as PC does. Nothing
+// when there are no mods.
 void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager);
+
+// The data manager the resources.cfg loader is about to build (its hook, before the original): its
+// group list is where the replacements folder goes before the groups are initialised.
+void NoteDataManager(uint32_t data_manager);
 
 // The plan InstallMods mounted (the mods the guest gets), or null when there are none.
 const mods::ModPlan* MountedModPlan();

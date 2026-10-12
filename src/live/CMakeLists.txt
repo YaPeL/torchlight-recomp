@@ -16,7 +16,8 @@ add_library(torchlight_live STATIC snapshot_store.cpp frame_queue.cpp session_fi
     slow_frames.cpp guest_events.cpp log_budget.cpp frame_reclaimer.cpp)
 target_include_directories(torchlight_live PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_live PUBLIC cxx_std_23)
-target_link_libraries(torchlight_live PUBLIC torchlight_commands torchlight_measure ZLIB::ZLIB)
+target_link_libraries(torchlight_live PUBLIC torchlight_commands torchlight_measure torchlight_texture_files
+    ZLIB::ZLIB)
 target_compile_options(torchlight_live PRIVATE -Wall -Wextra)
 
 add_executable(snapshot_store_test snapshot_store_test.cpp)
@@ -63,7 +64,7 @@ add_test(NAME deferred_check_test COMMAND deferred_check_test)
 # of its own; the queue and the store above stay testable without OGRE.
 add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp frame_timing.cpp frame_counter.cpp
     frame_step.cpp install.cpp ui_overlay.cpp ui_gamepad.cpp)
-target_link_libraries(torchlight_live_mode PUBLIC torchlight_live torchlight_frontend rex::runtime
+target_link_libraries(torchlight_live_mode PUBLIC torchlight_live torchlight_frontend torchlight_texture_files rex::runtime
     torchlight_platform torchlight_settings)
 target_include_directories(torchlight_live_mode PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_options(torchlight_live_mode PRIVATE -Wall -Wextra)

@@ -28,4 +28,8 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
 bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive,
                            const std::string& group = "General");
 
+// Initialises an OGRE resource group through the guest (game's thread), which parses its scripts
+// (materials and the rest); false when it could not be called.
+bool InitialiseResourceGroup(GuestCall& call, const std::string& group);
+
 }  // namespace torchlight::game_menu

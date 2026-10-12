@@ -189,7 +189,7 @@ add_custom_target(torchlight_data ALL
             "$<TARGET_FILE_DIR:torchlight>/data/ui")
 add_dependencies(torchlight torchlight_data)
 # The live mode (and through it the frontend) and the backend objects.
-target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods
+target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods torchlight_texture_files
     torchlight_save_mod_list torchlight_video_mode torchlight_guest_path
     torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull
     torchlight_dev_input_script)

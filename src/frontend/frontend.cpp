@@ -181,9 +181,9 @@ void Frontend::PrepareTexture(const TextureDesc& t) {
     stats_.render_targets += ok;
     if (!ok) stats_.texture_problems.Add("render target creation failed");
   } else if (!t.name.empty() && !t.manual) {
-    auto data = content_.GameFile(t.name);
+    auto data = content_.NamedTexture(t);
     if (!data) {
-      stats_.texture_problems.Add("not found in pak.zip");
+      stats_.texture_problems.Add("not found (pak.zip, mods, replacements)");
     } else {
       std::string ext = std::filesystem::path(t.name).extension().string();
       if (!ext.empty()) ext = ext.substr(1);

@@ -25,9 +25,22 @@ std::string ModDeviceMount(size_t index);
 // Whether `path` is on a mod's device ("tlmod<N>:", any case).
 bool OnModDevice(std::string_view path);
 
+// The device the player's replacements folder is mounted as (docs/mods.md 7k): its files are read
+// in place of the pak's files at the same path, as if they were inside the pak.
+inline constexpr std::string_view kReplacementsDeviceLink = "tlrepl:";
+inline constexpr std::string_view kReplacementsDeviceMount = "\\Device\\TorchlightReplacements";
+// Whether `path` is on the replacements' device (any case).
+bool OnReplacementsDevice(std::string_view path);
+
 // The search path the guest's FindFirstFileA is given instead of `path`: WindowsSeparators for a
-// path on a mod's device, nothing for any other (kept as the Xbox reads it; guest_abi
-// xapi_files.h says why).
+// path on a mod's device or the replacements', nothing for any other (kept as the Xbox reads it;
+// guest_abi xapi_files.h says why).
 std::optional<std::string> ModsSearchPath(std::string_view path);
+
+// A resource name without our device, "TLMOD000:/MEDIA/X.DDS" -> "MEDIA/X.DDS", for a name on a
+// mod's device or the replacements'; nothing for any other. PC names a mod's resources without a
+// device (its mods are folders with relative names), and the game's listener names textures after
+// the script's full path, device included (guest_abi game_ui.h kScriptListenerHandleEvent).
+std::optional<std::string> WithoutOurDevice(std::string_view name);
 
 }  // namespace torchlight::hooks

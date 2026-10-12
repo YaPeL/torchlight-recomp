@@ -179,6 +179,13 @@ ModPlan PlanMods(const ScanResult& scan, const std::optional<ModList>& list) {
     if (a_on != b_on) return a_on;
     return a_on && a.priority < b.priority;
   });
+  for (const ModListEntry& entry : plan.list.entries) {
+    if (entry.priority < 0) continue;
+    const std::string folder = on_disk(FolderOf(entry.directory));
+    for (size_t i = 0; i < plan.mods.size(); ++i) {
+      if (plan.mods[i].folder == folder) plan.activation.push_back(i);
+    }
+  }
   return plan;
 }
 

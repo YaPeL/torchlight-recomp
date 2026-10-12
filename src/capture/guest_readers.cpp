@@ -122,6 +122,7 @@ commands::SetViewport ReadViewport(const uint8_t* m, uint32_t viewport) {
 commands::TextureDesc ReadTextureDesc(const uint8_t* m, uint32_t texture) {
   commands::TextureDesc d;
   d.name = ogre::ReadString(m, texture + ogre::resource::kName.offset);
+  d.group = ogre::ReadString(m, texture + ogre::resource::kGroup.offset);
   d.type = ToTextureType(abi::ReadU32(m, texture, ogre::texture::kTextureType));
   d.width = abi::ReadU32(m, texture, ogre::texture::kWidth);
   d.height = abi::ReadU32(m, texture, ogre::texture::kHeight);

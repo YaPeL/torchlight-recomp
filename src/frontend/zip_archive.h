@@ -15,6 +15,8 @@ class ZipArchive {
   bool Open(const std::string& path, std::string& error);
   // Entry data by name, compared case-insensitively with '\\' and '/' treated alike.
   std::optional<std::vector<uint8_t>> Read(const std::string& name) const;
+  // Whether an entry has that name (compared as Read does).
+  bool Contains(const std::string& name) const { return entries_.contains(Key(name)); }
   size_t size() const { return entries_.size(); }
   // Every entry's name as stored in the archive.
   const std::vector<std::string>& names() const { return names_; }

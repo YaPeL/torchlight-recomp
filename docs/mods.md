@@ -708,7 +708,7 @@ in the game: each of the three mods alone, then all three, build the unit index 
 and play the load script to the end. The text mods of the Mod-Pack never went this way: their text
 files are read without OGRE.
 
-## 7j. A mod's textures never reach the screen (2026-10-10, open)
+## 7j. A mod's textures never reach the screen (2026-10-10; guest side as on PC 2026-10-12, host open)
 
 TNNR (Torchlight Neural Network Remastered v0.9.5, 2.7 GB) is meant to be dropped into PC's
 `Pak.zip`; as a mod it is one folder, `mods/TNNR/media`, with 3206 meshes, 1318 `.dds`, 889
@@ -734,9 +734,8 @@ groups were initialised; the texture names come from the material compiler's lis
 ("processTextureNames": `MEDIA/` plus the material's folder plus the name). Our guest adds each
 mod's folder to "General" and to the mod's group but never initialises the mod's group, so the
 mod's materials are not parsed, and a game material looks its textures up in the pak's group.
-What PC does when a mod's material has the same name as a pak material (OGRE 1.6 throws on a
-duplicate resource name; who catches it was not found) is to confirm in a run of the PC game.
-**[read, to verify]**
+What PC does when a mod's material has the same name as a pak material is settled below, by
+reading the executable. **[read]**
 
 The run logs agree. The synthetic mod's `path_center.dds` is uncompressed A8R8G8B8 without
 mipmaps; the first validation run (2026-10-07) loaded `MEDIA/LEVELSETS/TOWN1/PATH_CENTER.DDS`
@@ -749,10 +748,54 @@ The first hypothesis (OGRE's index gave the pak's file, so the mod's folder was 
 game's groups "0ZIP0" and "ZIP") changed nothing and was not kept: the guest side was never the
 problem.
 
-**Also to check when this is fixed:** which mod wins when two replace the same asset. The data
-loader picks the lowest `PRIORITY`; where OGRE's index decides (the location added last wins, and
-the locations are added in priority order), the highest `PRIORITY` would win. **[read, to verify
-in a run]**
+**Which mod wins when two replace the same asset.** The data loader (`.dat` files) picks the lowest
+`PRIORITY`. Materials and textures follow the activation order instead, below. **[read]**
+
+### PC's rule, read from Torchlight.exe (2026-10-12)
+
+- **A material defined twice: the first definition stays.** `ResourceManager::create` with a name
+  that exists returns a new resource; `addImpl` does not register it and nothing throws up to
+  `WinMain`. The duplicate's script is compiled into that orphan, which nothing uses. **[read]**
+- **Textures are global by name.** The texture manager's `getByName` takes only the name, so the
+  first texture loaded under a name is the one every material gets. A mod's texture at a path the
+  game already loaded is never read. **[read]**
+- **The mods' groups come after the game's, in `mods.dat`'s order.** Each mod gets its own resource
+  group, initialised as its entry is read (0x5ce440 → 0x5cd150 → 0x5cce30), after the pak's groups.
+  A list PC wrote is in priority order, so for PC's own lists the two orders agree. A file not in
+  the group asked for is looked up in the other groups in creation order
+  (`findGroupContainingResourceImpl`). **[read]**
+- **Consequence:** a pack like TNNR, meant to be put inside `Pak.zip`, changes nothing when
+  installed as a mod on PC: its materials repeat the game's names and its textures the game's
+  paths. What a mod can add are new names. **[read]**
+
+### Our guest, made to follow it (branch feature/mods-pc-groups)
+
+- Each active mod's folder goes only into the mod's own group (no longer also into "General"),
+  which is initialised after the game's groups, in `mods.dat`'s order (`ModPlan::activation`,
+  tested in `mods_test.cpp`).
+- **What attempt 1 missed.** The Xbox build's script listener (`sub_8239B490`, "createMaterial")
+  does not create a material when its name exists: it hands back the existing one, and the script
+  is compiled over it, so the mod wins. Initialising the mods' groups alone therefore made TNNR's
+  materials replace the game's, with the pak's textures: the mine turned magenta. That attempt was
+  reverted.
+- **Attempt 2.** `HookScriptListener` (`game_menu/mods_install.cpp`) sees when the listener handed
+  back an existing material for a mod's script (OGRE's next handle did not move) and creates one
+  instead, which OGRE leaves unregistered, as PC's `create` does. A mod's script is told by the
+  group it is compiled for (`ModScriptGroups`, `mod_scripts.h`): the event's file name is relative
+  to its location and carries no device. Deciding by that file name was the first pass's bug, and
+  `mod_scripts_test.cpp` covers it.
+- **Texture names.** The listener names a script's textures from the script's full path, device
+  included (`TLMOD000:/MEDIA/...`, `sub_8239A7F8`). The hook strips our devices
+  (`hooks::WithoutOurDevice`), so the names are the pak's, as on PC.
+- **Checked in automatic runs (2026-10-12), a synthetic check, not the final validation:** TNNR as a
+  mod (over 2,600 duplicate materials ignored, no `TLMOD` names, the mine drawn as without mods);
+  the 29-mod pack (29 groups initialised, 6 duplicates ignored); Enhanced Edition (3 groups, 4
+  duplicates); a save with a mod's sword loads.
+- **Still open, on the host:** the frontend reads every named texture from `pak.zip`
+  (`Frontend::PrepareTexture`). For a mod's new texture, and for the replacements folder (7k), it
+  has to resolve the name in the group the texture was loaded in: the replacements folder first,
+  then that group's locations, then the pak and the other mods' groups; captures keep those bytes.
+  That work belongs to the render frontend.
 
 **Level load time with TNNR.** One run each, same build and load script: 5.0 s without mods
 (`tnnr0`), 6.5 s with TNNR (`tnnr1`). Over the load's long frames, TNNR adds about 5,900 file reads
@@ -763,6 +806,142 @@ comparable: it carried the reverted "0ZIP0"/"ZIP" experiment, and every operatio
 9 times slower than in `tnnr1` (reads 0.064 ms against 0.012 ms each, file checks 0.46 ms against
 0.05 ms), including the startup before the mods were registered (14 s against 3.4 s), which
 points at a loaded machine rather than at the mod.
+
+
+**The host side (2026-10-12, branch `feature/mod-textures`).** Each texture description carries the
+group the guest loaded it in (`Resource::mGroup`, `guest_abi` `resource::kGroup`), and the host
+takes the file OGRE takes (`mods/texture_files.h`): in a mod's group, that mod's folder first, then
+the game's groups (the replacements folder, then the pak), then the other mods in activation order;
+in a game group, the replacements folder, the pak, then the mods. Files match ignoring case. A name with a device first (`TLMOD002:/MEDIA/...`, a mod's
+`TEXTURE_OVERRIDE`, which the data loader gives by its full path) is looked up only in that
+device's folder, as OGRE opens it. The
+live frontend reads that file (`LiveContentSource::NamedTexture`); a capture keeps the bytes of a
+mod's or the replacements folder's file as a blob (`TextureDesc::file`, chunk `TXFL`, format 1.7),
+so replay, which has no mods, draws them. Session recordings (`--live_record`) carry them the same
+way: the file's bytes once, as the texture's content, and the group and file in a section after
+each frame's commands, which recordings made before do not have. Without mods or replacements the
+images do not change; a capture only adds each named texture's group to its TXFL chunk.
+
+**Checking the host's choice** (`TORCHLIGHT_MODS_DIAGNOSTICS`, `--mods_texture_check`): the guest
+reports the archive and path it opened for each named texture (`mods::NoteGuestTextureOpen`), and the
+live frontend compares its own choice with it: each difference is logged as
+`mods: texture check: NAME: the game opened ..., the host chose ...`, and the live summary counts
+the textures compared, differing and not reported. Validation runs expect no difference.
+
+## 7k. The replacements folder: files as if inside the pak (2026-10-12)
+
+PC's texture packs, TNNR among them, are meant to be put inside `Pak.zip`. As mods they change
+nothing (7j), so the player gets the equivalent of putting files into the pak: a `replacements`
+folder next to `mods` in the user data folder (`platform::DataDir()`), with the pak's layout
+(`media/...`).
+
+- It has no `mods.dat` entry and no priority, and it is not a mod: it does not count for the MODS
+  achievements and goes into no save's mod list.
+- When it holds any file, it is mounted read-only as `tlrepl:`. Before `initialiseAllResourceGroups`
+  (`sub_82429D78`) first runs, the folder is added to each of the data manager's groups (the pak's,
+  "0ZIP0" and "ZIP"), after the pak. In OGRE's index the location added last wins, so its files
+  come before the pak's at the same path.
+- Its material scripts are compiled as the pak's would be: a material named like a pak material
+  redefines it, as an edited file inside the pak would. Its texture names are stripped of the
+  device like the mods'.
+- Textures are still global by name and the first one loaded wins. The replacements win over the
+  pak because they are found first at the same path, not because of a later load.
+- On the host, the frontend takes the file the guest's OGRE takes (`mods/texture_files.h`, 7j "The
+  host side"): this folder first for the pak's groups. Captures and session recordings keep the
+  folder's bytes, since replay has no replacements folder.
+
+**The texture check (diagnostics).** With `TORCHLIGHT_MODS_DIAGNOSTICS` and `--mods_texture_check`,
+the guest reports which archive its OGRE opened each named texture from. `mods_install.cpp` follows
+`ResourceGroupManager::openResource` and the archives' `open` (guest_abi `game_ui.h`
+`kOpenResource`; `game_menu/texture_open.h`, tested). The live frontend compares that with its own
+choice. It logs each difference and, every 10 s, how many textures were compared, how many differ
+and how many the game did not report.
+
+**What the check found: names with a device.** The guest's data loader gives a mod's file by its
+full path, device included (`TLMOD002:/MEDIA/...`, the mod's file-map value). OGRE opens that name
+as absolute, in that mod's folder only. Data files whose textures go through the loader therefore
+name them that way:
+- unit `.dat`: `TEXTURE_OVERRIDE` and the `[TEXTURE_REPLACE]` blocks (readers `sub_8228B4B8`,
+  `sub_8228EBE8`, `sub_822B6A60`, `sub_822B6938`, `sub_822C7EF8`, through `sub_822BE668`);
+- the wardrobe's `[WARDROBE]` blocks and the class pieces (`WARDROBE_BASE`, `BOOTS_BASE` and the
+  rest; `sub_822DC6B0`, `sub_822DB728`);
+- the shared textures the game fetches through the loader (`media/sharedtextures/rimlight.dds`,
+  `highlight.dds`, `highlightred.dds`, `outlineblue.dds`, `outlinered.dds`) when a mod ships one.
+
+Enhanced Edition's town portal scroll (`TEXTURE_OVERRIDE`) showed it: the host found nothing for
+`TLMOD002:/...SCROLL_BLUE.DDS`. The host now looks such a name up in that device's folder only
+(`TLREPL:` in the replacements folder), as OGRE does. On PC the name is the absolute path into the
+mod's folder, and the mod's texture is shown the same way. These callers reach the loader too and
+handle textures or materials, but were not traced: `sub_822BE910`, `sub_822C57D8`, `sub_822DC570`,
+`sub_82319620`, `sub_822A9CC0`, `sub_82206CF8`, `sub_82210148`. The following do not go through
+the loader, so their names stay relative:
+- material scripts (their texture names are stripped of our device, 7j);
+- particle `.layout` textures;
+- CEGUI imagesets and UI icons, `SKILL_ICON`;
+- a level layout's light textures (`LIGHTMASK`, `RIMLIGHT` and the rest).
+
+**Validated (2026-10-12), automatic runs on copies of the saves, diagnostics build, texture check
+on:**
+
+| Run | Check | Result |
+|---|---|---|
+| 1. Town, sword save, a synthetic mod with a new material and its texture, and one repeating the town's materials with another texture | 0 differ (425 compared) | The swords drawn with the new texture. The repeated materials were ignored (300+): their texture never appears, and the buildings keep `TOWN_BUILDING_02.DDS`. |
+| 2. Mine's first floor, TNNR in the replacements folder | 0 differ | All 95 TNNR textures the game loaded have TNNR's size, none the pak's. Of the 94 that this save loads without TNNR and TNNR resizes, 93 loaded; the one missing was not part of that level, which varies between runs. |
+| 3. Same, TNNR as a mod | 0 differ | The pak's textures, and no `TLMOD` names. |
+| 4. The 29 mods | 0 differ | 29 groups, 5218 units. Repeated after the device fix: 0 differ. |
+| 5. Enhanced Edition | 2 differences (the scroll above), then 0 after the fix (336 compared) | The scroll's texture was loaded from the mod and the check agreed. It was not in the captured frame, so on screen it rests on the check and the frontend's tests. |
+| 6. Mine's first floor, without TNNR | 0 differ | Baseline for 2. |
+| 7. Replays of 1 and 2 without mods | — | 1 draws the green swords. 2 holds the whole TNNR file for each of the 39 TNNR textures it draws. |
+
+Saves made with mods (the sword's, the pack's, Enhanced Edition's) loaded with no unknown units and
+no save protection.
+
+**Memory and load time, run 2 against run 6** (one sample each, thermal state not recorded). Peaks
+were sampled once a second from outside the game. "Guest" is the resident part of the guest's
+memory mapping. "Host" is the rest of the process. GPU memory was read for the whole card (4 GB),
+the game being its only client.
+
+| | Guest | Host | GPU | Level load |
+|---|---|---|---|---|
+| Without TNNR | 331 MB | 682 MB | 112 MB | 3.7 s |
+| TNNR in replacements | 477 MB | 999 MB | 279 MB | 6.5 s |
+| TNNR as a mod | 345 MB | 699 MB | 112 MB | 4.7 s |
+
+TNNR in the replacements folder fit. No failure, failed allocation or texture left unloaded. The
+host's lookup is not on the game's load path: it lists the folders once at start, then makes one
+lookup per texture. The longer load comes from reading larger files: TNNR's textures are up to 8
+times larger per side, and as a mod only its meshes and layouts are read.
+
+The last check is the player's own, by hand.
+
+**Validated (2026-10-12): a mod's model at a pak path is still used.** Read first, in both
+builds: a unit's model is not named by a material script. The game asks the data loader for the
+mesh (PC `0x5b7fb0` → `0x5c2370`, Xbox `sub_8238FB60` → `sub_8239D5F8`), which looks in the active
+mods' file maps before the pak's groups. A mod's file comes back as its full path in the mod's
+folder (the map's value, `sub_823AA340`; `tlmod001:\media\...` here), and that is the name
+`createEntity` gets, with the group left to OGRE. OGRE takes that name as absolute (any `:` on
+Xbox, `sub_824B3640`; a drive letter on PC). A folder location only claims an absolute name that
+starts with its own path (`FileSystemArchive::exists`, PC OgreMain `0x100873e0`). So only the
+mod's own folder resolves it, whichever group holds that folder. A skeleton listed in a
+`.animation` file comes through the data loader the same way and is loaded in "General". OGRE then
+searches the other groups, so the skeleton still resolves to the mod's file. A skeleton that a
+`.mesh` names inside itself is looked up by its relative name in the mesh's group, now the mod's,
+then in the others in creation order, as on PC.
+Then checked in two automatic runs on copies of the test sword's save: a synthetic mod puts a
+two-hander's mesh at the base sword's path (`media/models/weapons/hacker/hacker.MESH`). With this
+branch and with develop (9877dc8, the mods also in "General"), both equipped swords are drawn with
+the two-hander's mesh (1188 vertices; the pak's sword has 432), the same draws in both captures.
+The swapped mesh was drawn without a texture, the same in both builds. The test mod was wrong, not
+the lookup. A mesh names its materials without a folder (`2handers_05` in the two-hander's, `weapon_hacker`
+in the sword's). The game's mesh listener prefixes the mesh's own folder from "MEDIA" (PC
+`0x5c1db0`, folder `0x5c6040`; Xbox `sub_8239A5B8`, `sub_823A13A8`). The material scripts are named
+the same way (script folder from "MEDIA" plus the name, `sub_8239B490`). So the moved mesh asked
+for `MEDIA/MODELS/WEAPONS/HACKER/2handers_05`, which exists nowhere, on PC too. The two-hander's
+material is `MEDIA/MODELS/WEAPONS/2HANDERS_05/2handers_05`. A mod's mesh reaches the listener
+upper-cased (the mods' file map values are, e.g. `TLMOD000:/MEDIA/UNITS/...` in the log), so the
+search for "MEDIA" (which tells case apart) finds it. The test mod now renames the mesh's material
+to `weapon_hacker`, the sword folder's own. Checked in an automatic run with this branch: both
+swords are drawn with the two-hander's mesh (1188 vertices) and `WEAPON_HACKER.DDS`.
 
 ## 8. Where mods go on our side
 
@@ -795,9 +974,11 @@ What exists today (`mods/mod_list.h`):
   for subfolders that are not mods.
 - `ParseModList(bytes, &error)` and `WriteModList(list)` read and write `mods.dat` in PC's format
   (`CHECKFORNEW`, then `DIRECTORY`, `PRIORITY`, `COMPRESSED` per mod). A negative `PRIORITY` turns a
-  mod off; the lower number wins when two mods change the same file.
+  mod off; the lower number wins when two mods change the same data file. Materials and textures
+  follow the file's order instead (7j); a list PC wrote is in priority order, so both agree.
 - `PlanMods(scan, list)` gives what the game will do: the load order (`ModPlan::mods`, the enabled
-  ones by priority, then the disabled ones) and the list to keep (`ModPlan::list`: folders gone are
+  ones by priority, then the disabled ones), the activation order of the mods' resource groups
+  (`ModPlan::activation`, `mods.dat`'s order) and the list to keep (`ModPlan::list`: folders gone are
   dropped, new ones added at the end). `list_changed` says it differs from the file.
 
 What the launcher would add on top, kept in the launcher (a thin layer over the above, no new state in

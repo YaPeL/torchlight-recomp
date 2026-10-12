@@ -209,6 +209,67 @@ inline constexpr GuestFunction kSettingsMenuOnCommand{0x82380C28, Confidence::kC
 // Called by the resources.cfg loader sub_8239B998 (@0x8239C574, @0x8239C5FC, @0x8239C6B0).
 inline constexpr GuestFunction kAddResourceLocation{0x8242AE30, Confidence::kConfirmed};
 inline constexpr GuestFunction kResourcesCfgLoader{0x8239B998, Confidence::kConfirmed};
+// [confirmed] ResourceGroupManager::initialiseResourceGroup(name): logs "Initialising resource
+// group " (@0x820DB170), throws "Cannot find a group named " when the group is missing, then parses
+// the group's scripts (sub_8242B730, which logs "Parsing scripts for resource group " @0x820DB6AC)
+// and creates its declared resources (sub_8242BED0), as in OgreResourceGroupManager.cpp 1.7,
+// lines 102-126. The resources.cfg loader calls initialiseAllResourceGroups (sub_82429D78)
+// itself, so a group made after it stays uninitialised until this is called.
+inline constexpr GuestFunction kInitialiseResourceGroup{0x82429C98, Confidence::kConfirmed};
+// [confirmed] ResourceGroupManager::initialiseAllResourceGroups: parses every uninitialised group's
+// scripts (calls sub_8242B730). Called by the resources.cfg loader (@0x8239C8C8) after its
+// locations are added (the last @0x8239C6B0) and the data manager's group list (data_manager
+// below) is filled (@0x8239C390, @0x8239C48C); otherwise only from two ResourceBackgroundQueue
+// methods nothing calls directly.
+inline constexpr GuestFunction kInitialiseAllResourceGroups{0x82429D78, Confidence::kConfirmed};
+
+// [confirmed] The data manager's OGRE groups, the ones resources.cfg's archives are in ("0ZIP0",
+// "ZIP"): a vector of std::string (stride 0x1C) at +76, count +80, capacity +84, as the data loader
+// walks it in sub_8239D0E8 (addi r30,r27,76; lwz 8(r30) bound; addi r28,r28,28).
+namespace data_manager {
+inline constexpr Field kGroupsData{76, Confidence::kConfirmed};
+inline constexpr Field kGroupsCount{80, Confidence::kConfirmed};
+inline constexpr uint32_t kGroupStride = 0x1C;
+}  // namespace data_manager
+
+// [confirmed] The game's ScriptCompilerListener::handleEvent (Runic's): this r3, compiler r4,
+// event r5, retval r6; returns whether it handled the event. Two events, compared by their type
+// string (event +4, OgreScriptCompiler.cpp 1.7 lines 1658-1666):
+// - "createMaterial" (@0x820D2C3C): the material's name is the script's folder (event
+//   kMaterialFile, upper case) with anything before "MEDIA" dropped (@0x8239B5E0), plus the
+//   material's name (kMaterialName, @0x8239B644). When a material of that name exists
+//   (MaterialManager slot 22, @0x8239B664) it RETURNS THAT ONE, and the script is compiled over it;
+//   only otherwise does it call create (kResourceManagerCreate, @0x8239B6C4). PC's listener
+//   (Torchlight.exe 0x5C31E0) always calls create, which OGRE leaves unregistered when the name
+//   exists (addImpl, no loading listener), so on PC the first definition is kept. Scripts whose
+//   compiler +52 starts with 'D' or 'd' are left alone (@0x8239B4FC, @0x8239B514).
+// - "processResourceName" (@0x820D2C4C), for a texture (kResourceKind 0): sub_8239A7F8 rebuilds
+//   kResourceName from the script's full path, so a script on one of our devices names its textures
+//   "TLMOD000:/MEDIA/..." where PC's names start at "MEDIA/".
+inline constexpr GuestFunction kScriptListenerHandleEvent{0x8239B490, Confidence::kConfirmed};
+namespace script_event {
+inline constexpr Field kType{4, Confidence::kConfirmed};             // std::string
+inline constexpr Field kMaterialFile{32, Confidence::kInferred};     // std::string, createMaterial
+inline constexpr Field kMaterialName{60, Confidence::kConfirmed};    // std::string, createMaterial
+inline constexpr Field kMaterialGroup{88, Confidence::kConfirmed};   // std::string, createMaterial
+inline constexpr Field kResourceKind{32, Confidence::kConfirmed};    // processResourceName, 0 = texture
+inline constexpr Field kResourceName{36, Confidence::kConfirmed};    // std::string, processResourceName
+inline constexpr uint32_t kTextureKind = 0;
+}  // namespace script_event
+// [confirmed] Ogre::MaterialManager singleton pointer (lis r30,-31920; lwz r4,26516(r30) in the
+// listener, @0x8239B65C).
+inline constexpr uint32_t kMaterialManagerGlobal = 0x83506794;
+// [confirmed] ResourceManager::create (sub_824C8FC8), MaterialManager vtable 0x82002DEC slot 4:
+// r3 the returned SharedPtr (16 bytes, the pointer at +4), r4 this, then name, group, isManual,
+// loader, params. Every call adds one to mNextHandle, a 64-bit value at +112 (ld @0x824C8FE8,
+// std @0x824C8FF4), before createImpl; addImpl drops a resource whose name exists, and
+// _notifyResourceCreated keeps it alive in its group's list (OgreResourceGroupManager.cpp 1.7,
+// lines 1124-1139).
+inline constexpr VtableSlot kResourceManagerCreate{4, Confidence::kConfirmed};
+inline constexpr Field kResourceManagerNextHandle{112, Confidence::kConfirmed};
+// [confirmed] SharedPtr<Material>'s destructor, as the listener releases its own (@0x8239B684,
+// @0x8239B6DC).
+inline constexpr GuestFunction kMaterialPtrRelease{0x8220D490, Confidence::kConfirmed};
 
 // [confirmed] How the game's data loader (sub_8239D5F8) finds a file, in sub_8239D0E8: the mods'
 // file maps first; then, when the data manager's +16 is set (it is), OGRE's resourceExists over the
@@ -221,6 +282,21 @@ inline constexpr GuestFunction kResourcesCfgLoader{0x8239B998, Confidence::kConf
 // exactly as the game asks for it: in upper case when it goes through this loader (the unit index,
 // mods/unit_cache.h UnitIndexFileName), with the game's own spelling when the game asks by its own
 // name through CEGUI or OGRE (our layout, the widened layouts, which keep the pak's names).
+
+// [confirmed] Where a resource's file is opened, for the mods' texture check (docs/mods.md 7j,
+// mods_install.cpp behind TORCHLIGHT_MODS_DIAGNOSTICS):
+// - ResourceGroupManager::openResource (OgreResourceGroupManager.cpp 1.7): r3 the returned
+//   DataStreamPtr, r4 this, r5 the resource name (std::string), r6 the group, r7
+//   searchGroupsIfNotFound, r8 resourceBeingLoaded (prologue @0x8242B070-@0x8242B08C; "Cannot locate
+//   resource " @0x820DB61C). Not found in its group, it calls itself for the group that has the file.
+// - FileSystemArchive::open ("FileSystemArchive::open" @0x820E5E10) and ZipArchive::open (" - Unable
+//   to open file " @0x820E8710): r3 the returned DataStreamPtr, r4 this, r5 the file name
+//   (std::string). The archive's name (Archive::mName, a std::string) is at this+4: concatenate_path
+//   (mName, filename) @0x824B3D5C; mName + " - Unable to open file " @0x824BD460.
+inline constexpr GuestFunction kOpenResource{0x8242B070, Confidence::kConfirmed};
+inline constexpr GuestFunction kFileSystemArchiveOpen{0x824B3D48, Confidence::kConfirmed};
+inline constexpr GuestFunction kZipArchiveOpen{0x824BD3D0, Confidence::kConfirmed};
+inline constexpr Field kArchiveName{4, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // Calling into the guest from a hook (on the game's thread: CEGUI is not thread-safe).

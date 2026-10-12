@@ -154,10 +154,19 @@ int main() {
             "enabled by priority, the new one after the highest");
       Check(plan.mods[2].priority == 6, "new mod: highest + 1");
       Check(plan.mods[3].folder == "d_mod" && plan.mods[3].priority == -1, "disabled mod registered last");
+      // Activation follows mods.dat (b, A), then the new folder (c); the disabled one is left out.
+      Check(plan.activation == std::vector<size_t>{1, 0, 2}, "activation in mods.dat's order, not by priority");
     }
     list.check_for_new = false;
     plan = PlanMods(scan, list);
     Check(plan.mods.size() == 3, "without CHECKFORNEW new folders are not added");
+
+    // A list in priority order, as PC writes it: activation and registration orders agree.
+    ModList sorted;
+    sorted.check_for_new = false;
+    sorted.entries = {{"A_mod", 0, false}, {"b_mod", 1, false}, {"c_mod", 2, false}};
+    plan = PlanMods(scan, sorted);
+    Check(plan.activation == std::vector<size_t>{0, 1, 2}, "a sorted list activates in priority order");
 
     // mods.dat in another case than the folders (PC writes its paths in upper case): the plan has
     // the folders as they are on disk, the list keeps what was written.

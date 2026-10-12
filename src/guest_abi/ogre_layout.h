@@ -452,6 +452,9 @@ inline constexpr Field kLockOptions{0x10, Confidence::kConfirmed};
 namespace resource {
 // [confirmed] Resource::getName (Texture vtable slot 22, 0x824E5010) returns this+0x2C.
 inline constexpr Field kName{0x2C, Confidence::kConfirmed};
+// [confirmed] Resource::getGroup (Texture vtable slot 33, 0x824E51D8) returns this+0x48: mGroup,
+// the resource group the resource was loaded in (OgreResource.h:146), a std::string.
+inline constexpr Field kGroup{0x48, Confidence::kConfirmed};
 // [confirmed] getHandle (slot 23, 0x824312E0) loads a u64 from +0x68.
 inline constexpr Field kHandle{0x68, Confidence::kConfirmed};
 // [confirmed] getLoadingState (slot 27, 0x821910A8) loads +0x70.
