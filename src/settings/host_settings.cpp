@@ -424,8 +424,8 @@ std::string Serialize(const HostSettings& settings) {
       << "# Aspect ratio of the game's frame: \"auto\" (the display's), \"4:3\", \"16:10\",\n"
       << "# \"16:9\", \"21:9\" or \"32:9\"; takes effect after a restart.\n"
       << "aspect = " << Quote(AspectName(settings.aspect)) << "\n"
-      << "# Achievement set: \"xbox\" (the game's 12, the default) or \"pc\" (the PC version's,\n"
-      << "# incomplete); takes effect after a restart.\n";
+      << "# Achievement set: \"xbox\" (the game's 12, the default) or \"pc\" (the PC version's\n"
+      << "# 66); takes effect after a restart.\n";
   if (settings.achievements) {
     out << "achievements = " << Quote(std::string(AchievementSetName(*settings.achievements)))
         << "\n";

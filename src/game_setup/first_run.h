@@ -19,7 +19,7 @@ bool EnsureGameData(const std::filesystem::path& game_dir,
                     std::vector<platform::StartupMessage>& log);
 
 // The achievement set (settings::AchievementSet), asked once: when settings.toml has no
-// "achievements" key yet, a message box offers Xbox 360 and PC (incomplete), and the choice is saved
+// "achievements" key yet, a message box offers Xbox 360 and PC, and the choice is saved
 // there (closing the box keeps the default, Xbox 360, and saves it too). Before the host settings
 // are read for the rest of the startup.
 void EnsureAchievementChoice(std::vector<platform::StartupMessage>& log);

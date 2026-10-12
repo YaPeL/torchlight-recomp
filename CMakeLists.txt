@@ -153,6 +153,7 @@ add_subdirectory(tools/synthetic_capture)
 add_subdirectory(tools/replay)
 add_subdirectory(tools/run_capped)
 add_subdirectory(tools/translations)
+add_subdirectory(tools/achievement_coverage)
 add_subdirectory(tests/save_convert)
 
 if(TORCHLIGHT_GAME)

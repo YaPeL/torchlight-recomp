@@ -66,7 +66,7 @@ class PcList : public rex::ui::ImGuiDialog {
     ImGui::SetNextWindowSize(ImVec2(640.0f, 560.0f), ImGuiCond_FirstUseEver);
     ImGui::SetNextWindowBgAlpha(0.92f);
     bool close = CloseRequested();
-    const std::string title = Translate("Achievements (PC, incomplete)") + "##pc_achievements";
+    const std::string title = Translate("Achievements (PC)") + "##pc_achievements";
     if (ImGui::Begin(title.c_str(), nullptr, ImGuiWindowFlags_NoCollapse)) {
       ImGui::Text("%s: %d / %d", Translate("Unlocked").c_str(), unlocked, available);
       ImGui::ProgressBar(available ? float(unlocked) / available : 0.0f, ImVec2(-1.0f, 6.0f), "");
