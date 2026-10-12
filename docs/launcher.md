@@ -295,6 +295,13 @@ every start is every file of the table with its size plus `default.xex` by SHA-2
 window waits for the keys and buttons held to be released; the colors are black and phosphor
 green until the design review. Pending: step 6, the design review, the asynchronous pickers.
 
+**Next iteration (decided 2026-10-12):** the branch stays as it is, not integrated. Left for then:
+step 6 by hand (Windows first: package, folder, cancel, a bad package, the fallback browser in
+`launcher_preview --browser`; then Sandbox, Linux, the Deck) together with the design review; a
+durable install-complete marker written last by the install (once `feature/durable-writes` is in
+`develop`), checked together with `QuickCheckGameFolder`; and stage 5, the Steam shortcut (section
+7).
+
 **Risks**:
 - **ImGui twice in the process**: checked on 2026-10-08, there is one copy and the launcher must
   not add another. The SDK builds ImGui 1.92.5 (`thirdparty/imgui` at `6d910d5`, an OBJECT library
@@ -434,3 +441,37 @@ The launcher shows these previews before writing anything, and the user can leav
 **Risks**: the binary format is undocumented (the tools above agree on it). A wrong write could
 lose the user's other shortcuts, hence the backup, the temporary file and the round-trip test.
 Steam's views and caches change without notice. Flatpak and Snap Steam sandboxes.
+
+**Order of work (proposed 2026-10-09, to be approved in the next iteration)**, one commit per step
+on a branch from the launcher's:
+
+0. **Check with a real Steam first**: a non-Steam game added by hand through Steam's own interface,
+   so that Steam writes `shortcuts.vdf` itself (field order, types, key case); then, with the
+   user's approval and a backup of `config/`, test images in `grid/` to see which view uses each
+   one (library, Big Picture, the logo's JSON). Seen on the Windows machine (read only,
+   2026-10-09): `HKCU\Software\Valve\Steam\SteamPath` exists; `userdata` holds one account besides
+   `0`; there was no `shortcuts.vdf` yet.
+1. **`src/steam/shortcuts_vdf`** (pure): the binary VDF read into a tree that keeps order, types and
+   unknown fields and writes it back byte for byte; our entry added, replaced or removed by `Exe`
+   (keys compared without case), indices renumbered; the id as `crc32(Exe + AppName) | 0x80000000`
+   with its own CRC32. Tests: round trip of a file with several entries and unknown fields, and
+   ids against values computed separately.
+2. **Finding Steam and the account**: the folders per platform (Windows: the registry, else
+   `%ProgramFiles(x86)%\Steam`; Linux: `~/.steam/steam`, `~/.local/share/Steam`, Flatpak under
+   `~/.var/app/com.valvesoftware.Steam`, Snap under `~/snap/steam`, the last two marked sandboxed;
+   macOS by its agent); the accounts are the numeric `userdata` folders but `0`, named from
+   `loginusers.vdf` (a text VDF reader; SteamID64 minus 76561197960265728). Tests over a fake tree.
+3. **Steam running or not** (platform module, from the process list) and the close-and-reopen the
+   user chooses (`steam -shutdown`, or `flatpak run com.valvesoftware.Steam -shutdown`; wait up to
+   20 s; write; start it again with `-silent`). A test of the states; the real close by hand.
+4. **The executable Steam starts**: Windows `torchlight.exe`, quoted, its folder as `StartDir`;
+   Linux the `.AppImage` named by `APPIMAGE` (set by the AppImage runtime; read, not ours), else
+   the installed executable, never the temporary mount. A sandboxed Steam that cannot see that path
+   gets an explanation with the `flatpak override` command it would need, never run for the user.
+5. **The art** (pure but for SDL's PNG load and save): the table above, with tests on synthetic
+   images (a known DXT1 block, the crop geometry, the output sizes).
+6. **The page** "Add to Steam" from Ready: previews with a check box each, the account, the notice
+   and the close-and-add or cancel, update and remove, Game Mode's images-only case; texts in
+   `data/ui` (de, fr, es); tests with fake Steam services over a temporary tree.
+7. **By hand**: Windows with the user's Steam (a backup of `config/` and the user's approval before
+   each write), then Linux native and Flatpak, the Deck in both modes, macOS by its agent.
