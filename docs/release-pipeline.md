@@ -562,7 +562,23 @@ new things a player can use, and bugs are fixes to behaviour a previous release 
 something new in the same release is part of that feature, not a bug. At each freeze the integrator
 proposes both lists and the number, and the owner confirms them before the tag. The release notes
 are the CHANGELOG's player-facing part, with its known limitations and the platforms' first-start
-steps (SmartScreen, Gatekeeper).
+steps (SmartScreen, Gatekeeper), written into `release.yml`'s draft step at each freeze.
+
+Example, the release after `v0.1.0-beta` (2026-10-12): six features (macOS; PC mods, with their
+textures, the save protection and the mods' achievements; the replacements folder; the guest D3D
+skip on by default; the frame counter with presented and dropped frames; the other performance
+work) take X from 1 to 7 and Y back to 0; six fixes to the beta's behaviour (16-bit colour on
+Wayland; saves not reaching the disk; a renamed save leaving its old spelling behind on Linux; a
+crash hanging instead of ending; the log folder growing without limit; a renderer that could not
+start crashing instead of saying why) take Y to 6: **`v0.7.6-beta`**. Fixes to things new in the
+same iteration were not counted.
+
+Validation before the release: the freeze is merged into `main` and tagged as a release candidate
+(`v0.7.6-beta.rc1`), whose run leaves a draft release with the three platforms' packages, never
+published. A draft is invisible to anyone without write access and is not the README badge's
+latest release. Fixes found there go through `develop` into `main` again; the final tag
+(`v0.7.6-beta`) makes the draft that is published, and the candidate's draft is deleted (its tag
+stays).
 
 ## Sources
 

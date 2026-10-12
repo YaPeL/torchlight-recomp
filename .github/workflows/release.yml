@@ -472,12 +472,41 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The release's notes: the player-facing part of its CHANGELOG section, with the known
+          # limitations and the first-start steps (docs/release-pipeline.md 5.10). Updated at each freeze.
           cat > notes.md <<'NOTES'
           Linux, Windows and macOS (Apple Silicon) beta. Needs your own copy of Torchlight for Xbox Live Arcade (asked for on the first start).
 
+          **New**
+          - **PC mods.** Mods made for Torchlight on PC load: put each mod folder in the `mods` folder next to your saves; the order comes from PC's `mods.dat`. New items, monsters and changed data work, and mods' textures and models show as on PC. Your saves are backed up when the set of mods changes, and items from a removed mod are taken out with a notice. Every PC achievement can be earned now, including the ones for playing with mods. See the [mods guide](https://github.com/YaPeL/torchlight-recomp/blob/main/docs/mods-guide.md).
+          - **Texture packs**: packs meant to be copied into PC's `Pak.zip` go in the new `replacements` folder.
+          - **macOS** on Apple Silicon (M1 or later, macOS 13.3 or later), as a `.dmg`.
+          - **Faster**: higher frame rates, above all in fights and in the town. The native renderer no longer does the Xbox graphics chip's work, and off-screen parts of the level are not drawn.
+          - **Frame counter (F3)**: frame rate, 1 % low, long frames, and the frames that reach the screen.
+
+          **Fixed**
+          - Wayland showed the game with 16-bit colour.
+          - A save could be lost to a crash or power loss right after saving.
+          - On Linux, a save renamed to another spelling left the old file behind.
+          - A crash left the game hung instead of ending it.
+          - The log folder grew without limit (now 50 MB a run, 200 MB in all).
+          - When the renderer could not start, the game crashed instead of saying why.
+
+          **Known limitations**
+          - A class added by a mod is not offered at character creation.
+          - Mods' new affixes and level pieces are not added yet, mods must be unpacked folders, and mods are chosen by editing `mods.dat`.
+          - Most PC achievements have not been earned in actual play yet.
+          - Untested on the Steam Deck.
+          - Android and a launcher come in the next iteration.
+
           **Windows:** the zip is not code-signed, so the first start may show SmartScreen's "Windows protected your PC". That is Windows being cautious with programs it has not seen downloaded often, not a detection of anything harmful: click **More info**, then **Run anyway**.
 
-          **macOS:** the app is not signed or notarized by Apple, so the first start says "Apple could not verify “Torchlight Recomp.app” is free of malware". That is macOS refusing apps from developers without a paid Apple account, not a detection of anything harmful: click **Done**, then in **System Settings → Privacy & Security** click **Open Anyway**, and **Open Anyway** again in the warning that follows. Step by step, and how to play with the keyboard: [README](https://github.com/YaPeL/torchlight-recomp#macos).
+          **macOS:** the app is not signed or notarized by Apple. That is macOS refusing apps from developers without a paid Apple account, not a detection of anything harmful. To open it the first time:
+          1. Drag **Torchlight Recomp** from the `.dmg` to **Applications** and double-click it. macOS says Apple could not verify it is free of malware: click **Done** (not Move to Trash).
+          2. In **System Settings → Privacy & Security**, click **Open Anyway** next to the message about Torchlight Recomp.
+          3. The warning comes back with an **Open Anyway** button: click it and confirm with your password or Touch ID.
+
+          Later starts open directly. Playing with the keyboard: see the [README](https://github.com/YaPeL/torchlight-recomp#macos).
 
           `SHA256SUMS` lists the checksum of every file.
           NOTES
