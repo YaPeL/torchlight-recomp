@@ -56,8 +56,8 @@ details after them.
 
 ### Achievements
 
-- The PC achievement set is complete: all 66 can be earned. The choice is shown as "PC", no longer
-  "PC (incomplete)".
+- Every PC achievement can be earned now, including the ones for playing with mods (1, 5 and 10
+  mods), so the PC set is no longer marked incomplete: the choice is shown as "PC".
 
 ### Fixed
 

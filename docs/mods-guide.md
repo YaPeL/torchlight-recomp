@@ -7,9 +7,9 @@ them and what to expect. The technical notes are in [mods.md](mods.md).
 
 Put each mod in its own folder inside the `mods` folder, next to your saves:
 
-| | Linux | Windows |
-|---|---|---|
-| Mods | `~/.local/share/TorchlightRecomp/mods/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\mods\` |
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Mods | `~/.local/share/TorchlightRecomp/mods/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\mods\` | `~/Library/Application Support/TorchlightRecomp/mods/` |
 
 Copy each mod folder as it is on PC (under `Runic Games/Torchlight/mods/`), with its `media`
 folder inside. A mod's `mod.dat` (its name and author) is optional, as on PC. Mods must be unpacked
@@ -34,9 +34,9 @@ loaded keeps it.
 
 Put those packs in the `replacements` folder instead, next to `mods`:
 
-| | Linux | Windows |
-|---|---|---|
-| Replacements | `~/.local/share/TorchlightRecomp/replacements/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\replacements\` |
+| | Linux | Windows | macOS |
+|---|---|---|---|
+| Replacements | `~/.local/share/TorchlightRecomp/replacements/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\replacements\` | `~/Library/Application Support/TorchlightRecomp/replacements/` |
 
 Copy the pack's `media` folder inside it, so the files keep the game's paths (for example
 `replacements/media/levelsets/...`). Files there are used instead of the game's at the same path, as
