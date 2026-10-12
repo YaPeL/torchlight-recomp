@@ -63,6 +63,10 @@ struct ModPlan {
   // registered mod the next priority (kAddMod), so this order is the load order; the disabled
   // ones get their negative priority written afterwards.
   std::vector<PlannedMod> mods;
+  // Activation order (indices into mods, enabled mods only): mods.dat's order, new folders last,
+  // whatever the priorities. PC activates each mod (its OGRE resource group) as it reads its
+  // entry (Torchlight.exe 0x5ce440 -> 0x5cd150 -> 0x5cce30); a list PC wrote is in priority order.
+  std::vector<size_t> activation;
   ModList list;               // mods.dat to keep: unknown folders dropped, new ones added
   bool list_changed = false;  // write it back
 };

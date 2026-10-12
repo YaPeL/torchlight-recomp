@@ -277,11 +277,10 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
 #endif
   // As PC does (docs/mods.md 7j): each active mod's folder goes only into the mod's own resource
   // group (guest_abi mods.h, mod::kResourceGroup; OGRE makes the group when a location is added to
-  // it), which is then initialised, after the game's groups and in priority order. Its scripts
-  // are parsed then; a material named like one already registered is dropped by OGRE, so the
-  // game's own materials, and their textures from the pak, are kept.
-  for (size_t i = 0; i < g_plan.mods.size(); ++i) {
-    if (g_plan.mods[i].priority < 0) continue;
+  // it), which is then initialised, after the game's groups and in mods.dat's order (ModPlan
+  // activation). Its scripts are parsed then; a material named like one already registered is
+  // dropped by OGRE, so the game's own materials, and their textures from the pak, are kept.
+  for (const size_t i : g_plan.activation) {
     const std::string location = hooks::ModDeviceLink(i) + "\\";
     const uint32_t mod = i < count ? call.ReadU32(list + 4 * i) : 0;
     const std::string group = mod ? abi::ogre::ReadString(base, mod + mods_abi::mod::kResourceGroup.offset, 256) : "";
