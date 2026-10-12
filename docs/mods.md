@@ -852,8 +852,8 @@ Then checked in two automatic runs on copies of the test sword's save: a synthet
 two-hander's mesh at the base sword's path (`media/models/weapons/hacker/hacker.MESH`). With this
 branch and with develop (9877dc8, the mods also in "General"), both equipped swords are drawn with
 the two-hander's mesh (1188 vertices; the pak's sword has 432), the same draws in both captures.
-The swapped mesh is drawn without a texture in both builds. That comes from the test content, not
-from the groups: the mesh names its own material, which the item does not resolve.
+The swapped mesh is drawn without a texture, the same in both builds, so it does not depend on
+the groups. Why was not looked into: the mesh names the two-hander's material, not the sword's.
 
 ## 8. Where mods go on our side
 
