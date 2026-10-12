@@ -642,6 +642,39 @@ the backend's vsync on with the cap set to unlimited. The guest then runs unpace
 display presents 60 frames a second and drops about two thirds of them; backpressure could save
 CPU and temperature there (battery on the Steam Deck). Not measured.
 
+### Stage 2 closed: the reference run (2026-10-11)
+
+develop `ad2f22c` as it stays (the guest D3D skip on by default: class A render states, the
+texture matrix, the sampler states and the draws and bindings), the reference route by hand with
+the step overlay, the fixed-floor saved game, no frame cap, vsync off, the 55 C cool-down, power
+profile performance; the package at 82 C in every step:
+
+| Step | Game fps (1 % low) | Presented fps (1 % low) | Dropped | Game process CPU | Clock |
+|---|---|---|---|---|---|
+| Main menu, hands off | 368.7 (274.0) | 238.3 (104.0) | 1305 | 2.7 cores | 3060 MHz |
+| Dungeon, still | 225.6 (164.5) | 202.5 (135.5) | 231 | 2.6 cores | 3207 MHz |
+| Dungeon, fight | 180.1 (125.8) | 167.7 (108.2) | 497 | 2.4 cores | 3164 MHz |
+| Town square | 144.4 (105.3) | 141.7 (99.0) | 106 | 2.3 cores | 3163 MHz |
+
+For comparison, the first hand run on this route (2026-10-10, the skip off by default): fight 169.5
+game / 161.5 presented, town square 137.7 / 134.0. Single runs on a laptop under its thermal limit
+move by several percent; the gain of the stage's last steps is the skip on by default (the hand
+runs of 2026-10-11 in docs/native-skip-guest-d3d.md: +4-9 % presented).
+
+What is left for later, each documented where it was evaluated:
+
+- **The two-stage backend pipeline** (above, "Paused"): on this laptop the reference route is
+  limited by the guest's thread, not the backend; it waits for a machine where the backend falls
+  behind on the real route.
+- **The buffer bindings** (`setVertexBufferBinding`, slot 85; docs/native-skip-guest-d3d.md, class
+  B): not read yet; after steps c and d brought nothing measurable here, it goes with a machine
+  that can show small gains.
+- **Backpressure with vsync and no frame cap** (above): the one case where the guest makes frames
+  that are dropped (about two thirds at 60 Hz); it could save CPU and battery (the Steam Deck).
+- **OGRE 14's interface** (the optimization list, item 8): not evaluated.
+- Also written down: the swap-to-presented latency with vsync is 42-49 ms (about three refreshes),
+  worth its own look; the device `SetTexture` skip and step d are discarded (no gain).
+
 ### Present wait and drops on other machines: what to measure
 
 On this laptop the present's wait is the compositor's and the PRIME copy's pacing, so it says
