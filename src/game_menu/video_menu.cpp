@@ -209,7 +209,7 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
   InstallWideLayouts(runtime, game_data_root);
 }
 
-// One FileSystem location in the default group; false on failure (video_menu.h).
+// One FileSystem location in a group (the default one unless told); false on failure (video_menu.h).
 bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive, const std::string& group_name) {
   const uint32_t manager = call.ReadU32(ui::kResourceGroupManagerGlobal);
   const uint32_t mark = call.Mark();
@@ -223,6 +223,18 @@ bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recurs
   call.DestroyStdString(group);
   call.DestroyStdString(type);
   call.DestroyStdString(name);
+  call.Release(mark);
+  return ok;
+}
+
+// One resource group initialised; false on failure (video_menu.h).
+bool InitialiseResourceGroup(GuestCall& call, const std::string& group_name) {
+  const uint32_t manager = call.ReadU32(ui::kResourceGroupManagerGlobal);
+  const uint32_t mark = call.Mark();
+  const uint32_t group = call.StdString(group_name);
+  const bool ok = manager && group;
+  if (ok) call.Call(ui::kInitialiseResourceGroup.address, {manager, group});
+  call.DestroyStdString(group);
   call.Release(mark);
   return ok;
 }
@@ -393,7 +405,8 @@ REX_FUNC(sub_8239B998) {
   const uint32_t data_manager = ctx.r3.u32;
   __imp__sub_8239B998(ctx, base);
   torchlight::game_menu::AddResourceLocations(ctx, base);
-  // The player's mods (mods_install.h), after the locations above: the last one added wins.
+  // The player's mods (mods_install.h): each in its own resource group, initialised after the
+  // game's groups, as on PC.
   torchlight::game_menu::RegisterMods(ctx, base, data_manager);
 }
 

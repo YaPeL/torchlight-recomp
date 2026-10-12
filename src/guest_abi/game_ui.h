@@ -209,6 +209,13 @@ inline constexpr GuestFunction kSettingsMenuOnCommand{0x82380C28, Confidence::kC
 // Called by the resources.cfg loader sub_8239B998 (@0x8239C574, @0x8239C5FC, @0x8239C6B0).
 inline constexpr GuestFunction kAddResourceLocation{0x8242AE30, Confidence::kConfirmed};
 inline constexpr GuestFunction kResourcesCfgLoader{0x8239B998, Confidence::kConfirmed};
+// [confirmed] ResourceGroupManager::initialiseResourceGroup(name): logs "Initialising resource
+// group " (@0x820DB170), throws "Cannot find a group named " when the group is missing, then parses
+// the group's scripts (sub_8242B730, which logs "Parsing scripts for resource group " @0x820DB6AC)
+// and creates its declared resources (sub_8242BED0), as in OgreResourceGroupManager.cpp 1.7,
+// lines 102-126. The resources.cfg loader calls initialiseAllResourceGroups (sub_82429D78)
+// itself, so a group made after it stays uninitialised until this is called.
+inline constexpr GuestFunction kInitialiseResourceGroup{0x82429C98, Confidence::kConfirmed};
 
 // [confirmed] How the game's data loader (sub_8239D5F8) finds a file, in sub_8239D0E8: the mods'
 // file maps first; then, when the data manager's +16 is set (it is), OGRE's resourceExists over the
