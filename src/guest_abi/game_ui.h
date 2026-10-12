@@ -214,7 +214,8 @@ inline constexpr GuestFunction kResourcesCfgLoader{0x8239B998, Confidence::kConf
 // the group's scripts (sub_8242B730, which logs "Parsing scripts for resource group " @0x820DB6AC)
 // and creates its declared resources (sub_8242BED0), as in OgreResourceGroupManager.cpp 1.7,
 // lines 102-126. The resources.cfg loader calls initialiseAllResourceGroups (sub_82429D78)
-// itself, so a group made after it stays uninitialised until this is called.
+// itself, so a group made after it stays uninitialised until this is called. Not called for the
+// mods: it let a mod's materials replace the game's (docs/mods.md 7j).
 inline constexpr GuestFunction kInitialiseResourceGroup{0x82429C98, Confidence::kConfirmed};
 
 // [confirmed] How the game's data loader (sub_8239D5F8) finds a file, in sub_8239D0E8: the mods'

@@ -275,11 +275,11 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   LogModFileMaps(base, manager);
 #endif
-  // As PC does (docs/mods.md 7j): each active mod's folder goes only into the mod's own resource
-  // group (guest_abi mods.h, mod::kResourceGroup; OGRE makes the group when a location is added to
-  // it), which is then initialised, after the game's groups and in mods.dat's order (ModPlan
-  // activation). Its scripts are parsed then; a material named like one already registered is
-  // dropped by OGRE, so the game's own materials, and their textures from the pak, are kept.
+  // Each active mod's folder goes only into the mod's own resource group (guest_abi mods.h,
+  // mod::kResourceGroup; OGRE makes the group when a location is added to it), in mods.dat's order
+  // (ModPlan activation), as PC does. A file OGRE does not find in the group it is asked for is
+  // looked up in the other groups, which is how a mod's new files are found. Unlike PC, the group is
+  // not initialised: doing it let a mod's materials replace the game's (docs/mods.md 7j).
   for (const size_t i : g_plan.activation) {
     const std::string location = hooks::ModDeviceLink(i) + "\\";
     const uint32_t mod = i < count ? call.ReadU32(list + 4 * i) : 0;
@@ -292,11 +292,7 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
       REXLOG_ERROR("mods: cannot add {} to resource group \"{}\"", location, group);
       continue;
     }
-    if (InitialiseResourceGroup(call, group)) {
-      REXLOG_INFO("mods: {} in resource group \"{}\", initialised", location, group);
-    } else {
-      REXLOG_ERROR("mods: cannot initialise resource group \"{}\"", group);
-    }
+    REXLOG_INFO("mods: {} in resource group \"{}\"", location, group);
   }
 }
 
