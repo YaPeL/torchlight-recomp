@@ -496,6 +496,25 @@ show, with Direct3D 11 (chosen in the Video column; host settings `render_system
 3. If either differs, the log and both captures, and `--native_skip_guest_d3d=false` as the way
    back until it is understood.
 
+**Checked on Windows (2026-10-12)**: develop `71ecd73` (with the mods' integration), SDK base
+`bd833a2` with `patches/series`, Release; the user's settings untouched: `render_system = ""` is
+Direct3D 11 on Windows when its plugin is installed (the first of the list,
+`src/live/install.cpp`; OGRE's log says `RenderSystem Name: Direct3D11 Rendering Subsystem`). Two
+runs by hand, the same saved game (in the town), an F9 capture each:
+
+- **A, the default**: the log says `guest D3D: skipped for the device-only calls (sampler states,
+  draws, bindings) (--native_skip_guest_d3d=true, native mode on)`; 278 draws; quit to the
+  dashboard normally.
+- **B, `--native_skip_guest_d3d=false`**: `guest D3D: runs in full`; 279 draws.
+- Neither log has a new error or a fault (only `ResolvePath(SAVE:\)`, as many times as in the runs
+  before).
+- **Replayed on Direct3D 11 and compared** (`capture_dump --draws`, addresses removed): the 117
+  kinds of draw in both captures (program, textures and target) have identical states (blend,
+  depth function, culling, viewport). The 7 kinds only in A and 5 only in B are what moves: NPCs
+  walking, the water's animation frame, particles. The render target names differ only in the
+  address part, as expected above. Both images show the same scene without defects; the camera
+  stood about 100 pixels apart, so they were compared by states, not pixel by pixel.
+
 ## Steps c and d: tried, discarded (2026-10-11)
 
 Step c (the device's `SetTexture`, branch `feature/skip-settexture`) and step d (the shader and
