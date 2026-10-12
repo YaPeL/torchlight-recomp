@@ -460,6 +460,9 @@ only).
 5. **The patched SDK and OGRE are published as prebuilt downloads** (no game content).
 6. **Windows**: no signing, with `SHA256SUMS` and the build attestation (confirmed for the beta on
    2026-10-06; the README and the release notes explain SmartScreen's prompt and how to pass it).
+7. **macOS** (decided 2026-10-08, for the beta): no signing and no notarization either, with
+   `SHA256SUMS` and the build attestation; the README and the release notes explain Gatekeeper's
+   "Open Anyway" step by step (`docs/macos-port.md`, section 6).
 
 **Scope**: first a Linux-only beta (AppImage). Windows is added when the port is ready; the owner
 announces it.
