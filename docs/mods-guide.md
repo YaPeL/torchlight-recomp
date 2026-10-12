@@ -59,7 +59,7 @@ Changes take effect the next time the game starts.
 
 - New affixes (the extra properties of magic items) and new level pieces from mods: the game ships
   these tables prebuilt and they are not rebuilt yet.
-- Replaced textures: the game loads them, but the screen still shows the original ones.
+- Replaced textures: the screen still shows the original ones.
 - Mods that are compressed archives instead of folders.
 - Choosing which mods to use from inside the game: edit `mods.dat` for now.
 

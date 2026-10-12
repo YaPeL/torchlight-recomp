@@ -690,17 +690,25 @@ materials and 255 compiled layouts at the same paths as the game's. Checked in a
 mod's resource group) are used. Its textures are not: the 92 textures of that level that TNNR has
 were drawn with the game's sizes and formats.
 
-**Cause: the host, not the guest.** The guest resolves a texture through OGRE as for any asset:
-the name it asks for is the full path in upper case (`MEDIA/LEVELSETS/MINE/RUBBLE_ROCKS_01.DDS`),
-which misses the case-sensitive index of every archive (the pak stores `media/levelSets/...`, a
-mod whatever case its author used) and hits the case-insensitive one, where the location added
-last wins (OGRE 1.7 `ResourceGroup::addToIndex` overwrites; `openResource` tries the
-case-sensitive index, then the case-insensitive one). The mods' folders are added after the pak,
-so the guest gets the mod's file. **[read]** But the live frontend does not use what the guest
-loaded for a named texture: `Frontend::PrepareTexture` takes the texture's name and reads the
-file again from the game's `pak.zip` (`LiveContentSource::GameFile`, the same as replay's
+**First cause: the host.** The live frontend does not use what the guest loaded for a named
+texture: `Frontend::PrepareTexture` takes the texture's name and reads the file again from the
+game's `pak.zip` (`LiveContentSource::GameFile`, the same as replay's
 `CaptureContentSource::GameFile`). A mod's texture therefore never reaches the screen, whatever
-its name, case, extension or folder. **[read]**
+its name, case, extension or folder, and whatever file the guest picked. **[read]**
+
+**Which file the guest picks is not settled.** The name the guest asks for is the full path in
+upper case (`MEDIA/LEVELSETS/MINE/RUBBLE_ROCKS_01.DDS`), which misses the case-sensitive index of
+every archive and hits the case-insensitive one, where the location added last wins (OGRE 1.7
+`ResourceGroup::addToIndex` overwrites). But a texture is opened in its material's resource group,
+not in every group. On PC (Torchlight.exe), each mod gets its own group: the mod's folder is added
+to it and the group is initialised, which parses the mod's `.material` files, after the pak's
+groups were initialised; the texture names come from the material compiler's listener
+("processTextureNames": `MEDIA/` plus the material's folder plus the name). Our guest adds each
+mod's folder to "General" and to the mod's group but never initialises the mod's group, so the
+mod's materials are not parsed, and a game material looks its textures up in the pak's group.
+What PC does when a mod's material has the same name as a pak material (OGRE 1.6 throws on a
+duplicate resource name; who catches it was not found) is to confirm in a run of the PC game.
+**[read, to verify]**
 
 The run logs agree. The synthetic mod's `path_center.dds` is uncompressed A8R8G8B8 without
 mipmaps; the first validation run (2026-10-07) loaded `MEDIA/LEVELSETS/TOWN1/PATH_CENTER.DDS`
@@ -714,9 +722,9 @@ game's groups "0ZIP0" and "ZIP") changed nothing and was not kept: the guest sid
 problem.
 
 **Also to check when this is fixed:** which mod wins when two replace the same asset. The data
-loader picks the lowest `PRIORITY`, while OGRE's index keeps the location added last, and the
-locations are added in priority order, so for assets the highest `PRIORITY` would win. **[read,
-to verify in a run]**
+loader picks the lowest `PRIORITY`; where OGRE's index decides (the location added last wins, and
+the locations are added in priority order), the highest `PRIORITY` would win. **[read, to verify
+in a run]**
 
 **Level load time with TNNR.** One run each, same build and load script: 5.0 s without mods
 (`tnnr0`), 6.5 s with TNNR (`tnnr1`). Over the load's long frames, TNNR adds about 5,900 file reads
