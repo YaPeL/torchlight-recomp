@@ -482,8 +482,12 @@ announces it.
 - **Re-running a release whose symbols were already pushed.** Each game job's Symbols step
   commits `<tag>/<platform>/` to `torchlight-symbols` and fails when there is nothing new to commit
   (a re-run with the same binaries: `git commit` exits 1). For v0.1.0-beta the owner deleted the
-  folders and re-ran. To fix: skip the commit and the push when the tree did not change, and say
-  so in the log.
+  folders and re-ran. Fixed 2026-10-12 (`tools/release/push_symbols.sh`, used by the three jobs):
+  a re-run replaces `<tag>/<platform>/`, and a tree that did not change is neither committed nor
+  pushed, with a line in the log. The same script compresses each platform's symbols into one
+  `symbols.tar.zst` and stops before the push when it is over 95 MB: `v0.7.6-beta.rc1`'s macOS
+  job failed on GitHub's 100 MB limit (the dSYM's DWARF is 105.85 MB). Unpacking:
+  `docs/crash-handling.md`, section 3.
 - **Guest memory reads on Windows and macOS arm64, before the macOS port.** The generated code
   translates a guest address as `base + address`, plus 0x1000 from 0xE0000000 up on Windows and
   macOS arm64 (`REX_PHYS_HOST_OFFSET`, `rex::memory::GuestPtr`). The content snapshots of buffers

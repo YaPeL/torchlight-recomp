@@ -121,20 +121,8 @@ jobs:
           umask 077
           printf '%s\n' "$SYMBOLS_KEY" > /tmp/symbols_key
           export GIT_SSH_COMMAND="ssh -i /tmp/symbols_key -o StrictHostKeyChecking=accept-new"
-          git clone --depth 1 "git@github.com:$SYMBOLS_REPOSITORY.git" /tmp/symbols-repo
-          mkdir -p "/tmp/symbols-repo/$GITHUB_REF_NAME/linux-x86_64"
-          cp -a /tmp/symbols/. "/tmp/symbols-repo/$GITHUB_REF_NAME/linux-x86_64/"
-          cd /tmp/symbols-repo
-          git config user.name "release workflow"
-          git config user.email "release@localhost"
-          git add -A
-          git commit -q -m "Symbols of $GITHUB_REF_NAME, linux-x86_64 ($GITHUB_SHA)"
-          # The Windows job pushes to the same repository: on a race, rebase onto its commit.
-          for attempt in 1 2 3; do
-            git push -q origin HEAD && break
-            [ "$attempt" = 3 ] && exit 1
-            git pull -q --rebase origin HEAD
-          done
+          tools/release/push_symbols.sh /tmp/symbols "$GITHUB_REF_NAME" linux-x86_64 \
+            "git@github.com:$SYMBOLS_REPOSITORY.git"
           rm -f /tmp/symbols_key
       - uses: actions/upload-artifact@v7
         with:
@@ -279,21 +267,8 @@ jobs:
           key_file="$RUNNER_TEMP/symbols_key"
           printf '%s\n' "$SYMBOLS_KEY" > "$key_file"
           export GIT_SSH_COMMAND="ssh -i '$key_file' -o StrictHostKeyChecking=accept-new"
-          repo="$RUNNER_TEMP/symbols-repo"
-          git clone --depth 1 "git@github.com:$SYMBOLS_REPOSITORY.git" "$repo"
-          mkdir -p "$repo/$GITHUB_REF_NAME/windows-x86_64"
-          cp -a "$RUNNER_TEMP/symbols/." "$repo/$GITHUB_REF_NAME/windows-x86_64/"
-          cd "$repo"
-          git config user.name "release workflow"
-          git config user.email "release@localhost"
-          git add -A
-          git commit -q -m "Symbols of $GITHUB_REF_NAME, windows-x86_64 ($GITHUB_SHA)"
-          # The Linux job pushes to the same repository: on a race, rebase onto its commit.
-          for attempt in 1 2 3; do
-            git push -q origin HEAD && break
-            [ "$attempt" = 3 ] && exit 1
-            git pull -q --rebase origin HEAD
-          done
+          tools/release/push_symbols.sh "$RUNNER_TEMP/symbols" "$GITHUB_REF_NAME" windows-x86_64 \
+            "git@github.com:$SYMBOLS_REPOSITORY.git"
           rm -f "$key_file"
       - uses: actions/upload-artifact@v7
         with:
@@ -394,21 +369,8 @@ jobs:
           key_file="$RUNNER_TEMP/symbols_key"
           printf '%s\n' "$SYMBOLS_KEY" > "$key_file"
           export GIT_SSH_COMMAND="ssh -i '$key_file' -o StrictHostKeyChecking=accept-new"
-          repo="$RUNNER_TEMP/symbols-repo"
-          git clone --depth 1 "git@github.com:$SYMBOLS_REPOSITORY.git" "$repo"
-          mkdir -p "$repo/$GITHUB_REF_NAME/macos-arm64"
-          cp -R "$RUNNER_TEMP/symbols/." "$repo/$GITHUB_REF_NAME/macos-arm64/"
-          cd "$repo"
-          git config user.name "release workflow"
-          git config user.email "release@localhost"
-          git add -A
-          git commit -q -m "Symbols of $GITHUB_REF_NAME, macos-arm64 ($GITHUB_SHA)"
-          # The Linux and Windows jobs push to the same repository: on a race, rebase onto theirs.
-          for attempt in 1 2 3; do
-            git push -q origin HEAD && break
-            [ "$attempt" = 3 ] && exit 1
-            git pull -q --rebase origin HEAD
-          done
+          tools/release/push_symbols.sh "$RUNNER_TEMP/symbols" "$GITHUB_REF_NAME" macos-arm64 \
+            "git@github.com:$SYMBOLS_REPOSITORY.git"
           rm -f "$key_file"
       - uses: actions/upload-artifact@v7
         with:
