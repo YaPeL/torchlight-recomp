@@ -1,5 +1,11 @@
 # macOS port: research
 
+**Status (2026-10-12):** MAC.1 to MAC.9 are done. The macOS build (Apple Silicon) runs the game,
+is tested in CI and ships as a `.dmg`. The release side is checked at the first freeze with macOS
+(section 7). The research below is kept as it was written, followed by each ticket's results; the
+install steps for players are in the README, and the Gatekeeper steps checked on macOS 26 are in
+section 6.
+
 Goal: build and run the game on macOS on Apple Silicon (arm64) with the native backend
 (`--native_live=only`), using the same code as Linux and Windows, and ship it as a `.app`. This is
 research only, from reading this repository, the ReXGlue SDK at `0c7b01a` (and its `development`
