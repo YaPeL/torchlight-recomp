@@ -249,7 +249,7 @@ inline constexpr uint32_t kGroupStride = 0x1C;
 inline constexpr GuestFunction kScriptListenerHandleEvent{0x8239B490, Confidence::kConfirmed};
 namespace script_event {
 inline constexpr Field kType{4, Confidence::kConfirmed};             // std::string
-inline constexpr Field kMaterialFile{32, Confidence::kConfirmed};    // std::string, createMaterial
+inline constexpr Field kMaterialFile{32, Confidence::kInferred};     // std::string, createMaterial
 inline constexpr Field kMaterialName{60, Confidence::kConfirmed};    // std::string, createMaterial
 inline constexpr Field kMaterialGroup{88, Confidence::kConfirmed};   // std::string, createMaterial
 inline constexpr Field kResourceKind{32, Confidence::kConfirmed};    // processResourceName, 0 = texture

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -47,6 +48,8 @@ bool g_mounted = false;
 bool g_replacements = false;
 // The data manager the resources.cfg loader is building (NoteDataManager), for its group list.
 uint32_t g_data_manager = 0;
+// The active mods' resource groups (RegisterMods): a script compiled for one of them is a mod's.
+std::set<std::string> g_mod_groups;
 
 std::optional<std::vector<uint8_t>> ReadFile(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
@@ -329,6 +332,7 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
       REXLOG_ERROR("mods: cannot add {} to resource group \"{}\"", location, group);
       continue;
     }
+    g_mod_groups.insert(group);
     if (InitialiseResourceGroup(call, group)) {
       REXLOG_INFO("mods: {} in resource group \"{}\", initialised", location, group);
     } else {
@@ -373,7 +377,7 @@ uint64_t NextHandle(const uint8_t* base, uint32_t manager) {
 
 // The game's script listener (guest_abi game_ui.h kScriptListenerHandleEvent), made to behave as
 // PC's for our devices:
-// - "createMaterial" from a mod's script: when the listener hands back a material that already
+// - "createMaterial" for a mod's group: when the listener hands back a material that already
 //   existed (no create, so OGRE's next handle did not move), a new one is created instead, which
 //   OGRE leaves unregistered because the name exists; the script is compiled into it, and the
 //   first definition (the game's) is kept, as on PC. The replacements' scripts keep the listener's
@@ -388,8 +392,10 @@ void HookScriptListener(PPCContext& ctx, uint8_t* base, void (*original)(PPCCont
   }
   const std::string type = abi::ogre::ReadString(base, ev + event::kType.offset, 64);
   if (type == "createMaterial") {
+    // The group the script is compiled for (the one being initialised); the event's file name is
+    // relative, so it does not tell a mod's script from the pak's.
     const bool from_mod =
-        hooks::OnModDevice(abi::ogre::ReadString(base, ev + event::kMaterialFile.offset, 1024));
+        g_mod_groups.count(abi::ogre::ReadString(base, ev + event::kMaterialGroup.offset, 256)) != 0;
     const uint32_t manager = abi::ReadU32(base, ui::kMaterialManagerGlobal);
     const uint64_t before = manager ? NextHandle(base, manager) : 0;
     original(ctx, base);
