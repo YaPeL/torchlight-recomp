@@ -943,6 +943,26 @@ search for "MEDIA" (which tells case apart) finds it. The test mod now renames t
 to `weapon_hacker`, the sword folder's own. Checked in an automatic run with this branch: both
 swords are drawn with the two-hander's mesh (1188 vertices) and `WEAPON_HACKER.DDS`.
 
+## 7l. A mod's new class is not offered at character creation (2026-10-12, open)
+
+Seen in the hand test with the 29-mod pack: the game's unit index has the pack's classes (5218
+units, the mods' player units included), but the character creation screen offers only the
+Destroyer, the Alchemist and the Vanquisher.
+
+**Why.** The Xbox build's character creation menu names its choices in its code: the three
+classes ("Destroyer", "Alchemist", "Vanquisher") and the three pets ("Dog", "Cat", "Chakawary"),
+next to its windows "EditBox", "EditBoxPet" and "DoneButton" (`sub_82D1C998`, `sub_82EB3258`,
+strings at 0x820CB3CC-0x820CB418). A class that is not one of those three names is never offered,
+whatever the data holds. **[read]** PC's screen is a different one (`media/ui/charactercreate.layout`, menu
+code around Torchlight.exe 0x5B794F). Its code names no class: the class is shown in a text window,
+"CharacterClass", filled at run time. Where PC takes its list from was not traced. **[read, the
+list's source to verify]**
+
+**What it needs.** Not a data fix: the Xbox menu would have to list the player classes from the
+data, or the PC screen would have to be brought back. This is deferred to the work on the PC
+interface and controls (section 9). A mod's class can still be loaded where it already exists, for
+example a character imported from PC with that class. That case was not tested.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
