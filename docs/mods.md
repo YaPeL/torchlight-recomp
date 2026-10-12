@@ -846,15 +846,73 @@ folder next to `mods` in the user data folder (`platform::DataDir()`), with the 
   device like the mods'.
 - Textures are still global by name and the first one loaded wins. The replacements win over the
   pak because they are found first at the same path, not because of a later load.
-- On the host, the frontend's resolver looks in this folder first (7j, still open). Until it does,
-  the folder is half done: the replaced materials are used, but the screen shows the pak's
-  textures. The branch is integrated only together with the frontend's part.
+- On the host, the frontend takes the file the guest's OGRE takes (`mods/texture_files.h`, 7j "The
+  host side"): this folder first for the pak's groups. Captures and session recordings keep the
+  folder's bytes, since replay has no replacements folder.
 
-**Validation, once the frontend's part is in:** TNNR in the folder shows the 15 checked textures
-at TNNR's sizes, and the captures keep those bytes; TNNR as a mod still shows the pak's; a
-synthetic mod with a new material and its own texture shows it (not magenta); a synthetic mod
-repeating a game material's name is ignored; the 29 mods, Enhanced Edition and the sword save load
-as before; a save made with mods loads the same. The last check is the player's own, by hand.
+**The texture check (diagnostics).** With `TORCHLIGHT_MODS_DIAGNOSTICS` and `--mods_texture_check`,
+the guest reports which archive its OGRE opened each named texture from. `mods_install.cpp` follows
+`ResourceGroupManager::openResource` and the archives' `open` (guest_abi `game_ui.h`
+`kOpenResource`; `game_menu/texture_open.h`, tested). The live frontend compares that with its own
+choice. It logs each difference and, every 10 s, how many textures were compared, how many differ
+and how many the game did not report.
+
+**What the check found: names with a device.** The guest's data loader gives a mod's file by its
+full path, device included (`TLMOD002:/MEDIA/...`, the mod's file-map value). OGRE opens that name
+as absolute, in that mod's folder only. Data files whose textures go through the loader therefore
+name them that way:
+- unit `.dat`: `TEXTURE_OVERRIDE` and the `[TEXTURE_REPLACE]` blocks (readers `sub_8228B4B8`,
+  `sub_8228EBE8`, `sub_822B6A60`, `sub_822B6938`, `sub_822C7EF8`, through `sub_822BE668`);
+- the wardrobe's `[WARDROBE]` blocks and the class pieces (`WARDROBE_BASE`, `BOOTS_BASE` and the
+  rest; `sub_822DC6B0`, `sub_822DB728`);
+- the shared textures the game fetches through the loader (`media/sharedtextures/rimlight.dds`,
+  `highlight.dds`, `highlightred.dds`, `outlineblue.dds`, `outlinered.dds`) when a mod ships one.
+
+Enhanced Edition's town portal scroll (`TEXTURE_OVERRIDE`) showed it: the host found nothing for
+`TLMOD002:/...SCROLL_BLUE.DDS`. The host now looks such a name up in that device's folder only
+(`TLREPL:` in the replacements folder), as OGRE does. On PC the name is the absolute path into the
+mod's folder, and the mod's texture is shown the same way. These callers reach the loader too and
+handle textures or materials, but were not traced: `sub_822BE910`, `sub_822C57D8`, `sub_822DC570`,
+`sub_82319620`, `sub_822A9CC0`, `sub_82206CF8`, `sub_82210148`. The following do not go through
+the loader, so their names stay relative:
+- material scripts (their texture names are stripped of our device, 7j);
+- particle `.layout` textures;
+- CEGUI imagesets and UI icons, `SKILL_ICON`;
+- a level layout's light textures (`LIGHTMASK`, `RIMLIGHT` and the rest).
+
+**Validated (2026-10-12), automatic runs on copies of the saves, diagnostics build, texture check
+on:**
+
+| Run | Check | Result |
+|---|---|---|
+| 1. Town, sword save, a synthetic mod with a new material and its texture, and one repeating the town's materials with another texture | 0 differ (425 compared) | The swords drawn with the new texture. The repeated materials were ignored (300+): their texture never appears, and the buildings keep `TOWN_BUILDING_02.DDS`. |
+| 2. Mine's first floor, TNNR in the replacements folder | 0 differ | All 95 TNNR textures the game loaded have TNNR's size, none the pak's. Of the 94 that this save loads without TNNR and TNNR resizes, 93 loaded; the one missing was not part of that level, which varies between runs. |
+| 3. Same, TNNR as a mod | 0 differ | The pak's textures, and no `TLMOD` names. |
+| 4. The 29 mods | 0 differ | 29 groups, 5218 units. Repeated after the device fix: 0 differ. |
+| 5. Enhanced Edition | 2 differences (the scroll above), then 0 after the fix (336 compared) | The scroll's texture was loaded from the mod and the check agreed. It was not in the captured frame, so on screen it rests on the check and the frontend's tests. |
+| 6. Mine's first floor, without TNNR | 0 differ | Baseline for 2. |
+| 7. Replays of 1 and 2 without mods | — | 1 draws the green swords. 2 holds the whole TNNR file for each of the 39 TNNR textures it draws. |
+
+Saves made with mods (the sword's, the pack's, Enhanced Edition's) loaded with no unknown units and
+no save protection.
+
+**Memory and load time, run 2 against run 6** (one sample each, thermal state not recorded). Peaks
+were sampled once a second from outside the game. "Guest" is the resident part of the guest's
+memory mapping. "Host" is the rest of the process. GPU memory was read for the whole card (4 GB),
+the game being its only client.
+
+| | Guest | Host | GPU | Level load |
+|---|---|---|---|---|
+| Without TNNR | 331 MB | 682 MB | 112 MB | 3.7 s |
+| TNNR in replacements | 477 MB | 999 MB | 279 MB | 6.5 s |
+| TNNR as a mod | 345 MB | 699 MB | 112 MB | 4.7 s |
+
+TNNR in the replacements folder fit. No failure, failed allocation or texture left unloaded. The
+host's lookup is not on the game's load path: it lists the folders once at start, then makes one
+lookup per texture. The longer load comes from reading larger files: TNNR's textures are up to 8
+times larger per side, and as a mod only its meshes and layouts are read.
+
+The last check is the player's own, by hand.
 
 **Validated (2026-10-12): a mod's model at a pak path is still used.** Read first, in both
 builds: a unit's model is not named by a material script. The game asks the data loader for the
