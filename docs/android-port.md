@@ -12,14 +12,14 @@ Mac today (section 6).
 |---|---|---|
 | ARM64 core | Patches 23–25 (`fctiw`/`fctid`, `mffs`, `mtfsf`), the memory fences of the SDK base and MAC.2's translation carry over from macOS. The 16 KB handling does too, but the SDK picks the host offset at compile time per platform, and an Android APK meets both 4 KB and 16 KB devices | Yes: Android must build with the 16 KB-safe offset (an SDK patch) |
 | SDK | ReXGlue keeps Xenia's Android code (`REX_PLATFORM_ANDROID`: `ASharedMemory`, threads), but has no Android preset or toolchain, and it was never built for Android | Yes: a `android-arm64` preset and the NDK toolchain, as a patch |
-| Render | OGRE's GLES2 render system (GLES 3.x when available) with RTSS's GLSL ES writer; Vulkan later. The backend uploads DXT1/3/5 as they come from the guest; Mali and Adreno have no BCn | Yes: DXT must be decoded or transcoded in the backend's conventions module |
+| Render | OGRE's GLES2 render system (GLES 3.x when available) with RTSS's GLSL ES writer; Vulkan later. The backend uploads DXT1/3/5 as they come from the guest; Mali and Adreno have no BCn | Yes: textures converted ahead of time, never during play (section 3) |
 | Window and lifecycle | SDL3 has Android support (SDLActivity, lifecycle events, `ANativeWindow`); OGRE's Android EGL window takes an `ANativeWindow` and can keep its context when the surface goes | No, but surface loss is the main risk (section 4) |
 | Controls | The game is built for a gamepad, which helps: a touch overlay emulates one. The closest precedent, UnleashedRecomp-Android, draws it in-engine and hides it on gamepad input. A setting Auto / Always / Never (A5) | No; gamepad first |
 | Game data | Pick the XBLA package with Android's document picker, copy it into app storage, install as today | No |
 | Packaging | Signed arm64 APK on GitHub Releases; no Play (single commercial game, user-supplied data; precedent below) | No |
 | Performance | CPU-bound on desktop (the guest's own code); a mid-range phone is slower per core: 30 fps is the realistic target, 60 to be measured | Unknown until measured |
-| Memory | Never measured on desktop; to measure before any device work | Unknown |
-| Devices | A Galaxy Tab S5e and a POCO phone (the owner's); the Apple Silicon emulator with a 16 KB image for bring-up; the tools (9.7 GB) approved | Yes: tools to install (section 6) |
+| Memory | Never measured on desktop; the first step of the next iteration | Unknown |
+| Devices | A POCO X7 5G (main) and a Galaxy Tab S5e (floor: Android 11, 4 GB), the owner's; the Apple Silicon emulator with a 16 KB image for bring-up; the tools (9.7 GB) approved | Yes: tools to install (section 6) |
 
 Recommendation: the same order as macOS, each stage validated before the next: SDK on Android with
 its tests on a device, then OGRE GLES 3 with the backend's replays, then a skeleton APK with the
@@ -106,7 +106,7 @@ first version takes the package file only.
   name and signing key will need registering before that.
 - F-Droid needs reproducible builds and has rules on non-free assets: unlikely.
 
-For this port: a signed APK (arm64-v8a, targetSdk 35+, 16 KB aligned) on GitHub Releases with the
+For this port: a signed APK (arm64-v8a, minSdk 30, targetSdk 35+, 16 KB aligned) on GitHub Releases with the
 other platforms' downloads and in `SHA256SUMS`. The signing key is a new secret of the `release`
 environment, generated and kept by the owner (A7); losing it means users cannot update in place.
 
@@ -205,9 +205,23 @@ replays measure it.
   (https://vulkan.gpuinfo.org/listfeaturescore10.php?platform=android). Without
   `RSC_TEXTURE_COMPRESSION_DXT` the backend decodes DXT to RGBA8 at upload (DXT1 is 4 bits per
   texel and DXT3/5 8, RGBA8 32: eight and four times the memory), or transcodes it to ETC2 or ASTC
-  (CPU cost per upload, about DXT's memory). A
-  capability decision, in the conventions module, chosen by the render system's capabilities, not
-  by platform. Decoding first (simple, exact); transcoding if memory says so (section 5).
+  (CPU cost per upload, about DXT's memory). Which one is a capability decision, in the
+  conventions module, chosen by the render system's capabilities, not by platform.
+
+  **Owner's decision (2026-10-12): textures are never converted during play.** No decode or
+  transcode at upload while the game runs (it would cost frame time on the guest's loads, worst
+  on the floor device). Instead:
+
+  - a desktop tool converts ahead of time the game's `pak`, mods and texture replacements to what
+    the phones read (ETC2 or ASTC, or RGBA8 where those lose too much), and its output is copied
+    to the phone;
+  - on the phone, conversion runs only when something is imported or turned on (the game package
+    at first install, a mod, a replacement pack), from the launcher, with its progress shown, and
+    never in the game.
+
+  Open for the next iteration: how converted data reaches the backend without the guest seeing a
+  format it does not know (the guest's OGRE 1.7 expects DXT), agreed before any code; and which
+  target format per texture kind, decided by the conversion measurements below.
 - **Formats and limits.** Every pixel format the backend creates must exist in GLES 3 (some
   16-bit and float formats have no render-target support there), and the vertex element types
   too. An audit of the `tl_*` formats against the GLES render system's tables, then replays.
@@ -317,13 +331,20 @@ and the surface/context behaviour may differ from real drivers).
 
 **Physical devices** (the owner's, 2026-10-10):
 
-- **Samsung Galaxy Tab S5e**: Snapdragon 670 (2 Cortex-A75 at 2.0 GHz, 6 Cortex-A55), Adreno 615
-  (GLES 3.2, Vulkan 1.1), 4 or 6 GB, 2560x1600; its last update is Android 11 (API 30), with 4 KB
+- **Samsung Galaxy Tab S5e**, the floor: Snapdragon 670 (2 Cortex-A75 at 2.0 GHz, 6 Cortex-A55),
+  Adreno 615 (GLES 3.2, Vulkan 1.1), 4 GB (the owner's unit), 2560x1600; its last update is Android 11 (API 30), with 4 KB
   pages (*from its specifications; to confirm on the device with `adb shell getprop` and
   `getconf PAGESIZE`*). Below the mid-range target in CPU, and on an older Android: it sets the
   minimum API if it is to be supported (minSdk 30 or lower), and it is the low end the frame-rate
   levers are tried on. Adreno: no DXT, ETC2 and ASTC present.
-- **A POCO phone**: model to be named by the owner; it decides the mid-range measurements (A6).
+- **POCO X7 5G**, the main device: MediaTek Dimensity 7300 Ultra (4 Cortex-A78 at 2.5 GHz, 4
+  Cortex-A55), Mali-G615 MC2 (GLES 3.2, Vulkan 1.3), 8 or 12 GB, 1220x2712, shipped with Android 14
+  (HyperOS) (*from its specifications; to confirm on the device*). It decides the mid-range
+  measurements (A6). Mali: no DXT, ETC2 and ASTC present.
+
+The Tab S5e is the floor (owner's decision, 2026-10-12): Android 11 and 4 GB. So **minSdk is 30
+or lower** (API 30, Android 11), and the memory budget, the frame-rate levers and the converted
+textures have to fit 4 GB.
 
 A Bluetooth pad for stages A4-A5 (any Xbox or PlayStation pad), and the Auto mode of the touch
 controls is tested with it connected at start and connected later.
@@ -338,7 +359,7 @@ controls is tested with it connected at start and connected later.
 | A3. Skeleton APK and lifecycle | AND.3 | A2 | An APK (SDLActivity, `libmain.so`) that replays a capture in a loop and survives background/foreground, screen off/on and low memory without losing the picture | Surface loss with an OGRE-owned EGL; a lost context |
 | A4. Game to the main menu | AND.4 | A1–A3; the XBLA package on the phone | First start: package picked with SAF, installed; the main menu with a gamepad; saves on app storage | Memory; file paths and case |
 | A5. Touch controls | AND.5 | A4 | An overlay drawn by the backend's UI pass, a layout editor, the Auto / Always / Never setting (below); a dungeon played by touch | Design for a pad-built ARPG on a phone screen |
-| A6. Play and measure | AND.6 | A4 | Town and dungeon frame times, memory, thermals on the mid-range phone; 30 fps held | CPU too slow; throttling |
+| A6. Play and measure | AND.6 | A4 | Town and dungeon frame times, memory, thermals on the POCO X7 5G, and on the Tab S5e as the floor; 30 fps held | CPU too slow; throttling |
 | A7. Package and CI | AND.7 | A1–A6; the owner's signing key (below) | A signed, 16 KB-aligned APK (`check_elf_alignment.sh`, `apksigner verify`); CI builds the deps and the tests without the game; the release job builds and signs the APK at a freeze and publishes it on GitHub Releases only | Developer verification (2027) |
 
 **A5, the touch controls setting** (owner's decision, 2026-10-10). A setting with three values,
@@ -408,11 +429,35 @@ release.
 6. **Controls**: a pad overlay on a phone screen for a game designed for a pad; the layout needs
    play-testing (A5).
 
-**Owner decisions** (2026-10-10). The Android tools installed here (section 6, measured first);
-the touch controls setting Auto / Always / Never (A5); the signing key generated and kept by the
-owner, used by CI as a `release` environment secret (A7); GitHub Releases only, no Play; test
-devices: a Samsung Galaxy Tab S5e and a POCO phone (model to be named). Proposed to the ReXGlue
-agent: the 0x1000 host offset on Android as a patch of the series (section 2).
+**Decided so far** (owner, 2026-10-10 and 2026-10-12):
+
+- Devices: POCO X7 5G (main) and Galaxy Tab S5e (floor: Android 11, 4 GB) (section 6).
+- minSdk compatible with API 30 (Android 11).
+- Textures: never converted during play; a desktop tool converts the `pak`, mods and texture
+  replacements ahead of time; on the phone, conversion only when importing or turning something
+  on, from the launcher (section 3).
+- Touch controls: the setting Auto / Always / Never, in the settings and the launcher (A5).
+- The signing key generated and kept by the owner; CI uses it as `release` environment secrets
+  (A7).
+- GitHub Releases only, no Play.
+- The Android tools installed here when work resumes: command-line tools, NDK, the 16 KB arm64
+  emulator image only (section 6). `sdkmanager` needs JDK 17 or later and this Mac has only Java 8:
+  a JDK (proposed: Temurin 21 unpacked under `~/android-sdk`, no installer) to be approved first.
+- The 0x1000 host offset on Android proposed to the ReXGlue agent as a patch of the series
+  (section 2), relayed by the owner; its number still to come.
+
+**Paused** (2026-10-12) until the owner resumes Android. **The next iteration starts with the
+pending measurements**, before A0-A1:
+
+1. **Memory** on this Mac: the game's footprint (Apple Silicon counts GPU memory in the process,
+   as Android does) in the main menu, the dungeon standing still and fighting, and the town, with
+   the standard script (`tools/input_scripts/measure-fight-town.txt`, `--dev_input_script`, a build
+   with `TORCHLIGHT_DEV_COMMANDS`), 720p internal resolution, on copies (`--user_data_root`).
+   Needs the fixed-floor saved game, which is not on this Mac.
+2. **Conversion numbers**: the texture bytes of the game's `pak` as DXT and once converted to each
+   candidate (RGBA8, ETC2, ASTC), the time to convert the whole `pak` on the desktop and on the
+   phones, and the quality lost (PSNR against the DXT decode). They decide the target formats and
+   whether the floor device fits.
 
 ## Sources
 
