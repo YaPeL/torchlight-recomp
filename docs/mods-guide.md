@@ -86,8 +86,9 @@ back to the original files.
 - New affixes (the extra properties of magic items) and new level pieces from mods: the game ships
   these tables prebuilt and they are not rebuilt yet.
 - Mods that are compressed archives instead of folders.
-- Playing a mod's new class: the Xbox character creation screen offers only the game's three
-  classes. This waits for the PC interface.
+- Playing a mod's new class: the Xbox character creation screen has the game's three classes
+  written into it, so it never offers a class a mod adds. This waits for the PC interface
+  ([mods.md](mods.md), 7l).
 - Choosing which mods to use from inside the game: edit `mods.dat` for now.
 
 If something goes wrong, the log of the run tells what the game did with each mod
