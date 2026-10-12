@@ -1,11 +1,13 @@
 // Tests for the schema port and the tree reader/writer, against fixtures the Python tool made
 // (tests/save_import/fixtures, from tests/save_convert/make_fixtures.py; synthetic, no game data).
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <string>
 
 #include "save_import/json.h"
@@ -73,6 +75,51 @@ void TestCharacter(const Schema& schema) {
         "v25 round trip");
 }
 
+// A PC character saved with mods records their names (player/names): the import writes each one
+// as the 360 reader takes it, u16 length then UTF-16 units, big-endian (docs/mods.md, 7d).
+void TestModList(const Schema& schema) {
+  SaveError error;
+  auto parsed = ReadPc(schema, Fixture("pc_save.svt"), error);
+  Check(parsed != nullptr, "reads the PC save: " + error.message);
+  Node* names = parsed->tree.Find("player") ? parsed->tree.Find("player")->Find("names") : nullptr;
+  Check(names && names->kind == Node::Kind::kList, "player/names is a list");
+  const std::u16string mods[] = {u"First Mod", u"another_mod", u"Z"};
+  names->items.clear();
+  for (const std::u16string& m : mods) {
+    Node text;
+    text.kind = Node::Kind::kText;
+    text.text = m;
+    names->items.push_back(text);
+  }
+  const Bytes x360 = Write360(schema, *parsed);
+  std::span<const uint8_t> body;
+  Check(Split360(x360, body, error), "360 digest: " + error.message);
+
+  Bytes expected = {0, 0, 0, 3};
+  for (const std::u16string& m : mods) {
+    expected.push_back(static_cast<uint8_t>(m.size() >> 8));
+    expected.push_back(static_cast<uint8_t>(m.size()));
+    for (char16_t c : m) {
+      expected.push_back(static_cast<uint8_t>(c >> 8));
+      expected.push_back(static_cast<uint8_t>(c));
+    }
+  }
+  int found = 0;
+  for (auto it = body.begin();; ++it) {
+    it = std::search(it, body.end(), expected.begin(), expected.end());
+    if (it == body.end()) break;
+    ++found;
+  }
+  Check(found == 1, "the names with their u16 lengths, big-endian, once");
+
+  auto back = ParseBody(schema, *schema.root(), body, Endian::kBig, error);
+  Check(back != nullptr, "the 360 side reads back: " + error.message);
+  const Node* read = back->tree.Find("player")->Find("names");
+  Check(read->items.size() == 3, "three names read back");
+  auto it = read->items.begin();
+  for (const std::u16string& m : mods) Check((it++)->text == m, "name read back");
+}
+
 void TestStash(const Schema& schema) {
   const Bytes pc = Fixture("pc_stash.bin");
   SaveError error;
@@ -121,6 +168,7 @@ int main() {
   Check(schema != nullptr, "embedded schema: " + error);
   TestEmbeddedSchema(*schema);
   TestCharacter(*schema);
+  TestModList(*schema);
   TestStash(*schema);
   TestErrors(*schema);
   std::puts("save_import save_tree: ok");

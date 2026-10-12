@@ -1,12 +1,16 @@
 #include "live/session_file.h"
 
 #include <cstring>
+#include <fstream>
+#include <iterator>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <zlib.h>
 
 #include "commands/serialize.h"
+#include "mods/texture_files.h"
 
 namespace torchlight::live {
 
@@ -59,9 +63,27 @@ SessionWriter::Result SessionWriter::Append(const LiveFrame& frame) {
   s.programs = frame.programs;
   s.program_sources = frame.program_sources;
   s.destroyed = frame.destroyed;
+  // Named textures a mod or the replacements folder gives: their files go in as the texture's
+  // content (replay has no mods; mods/texture_files.h), as a capture keeps them.
+  std::vector<LiveFrame::Content> files;
+  if (auto resolver = mods::CurrentTextureResolver()) {
+    for (auto& t : s.textures) {
+      if (t.name.empty() || t.manual || t.render_target || t.file != 0) continue;
+      const mods::TextureFile found = resolver->Find(t.name, t.group, mods::PakHas);
+      if (found.source != mods::TextureSource::kMod && found.source != mods::TextureSource::kReplacements) continue;
+      std::ifstream in(found.path, std::ios::binary);
+      commands::Blob blob;
+      blob.bytes.assign(std::istreambuf_iterator<char>(in), {});
+      if (blob.bytes.empty()) continue;
+      blob.endian = commands::BlobEndian::kHostFile;
+      blob.hash = commands::HashBytes(blob.bytes.data(), blob.bytes.size(), blob.endian, 0);
+      t.file = blob.hash;
+      files.push_back({t.id, std::make_shared<const commands::Blob>(std::move(blob))});
+    }
+  }
   std::vector<Hash> first_seen;
-  for (const auto& c : frame.contents) {
-    if (!c.content) continue;
+  auto add_content = [&](const LiveFrame::Content& c) {
+    if (!c.content) return;
     SessionContent sc;
     sc.id = c.id;
     if (written_.count(c.content->hash)) {
@@ -72,7 +94,9 @@ SessionWriter::Result SessionWriter::Append(const LiveFrame& frame) {
       first_seen.push_back(c.content->hash);
     }
     s.contents.push_back(std::move(sc));
-  }
+  };
+  for (const auto& c : frame.contents) add_content(c);
+  for (const auto& c : files) add_content(c);
   std::vector<uint8_t> raw = commands::SerializeSessionFrame(s);
   uLongf packed_size = compressBound(uLong(raw.size()));
   std::vector<uint8_t> record(8 + packed_size);
@@ -97,9 +121,10 @@ SessionWriter::Result SessionWriter::Append(const LiveFrame& frame) {
   }
   for (Hash h : first_seen) written_.insert(h);
   // Same rule as the reader: superseded and destroyed content is forgotten.
-  for (const auto& c : frame.contents)
-    if (c.content)
-      if (auto old = keys_.Set(c.id, c.content->hash)) written_.erase(*old);
+  for (const std::vector<LiveFrame::Content>* list : {&frame.contents, &std::as_const(files)})
+    for (const auto& c : *list)
+      if (c.content)
+        if (auto old = keys_.Set(c.id, c.content->hash)) written_.erase(*old);
   for (const auto& id : frame.destroyed)
     if (auto old = keys_.Erase(id)) written_.erase(*old);
   bytes_ += record.size();

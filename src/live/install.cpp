@@ -1,4 +1,5 @@
 #include "live/install.h"
+#include "live/frame_counter.h"
 
 #include <algorithm>
 #include <atomic>
@@ -19,7 +20,9 @@
 #include <rex/ui/presenter.h>
 
 #include "hooks/video_mode.h"
+#include "live/deferred_check.h"
 #include "live/live_mode.h"
+#include "live/log_budget.h"
 #include "live/ui_gamepad.h"
 #include "live/ui_overlay.h"
 #include "platform/platform.h"
@@ -36,6 +39,10 @@ REXCVAR_DEFINE_STRING(native_live, "only", "Torchlight",
 REXCVAR_DEFINE_STRING(live_record, "", "Torchlight",
                       "Live mode: record every frame the native backend consumes to this file "
                       "(session recording, replay --session); empty does not record");
+REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
+                    "Live mode: time the recording cost per hook and section and log it (live "
+                    "producer, live measurements); off by default, it costs the guest's render "
+                    "thread about 2 %. The frame time statistics are always on");
 REXCVAR_DEFINE_UINT32(live_record_max_mb, 4096, "Torchlight",
                       "Live mode: the session recording stops (well formed) at this size in MiB");
 
@@ -112,14 +119,24 @@ void RequestDialogFrame() {
     Dialogs* d = g_dialogs.get();
     if (!d) return;
     d->frame_requested = false;
+    // The frame counter (frame_counter.h) is drawn but is not a dialog that takes the input: it is
+    // left out of "a dialog is open".
+    rex::ui::ImGuiDialog* counter = FrameCounterDialog();
+    if (counter) d->drawer->RemoveDialog(counter);
     const bool open = d->drawer->HasDialogs();
+    if (counter) d->drawer->AddDialog(counter);
     const platform::GamepadState pad = platform::ReadGamepad();
     g_guest_input_blocked = BlockGuestInput(open, g_guest_input_blocked.load(), pad);
-    if (open) {
-      // Gamepad navigation (the drawer itself only takes keyboard, mouse and touch).
+    if (open || counter) {
+      // Gamepad navigation (the drawer itself only takes keyboard, mouse and touch), only for the
+      // dialogs.
       ImGuiIO& io = d->drawer->GetIO();
-      io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
-      if (pad.connected) {
+      if (open) {
+        io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;
+      } else {
+        io.ConfigFlags &= ~ImGuiConfigFlags_NavEnableGamepad;
+      }
+      if (open && pad.connected) {
         io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
         for (const UiGamepadKey& k : GamepadToImGui(pad)) {
           io.AddKeyAnalogEvent(k.key, k.down, k.value);
@@ -188,6 +205,17 @@ std::string g_gpu_error;
 
 // The settings while running (only mode): what the machine offers, the settings normalized against
 // it at Install and as changed since by the menu.
+// Whether OpenGL 3.3, which GL3+ needs, can run here (platform::CanCreateGl33Context, timed): at
+// startup when the session would use GL3+, else when the settings menu is built (HostCapabilities).
+DeferredCheck g_gl33([] {
+  const auto start = std::chrono::steady_clock::now();
+  const bool gl33 = platform::CanCreateGl33Context();
+  const double ms =
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+  REXLOG_INFO("live: OpenGL 3.3 {} ({:.1f} ms to check)", gl33 ? "available" : "not available", ms);
+  return gl33;
+});
+
 struct RunningSettings {
   std::mutex mutex;
   settings::Capabilities caps;
@@ -296,13 +324,16 @@ void InitRunningSettings(const std::filesystem::path& game_data_root, rex::Runti
   }
   // GL3+ needs OpenGL 3.3 and OGRE crashes without it (Windows with no GPU driver): it stays
   // installed, a saved choice of it is kept, and the session uses another (EffectiveRenderSystem).
-  const auto probe_start = std::chrono::steady_clock::now();
-  const bool gl33 = platform::CanCreateGl33Context();
-  const double probe_ms =
-      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - probe_start).count();
-  REXLOG_INFO("live: OpenGL 3.3 {} ({:.1f} ms to check)", gl33 ? "available" : "not available",
-              probe_ms);
-  if (!gl33) caps.unavailable_render_systems = {kGl3PlusRenderSystemName};
+  // The probe costs ~150-180 ms with a GPU driver, so it runs here only when the session would use
+  // GL3+ and could fall back; otherwise it runs when the game builds its settings menu, which asks
+  // for the capabilities to list the render systems (HostCapabilities; while the title screen
+  // loads, not when the player opens Settings).
+  if (settings::StartupNeedsRenderSystemCheck(caps, g_host_settings.values.render_system,
+                                              kGl3PlusRenderSystemName)) {
+    if (!g_gl33.Result()) caps.unavailable_render_systems = {kGl3PlusRenderSystemName};
+  } else {
+    REXLOG_INFO("live: OpenGL 3.3 check deferred to the settings menu");
+  }
   for (const platform::Gpu& gpu : platform::SelectableGpus(platform::Gpus())) {
     caps.gpus.push_back({gpu.id, gpu.name, gpu.boot});
   }
@@ -379,10 +410,26 @@ void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths) {
       paths.cache_root = paths.user_data_root / "cache";
     }
   }
+  // A run's log rotates within the budget (the runtime's rotating file sink; on bd833a2 through
+  // SDK patch 26, which brought it back).
+  const LogBudget budget;
+  const auto set_unless_command_line = [](const char* name, const std::string& value) {
+    const rex::cvar::FlagEntry* entry = rex::cvar::GetFlagInfo(name);
+    if (entry && entry->source != rex::cvar::Source::kCommandLine) {
+      rex::cvar::SetFlagByName(name, value);
+    }
+  };
+  set_unless_command_line("log_max_file_size_mb", std::to_string(budget.file_bytes >> 20));
+  set_unless_command_line("log_max_files", std::to_string(RotatedFilesPerRun(budget)));
+
   const rex::cvar::FlagEntry* flag = rex::cvar::GetFlagInfo("log_file");
   if (!flag || flag->source == rex::cvar::Source::kCommandLine) return;
   const std::string dir = platform::LogDir();
   if (dir.empty()) return;  // the runtime's default, next to the executable
+  if (const size_t removed = PruneLogFolder(dir, app_name, budget); removed > 0) {
+    std::printf("torchlight: removed %zu old log files to keep the log folder under %llu MB\n",
+                removed, static_cast<unsigned long long>(budget.folder_bytes >> 20));
+  }
   rex::cvar::SetFlagByName("log_file", NextLogPath(dir, app_name).string());
 }
 
@@ -459,6 +506,7 @@ void PreSetup(rex::RuntimeConfig& config) {
 void Install(const std::filesystem::path& game_data_root, const DialogHost& dialogs) {
   // Before the guest runs, in every mode.
   ApplyLanguage(g_host_settings.values.language, game_data_root);
+  InstallFrameCounter(dialogs.runtime);
   if (!Only()) BlockGuestInputUnderXamDialogs(dialogs.runtime);
   std::string mode = Mode();
   if (mode == "off") return;
@@ -473,6 +521,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.draw = !ParallelNoDraw();
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
+  options.producer_timing = REXCVAR_GET(native_producer_timing);
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);
@@ -531,7 +580,12 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
 std::string LanguagePack() { return g_language_pack; }
 
 settings::Capabilities HostCapabilities() {
+  // The deferred OpenGL 3.3 check, run outside the lock, when startup did not need it: the game
+  // builds its settings menu, with our video column, once while the title screen loads (game
+  // thread).
+  const bool gl33 = g_gl33.Result();
   std::lock_guard lock(g_running.mutex);
+  if (!gl33) g_running.caps.unavailable_render_systems = {kGl3PlusRenderSystemName};
   return g_running.caps;
 }
 

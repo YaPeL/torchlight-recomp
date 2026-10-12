@@ -148,6 +148,132 @@ int main() {
     Check(f2->vertex_buffers.empty(), "description not sent again");
     Check(f2->contents[1].content->bytes[0] == 2, "new version's bytes");
   }
+  // Draw buffers (Session::DrawBuffer): the registry's answer and the live state are kept per
+  // address until the registry changes there; a buffer freed and created again at the same
+  // address is a new generation with a fresh live state, even when its content version restarts.
+  {
+    queue.Pop(std::chrono::milliseconds(0));
+    const uint32_t address = 0xA400;
+    capture::BufferInfo created;
+    created.element_size = 12;
+    created.count = 4;
+    s.OnCreated(ResourceKind::kVertexBuffer, address, created);
+    auto e1 = s.DrawBuffer(ResourceKind::kVertexBuffer, address);
+    Check(e1 && e1->info.id.generation != 0 && e1->info.count == 4, "registered buffer found");
+    Check(!s.DrawBuffer(ResourceKind::kIndexBuffer, address), "another kind at the address: none");
+    const ResourceId gen1 = e1->info.id;
+    const uint8_t bytes1[48] = {1}, bytes2[48] = {2};
+    e1 = s.DrawBuffer(ResourceKind::kVertexBuffer, address);
+    s.AddVertexBuffer(e1->info, e1->live);
+    auto c1 = s.RecordContent(gen1, address, bytes1, sizeof(bytes1), BlobEndian::kVertexFetch, 2,
+                              e1->live);
+    // A change at another address of the same cache bucket only makes it ask again.
+    s.OnCreated(ResourceKind::kVertexBuffer, address + 4 * 256, created);
+    auto again = s.DrawBuffer(ResourceKind::kVertexBuffer, address);
+    Check(again && again->info.id == gen1 && again->live->described, "same buffer, same state");
+    s.OnSwapBegin();
+    auto f1 = queue.Pop(std::chrono::milliseconds(100));
+    Check(f1 && f1->vertex_buffers.size() == 1 && f1->contents.size() == 1, "first generation sent");
+
+    s.OnDestroyed(address);
+    Check(!s.DrawBuffer(ResourceKind::kVertexBuffer, address), "destroyed: none");
+    s.OnCreated(ResourceKind::kVertexBuffer, address, created);
+    auto e2 = s.DrawBuffer(ResourceKind::kVertexBuffer, address);
+    Check(e2 && e2->info.id.generation == gen1.generation + 1, "new generation at the address");
+    Check(!e2->live->described && !e2->live->content, "new generation: fresh live state");
+    s.AddVertexBuffer(e2->info, e2->live);
+    auto c2 = s.RecordContent(e2->info.id, address, bytes2, sizeof(bytes2),
+                              BlobEndian::kVertexFetch, 2, e2->live);
+    Check(c2.live != c1.live, "new generation: its own snapshot, not the old one's");
+    s.OnSwapBegin();
+    auto f2 = queue.Pop(std::chrono::milliseconds(100));
+    Check(f2 && f2->vertex_buffers.size() == 1 && f2->vertex_buffers[0].id == e2->info.id,
+          "new generation described");
+    Check(f2 && f2->contents.size() == 1 && f2->contents[0].content->bytes[0] == 2,
+          "new generation's bytes");
+    s.OnDestroyed(address);
+    s.OnDestroyed(address + 4 * 256);
+  }
+  // Descriptions already in the live stream are not read again (LiveTextureDescribed /
+  // LiveDeclarationDescribed), and a resource freed and created again at the same address, or a
+  // declaration changed in place, is described again.
+  {
+    queue.Pop(std::chrono::milliseconds(0));
+    const uint32_t address = 0xB000;
+    s.OnCreated(ResourceKind::kTexture, address);
+    const ResourceId t1 = s.Lookup(ResourceKind::kTexture, address)->id;
+    Check(!s.LiveTextureDescribed(t1), "a new texture is not described yet");
+    TextureDesc first;
+    first.id = t1;
+    first.name = "first.dds";
+    first.width = 64;
+    s.AddTexture(first);
+    Check(s.LiveTextureDescribed(t1), "a static texture, once described, is not read again");
+    s.OnDestroyed(address);
+    s.OnCreated(ResourceKind::kTexture, address);  // another texture at the same address
+    const ResourceId t2 = s.Lookup(ResourceKind::kTexture, address)->id;
+    Check(t2.generation == t1.generation + 1, "the new texture is the next generation");
+    Check(!s.LiveTextureDescribed(t2), "the new texture at the same address is described again");
+    TextureDesc second;
+    second.id = t2;
+    second.name = "second.dds";
+    second.width = 128;
+    s.AddTexture(second);
+    Check(s.LiveTextureDescribed(t2), "and then it is not read again");
+    s.OnSwapBegin();
+    auto f = queue.Pop(std::chrono::milliseconds(100));
+    bool saw_first = false, saw_second = false;
+    for (const auto& t : f->textures) {
+      saw_first |= t.id == t1 && t.name == "first.dds";
+      saw_second |= t.id == t2 && t.name == "second.dds" && t.width == 128;
+    }
+    Check(saw_first && saw_second, "both textures' own descriptions reach the live stream");
+    Check(!s.LiveTextureDescribed(t1), "the destroyed texture is forgotten at the cut");
+
+    // A dynamic texture (manual, its content snapshotted) keeps being read.
+    s.OnCreated(ResourceKind::kTexture, 0xB100);
+    TextureDesc dynamic;
+    dynamic.id = s.Lookup(ResourceKind::kTexture, 0xB100)->id;
+    dynamic.name = "dynamic";
+    dynamic.manual = true;
+    s.AddTexture(dynamic, 0x5555);
+    Check(!s.LiveTextureDescribed(dynamic.id), "a dynamic texture is read on every bind");
+    // A render target's description holds no content: not read again.
+    s.OnCreated(ResourceKind::kTexture, 0xB200);
+    TextureDesc target;
+    target.id = s.Lookup(ResourceKind::kTexture, 0xB200)->id;
+    target.render_target = true;
+    s.AddTexture(target);
+    Check(s.LiveTextureDescribed(target.id), "a render target is not read again");
+
+    // Declarations: keyed by their content too.
+    const uint32_t decl = 0xC000;
+    s.OnCreated(ResourceKind::kVertexDeclaration, decl);
+    VertexDeclarationContent d1;
+    d1.id = s.Lookup(ResourceKind::kVertexDeclaration, decl)->id;
+    d1.content = 0x1234;
+    Check(!s.LiveDeclarationDescribed(d1.id, d1.content), "a new declaration is not described");
+    s.AddVertexDeclaration(d1);
+    Check(s.LiveDeclarationDescribed(d1.id, 0x1234), "the same content: not read again");
+    Check(!s.LiveDeclarationDescribed(d1.id, 0x5678), "changed in place: described again");
+    // The element bytes it was sent with: the same bytes skip the hash, others do not.
+    Check(s.DrawDeclaration(decl) && s.DrawDeclaration(decl)->id == d1.id, "declaration found");
+    const uint8_t elements[] = {1, 2, 3, 4}, changed[] = {1, 2, 3, 5};
+    Check(!s.LiveDeclarationBytesSent(d1.id, elements), "bytes not remembered yet");
+    s.RememberLiveDeclaration(d1.id, elements, 0x1234);
+    Check(s.LiveDeclarationBytesSent(d1.id, elements) == 0x1234, "the same bytes: its hash");
+    Check(!s.LiveDeclarationBytesSent(d1.id, changed), "bytes changed in place: hashed again");
+    Check(!s.LiveDeclarationBytesSent(d1.id, std::span(elements, 3)), "shorter list: hashed again");
+    s.OnDestroyed(decl);
+    Check(!s.DrawDeclaration(decl), "destroyed declaration: none");
+    s.OnCreated(ResourceKind::kVertexDeclaration, decl);
+    const ResourceId d2 = s.Lookup(ResourceKind::kVertexDeclaration, decl)->id;
+    Check(s.DrawDeclaration(decl) && s.DrawDeclaration(decl)->id == d2, "new generation found");
+    Check(!s.LiveDeclarationDescribed(d2, 0x1234),
+          "a new declaration at the same address, even with the same content, is described again");
+    Check(!s.LiveDeclarationBytesSent(d2, elements),
+          "a new declaration at the same address, even with the same bytes, is hashed again");
+  }
   // A capture's baseline re-reads shadow entries: early outs recorded before no longer apply.
   {
     const uint32_t raw[] = {9};

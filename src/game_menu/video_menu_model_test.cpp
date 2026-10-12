@@ -125,7 +125,7 @@ void TestAchievements() {
   Check(m.Enabled(Row::kAchievements) && m.Text(Row::kAchievements) == "Xbox 360",
         "Xbox 360 by default (no key)");
   Check(!m.Step(Row::kAchievements, -1), "Xbox 360 is the first choice");
-  Check(m.Step(Row::kAchievements, +1) && m.Text(Row::kAchievements) == "PC (incomplete)",
+  Check(m.Step(Row::kAchievements, +1) && m.Text(Row::kAchievements) == "PC",
         "right: PC");
   Check(m.settings().achievements == AchievementSet::kPc && m.RestartNeeded(), "PC needs a restart");
   Check(!m.Step(Row::kAchievements, +1), "PC is the last choice");
@@ -135,7 +135,7 @@ void TestAchievements() {
   HostSettings pc;
   pc.achievements = AchievementSet::kPc;
   VideoMenuModel started_pc(Desktop(), pc, pc);
-  Check(started_pc.Text(Row::kAchievements) == "PC (incomplete)" && !started_pc.RestartNeeded(),
+  Check(started_pc.Text(Row::kAchievements) == "PC" && !started_pc.RestartNeeded(),
         "started with PC");
   Check(started_pc.Reset() && started_pc.Text(Row::kAchievements) == "Xbox 360" &&
             started_pc.RestartNeeded(),

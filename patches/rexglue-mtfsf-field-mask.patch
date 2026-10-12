@@ -1,0 +1,73 @@
+diff --git a/src/codegen/builders/system.cpp b/src/codegen/builders/system.cpp
+index f560429..80bc1b8 100644
+--- a/src/codegen/builders/system.cpp
++++ b/src/codegen/builders/system.cpp
+@@ -345,10 +345,12 @@ bool build_mtmsrd(BuilderContext& ctx) {
+ 
+ bool build_mtfsf(BuilderContext& ctx) {
+   uint32_t fm = ctx.insn.operands[0];
++  // FM bit 0 (the most significant of the eight) selects FPSCR field 0, bits
++  // 0-3 in PowerPC numbering: 0xF0000000. Field 7 holds RN.
+   uint32_t mask = 0;
+   for (int j = 0; j < 8; j++) {
+-    if (fm & (1 << (7 - j)))
+-      mask |= 0xF << (4 * j);
++    if (fm & (0x80 >> j))
++      mask |= 0xF0000000u >> (4 * j);
+   }
+   if (mask == 0xFFFFFFFF) {
+     ctx.println("\tctx.fpscr.storeFromGuest({}.u32);", ctx.f(ctx.insn.operands[1]));
+diff --git a/tests/ppc/asm/instr_mtfsf_fields.s b/tests/ppc/asm/instr_mtfsf_fields.s
+new file mode 100644
+index 0000000..986f8fc
+--- /dev/null
++++ b/tests/ppc/asm/instr_mtfsf_fields.s
+@@ -0,0 +1,48 @@
++# mtfsf writes only the FPSCR fields its FM selects. FM bit 7 (mtfsf 0x01) is
++# field 7, which holds RN; FM bit 0 (mtfsf 0x80) is field 0. mffs reads RN back.
++# Each test puts the mode back to round to nearest (f0 = 0).
++
++# mtfsf 0x01 sets RN (round down)
++test_mtfsf_fields_1:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000003
++  mtfsf 0x01, f1
++  mffs f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f1 0x0000000000000003
++  #_ REGISTER_OUT f2 0x0000000000000003
++
++# mtfsf 0x80 leaves RN alone
++test_mtfsf_fields_2:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000003
++  mtfsf 0x80, f1
++  mffs f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f1 0x0000000000000003
++  #_ REGISTER_OUT f2 0x0000000000000000
++
++# mtfsf 0x01 after round up keeps only the new RN (toward zero)
++test_mtfsf_fields_3:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000002
++  #_ REGISTER_IN f3 0x0000000000000001
++  mtfsf 0xFF, f1
++  mtfsf 0x01, f3
++  mffs f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x0000000000000001
++
++# mtfsf 0xFE (every field but 7) keeps RN (round up)
++test_mtfsf_fields_4:
++  #_ REGISTER_IN f0 0x0000000000000000
++  #_ REGISTER_IN f1 0x0000000000000002
++  mtfsf 0xFF, f1
++  mtfsf 0xFE, f0
++  mffs f2
++  mtfsf 0xFF, f0
++  blr
++  #_ REGISTER_OUT f2 0x0000000000000002

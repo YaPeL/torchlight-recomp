@@ -35,7 +35,7 @@ struct FrameRecord {
   uint32_t textures_created = 0;
   double texture_ms = 0;
   uint32_t programs_generated = 0;
-  double program_ms = 0;
+  double program_ms = 0, program_generate_ms = 0;  // the draws that generated programs; RTSS
   uint32_t gpu_buffers_created = 0, vertex_layouts_created = 0;
 };
 

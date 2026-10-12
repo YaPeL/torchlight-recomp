@@ -1,7 +1,7 @@
 # Xbox 360 achievements and a player choice between Xbox and PC sets
 
 Research for offering the player one of two achievement sets: the game's own 12 Xbox 360
-achievements, or the PC set (66 IDs, incomplete; see achievement-coverage.md). Reading only: the
+achievements, or the PC set (66 IDs; see achievement-coverage.md). Reading only: the
 guest code, the ReXGlue SDK (read only) and the user's game files at runtime. 2026-10-06.
 
 ## 1. How the Xbox achievements work in the recomp today
@@ -64,18 +64,21 @@ icon images from the same XDBF. Nothing is distributed: the app reads them throu
 `runtime()->kernel_state()->achievements()` while the game runs. The texts are the game's own,
 localised for de/fr/es where the title has them.
 
-## 4. Feasibility of "Achievements: Xbox 360 / PC (incomplete)"
+## 4. Feasibility of "Achievements: Xbox 360 / PC"
+
+The PC choice was labelled "PC (incomplete)" while some PC achievements could not be earned; since
+every one can (all 66 implemented, achievement-coverage.md), the label is "PC" (2026-10-12).
 
 ### What each choice enables
 
-| | Xbox 360 | PC (incomplete) |
+| | Xbox 360 | PC |
 |---|---|---|
 | Guest Xbox path (mapper, queue, XUserWriteAchievements) | runs unchanged | suppressed (as today) |
 | Native PC service, hooks, counters, flush points | off (`pc_achievements=off`) | on (`local`; Steam modes unchanged) |
 | Saved progress | SDK toml `achievements/58410A7E.toml` | `achievements/<profile>.state` |
 | In-game toast | CEGUI toast fed by the SDK's notification callback, texts from the XDBF | CEGUI toast as today, our texts |
 | SDK ImGui toast | shows in Xenos; would duplicate ours, so ours is not used in Xenos (or the SDK's listener stays, see below) | not involved |
-| "Achievements" button | list of the 12 with XDBF names, descriptions, icons, unlocked state | list of the 66 (60 reachable) with our texts, unlocked state and counter progress |
+| "Achievements" button | list of the 12 with XDBF names, descriptions, icons, unlocked state | list of the 66 with our texts, unlocked state and counter progress |
 
 Both sets cannot be earned in the same session without a third mode; nothing here needs one.
 
@@ -164,10 +167,9 @@ replace the SDK's in Xenos.
 - Takes effect after a restart (use the existing restart notice).
 - UI texts (English; translations to de/fr/es on your side):
   - Row label: `Achievements`
-  - Values: `Xbox 360` and `PC (incomplete)`
+  - Values: `Xbox 360` and `PC`
   - First-start explanation: `Choose which achievements to earn. Xbox 360: the game's original
-    12 achievements. PC: the 66 achievements of the PC version; some cannot be earned yet. Each
-    set keeps its own progress. You can change this later in the settings (restart required).`
+    12 achievements. PC: the 66 achievements of the PC version. Each set keeps its own progress. You can change this later in the settings (restart required).`
 
 ## Implemented: the Achievements list (2026-10-06)
 

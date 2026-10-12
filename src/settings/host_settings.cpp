@@ -1,5 +1,7 @@
 #include "settings/host_settings.h"
 
+#include "platform/durable_file.h"
+
 #include <algorithm>
 #include <cctype>
 #include <charconv>
@@ -152,6 +154,15 @@ std::string EffectiveRenderSystem(const Capabilities& caps, const std::string& r
     if (RenderSystemUsable(caps, offered)) return offered;
   }
   return "";
+}
+
+bool StartupNeedsRenderSystemCheck(const Capabilities& caps, const std::string& render_system,
+                                   const std::string& checked) {
+  if (EffectiveRenderSystem(caps, render_system) != checked) return false;
+  for (const std::string& offered : caps.render_systems) {
+    if (offered != checked && RenderSystemUsable(caps, offered)) return true;
+  }
+  return false;
 }
 
 Choices<std::string> RenderSystemChoices(const Capabilities& caps) {
@@ -413,8 +424,8 @@ std::string Serialize(const HostSettings& settings) {
       << "# Aspect ratio of the game's frame: \"auto\" (the display's), \"4:3\", \"16:10\",\n"
       << "# \"16:9\", \"21:9\" or \"32:9\"; takes effect after a restart.\n"
       << "aspect = " << Quote(AspectName(settings.aspect)) << "\n"
-      << "# Achievement set: \"xbox\" (the game's 12, the default) or \"pc\" (the PC version's,\n"
-      << "# incomplete); takes effect after a restart.\n";
+      << "# Achievement set: \"xbox\" (the game's 12, the default) or \"pc\" (the PC version's\n"
+      << "# 66); takes effect after a restart.\n";
   if (settings.achievements) {
     out << "achievements = " << Quote(std::string(AchievementSetName(*settings.achievements)))
         << "\n";
@@ -459,10 +470,9 @@ bool Save(const std::string& path, const HostSettings& settings, std::string& er
       return false;
     }
   }
-  std::error_code ec;
-  std::filesystem::rename(temp, path, ec);
-  if (ec) {
-    error = "cannot replace " + path + ": " + ec.message();
+  // On the disk before it replaces the old file, so a power cut leaves one or the other whole.
+  if (!platform::FlushFileToDisk(temp, error) || !platform::CommitReplace(temp, path, error)) {
+    std::error_code ec;
     std::filesystem::remove(temp, ec);
     return false;
   }

@@ -14,6 +14,7 @@
 #include "guest_abi/ogre_enums.h"
 #include "guest_abi/ogre_layout.h"
 #include "guest_abi/xbox_d3d.h"
+#include "guest_abi/xbox_memory.h"
 
 namespace {
 
@@ -256,6 +257,15 @@ static_assert(SlotIs(kRenderSystemSlots, VtableSlot{104, Confidence::kConfirmed}
 static_assert(kRenderSystemSlots[104].guest_impl == 0x8219BEB0);
 static_assert(viewport::kActLeft.offset < viewport::kUpdated.offset);
 
+// Host translation, for both host offsets whatever this build's is (xbox_memory.h).
+static_assert(xbox_memory::kHostOffset == 0 || xbox_memory::kHostOffset == 0x1000);
+static_assert(xbox_memory::HostDistance(0xDFFFFFFFu, 0) == 0xDFFFFFFFu);
+static_assert(xbox_memory::HostDistance(0xE0000000u, 0) == 0xE0000000u);
+static_assert(xbox_memory::HostDistance(0x82000000u, 0x1000) == 0x82000000u);
+static_assert(xbox_memory::HostDistance(0xDFFFFFFFu, 0x1000) == 0xDFFFFFFFu);
+static_assert(xbox_memory::HostDistance(0xE0000000u, 0x1000) == 0xE0001000u);
+static_assert(xbox_memory::HostDistance(0xFFFFFFFFu, 0x1000) == 0x100000FFFull);  // no wrap
+
 int failures = 0;
 
 void Check(bool ok, const char* what) {
@@ -304,6 +314,21 @@ int main() {
   str_mem[0x40 + 0x13] = 16;
   str_mem[0x40 + 0x17] = 31;
   Check(ReadString(str_mem, 0x40) == "texture_name.dds", "ReadString heap");
+
+  // The readers translate with this build's host offset: a fake base whose guest 0xE0000000 (plus
+  // the offset) lands on `high`, and whose guest 0x10 lands on `low`.
+  uint8_t low[0x20] = {};
+  uint8_t high[0x20] = {};
+  const uint8_t word[] = {0xCA, 0xFE, 0xF0, 0x0D};
+  std::memcpy(high + 4, word, 4);
+  std::memcpy(low + 0x10, word, 4);
+  const uint64_t boundary_distance = xbox_memory::HostDistance(xbox_memory::kHostOffsetBoundary);
+  const auto high_base =
+      reinterpret_cast<const uint8_t*>(reinterpret_cast<uintptr_t>(high) - boundary_distance);
+  Check(ReadU32(high_base, xbox_memory::kHostOffsetBoundary + 4) == 0xCAFEF00D,
+        "ReadU32 from the host offset boundary up");
+  Check(xbox_memory::HostAddress(low, 0x10) == low + 0x10, "HostAddress below the boundary");
+  Check(ReadU32(low, 0x10) == 0xCAFEF00D, "ReadU32 below the boundary");
 
   if (failures == 0) std::printf("guest_abi layout test: ok\n");
   return failures == 0 ? 0 : 1;

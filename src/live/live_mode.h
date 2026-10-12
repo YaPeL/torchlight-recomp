@@ -55,6 +55,8 @@ struct LiveOptions {
   // presenting; request_ui_frame asks for the next UI frame after each present.
   UiOverlay* ui = nullptr;
   std::function<void()> request_ui_frame;
+  // The producer's cost per hook and section, timed and logged (--native_producer_timing).
+  bool producer_timing = false;
   // OGRE's log file; empty: none (debugger output only).
   std::string ogre_log_path;
   // Session recording (session_file.h): every consumed frame to this file, up to the cap.
@@ -86,6 +88,7 @@ class LiveMode {
   SnapshotStore store_;
   std::thread thread_;
   std::atomic<bool> running_{false};
+  std::atomic<bool> finished_{false};  // Run() has returned (Stop)
   std::atomic<uint64_t> pending_window_size_{0};  // width << 32 | height, 0 when none
   struct PendingVideo {
     settings::Resolution render_resolution;

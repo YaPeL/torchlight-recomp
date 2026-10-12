@@ -11,7 +11,7 @@ int failures=0;
 void Check(bool value,const char* message) { if(!value) { ++failures; std::cerr<<message<<'\n'; } }
 }
 int main() {
-  rex::InitLogging(nullptr,spdlog::level::err);
+  rex::InitLogging({},spdlog::level::err);  // {}: a const char* on SDK 0c7b01a, a path on bd833a2
   const std::filesystem::path root=TORCHLIGHT_ACHIEVEMENT_TEST_ROOT;
   std::filesystem::create_directories(root);
   const auto path=root/"lifecycle-test.state";

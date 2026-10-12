@@ -64,6 +64,20 @@ int main() {
     Check(s.hold_ns >= 50'000'000, "held at least 50 ms in total");
   }
   {
+    // The time held is timed on one acquisition in kHoldSampleEvery and scaled: holding it 2 ms
+    // that many times comes out near the true total (2 ms * 64).
+    MeasuredMutex m("sampled");
+    for (uint64_t i = 0; i < MeasuredMutex::kHoldSampleEvery; ++i) {
+      std::lock_guard<MeasuredMutex> lock(m);
+      std::this_thread::sleep_for(2ms);
+    }
+    MutexSummary s = Find("sampled");
+    Check(s.acquisitions == MeasuredMutex::kHoldSampleEvery, "every acquisition counted");
+    Check(s.hold_ns >= 2'000'000 * MeasuredMutex::kHoldSampleEvery &&
+              s.hold_ns < 40'000'000 * MeasuredMutex::kHoldSampleEvery,
+          "the estimated time held is near the true total");
+  }
+  {
     // Same name: instances add up.
     MeasuredMutex a("shared"), b("shared");
     { std::lock_guard<MeasuredMutex> lock(a); }

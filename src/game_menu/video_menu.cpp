@@ -15,6 +15,7 @@
 #include <rex/runtime.h>
 
 #include "game_menu/guest_call.h"
+#include "game_menu/mods_install.h"
 #include "game_menu/menu_strings.h"
 #include "game_menu/video_menu_model.h"
 #include "game_menu/wide_layout.h"
@@ -184,10 +185,10 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
     REXLOG_ERROR("game menu: no runtime file system; video menu off");
     return;
   }
-  const std::string exe_dir = platform::ExecutableDir();
-  const std::filesystem::path data = std::filesystem::path(exe_dir) / "data" / "ui";
+  const std::string resources = platform::ResourceDir();
+  const std::filesystem::path data = std::filesystem::path(resources) / "data" / "ui";
   std::error_code ec;
-  if (exe_dir.empty() || !std::filesystem::exists(data / kVideoLayout, ec)) {
+  if (resources.empty() || !std::filesystem::exists(data / kVideoLayout, ec)) {
     REXLOG_ERROR("game menu: layouts not found in {}; video menu off", data.string());
     return;
   }
@@ -208,15 +209,13 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
   InstallWideLayouts(runtime, game_data_root);
 }
 
-namespace {
-
-// One FileSystem location in the default group; false on failure.
-bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive) {
+// One FileSystem location in a group (the default one unless told); false on failure (video_menu.h).
+bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive, const std::string& group_name) {
   const uint32_t manager = call.ReadU32(ui::kResourceGroupManagerGlobal);
   const uint32_t mark = call.Mark();
   const uint32_t name = call.StdString(path);
   const uint32_t type = call.StdString(kResourceType);
-  const uint32_t group = call.StdString(kResourceGroup);
+  const uint32_t group = call.StdString(group_name);
   const bool ok = manager && name && type && group;
   if (ok) {
     call.Call(ui::kAddResourceLocation.address, {manager, name, type, group, recursive ? 1u : 0u});
@@ -227,6 +226,20 @@ bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recurs
   call.Release(mark);
   return ok;
 }
+
+// One resource group initialised; false on failure (video_menu.h).
+bool InitialiseResourceGroup(GuestCall& call, const std::string& group_name) {
+  const uint32_t manager = call.ReadU32(ui::kResourceGroupManagerGlobal);
+  const uint32_t mark = call.Mark();
+  const uint32_t group = call.StdString(group_name);
+  const bool ok = manager && group;
+  if (ok) call.Call(ui::kInitialiseResourceGroup.address, {manager, group});
+  call.DestroyStdString(group);
+  call.Release(mark);
+  return ok;
+}
+
+namespace {
 
 // After the game's resources.cfg locations (once): our layouts (only mode), and a language pack's
 // folder (any mode), recursive so its files keep their game paths (media/UI/...). The game's own
@@ -389,8 +402,13 @@ extern "C" {
 FUNCTION_ADDRESS_CHECK(kResourcesCfgLoader, 8239B998);
 REX_EXTERN(__imp__sub_8239B998);
 REX_FUNC(sub_8239B998) {
+  const uint32_t data_manager = ctx.r3.u32;
+  torchlight::game_menu::NoteDataManager(data_manager);
   __imp__sub_8239B998(ctx, base);
   torchlight::game_menu::AddResourceLocations(ctx, base);
+  // The player's mods (mods_install.h): each in its own resource group, initialised after the
+  // game's groups, as on PC.
+  torchlight::game_menu::RegisterMods(ctx, base, data_manager);
 }
 
 FUNCTION_ADDRESS_CHECK(kSettingsMenuInit, 823802F8);

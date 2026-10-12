@@ -4,6 +4,8 @@
 #include <chrono>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <string_view>
 #include <thread>
 #include <tuple>
@@ -14,6 +16,7 @@
 #include "commands/serialize.h"
 #include "guest_abi/ogre_layout.h"
 #include "hooks/hooks.h"
+#include "mods/texture_files.h"
 
 namespace torchlight::capture {
 
@@ -81,9 +84,11 @@ void Session::EnableLive(live::FrameQueue* queue, live::SnapshotStore* store) {
   live_store_ = store;
   live_queue_ = queue;
   live_frame_.cut = std::chrono::steady_clock::now();
+  constant_mirror_.Reset();  // the consumer starts with no constants
   // The live consumer starts empty: it gets the state already in the shadow first, as a capture's
   // baseline does, since State skips values that did not change.
-  for (const auto& [key, entry] : shadow_) {
+  for (uint32_t key : ShadowKeysInOrder()) {
+    const ShadowEntry& entry = shadow_.at(key);
     if (entry.present) LiveAppend(entry.payload);
   }
 }
@@ -115,6 +120,14 @@ void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t obj
   entry.object = object;
   entry.present = true;
   ++entry.version;
+}
+
+std::vector<uint32_t> Session::ShadowKeysInOrder() const {
+  std::vector<uint32_t> keys;
+  keys.reserve(shadow_.size());
+  for (const auto& [key, entry] : shadow_) keys.push_back(key);
+  std::sort(keys.begin(), keys.end());
+  return keys;
 }
 
 void Session::EraseState(uint32_t key) {
@@ -183,15 +196,24 @@ void Session::CutLiveFrame(bool measured) {
     for (auto& t : live_pending_textures_) live_frame_.textures.push_back(std::move(t));
     for (const auto& id : live_pending_destroyed_) {
       live_frame_.destroyed.push_back(id);
-      live_buffers_.erase(BufferKey(id));
-      live_sent_programs_.erase({id.guest_address, id.generation});
+      if (BufferSlot* slot = buffer_slots_.find(id.guest_address);
+          slot && slot->live_generation == id.generation) {
+        slot->live = {};
+        slot->live_generation = 0;
+      }
+      live_described_textures_.erase(BufferKey(id));
+      live_sent_programs_.erase(BufferKey(id));
     }
     live_pending_textures_.clear();
     live_pending_destroyed_.clear();
   }
   live_frame_.swap = swap_number_;
+  // The next frame's commands reserved at this one's count and a margin: growing the vector by
+  // doubling reallocated and moved every command several times per frame.
+  const size_t commands = live_frame_.commands.size();
   live_queue_->Push(std::move(live_frame_));
   live_frame_ = live::LiveFrame{};
+  live_frame_.commands.reserve(commands + commands / 8);
   live_frame_.cut = std::chrono::steady_clock::now();
   live_frame_contents_.clear();
 }
@@ -199,7 +221,7 @@ void Session::CutLiveFrame(bool measured) {
 Session::RecordedContent Session::RecordContent(const commands::ResourceId& id,
                                                 uint32_t version_address, const uint8_t* data,
                                                 size_t size, commands::BlobEndian endian,
-                                                uint8_t endian_raw) {
+                                                uint8_t endian_raw, LiveBuffer* live_buffer) {
   ProducerTimer timer(producer_times_, ProducerSection::kResources, measuring());
   RecordedContent r;
   if (armed()) r.capture = AddBlob(data, size, endian, endian_raw);
@@ -207,7 +229,7 @@ Session::RecordedContent Session::RecordContent(const commands::ResourceId& id,
     uint32_t version = ContentVersion(version_address);
     bool buffer = id.kind == commands::ResourceKind::kVertexBuffer ||
                   id.kind == commands::ResourceKind::kIndexBuffer;
-    LiveBuffer* cached = buffer ? &live_buffers_[BufferKey(id)] : nullptr;
+    LiveBuffer* cached = live_buffer ? live_buffer : buffer ? &LiveBufferOf(id) : nullptr;
     live::SnapshotStore::Content content;
     if (cached && cached->content && cached->version == version) {
       content = cached->content;
@@ -230,7 +252,7 @@ Session::RecordedContent Session::RecordContent(const commands::ResourceId& id,
     }
     r.live = content->hash;
     if (!cached || cached->added_at_swap != swap_number_) {
-      if (live_frame_contents_.insert(r.live).second) live_frame_.contents.push_back({id, content});
+      if (live_frame_contents_.insert(r.live)) live_frame_.contents.push_back({id, content});
       if (cached) cached->added_at_swap = swap_number_;
     }
     if (armed() && capture_live_blobs_.insert(r.live).second) capture_.live_blobs.push_back(*content);
@@ -262,7 +284,8 @@ void Session::OnSwapBegin() {
   }
   const bool ended_frame_measured = measure_frame_.load(std::memory_order_relaxed);
   ++swap_number_;
-  measure_frame_.store(swap_number_ % kMeasureEveryFrames == 0, std::memory_order_relaxed);
+  measure_frame_.store(producer_timing_ && swap_number_ % kMeasureEveryFrames == 0,
+                       std::memory_order_relaxed);
   if (live()) {
     LiveAppend(commands::Present{swap_number_});
     CutLiveFrame(ended_frame_measured);
@@ -299,7 +322,8 @@ void Session::Start() {
   // Baseline: the last value of every state setter, with the resources they refer to re-read
   // now so their descriptions are part of the capture.
   size_t baseline = 0;
-  for (auto& [key, entry] : shadow_) {
+  for (uint32_t key : ShadowKeysInOrder()) {
+    ShadowEntry& entry = shadow_.at(key);
     if (!entry.present) continue;
     ++baseline;
     ++entry.version;  // re-read below: early outs recorded against it no longer apply
@@ -447,8 +471,8 @@ void Session::OnContentWritten(uint32_t buffer) {
 
 uint32_t Session::ContentVersion(uint32_t address) {
   std::lock_guard<live::MeasuredMutex> lock(versions_mutex_);
-  auto it = versions_.find(address);
-  return it == versions_.end() ? 0 : it->second.version;
+  const ContentState* state = versions_.find(address);
+  return state ? state->version : 0;
 }
 
 void Session::OnTextureLoaded(const uint8_t* membase, uint32_t texture) {
@@ -468,6 +492,66 @@ void Session::OnTextureLoaded(const uint8_t* membase, uint32_t texture) {
 
 std::optional<BufferInfo> Session::Lookup(commands::ResourceKind kind, uint32_t guest_address) {
   return registry_.Lookup(kind, guest_address);
+}
+
+std::optional<Session::DrawBufferEntry> Session::DrawBuffer(commands::ResourceKind kind,
+                                                            uint32_t guest_address) {
+  BufferSlot& slot = buffer_slots_[guest_address];
+  if (!Registered(slot, kind, guest_address)) return std::nullopt;
+  if (slot.live_generation != slot.info->id.generation) {
+    slot.live = {};
+    slot.live_generation = slot.info->id.generation;
+  }
+  return DrawBufferEntry{*slot.info, &slot.live};
+}
+
+template <typename Slot>
+const std::optional<BufferInfo>& Session::Registered(Slot& slot, commands::ResourceKind kind,
+                                                     uint32_t guest_address) {
+  // The stamp first: a change after it is read makes the next call ask the registry again.
+  const uint64_t stamp = registry_.Stamp(guest_address);
+  if (!slot.looked_up || slot.stamp != stamp || slot.kind != kind) {
+    slot.info = registry_.Lookup(kind, guest_address);
+    slot.stamp = stamp;
+    slot.kind = kind;
+    slot.looked_up = true;
+  }
+  return slot.info;
+}
+
+std::optional<BufferInfo> Session::DrawDeclaration(uint32_t guest_address) {
+  return Registered(declaration_slots_[guest_address], commands::ResourceKind::kVertexDeclaration,
+                    guest_address);
+}
+
+std::optional<commands::Hash> Session::LiveDeclarationBytesSent(
+    const commands::ResourceId& id, std::span<const uint8_t> elements) const {
+  if (!live() || armed()) return std::nullopt;
+  const DeclarationSlot* slot = declaration_slots_.find(id.guest_address);
+  if (!slot || slot->sent_generation != id.generation ||
+      !std::equal(elements.begin(), elements.end(), slot->sent_bytes.begin(),
+                  slot->sent_bytes.end())) {
+    return std::nullopt;
+  }
+  return slot->sent_content;
+}
+
+void Session::RememberLiveDeclaration(const commands::ResourceId& id,
+                                      std::span<const uint8_t> elements, commands::Hash content) {
+  if (!live()) return;
+  DeclarationSlot& slot = declaration_slots_[id.guest_address];
+  slot.sent_generation = id.generation;
+  slot.sent_bytes.assign(elements.begin(), elements.end());
+  slot.sent_content = content;
+}
+
+Session::LiveBuffer& Session::LiveBufferOf(const commands::ResourceId& id) {
+  BufferSlot& slot = buffer_slots_[id.guest_address];
+  if (slot.live_generation != id.generation) {
+    slot.live = {};
+    slot.live_generation = id.generation;
+  }
+  return slot.live;
 }
 
 bool Session::HasProgramSource(const std::string& name) {
@@ -495,11 +579,11 @@ commands::Hash Session::AddBlob(const uint8_t* data, size_t size, commands::Blob
   return h;
 }
 
-void Session::AddVertexBuffer(const BufferInfo& info) {
+void Session::AddVertexBuffer(const BufferInfo& info, LiveBuffer* live_buffer) {
   auto key = std::make_tuple(info.id.guest_address, info.id.generation);
   commands::VertexBufferDesc desc{info.id, info.element_size, info.count, info.usage};
   if (live()) {
-    LiveBuffer& cached = live_buffers_[BufferKey(info.id)];
+    LiveBuffer& cached = live_buffer ? *live_buffer : LiveBufferOf(info.id);
     if (!cached.described) {
       cached.described = true;
       live_frame_.vertex_buffers.push_back(desc);
@@ -510,11 +594,11 @@ void Session::AddVertexBuffer(const BufferInfo& info) {
   }
 }
 
-void Session::AddIndexBuffer(const BufferInfo& info) {
+void Session::AddIndexBuffer(const BufferInfo& info, LiveBuffer* live_buffer) {
   auto key = std::make_tuple(info.id.guest_address, info.id.generation);
   commands::IndexBufferDesc desc{info.id, info.element_size, info.count, info.usage};
   if (live()) {
-    LiveBuffer& cached = live_buffers_[BufferKey(info.id)];
+    LiveBuffer& cached = live_buffer ? *live_buffer : LiveBufferOf(info.id);
     if (!cached.described) {
       cached.described = true;
       live_frame_.index_buffers.push_back(desc);
@@ -528,13 +612,33 @@ void Session::AddIndexBuffer(const BufferInfo& info) {
 void Session::AddTexture(commands::TextureDesc desc, commands::Hash live_content) {
   if (live()) {
     auto sent = std::make_tuple(desc.id.guest_address, desc.id.generation, live_content);
-    if (live_sent_textures_.insert(sent).second) {
+    if (live_sent_textures_.insert(sent)) {
       commands::TextureDesc d = desc;
       d.content = live_content;
       live_frame_.textures.push_back(std::move(d));
     }
+    // No content snapshot (a static texture or a render target): this generation's description
+    // is final, the hooks need not read it again (LiveTextureDescribed). Dynamic textures carry
+    // their content and keep being read.
+    if (live_content == 0 && (desc.render_target || (!desc.name.empty() && !desc.manual))) {
+      live_described_textures_.insert(BufferKey(desc.id));
+    }
   }
   if (!armed()) return;
+  // A named texture whose file is a mod's or the replacements folder's: the capture keeps the
+  // file's bytes (replay has no mods; mods/texture_files.h).
+  if (!desc.render_target && !desc.manual && !desc.name.empty() && desc.file == 0) {
+    if (auto resolver = mods::CurrentTextureResolver()) {
+      const mods::TextureFile found = resolver->Find(desc.name, desc.group, mods::PakHas);
+      if (found.source == mods::TextureSource::kMod || found.source == mods::TextureSource::kReplacements) {
+        std::ifstream in(found.path, std::ios::binary);
+        const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
+        if (!bytes.empty()) {
+          desc.file = AddBlob(bytes.data(), bytes.size(), commands::BlobEndian::kHostFile, 0);
+        }
+      }
+    }
+  }
   if (live() && live_content &&
       capture_live_textures_.insert({desc.id.guest_address, desc.id.generation, live_content})
           .second) {
@@ -547,7 +651,7 @@ void Session::AddTexture(commands::TextureDesc desc, commands::Hash live_content
 }
 
 void Session::AddProgram(commands::ProgramDesc desc) {
-  if (live() && live_sent_programs_.insert({desc.id.guest_address, desc.id.generation}).second) {
+  if (live() && live_sent_programs_.insert(BufferKey(desc.id)).second) {
     live_frame_.programs.push_back(desc);
     if (!live_sent_sources_.count(desc.name)) {
       std::lock_guard<live::MeasuredMutex> lock(registry_mutex_);
@@ -563,9 +667,19 @@ void Session::AddProgram(commands::ProgramDesc desc) {
   }
 }
 
+bool Session::LiveTextureDescribed(const commands::ResourceId& id) const {
+  return live() && !armed() && live_described_textures_.contains(BufferKey(id));
+}
+
+bool Session::LiveDeclarationDescribed(const commands::ResourceId& id,
+                                       commands::Hash content) const {
+  return live() && !armed() &&
+         live_sent_declarations_.contains({id.guest_address, id.generation, content});
+}
+
 void Session::AddVertexDeclaration(commands::VertexDeclarationContent content) {
   auto key = std::make_tuple(content.id.guest_address, content.id.generation, content.content);
-  if (live() && live_sent_declarations_.insert(key).second) live_frame_.declarations.push_back(content);
+  if (live() && live_sent_declarations_.insert(key)) live_frame_.declarations.push_back(content);
   if (armed() && declaration_index_.emplace(key, capture_.vertex_declarations.size()).second) {
     capture_.vertex_declarations.push_back(std::move(content));
   }

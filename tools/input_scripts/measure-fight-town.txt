@@ -1,0 +1,35 @@
+# The standard measurement (docs/performance-profile.md, method): on the fixed-floor saved game,
+# the mine's first floor standing still and fighting, then the town square walked around. The marks
+# are the steps the measurement scripts read (frame summaries per step in the log).
+press A every 3s until menu MainMenu timeout 90s
+mark MAIN MENU: hands off
+idle 10s
+# Continue (the menu's first entry): the saved character, by the stairs of the mine's first floor.
+press A every 3s until level_loaded timeout 60s
+idle 3s
+mark DUNGEON: stand still
+capture
+idle 10s
+mark DUNGEON: fight
+# West over the bridge to the spiders, attacking (A targets the nearest enemy), and on.
+stick left -1 0 for 6s
+press A every 0.5s for 14s
+stick left -1 0 for 4s
+press A every 0.5s for 16s
+# Up to the town without walking back: the developer command (TORCHLIGHT_DEV_COMMANDS).
+mark Go to town
+command ASCEND
+wait level_loaded timeout 60s
+idle 3s
+# From where ASCEND leaves the character (by the east bridge), the same loop round the square.
+mark TOWN SQUARE: walk around
+stick left -0.7 0.7 for 5s
+stick left -1 0 for 5s
+stick left -0.7 -0.7 for 5s
+stick left 0 -1 for 5s
+stick left 0.7 -0.7 for 5s
+stick left 1 0 for 5s
+stick left 0.7 0.7 for 5s
+stick left 0 1 for 5s
+mark Done
+quit

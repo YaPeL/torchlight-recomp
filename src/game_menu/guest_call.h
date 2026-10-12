@@ -15,6 +15,8 @@
 
 #include <rex/ppc/context.h>
 
+#include "guest_abi/xbox_memory.h"
+
 namespace torchlight::game_menu {
 
 class GuestCall {
@@ -39,7 +41,9 @@ class GuestCall {
 
   uint32_t ReadU32(uint32_t address) const;
   void WriteU32(uint32_t address, uint32_t value);
-  void WriteU8(uint32_t address, uint8_t value) { base_[address] = value; }
+  void WriteU8(uint32_t address, uint8_t value) {
+    *guest_abi::xbox_memory::HostAddress(base_, address) = value;
+  }
   uint8_t* base() const { return base_; }
 
   // Guest strings built in the scratch area (empty guest address on failure); both may allocate

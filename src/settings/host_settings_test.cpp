@@ -300,6 +300,25 @@ void TestRenderSystemFallback() {
   Check(EffectiveRenderSystem(gl_only, gl).empty(), "no render system can run: empty");
 }
 
+// The OpenGL 3.3 check runs at startup only when the session would use GL3+ and could fall back.
+void TestStartupRenderSystemCheck() {
+  const std::string d3d11 = "Direct3D11 Rendering Subsystem";
+  const std::string gl = "OpenGL 3+ Rendering Subsystem";
+  Capabilities windows = Desktop();
+  windows.render_systems = {d3d11, gl};
+  Check(StartupNeedsRenderSystemCheck(windows, gl, gl), "GL3+ saved, Direct3D 11 to fall back to");
+  Check(!StartupNeedsRenderSystemCheck(windows, d3d11, gl), "Direct3D 11 saved: deferred");
+  Check(!StartupNeedsRenderSystemCheck(windows, "", gl), "automatic (Direct3D 11 first): deferred");
+  Check(!StartupNeedsRenderSystemCheck(windows, "Vulkan Rendering Subsystem", gl),
+        "a render system not offered gives the first one: deferred");
+  Capabilities gl_first = windows;
+  gl_first.render_systems = {gl, d3d11};
+  Check(StartupNeedsRenderSystemCheck(gl_first, "", gl), "automatic with GL3+ first: checked");
+  Capabilities gl_only = Desktop();  // Linux, or Windows without the Direct3D 11 plugin
+  Check(!StartupNeedsRenderSystemCheck(gl_only, gl, gl), "GL3+ only: nothing to fall back to");
+  Check(!StartupNeedsRenderSystemCheck(gl_only, "", gl), "GL3+ only, automatic: nothing either");
+}
+
 void TestRenderScale() {
   const Resolution guest{1280, 720};
   Check(RenderScaleFor({}, guest, {1920, 1080}) == 1.5f, "window size 1080p: 1.5");
@@ -336,6 +355,7 @@ int main() {
   TestChoices();
   TestNormalize();
   TestRenderSystemFallback();
+  TestStartupRenderSystemCheck();
   TestRenderScale();
   TestLanguages();
   TestGpuLogLabel();

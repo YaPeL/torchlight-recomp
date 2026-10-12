@@ -257,6 +257,45 @@ class Problem:
         return '%s %s at %s%s' % (self.kind, value, self.path, extra)
 
 
+def is_removable_unit(problem):
+    """An item or a unit (pet, creature) whose unit GUID the target game lacks (e.g. a PC mod's
+    item): taken out of the save instead of refusing it (docs/mods.md, section 7f). The
+    character's own class and any other missing reference still refuse the save."""
+    return problem.kind == _KIND_NAMES['unit_guid'] and (
+        problem.path.endswith('/item/unit_guid') or problem.path.endswith('/unit/unit_guid'))
+
+
+def remove_units(parsed, guids):
+    """Remove from a parsed save every item or unit (an element of a list) whose unit GUID is in
+    `guids`. Returns [(path, name, guid)] of what was removed."""
+    owners = {}
+
+    def walk(node):
+        if isinstance(node, dict):
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                if isinstance(item, dict):
+                    owners[id(item)] = node
+                walk(item)
+
+    walk(parsed.tree)
+    removed = []
+    for ref in parsed.refs:
+        if ref.role != 'unit_guid' or signed64(ref.value) not in guids:
+            continue
+        if not (ref.path.endswith('/item/unit_guid') or ref.path.endswith('/unit/unit_guid')):
+            continue
+        owner = owners.get(id(ref.element))
+        if owner is None or not any(x is ref.element for x in owner):
+            continue  # already gone with an enclosing entry
+        owner[:] = [x for x in owner if x is not ref.element]
+        name = ref.element.get('s0') or ref.element.get('name') or ''
+        removed.append((ref.path.rsplit('/', 1)[0], name, signed64(ref.value)))
+    return removed
+
+
 _KIND_NAMES = {
     'unit_guid': 'unit (UNIT_GUID)',
     'unique_guid': 'unique (UNIQUE_GUID)',
@@ -281,11 +320,14 @@ def check_references(parsed, target, source=None):
     effect_sources = target.skill_names | target.affix_names | target.effect_names
 
     def problem(ref, value, context=''):
-        key = (ref.role, value)
+        found = Problem(_KIND_NAMES[ref.role], value, ref.path, context)
+        # Once per value, but apart for the places an item can be removed from and the others, so
+        # a missing unit in an item does not hide the same unit as the character's class.
+        key = (ref.role, value, is_removable_unit(found))
         if key in seen:
             return
         seen.add(key)
-        problems.append(Problem(_KIND_NAMES[ref.role], value, ref.path, context))
+        problems.append(found)
 
     for ref in parsed.refs:
         element_name = ref.element.get('s0') or ref.element.get('name') or ''

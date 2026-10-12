@@ -37,14 +37,14 @@ uint32_t GuestCall::Reserve(uint32_t size) {
     return 0;
   }
   const uint32_t at = scratch_;
-  std::memset(base_ + at, 0, aligned);
+  std::memset(abi::xbox_memory::HostAddress(base_, at), 0, aligned);
   scratch_ += aligned;
   return at;
 }
 
 uint32_t GuestCall::PushUtf8(std::string_view text) {
   const uint32_t at = Reserve(uint32_t(text.size()) + 1);
-  if (at) std::memcpy(base_ + at, text.data(), text.size());
+  if (at) std::memcpy(abi::xbox_memory::HostAddress(base_, at), text.data(), text.size());
   return at;
 }
 
@@ -90,7 +90,7 @@ uint32_t GuestCall::ReadU32(uint32_t address) const { return abi::ReadU32(base_,
 
 void GuestCall::WriteU32(uint32_t address, uint32_t value) {
   const uint32_t big = std::byteswap(value);
-  std::memcpy(base_ + address, &big, 4);
+  std::memcpy(abi::xbox_memory::HostAddress(base_, address), &big, 4);
 }
 
 uint32_t GuestCall::CeguiString(std::string_view utf8) {

@@ -1,7 +1,8 @@
 // Platform module: everything that depends on the host's window system or video layer lives here,
 // behind this interface (one implementation file per platform, chosen by CMake; no platform
 // #ifdefs elsewhere). Today: Linux (SDL on X11 or Wayland, whichever SDL chose; OGRE GL on the
-// same window system) and Windows (SDL's Win32 windows; OGRE GL drawing on the game window).
+// same window system), Windows (SDL's Win32 windows; OGRE GL drawing on the game window) and macOS
+// (SDL's Cocoa windows; OGRE GL drawing in the game window's content view).
 //
 // Two sides use it: the app (the game window SDL owns, see live/install.cpp) and the render
 // backend (the window OGRE creates, see backend/backend.cpp).
@@ -20,14 +21,14 @@ namespace torchlight::platform {
 // A native window, as the backend's C API carries it (backend_api.h, tl_native_window; same
 // fields and values). X11: `window` is the window id (OGRE opens its own display connection).
 // Wayland: `window` is the wl_surface and `display` the wl_display, both SDL's. Win32: `window`
-// is the HWND.
+// is the HWND. Cocoa: `window` is the window's content view (NSView).
 struct NativeWindow {
-  enum System : uint32_t { kNone = 0, kX11 = 1, kWayland = 2, kWin32 = 3 };
+  enum System : uint32_t { kNone = 0, kX11 = 1, kWayland = 2, kWin32 = 3, kCocoa = 4 };
   uint32_t system = kNone;
   uint64_t window = 0;
   uint64_t display = 0;
 };
-// "x11", "wayland" or "win32", for the log.
+// "x11", "wayland", "win32" or "cocoa", for the log.
 const char* SystemName(const NativeWindow& window);
 
 // ---- the game window (SDL) -------------------------------------------------------------------
@@ -107,9 +108,13 @@ class ProgressWindow {
 std::string ShaderCacheDir();
 // Other files the host generates for this machine (`name` below the cache folder).
 std::string CacheDir(const std::string& name);
-// Directory of the running executable, ending in a separator (the host's data is installed next to
-// it); empty when unknown.
+// Directory of the running executable, ending in a separator; empty when unknown.
 std::string ExecutableDir();
+// The read-only files installed with the game (data/ui; OGRE's media is OgreMediaDir), ending in a
+// separator; empty when unknown. Linux and Windows: the executable's directory. macOS: in the app
+// bundle its Contents/Resources/ (code signing seals data apart from code, which Contents/MacOS
+// holds), else the executable's directory (the build tree).
+std::string ResourceDir();
 // The host's own settings (settings/host_settings.h) and the runtime's config. Linux:
 // $XDG_CONFIG_HOME/TorchlightRecomp/, else ~/.config/TorchlightRecomp/. Windows:
 // %APPDATA%\TorchlightRecomp\.
@@ -129,8 +134,9 @@ std::string GameDataDir();
 std::string LogDir();
 // OGRE's plugins (RenderSystem_GL3Plus, Codec_STBI, the Wayland GL build in wayland/) and the
 // media the backend uses (Main, RTShaderLib): installed next to the executable, in ogre/plugins/
-// and ogre/media/ (the build stages them there too), so the files can live anywhere. Ending in a
-// separator; empty when the executable's directory is unknown.
+// and ogre/media/ (the build stages them there too), so the files can live anywhere; in a macOS
+// app bundle, Contents/PlugIns/ogre/ and Contents/Resources/ogre/media/. Ending in a separator;
+// empty when the executable's directory is unknown.
 std::string OgrePluginDir();
 std::string OgreMediaDir();
 
@@ -192,6 +198,40 @@ bool HasDirect3D11(const std::string& plugin_dir);
 // OpenGL 1.1, on which OGRE crashes). Linux and macOS: true without probing, GL3+ being the only
 // render system there.
 bool CanCreateGl33Context();
+
+// Runs `work` on the thread the window system wants OGRE's window created, resized and destroyed
+// on, and returns when it is done (an exception `work` throws is thrown here). macOS: the main
+// thread, since AppKit lets only the main thread attach a GL context to a view and update it
+// (-[NSOpenGLContext setView:] and -update), and the live mode drives the backend from its render
+// thread. The main thread runs it while it waits for events (SDL's loop runs Cocoa's), and in
+// WaitServingWindowThread when it waits for something else. The calling thread's current GL
+// context goes with `work`, and the one `work` leaves current comes back. Linux and Windows: runs
+// `work` on the calling thread.
+void RunOnWindowThread(const std::function<void()>& work);
+// On the main thread, before joining a thread that may be in RunOnWindowThread: returns when
+// `done` is true, running that thread's work meanwhile. Linux and Windows have nothing to run and
+// return at once.
+void WaitServingWindowThread(const std::function<bool()>& done);
+// How OGRE's window drawing in the game window follows a new size of it: false, OGRE resizes it
+// (RenderWindow::resize: X11's child window, Wayland's EGL window, Win32); true, the window system
+// has already sized it and OGRE reads the size (RenderWindow::windowMovedOrResized: Cocoa, whose
+// content view SDL sizes; OGRE's resize would size the view again, in points).
+bool OgreWindowFollowsGameWindow();
+
+// The backend's own top-level window (offscreen backends keep a hidden one for the GL context, the
+// replay shows one) where OGRE's render system cannot create it itself: macOS, whose OGRE 14 Cocoa
+// GL window only draws in an external view ("Builtin Window creation broken",
+// OgreOSXCocoaWindow.mm). OGRE then draws in this one (OgreWindowParams with native()), which must
+// outlive OGRE's window. Main thread.
+class OgreTopLevelWindow {
+ public:
+  // Null where OGRE creates its own top-level windows (Linux, Windows) and when no window can be
+  // made.
+  static std::unique_ptr<OgreTopLevelWindow> Create(const std::string& title, uint32_t width,
+                                                    uint32_t height, bool visible);
+  virtual ~OgreTopLevelWindow() = default;
+  virtual NativeWindow native() const = 0;
+};
 
 // Keys typed in a top-level window the backend created: OGRE does not read the keyboard.
 class KeyReader {

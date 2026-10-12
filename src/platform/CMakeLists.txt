@@ -1,6 +1,8 @@
 # Platform module (platform.h): the plain SDL3 parts (platform_sdl.cpp) plus one implementation
 # file per platform.
 # The user's folders and their migration (user_folders.h): no SDL or runtime, tested on their own.
+# Writes that survive a power cut (durable_file.h), the same.
+include(durable_file.cmake)
 if(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp text_wrap.cpp)
@@ -15,6 +17,13 @@ elseif(WIN32)
     # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE dxgi opengl32 gdi32)
+elseif(APPLE)
+    enable_language(OBJCXX)
+    add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_mac.cpp)
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_mac.mm text_wrap.cpp)
+    # AppKit: the game window's view, OGRE's window keys; CoreGraphics: the window server session.
+    target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
+                          PRIVATE "-framework AppKit" "-framework CoreGraphics")
 else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
@@ -28,7 +37,7 @@ target_compile_options(torchlight_platform PRIVATE -Wall -Wextra)
 
 # The GPU choice rules are each platform's: Linux's (PRIME, DRI_PRIME) on machines described by
 # hand; Windows' on this machine (gpu_adapters_test has the made-up ones), with the paths and the
-# key reader.
+# key reader. macOS has one GPU and no rules.
 if(WIN32)
     add_executable(platform_win_test platform_win_test.cpp)
     target_link_libraries(platform_win_test PRIVATE torchlight_platform shell32 ole32 opengl32)
@@ -39,7 +48,7 @@ if(WIN32)
     target_link_libraries(utf8_paths_test PRIVATE shell32)  # CommandLineToArgvW
     target_compile_options(utf8_paths_test PRIVATE -Wall -Wextra -Werror)
     add_test(NAME utf8_paths_test COMMAND utf8_paths_test)
-else()
+elseif(NOT APPLE)
     add_executable(gpu_choice_test gpu_choice_test.cpp)
     target_link_libraries(gpu_choice_test PRIVATE torchlight_platform)
     target_compile_options(gpu_choice_test PRIVATE -Wall -Wextra -Werror)
@@ -59,6 +68,11 @@ target_include_directories(text_wrap_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.
 target_compile_features(text_wrap_test PRIVATE cxx_std_23)
 target_compile_options(text_wrap_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME text_wrap_test COMMAND text_wrap_test)
+
+add_executable(durable_file_test durable_file_test.cpp)
+target_link_libraries(durable_file_test PRIVATE torchlight_durable_file)
+target_compile_options(durable_file_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME durable_file_test COMMAND durable_file_test)
 
 add_executable(user_folders_test user_folders_test.cpp)
 target_link_libraries(user_folders_test PRIVATE torchlight_user_folders)

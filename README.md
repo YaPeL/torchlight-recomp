@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/YaPeL/torchlight-recomp/actions/workflows/ci.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/ci.yml)
 [![Release](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml)
-[![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-recomp?include_prereleases)](https://github.com/YaPeL/torchlight-recomp/releases)
+[![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-recomp?include_prereleases&filter=v*&sort=semver)](https://github.com/YaPeL/torchlight-recomp/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![Platforms: Linux | Windows](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows-lightgrey)](#installing)
+[![Platforms: Linux | Windows | macOS](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)](#installing)
 
 An unofficial native PC port of Torchlight for Xbox LIVE Arcade (Xbox 360), made by static
 recompilation with the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk). The game's PowerPC
-code is translated to C++ and compiled for x86-64; instead of emulating the Xbox 360 GPU, every draw
-is rebuilt with [OGRE 14](https://www.ogre3d.org/) on OpenGL 3.3 (or Direct3D 11 on Windows).
+code is translated to C++ and compiled for x86-64 and, on macOS, ARM64 (Apple Silicon); instead of
+emulating the Xbox 360 GPU, every draw is rebuilt with [OGRE 14](https://www.ogre3d.org/) on OpenGL 3.3 (or Direct3D 11 on Windows).
 
 > [!IMPORTANT]
 > The releases contain no game assets and no original game files. The executable is built from the
@@ -17,7 +17,7 @@ is rebuilt with [OGRE 14](https://www.ogre3d.org/) on OpenGL 3.3 (or Direct3D 11
 > XBLA package from your Xbox 360, version 1.0.140.0). This project is not affiliated with or
 > endorsed by the owners of Torchlight or by Microsoft.
 
-This is a **beta**, the first public release. See [Known limitations](#known-limitations).
+This is a **beta**. See [Known limitations](#known-limitations).
 
 ## Contents
 
@@ -61,6 +61,36 @@ PC": that is Windows being cautious with programs it has not seen downloaded oft
 of anything harmful. Click **More info**, then **Run anyway**; Windows remembers the choice for
 that copy. To check a download, compare its SHA-256 with the release's `SHA256SUMS`.
 
+### macOS
+
+Requirements: a Mac with Apple Silicon (M1 or later) and macOS 13.3 or later; tested on macOS 26.
+There is no build for Intel Macs. How the port works, and these steps as checked on macOS 26:
+[docs/macos-port.md](docs/macos-port.md) (section 6 for the package and Gatekeeper).
+
+Open `Torchlight-Recomp-*-arm64.dmg` and drag **Torchlight Recomp** to **Applications**.
+
+The app is not signed or notarized by Apple, so the first time macOS refuses to open it. That is
+macOS refusing apps from developers without a paid Apple account, not a detection of anything
+harmful. To open it:
+
+1. Double-click **Torchlight Recomp** in Applications. macOS says "Apple could not verify
+   “Torchlight Recomp.app” is free of malware that may harm your Mac or compromise your privacy."
+   Click **Done** (not **Move to Trash**).
+2. Open **System Settings → Privacy & Security** and scroll down to the message about
+   "Torchlight Recomp". Click **Open Anyway** (it stays there for about an hour after step 1).
+3. The same warning comes back, now with an **Open Anyway** button: click it and confirm with your
+   password or Touch ID.
+
+macOS remembers the choice; later starts open it directly. A new version needs the same steps
+once. To check a download, compare its SHA-256 (`shasum -a 256 FILE` in Terminal) with the
+release's `SHA256SUMS`.
+
+To play with the keyboard (see [First start](#first-start)), start it from Terminal:
+
+```sh
+open -a "Torchlight Recomp" --args --mnk_mode=true
+```
+
 ## First start
 
 1. A dialog asks for your Torchlight XBLA package: the file copied from your console's storage, or
@@ -80,6 +110,11 @@ with `--mnk_mode=true`.
 
 The game runs on the native renderer: menus, town, dungeons, character creation, inventory, pets and
 saves.
+
+On a laptop with a GeForce GTX 1050 Ti (Linux, 720p, no frame cap), the native renderer runs the
+game about twice as fast as the same build with ReXGlue's emulated Xenos GPU (1.9–2.5 times the
+frame rate), loads levels 1.5–2 times faster, and has almost no frames over 33 ms
+([measurements](docs/performance-profile.md#native-renderer-against-xenos-2026-10-07)).
 
 ### Display settings
 
@@ -101,9 +136,9 @@ Two sets, chosen at the first start or in the Video column. Each keeps its own p
 
 - **Xbox 360**: the game's original 12 achievements, listed with their icons in the game's
   Achievements screen.
-- **PC (incomplete)**: the 66 achievements of the PC version, with an unlock notification in the
-  game. 63 are implemented; the three for mods (`MODS_1`, `MODS_5`, `MODS_10`) are not available,
-  since this version has no mods. They are kept on this machine: there is no Steam connection.
+- **PC**: the 66 achievements of the PC version, with an unlock notification in the game. The three
+  for mods (`MODS_1`, `MODS_5`, `MODS_10`) are earned by playing with PC mods ([Mods](#mods)). They
+  are kept on this machine: there is no Steam connection.
 
 ### Importing PC saves
 
@@ -111,6 +146,14 @@ Characters, the shared stash and the options of Torchlight for PC can be brought
 together with the PC version's `Pak.zip`, into the `import` folder of the game's data folder. When
 you open the "load character" menu, the game offers the import and explains anything it cannot
 convert. Your PC installation is never touched; the copies in `import` are renamed once imported.
+
+### Mods
+
+Mods made for Torchlight on PC can be used: copy their folders into the `mods` folder next to your
+saves, and order or turn them off in `mods.dat`, as on PC. Large packs such as the Ultimate
+Torchlight Mod-Pack load, and your saves are copied whenever the set of mods changes. See
+[docs/mods-guide.md](docs/mods-guide.md) for how to install them, what works and what does not
+yet.
 
 ### Languages
 
@@ -127,11 +170,16 @@ Other languages can be added as language packs, including translations made for 
 - **Xbox LIVE** features (sign-in, leaderboards) are not available.
 - **Steam Deck**: the AppImage is meant to work in Desktop Mode but has not been tested on the
   device yet.
-- **macOS** is not supported in this beta; a macOS version is planned for the next release.
+- **macOS**: the app is not signed or notarized (see Gatekeeper, above), and started from Finder
+  it has no keyboard controls: without a gamepad, start it from Terminal as shown there.
 - **Ultrawide**: at 32:9, the story screens shown inside a level can show a few rows of the level at
   the top right.
-- **Mods** made for the PC version are not supported. Language packs for scripts written right to
-  left (Arabic) are not supported, and Chinese and Japanese not yet.
+- **Mods**: new affixes and new level pieces from mods are not loaded yet, mods must be unpacked
+  folders, and the first start with a new set of mods takes longer (up to about a minute with a
+  large pack). A class added by a mod is not offered at character creation. The details are in
+  [docs/mods-guide.md](docs/mods-guide.md).
+- **Languages**: language packs for scripts written right to left (Arabic) are not supported, and
+  Chinese and Japanese not yet.
 - The Windows zip is not code-signed (see SmartScreen, above).
 
 ## Where files are kept
@@ -141,18 +189,30 @@ Other languages can be added as language packs, including translations made for 
 | Settings (`settings.toml`) | `~/.config/TorchlightRecomp/` | `%APPDATA%\TorchlightRecomp\` |
 | Game data, with `import` for PC saves | `~/.local/share/TorchlightRecomp/game/` | `%LOCALAPPDATA%\TorchlightRecomp\game\` |
 | Saves | `~/.local/share/TorchlightRecomp/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\` |
+| Mods (with `mods.dat`) | `~/.local/share/TorchlightRecomp/mods/` | `%USERPROFILE%\Saved Games\TorchlightRecomp\mods\` |
 | Logs | `~/.local/state/TorchlightRecomp/logs/` | `%LOCALAPPDATA%\TorchlightRecomp\logs\` |
 | Shader cache | `~/.cache/TorchlightRecomp/` | `%LOCALAPPDATA%\TorchlightRecomp\ogre\` |
 
 On Linux the `XDG_*_HOME` variables are honored.
+
+On macOS, in `~/Library/`:
+
+| | macOS |
+|---|---|
+| Settings (`settings.toml`) and saves | `Application Support/TorchlightRecomp/` |
+| Mods (with `mods.dat`) and replacements | `Application Support/TorchlightRecomp/mods/`, `.../replacements/` |
+| Game data, with `import` for PC saves | `Application Support/TorchlightRecomp/game/` |
+| Logs | `Logs/TorchlightRecomp/` |
+| Shader cache | `Caches/TorchlightRecomp/ogre/` |
 
 ## Building
 
 Building the game needs your own copy of it too: the code generator reads its executable. Without
 it, only the libraries, the tests and the tools build (what CI does). See
 [docs/BUILDING.md](docs/BUILDING.md) for the dependencies (the patched ReXGlue SDK, OGRE 14.6.0),
-the build on Linux and Windows, the tests and the development tools, and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the port works.
+the build on Linux, Windows and macOS, the tests and the development tools, and
+[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the port works. To contribute, see
+[CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Credits
 

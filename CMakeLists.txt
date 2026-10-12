@@ -27,6 +27,8 @@ else()
     message(STATUS "Found ReXGlue SDK ${REXGLUE_VERSION_STRING} at ${rexglue_DIR} (no game)")
 endif()
 
+include(cmake/guest_host_offset.cmake)
+
 if(WIN32)
     # Every executable next to the game's, where the runtime DLLs are (no rpath on Windows).
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
@@ -53,17 +55,30 @@ set(TORCHLIGHT_SOURCES
     src/achievements/achievement_list.cpp
     # Development only: guest developer commands (--dev_guest_command).
     src/dev/guest_command.cpp
+    # Development only: controller input scripts (--dev_input_script).
+    src/dev/script_input.cpp
     # Guest RenderSystem hooks and frame capture (F9, --capture_dir).
     src/capture/guest_readers.cpp
     src/capture/install.cpp
     src/capture/session.cpp
+    src/hooks/bucket_cull_hooks.cpp
     src/hooks/gpu_wait_hooks.cpp
+    src/hooks/guest_copy_hooks.cpp
+    src/hooks/guest_io_hooks.cpp
     src/hooks/render_system_hooks.cpp
     src/hooks/resource_hooks.cpp
     src/hooks/video_mode_hooks.cpp
+    src/hooks/find_file_hooks.cpp
     # The video menu inside the game's UI (hooks on the game's menus).
     src/game_menu/guest_call.cpp
     src/game_menu/language_pack.cpp
+    src/game_menu/mods_install.cpp
+    # The mods' units in the game's unit index (guest calls; the format and cache are torchlight_mods).
+    src/mods/unit_index_install.cpp
+    src/mods/save_units_install.cpp
+    src/mods/text_reader_hooks.cpp
+    src/mods/save_block_hooks.cpp
+    src/mods/wardrobe_hooks.cpp
     src/game_menu/save_import_menu.cpp
     src/game_menu/save_indicator.cpp
     src/game_menu/video_menu.cpp
@@ -77,6 +92,15 @@ endif()
 
 set(TORCHLIGHT_GPU_PLUGINS xenos null)
 rexglue_setup_target(torchlight GPU_PLUGINS ${TORCHLIGHT_GPU_PLUGINS})
+# The default code model for the game on Linux x86-64 (docs/guest-hot-paths.md). The SDK compiles
+# its targets with -mcmodel=large ("large executable support"), which makes every call between
+# guest functions a 64-bit absolute address in a register and an indirect call; the executable's
+# text (67 MB) is far below the default model's 2 GB, and the Windows build already uses it. The
+# later -mcmodel wins; the SDK's libraries keep theirs (code models link together).
+if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    target_compile_options(torchlight_recomp PRIVATE -mcmodel=small)
+    target_compile_options(torchlight PRIVATE -mcmodel=small)
+endif()
 # The SDK copies the GPU plugins next to the executable in a POST_BUILD step, which only runs when
 # the executable relinks: after reinstalling the SDK the game kept loading the old plugins. This copy
 # depends on the installed plugin files instead (a stamp per plugin: OUTPUT takes no target-dependent
@@ -103,6 +127,10 @@ enable_testing()
 # executable has its own, empty copy of spdlog's registry): cmake/check_no_spdlog.cmake.
 add_test(NAME no_direct_spdlog COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_SOURCE_DIR}/cmake/check_no_spdlog.cmake)
+# Hooks never touch the guest registers the generated code may keep in locals (r12, r14-r31, f14-f31,
+# v14 and up): cmake/check_guest_registers.cmake.
+add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
+    -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
 add_subdirectory(src/dev)
@@ -112,6 +140,7 @@ add_subdirectory(src/rtss)
 add_subdirectory(src/capture)
 add_subdirectory(src/settings)
 add_subdirectory(src/save_import)
+add_subdirectory(src/mods)
 add_subdirectory(src/game_menu)
 add_subdirectory(src/platform)
 add_subdirectory(src/backend)
@@ -122,7 +151,9 @@ add_subdirectory(tools/capture_dump)
 add_subdirectory(tools/thread_profile)
 add_subdirectory(tools/synthetic_capture)
 add_subdirectory(tools/replay)
+add_subdirectory(tools/run_capped)
 add_subdirectory(tools/translations)
+add_subdirectory(tools/achievement_coverage)
 add_subdirectory(tests/save_convert)
 
 if(TORCHLIGHT_GAME)
@@ -135,6 +166,23 @@ if(TORCHLIGHT_DEV_COMMANDS)
     set_source_files_properties(src/dev/guest_command.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_COMMANDS=1)
 endif()
+# Mods diagnostics for validation runs (mods/unit_index_install.cpp: --mods_unit_index_check; the
+# mods' file maps in the log, game_menu/mods_install.cpp; the guest's directory searches on tlmods:
+# and those whose path the hook changes, hooks/find_file_hooks.cpp). Off by default; the release
+# workflows and presets never set it, so release builds have no such flag.
+option(TORCHLIGHT_MODS_DIAGNOSTICS "Mods diagnostics (--mods_unit_index_check)" OFF)
+if(TORCHLIGHT_MODS_DIAGNOSTICS)
+    set_source_files_properties(src/mods/unit_index_install.cpp src/game_menu/mods_install.cpp
+        src/hooks/find_file_hooks.cpp PROPERTIES
+        COMPILE_DEFINITIONS TORCHLIGHT_MODS_DIAGNOSTICS=1)
+endif()
+# Controller input scripts for unattended runs (dev/script_input.h). Off by default; the release
+# workflows never set it, so release builds ignore --dev_input_script.
+option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_script" OFF)
+if(TORCHLIGHT_DEV_INPUT)
+    set_source_files_properties(src/dev/script_input.cpp PROPERTIES
+        COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+endif()
 # Our layouts for the game's UI (game_menu/video_menu.h), next to the executable; copied on every
 # build (an edited layout needs no relink).
 add_custom_target(torchlight_data ALL
@@ -142,8 +190,10 @@ add_custom_target(torchlight_data ALL
             "$<TARGET_FILE_DIR:torchlight>/data/ui")
 add_dependencies(torchlight torchlight_data)
 # The live mode (and through it the frontend) and the backend objects.
-target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_video_mode
-    torchlight_game_setup torchlight_save_import)
+target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods torchlight_texture_files
+    torchlight_save_mod_list torchlight_video_mode torchlight_guest_path
+    torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull
+    torchlight_dev_input_script)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)
@@ -220,6 +270,34 @@ if(UNIX AND NOT APPLE)
             CONFIGURATIONS Debug RelWithDebInfo)
     # The replay tool, for checking the installed tree without the game.
     install(TARGETS replay RUNTIME DESTINATION bin COMPONENT tools EXCLUDE_FROM_ALL)
+elseif(APPLE)
+    # macOS app bundle (packaging/macos/make_app.sh installs into Torchlight Recomp.app/Contents):
+    # MacOS/ holds the executable and the GPU plugin (the SDK loads it from the executable's
+    # directory), Frameworks/ the shared libraries, PlugIns/ogre/ OGRE's plugins, Resources/ the
+    # data (data/ui, ogre/media): code signing seals code and data apart. In the build tree the game
+    # finds the SDK's and OGRE's dylibs through the build RPATH (their library directories), as on
+    # Linux; the SDK's own setting (@executable_path, used for the build too) only finds the SDK's
+    # runtime staged next to it. Xenos is not packaged: it needs MoltenVK, which the SDK looks for
+    # only where a signed bundle cannot hold it (Contents/lib), and it only serves diagnostics.
+    if(TORCHLIGHT_GAME)
+        set_target_properties(torchlight PROPERTIES
+            BUILD_WITH_INSTALL_RPATH OFF
+            INSTALL_RPATH "@executable_path/../Frameworks")
+        install(TARGETS torchlight RUNTIME DESTINATION MacOS)
+        install(FILES "$<TARGET_FILE:rex::gpu-null>" DESTINATION MacOS)
+        install(DIRECTORY "${CMAKE_SOURCE_DIR}/data/ui" DESTINATION Resources/data)
+    endif()
+    install(FILES "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" DESTINATION Resources)
+    # The plugins under their unversioned names, which OGRE loads (src/backend), as files.
+    foreach(_plugin IN LISTS TORCHLIGHT_OGRE_PLUGINS)
+        get_filename_component(_name "${_plugin}" NAME)
+        file(REAL_PATH "${_plugin}" _file)
+        install(FILES "${_file}" DESTINATION PlugIns/ogre RENAME "${_name}")
+    endforeach()
+    install(DIRECTORY ${TORCHLIGHT_OGRE_MEDIA} DESTINATION Resources/ogre/media)
+    install(FILES "$<TARGET_FILE:rex::runtime>" DESTINATION Frameworks)  # OGRE's: src/backend
+    install(FILES "$<TARGET_FILE:rex::TracyClient>" DESTINATION Frameworks
+            CONFIGURATIONS Debug RelWithDebInfo)
 elseif(WIN32)
     # Windows zip (packaging/windows/make_zip.ps1): one folder, with the executable next to every DLL
     # it loads (Windows looks next to the executable; there is no rpath), the GPU plugins (the SDK

@@ -19,9 +19,16 @@
 #include "achievements/achievement_list.h"
 #include "achievements/runtime.h"
 #include "game_menu/save_import_menu.h"
+#include "game_menu/mods_install.h"
+#include "mods/save_units_install.h"
+#include "mods/unit_index_install.h"
 #include "game_menu/video_menu.h"
+#include "hooks/guest_copy_hooks.h"
+#include "hooks/guest_d3d_skip.h"
+#include "hooks/bucket_cull_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
+#include "dev/script_input.h"
 #include "game_setup/first_run.h"
 #include "platform/platform.h"
 #include "platform/user_folders.h"
@@ -93,6 +100,9 @@ class TorchlightApp : public rex::ReXApp {
     // ratio the game has no mode for.
     torchlight::live::ApplyAspect();
     torchlight::hooks::InstallVideoMode();
+    torchlight::hooks::LogGuestCopyMode();
+    torchlight::hooks::InstallGuestD3DSkip(torchlight::live::OnlyMode());
+    torchlight::hooks::InstallBucketCull(torchlight::live::OnlyMode());
     auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
     torchlight::capture::Install(graphics ? graphics->presenter() : nullptr);
     // The video menu changes what the native backend draws: only mode.
@@ -100,6 +110,23 @@ class TorchlightApp : public rex::ReXApp {
     // PC saves from the game files' import/ folder: the part confirmed before is applied here,
     // before the guest runs; old save backups are pruned too.
     torchlight::game_menu::InstallSaveImport(runtime(), game_data_root(), user_data_root());
+    // The player's PC mods (any mode): mounted and their saves protected before the guest runs.
+    torchlight::game_menu::InstallMods(runtime(), torchlight::platform::DataDir(), user_data_root());
+    // Their units in the game's unit index (cached in the user's folder when mods bring any).
+    torchlight::mods::InstallUnitIndex(runtime(), torchlight::platform::DataDir(),
+                                       game_data_root() / "pak.zip",
+                                       torchlight::game_menu::MountedModPlan());
+    // Items and creatures the game would not know (a removed mod's) out of the saves, backed up
+    // first, so a save never stops the game.
+    torchlight::mods::InstallSaveUnits(torchlight::platform::DataDir(), game_data_root() / "pak.zip",
+                                       user_data_root(), torchlight::game_menu::MountedModPlan());
+    // Development builds: a controller script (before live::Install sets the input's active
+    // callback, which the script's controller follows too).
+    torchlight::dev::InstallInputScript(runtime(), [this] {
+      app_context().CallInUIThread([this] {
+        if (window()) window()->RequestClose();
+      });
+    });
     torchlight::live::Install(
         game_data_root(),
         {&app_context(), window(), runtime(),

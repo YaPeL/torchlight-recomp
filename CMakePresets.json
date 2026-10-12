@@ -44,7 +44,9 @@
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
-                "CMAKE_OSX_ARCHITECTURES": "x86_64"
+                "CMAKE_OSX_ARCHITECTURES": "x86_64",
+                "CMAKE_OSX_SYSROOT": "macosx",
+                "CMAKE_OSX_DEPLOYMENT_TARGET": "13.3"
             },
             "condition": {
                 "type": "equals",
@@ -132,6 +134,15 @@
             "name": "linux-amd64-nogame",
             "displayName": "Linux AMD64 without the game (libraries, tests, tools; CI)",
             "inherits": "linux-base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "TORCHLIGHT_GAME": "OFF"
+            }
+        },
+        {
+            "name": "mac-arm64-nogame",
+            "displayName": "macOS ARM64 without the game (libraries, tests, tools; CI)",
+            "inherits": "mac-arm64-base",
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "RelWithDebInfo",
                 "TORCHLIGHT_GAME": "OFF"
@@ -271,6 +282,10 @@
         {
             "name": "linux-amd64-nogame",
             "configurePreset": "linux-amd64-nogame"
+        },
+        {
+            "name": "mac-arm64-nogame",
+            "configurePreset": "mac-arm64-nogame"
         },
         {
             "name": "win-amd64-nogame",

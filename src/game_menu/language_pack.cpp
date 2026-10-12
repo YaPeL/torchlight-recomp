@@ -24,13 +24,6 @@ namespace torchlight::game_menu {
 
 namespace {
 
-void WriteU32(uint8_t* base, uint32_t addr, uint32_t value) {
-  base[addr] = uint8_t(value >> 24);
-  base[addr + 1] = uint8_t(value >> 16);
-  base[addr + 2] = uint8_t(value >> 8);
-  base[addr + 3] = uint8_t(value);
-}
-
 // A guest std::wstring's text (UTF-16, big-endian in guest memory). Same layout as the narrow one
 // (ogre_layout.h stl_string) in 16-bit units: inline below capacity 8 (kWStringFromText).
 std::u16string ReadWString(const uint8_t* base, uint32_t str, uint32_t max_length = 1024) {
@@ -49,8 +42,9 @@ uint32_t AllocWideText(GuestCall& call, const std::string& ascii) {
   if (!block) return 0;
   for (size_t i = 0; i <= ascii.size(); ++i) {
     const uint16_t c = i < ascii.size() ? uint8_t(ascii[i]) : 0;
-    call.base()[block + 2 * i] = uint8_t(c >> 8);
-    call.base()[block + 2 * i + 1] = uint8_t(c);
+    uint8_t* unit = abi::xbox_memory::HostAddress(call.base(), block + uint32_t(2 * i));
+    unit[0] = uint8_t(c >> 8);
+    unit[1] = uint8_t(c);
   }
   return block;
 }
@@ -114,9 +108,9 @@ REX_FUNC(sub_82345898) {
   for (uint32_t field : {cs::kLength.offset, cs::kEncodedBufferLength.offset,
                          cs::kEncodedDataLength.offset, cs::kEncodedBuffer.offset,
                          cs::kInlineBuffer.offset, cs::kHeapBuffer.offset}) {
-    WriteU32(base, str + field, 0);
+    abi::WriteU32(base, str + field, 0);
   }
-  WriteU32(base, str + cs::kReserve.offset, cs::kInlineCapacity);
+  abi::WriteU32(base, str + cs::kReserve.offset, cs::kInlineCapacity);
   {
     GuestCall call(ctx, base);
     call.Call(ui::kCeguiStringGrow.address, {str, uint32_t(text.size())});
@@ -125,9 +119,9 @@ REX_FUNC(sub_82345898) {
   const uint32_t buffer = reserve > cs::kInlineCapacity
                               ? abi::ReadU32(base, str + cs::kHeapBuffer.offset)
                               : str + cs::kInlineBuffer.offset;
-  WriteU32(base, str + cs::kLength.offset, uint32_t(text.size()));
-  for (size_t i = 0; i < text.size(); ++i) WriteU32(base, buffer + uint32_t(4 * i), text[i]);
-  WriteU32(base, buffer + uint32_t(4 * text.size()), 0);
+  abi::WriteU32(base, str + cs::kLength.offset, uint32_t(text.size()));
+  for (size_t i = 0; i < text.size(); ++i) abi::WriteU32(base, buffer + uint32_t(4 * i), text[i]);
+  abi::WriteU32(base, buffer + uint32_t(4 * text.size()), 0);
   ctx.r3.u64 = str;
 }
 

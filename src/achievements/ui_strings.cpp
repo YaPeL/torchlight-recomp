@@ -21,7 +21,7 @@ std::string g_language = "en";
 
 void Load() {
   const std::filesystem::path file =
-      std::filesystem::path(platform::ExecutableDir()) / "data" / "ui" / kStringsFile;
+      std::filesystem::path(platform::ResourceDir()) / "data" / "ui" / kStringsFile;
   std::vector<std::string> warnings;
   std::string error;
   if (!g_strings.Load(file.string(), warnings, error)) {
