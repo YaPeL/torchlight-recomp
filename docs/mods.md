@@ -692,6 +692,37 @@ The Xbox build, the same Runic code, drops it and makes Tarn again from the leve
 **[inferred for PC]** Our save protection plays no part in it: Tarn is not the player's, so it is
 left in the save. PC has no such protection: there, only the game's own handling applies.
 
+**Trading with Tarn, checked 2026-10-12** in three guided runs: with the pack, with `JCC - Map`
+turned off, and without mods. Trading worked and the game saved in all three. With `JCC - Map`
+turned off, the log reported the mod's Tarn as unknown and left it in the save. The game made Tarn
+again from the level, with the base GUID.
+
+What happens to a sold item, read from the guest code:
+- The sale handler `sub_8236B7B8` pays the player. It then removes the item from the player's
+  inventory (`sub_822E3218`) and adds it to the merchant's (`sub_822E26D8`).
+- The add looks only in the slot range of the item's category (`sub_822E1C20`, `sub_822E2428`).
+  When no category matches, it uses the first range.
+- A stackable item first merges into a stack of the same unit type that has room (`sub_822E29F8`:
+  inventory +12, item +360/+484/+488). The sold object is then freed.
+- Otherwise the item takes a free slot of the range. When the range is full, the item is freed.
+  **[inferred]** The free is a call to vtable slot 0 with 1, the deleting destructor.
+
+**[read from saves]** A merchant's slots come in ranges of 42: the first is slots 19-60, and
+weapons start at 61.
+
+What the player sees is the game's own behaviour:
+- A sold item that merges into one of the merchant's goods does not show as a new entry.
+  **[observed]** The merchant's stack stays at one, as it does when the player buys from it.
+- An item whose range is full is lost.
+- Merchants restock when the level loads, so what was sold is gone after a reload.
+
+Without mods, a weapon sold to Tarn appeared in his weapon range (slot 61). One sold to Triya
+appeared in hers (slot 77). The save kept both.
+
+**[open, low priority]** In the run with `JCC - Map` turned off, a weapon sold to the remade Tarn
+did not appear. His first range was full (42 goods, slots 19-60). The ranges that Tarn has were not
+read.
+
 ## 7i. Mods that ship PC-compiled `.ADM` files crashed at startup (2026-10-10, fixed)
 
 Enhanced Edition v1.0 (three mods: `Enhanced`, `BasementMiniDungeon`, `Charm_to_Stun`) ends the
