@@ -16,7 +16,8 @@ add_library(torchlight_live STATIC snapshot_store.cpp frame_queue.cpp session_fi
     slow_frames.cpp guest_events.cpp log_budget.cpp frame_reclaimer.cpp)
 target_include_directories(torchlight_live PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_live PUBLIC cxx_std_23)
-target_link_libraries(torchlight_live PUBLIC torchlight_commands torchlight_measure ZLIB::ZLIB)
+target_link_libraries(torchlight_live PUBLIC torchlight_commands torchlight_measure torchlight_texture_files
+    ZLIB::ZLIB)
 target_compile_options(torchlight_live PRIVATE -Wall -Wextra)
 
 add_executable(snapshot_store_test snapshot_store_test.cpp)

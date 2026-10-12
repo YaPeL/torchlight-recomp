@@ -4,6 +4,8 @@
 #include <iterator>
 #include <string_view>
 
+#include <rex/logging.h>
+
 #include "mods/texture_files.h"
 
 namespace torchlight::live {
@@ -120,10 +122,20 @@ std::optional<std::vector<uint8_t>> LiveContentSource::GameFile(const std::strin
 }
 
 std::optional<std::vector<uint8_t>> LiveContentSource::NamedTexture(const commands::TextureDesc& t) const {
+  // A replayed session's mod or replacements file, kept with it.
+  if (t.file != 0) {
+    if (const commands::Blob* blob = Blob(t.file)) return blob->bytes;
+  }
   auto resolver = mods::CurrentTextureResolver();
   if (!resolver) return GameFile(t.name);
   const mods::TextureFile found =
       resolver->Find(t.name, t.group, [this](std::string_view key) { return pak_.Contains(std::string(key)); });
+  if (mods::TextureCheckOn()) {
+    if (auto difference = mods::CheckTextureChoice(t.name, found)) {
+      static int logged = 0;
+      if (logged++ < 50) REXLOG_WARN("mods: texture check: {}", *difference);
+    }
+  }
   switch (found.source) {
     case mods::TextureSource::kPak:
       return GameFile(t.name);

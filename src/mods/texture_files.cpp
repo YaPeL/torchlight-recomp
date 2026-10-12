@@ -3,6 +3,7 @@
 #include <atomic>
 #include <mutex>
 #include <system_error>
+#include <unordered_map>
 
 namespace torchlight::mods {
 
@@ -40,7 +41,7 @@ std::optional<std::filesystem::path> TextureResolver::Folder::Find(const std::st
 
 TextureResolver::TextureResolver(const TextureLocations& locations) {
   if (!locations.replacements.empty()) replacements_ = List(locations.replacements);
-  for (const auto& [group, folder] : locations.mods) mods_.emplace_back(group, List(folder));
+  for (const auto& mod : locations.mods) mods_.emplace_back(mod.group, List(mod.folder));
 }
 
 TextureFile TextureResolver::Find(std::string_view name, std::string_view group,
@@ -75,13 +76,78 @@ TextureFile TextureResolver::Find(std::string_view name, std::string_view group,
 namespace {
 std::mutex g_mutex;
 std::shared_ptr<const TextureResolver> g_resolver;
+TextureLocations g_locations;
 std::unordered_set<std::string> g_pak_names;
+std::atomic<bool> g_check{false};
+std::unordered_map<std::string, std::pair<std::string, std::string>> g_guest_opens;  // key -> container, path
+TextureCheckCounts g_counts;
+
+std::string Lower(std::string_view text) {
+  std::string out(text);
+  for (char& c : out) c = char(c >= 'A' && c <= 'Z' ? c - 'A' + 'a' : c);
+  return out;
+}
 }  // namespace
 
 void SetTextureLocations(const TextureLocations& locations) {
   auto resolver = std::make_shared<const TextureResolver>(locations);
   std::lock_guard lock(g_mutex);
   g_resolver = resolver->empty() ? nullptr : resolver;
+  g_locations = locations;
+}
+
+void SetTextureCheck(bool on) { g_check = on; }
+bool TextureCheckOn() { return g_check; }
+
+void NoteGuestTextureOpen(std::string_view name, std::string_view container, std::string_view path) {
+  if (!g_check) return;
+  std::lock_guard lock(g_mutex);
+  g_guest_opens[TextureNameKey(name)] = {std::string(container), std::string(path)};
+}
+
+TextureFile SourceOfGuestContainer(std::string_view container, const TextureLocations& locations) {
+  const std::string c = Lower(container);
+  if (c.starts_with("tlrepl:")) return {TextureSource::kReplacements, locations.replacements};
+  for (const auto& mod : locations.mods) {
+    if (!mod.device.empty() && c.starts_with(Lower(mod.device))) return {TextureSource::kMod, mod.folder};
+  }
+  return {TextureSource::kPak, {}};
+}
+
+std::optional<std::string> CheckTextureChoice(std::string_view name, const TextureFile& chosen) {
+  const std::string key = TextureNameKey(name);
+  std::lock_guard lock(g_mutex);
+  auto it = g_guest_opens.find(key);
+  if (it == g_guest_opens.end()) {
+    ++g_counts.unreported;
+    return std::nullopt;
+  }
+  ++g_counts.compared;
+  const TextureFile guest = SourceOfGuestContainer(it->second.first, g_locations);
+  // The same source, and for a mod the same mod (the chosen file lies in its folder).
+  bool same = guest.source == chosen.source;
+  if (same && guest.source == TextureSource::kMod) {
+    const std::string folder = guest.path.lexically_normal().generic_string();
+    same = chosen.path.lexically_normal().generic_string().starts_with(folder);
+  }
+  if (same) return std::nullopt;
+  ++g_counts.differing;
+  auto describe = [](const TextureFile& f) {
+    switch (f.source) {
+      case TextureSource::kPak: return std::string("the pak");
+      case TextureSource::kReplacements: return "the replacements folder (" + f.path.string() + ")";
+      case TextureSource::kMod: return "a mod (" + f.path.string() + ")";
+      case TextureSource::kNone: return std::string("nothing");
+    }
+    return std::string("?");
+  };
+  return std::string(name) + ": the game opened " + it->second.first + it->second.second + " (" + describe(guest) +
+         "), the host chose " + describe(chosen);
+}
+
+TextureCheckCounts TextureCheckTotals() {
+  std::lock_guard lock(g_mutex);
+  return g_counts;
 }
 
 std::shared_ptr<const TextureResolver> CurrentTextureResolver() {

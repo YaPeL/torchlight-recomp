@@ -815,10 +815,16 @@ the game's groups (the replacements folder, then the pak), then the other mods i
 in a game group, the replacements folder, the pak, then the mods. Files match ignoring case. The
 live frontend reads that file (`LiveContentSource::NamedTexture`); a capture keeps the bytes of a
 mod's or the replacements folder's file as a blob (`TextureDesc::file`, chunk `TXFL`, format 1.7),
-so replay, which has no mods, draws them. Session recordings (`--live_record`) do not carry those
-files yet: a session replayed without the mods shows the pak's textures or the fallback. Without
-mods or replacements the images do not change; a capture only adds each named texture's group to
-its TXFL chunk.
+so replay, which has no mods, draws them. Session recordings (`--live_record`) carry them the same
+way: the file's bytes once, as the texture's content, and the group and file in a section after
+each frame's commands, which recordings made before do not have. Without mods or replacements the
+images do not change; a capture only adds each named texture's group to its TXFL chunk.
+
+**Checking the host's choice** (`TORCHLIGHT_MODS_DIAGNOSTICS`, `--mods_texture_check`): the guest
+reports the archive and path it opened for each named texture (`mods::NoteGuestTextureOpen`), and the
+live frontend compares its own choice with it: each difference is logged as
+`mods: texture check: NAME: the game opened ..., the host chose ...`, and the live summary counts
+the textures compared, differing and not reported. Validation runs expect no difference.
 
 ## 7k. The replacements folder: files as if inside the pak (2026-10-12)
 

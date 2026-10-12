@@ -645,6 +645,19 @@ std::vector<uint8_t> SerializeSessionFrame(SessionFrame& frame) {
   uint64_t count = frame.commands.size();
   w.num(count);
   for (auto& c : frame.commands) WriteCommand(w, c);
+  // Named textures' groups and files (as the capture's TXFL chunk), after the commands: a
+  // recording made before has nothing there.
+  uint64_t files = 0;
+  for (const auto& t : frame.textures) files += !t.group.empty() || t.file != 0;
+  if (files) {
+    w.num(files);
+    for (auto& t : frame.textures) {
+      if (t.group.empty() && t.file == 0) continue;
+      S(w, t.id);
+      w.str(t.group);
+      w.num(t.file);
+    }
+  }
   return std::move(w.out);
 }
 
@@ -662,6 +675,28 @@ bool DeserializeSessionFrame(const uint8_t* data, size_t size, SessionFrame& fra
   for (uint64_t i = 0; i < count; ++i) {
     if (!ReadCommand(r, frame.commands)) {
       error = "malformed command in a session frame";
+      return false;
+    }
+  }
+  if (!r.at_end()) {
+    uint64_t files = 0;
+    r.num(files);
+    for (uint64_t i = 0; i < files && files <= kMaxElements && r.ok(); ++i) {
+      ResourceId id;
+      std::string group;
+      Hash file = 0;
+      S(r, id);
+      r.str(group);
+      r.num(file);
+      for (auto& t : frame.textures) {
+        if (t.id == id) {
+          t.group = group;
+          t.file = file;
+        }
+      }
+    }
+    if (!r.ok()) {
+      error = "malformed texture files in a session frame";
       return false;
     }
   }

@@ -3,11 +3,15 @@
 
 #include "live/session_file.h"
 
+#include <fstream>
+
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <string>
+
+#include "mods/texture_files.h"
 
 using namespace torchlight;
 using live::LiveFrame;
@@ -113,6 +117,41 @@ int main() {
     std::ofstream(dir + "/bad.tlses") << "TLCAP   whatever";
     SessionReader r;
     Check(!r.Open(dir + "/bad.tlses", error), "rejects another format");
+  }
+
+  // A named texture from the replacements folder: its group and file are recorded, and its bytes
+  // come back with the frame (replay has no replacements folder).
+  {
+    const std::filesystem::path repl = std::filesystem::path(dir) / "replacements";
+    std::filesystem::create_directories(repl / "media" / "levelsets");
+    std::ofstream(repl / "media" / "levelsets" / "grass.dds", std::ios::binary) << "DDS bytes";
+    mods::TextureLocations locations;
+    locations.replacements = repl;
+    mods::SetTextureLocations(locations);
+    LiveFrame f = Frame(20);
+    commands::TextureDesc t;
+    t.id = Id(7);
+    t.name = "MEDIA/LEVELSETS/GRASS.DDS";
+    t.group = "ZIP";
+    f.textures.push_back(t);
+    {
+      SessionWriter w;
+      Check(w.Open(path, 0, error), "open for the texture file");
+      Check(w.Append(f) == SessionWriter::Result::kWritten, "frame with a replaced texture written");
+    }
+    SessionReader r;
+    LiveFrame back;
+    Check(r.Open(path, error) && r.Next(back, error), "frame with a replaced texture read");
+    Check(back.textures.size() == 1 && back.textures[0].group == "ZIP" && back.textures[0].file != 0,
+          "its group and file come back");
+    bool bytes = false;
+    for (const auto& c : back.contents) {
+      if (c.content && c.content->hash == back.textures[0].file) {
+        bytes = std::string(c.content->bytes.begin(), c.content->bytes.end()) == "DDS bytes";
+      }
+    }
+    Check(bytes, "the file's bytes come back with the frame");
+    mods::SetTextureLocations({});
   }
 
   std::filesystem::remove_all(dir);

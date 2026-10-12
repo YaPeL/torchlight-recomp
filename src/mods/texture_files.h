@@ -30,8 +30,13 @@ namespace torchlight::mods {
 
 struct TextureLocations {
   std::filesystem::path replacements;  // empty: no replacements folder in use
-  // Each active mod's resource group and folder, in activation order.
-  std::vector<std::pair<std::string, std::filesystem::path>> mods;
+  // Each active mod, in activation order.
+  struct Mod {
+    std::string group;               // its resource group
+    std::filesystem::path folder;    // its folder on the host
+    std::string device;              // the guest's name for it ("tlmod003:"), for the check
+  };
+  std::vector<Mod> mods;
 };
 
 enum class TextureSource { kNone, kReplacements, kMod, kPak };
@@ -70,6 +75,23 @@ class TextureResolver {
 // from any thread. Null without mods or replacements.
 void SetTextureLocations(const TextureLocations& locations);
 std::shared_ptr<const TextureResolver> CurrentTextureResolver();
+
+// Validation (TORCHLIGHT_MODS_DIAGNOSTICS, --mods_texture_check): the guest reports the file it
+// opened for each named texture, and the host compares its own choice with it.
+// `container` is the archive as the guest names it ("tlmod003:\\", "tlrepl:\\", or the pak's zip),
+// `path` the file inside it.
+void SetTextureCheck(bool on);
+bool TextureCheckOn();
+void NoteGuestTextureOpen(std::string_view name, std::string_view container, std::string_view path);
+// Compares the host's choice for `name` with what the guest opened. Empty when they agree or the
+// guest reported nothing for it; otherwise a line for the log. Counts both (TextureCheckCounts).
+std::optional<std::string> CheckTextureChoice(std::string_view name, const TextureFile& chosen);
+struct TextureCheckCounts {
+  uint64_t compared = 0, differing = 0, unreported = 0;
+};
+TextureCheckCounts TextureCheckTotals();
+// Which source a guest container stands for: a mod's (its folder), the replacements, or the pak.
+TextureFile SourceOfGuestContainer(std::string_view container, const TextureLocations& locations);
 
 // The pak's entry names (TextureNameKey), published by whoever opens the pak (the live mode), for
 // a resolver used where the pak is not open (the capture). Empty until set: a pak that did not

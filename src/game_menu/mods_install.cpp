@@ -27,6 +27,14 @@
 #include "mods/save_safety.h"
 #include "mods/texture_files.h"
 
+#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+#include <rex/cvar.h>
+
+REXCVAR_DEFINE_BOOL(mods_texture_check, false, "Torchlight",
+                    "Diagnostics: compare the file the host takes for each named texture with the one "
+                    "the game opened, and log every difference (mods/texture_files.h)");
+#endif
+
 namespace torchlight::game_menu {
 
 namespace {
@@ -203,6 +211,12 @@ void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_
 
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
                  const std::filesystem::path& user_data_root) {
+#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
+  if (REXCVAR_GET(mods_texture_check)) {
+    mods::SetTextureCheck(true);
+    REXLOG_INFO("mods: texture check on: the host's choice of each named texture is compared with the game's");
+  }
+#endif
   if (data_dir.empty()) return;
   MountReplacements(runtime, data_dir);
   const std::filesystem::path folder = data_dir / "mods";
@@ -341,7 +355,7 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
       continue;
     }
     g_mod_groups.Add(group);
-    g_texture_locations.mods.emplace_back(group, g_mods_folder / g_plan.mods[i].folder);
+    g_texture_locations.mods.push_back({group, g_mods_folder / g_plan.mods[i].folder, hooks::ModDeviceLink(i)});
     if (InitialiseResourceGroup(call, group)) {
       REXLOG_INFO("mods: {} in resource group \"{}\", initialised", location, group);
     } else {
