@@ -690,7 +690,7 @@ Tarn the game no longer knows once the mod is on, and the other way round when i
 **[read]** What PC's executable does with that old Tarn when it loads the saved town was not read.
 The Xbox build, the same Runic code, drops it and makes Tarn again from the level (above).
 **[inferred for PC]** Our save protection plays no part in it: Tarn is not the player's, so it is
-left in the save. That is also what the game itself keeps on PC, which has no such protection.
+left in the save. PC has no such protection: there, only the game's own handling applies.
 
 ## 7i. Mods that ship PC-compiled `.ADM` files crashed at startup (2026-10-10, fixed)
 
