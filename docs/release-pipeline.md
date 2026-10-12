@@ -544,6 +544,23 @@ announces it.
   changes the Windows key (and not the Linux one), so CI builds and publishes new Windows archives
   instead of reusing the RelWithDebInfo ones.
 
+### 5.10 Version numbers (since 2026-10-12)
+
+Releases are numbered `vZ.X.Y` (the owner's scheme), counted from the previous release's number:
+
+- **X** goes up by one for each new feature the release brings (several features, several steps).
+- **Y** goes up by one for each bug the release fixes. When X goes up, Y first goes back to 0 and
+  then counts the release's fixes.
+- **Z** stays 0 until the project's list of features is complete.
+- A suffix (`-beta`) is decided per release by the owner.
+
+The two lists come from the release's CHANGELOG section (its player-facing part): features are the
+new things a player can use, and bugs are fixes to behaviour a previous release shipped. A fix to
+something new in the same release is part of that feature, not a bug. At each freeze the integrator
+proposes both lists and the number, and the owner confirms them before the tag. The release notes
+are the CHANGELOG's player-facing part, with its known limitations and the platforms' first-start
+steps (SmartScreen, Gatekeeper).
+
 ## Sources
 
 - Unleashed Recompiled: <https://github.com/hedge-dev/UnleashedRecomp> (`.github/workflows/`,
