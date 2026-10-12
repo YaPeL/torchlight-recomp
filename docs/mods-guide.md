@@ -50,8 +50,8 @@ back to the original files.
   saved as UTF-16 by PC tools.
 - New items and monsters: the game's unit table is rebuilt with the mods' units. The first start
   with a new set of mods takes longer, up to about a minute with a large pack; later starts use a
-  saved copy. New classes are added to the table too, but picking one when creating a character has
-  not been tested yet.
+  saved copy. New classes are added to the table too, but the character creation screen offers
+  only the game's three classes (see below).
 - Replaced models (checked less than data).
 - The PC achievements for mods (Played with a mod, 5 mods, 10 mods), in the PC achievement set.
 - Large packs: the Ultimate Torchlight Mod-Pack (29 mods) loads.
@@ -86,6 +86,8 @@ back to the original files.
 - New affixes (the extra properties of magic items) and new level pieces from mods: the game ships
   these tables prebuilt and they are not rebuilt yet.
 - Mods that are compressed archives instead of folders.
+- Playing a mod's new class: the Xbox character creation screen offers only the game's three
+  classes. This waits for the PC interface.
 - Choosing which mods to use from inside the game: edit `mods.dat` for now.
 
 If something goes wrong, the log of the run tells what the game did with each mod
