@@ -715,9 +715,15 @@ What the player sees is the game's own behaviour:
   **[observed]** The merchant's stack stays at one, as it does when the player buys from it.
 - An item whose range is full is lost.
 - Merchants restock when the level loads, so what was sold is gone after a reload.
+  **[observed in saves; not read in code]** In the run without mods, the save the run started from
+  held Tarn's and Triya's goods. After the town loaded, every one of those goods was gone from the
+  save the run wrote, replaced by new ones (new item ids). That the restock also drops goods the
+  player sold is **[inferred]**; no run reloaded the town after a sale.
 
 Without mods, a weapon sold to Tarn appeared in his weapon range (slot 61). One sold to Triya
-appeared in hers (slot 77). The save kept both.
+appeared in hers (slot 77). The save written in that same session, with no level load after the
+sales, kept both. So a sold item stays with the merchant, in the stock and in the save, until the
+next load of that level rebuilds the stock.
 
 **[open, low priority]** In the run with `JCC - Map` turned off, a weapon sold to the remade Tarn
 did not appear. His first range was full (42 goods, slots 19-60). The ranges that Tarn has were not
