@@ -127,7 +127,9 @@ std::optional<std::string> CheckTextureChoice(std::string_view name, const Textu
   // The same source, and for a mod the same mod (the chosen file lies in its folder).
   bool same = guest.source == chosen.source;
   if (same && guest.source == TextureSource::kMod) {
-    const std::string folder = guest.path.lexically_normal().generic_string();
+    // Inside that folder: its path and a separator, so "mods/A" does not match "mods/AB/...".
+    std::string folder = guest.path.lexically_normal().generic_string();
+    if (!folder.ends_with('/')) folder += '/';
     same = chosen.path.lexically_normal().generic_string().starts_with(folder);
   }
   if (same) return std::nullopt;

@@ -94,8 +94,13 @@ int main() {
             .has_value(),
         "the host took the replacements, the game the pak: a difference");
   Check(!CheckTextureChoice("MEDIA/OTHER.DDS", {}), "nothing reported: nothing compared");
+  // A mod whose folder name starts like another's is another mod.
+  NoteGuestTextureOpen("MEDIA/X.DDS", "tlmod000:\\", "media\\x.dds");
+  Check(CheckTextureChoice("MEDIA/X.DDS", {TextureSource::kMod, root / "a2" / "media" / "x.dds"})
+            .has_value(),
+        "folder a against a file of folder a2: a difference");
   const TextureCheckCounts counts = TextureCheckTotals();
-  Check(counts.compared == 2 && counts.differing == 1 && counts.unreported == 1, "the counts");
+  Check(counts.compared == 3 && counts.differing == 2 && counts.unreported == 1, "the counts");
 
   std::error_code ec;
   fs::remove_all(root, ec);
