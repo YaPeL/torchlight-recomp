@@ -816,7 +816,9 @@ in a game group, the replacements folder, the pak, then the mods. Files match ig
 live frontend reads that file (`LiveContentSource::NamedTexture`); a capture keeps the bytes of a
 mod's or the replacements folder's file as a blob (`TextureDesc::file`, chunk `TXFL`, format 1.7),
 so replay, which has no mods, draws them. Session recordings (`--live_record`) do not carry those
-files yet: a session replayed without the mods shows the pak's textures or the fallback.
+files yet: a session replayed without the mods shows the pak's textures or the fallback. Without
+mods or replacements the images do not change; a capture only adds each named texture's group to
+its TXFL chunk.
 
 ## 7k. The replacements folder: files as if inside the pak (2026-10-12)
 

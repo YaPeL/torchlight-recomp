@@ -72,7 +72,8 @@ void SetTextureLocations(const TextureLocations& locations);
 std::shared_ptr<const TextureResolver> CurrentTextureResolver();
 
 // The pak's entry names (TextureNameKey), published by whoever opens the pak (the live mode), for
-// a resolver used where the pak is not open (the capture). Empty until set.
+// a resolver used where the pak is not open (the capture). Empty until set: a pak that did not
+// open counts as empty, so a texture would then be taken from a mod's folder when one has it.
 void SetPakNames(const std::vector<std::string>& names);
 bool PakHas(std::string_view name);
 
