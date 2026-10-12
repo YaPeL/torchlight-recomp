@@ -1,7 +1,7 @@
 # The video settings column's model (video_menu_model.h): no guest, no OGRE; the hooks and guest
 # calls (video_menu.cpp, guest_call.cpp) are part of the executable.
 add_library(torchlight_game_menu_model STATIC video_menu_model.cpp menu_strings.cpp
-    text_conversion.cpp wide_layout.cpp)
+    text_conversion.cpp wide_layout.cpp mod_scripts.cpp)
 target_include_directories(torchlight_game_menu_model PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(torchlight_game_menu_model PUBLIC torchlight_settings)
 target_compile_features(torchlight_game_menu_model PUBLIC cxx_std_23)
@@ -28,6 +28,11 @@ add_executable(wide_layout_test wide_layout_test.cpp)
 target_link_libraries(wide_layout_test PRIVATE torchlight_game_menu_model)
 target_compile_options(wide_layout_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME wide_layout_test COMMAND wide_layout_test)
+
+add_executable(mod_scripts_test mod_scripts_test.cpp)
+target_link_libraries(mod_scripts_test PRIVATE torchlight_game_menu_model)
+target_compile_options(mod_scripts_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME mod_scripts_test COMMAND mod_scripts_test)
 
 # The unit save writer's mod-list repair around the original (save_mod_list.h): guest memory
 # through guest_abi, no rex; the hook itself is in the executable (mods_install.cpp).
