@@ -812,7 +812,9 @@ points at a loaded machine rather than at the mod.
 group the guest loaded it in (`Resource::mGroup`, `guest_abi` `resource::kGroup`), and the host
 takes the file OGRE takes (`mods/texture_files.h`): in a mod's group, that mod's folder first, then
 the game's groups (the replacements folder, then the pak), then the other mods in activation order;
-in a game group, the replacements folder, the pak, then the mods. Files match ignoring case. The
+in a game group, the replacements folder, the pak, then the mods. Files match ignoring case. A name with a device first (`TLMOD002:/MEDIA/...`, a mod's
+`TEXTURE_OVERRIDE`, which the data loader gives by its full path) is looked up only in that
+device's folder, as OGRE opens it. The
 live frontend reads that file (`LiveContentSource::NamedTexture`); a capture keeps the bytes of a
 mod's or the replacements folder's file as a blob (`TextureDesc::file`, chunk `TXFL`, format 1.7),
 so replay, which has no mods, draws them. Session recordings (`--live_record`) carry them the same

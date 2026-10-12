@@ -65,6 +65,14 @@ int main() {
   f = resolver.Find("MEDIA/MODELS/AXE/ONLY_B.DDS", "MOD A", pak);
   Check(f.source == TextureSource::kMod && f.path.filename() == "only_b.dds", "then the other mods");
 
+  // An absolute name, as the data loader gives a mod's file: only that mod's folder.
+  f = resolver.Find("TLMOD001:/MEDIA/MODELS/AXE/ONLY_B.DDS", "General", pak);
+  Check(f.source == TextureSource::kMod && f.path.filename() == "only_b.dds", "a mod's device: its folder");
+  f = resolver.Find("tlmod000:\\media\\models\\axe\\only_b.dds", "General", pak);
+  Check(f.source == TextureSource::kNone, "another mod's device: not looked up elsewhere");
+  f = resolver.Find("TLREPL:/MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "General", pak);
+  Check(f.source == TextureSource::kReplacements, "the replacements' device: that folder");
+
   // Nowhere.
   f = resolver.Find("MEDIA/NOWHERE.DDS", "MOD A", pak);
   Check(f.source == TextureSource::kNone, "not found anywhere");

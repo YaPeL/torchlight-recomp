@@ -41,12 +41,33 @@ std::optional<std::filesystem::path> TextureResolver::Folder::Find(const std::st
 
 TextureResolver::TextureResolver(const TextureLocations& locations) {
   if (!locations.replacements.empty()) replacements_ = List(locations.replacements);
-  for (const auto& mod : locations.mods) mods_.emplace_back(mod.group, List(mod.folder));
+  for (const auto& mod : locations.mods) {
+    mods_.emplace_back(mod.group, List(mod.folder));
+    devices_.push_back(TextureNameKey(mod.device));
+  }
 }
 
 TextureFile TextureResolver::Find(std::string_view name, std::string_view group,
                                   const std::function<bool(std::string_view)>& pak_has) const {
   const std::string key = TextureNameKey(name);
+  // An absolute name (a device first): only that device's folder.
+  if (const size_t colon = key.find(':'); colon != std::string::npos) {
+    std::string rest = key.substr(colon + 1);
+    while (!rest.empty() && rest.front() == '/') rest.erase(rest.begin());
+    const std::string device = key.substr(0, colon + 1);
+    if (device == "TLREPL:") {
+      if (replacements_) {
+        if (auto file = replacements_->Find(rest)) return {TextureSource::kReplacements, *file};
+      }
+      return {};
+    }
+    for (size_t i = 0; i < devices_.size() && i < mods_.size(); ++i) {
+      if (devices_[i] != device) continue;
+      if (auto file = mods_[i].second.Find(rest)) return {TextureSource::kMod, *file};
+      return {};
+    }
+    return {};
+  }
   auto game = [&]() -> std::optional<TextureFile> {
     if (replacements_) {
       if (auto file = replacements_->Find(key)) return TextureFile{TextureSource::kReplacements, *file};

@@ -10,7 +10,9 @@
 // - In any other group (the game's): the replacements folder (added last to the pak's groups, it
 //   wins their index), then the pak, then the mods in activation order.
 // Names are the guest's ("MEDIA/LEVELSETS/..."); files in the folders match ignoring case, with
-// '/' and '\' alike.
+// '/' and '\' alike. A name that starts with a device ("TLMOD002:/MEDIA/...", "TLREPL:/...") is
+// absolute: the guest's data loader gives a mod's file by its full path (a mod's TEXTURE_OVERRIDE,
+// docs/mods.md 7j), and OGRE opens it only in the folder that device is; so does the host.
 
 #pragma once
 
@@ -69,6 +71,7 @@ class TextureResolver {
   static Folder List(const std::filesystem::path& root);
   std::optional<Folder> replacements_;
   std::vector<std::pair<std::string, Folder>> mods_;
+  std::vector<std::string> devices_;  // mods_'s devices, TextureNameKey'd ("TLMOD002:")
 };
 
 // The session's resolver: set once before the guest loads textures (the mods' registration), read
