@@ -421,7 +421,7 @@ All raw runtime logs, inputs, profile snapshots and screenshots stay in ignored 
 
 R1 evidence comprises one fresh-state record, 22 character-event observations (one rejected bootstrap grant plus 21 steps), one retained completion and four persistence snapshots. The final local state SHA-256 is `f84028bbf40c768f6d6f02ae087197d3ec462c781740a44a2ade70509a6ce85e`. The user closed the window; the SDK logged normal window close then title hard exit with process status 0. There was no crash during the actual game run.
 
-**Real ingress coverage: 2/66**, counting the completed FIRSTLEVEL chain and the TRAVEL_25000 stat producer separately. **Fully unlocked end-to-end gameplay coverage: 1/66.** The stat-producer count does not imply a threshold-crossing scenario was validated. Implementation coverage remains **54/66 implemented, 7 partial, 5 blocked**. These independent statuses appear in the [updated matrix](achievement-coverage.md).
+(As of 2026-10-04; the current counts are the summary line of achievement-coverage.md, counted from its rows.) **Real ingress coverage: 2/66**, counting the completed FIRSTLEVEL chain and the TRAVEL_25000 stat producer separately. **Fully unlocked end-to-end gameplay coverage: 1/66.** The stat-producer count does not imply a threshold-crossing scenario was validated. Implementation coverage remains **54/66 implemented, 7 partial, 5 blocked**. These independent statuses appear in the [updated matrix](achievement-coverage.md).
 
 ### Discovered lifecycle bug and conservative fix
 
