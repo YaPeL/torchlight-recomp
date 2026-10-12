@@ -25,7 +25,8 @@ add_test(NAME flat_map_test COMMAND flat_map_test)
 # The session's produced commands (live path), without the recompiled code: the hooks' slot table
 # is stubbed in the test.
 add_executable(session_test session_test.cpp session.cpp guest_readers.cpp)
-target_link_libraries(session_test PRIVATE torchlight_registry torchlight_live guest_abi rex::runtime)
+target_link_libraries(session_test PRIVATE torchlight_registry torchlight_live torchlight_texture_files guest_abi
+    rex::runtime)
 target_include_directories(session_test PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_options(session_test PRIVATE -Wall -Wextra)
 add_test(NAME session_test COMMAND session_test)

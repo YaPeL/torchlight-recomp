@@ -21,6 +21,7 @@
 #include "live/live_content_source.h"
 #include "live/measured_mutex.h"
 #include "live/slow_frames.h"
+#include "mods/texture_files.h"
 
 namespace torchlight::live {
 
@@ -249,6 +250,8 @@ void LiveMode::Run() {
   std::string error;
   if (!pak.Open((options_.game_data_root / "pak.zip").string(), error)) {
     REXLOG_ERROR("live: {}", error);
+  } else {
+    mods::SetPakNames(pak.names());  // what a capture's mod textures are told apart from
   }
   LiveContentSource content(pak);
   frontend::Frontend frontend(backend, content);

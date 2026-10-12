@@ -25,6 +25,7 @@
 #include "mods/mod_list.h"
 #include "save_import/pak.h"
 #include "mods/save_safety.h"
+#include "mods/texture_files.h"
 
 namespace torchlight::game_menu {
 
@@ -46,6 +47,10 @@ mods::ModPlan g_plan;
 bool g_mounted = false;
 // The replacements folder (docs/mods.md 7k), mounted as hooks::kReplacementsDeviceLink.
 bool g_replacements = false;
+// Where the frontend and the capture look for named textures (mods/texture_files.h): the
+// replacements folder from InstallMods, the mods' groups and folders from RegisterMods.
+mods::TextureLocations g_texture_locations;
+std::filesystem::path g_mods_folder;
 // The data manager the resources.cfg loader is building (NoteDataManager), for its group list.
 uint32_t g_data_manager = 0;
 // The active mods' resource groups (RegisterMods), to tell a mod's material script.
@@ -189,6 +194,8 @@ void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_
     return;
   }
   g_replacements = true;
+  g_texture_locations.replacements = folder;
+  mods::SetTextureLocations(g_texture_locations);
   REXLOG_INFO("replacements: {} as {}", folder.string(), hooks::kReplacementsDeviceLink);
 }
 
@@ -199,6 +206,7 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
   if (data_dir.empty()) return;
   MountReplacements(runtime, data_dir);
   const std::filesystem::path folder = data_dir / "mods";
+  g_mods_folder = folder;
   mods::ScanResult scan = mods::ScanModsFolder(folder);
   for (const std::string& line : scan.skipped) REXLOG_WARN("mods: skipped {}", line);
   std::optional<mods::ModList> list;
@@ -333,12 +341,14 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
       continue;
     }
     g_mod_groups.Add(group);
+    g_texture_locations.mods.emplace_back(group, g_mods_folder / g_plan.mods[i].folder);
     if (InitialiseResourceGroup(call, group)) {
       REXLOG_INFO("mods: {} in resource group \"{}\", initialised", location, group);
     } else {
       REXLOG_ERROR("mods: cannot initialise resource group \"{}\"", group);
     }
   }
+  mods::SetTextureLocations(g_texture_locations);  // before any texture is loaded
 }
 
 void NoteDataManager(uint32_t data_manager) { g_data_manager = data_manager; }

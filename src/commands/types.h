@@ -18,8 +18,10 @@ namespace torchlight::commands {
 
 inline constexpr uint32_t kFormatVersionMajor = 1;
 // 1.1: SetTextureBlend, 1.2: transpose flag, 1.3: program sources (chunk PSRC),
-// 1.4: SetGammaRamp, 1.5: live content keys (Draw::live_keys, chunk LIVE), 1.6: SetSceneClip.
-inline constexpr uint32_t kFormatVersionMinor = 6;
+// 1.4: SetGammaRamp, 1.5: live content keys (Draw::live_keys, chunk LIVE), 1.6: SetSceneClip,
+// 1.7: named textures' groups and the files of the ones a mod or the replacements folder gives
+// (chunk TXFL).
+inline constexpr uint32_t kFormatVersionMinor = 7;
 inline constexpr uint8_t kUnknown = 0xFF;
 
 // ---------------------------------------------------------------------------------------------
@@ -64,6 +66,7 @@ enum class BlobEndian : uint8_t {
   kGuestCpuBigEndian,  // written by the guest CPU in its native order (endian_raw unused)
   kVertexFetch,        // endian_raw = the 2-bit swap mode of the vertex fetch constant
   kTextureFetch,       // endian_raw = the 2-bit swap mode of the texture fetch constant
+  kHostFile,           // a host file's bytes as they are (TextureDesc::file; endian_raw unused)
 };
 
 enum class UnresolvedReason : uint16_t {
@@ -459,6 +462,12 @@ struct TextureDesc {
   bool render_target = false, manual = false;
   // Raw Xenos content (base level, tiled) for dynamic or unnamed textures.
   Hash content = 0;
+  // Named textures: the guest's resource group the texture was loaded in (Resource::mGroup), which
+  // decides the file with mods (mods/texture_files.h); and, in a capture, the blob holding that
+  // file's bytes when it is not the pak's (a mod's or the replacements folder's), since replay has
+  // no mods. Serialized in their own chunk (TXFL), not with the rest of the description.
+  std::string group;
+  Hash file = 0;
   std::array<uint32_t, 6> fetch_constant{};
   UnresolvedReason unresolved = UnresolvedReason::kNone;
 };

@@ -807,6 +807,17 @@ comparable: it carried the reverted "0ZIP0"/"ZIP" experiment, and every operatio
 0.05 ms), including the startup before the mods were registered (14 s against 3.4 s), which
 points at a loaded machine rather than at the mod.
 
+
+**The host side (2026-10-12, branch `feature/mod-textures`).** Each texture description carries the
+group the guest loaded it in (`Resource::mGroup`, `guest_abi` `resource::kGroup`), and the host
+takes the file OGRE takes (`mods/texture_files.h`): in a mod's group, that mod's folder first, then
+the game's groups (the replacements folder, then the pak), then the other mods in activation order;
+in a game group, the replacements folder, the pak, then the mods. Files match ignoring case. The
+live frontend reads that file (`LiveContentSource::NamedTexture`); a capture keeps the bytes of a
+mod's or the replacements folder's file as a blob (`TextureDesc::file`, chunk `TXFL`, format 1.7),
+so replay, which has no mods, draws them. Session recordings (`--live_record`) do not carry those
+files yet: a session replayed without the mods shows the pak's textures or the fallback.
+
 ## 7k. The replacements folder: files as if inside the pak (2026-10-12)
 
 PC's texture packs, TNNR among them, are meant to be put inside `Pak.zip`. As mods they change

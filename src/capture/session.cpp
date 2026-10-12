@@ -4,6 +4,8 @@
 #include <chrono>
 #include <filesystem>
 #include <format>
+#include <fstream>
+#include <iterator>
 #include <string_view>
 #include <thread>
 #include <tuple>
@@ -14,6 +16,7 @@
 #include "commands/serialize.h"
 #include "guest_abi/ogre_layout.h"
 #include "hooks/hooks.h"
+#include "mods/texture_files.h"
 
 namespace torchlight::capture {
 
@@ -622,6 +625,20 @@ void Session::AddTexture(commands::TextureDesc desc, commands::Hash live_content
     }
   }
   if (!armed()) return;
+  // A named texture whose file is a mod's or the replacements folder's: the capture keeps the
+  // file's bytes (replay has no mods; mods/texture_files.h).
+  if (!desc.render_target && !desc.manual && !desc.name.empty() && desc.file == 0) {
+    if (auto resolver = mods::CurrentTextureResolver()) {
+      const mods::TextureFile found = resolver->Find(desc.name, desc.group, mods::PakHas);
+      if (found.source == mods::TextureSource::kMod || found.source == mods::TextureSource::kReplacements) {
+        std::ifstream in(found.path, std::ios::binary);
+        const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
+        if (!bytes.empty()) {
+          desc.file = AddBlob(bytes.data(), bytes.size(), commands::BlobEndian::kHostFile, 0);
+        }
+      }
+    }
+  }
   if (live() && live_content &&
       capture_live_textures_.insert({desc.id.guest_address, desc.id.generation, live_content})
           .second) {

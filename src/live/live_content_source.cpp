@@ -1,5 +1,11 @@
 #include "live/live_content_source.h"
 
+#include <fstream>
+#include <iterator>
+#include <string_view>
+
+#include "mods/texture_files.h"
+
 namespace torchlight::live {
 
 using namespace torchlight::commands;
@@ -111,6 +117,26 @@ const rtss::Program* LiveContentSource::Program(const std::string& name) const {
 
 std::optional<std::vector<uint8_t>> LiveContentSource::GameFile(const std::string& name) const {
   return pak_.Read(name);
+}
+
+std::optional<std::vector<uint8_t>> LiveContentSource::NamedTexture(const commands::TextureDesc& t) const {
+  auto resolver = mods::CurrentTextureResolver();
+  if (!resolver) return GameFile(t.name);
+  const mods::TextureFile found =
+      resolver->Find(t.name, t.group, [this](std::string_view key) { return pak_.Contains(std::string(key)); });
+  switch (found.source) {
+    case mods::TextureSource::kPak:
+      return GameFile(t.name);
+    case mods::TextureSource::kMod:
+    case mods::TextureSource::kReplacements: {
+      std::ifstream in(found.path, std::ios::binary);
+      if (!in) return std::nullopt;
+      return std::vector<uint8_t>((std::istreambuf_iterator<char>(in)), {});
+    }
+    case mods::TextureSource::kNone:
+      break;
+  }
+  return std::nullopt;
 }
 
 size_t LiveContentSource::content_bytes() const {

@@ -43,6 +43,8 @@ class LiveContentSource : public frontend::ContentSource {
   std::string ProgramName(const commands::ResourceId& id) const override;
   const rtss::Program* Program(const std::string& name) const override;
   std::optional<std::vector<uint8_t>> GameFile(const std::string& name) const override;
+  // With the player's mods or replacements, the file the guest's OGRE takes (mods/texture_files.h).
+  std::optional<std::vector<uint8_t>> NamedTexture(const commands::TextureDesc& t) const override;
 
   size_t content_bytes() const;
 

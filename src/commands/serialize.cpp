@@ -29,6 +29,7 @@ constexpr uint32_t kTagStats = Tag('S', 'T', 'A', 'T');
 constexpr uint32_t kTagReference = Tag('R', 'I', 'M', 'G');
 constexpr uint32_t kTagProgramSources = Tag('P', 'S', 'R', 'C');  // 1.3
 constexpr uint32_t kTagLive = Tag('L', 'I', 'V', 'E');            // 1.5
+constexpr uint32_t kTagTextureFiles = Tag('T', 'X', 'F', 'L');    // 1.7
 
 template <typename T>
 T ToLittle(T v) {
@@ -503,6 +504,22 @@ std::vector<uint8_t> SerializeCapture(const Capture& in) {
     Vec(live, c.live_textures, [](Writer& io, LiveTextureContent& t) { S(io, t); });
     WriteChunk(file, kTagLive, live);
   }
+  {
+    // Named textures' groups and files (1.7): only the textures that have one.
+    Writer files;
+    uint64_t n = 0;
+    for (const auto& t : c.textures) n += !t.group.empty() || t.file != 0;
+    if (n) {
+      files.num(n);
+      for (auto& t : c.textures) {
+        if (t.group.empty() && t.file == 0) continue;
+        S(files, t.id);
+        files.str(t.group);
+        files.num(t.file);
+      }
+      WriteChunk(file, kTagTextureFiles, files);
+    }
+  }
   if (!c.program_sources.empty()) {
     Writer sources;
     Vec(sources, c.program_sources, [](Writer& io, ProgramSource& p) { S(io, p); });
@@ -565,6 +582,23 @@ bool DeserializeCapture(const std::vector<uint8_t>& bytes, Capture& c, std::stri
       Vec(r, c.live_textures, [](Reader& io, LiveTextureContent& t) { S(io, t); });
     } else if (tag == kTagProgramSources) {
       Vec(r, c.program_sources, [](Reader& io, ProgramSource& p) { S(io, p); });
+    } else if (tag == kTagTextureFiles) {
+      uint64_t n = 0;
+      r.num(n);
+      for (uint64_t i = 0; i < n && n <= kMaxElements && r.ok(); ++i) {
+        ResourceId id;
+        std::string group;
+        Hash file = 0;
+        S(r, id);
+        r.str(group);
+        r.num(file);
+        for (auto& t : c.textures) {
+          if (t.id == id) {
+            t.group = group;
+            t.file = file;
+          }
+        }
+      }
     } else if (tag == kTagReference) {
       c.reference.emplace();
       S(r, *c.reference);

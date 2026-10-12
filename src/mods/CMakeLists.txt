@@ -51,3 +51,16 @@ add_executable(mods_wardrobe_guard_test wardrobe_guard_test.cpp)
 target_link_libraries(mods_wardrobe_guard_test PRIVATE torchlight_mods)
 target_compile_options(mods_wardrobe_guard_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mods_wardrobe_guard_test COMMAND mods_wardrobe_guard_test)
+
+# Which file a named texture comes from with the player's mods and the replacements folder
+# (texture_files.h): used by the live frontend, the capture and the mods' registration. No other
+# dependency.
+add_library(torchlight_texture_files STATIC texture_files.cpp)
+target_include_directories(torchlight_texture_files PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_texture_files PUBLIC cxx_std_23)
+target_compile_options(torchlight_texture_files PRIVATE -Wall -Wextra -Werror)
+set_target_properties(torchlight_texture_files PROPERTIES POSITION_INDEPENDENT_CODE ON)
+add_executable(mods_texture_files_test texture_files_test.cpp)
+target_link_libraries(mods_texture_files_test PRIVATE torchlight_texture_files)
+target_compile_options(mods_texture_files_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME mods_texture_files_test COMMAND mods_texture_files_test)
