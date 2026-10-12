@@ -861,7 +861,8 @@ for `MEDIA/MODELS/WEAPONS/HACKER/2handers_05`, which exists nowhere, on PC too. 
 material is `MEDIA/MODELS/WEAPONS/2HANDERS_05/2handers_05`. A mod's mesh reaches the listener
 upper-cased (the mods' file map values are, e.g. `TLMOD000:/MEDIA/UNITS/...` in the log), so the
 search for "MEDIA" (which tells case apart) finds it. The test mod now renames the mesh's material
-to `weapon_hacker`, the sword folder's own; its check run is pending.
+to `weapon_hacker`, the sword folder's own. Checked in an automatic run with this branch: both
+swords are drawn with the two-hander's mesh (1188 vertices) and `WEAPON_HACKER.DDS`.
 
 ## 8. Where mods go on our side
 

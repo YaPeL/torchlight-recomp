@@ -75,6 +75,12 @@ back to the original files.
   whole session, so those items are not lost, and the notice says so in capitals. Quit, fix the
   mods, and start again.
 
+## If you make mods
+
+- A model (`.MESH`) looks up its materials by name in its own folder. A model moved to another
+  folder must name a material defined in that folder, or bring its `.material` file along next to
+  it. Torchlight on PC works the same way.
+
 ## Not supported yet
 
 - New affixes (the extra properties of magic items) and new level pieces from mods: the game ships
