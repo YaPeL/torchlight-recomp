@@ -35,6 +35,13 @@ int main() {
   Touch(root / "b" / "Media" / "Models" / "Sword" / "NEW_SWORD.DDS");    // b: the same new path
   Touch(root / "b" / "media" / "models" / "axe" / "only_b.dds");
   Touch(root / "r" / "media" / "levelsets" / "town1" / "grass001.dds");  // replaces a pak texture
+  // Files a mod's data names through the data loader, which gives them back by their full path
+  // with the mod's device (docs/mods.md 7j): a unit's TEXTURE_OVERRIDE and [TEXTURE_REPLACE]
+  // blocks, a wardrobe piece (as the .dat names it, .png), a shared texture a mod ships.
+  Touch(root / "b" / "media" / "units" / "items" / "Scroll_Blue.dds");
+  Touch(root / "b" / "media" / "units" / "monsters" / "spider_red.dds");
+  Touch(root / "b" / "Media" / "Wardrobe" / "Destroyer" / "starting_boots.png");
+  Touch(root / "b" / "media" / "sharedtextures" / "rimlight.dds");
   TextureLocations locations;
   locations.replacements = root / "r";
   locations.mods = {{"MOD A", root / "a", "tlmod000:"}, {"MOD B", root / "b", "tlmod001:"}};
@@ -72,6 +79,20 @@ int main() {
   Check(f.source == TextureSource::kNone, "another mod's device: not looked up elsewhere");
   f = resolver.Find("TLREPL:/MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "General", pak);
   Check(f.source == TextureSource::kReplacements, "the replacements' device: that folder");
+
+  // The data loader's paths, one case each (the names as the guest asks for them).
+  f = resolver.Find("TLMOD001:/MEDIA/UNITS/ITEMS/SCROLL_BLUE.DDS", "General", pak);
+  Check(f.source == TextureSource::kMod && f.path.filename() == "Scroll_Blue.dds", "a unit's TEXTURE_OVERRIDE");
+  f = resolver.Find("TLMOD001:/MEDIA/UNITS/MONSTERS/SPIDER_RED.DDS", "Autodetect", pak);
+  Check(f.source == TextureSource::kMod && f.path.filename() == "spider_red.dds", "a [TEXTURE_REPLACE] block");
+  f = resolver.Find("TLMOD001:/MEDIA/WARDROBE/DESTROYER/STARTING_BOOTS.PNG", "General", pak);
+  Check(f.source == TextureSource::kMod && f.path.filename() == "starting_boots.png", "a wardrobe piece, as named");
+  f = resolver.Find("TLMOD001:/MEDIA/WARDROBE/DESTROYER/STARTING_BOOTS.DDS", "General", pak);
+  Check(f.source == TextureSource::kNone, "the name as the guest asks for it, no other extension");
+  f = resolver.Find("TLMOD001:/MEDIA/SHAREDTEXTURES/RIMLIGHT.DDS", "General", pak);
+  Check(f.source == TextureSource::kMod && f.path.filename() == "rimlight.dds", "a shared texture a mod ships");
+  f = resolver.Find("GAME:\\MEDIA\\SHAREDTEXTURES\\RIMLIGHT.DDS", "General", pak);
+  Check(f.source == TextureSource::kNone, "a device that is no mod's: nothing");
 
   // Nowhere.
   f = resolver.Find("MEDIA/NOWHERE.DDS", "MOD A", pak);
