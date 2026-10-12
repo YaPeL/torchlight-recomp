@@ -142,6 +142,22 @@ monsters (need the data indexing to see new files). UI mods and mods that rely o
   - **The Steam check.** Without Steam, `SteamAPI_Init` fails and the game opens `steam://run`.
     The check that skips it, `find_first_of("COMPRESS")` on the command line, also feeds the game's
     `COMPRESS` option, which the data manager reads.
+  - **What it touched.** Steam relaunched the game in the real prefix, and the player played there
+    for four minutes. The test character arrived as a new `save/2.svt` (plus `save/backup.tmp`).
+    The shared stash was rewritten, with only its items' ids changed, and `SETTINGS.TXT` was
+    replaced by the test's. The three `.cmp` files waited locally to be uploaded; nothing was
+    uploaded, since the game's cloud sync was off.
+  - **Restored on 2026-10-12, with Steam closed.** Moved to a quarantine folder, nothing deleted:
+    `2.svt`, `backup.tmp`, the rewritten stash, the three `.cmp` files and `remotecache.vdf`. The
+    stash was put back from `savebackup/tmpbackup`. Without the `.cmp` files the game is safe: it
+    loads nothing from remote storage and keeps the local saves (0x5f9e90 returns early when
+    `GetFileSize` is 0). The no-load branch, 0x5f8b00, only empties `save/tmpBackup/`.
+  - **Getting `SETTINGS.TXT` back from the server, if wanted.** With the `.cmp` files and
+    `remotecache.vdf` already out of `userdata/<account>/41500/`, turn Steam Cloud back on for
+    Torchlight. Steam then sees no local state and downloads the server's last version (change 15,
+    2026-10-05) instead of uploading anything. The next launch of the game restores
+    `SETTINGS.TXT` from that `settings.cmp`. It restores saves and the stash the same way, so check
+    that the server's `saves.cmp` holds the expected characters first.
 
 ## 7. Code readings (2026-10-07)
 
