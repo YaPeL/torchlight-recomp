@@ -683,6 +683,15 @@ Not checked by these runs: that quests given by a replaced or unknown unit go on
 saves had one), and trading with Tarn. If quests show a problem, their units go back to the
 player's side.
 
+**On PC it is the same mod change.** PC's `Pak.zip` gives Tarn the GUID the Xbox pak does
+(-7294468752501370402 in `MEDIA/UNITS/MONSTERS/MERCHANT/MERCHANT_GOODS.DAT.adm`). `JCC - Map`'s
+`merchant_goods.dat` sets -3011397813159128610. So on PC too, a save made without the mod holds a
+Tarn the game no longer knows once the mod is on, and the other way round when it is turned off.
+**[read]** What PC's executable does with that old Tarn when it loads the saved town was not read.
+The Xbox build, the same Runic code, drops it and makes Tarn again from the level (above).
+**[inferred for PC]** Our save protection plays no part in it: Tarn is not the player's, so it is
+left in the save. PC has no such protection: there, only the game's own handling applies.
+
 ## 7i. Mods that ship PC-compiled `.ADM` files crashed at startup (2026-10-10, fixed)
 
 Enhanced Edition v1.0 (three mods: `Enhanced`, `BasementMiniDungeon`, `Charm_to_Stun`) ends the
