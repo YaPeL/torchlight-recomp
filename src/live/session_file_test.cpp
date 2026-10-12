@@ -151,6 +151,35 @@ int main() {
       }
     }
     Check(bytes, "the file's bytes come back with the frame");
+
+    // A name with a mod's device (a mod's TEXTURE_OVERRIDE, by the data loader's full path), in any
+    // case: that mod's file is kept the same way.
+    const std::filesystem::path mod = std::filesystem::path(dir) / "mods" / "Enhanced";
+    std::filesystem::create_directories(mod / "Media" / "Models");
+    std::ofstream(mod / "Media" / "Models" / "Scroll_Blue.dds", std::ios::binary) << "scroll bytes";
+    locations.mods = {{"ENHANCED", mod, "tlmod002:"}};
+    mods::SetTextureLocations(locations);
+    LiveFrame g = Frame(21);
+    commands::TextureDesc u;
+    u.id = Id(8);
+    u.name = "TLMOD002:/MEDIA/MODELS/SCROLL_BLUE.DDS";
+    u.group = "General";
+    g.textures.push_back(u);
+    {
+      SessionWriter w;
+      Check(w.Open(path, 0, error), "open for the device-named texture");
+      Check(w.Append(g) == SessionWriter::Result::kWritten, "frame with a device-named texture written");
+    }
+    SessionReader r2;
+    LiveFrame back2;
+    Check(r2.Open(path, error) && r2.Next(back2, error), "frame with a device-named texture read");
+    bool scroll = false;
+    for (const auto& c : back2.contents) {
+      if (c.content && !back2.textures.empty() && c.content->hash == back2.textures[0].file) {
+        scroll = std::string(c.content->bytes.begin(), c.content->bytes.end()) == "scroll bytes";
+      }
+    }
+    Check(scroll, "a device-named texture's mod file is kept");
     mods::SetTextureLocations({});
   }
 
