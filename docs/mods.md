@@ -852,8 +852,16 @@ Then checked in two automatic runs on copies of the test sword's save: a synthet
 two-hander's mesh at the base sword's path (`media/models/weapons/hacker/hacker.MESH`). With this
 branch and with develop (9877dc8, the mods also in "General"), both equipped swords are drawn with
 the two-hander's mesh (1188 vertices; the pak's sword has 432), the same draws in both captures.
-The swapped mesh is drawn without a texture, the same in both builds, so it does not depend on
-the groups. Why was not looked into: the mesh names the two-hander's material, not the sword's.
+The swapped mesh was drawn without a texture, the same in both builds. The test mod was wrong, not
+the lookup. A mesh names its materials without a folder (`2handers_05` in the two-hander's, `weapon_hacker`
+in the sword's). The game's mesh listener prefixes the mesh's own folder from "MEDIA" (PC
+`0x5c1db0`, folder `0x5c6040`; Xbox `sub_8239A5B8`, `sub_823A13A8`). The material scripts are named
+the same way (script folder from "MEDIA" plus the name, `sub_8239B490`). So the moved mesh asked
+for `MEDIA/MODELS/WEAPONS/HACKER/2handers_05`, which exists nowhere, on PC too. The two-hander's
+material is `MEDIA/MODELS/WEAPONS/2HANDERS_05/2handers_05`. A mod's mesh reaches the listener
+upper-cased (the mods' file map values are, e.g. `TLMOD000:/MEDIA/UNITS/...` in the log), so the
+search for "MEDIA" (which tells case apart) finds it. The test mod now renames the mesh's material
+to `weapon_hacker`, the sword folder's own; its check run is pending.
 
 ## 8. Where mods go on our side
 
