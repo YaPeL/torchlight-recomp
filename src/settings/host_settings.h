@@ -28,7 +28,7 @@ struct Resolution {
 enum class Aspect { kAuto, k4x3, k16x10, k16x9, k21x9, k32x9 };
 
 // Which achievement set the game uses: the Xbox 360 one (the game's own 12) or the PC one
-// (achievements/, incomplete). Read once at startup.
+// (the PC version's 66, achievements/). Read once at startup.
 enum class AchievementSet { kXbox, kPc };
 
 // Stored values. Empty strings and zero sizes mean "automatic".

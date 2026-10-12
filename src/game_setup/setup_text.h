@@ -58,10 +58,10 @@ inline constexpr std::string_view kTextChecking = "Checking the game files...";
 // The achievement set's page (EnsureAchievementChoice; docs/achievements-xbox.md).
 inline constexpr std::string_view kTextAchievementsChoice =
     "Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 "
-    "achievements of the PC version; some cannot be earned yet. Each set keeps its own progress. "
-    "You can change this later in the settings (restart required).";
+    "achievements of the PC version. Each set keeps its own progress. You can change "
+    "this later in the settings (restart required).";
 inline constexpr std::string_view kTextAchievementsXbox = "Xbox 360";
-inline constexpr std::string_view kTextAchievementsPc = "PC (incomplete)";
+inline constexpr std::string_view kTextAchievementsPc = "PC";
 std::span<const std::string_view> InterfaceTexts();
 
 }  // namespace torchlight::game_setup

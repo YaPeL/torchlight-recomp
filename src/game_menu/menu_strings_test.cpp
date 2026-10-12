@@ -42,7 +42,7 @@ void TestShippedFile() {
   const char* texts[] = {"Video", "Resolution", "Aspect Ratio", "Frame Rate Limit", "Language",
                          "Achievements", "Vertical Sync", "Renderer", "GPU",
                          "Some changes need a restart", "Unlimited", "Window", "Default", "Auto",
-                         "PC (incomplete)"};
+                         "PC"};
   for (const char* language : {"de", "fr", "es"}) {
     for (const char* text : texts) {
       if (!s.Has(language, text)) {

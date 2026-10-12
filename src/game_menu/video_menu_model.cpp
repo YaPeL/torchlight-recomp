@@ -170,7 +170,7 @@ std::string VideoMenuModel::Text(Row row) const {
       return current_.fps_cap ? std::to_string(current_.fps_cap) : "Unlimited";
     case Row::kAchievements:
       return settings::EffectiveAchievements(current_) == settings::AchievementSet::kPc
-                 ? "PC (incomplete)"
+                 ? "PC"
                  : "Xbox 360";
     case Row::kLanguage:
       return LanguageName(Language(current_.language));

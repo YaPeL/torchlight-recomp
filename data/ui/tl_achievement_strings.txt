@@ -5,7 +5,7 @@
 # UI text drops anything beyond it.
 
 [de]
-Achievements (PC, incomplete) = Erfolge (PC, unvollständig)
+Achievements (PC) = Erfolge (PC)
 Unlocked = Freigeschaltet
 Close = Schließen
 Achievement Unlocked = Erfolg freigeschaltet
@@ -77,7 +77,7 @@ Talked to the horse 100 times = 100-mal mit dem Pferd gesprochen
 Defeated Ordrak without ever dying = Ordrak besiegt, ohne je zu sterben
 
 [fr]
-Achievements (PC, incomplete) = Succès (PC, incomplet)
+Achievements (PC) = Succès (PC)
 Unlocked = Débloqués
 Close = Fermer
 Achievement Unlocked = Succès débloqué
@@ -149,7 +149,7 @@ Talked to the horse 100 times = 100 conversations avec le cheval
 Defeated Ordrak without ever dying = Ordrak vaincu sans jamais mourir
 
 [es]
-Achievements (PC, incomplete) = Logros (PC, incompletos)
+Achievements (PC) = Logros (PC)
 Unlocked = Desbloqueados
 Close = Cerrar
 Achievement Unlocked = Logro desbloqueado
