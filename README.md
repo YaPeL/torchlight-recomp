@@ -17,7 +17,7 @@ emulating the Xbox 360 GPU, every draw is rebuilt with [OGRE 14](https://www.ogr
 > XBLA package from your Xbox 360, version 1.0.140.0). This project is not affiliated with or
 > endorsed by the owners of Torchlight or by Microsoft.
 
-This is a **beta**, the first public release. See [Known limitations](#known-limitations).
+This is a **beta**. See [Known limitations](#known-limitations).
 
 ## Contents
 
@@ -64,7 +64,8 @@ that copy. To check a download, compare its SHA-256 with the release's `SHA256SU
 ### macOS
 
 Requirements: a Mac with Apple Silicon (M1 or later) and macOS 13.3 or later; tested on macOS 26.
-There is no build for Intel Macs.
+There is no build for Intel Macs. How the port works, and these steps as checked on macOS 26:
+[docs/macos-port.md](docs/macos-port.md) (section 6 for the package and Gatekeeper).
 
 Open `Torchlight-Recomp-*-arm64.dmg` and drag **Torchlight Recomp** to **Applications**.
 
@@ -175,7 +176,8 @@ Other languages can be added as language packs, including translations made for 
   the top right.
 - **Mods**: new affixes and new level pieces from mods are not loaded yet, mods must be unpacked
   folders, and the first start with a new set of mods takes longer (up to about a minute with a
-  large pack). The details are in [docs/mods-guide.md](docs/mods-guide.md).
+  large pack). A class added by a mod is not offered at character creation. The details are in
+  [docs/mods-guide.md](docs/mods-guide.md).
 - **Languages**: language packs for scripts written right to left (Arabic) are not supported, and
   Chinese and Japanese not yet.
 - The Windows zip is not code-signed (see SmartScreen, above).
@@ -198,6 +200,7 @@ On macOS, in `~/Library/`:
 | | macOS |
 |---|---|
 | Settings (`settings.toml`) and saves | `Application Support/TorchlightRecomp/` |
+| Mods (with `mods.dat`) and replacements | `Application Support/TorchlightRecomp/mods/`, `.../replacements/` |
 | Game data, with `import` for PC saves | `Application Support/TorchlightRecomp/game/` |
 | Logs | `Logs/TorchlightRecomp/` |
 | Shader cache | `Caches/TorchlightRecomp/ogre/` |
@@ -207,7 +210,7 @@ On macOS, in `~/Library/`:
 Building the game needs your own copy of it too: the code generator reads its executable. Without
 it, only the libraries, the tests and the tools build (what CI does). See
 [docs/BUILDING.md](docs/BUILDING.md) for the dependencies (the patched ReXGlue SDK, OGRE 14.6.0),
-the build on Linux and Windows, the tests and the development tools, and
+the build on Linux, Windows and macOS, the tests and the development tools, and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for how the port works. To contribute, see
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
