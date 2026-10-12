@@ -37,10 +37,16 @@ namespace ui = torchlight::guest_abi::game_ui;
 // numbered by its place in the plan: the guest never sees the folder's name, which may hold
 // characters the kernel refuses in a path, as the Xbox does (a comma).
 constexpr const char* kRecordFile = "mod_set.txt";
+// Files read in place of the pak's at the same path, as if they were inside it (docs/mods.md 7k).
+constexpr const char* kReplacementsFolder = "replacements";
 
 // Set by InstallMods before the guest runs; read once by RegisterMods on the game's thread.
 mods::ModPlan g_plan;
 bool g_mounted = false;
+// The replacements folder (docs/mods.md 7k), mounted as hooks::kReplacementsDeviceLink.
+bool g_replacements = false;
+// The data manager the resources.cfg loader is building (NoteDataManager), for its group list.
+uint32_t g_data_manager = 0;
 
 std::optional<std::vector<uint8_t>> ReadFile(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
@@ -154,11 +160,41 @@ void LogModFileMaps(const uint8_t* base, uint32_t manager) {
 }
 #endif
 
+// The replacements folder, when it holds any file: mounted read-only, its files are added to the
+// pak's groups before they are initialised (HookInitialiseAll).
+void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_dir) {
+  const std::filesystem::path folder = data_dir / kReplacementsFolder;
+  std::error_code ec;
+  bool any = false;
+  for (auto it = std::filesystem::recursive_directory_iterator(folder, ec);
+       !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+    if (it->is_regular_file(ec)) {
+      any = true;
+      break;
+    }
+  }
+  if (!any) return;
+  if (!runtime || !runtime->file_system()) {
+    REXLOG_ERROR("replacements: no runtime file system; {} not used", folder.string());
+    return;
+  }
+  const std::string mount(hooks::kReplacementsDeviceMount);
+  auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, folder, /*read_only=*/true);
+  if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
+      !runtime->file_system()->RegisterSymbolicLink(std::string(hooks::kReplacementsDeviceLink), mount)) {
+    REXLOG_ERROR("replacements: cannot mount {}", folder.string());
+    return;
+  }
+  g_replacements = true;
+  REXLOG_INFO("replacements: {} as {}", folder.string(), hooks::kReplacementsDeviceLink);
+}
+
 }  // namespace
 
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
                  const std::filesystem::path& user_data_root) {
   if (data_dir.empty()) return;
+  MountReplacements(runtime, data_dir);
   const std::filesystem::path folder = data_dir / "mods";
   mods::ScanResult scan = mods::ScanModsFolder(folder);
   for (const std::string& line : scan.skipped) REXLOG_WARN("mods: skipped {}", line);
@@ -275,11 +311,12 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
 #ifdef TORCHLIGHT_MODS_DIAGNOSTICS
   LogModFileMaps(base, manager);
 #endif
-  // Each active mod's folder goes only into the mod's own resource group (guest_abi mods.h,
-  // mod::kResourceGroup; OGRE makes the group when a location is added to it), in mods.dat's order
-  // (ModPlan activation), as PC does. A file OGRE does not find in the group it is asked for is
-  // looked up in the other groups, which is how a mod's new files are found. Unlike PC, the group is
-  // not initialised: doing it let a mod's materials replace the game's (docs/mods.md 7j).
+  // As PC does (docs/mods.md 7j): each active mod's folder goes only into the mod's own resource
+  // group (guest_abi mods.h, mod::kResourceGroup; OGRE makes the group when a location is added to
+  // it), which is then initialised, after the game's groups and in mods.dat's order (ModPlan
+  // activation), so the mod's scripts are parsed. A material named like one already defined is not
+  // compiled over it (HookScriptListener), and a file OGRE does not find in the group it is asked
+  // for is looked up in the other groups, which is how a mod's new files are found.
   for (const size_t i : g_plan.activation) {
     const std::string location = hooks::ModDeviceLink(i) + "\\";
     const uint32_t mod = i < count ? call.ReadU32(list + 4 * i) : 0;
@@ -292,12 +329,110 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
       REXLOG_ERROR("mods: cannot add {} to resource group \"{}\"", location, group);
       continue;
     }
-    REXLOG_INFO("mods: {} in resource group \"{}\"", location, group);
+    if (InitialiseResourceGroup(call, group)) {
+      REXLOG_INFO("mods: {} in resource group \"{}\", initialised", location, group);
+    } else {
+      REXLOG_ERROR("mods: cannot initialise resource group \"{}\"", group);
+    }
   }
 }
 
+void NoteDataManager(uint32_t data_manager) { g_data_manager = data_manager; }
+
+namespace {
+
+// initialiseAllResourceGroups (guest_abi game_ui.h kInitialiseAllResourceGroups), the first time:
+// before the original parses the groups, the replacements folder goes into each of the data
+// manager's groups (the pak's), after the pak. In each group its files then come before the pak's
+// (the location added last wins the group's index) and its scripts are parsed after the pak's, so
+// its definitions are the ones kept, as if its files were inside the pak.
+void HookInitialiseAll(PPCContext& ctx, uint8_t* base, void (*original)(PPCContext&, uint8_t*)) {
+  static bool done = false;
+  if (!done && g_replacements && g_data_manager) {
+    done = true;
+    GuestCall call(ctx, base);
+    const uint32_t data = call.ReadU32(g_data_manager + ui::data_manager::kGroupsData.offset);
+    const uint32_t count = call.ReadU32(g_data_manager + ui::data_manager::kGroupsCount.offset);
+    const std::string location = std::string(hooks::kReplacementsDeviceLink) + "\\";
+    for (uint32_t i = 0; i < count && i < 64; ++i) {
+      const std::string group = abi::ogre::ReadString(base, data + i * ui::data_manager::kGroupStride, 256);
+      if (group.empty()) continue;
+      if (AddFileSystemLocation(call, location, true, group)) {
+        REXLOG_INFO("replacements: in resource group \"{}\"", group);
+      } else {
+        REXLOG_ERROR("replacements: cannot add to resource group \"{}\"", group);
+      }
+    }
+  }
+  original(ctx, base);
+}
+
+uint64_t NextHandle(const uint8_t* base, uint32_t manager) {
+  return abi::ReadU64(base, manager + ui::kResourceManagerNextHandle.offset);
+}
+
+// The game's script listener (guest_abi game_ui.h kScriptListenerHandleEvent), made to behave as
+// PC's for our devices:
+// - "createMaterial" from a mod's script: when the listener hands back a material that already
+//   existed (no create, so OGRE's next handle did not move), a new one is created instead, which
+//   OGRE leaves unregistered because the name exists; the script is compiled into it, and the
+//   first definition (the game's) is kept, as on PC. The replacements' scripts keep the listener's
+//   own behaviour: they redefine, as files inside the pak would.
+// - "processResourceName" for a texture: the name without our device, as PC names it.
+void HookScriptListener(PPCContext& ctx, uint8_t* base, void (*original)(PPCContext&, uint8_t*)) {
+  namespace event = ui::script_event;
+  const uint32_t ev = ctx.r5.u32, retval = ctx.r6.u32;
+  if ((!g_mounted && !g_replacements) || !ev) {
+    original(ctx, base);
+    return;
+  }
+  const std::string type = abi::ogre::ReadString(base, ev + event::kType.offset, 64);
+  if (type == "createMaterial") {
+    const bool from_mod =
+        hooks::OnModDevice(abi::ogre::ReadString(base, ev + event::kMaterialFile.offset, 1024));
+    const uint32_t manager = abi::ReadU32(base, ui::kMaterialManagerGlobal);
+    const uint64_t before = manager ? NextHandle(base, manager) : 0;
+    original(ctx, base);
+    const bool handled = (ctx.r3.u32 & 0xFF) != 0;
+    if (!handled || !from_mod || !manager || !retval || NextHandle(base, manager) != before) return;
+    const uint32_t existing = abi::ReadU32(base, retval);
+    if (!existing) return;
+    GuestCall call(ctx, base);
+    const uint32_t out = call.Reserve(16);
+    if (!out) return;
+    const uint32_t create =
+        call.ReadU32(call.ReadU32(manager) + ui::kResourceManagerCreate.byte_offset());
+    call.Call(create, {out, manager, existing + abi::ogre::resource::kName.offset,
+                       ev + event::kMaterialGroup.offset, 0, 0, 0});
+    const uint32_t made = call.ReadU32(out + 4);
+    if (made) call.WriteU32(retval, made);
+    call.Call(ui::kMaterialPtrRelease.address, {out});
+    static uint32_t kept = 0;
+    if (++kept <= 3 || kept % 100 == 0) {
+      REXLOG_INFO("mods: material \"{}\" already defined, the mod's ignored as on PC ({} so far)",
+                  abi::ogre::ReadString(base, existing + abi::ogre::resource::kName.offset, 256), kept);
+    }
+    return;
+  }
+  original(ctx, base);
+  if (type != "processResourceName" ||
+      abi::ReadU32(base, ev + event::kResourceKind.offset) != event::kTextureKind) {
+    return;
+  }
+  const uint32_t name = ev + event::kResourceName.offset;
+  const auto stripped = hooks::WithoutOurDevice(abi::ogre::ReadString(base, name, 1024));
+  if (!stripped) return;
+  GuestCall call(ctx, base);
+  const uint32_t text = call.PushUtf8(*stripped);
+  if (text) call.Call(ui::kStringAssign.address, {name, text, static_cast<uint32_t>(stripped->size())});
+}
+
+}  // namespace
+
 }  // namespace torchlight::game_menu
 
+REX_EXTERN(__imp__sub_8239B490);
+REX_EXTERN(__imp__sub_82429D78);
 REX_EXTERN(__imp__sub_822A68F0);
 
 namespace torchlight::game_menu {
@@ -336,5 +471,13 @@ extern "C" {
 
 static_assert(torchlight::guest_abi::mods::kUnitSaveWriter.address == 0x822A68F0u, "mods mismatch");
 REX_FUNC(sub_822A68F0) { torchlight::game_menu::HookUnitSave(ctx, base); }
+
+static_assert(torchlight::guest_abi::game_ui::kScriptListenerHandleEvent.address == 0x8239B490u,
+              "game_ui mismatch");
+REX_FUNC(sub_8239B490) { torchlight::game_menu::HookScriptListener(ctx, base, __imp__sub_8239B490); }
+
+static_assert(torchlight::guest_abi::game_ui::kInitialiseAllResourceGroups.address == 0x82429D78u,
+              "game_ui mismatch");
+REX_FUNC(sub_82429D78) { torchlight::game_menu::HookInitialiseAll(ctx, base, __imp__sub_82429D78); }
 
 }  // extern "C"

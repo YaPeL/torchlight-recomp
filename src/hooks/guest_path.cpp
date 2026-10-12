@@ -41,9 +41,24 @@ bool OnModDevice(std::string_view path) {
   return at > kPrefix.size() && at < path.size() && path[at] == ':';
 }
 
+bool OnReplacementsDevice(std::string_view path) {
+  if (path.size() < kReplacementsDeviceLink.size()) return false;
+  for (size_t i = 0; i < kReplacementsDeviceLink.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(path[i])) != kReplacementsDeviceLink[i]) return false;
+  }
+  return true;
+}
+
 std::optional<std::string> ModsSearchPath(std::string_view path) {
-  if (!OnModDevice(path)) return std::nullopt;
+  if (!OnModDevice(path) && !OnReplacementsDevice(path)) return std::nullopt;
   return WindowsSeparators(path);
+}
+
+std::optional<std::string> WithoutOurDevice(std::string_view name) {
+  if (!OnModDevice(name) && !OnReplacementsDevice(name)) return std::nullopt;
+  size_t at = name.find(':') + 1;
+  while (at < name.size() && (name[at] == '/' || name[at] == '\\')) ++at;
+  return std::string(name.substr(at));
 }
 
 }  // namespace torchlight::hooks
