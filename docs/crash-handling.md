@@ -108,10 +108,21 @@ can resolve it. Paths under the home folder are written as `~`.
    how many duplicates the log suppressed (section 5).
 
 **Resolving it later** (a script, `tools/crash/resolve.py`, to be written). It takes the report and
-a checkout of `torchlight-symbols`, and finds `<tag>/<platform>/` by version:
+a checkout of `torchlight-symbols`, and finds `<tag>/<platform>/` by version. Since v0.7.6-beta each
+platform's folder holds one archive, `symbols.tar.zst` (or `symbols.tar.xz` where the release
+runner had no zstd), written by `tools/release/push_symbols.sh`: GitHub refuses files over
+100 MB and the macOS dSYM's DWARF is larger. Unpack it first, into a folder of its own:
+
+```sh
+mkdir -p symbols && zstd -dc <tag>/<platform>/symbols.tar.zst | tar -xf - -C symbols
+# or: xz -dc <tag>/<platform>/symbols.tar.xz | tar -xf - -C symbols
+```
+
+`v0.1.0-beta` (and the Linux and Windows folders of any release before it) hold the files as
+they are. Then:
 - Linux: `addr2line -f -C -e <the .debug matching the build ID>` on each module + offset.
 - Windows: `llvm-symbolizer` with the PDB.
-- macOS: `atos` with the dSYM, which the macOS release would add to `torchlight-symbols`.
+- macOS: `atos` with the dSYM (`torchlight.dSYM`, in the macOS archive).
 
 The resolved `sub_` names give the guest stack, and the guest addresses can then be looked up in
 `guest_abi` and the legacy notes by hand.
