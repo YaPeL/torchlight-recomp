@@ -500,6 +500,11 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
     uint32_t data = U32(m, parameters + values.offset + ogre::stl_vector::kFirst.offset);
     uint32_t structure = U32(m, parameters + logical.offset + ogre::shared_ptr::kPRep.offset);
     if (structure == 0 || data == 0) return;
+    // The ranges are counted only by walking the guest's map, so `out` is reserved at its first
+    // range from the last command's count of the same kind (floats, ints): one allocation instead
+    // of one per doubling, and none when every range is left out (most live commands).
+    thread_local size_t last_count[2] = {0, 0};
+    size_t& hint = last_count[floats ? 0 : 1];
     ForEachNode(m, structure + ogre::gpu_logical_buffer_struct::kMap.offset, [&](uint32_t n) {
       uint16_t variability = abi::ReadU16(m, n, node::kVariability);
       if ((variability & mask) == 0) return;
@@ -521,8 +526,10 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
         return;
       if (mirror) mirror->Store(floats, stage, physical, values.data(), r.element_count);
       r.data.assign(values.begin(), values.end());
+      if (out.empty()) out.reserve(std::max<size_t>(hint, 1));
       out.push_back(std::move(r));
     });
+    if (!out.empty()) hint = out.size();
   };
   read_ranges(gpp::kFloatLogicalToPhysical, gpp::kFloatConstants, true, c.floats);
   read_ranges(gpp::kIntLogicalToPhysical, gpp::kIntConstants, false, c.ints);
