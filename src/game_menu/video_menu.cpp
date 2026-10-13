@@ -1,6 +1,8 @@
 #include "game_menu/video_menu.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -14,6 +16,7 @@
 #include <rex/ppc/func.h>
 #include <rex/runtime.h>
 
+#include "game_menu/class_selector_model.h"
 #include "game_menu/guest_call.h"
 #include "game_menu/mods_install.h"
 #include "game_menu/menu_strings.h"
@@ -44,7 +47,8 @@ constexpr const char* kVideoLayout = "tl_video_settings.uilayout";
 constexpr const char* kStringsFile = "tl_video_strings.txt";
 // The game's layouts we change, generated from the user's pak into the local cache and served like
 // a language pack's files (same paths, found first): the framed ones with their bands re-anchored
-// for a frame wider than 16:9, and the skill tree with a third column (skill_tree_model.h).
+// for a frame wider than 16:9, the skill tree with a third column (skill_tree_model.h) and the
+// character creation screen with labels for mods' classes (class_selector_model.h).
 constexpr const char* kLayoutsDeviceMount = "\\Device\\TorchlightLayouts";
 constexpr const char* kLayoutsDeviceLink = "tllayouts:";
 constexpr const char* kLayoutsResourceLocation = "tllayouts:\\";
@@ -132,8 +136,18 @@ void Refresh(GuestCall& call) {
 namespace {
 
 // Writes the layouts of the user's pak we change under `dir`/media/UI/: the framed ones with their
-// bands re-anchored when `widen`, and the skill tree with its third column; how many. Nothing of the
+// bands re-anchored when `widen`, the skill tree with its third column and the creation screen with
+// its class labels; how many. Nothing of the
 // game is kept in the repository: this runs on the user's own data.
+// `path`'s file name is `file`, in any case.
+bool IsNamed(const std::string& path, std::string_view file) {
+  const std::string name = path.substr(path.find_last_of("/\\") + 1);
+  return name.size() == file.size() &&
+         std::equal(name.begin(), name.end(), file.begin(), [](char a, char b) {
+           return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+         });
+}
+
 int WriteLayouts(const std::filesystem::path& pak_path, const std::filesystem::path& dir, bool widen) {
   frontend::ZipArchive pak;
   std::string error;
@@ -160,6 +174,11 @@ int WriteLayouts(const std::filesystem::path& pak_path, const std::filesystem::p
     if (auto columns = skill_tree::AddSkillColumn(xml)) {
       xml = std::move(*columns);
       changes.push_back("skill tree third column");
+    }
+    if (auto labels = IsNamed(name, ui::kNewGameMenuLayout) ? class_selector::AddClassLabels(xml)
+                                                             : std::nullopt) {
+      xml = std::move(*labels);
+      changes.push_back("class button labels");
     }
     if (changes.empty()) continue;
     const std::string file = name.substr(name.find_last_of("/\\") + 1);

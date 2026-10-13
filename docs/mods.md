@@ -1019,6 +1019,13 @@ and learn the wrong skill. **[read; seen in a capture]** The tree now gets a thi
 class that uses one (ARCHITECTURE.md, "a third column in the skill tree"); the game's classes keep
 their tree as it was.
 
+**Offered at creation (2026-10-13).** The creation screen now lists the mods' classes as well
+(ARCHITECTURE.md, "mods' classes at character creation"): the game's three, then each enabled
+mod's `charactercreate.layout` class buttons with a player unit behind them. With the 29-mod pack
+that is 28 classes (JCC - Main's layout); a mod's class that no layout lists is not offered, as on
+PC. Icons: the game's classes keep theirs; the others show an empty frame with the class name. The
+mods' own PC icons (their `logo.imageset`) are a later improvement.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:

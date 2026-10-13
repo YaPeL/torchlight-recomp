@@ -219,6 +219,18 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   their size and places, and the game's own left and right handlers run. The focus also moves off
   a hidden cell to the first cell shown: the game starts at the first cell, which a mod's class
   may leave empty (its description then showed the layout's placeholder text).
+- Difference with the Xbox 360, mods' classes at character creation (`game_menu/class_selector.cpp`,
+  model `class_selector_model.h` and `mods/class_list.h`, with tests; `guest_abi/game_ui.h`
+  `CNewGameMenu`). The Xbox screen offers its three classes on three buttons, each named after its
+  class, on the first row of a fixed pad grid. The class list is the game's three, then the class
+  buttons (onClick guiSelect1) of the enabled mods' `charactercreate.layout` files, in the mods'
+  search order, kept when a player unit of that name exists. With more than three, the three
+  buttons show a window onto the list: left on the first or right on the last scrolls it by one,
+  wrapping, and A picks the class the button shows (the screen sends the button's window name; the
+  selection maps it to that class). A class without an Xbox button image shows the empty skill
+  frame with its name, on a label the layout cache adds to each class button (hidden otherwise).
+  The class's name and description come from its unit data, as for the game's classes. With the
+  game's three classes only, the hooks run the game's code unchanged.
 - Screens other than 16:9 and 4:3 (ultrawide 21:9 and 32:9, and 16:10; TLR-006), only mode. With
   Xenos the game keeps its 16:9. Validated with captures at 21:9 (1680x720), 32:9 (2560x720) and
   16:10 (1280x800):
@@ -250,7 +262,7 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     screen's edges. At 1280 they overlap into one band; wider, they leave gaps. The end pieces are
     re-anchored to the edges of a centred 16:9 area (`{0.5, ±offset}`), keeping their overlap. The
     rule is structural, with nothing matched by name. The pak's layouts that have bands are written,
-    widened, with the skill tree's, to the platform's cache folder (`platform::CacheDir("layouts")`;
+    widened, with the skill tree's and the creation screen's, to the platform's cache folder (`platform::CacheDir("layouts")`;
     Linux: `~/.cache/TorchlightRecomp/layouts/`). That folder is mounted as `tllayouts:` and added as a
     resource location in the default group, after `resources.cfg`, so the game finds those layouts
     there first (as the language pack's fonts). They are regenerated on every start; the bands are
