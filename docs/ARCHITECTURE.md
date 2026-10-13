@@ -305,9 +305,15 @@ hook is timed with `--native_producer_timing` (off by default); the live mode's 
   shared memory right after creating it. The cleanup loop in docs/BUILDING.md is still useful for files left
   by runs with an SDK without the patch. Pending: the upstream report.
 - Full-screen images on screens wider than 16:9 (TLR-006.5, after the beta): loading and story
-  screens show their image pillarboxed with continuous bands, which looks right. To review: on the
-  story screen at 32:9 (in level, so without the scene clip) a few rows of the level's scene show at
-  the top right, past the end of the top band (x ~1880-2075 of 2560).
+  screens show their image pillarboxed with continuous bands, which looks right. On the story
+  screen at 32:9 (`cinematic.uilayout`, in a level) a dark blue strip shows at the top right: x
+  1920-2080 of 2560, the top three rows (RGB 12,12,25 over the black 12,12,12). Checked 2026-10-13
+  on captures of a new character's story screen at 2560x720 (automatic run, three frames 7 s
+  apart): it is not the level's scene, which the layout's full-screen black covers everywhere
+  else (the strip is the same in the three frames while the scene moves); it is a static UI
+  element that starts exactly at the right edge of the centred 16:9 area, so at 16:9 it lies past
+  the screen's edge and never shows. Next: dump the UI draws' vertices (`capture_dump` has no such
+  option yet) to find which element and layout it is, then widen or clip it like the bands.
 - Mesa against NVIDIA on the 2D screens (loading screens, menus): the same replay gives 59.3 dB
   against Xenos with Mesa (Intel UHD 630) and 69.8-69.9 dB with NVIDIA (GTX 1050 Ti on Linux, RTX
   5080 on Windows): at most 5 levels per channel from Xenos with Mesa, 2 with NVIDIA (capture v18).
