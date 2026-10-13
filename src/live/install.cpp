@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 
+#include <rex/chrono/clock.h>
 #include <rex/cvar.h>
 #include <rex/graphics/graphics_system.h>
 #include <rex/input/input_system.h>
@@ -42,6 +43,15 @@ REXCVAR_DEFINE_STRING(live_record, "", "Torchlight",
 REXCVAR_DEFINE_INT32(native_frame_queue, 2, "Torchlight",
                      "Live mode: how many guest frames wait for the backend before the oldest is "
                      "dropped (docs/performance-profile.md, vsync latency); for measurements");
+REXCVAR_DEFINE_INT32(native_frame_latency, 0, "Torchlight",
+                     "Live mode: how many frames the render system may queue ahead of the display "
+                     "(Direct3D 11's maximum frame latency); 0 (the default) leaves the driver's "
+                     "(docs/performance-profile.md, vsync latency)");
+REXCVAR_DEFINE_DOUBLE(native_present_lead_ms, 0.0, "Torchlight",
+                      "Live mode with vsync: the backend takes the newest guest frame only this many "
+                      "ms before the display's next refresh (late latch), so it presents fresher "
+                      "frames and its present waits less; 0 (the default) takes each frame as soon "
+                      "as it can (docs/performance-profile.md, vsync latency)");
 REXCVAR_DEFINE_BOOL(native_vblank_follows_display, false, "Torchlight",
                     "Live mode with vsync: align the guest's vblank with the display's (each "
                     "vsynced present), so a frame starts right after the display's vblank and is "
@@ -556,9 +566,13 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.frame_queue = size_t(std::max(1, REXCVAR_GET(native_frame_queue)));
   options.on_vsynced_present = [] {
     if (!g_vblank_follows.load(std::memory_order_relaxed)) return;
-    if (rex::graphics::GraphicsSystem* graphics = g_vblank_graphics.load()) graphics->AlignGuestVblank();
+    if (rex::graphics::GraphicsSystem* graphics = g_vblank_graphics.load()) {
+      graphics->AlignGuestVblank(rex::chrono::Clock::QueryGuestTickCount());
+    }
   };
   options.backpressure = REXCVAR_GET(live_backpressure);
+  options.present_lead_ms = std::max(0.0, REXCVAR_GET(native_present_lead_ms));
+  options.frame_latency = uint32_t(std::max(0, REXCVAR_GET(native_frame_latency)));
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);

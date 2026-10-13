@@ -235,6 +235,13 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   return plugin_dir;
 }
 
+bool SetDirect3D11FrameLatency(void* device, uint32_t frames) {
+  if (!device || frames == 0) return false;
+  Microsoft::WRL::ComPtr<IDXGIDevice1> dxgi;
+  if (FAILED(static_cast<IUnknown*>(device)->QueryInterface(IID_PPV_ARGS(&dxgi)))) return false;
+  return SUCCEEDED(dxgi->SetMaximumFrameLatency(frames));
+}
+
 bool HasDirect3D11(const std::string& plugin_dir) {
   // OGRE appends _d to the plugin's name in its Debug build.
   std::error_code ec;

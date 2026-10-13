@@ -61,6 +61,12 @@ struct LiveOptions {
   size_t frame_queue = 2;
   // Backend thread, right after each present that waited for vsync (the display's vblank).
   std::function<void()> on_vsynced_present;
+  // With vsync, take the newest frame only this long before the display's next refresh (late
+  // latch, --native_present_lead_ms); 0: as soon as the backend is free.
+  double present_lead_ms = 0;
+  // Frames the render system may queue ahead of the display (--native_frame_latency); 0: the
+  // driver's.
+  uint32_t frame_latency = 0;
   // The guest waits at its swap while a queued frame is not taken (frame_queue.h backpressure).
   bool backpressure = false;
   // OGRE's log file; empty: none (debugger output only).

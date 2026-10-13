@@ -1,22 +1,25 @@
 diff --git a/include/rex/graphics/graphics_system.h b/include/rex/graphics/graphics_system.h
-index 4477c2f..e038c1b 100644
+index 4477c2f..b5d10c3 100644
 --- a/include/rex/graphics/graphics_system.h
 +++ b/include/rex/graphics/graphics_system.h
-@@ -51,6 +51,13 @@ class GraphicsSystem : public system::IGraphicsSystem {
+@@ -51,6 +51,16 @@ class GraphicsSystem : public system::IGraphicsSystem {
    // Rate of the guest's vblank interrupt while the vsync cvar is on, in Hz; 0 (the default) uses
    // the guest video mode's refresh rate. Any thread; the vblank thread reads it every tick.
    void SetGuestVblankRate(uint32_t hz) { guest_vblank_hz_ = hz; }
-+  // Aligns the guest's vblank with a host event happening now (the display's vblank, as a host
-+  // renderer sees it when its vsynced present returns): the vblank thread moves its phase so that
-+  // the next guest vblank falls one interval after this call, at its rate. Without it the guest's
-+  // vblank runs on its own clock, out of phase with the display's. Any thread; the latest call
-+  // wins; only while the vsync cvar is on. A phase moved back never brings two vblanks closer than
-+  // half an interval.
-+  void AlignGuestVblank();
++  // Aligns the guest's vblank with a host event (the display's vblank, as a host renderer sees it
++  // when its vsynced present returns) at `guest_ticks` (chrono::Clock::QueryGuestTickCount then):
++  // the vblank thread moves its phase so that the next guest vblank falls a whole number of
++  // intervals after it, at its rate. Without it the guest's vblank runs on its own clock, out of
++  // phase with the display's. Any thread; the latest call wins; only while the vsync cvar is on. A
++  // phase moved back never brings two vblanks closer than half an interval. Inline: the graphics
++  // system lives in the GPU plugin.
++  void AlignGuestVblank(uint64_t guest_ticks) {
++    guest_vblank_anchor_.store(guest_ticks, std::memory_order_relaxed);
++  }
  
    virtual ~GraphicsSystem();
  
-@@ -124,6 +131,7 @@ class GraphicsSystem : public system::IGraphicsSystem {
+@@ -124,6 +134,7 @@ class GraphicsSystem : public system::IGraphicsSystem {
  
    std::atomic<bool> vsync_worker_running_;
    std::atomic<uint32_t> guest_vblank_hz_{0};
@@ -25,7 +28,7 @@ index 4477c2f..e038c1b 100644
  
    RegisterFile register_file_;
 diff --git a/src/graphics/graphics_system.cpp b/src/graphics/graphics_system.cpp
-index 1d85969..f303a36 100644
+index 1d85969..5901ddf 100644
 --- a/src/graphics/graphics_system.cpp
 +++ b/src/graphics/graphics_system.cpp
 @@ -156,6 +156,7 @@ X_STATUS GraphicsSystem::SetupGuestGpu(runtime::FunctionDispatcher* function_dis
@@ -56,14 +59,3 @@ index 1d85969..f303a36 100644
              MarkVblank();
              last_frame_time += interval_ticks;
            }
-@@ -325,6 +337,10 @@ void GraphicsSystem::DispatchInterruptCallback(uint32_t source, uint32_t cpu) {
-                                          rex::countof(args));
- }
- 
-+void GraphicsSystem::AlignGuestVblank() {
-+  guest_vblank_anchor_.store(chrono::Clock::QueryGuestTickCount(), std::memory_order_relaxed);
-+}
-+
- void GraphicsSystem::MarkVblank() {
-   // TODO: Enable profiling once ported
-   // SCOPE_profile_cpu_f("gpu");

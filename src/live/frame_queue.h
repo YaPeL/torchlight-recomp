@@ -72,8 +72,9 @@ class FrameQueue {
   void SetBackpressure(std::chrono::milliseconds cap);
   // Producer: with backpressure, blocks up to the cap while a queued frame is not taken.
   void Push(LiveFrame frame);
-  // Consumer: waits up to `timeout` for a frame.
-  std::optional<LiveFrame> Pop(std::chrono::milliseconds timeout);
+  // Consumer: waits up to `timeout` for a frame. `newest`: the most recent queued frame, the older
+  // ones dropped into it.
+  std::optional<LiveFrame> Pop(std::chrono::milliseconds timeout, bool newest = false);
   void Close();  // wakes the consumer; Pop returns nullopt once empty
 
   uint64_t pushed() const;

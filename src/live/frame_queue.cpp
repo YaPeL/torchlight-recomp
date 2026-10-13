@@ -75,10 +75,16 @@ void FrameQueue::Push(LiveFrame frame) {
   ready_.notify_one();
 }
 
-std::optional<LiveFrame> FrameQueue::Pop(std::chrono::milliseconds timeout) {
+std::optional<LiveFrame> FrameQueue::Pop(std::chrono::milliseconds timeout, bool newest) {
   std::unique_lock<MeasuredMutex> lock(mutex_);
   ready_.wait_for(lock, timeout, [&] { return !frames_.empty() || closed_; });
   if (frames_.empty()) return std::nullopt;
+  while (newest && frames_.size() > 1) {
+    LiveFrame oldest = std::move(frames_.front());
+    frames_.pop_front();
+    frames_.front().AbsorbDropped(std::move(oldest));
+    ++dropped_;
+  }
   LiveFrame f = std::move(frames_.front());
   frames_.pop_front();
   lock.unlock();

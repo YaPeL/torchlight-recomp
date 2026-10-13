@@ -84,6 +84,9 @@ class CounterDialog : public rex::ui::ImGuiDialog {
         ImGui::Text("latency %.0f ms: queue %.0f, render %.0f, present %.0f", l.total_ms,
                     l.queue_ms, l.render_ms, l.present_ms);
       }
+      size_t on_screen = 0;
+      const double screen = FrameTiming::Get().RecentScreenLatency(std::chrono::seconds(1), &on_screen);
+      if (on_screen) ImGui::Text("to the screen %.0f ms", screen);
     } else {
       ImGui::Text("%.1f ms", s.last_ms);
       ImGui::Text("1%% low %.0f FPS", s.low_1pct_fps);

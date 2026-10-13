@@ -84,6 +84,13 @@ class FrameTiming {
   // The presented frames' latency over the last `window` (any thread); no frames outside the native
   // mode.
   LatencyMeans RecentLatency(std::chrono::milliseconds window);
+  // Backend thread: a frame reached the screen `ms` after the guest's swap that cut it (the window
+  // system's presentation time, platform/presentation_time.h; development builds on Wayland).
+  // `gap_ms`: since the screen's previous frame (0 for the first); past one refresh and a half, a
+  // refresh showed the previous frame again (a stutter).
+  void OnScreen(double ms, double gap_ms = 0);
+  // The mean swap-to-screen latency over the last `window` and how many frames; 0 when unknown.
+  double RecentScreenLatency(std::chrono::milliseconds window, size_t* frames = nullptr);
 
  private:
   FrameTiming() = default;
@@ -94,6 +101,7 @@ class FrameTiming {
     PresentLatency latency;
   };
   std::deque<LatencyEntry> latency_;  // the last kRecent
+  std::deque<std::pair<FrameSeries::Clock::time_point, double>> screen_;  // the last kRecent
 };
 
 // "level load: N ms" in the log: one call of the guest's level load (guest_abi kLevelLoad).
@@ -108,6 +116,8 @@ class FrameObserver {
   // Every guest swap; `ms` is the frame's time (0 for the first).
   virtual void OnGuestFrame(double ms) = 0;
   virtual void OnPresentedFrame(double ms, size_t dropped, const PresentLatency& latency) = 0;
+  // A frame reached the screen `ms` after its guest swap (FrameTiming::OnScreen).
+  virtual void OnScreenFrame(double /*ms*/, double /*gap_ms*/) {}
   virtual void OnLevelLoaded() = 0;
 };
 // Before the guest runs; null removes it.
