@@ -115,11 +115,17 @@ void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t obj
     capture_.frames.back().commands.push_back({0, payload});
   }
   if (live()) LiveAppend(payload);
-  ShadowEntry& entry = shadow_[key];
+  auto [slot, created] = shadow_.try_emplace(key);
+  ShadowEntry& entry = slot->second;
+  if (created) {
+    entry.stamp = uint32_t(stamps_.size());
+    stamps_.push_back(0);
+  }
   entry.payload = std::move(payload);
   entry.object = object;
   entry.present = true;
   ++entry.version;
+  Stamp(entry);
 }
 
 std::vector<uint32_t> Session::ShadowKeysInOrder() const {
@@ -135,13 +141,15 @@ void Session::EraseState(uint32_t key) {
   if (it == shadow_.end() || !it->second.present) return;
   it->second.present = false;
   ++it->second.version;
+  Stamp(it->second);
 }
 
 bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> raw) const {
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return false;
   const ArgsMemo& m = memos_[slot * kMemoSubs + sub];
-  return m.entry && m.entry->present && m.entry->version == m.version &&
-         m.count == raw.size() && std::equal(raw.begin(), raw.end(), m.raw.begin());
+  // A version is never 0, so an absent entry (stamp 0) never matches.
+  return m.stamp < stamps_.size() && stamps_[m.stamp] == m.version && m.count == raw.size() &&
+         std::equal(raw.begin(), raw.end(), m.raw.begin());
 }
 
 void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<const uint32_t> raw) {
@@ -149,7 +157,8 @@ void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<cons
   auto it = shadow_.find(key);
   if (it == shadow_.end()) return;
   ArgsMemo& m = memos_[slot * kMemoSubs + sub];
-  m.entry = &it->second;
+  // An absent entry has no early out (its stamp 0 must match no memo).
+  m.stamp = it->second.present ? it->second.stamp : UINT32_MAX;
   m.version = it->second.version;
   m.count = uint32_t(raw.size());
   std::copy(raw.begin(), raw.end(), m.raw.begin());
@@ -327,6 +336,7 @@ void Session::Start() {
     if (!entry.present) continue;
     ++baseline;
     ++entry.version;  // re-read below: early outs recorded against it no longer apply
+    Stamp(entry);
     if (entry.object != 0 && membase_ != nullptr) {
       if (auto* t = std::get_if<commands::SetTexture>(&entry.payload)) {
         t->texture = CaptureTexture(membase_, entry.object);

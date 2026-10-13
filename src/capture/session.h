@@ -323,13 +323,19 @@ class Session {
     uint32_t object = 0;
     uint64_t version = 0;
     bool present = true;
+    uint32_t stamp = 0;  // its slot in stamps_
   };
   // A hash map (looked up on every state hook); its node-based entries keep their address, which
   // the early out's memos rely on. Walked in key order where order shows (ShadowKeysInOrder).
   std::unordered_map<uint32_t, ShadowEntry> shadow_;
   std::vector<uint32_t> ShadowKeysInOrder() const;
+  // Each shadow entry's version while present, 0 while not, in one dense array: the early out
+  // reads this instead of the entry (a command payload, about 1.5 KB, a cache miss per call:
+  // half of Unchanged's samples in the town square). Entries are never removed, so a slot stays.
+  std::vector<uint64_t> stamps_;
+  void Stamp(ShadowEntry& entry) { stamps_[entry.stamp] = entry.present ? entry.version : 0; }
   struct ArgsMemo {
-    const ShadowEntry* entry = nullptr;
+    uint32_t stamp = UINT32_MAX;  // the entry's slot in stamps_; none yet
     uint64_t version = 0;
     uint32_t count = 0;
     std::array<uint32_t, kMaxRawArgs> raw{};

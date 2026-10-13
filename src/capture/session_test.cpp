@@ -99,6 +99,12 @@ int main() {
     s.Remember(44, 5, key, raw_a);
     s.EraseState(key);
     Check(!s.Unchanged(44, 5, raw_a), "erased entry: no early out");
+    s.Remember(44, 5, key, raw_a);
+    Check(!s.Unchanged(44, 5, raw_a), "remembered while erased: no early out");
+    s.State(key, SetSamplerFilter{5, {1, 0}, {2, 0}});
+    Check(!s.Unchanged(44, 5, raw_a), "present again: the memo of before does not apply");
+    s.Remember(44, 5, key, raw_a);
+    Check(s.Unchanged(44, 5, raw_a), "remembered again: early out");
     // Raw words read through a pointer: the same address with other contents is other words.
     const uint32_t blend_at_address[] = {0, 0x1000, 7}, blend_changed[] = {0, 0x1000, 8};
     s.State(43, SetBlend{});
