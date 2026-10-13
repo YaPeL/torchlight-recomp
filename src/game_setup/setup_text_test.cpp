@@ -34,7 +34,7 @@ std::vector<std::string> AllTexts() {
        {kTextNotPackage, kTextNotArcade, kTextNotTorchlight, kTextMissing, kTextOtherSize,
         kTextDiffers, kTextCannotRead, kTextCannotReadFolder, kTextCannotCopy,
         kTextCannotReadPackage, kTextCannotReadEntry, kTextCannotWrite, kTextCannotCreate,
-        kTextCannotMoveAside, kTextCannotFinish}) {
+        kTextCannotMoveAside, kTextCannotFinish, kTextRendererTitle, kTextRendererFailed}) {
     texts.emplace_back(t);
   }
   return texts;
