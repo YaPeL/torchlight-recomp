@@ -133,6 +133,15 @@ class TorchlightApp : public rex::ReXApp {
          [this](ImFontAtlas* atlas) { OnConfigureFonts(atlas); },
          [this](ImGuiStyle& imgui_style, rex::ui::Style& ui_style) {
            OnConfigureStyle(imgui_style, ui_style);
+         },
+         // The renderer could not start: a message box, then the game closes (a black window
+         // otherwise).
+         [this](const std::string& reason) {
+           app_context().CallInUIThread([this, reason] {
+             REXLOG_ERROR("live: the renderer could not start; telling the player and closing");
+             torchlight::game_setup::ShowRendererError(reason);
+             if (window()) window()->RequestClose();
+           });
          }});
   }
 
