@@ -404,6 +404,86 @@ inline constexpr uint32_t kActionCloseAll = 8;
 }  // namespace navigation
 
 // ---------------------------------------------------------------------------------------------
+// CEGUI window lookup and visibility, as the skill tree uses them.
+// [confirmed] Window::getChildRecursive(name): r3 = window, r4 = String*; searches the children
+// (vector at +0x2C..+0x30) by name (+0x348) and recurses into each (@0x825AE360..); null when
+// absent (the skill tree's cell lookup checks it, @0x8235E994).
+inline constexpr GuestFunction kFindDescendant{0x825AE360, Confidence::kConfirmed};
+// [confirmed] Window::setVisible(bool): r3 = window, r4 = state; stores the flag at +0x161
+// (@0x821A56E0) and fires the shown or hidden event. Window::isVisible(local_only) reads the same
+// byte (@0x821AFE64) and, unless local_only, the parents' too.
+inline constexpr GuestFunction kWindowSetVisible{0x821A56C0, Confidence::kConfirmed};
+inline constexpr Field kWindowVisible{0x161, Confidence::kConfirmed};
+
+// ---------------------------------------------------------------------------------------------
+// CCharSkillsMenuXenon: the skill tree page of the character screen (RTTI
+// .?AVCCharSkillsMenuXenon@@, complete object locator 0x8211CC68 before its vtable 0x820D0164).
+// Its layout, skillsmenu_xenon.uilayout, has the tree's cells "skillbg<pane>_<row>_<column>"
+// (3 panes, 6 rows, 2 columns) with the children "skillicon..." and "skilllvl...", and the four
+// spell cells "spellbg<n>".
+inline constexpr uint32_t kCharSkillsMenuVtable = 0x820D0164;
+// [confirmed] Slot 6 (0x820D017C): r3 = menu, r4 = character; stores the character (@0x8235BD50)
+// and hides every tree cell, panes 0-2, rows 0-5, columns 0-1 (@0x8235BE58..@0x8235BE78).
+inline constexpr GuestFunction kSkillsMenuSetCharacter{0x8235BD40, Confidence::kConfirmed};
+// [confirmed] Slot 8 (0x820D0184): builds the tree from the character's skills. For each skill it
+// writes the skill's id into table slot min(12 * pane + 2 * row + column, 35) (@0x8235C210,
+// @0x8235C244) before looking its cell up by name; a found cell is shown, gets its icon and level,
+// and its +0x134 pointed at the slot (@0x8235C350), and the focused cell's skill is described
+// (sub_8235D558). A skill in a third column therefore takes the next row's first slot. The
+// navigation handlers call it after every move (vtable +0x20, @0x8235E464, @0x8235E550).
+inline constexpr GuestFunction kSkillsMenuBuildTree{0x8235BE88, Confidence::kConfirmed};
+inline constexpr VtableSlot kSkillsMenuBuildTreeSlot{8, Confidence::kConfirmed};
+// [confirmed] Focus one cell right / left (r3 = menu): the column +1 / -1 within 0-1, wrapping into
+// the next / previous pane of 0-2 (@0x8235E3F4..@0x8235E410, @0x8235E4DC..@0x8235E504); on the
+// spell row the spell index wraps within 0-3. A cell that exists but is hidden is passed by calling
+// itself again (@0x8235E444); then the tree is rebuilt.
+inline constexpr GuestFunction kSkillsMenuFocusRight{0x8235E3A0, Confidence::kConfirmed};
+inline constexpr GuestFunction kSkillsMenuFocusLeft{0x8235E488, Confidence::kConfirmed};
+// [confirmed] The focused skill (r3 = menu; returns the skill or null): looks the table slot of the
+// focused cell (or spell 36-39) up in the character's skills (@0x8235E8C8..@0x8235E8DC). The
+// description, learn and assign code reach the focused skill only through it (sub_82381D18,
+// sub_82382720, sub_823827F8).
+inline constexpr GuestFunction kSkillsMenuFocusedSkill{0x8235E830, Confidence::kConfirmed};
+// [confirmed] Skill lookup by id: r3 = the character's skill list, r4 = id (64-bit); returns the
+// skill or null (@0x8235E8DC).
+inline constexpr GuestFunction kSkillListFind{0x821F58F8, Confidence::kConfirmed};
+// [confirmed] Slot 13 (vtable +0x34): the root window the cells are looked up in (@0x8235E958,
+// @0x8235E990 into kFindDescendant).
+inline constexpr VtableSlot kSkillsMenuRootSlot{13, Confidence::kConfirmed};
+namespace skills_menu {
+// [confirmed] The character (kSkillsMenuSetCharacter @0x8235BD50; its skill list at +0x184,
+// @0x8235C124, @0x8235E8D4).
+inline constexpr Field kCharacter{0xB0, Confidence::kConfirmed};
+inline constexpr Field kCharacterSkills{0x184, Confidence::kConfirmed};
+// [confirmed] u8: the focus is on the spell row (the left/right handlers branch on it, @0x8235E3A0).
+inline constexpr Field kSpellRow{0xB5, Confidence::kConfirmed};
+// [confirmed] The skill ids of the tree's 36 cells then the 4 spells, 8 bytes each (the builder
+// stores at (slot + 38) * 8, @0x8235C244; the getter reads the same, @0x8235E8D8).
+inline constexpr Field kTable{0x130, Confidence::kConfirmed};
+inline constexpr uint32_t kTableSlots = 40;
+// [confirmed] The focused cell, s16 each: pane, row, column (sub_8235E8F0 builds the cell's name
+// from them, @0x8235E914..@0x8235E920; the menu's reset zeroes them, @0x8235ADE4).
+inline constexpr Field kFocusPane{0x650, Confidence::kConfirmed};
+inline constexpr Field kFocusRow{0x652, Confidence::kConfirmed};
+inline constexpr Field kFocusColumn{0x654, Confidence::kConfirmed};
+}  // namespace skills_menu
+namespace skill_list {
+// [confirmed] The builder walks entries 0..count-1 (@0x8235C130); an entry is read from
+// data + 4 * index while the index is below the bound, else from data (@0x8235C1BC..@0x8235C1D0).
+inline constexpr Field kData{0x2C, Confidence::kConfirmed};
+inline constexpr Field kCount{0x30, Confidence::kConfirmed};
+inline constexpr Field kBound{0x34, Confidence::kConfirmed};
+}  // namespace skill_list
+namespace skill {
+// [confirmed] The skill's place in the tree, 32-bit fields used as s16 (extsh, @0x8235C1DC..
+// @0x8235C1E8), and its id (64-bit, @0x8235C230).
+inline constexpr Field kColumn{0xD4, Confidence::kConfirmed};
+inline constexpr Field kRow{0xD8, Confidence::kConfirmed};
+inline constexpr Field kPane{0xDC, Confidence::kConfirmed};
+inline constexpr Field kId{0x180, Confidence::kConfirmed};
+}  // namespace skill
+
+// ---------------------------------------------------------------------------------------------
 // [confirmed] Ogre::ResourceGroupManager singleton pointer (r3 of every addResourceLocation call
 // in kResourcesCfgLoader, @0x8239C56C). OGRE 1.7's openResource searches every group when the
 // file is not in the one asked for (OgreResourceGroupManager.h:746, default true), so a location

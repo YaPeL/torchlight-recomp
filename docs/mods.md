@@ -207,7 +207,7 @@ of reading 1), which is the mechanism the project already uses.
 **Mounting the folder.** The guest reads files through the runtime's virtual file system. The SDK
 already offers what is needed, with no patch: `rex::filesystem::HostPathDevice` on a host folder,
 `RegisterDevice` and `RegisterSymbolicLink`; the video menu mounts `data/ui/` as `tlhost:` and the
-wide layouts as `tlwide:` this way (`src/game_menu/video_menu.cpp`). The mods folder would be a
+wide layouts as `tllayouts:` this way (`src/game_menu/video_menu.cpp`). The mods folder would be a
 device of its own on `DataDir()/mods/` (for example `tlmods:`), **writable** (`read_only` false)
 because of the compiled files below, and only that folder: never the game's data. **[read]**
 
@@ -433,7 +433,7 @@ default, so the same mistake would not show there). A file we create for the gam
 a resource location is named exactly as the game asks for it: in upper case when the game reaches
 it through the data loader (the unit index), with the game's own spelling when it asks by its own
 name through CEGUI or OGRE (our video layout on `tlhost:`, which we load by our own name; the
-widened layouts on `tlwide:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
+widened layouts on `tllayouts:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
 and the rule. **[to verify]** with a mod whose files are named in lower case, as PC mods often
 are (Windows ignores case): the mods' file maps, which the game fills from the folder listing and
 looks up in upper case, and the mods' assets that OGRE finds through the mod folders' locations.
@@ -451,7 +451,7 @@ That is what kept our unit index out: written by the host after `tlunits:` was m
 never listed (case did not matter: with the file there at the mount, its lower-case name was read
 too). `tlunits:` is now mounted in the index loader's hook, once the file exists
 (`MountIndexFolder`). The other mounts: `tlhost:` holds files shipped with the executable,
-`tlwide:` is written before it is mounted, and the language pack is on the game's own device, so
+`tllayouts:` is written before it is mounted, and the language pack is on the game's own device, so
 none of them is affected. On `tlmods:` the game itself writes the `.ADM` files it compiles, through
 the device, so the device lists them; but a `.ADM` compiled during a session is in neither the
 mod's file map nor OGRE's index until the next start. In that session the game reads and compiles
@@ -1008,6 +1008,16 @@ list's source to verify]**
 data, or the PC screen would have to be brought back. This is deferred to the work on the PC
 interface and controls (section 9). A mod's class can still be loaded where it already exists, for
 example a character imported from PC with that class. That case was not tested.
+
+**Played with a character made outside that screen (2026-10-13).** An Enchantress (JCC -
+Enchantress) made from a copy of a Destroyer save loads, levels up, learns and uses a skill, and
+saves and loads again; the 3D character behind the main menu shows her. Her skill tree did not
+show a third of her skills: the Xbox tree has two columns per pane, PC's have three, and every
+class of the 29-mod pack uses the third (2 to 15 skills each). Worse, the game's table of the
+tree's skills gave a third-column skill the slot of the cell below it, so that cell could describe
+and learn the wrong skill. **[read; seen in a capture]** The tree now gets a third column for a
+class that uses one (ARCHITECTURE.md, "a third column in the skill tree"); the game's classes keep
+their tree as it was.
 
 ## 8. Where mods go on our side
 

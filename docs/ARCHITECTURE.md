@@ -206,6 +206,19 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   for about a second. The PC version has no such wait (its only `Sleep` call is the C runtime's
   startup). That `Sleep` is skipped; the indicator opens and closes as before. The full autosave
   notice, shown once per session, keeps its 5 s minimum: the player has to read it.
+- Difference with the Xbox 360, a third column in the skill tree (`game_menu/skill_tree.cpp`, model
+  `skill_tree_model.h` with tests; `guest_abi/game_ui.h` `CCharSkillsMenuXenon`). The Xbox tree
+  has 3 panes x 6 rows x 2 columns of cells; PC's trees, and those of PC mods' classes, have 3
+  columns. A third-column skill had no cell, and the game's table of the tree's skills
+  (12 * pane + 2 * row + column) gave it the slot of the next row's first cell, so that cell could
+  describe and learn the wrong skill. The layout cache adds the third column's cells to the
+  skill tree layout (hidden copies of the second column's). After every build of the tree the
+  table is put right. For a class with a third-column skill, the three columns are placed in the
+  pane's width (cells at 78 %), left and right move through them, and the focused-skill getter
+  finds the third column's skills. For a class without one (the game's three), the cells keep
+  their size and places, and the game's own left and right handlers run. The focus also moves off
+  a hidden cell to the first cell shown: the game starts at the first cell, which a mod's class
+  may leave empty (its description then showed the layout's placeholder text).
 - Screens other than 16:9 and 4:3 (ultrawide 21:9 and 32:9, and 16:10; TLR-006), only mode. With
   Xenos the game keeps its 16:9. Validated with captures at 21:9 (1680x720), 32:9 (2560x720) and
   16:10 (1280x800):
@@ -237,11 +250,11 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     screen's edges. At 1280 they overlap into one band; wider, they leave gaps. The end pieces are
     re-anchored to the edges of a centred 16:9 area (`{0.5, ±offset}`), keeping their overlap. The
     rule is structural, with nothing matched by name. The pak's layouts that have bands are written,
-    widened, to the platform's cache folder (`platform::CacheDir("layouts")`; Linux:
-    `~/.cache/TorchlightRecomp/layouts/`). That folder is mounted as `tlwide:` and added as a
+    widened, with the skill tree's, to the platform's cache folder (`platform::CacheDir("layouts")`;
+    Linux: `~/.cache/TorchlightRecomp/layouts/`). That folder is mounted as `tllayouts:` and added as a
     resource location in the default group, after `resources.cfg`, so the game finds those layouts
-    there first (as the language pack's fonts). They are regenerated on every start with a wider
-    frame.
+    there first (as the language pack's fonts). They are regenerated on every start; the bands are
+    widened only with a wider frame.
   - Front end scene clip (`SceneClip16x9` in `backend.cpp`): in the main menu and character creation
     the game's 3D scene is built for 16:9, so a wider frame shows its edges. The hook on
     `CreateViewports` (`sub_8220A470`, read only) keeps the scene viewport. While the frame is wider
