@@ -48,6 +48,11 @@ void LiveFrame::AbsorbDropped(LiveFrame&& older) {
   producer.snapshot_bytes += older.producer.snapshot_bytes;
 }
 
+void FrameQueue::SetCapacity(size_t capacity) {
+  std::lock_guard<MeasuredMutex> lock(mutex_);
+  capacity_ = capacity < 1 ? 1 : capacity;
+}
+
 void FrameQueue::Push(LiveFrame frame) {
   {
     std::lock_guard<MeasuredMutex> lock(mutex_);

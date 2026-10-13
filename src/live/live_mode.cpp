@@ -109,6 +109,7 @@ LiveMode& LiveMode::Get() {
 
 void LiveMode::Start(const LiveOptions& options) {
   options_ = options;
+  queue_.SetCapacity(FrameQueueDepth(options.frame_queue, options.vsync));
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
   capture::Session::Get().EnableLive(&queue_, &store_);
@@ -342,6 +343,7 @@ void LiveMode::Run() {
         if (video->vsync != options_.vsync) {
           options_.vsync = video->vsync;
           tl_backend_set_vsync(backend, video->vsync);
+          queue_.SetCapacity(FrameQueueDepth(options_.frame_queue, video->vsync));
           REXLOG_INFO("live: vsync {}", video->vsync ? "on" : "off");
         }
         if (video->render_resolution != options_.render_resolution) {

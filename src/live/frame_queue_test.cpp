@@ -10,6 +10,7 @@
 namespace {
 
 using namespace torchlight::commands;
+using torchlight::live::FrameQueueDepth;
 using torchlight::live::FrameQueue;
 using torchlight::live::LiveFrame;
 using torchlight::live::SnapshotStore;
@@ -74,6 +75,21 @@ int main() {
   std::this_thread::sleep_for(std::chrono::milliseconds(20));
   q.Close();
   consumer.join();
+  // The depth: one frame with vsync, two without, unless chosen; a deeper queue made shallower
+  // drops the older frames at the next push.
+  static_assert(FrameQueueDepth(0, true) == 1 && FrameQueueDepth(0, false) == 2);
+  static_assert(FrameQueueDepth(3, true) == 3 && FrameQueueDepth(1, false) == 1);
+  FrameQueue shallow;
+  shallow.Push(MakeFrame(20, store));
+  shallow.SetCapacity(1);
+  shallow.Push(MakeFrame(21, store));
+  auto newest = shallow.Pop(std::chrono::milliseconds(0));
+  Check(newest && newest->swap == 21 && newest->dropped_before == 1 && shallow.dropped() == 1,
+        "with one frame the newest is kept, the older dropped into it");
+  shallow.SetCapacity(0);
+  shallow.Push(MakeFrame(22, store));
+  shallow.Push(MakeFrame(23, store));
+  Check(shallow.dropped() == 2, "a capacity of 0 means one");
   std::printf("frame queue test: ok\n");
   return 0;
 }
