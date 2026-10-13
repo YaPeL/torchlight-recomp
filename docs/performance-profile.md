@@ -837,6 +837,24 @@ liveness analysis that would also take the argument registers (r3-r10, about 60 
 references; at best about +3-8 %, weeks of codegen work upstream) is left for after the producer,
 if the guest's thread is still the limit.
 
+### Producer: the state early out and the constant ranges' allocations (2026-10-13)
+
+The two cuts left from phase A, on `perf/producer-small-cuts` (not in `develop`):
+- **The early out's cache misses.** `Session::Unchanged` read each shadow entry's presence and
+  version through a pointer to the entry, a command payload of about 1.5 KB: in the town square's
+  annotated profile 47 % of its samples were that load and 21 % the memo's pointer. Each entry now
+  keeps its version (0 while erased) in one dense array and the memo keeps its slot there.
+- **The constant ranges' vector** was grown by doubling; it is reserved at its first kept range from
+  the last count of the same kind (a command whose ranges are all left out still allocates nothing).
+
+Profiles of the town square (one run each): `Unchanged` 0.67 -> 0.46 % of the process's samples,
+`_int_malloc` 0.75 -> 0.62 %, `ReadConstants` 0.47 -> 0.57 %; about 0.25 points, 0.5 % of the
+guest's thread. Synthetic runs (three each, no vsync, no cap), game fps: dungeon still 221.8 ->
+220.2, fight 205.0 -> 198.5, town square 181.5 -> 182.4, within the runs' spread (3-10 % between
+runs of one binary). **Not taken**: they do what they aim at, but 0.5 % is below what this laptop
+can show, by hand or scripted. Phase B (the producer off the guest's thread, estimated 1.5-2 %)
+is left for the same reason; both wait for a machine without a thermal limit.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
