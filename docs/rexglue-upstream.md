@@ -1274,16 +1274,30 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   pointing the builds at the new prefix) happens then, agreed with the agents that share it.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
-- The shared SDK copies on the Linux machine (2026-10-10). The live SDK is `bd833a2` with
-  develop's series: 1-30 (21 included), then 20 and 31. Two older copies stay next to it, with no
-  build tree pointing at either:
-  - `rexglue-sdk-bd833a2-30`, the series through 30 without 20 and 31: to roll back the last swap
-    (two `mv`). It goes at the next swap, when the copy it replaces becomes the rollback.
-  - `rexglue-sdk-0c7b01a`, the old base: `v0.1.0-beta` on `main` is built on it, to reproduce
-    or fix something of that beta. It can go after the next release.
+- The shared SDK copies on the Linux machine (2026-10-13). The live SDK is `bd833a2` with
+  develop's series: 1-30 (21 included), then 20 and 31. One older copy stays next to it:
+  `rexglue-sdk-bd833a2-30`, the series through 30 without 20 and 31, to roll back the last swap
+  (two `mv`). It goes at the next swap, when the copy it replaces becomes the rollback. The old
+  base `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as planned.
 
-  The copies of 1-26 to 1-29, an old install prefix and a scratch checkout of patch 20
-  were deleted (its changes are patch 20 on `feature/pc-mods`).
+- The swap, step by step. The new SDK is built apart with
+  `tools/deps/build_sdk.sh ~/rexglue-sdk-swapNN-install ~/rexglue-sdk-swapNN all`, from a worktree
+  of `develop` so the series cannot change during the build; the registry entry the install adds
+  for that prefix is deleted. After a go from every agent that uses `~/rexglue-sdk`, and with no
+  game running (binaries load `librexruntimerd.so` from it):
+  1. Delete the build trees (`out/build` and `out/linux-amd64`) of the new checkout and of the
+     live one. A build tree keeps the absolute paths it was configured in (`CMakeCache.txt`), its
+     install prefix among them: moved, a rebuild in it would install into the old prefix and
+     leave the live SDK unchanged, with no error. The installs do not need them: their libraries
+     find each other with `$ORIGIN`, and their CMake files hold no build path.
+  2. Move the live `~/rexglue-sdk` to `~/rexglue-sdk-bd833a2-NN` (the series it carries), the
+     new checkout to `~/rexglue-sdk`, and the new install to
+     `~/rexglue-sdk/out/install/linux-amd64`; delete the previous rollback copy.
+  3. Check that the CMake registry holds only the entry for `~/rexglue-sdk/out/install/linux-amd64`.
+  4. Verify on `develop`: `rexglue codegen`, a clean RelWithDebInfo build and `ctest`; then tell
+     the agents to rebuild.
+
+  A later SDK build inside `~/rexglue-sdk` configures a new tree there, with the right paths.
 
 ### 7. For the integrator: patch numbers (2026-10-08)
 
