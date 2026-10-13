@@ -115,6 +115,7 @@ void LiveMode::Start(const LiveOptions& options) {
   capture::Session::Get().EnableLive(&queue_, &store_);
   finished_ = false;
   thread_ = std::thread([this] {
+    platform::SetCurrentThreadName("tl backend");
     Run();
     finished_ = true;
   });
