@@ -468,7 +468,6 @@ void LiveMode::Run() {
           latency.queue_ms = Ms(start - frame->cut);
           latency.render_ms = Ms(present_start - start);
           latency.present_ms = Ms(present_end - present_start);
-          if (options_.vsync && options_.on_vsynced_present) options_.on_vsynced_present();
           FrameTiming::Get().OnPresent(dropped_since_present, latency);
           dropped_since_present = 0;
           latency_ms.Add(latency.total_ms());

@@ -60,8 +60,6 @@ struct LiveOptions {
   // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue); 0:
   // one with vsync, two without (QueueCapacity).
   size_t frame_queue = 2;
-  // Backend thread, right after each present that waited for vsync (the display's vblank).
-  std::function<void()> on_vsynced_present;
   // With vsync, take the newest frame only this long before the display's next refresh (late
   // latch, --native_present_lead_ms); 0: as soon as the backend is free.
   double present_lead_ms = 0;
