@@ -422,6 +422,10 @@ inline constexpr Field kWindowVisible{0x161, Confidence::kConfirmed};
 // moves over a fixed 5 x 3 grid of window names (table 0x82421E28, CEGUI Strings of 0x98 bytes,
 // filled by sub_82EB3258): the class buttons are its first row, in that order.
 inline constexpr uint32_t kNewGameMenuVtable = 0x820D2658;
+// [confirmed] The layout's file name (L"media/ui/charactercreate.uilayout" @0x820D24B8, loaded by the
+// menu's init sub_8238D6F0). Other menus' layouts use GUISELECT1 too (optionsmenu,
+// characterload, difficulty), for other things.
+inline constexpr const char* kNewGameMenuLayout = "charactercreate.uilayout";
 inline constexpr uint32_t kNewGameClassRow = 0;
 inline constexpr uint32_t kNewGameClassColumns = 3;
 // [confirmed] Slot 8 (0x820D2674), on show: puts the pad focus on the grid's first cell

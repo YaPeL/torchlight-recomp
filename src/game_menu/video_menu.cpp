@@ -1,6 +1,8 @@
 #include "game_menu/video_menu.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -137,6 +139,15 @@ namespace {
 // bands re-anchored when `widen`, the skill tree with its third column and the creation screen with
 // its class labels; how many. Nothing of the
 // game is kept in the repository: this runs on the user's own data.
+// `path`'s file name is `file`, in any case.
+bool IsNamed(const std::string& path, std::string_view file) {
+  const std::string name = path.substr(path.find_last_of("/\\") + 1);
+  return name.size() == file.size() &&
+         std::equal(name.begin(), name.end(), file.begin(), [](char a, char b) {
+           return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+         });
+}
+
 int WriteLayouts(const std::filesystem::path& pak_path, const std::filesystem::path& dir, bool widen) {
   frontend::ZipArchive pak;
   std::string error;
@@ -164,7 +175,8 @@ int WriteLayouts(const std::filesystem::path& pak_path, const std::filesystem::p
       xml = std::move(*columns);
       changes.push_back("skill tree third column");
     }
-    if (auto labels = class_selector::AddClassLabels(xml)) {
+    if (auto labels = IsNamed(name, ui::kNewGameMenuLayout) ? class_selector::AddClassLabels(xml)
+                                                             : std::nullopt) {
       xml = std::move(*labels);
       changes.push_back("class button labels");
     }
