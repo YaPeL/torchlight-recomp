@@ -516,27 +516,30 @@ in number order; a branch adds its own line at its number's place.
     no call in three scripted runs (load and quit, a new character, a fight and the town), so
     normal play reaches none of these paths. Upstream draft D31.
 
-32. `rexglue-codegen-non-argument-in-context.patch`: `non_argument_as_local` put r0, r2, r11,
-    r12, f0 and v32-v63 in C++ locals as one set, and Torchlight cannot take r12 there: it passes
-    data in it outside the ABI (to its `__finally` funclets and its stack probe), and with r12 a
-    local the game deadlocks about 3 s after start (`docs/guest-hot-paths.md`, upstream D26). The
-    manifest list `non_argument_in_context` now names the registers the option leaves in
-    `PPCContext` (`["r12"]` here); a name outside that set is an error and is ignored. A second
-    option, `verify_non_argument_locals`, makes a checking build for the option: every write to
-    such a local is also written through to the context, and before each instruction that reads
-    the register's old value a `REX_VERIFY_LOCAL` check compares the local with the context. The
-    two can differ only where the guest reads a value another function left in the register
-    (after a call, or at its entry), which is what the option changes; the first difference at
-    each site is logged (register, address, function, both values; 64 sites at most) and the
-    local value is used, so the game goes on as the experiment build would. Only the codegen and
-    its PCH template change; the runtime library is the same. Tests in
-    `argument_locals_test.cpp`: the list is read and a wrong name is refused; a kept register
-    stays in `ctx` while the others become locals, in a generated function; and where the checks
-    and the write-through go, for each kind of write the builders emit (whole, 32-bit, in one
-    statement with a read, conditional, all lanes, some lanes, lanes of one width in two element
-    types, a store intrinsic, before a jump). The checking build of Torchlight generates and
-    compiles, and its 86 tests pass. For the measured experiment of `non_argument_as_local` with r12 kept (2026-10-13):
-    on `sdk/argument-locals` it is the series' last line, so the experiment's SDK builds from
-    that branch, which is not for integration unless the experiment pays off.
+32. `rexglue-codegen-non-argument-in-context.patch`: `non_argument_as_local` put r0, r2, r11, r12,
+    f0 and v32-v63 in C++ locals as one set, and Torchlight cannot take r12 there: it passes data in
+    it outside the ABI (to its `__finally` funclets and its stack probe), and with r12 a local the
+    game deadlocks about 3 s after start (`docs/guest-hot-paths.md`, upstream D26). The manifest
+    list `non_argument_in_context` now names the registers the option leaves in `PPCContext`
+    (`["r12"]` here); a name outside that set is an error and is ignored. A second option,
+    `verify_non_argument_locals`, makes a checking build for the option: every write to such a local
+    is also written through to the context, and before each instruction that reads the register's
+    old value a `REX_VERIFY_LOCAL` check compares the local with the context. The two can differ
+    only where the guest reads a value another function left in the register (after a call, or at
+    its entry), which is what the option changes; the first difference at each site is logged
+    (register, address, function, both values; 64 sites at most) and the local value is used, so the
+    game goes on as the experiment build would. An instruction whose result ignores a register it
+    names twice is not checked: `subfe rD,rA,rA` (the compiler's mask of the carry; Torchlight has
+    332 with r11, and one logged the only difference of the trade route, at `0x824BFEAC`), `subf`,
+    `subfc`, `xor`, `eqv` and `andc`. Only the codegen and its PCH template change; the runtime
+    library is the same. Tests in `argument_locals_test.cpp`: the list is read and a wrong name is
+    refused; a kept register stays in `ctx` while the others become locals, in a generated function;
+    and where the checks and the write-through go, for each kind of write the builders emit (whole,
+    32-bit, in one statement with a read, conditional, all lanes, some lanes, lanes of one width in
+    two element types, a store intrinsic, before a jump), and no check for the same-register idioms.
+    The checking build of Torchlight generates and compiles, and its 86 tests pass. For the measured
+    experiment of `non_argument_as_local` with r12 kept (2026-10-13): on `sdk/argument-locals` it is
+    the series' last line, so the experiment's SDK builds from that branch, which is not for
+    integration unless the experiment pays off.
 
 The observation and diagnostic patches there were before remain in the git history.

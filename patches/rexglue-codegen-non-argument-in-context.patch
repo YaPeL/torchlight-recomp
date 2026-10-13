@@ -214,7 +214,7 @@ index 5da54a0..8076840 100644
              hasBool("generate_exception_handlers"), "generate_exception_handlers");
    if (hasBool("is_dll")) {
 diff --git a/src/codegen/function_graph.cpp b/src/codegen/function_graph.cpp
-index fc918bb..6b87e9f 100644
+index fc918bb..8798d1d 100644
 --- a/src/codegen/function_graph.cpp
 +++ b/src/codegen/function_graph.cpp
 @@ -12,6 +12,7 @@
@@ -233,14 +233,16 @@ index fc918bb..6b87e9f 100644
  
          // Check for mid-asm hook BEFORE instruction
          auto hookIt = ctx.config.midAsmHooks.find(blockBase);
-@@ -596,6 +598,13 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
+@@ -596,6 +598,15 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
          if (hookIt != ctx.config.midAsmHooks.end() && hookIt->second.afterInstruction) {
            builderCtx.emit_mid_asm_hook();
          }
 +
 +        if (ctx.config.verifyNonArgumentLocals) {
++          std::string unused =
++              IgnoredSameRegisterOperand(id, insn.operands[1], insn.operands[2]);
 +          std::string instrumented = InstrumentNonArgumentLocals(
-+              std::string_view(body).substr(insnStart), ctx.config, blockBase);
++              std::string_view(body).substr(insnStart), ctx.config, blockBase, unused);
 +          body.resize(insnStart);
 +          body += instrumented;
 +        }
@@ -249,10 +251,10 @@ index fc918bb..6b87e9f 100644
        blockBase += 4;
 diff --git a/src/codegen/verify_locals.cpp b/src/codegen/verify_locals.cpp
 new file mode 100644
-index 0000000..3109257
+index 0000000..c17c330
 --- /dev/null
 +++ b/src/codegen/verify_locals.cpp
-@@ -0,0 +1,276 @@
+@@ -0,0 +1,295 @@
 +/**
 + * @file        codegen/verify_locals.cpp
 + * @brief       Checking build for non_argument_as_local (verify_non_argument_locals)
@@ -273,6 +275,8 @@ index 0000000..3109257
 +#include <fmt/format.h>
 +
 +#include <rex/codegen/config.h>
++
++#include <ppc.h>
 +
 +namespace rex::codegen {
 +
@@ -438,8 +442,24 @@ index 0000000..3109257
 +
 +}  // namespace
 +
++std::string IgnoredSameRegisterOperand(int opcode, uint32_t operandA, uint32_t operandB) {
++  switch (opcode) {
++    case PPC_INST_SUBF:
++    case PPC_INST_SUBFC:
++    case PPC_INST_SUBFE:
++    case PPC_INST_XOR:
++    case PPC_INST_EQV:
++    case PPC_INST_ANDC:
++      if (operandA == operandB)
++        return fmt::format("r{}", operandA);
++      return {};
++    default:
++      return {};
++  }
++}
++
 +std::string InstrumentNonArgumentLocals(std::string_view text, const RecompilerConfig& config,
-+                                        uint32_t address) {
++                                        uint32_t address, std::string_view unused) {
 +  if (!config.verifyNonArgumentLocals) {
 +    return std::string(text);
 +  }
@@ -506,7 +526,8 @@ index 0000000..3109257
 +
 +  std::string out;
 +  for (const auto& name : reads) {
-+    out += fmt::format("\tREX_VERIFY_LOCAL({}, 0x{:08X});\n", name, address);
++    if (name != unused)
++      out += fmt::format("\tREX_VERIFY_LOCAL({}, 0x{:08X});\n", name, address);
 +  }
 +  // Write each local through to the context after the line that writes it, or before a line that
 +  // leaves the instruction, so a callee and the next check see the local's value.
@@ -531,10 +552,10 @@ index 0000000..3109257
 +}  // namespace rex::codegen
 diff --git a/src/codegen/verify_locals.h b/src/codegen/verify_locals.h
 new file mode 100644
-index 0000000..5261222
+index 0000000..f645321
 --- /dev/null
 +++ b/src/codegen/verify_locals.h
-@@ -0,0 +1,36 @@
+@@ -0,0 +1,51 @@
 +/**
 + * @file        codegen/verify_locals.h
 + * @brief       Checking build for non_argument_as_local (verify_non_argument_locals)
@@ -565,10 +586,25 @@ index 0000000..5261222
 + * @param text     The instruction's emitted lines (each ending in '\n'), comment line excluded
 + * @param config   The recompiler configuration
 + * @param address  Guest address of the instruction (logged on a difference)
++ * @param unused   A register the instruction names but whose value its result ignores (see
++ *                 IgnoredSameRegisterOperand); not checked. Empty for none.
 + * @return The instrumented lines; `text` unchanged when no such register is named
 + */
 +std::string InstrumentNonArgumentLocals(std::string_view text, const RecompilerConfig& config,
-+                                        uint32_t address);
++                                        uint32_t address, std::string_view unused = {});
++
++/**
++ * @brief The GPR an instruction reads twice without using its value, as "rN", or empty.
++ *
++ * subf, subfc, subfe, xor, eqv and andc (and their record forms) with both source operands the
++ * same register give a result that does not depend on it: 0, 0 with CA set, -1 or 0 from CA
++ * (the compiler's way to make a mask of the carry), 0, -1 and 0.
++ *
++ * @param opcode    The instruction's PPC_INST_* id
++ * @param operandA  Its second operand (rA, or rS for xor, eqv and andc)
++ * @param operandB  Its third operand (rB)
++ */
++std::string IgnoredSameRegisterOperand(int opcode, uint32_t operandA, uint32_t operandB);
 +
 +}  // namespace rex::codegen
 diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
@@ -585,10 +621,10 @@ index b74cb2e..4c52f74 100644
      codegen/output_stamp_test.cpp
 diff --git a/tests/unit/codegen/argument_locals_test.cpp b/tests/unit/codegen/argument_locals_test.cpp
 new file mode 100644
-index 0000000..f20a5c8
+index 0000000..bb677ea
 --- /dev/null
 +++ b/tests/unit/codegen/argument_locals_test.cpp
-@@ -0,0 +1,230 @@
+@@ -0,0 +1,246 @@
 +/**
 + * @file        codegen/argument_locals_test.cpp
 + * @brief       non_argument_in_context and the verify_non_argument_locals checking build
@@ -812,6 +848,22 @@ index 0000000..f20a5c8
 +    std::string text = "\tctx.r3.u64 = r12.u64;\n";
 +    CHECK(instrument(text) == text);
 +  }
++}
++
++TEST_CASE("An operand whose value the result ignores is not checked",
++          "[codegen][argument_locals]") {
++  // subfe r10,r11,r11 / xor r10,r11,r11 / subf r10,r11,r11 / subfe r10,r11,r9 / blr
++  const std::vector<uint32_t> words = {0x7D4B5910, 0x7D6A5A78, 0x7D4B5850, 0x7D4B4910,
++                                       0x4E800020};
++  auto out = Generate("same_register", words, CheckingConfig());
++  CHECK_FALSE(Contains(out.recomp, "REX_VERIFY_LOCAL(r11, 0x82000000)"));  // subfe rA == rB
++  CHECK_FALSE(Contains(out.recomp, "REX_VERIFY_LOCAL(r11, 0x82000004)"));  // xor rS == rB
++  CHECK_FALSE(Contains(out.recomp, "REX_VERIFY_LOCAL(r11, 0x82000008)"));  // subf rA == rB
++  CHECK(Contains(out.recomp, "REX_VERIFY_LOCAL(r11, 0x8200000C)"));        // subfe rA != rB
++
++  auto config = CheckingConfig();
++  CHECK(InstrumentNonArgumentLocals("\tctx.r10.u64 = ~r11.u64 + r11.u64;\n", config, 0x82001234,
++                                    "r11") == "\tctx.r10.u64 = ~r11.u64 + r11.u64;\n");
 +}
 +
 +TEST_CASE("Without the checking option nothing is instrumented", "[codegen][argument_locals]") {

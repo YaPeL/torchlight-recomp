@@ -754,16 +754,18 @@ before it is written in 306 functions (the funclets, the stack probe with 28 cal
 never emitted (0x826231F0, referenced by no code or data); r0, r2, f0 and v32-v63 in none. So r12
 alone is the problem here, and a title can need a different set.
 
-**PR: `[Codegen]: non_argument_in_context, and a checking build for non_argument_as_local`**
-(patch 32). A manifest list, `non_argument_in_context = ["r12"]`, names the registers the option
-leaves in `PPCContext`. `verify_non_argument_locals = true` makes a checking build: every write to
-such a local is written through to the context, and each instruction that reads the old value
-first compares the local with the context (`REX_VERIFY_LOCAL`, in the PCH). They can differ only
-where a function reads a value another left in the register, which is what the option changes; the
-first difference per site is logged and the local value is used. A static pass cannot rule out
-every such read (path-insensitive, it flags r11 after 2,159 calls, all we read on paths that are
-never taken), so the checking build lets a title test the option in play. Measured here before it
-is proposed: Torchlight with r12 kept, against develop.
+**PR: `[Codegen]: non_argument_in_context, and a checking build for non_argument_as_local`** (patch
+32). A manifest list, `non_argument_in_context = ["r12"]`, names the registers the option leaves in
+`PPCContext`. `verify_non_argument_locals = true` makes a checking build: every write to such a
+local is written through to the context, and each instruction that reads the old value first
+compares the local with the context (`REX_VERIFY_LOCAL`, in the PCH). They can differ only where a
+function reads a value another left in the register, which is what the option changes; the first
+difference per site is logged and the local value is used. Instructions whose result ignores a
+register named twice (`subfe rD,rA,rA`, the compiler's mask of the carry, and `subf`, `subfc`,
+`xor`, `eqv`, `andc`) are not checked: the first run flagged one such `subfe`. A static pass cannot
+rule out every such read (path-insensitive, it flags r11 after 2,159 calls, all we read on paths
+that are never taken), so the checking build lets a title test the option in play. Measured here
+before it is proposed: Torchlight with r12 kept, against develop.
 
 We keep `non_argument_as_local` off until that measurement.
 
