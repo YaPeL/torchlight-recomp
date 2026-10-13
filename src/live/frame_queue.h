@@ -66,8 +66,8 @@ class FrameQueue {
  public:
   explicit FrameQueue(size_t capacity = 2) : capacity_(capacity) {}
 
-  // Before the producer starts (LiveMode::Start): how many frames wait for the backend.
-  void SetCapacity(size_t capacity) { capacity_ = capacity < 1 ? 1 : capacity; }
+  // How many frames wait for the backend (at least one); any thread, applied at the next push.
+  void SetCapacity(size_t capacity);
   // Before the producer starts. Without it, Push never blocks.
   void SetBackpressure(std::chrono::milliseconds cap);
   // Producer: with backpressure, blocks up to the cap while a queued frame is not taken.

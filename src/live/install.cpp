@@ -42,7 +42,8 @@ REXCVAR_DEFINE_STRING(live_record, "", "Torchlight",
                       "(session recording, replay --session); empty does not record");
 REXCVAR_DEFINE_INT32(native_frame_queue, 2, "Torchlight",
                      "Live mode: how many guest frames wait for the backend before the oldest is "
-                     "dropped (docs/performance-profile.md, vsync latency); for measurements");
+                     "dropped; 0: one with vsync (less latency), two without (docs/performance-"
+                     "profile.md, vsync latency)");
 REXCVAR_DEFINE_BOOL(native_present_latch_auto, false, "Torchlight",
                     "Live mode with vsync: late latch on the display's own clock where the window "
                     "system reports presentation times (Wayland, development builds), with the lead "
@@ -567,7 +568,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
-  options.frame_queue = size_t(std::max(1, REXCVAR_GET(native_frame_queue)));
+  options.frame_queue = size_t(std::max(0, REXCVAR_GET(native_frame_queue)));
   options.on_vsynced_present = [] {
     if (!g_vblank_follows.load(std::memory_order_relaxed)) return;
     if (rex::graphics::GraphicsSystem* graphics = g_vblank_graphics.load()) {

@@ -53,6 +53,11 @@ void FrameQueue::SetBackpressure(std::chrono::milliseconds cap) {
   backpressure_ = cap;
 }
 
+void FrameQueue::SetCapacity(size_t capacity) {
+  std::lock_guard<MeasuredMutex> lock(mutex_);
+  capacity_ = capacity < 1 ? 1 : capacity;
+}
+
 void FrameQueue::Push(LiveFrame frame) {
   {
     std::unique_lock<MeasuredMutex> lock(mutex_);

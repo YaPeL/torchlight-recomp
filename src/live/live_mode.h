@@ -57,7 +57,8 @@ struct LiveOptions {
   std::function<void()> request_ui_frame;
   // The producer's cost per hook and section, timed and logged (--native_producer_timing).
   bool producer_timing = false;
-  // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue).
+  // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue); 0:
+  // one with vsync, two without (QueueCapacity).
   size_t frame_queue = 2;
   // Backend thread, right after each present that waited for vsync (the display's vblank).
   std::function<void()> on_vsynced_present;

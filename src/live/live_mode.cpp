@@ -107,6 +107,16 @@ void LogMeasurements(uint64_t cuts, uint64_t measured) {
 // (a minimized window, a lost device): 20 frames a second at worst.
 constexpr std::chrono::milliseconds kBackpressureCap{50};
 
+// The frame queue's depth. With vsync the display takes one frame a refresh and a guest paced at
+// the same rate fills any queue: each frame then waits in it a refresh per frame ahead of it
+// (measured: ~35-40 ms of the 70 ms to the screen with two). One frame keeps the newest. Without
+// vsync the backend presents as fast as it can and a second frame keeps it busy while the guest
+// makes the next (one frame showed fewer presented frames standing still in the dungeon).
+size_t QueueCapacity(size_t chosen, bool vsync) {
+  if (chosen) return chosen;
+  return vsync ? 1 : 2;
+}
+
 LiveMode& LiveMode::Get() {
   static LiveMode mode;
   return mode;
@@ -114,7 +124,7 @@ LiveMode& LiveMode::Get() {
 
 void LiveMode::Start(const LiveOptions& options) {
   options_ = options;
-  queue_.SetCapacity(options.frame_queue);
+  queue_.SetCapacity(QueueCapacity(options.frame_queue, options.vsync));
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
   if (options.backpressure) queue_.SetBackpressure(kBackpressureCap);
@@ -373,8 +383,10 @@ void LiveMode::Run() {
       return std::chrono::duration_cast<Clock::duration>(
           std::chrono::duration<double, std::milli>(auto_lead_ms));
     };
+    Clock::time_point aim{};  // the vblank this frame aims at (auto latch)
     if (auto_ready) {
-      const auto wake = vblank_after(Clock::now() + lead()) - lead();
+      aim = vblank_after(Clock::now() + lead());
+      const auto wake = aim - lead();
       if (wake > Clock::now()) std::this_thread::sleep_until(wake);
     } else if (latch) {
       const auto wake = last_present + std::chrono::duration_cast<Clock::duration>(
@@ -384,7 +396,9 @@ void LiveMode::Run() {
     }
     auto frame = queue_.Pop(std::chrono::milliseconds(100), latch);
     if (!frame) continue;
-    if (auto_ready) targets.emplace_back(frame->swap, vblank_after(Clock::now() + lead()));
+    // A frame that came after the wake aims at the vblank it can still make; one that waited for
+    // the guest is not the lead's fault, so it is not judged (no target).
+    if (auto_ready && Clock::now() <= aim - lead() / 2) targets.emplace_back(frame->swap, aim);
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
     dropped_since_present += frame->dropped_before;
@@ -431,6 +445,7 @@ void LiveMode::Run() {
         if (video->vsync != options_.vsync) {
           options_.vsync = video->vsync;
           tl_backend_set_vsync(backend, video->vsync);
+          queue_.SetCapacity(QueueCapacity(options_.frame_queue, video->vsync));
           REXLOG_INFO("live: vsync {}", video->vsync ? "on" : "off");
         }
         if (video->render_resolution != options_.render_resolution) {
