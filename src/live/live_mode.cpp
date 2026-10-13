@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <map>
 #include <optional>
 #include <string>
@@ -22,6 +23,7 @@
 #include "live/measured_mutex.h"
 #include "live/slow_frames.h"
 #include "mods/texture_files.h"
+#include "platform/presentation_time.h"
 
 namespace torchlight::live {
 
@@ -232,6 +234,14 @@ void LiveMode::Run() {
     return;
   }
   REXLOG_INFO("live: renderer {}", tl_backend_renderer(backend));
+  // When the presents reach the screen, where the window system says (presentation_time.h): the
+  // swap-to-screen latency, next to the swap-to-presented one.
+  std::unique_ptr<platform::PresentationClock> presentation =
+      parent.system != platform::NativeWindow::kNone ? platform::CreatePresentationClock(parent)
+                                                     : nullptr;
+  if (presentation) REXLOG_INFO("live: presentation times from the window system");
+  std::deque<std::pair<uint64_t, Clock::time_point>> cuts;  // presented frames awaiting the screen
+  Clock::time_point last_shown{};  // the screen's previous frame
   // Internal render scale for the current window size (LiveOptions::render_resolution).
   settings::Resolution window_size{options_.window_width, options_.window_height};
   auto apply_render_scale = [&] {
@@ -269,7 +279,7 @@ void LiveMode::Run() {
   }
   uint64_t recorded_bytes_before = recorder.bytes_written();
 
-  Series backend_ms, latency_ms, texture_ms, present_ms, record_ms;
+  Series backend_ms, latency_ms, queue_ms, screen_ms, texture_ms, present_ms, record_ms;
   // Consumer breakdown per frame (FrameStep), means over the period.
   double content_ms = 0, commands_ms = 0, draws_ms = 0, end_ms = 0, after_ms = 0, release_ms = 0;
   size_t frames = 0, frames_dropped = 0, textures_created = 0, slow_texture_frames = 0;
@@ -341,12 +351,33 @@ void LiveMode::Run() {
       }
       if (window_open) {
         if (options_.ui) ApplyUi(backend, *options_.ui);
+        if (presentation) presentation->BeforePresent(frame->swap);
         auto present_start = Clock::now();
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();
         if (window_open) {
-          FrameTiming::Get().OnPresent(dropped_since_present);
+          PresentLatency latency;
+          latency.queue_ms = Ms(start - frame->cut);
+          latency.render_ms = Ms(present_start - start);
+          latency.present_ms = Ms(present_end - present_start);
+          FrameTiming::Get().OnPresent(dropped_since_present, latency);
           dropped_since_present = 0;
+          latency_ms.Add(latency.total_ms());
+          queue_ms.Add(latency.queue_ms);
+        }
+        if (presentation) {
+          cuts.emplace_back(frame->swap, frame->cut);
+          for (const auto& shown : presentation->TakeShown()) {
+            while (!cuts.empty() && cuts.front().first < shown.id) cuts.pop_front();
+            if (cuts.empty() || cuts.front().first != shown.id) continue;
+            const double ms = Ms(shown.time - cuts.front().second);
+            screen_ms.Add(ms);
+            const double gap =
+                last_shown.time_since_epoch().count() ? Ms(shown.time - last_shown) : 0.0;
+            last_shown = shown.time;
+            FrameTiming::Get().OnScreen(ms, gap);
+          }
+          while (cuts.size() > 64) cuts.pop_front();
         }
         record.present_ms = Ms(present_end - present_start);
         present_ms.Add(record.present_ms);
@@ -381,7 +412,6 @@ void LiveMode::Run() {
     }
     auto end = Clock::now();
     backend_ms.Add(Ms(end - start));
-    latency_ms.Add(Ms(end - frame->cut));
     reclaimer.Free(std::move(*frame));
     ++frames;
     record.backend_ms = Ms(end - start);
@@ -407,12 +437,15 @@ void LiveMode::Run() {
           "live: {} frames rendered, {} dropped (backend behind), {} draws ({} drawn), "
           "{} draws with a texture not ready, {} textures created ({} preparation(s) over 16.7 ms)"
           "\n  backend frame: {}\n  present (vsync wait included): {}"
-          "\n  swap-to-presented latency: {}\n  texture preparation per "
+          "\n  swap-to-presented latency: {}\n    of it waiting in the frame queue: {}"
+          "\n  swap-to-screen latency (window system's presentation times): {}"
+          "\n  texture preparation per "
           "frame: {}\n  live content held: {:.1f} MiB (store {:.1f} MiB)"
           "\n  skipped:{}\n  degraded:{}\n  texture problems:{}",
           frames, frames_dropped, s.draws_total - draws_before, s.draws_drawn - drawn_before,
           s.textures_not_ready - not_ready_before, textures_created, slow_texture_frames,
-          backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(),
+          backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(), queue_ms.Summary(),
+          screen_ms.Summary(),
           texture_ms.Summary(),
           content.content_bytes() / 1048576.0, store_.bytes() / 1048576.0,
           Delta(s.skipped, skipped_before), Delta(s.degraded, degraded_before),

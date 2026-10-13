@@ -19,6 +19,9 @@ void Check(bool ok, const char* what) {
 
 int main() {
   using torchlight::live::FrameSeries;
+  using torchlight::live::LatencyMeans;
+  using torchlight::live::MeanLatency;
+  using torchlight::live::PresentLatency;
   using namespace std::chrono_literals;
   FrameSeries series;
   // Recent() measures against the real clock, so the series ends now.
@@ -50,6 +53,14 @@ int main() {
   Check(recent.size() == 1 && recent_dropped == 0, "older frames leave the recent window");
   FrameSeries idle;
   Check(idle.Recent().empty(), "a series with no frames shows nothing");
+  // The presented frames' latency: each part's mean, and their sum.
+  const LatencyMeans none = MeanLatency({});
+  Check(none.frames == 0 && none.total_ms == 0, "no frames: no latency");
+  const LatencyMeans m = MeanLatency({{30, 2, 14}, {10, 4, 16}});
+  Check(m.frames == 2 && m.queue_ms == 20 && m.render_ms == 3 && m.present_ms == 15 &&
+            m.total_ms == 38,
+        "the parts' means and their sum");
+  Check(PresentLatency{30, 2, 14}.total_ms() == 46, "a frame's latency is its parts");
   if (g_failures == 0) std::printf("frame series test: ok\n");
   return g_failures == 0 ? 0 : 1;
 }
