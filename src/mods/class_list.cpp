@@ -44,20 +44,6 @@ std::optional<std::filesystem::path> FindNoCase(const std::filesystem::path& dir
   return std::nullopt;
 }
 
-// A layout's text: UTF-8 or ASCII as it is, UTF-16 (with its byte order mark) narrowed; the names and
-// properties looked for are ASCII.
-std::string LayoutText(const std::vector<uint8_t>& bytes) {
-  const bool le = bytes.size() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE;
-  const bool be = bytes.size() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
-  if (!le && !be) return std::string(bytes.begin(), bytes.end());
-  std::string text;
-  for (size_t i = 2; i + 1 < bytes.size(); i += 2) {
-    const uint16_t unit = le ? uint16_t(bytes[i] | bytes[i + 1] << 8) : uint16_t(bytes[i] << 8 | bytes[i + 1]);
-    text.push_back(unit < 0x80 ? char(unit) : '?');
-  }
-  return text;
-}
-
 std::vector<const PlannedMod*> EnabledInSearchOrder(const ModPlan& plan) {
   std::vector<const PlannedMod*> mods;
   for (const PlannedMod& mod : plan.mods) {
@@ -67,6 +53,91 @@ std::vector<const PlannedMod*> EnabledInSearchOrder(const ModPlan& plan) {
 }
 
 }  // namespace
+
+std::string Utf16ToUtf8(std::u16string_view text) {
+  std::string out;
+  for (size_t i = 0; i < text.size(); ++i) {
+    uint32_t c = text[i];
+    if (c >= 0xD800 && c <= 0xDBFF && i + 1 < text.size() && text[i + 1] >= 0xDC00 && text[i + 1] <= 0xDFFF) {
+      c = 0x10000 + ((c - 0xD800) << 10) + (text[++i] - 0xDC00);
+    } else if (c >= 0xD800 && c <= 0xDFFF) {
+      c = 0xFFFD;
+    }
+    if (c < 0x80) {
+      out.push_back(char(c));
+    } else if (c < 0x800) {
+      out.push_back(char(0xC0 | c >> 6));
+      out.push_back(char(0x80 | (c & 0x3F)));
+    } else if (c < 0x10000) {
+      out.push_back(char(0xE0 | c >> 12));
+      out.push_back(char(0x80 | (c >> 6 & 0x3F)));
+      out.push_back(char(0x80 | (c & 0x3F)));
+    } else {
+      out.push_back(char(0xF0 | c >> 18));
+      out.push_back(char(0x80 | (c >> 12 & 0x3F)));
+      out.push_back(char(0x80 | (c >> 6 & 0x3F)));
+      out.push_back(char(0x80 | (c & 0x3F)));
+    }
+  }
+  return out;
+}
+
+std::u16string Utf8ToUtf16(std::string_view text) {
+  std::u16string out;
+  for (size_t i = 0; i < text.size();) {
+    const uint8_t b = uint8_t(text[i]);
+    const int length = b < 0x80 ? 1 : (b >> 5) == 0x6 ? 2 : (b >> 4) == 0xE ? 3 : (b >> 3) == 0x1E ? 4 : 0;
+    uint32_t c = length == 1 ? b : length == 2 ? b & 0x1F : length == 3 ? b & 0x0F : b & 0x07;
+    bool valid = length > 0 && i + length <= text.size();
+    for (int k = 1; valid && k < length; ++k) {
+      const uint8_t next = uint8_t(text[i + k]);
+      valid = (next & 0xC0) == 0x80;
+      c = c << 6 | (next & 0x3F);
+    }
+    if (!valid || c > 0x10FFFF || (c >= 0xD800 && c <= 0xDFFF)) {
+      out.push_back(u'\uFFFD');
+      i += 1;
+      continue;
+    }
+    if (c >= 0x10000) {
+      c -= 0x10000;
+      out.push_back(char16_t(0xD800 + (c >> 10)));
+      out.push_back(char16_t(0xDC00 + (c & 0x3FF)));
+    } else {
+      out.push_back(char16_t(c));
+    }
+    i += size_t(length);
+  }
+  return out;
+}
+
+std::string ClassKey(std::string_view name) {
+  std::u16string text = Utf8ToUtf16(name);
+  for (char16_t& c : text) {
+    if (c >= u'a' && c <= u'z') {
+      c = char16_t(c - 0x20);
+    } else if (c >= 0xE0 && c <= 0xFE && c != 0xF7) {
+      c = char16_t(c - 0x20);
+    } else if (c == 0xFF) {
+      c = 0x178;
+    }
+  }
+  return Utf16ToUtf8(text);
+}
+
+std::string LayoutText(const std::vector<uint8_t>& bytes) {
+  const bool le = bytes.size() >= 2 && bytes[0] == 0xFF && bytes[1] == 0xFE;
+  const bool be = bytes.size() >= 2 && bytes[0] == 0xFE && bytes[1] == 0xFF;
+  if (le || be) {
+    std::u16string text;
+    for (size_t i = 2; i + 1 < bytes.size(); i += 2) {
+      text.push_back(le ? char16_t(bytes[i] | bytes[i + 1] << 8) : char16_t(bytes[i] << 8 | bytes[i + 1]));
+    }
+    return Utf16ToUtf8(text);
+  }
+  const size_t skip = bytes.size() >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF ? 3 : 0;
+  return std::string(bytes.begin() + skip, bytes.end());
+}
 
 std::vector<std::string> ClassButtons(std::string_view xml) {
   std::vector<std::string> names;
@@ -100,11 +171,11 @@ std::vector<std::string> ClassList(const std::vector<std::vector<std::string>>& 
   std::set<std::string> seen;
   for (std::string_view game_class : kGameClasses) {
     list.emplace_back(game_class);
-    seen.insert(Upper(game_class));
+    seen.insert(ClassKey(game_class));
   }
   for (const auto& buttons : buttons_by_mod) {
     for (const std::string& name : buttons) {
-      const std::string key = Upper(name);
+      const std::string key = ClassKey(name);
       if (seen.contains(key) || !player_units.contains(key)) continue;
       seen.insert(key);
       list.push_back(name);
@@ -129,7 +200,7 @@ std::set<std::string> ModPlayerUnits(const std::filesystem::path& mods_folder, c
         if (const DatValue* value = blocks->front().Find("NAME")) name = value->value;
       }
       if (!name) name = FindDatValueAnywhere(bytes, "NAME");
-      if (name && !name->empty()) names.insert(Upper(*name));
+      if (name && !name->empty()) names.insert(ClassKey(*name));
     }
   }
   return names;

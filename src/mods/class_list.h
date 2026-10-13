@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <set>
 #include <string>
@@ -20,16 +21,28 @@ namespace torchlight::mods {
 // The Xbox screen's three classes, in its order (its buttons and pad grid, game_ui.h new_game_menu).
 inline constexpr std::string_view kGameClasses[] = {"Destroyer", "Alchemist", "Vanquisher"};
 
+// Class names are UTF-8 here; the game's are UTF-16 (its std::wstring, its unit NAMEs). A lone
+// surrogate or an invalid UTF-8 sequence becomes U+FFFD.
+std::string Utf16ToUtf8(std::u16string_view text);
+std::u16string Utf8ToUtf16(std::string_view text);
+// A class name as names are compared (a layout's button against a unit's NAME, the list's repeats):
+// ASCII and Latin-1 letters in upper case (the game's unit NAMEs are upper case), the rest as it is.
+std::string ClassKey(std::string_view name);
+// A layout file's text as UTF-8: UTF-16 (with its byte order mark, either order) converted, a UTF-8
+// byte order mark dropped, anything else as it is.
+std::string LayoutText(const std::vector<uint8_t>& bytes);
+
 // The names of a CEGUI layout's windows whose "onClick" property is guiSelect1 (any case), in the
 // layout's order.
 std::vector<std::string> ClassButtons(std::string_view layout_xml);
 
 // The game's classes, then the other buttons in order, without repeats (names compared in any
-// case) and without those whose name is not a player unit's (`player_units`: NAMEs, upper case).
+// case, ClassKey) and without those whose name is not a player unit's (`player_units`: ClassKeys
+// of the units' NAMEs).
 std::vector<std::string> ClassList(const std::vector<std::vector<std::string>>& buttons_by_mod,
                                    const std::set<std::string>& player_units);
 
-// The player units' NAMEs (upper case) the enabled mods of `plan` define (*.dat under
+// The player units' NAMEs (as ClassKeys) the enabled mods of `plan` define (*.dat under
 // media/units/players/, text definitions).
 std::set<std::string> ModPlayerUnits(const std::filesystem::path& mods_folder, const ModPlan& plan);
 

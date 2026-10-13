@@ -104,6 +104,35 @@ int main() {
     fs::remove_all(root);
   }
 
+  // Names beyond ASCII: UTF-16 layouts read in full, compared in any case, back to UTF-16 intact.
+  {
+    const std::string name = "Se\xC3\xB1" "ora \xC3\x91" "and\xC3\xBA";  // "Señora Ñandú"
+    const std::string upper = "SE\xC3\x91" "ORA \xC3\x91" "AND\xC3\x9A";
+    Check(m::ClassKey(name) == upper, "Latin-1 letters compare in any case");
+    Check(m::ClassKey("\xE6\x9D\xB1") == "\xE6\x9D\xB1", "other scripts as they are");
+    const std::u16string wide = u"Se\u00F1ora \U0001F600";
+    Check(m::Utf8ToUtf16(m::Utf16ToUtf8(wide)) == wide, "UTF-16 to UTF-8 and back, a surrogate pair kept");
+    Check(m::Utf16ToUtf8(std::u16string{u'a', char16_t(0xD800), u'b'}) == "a\xEF\xBF\xBD" "b", "a lone surrogate is U+FFFD");
+    Check(m::Utf8ToUtf16("a\xC3") == u"a\uFFFD", "a cut UTF-8 sequence is U+FFFD");
+    // A UTF-16LE layout and a UTF-16BE one.
+    const std::string xml = Button("GuiLook/RadioButton", name, "guiSelect1");
+    const std::u16string xml16 = m::Utf8ToUtf16(xml);
+    std::vector<uint8_t> le = {0xFF, 0xFE}, be = {0xFE, 0xFF};
+    for (char16_t c : xml16) {
+      le.push_back(uint8_t(c));
+      le.push_back(uint8_t(c >> 8));
+      be.push_back(uint8_t(c >> 8));
+      be.push_back(uint8_t(c));
+    }
+    Check(m::ClassButtons(m::LayoutText(le)) == std::vector<std::string>({name}), "a UTF-16LE layout's name");
+    Check(m::ClassButtons(m::LayoutText(be)) == std::vector<std::string>({name}), "a UTF-16BE layout's name");
+    std::vector<uint8_t> utf8 = {0xEF, 0xBB, 0xBF};
+    utf8.insert(utf8.end(), xml.begin(), xml.end());
+    Check(m::ClassButtons(m::LayoutText(utf8)) == std::vector<std::string>({name}), "a UTF-8 layout's name");
+    // Its unit, NAME in upper case: offered.
+    Check(m::ClassList({{name}}, {upper}).back() == name, "offered when its unit's NAME matches in any case");
+  }
+
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return EXIT_FAILURE;
