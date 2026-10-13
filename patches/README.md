@@ -41,7 +41,8 @@ in number order; a branch adds its own line at its number's place.
 | 29 | `rexglue-case-variants.patch` | `develop` | In the series |
 | 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `develop` | In the series |
 | 31 | `rexglue-guest-fatal-hook.patch` | `develop` | In the series |
-| 32 | | | Next free number |
+| 32 | `rexglue-codegen-non-argument-in-context.patch` | `sdk/argument-locals` | Not integrated: no gain in hand runs (upstream D26) |
+| 33 | | | Next free number |
 
 ## The patches
 
