@@ -81,6 +81,7 @@ set(TORCHLIGHT_SOURCES
     src/mods/wardrobe_hooks.cpp
     src/game_menu/save_import_menu.cpp
     src/game_menu/save_indicator.cpp
+    src/game_menu/skill_tree.cpp
     src/game_menu/video_menu.cpp
 )
 
