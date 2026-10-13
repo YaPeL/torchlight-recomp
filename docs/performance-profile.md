@@ -796,6 +796,47 @@ on, no cap, no vsync, 10 s from the town square mark; percentages of all the pro
 - **The two-stage pipeline** stays paused for the same reason: no machine measured so far shows the
   backend behind on the reference route.
 
+### The guest's thread is the limit; codegen with r0, r2, r11, f0 in locals: not taken (2026-10-13)
+
+**Where the limit is.** Per thread, without vsync or a cap, on the reference route (automatic runs,
+`/proc` sampled every 0.5 s): the guest's main thread (`Main XThread`, the recompiled PPC code) at
+99.8-100 % of one core in every step; the backend (`tl backend`) 62-68 %, the SDK's `GPU Commands`
+39-49 %, the UI thread 28-32 %, the rest under 2 % each. It hardly waits: 0.3 ms a second for the
+GPU's progress (`guest GPU waits:` in the log), about nothing on our locks (0.005 ms a frame on the
+frame queue). One thread computing is the limit, which is why a much faster desktop is only as much
+faster as its single core. Of that thread (town square DWARF profile): the recompiled guest code
+79 % (flat: the octree walk `0x821C7158` and `Frustum::isVisible` `0x821C74A0` at 1.8 % each are
+the top), our producer 8.4 %, the C library's allocator and `mem*` 4.6 %, `fma` through libm 1.6 %,
+the SDK's runtime 1.5 %, our hooks 1.1 %, the register save and restore helpers 0.2 % (4.6 % before
+the non-volatile registers went into locals). The floating point mode switches (`ldmxcsr`) are
+about 0.02 %.
+
+**SDK patch 32** (`sdk/argument-locals`, the ReXGlue agent's; not in `patches/series`):
+`non_argument_in_context` lets `non_argument_as_local` keep r12 in the context (the SEH funclets
+and the stack probe read it outside the ABI) and put r0, r2, r11, f0 and v32-v63 in locals, 23 % of
+the generated code's register references to the context. A live-in survey of the 43,927 functions
+found those registers live at entry only in two dead tails. A checking mode
+(`verify_non_argument_locals`) compares, at each read after a call, the local with what the context
+would hold, and logs the first difference per site:
+- three automatic routes with it (the fixed-floor game: a fight, `FAME`, two `LEVELUP`, `ASCEND`
+  and its save; that save loaded, `DESCEND`, a fight; the town by the vendors, an NPC, the
+  inventory): one line, `subfe r10,r11,r11` at `0x824BFEAC`, whose result does not depend on r11
+  (`~x + x + CA`): the compiler's way to turn a carry into a mask. The check now skips repeated
+  operands of `subfe`, `subf`, `subfc`, `xor`, `eqv` and `andc`.
+- **synthetic** (three runs each, alternated): game fps +3.6 % main menu, +3.2 % dungeon still,
+  +2.7 % fight, +1.1 % town square, the runs' ranges overlapping; the executable 3.5 % smaller.
+- **by hand** (four blind runs, two each, the reference route, no vsync or cap): dungeon still
+  227.9 -> 226.9 fps, fight 170.2 -> 177.3 (one run with it lacked the lightning effect; without it,
+  between the two without), town square 141.7 -> 140.8. No visible gain.
+
+**Not taken**: only what the hand runs back goes in. The patch, its checking mode and the filter
+stay on `sdk/argument-locals`; `~/rexglue-sdk` was not swapped. This laptop measures at its thermal
+limit (82 C, throttling throughout), where a 1-3 % gain is below what it can show: to measure again
+on a machine without that limit (the Windows desktop, the Steam Deck). The interprocedural
+liveness analysis that would also take the argument registers (r3-r10, about 60 % of the context
+references; at best about +3-8 %, weeks of codegen work upstream) is left for after the producer,
+if the guest's thread is still the limit.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
