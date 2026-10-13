@@ -44,7 +44,6 @@ struct Selector {
   bool listed = false;
   std::vector<std::string> classes;
   cs::Carousel carousel{0};
-  std::vector<uint32_t> names;  // a guest std::wstring per class, made when first picked
   bool images_saved = false;
   std::string images[cs::kSlots][3];  // each game class's button images, as the layout had them
   bool picking = false;               // inside OnCommand(GUISELECT1)
@@ -80,7 +79,6 @@ void List() {
   }
   g.classes = mods::ClassList(buttons, units);
   g.carousel = cs::Carousel(g.classes.size());
-  g.names.assign(g.classes.size(), 0);
   std::string list;
   for (const std::string& c : g.classes) list += (list.empty() ? "" : ", ") + c;
   REXLOG_INFO("class selector: {} classes ({}){}", g.classes.size(), list,
@@ -187,10 +185,10 @@ std::string ReadWString(uint8_t* base, uint32_t str) {
   return text;
 }
 
-// A guest std::wstring holding class `index`'s name, made once on the guest heap (the selection
-// copies it, so it is never freed).
-uint32_t ClassName(PPCContext& ctx, uint8_t* base, size_t index) {
-  if (g.names[index]) return g.names[index];
+// A guest std::wstring holding class `index`'s name, on the guest heap, for one selection: made
+// before it and destroyed after (DestroyName). One kept across selections broke the second pick of
+// the same class (the unit lookup found no unit by that name).
+uint32_t MakeName(PPCContext& ctx, uint8_t* base, size_t index) {
   GuestCall call(ctx, base);
   const std::string& name = g.classes[index];
   const uint32_t text = call.Call(ui::kAlloc.address, {0, uint32_t(2 * (name.size() + 1))});
@@ -202,8 +200,14 @@ uint32_t ClassName(PPCContext& ctx, uint8_t* base, size_t index) {
     abi::WriteBytes(base, text + uint32_t(2 * i), big, 2);
   }
   call.Call(ui::kWStringFromText.address, {str, text});
-  g.names[index] = str;
+  call.Call(ui::kFree.address, {text});
   return str;
+}
+
+void DestroyName(PPCContext& ctx, uint8_t* base, uint32_t str) {
+  GuestCall call(ctx, base);
+  call.Call(ui::kWStringDtor.address, {str});
+  call.Call(ui::kFree.address, {str});
 }
 
 }  // namespace
@@ -259,13 +263,14 @@ FUNCTION_ADDRESS_CHECK(kSelectClass, 82214000);
 REX_EXTERN(__imp__sub_82214000);
 REX_FUNC(sub_82214000) {
   using namespace torchlight::game_menu;
+  uint32_t name = 0;
   if (g.picking) {
     // The button's window name: the class it shows instead.
     const std::string button = ReadWString(base, ctx.r4.u32);
     if (const auto slot = GameClass(button)) {
       const size_t index = g.carousel.ClassAt(*slot);
       if (Upper(g.classes[index]) != Upper(button)) {
-        const uint32_t name = ClassName(ctx, base, index);
+        name = MakeName(ctx, base, index);
         if (name) {
           REXLOG_INFO("class selector: button {} picks {}", button, g.classes[index]);
           ctx.r4.u64 = name;
@@ -274,6 +279,7 @@ REX_FUNC(sub_82214000) {
     }
   }
   __imp__sub_82214000(ctx, base);
+  if (name) DestroyName(ctx, base, name);
 }
 
 }  // extern "C"
