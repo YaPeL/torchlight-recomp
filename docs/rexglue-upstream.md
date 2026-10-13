@@ -728,7 +728,7 @@ entry. MSVC's Xbox 360 code breaks that assumption in two places:
   r14-r31 from localization, and the copy through `ctx` around the call (`ctx.r{i} = r{i}` before,
   back after) covers only those registers.
 - **The stack probe (`__chkstk`-like) takes the allocation size in r12**:
-  `neg r11,r12` at entry. Some other functions also read r11 set by their caller.
+  `neg r11,r12` at entry.
 
 Seen in Torchlight: 88 functions start with `r31 = r12 - N`. With `reserved`, `xer`, `ctr`, `cr`,
 `non_volatile` and `non_argument_as_local` on, the game deadlocks about 3 s after start:
@@ -746,6 +746,33 @@ Seen in Torchlight: 88 functions start with `r31 = r12 - N`. With `reserved`, `x
 
 The non-volatile save and restore helpers are already elided under `non_volatile_as_local`, so they
 are not affected.
+
+**Which registers, measured (2026-10-13).** A backward liveness pass over Torchlight's 43,927
+generated functions (per PPC instruction, following direct calls to a fixpoint): r12 is read
+before it is written in 306 functions (the funclets, the stack probe with 28 callers, and the
+`__savevmx`/`__restvmx`/`__restfpr` helpers); r11 only in two tails of a function the codegen
+never emitted (0x826231F0, referenced by no code or data); r0, r2, f0 and v32-v63 in none. So r12
+alone is the problem here, and a title can need a different set.
+
+**A PR if it is ever wanted: `[Codegen]: non_argument_in_context, and a checking build for
+non_argument_as_local`** (patch 32, on `sdk/argument-locals`). A manifest list,
+`non_argument_in_context = ["r12"]`, names the registers the option leaves in `PPCContext`.
+`verify_non_argument_locals = true` makes a checking build: every write to such a local is
+written through to the context, and each instruction that reads the old value first compares the
+local with the context (`REX_VERIFY_LOCAL`, in the PCH). They can differ only where a function
+reads a value another left in the register; the first difference per site is logged and the
+local value is used. Instructions whose result ignores a register named twice (`subfe rD,rA,rA`,
+the compiler's mask of the carry, and `subf`, `subfc`, `xor`, `eqv`, `andc`) are not checked.
+
+**Result, and where it stays (2026-10-13).** Torchlight with r12 kept behaves as before: the
+checking build logged no difference over three routes (load, fight, level-ups, a floor change
+with its autosave, town, reload, trade and inventory) except one `subfe r10,r11,r11` at
+`0x824BFEAC`, whose result does not depend on r11 (that run is why the filter exists). The
+synthetic benchmark gave +1-3 % game fps and a 3.5 % smaller executable; hand runs on the same
+laptop, at its thermal limit, showed no gain (`docs/performance-profile.md`). Not integrated: we
+take only what the hand runs back up. Patch 32 stays on `sdk/argument-locals`, outside the
+series and out of the installed SDK, to measure again on a machine without a thermal limit
+(Windows desktop, Steam Deck). It is not proposed upstream until a gain shows.
 
 We keep `non_argument_as_local` off.
 
@@ -1319,7 +1346,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 29 | `rexglue-case-variants.patch` (D30) | `sdk/case-variants` | `bd833a2` |
 | 30 | `rexglue-posix-chain-unclaimed-faults.patch` (D25) | `sdk/fault-chain` | `bd833a2` |
 | 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2`, after 30 |
-| 32 | next free | | |
+| 32 | `rexglue-codegen-non-argument-in-context.patch` (D26) | `sdk/argument-locals` | `bd833a2`, after 31; not in the series |
+| 33 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
