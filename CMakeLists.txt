@@ -79,6 +79,7 @@ set(TORCHLIGHT_SOURCES
     src/mods/text_reader_hooks.cpp
     src/mods/save_block_hooks.cpp
     src/mods/wardrobe_hooks.cpp
+    src/game_menu/class_selector.cpp
     src/game_menu/save_import_menu.cpp
     src/game_menu/save_indicator.cpp
     src/game_menu/skill_tree.cpp
