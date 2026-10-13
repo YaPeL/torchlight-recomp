@@ -235,6 +235,11 @@ void LiveMode::Run() {
     return;
   }
   REXLOG_INFO("live: renderer {}", tl_backend_renderer(backend));
+  if (options_.frame_latency) {
+    const bool applied = tl_backend_set_frame_latency(backend, options_.frame_latency) == 0;
+    REXLOG_INFO("live: frame latency {}: {}", options_.frame_latency,
+                applied ? "applied" : "not available with this render system");
+  }
   // When the presents reach the screen, where the window system says (presentation_time.h): the
   // swap-to-screen latency, next to the swap-to-presented one.
   std::unique_ptr<platform::PresentationClock> presentation =

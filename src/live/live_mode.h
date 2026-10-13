@@ -60,6 +60,9 @@ struct LiveOptions {
   // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue); 0:
   // one with vsync, two without (frame_queue.h FrameQueueDepth).
   size_t frame_queue = 0;
+  // Frames the render system may queue ahead of the display (--native_frame_latency); 0: the
+  // driver's.
+  uint32_t frame_latency = 0;
   // OGRE's log file; empty: none (debugger output only).
   std::string ogre_log_path;
   // Session recording (session_file.h): every consumed frame to this file, up to the cap.

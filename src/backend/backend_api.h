@@ -105,6 +105,9 @@ enum tl_key { TL_KEY_F9 = 1 };
 uint32_t tl_backend_take_keys(tl_backend* b);
 /* Vertical sync of a visible window, while running (the window the backend presents in). */
 void tl_backend_set_vsync(tl_backend* b, int vsync);
+/* How many frames the render system may queue ahead of the display (Direct3D 11's maximum frame
+ * latency). Returns 0 when applied, nonzero where the render system has no such setting (GL3+). */
+int tl_backend_set_frame_latency(tl_backend* b, uint32_t frames);
 /* A window inside another application's (tl_backend_create_child): follows its new size. No-op
  * for other windows. */
 void tl_backend_resize_window(tl_backend* b, uint32_t width, uint32_t height);

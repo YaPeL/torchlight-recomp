@@ -322,6 +322,7 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 }
 
 bool HasDirect3D11(const std::string&) { return false; }
+bool SetDirect3D11FrameLatency(void*, uint32_t) { return false; }
 
 // Not probed: GL3+ is the only render system, so there is nothing to fall back to.
 bool CanCreateGl33Context() { return true; }

@@ -276,6 +276,7 @@ std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string
 }
 
 bool HasDirect3D11(const std::string&) { return false; }
+bool SetDirect3D11FrameLatency(void*, uint32_t) { return false; }
 
 // Not probed: GL3+ is the only render system, so there is nothing to fall back to.
 bool CanCreateGl33Context() { return true; }
