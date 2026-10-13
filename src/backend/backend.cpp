@@ -1697,6 +1697,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
   if (parent) parent_window = {parent->system, parent->window, parent->display};
   b->width = width;
   b->height = height;
+  std::string failure;  // an exception's description, handled after the handler
   try {
     // OGRE's log, made before the root so the root does not make its own next to the process.
     if (!Ogre::LogManager::getSingletonPtr()) {
@@ -1798,15 +1799,19 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
                   Ogre::RenderSystemCapabilities::vendorToString(caps->getVendor()) + " | " +
                   caps->getDriverVersion().toString();
   } catch (Ogre::Exception& e) {
-    // In OGRE's log too: a render system that cannot start (OpenGL below 3.3) says why there.
-    if (Ogre::LogManager* log = Ogre::LogManager::getSingletonPtr()) {
-      log->logError("backend creation failed: " + e.getFullDescription());
-    }
-    SetError(error, error_size, e.getFullDescription());
-    tl_backend_destroy(b);
-    return nullptr;
+    failure = e.getFullDescription();
   }
-  return b;
+  if (failure.empty()) return b;
+  // Outside the handler: the exception may come from a render system plugin (GL3+'s OpenGL 3.3
+  // assertion), whose code tl_backend_destroy unloads with the root; ending the handler after that
+  // ran the exception's destructor from the unloaded library (a crash instead of the error).
+  // In OGRE's log too: a render system that cannot start says why there.
+  if (Ogre::LogManager* log = Ogre::LogManager::getSingletonPtr()) {
+    log->logError("backend creation failed: " + failure);
+  }
+  SetError(error, error_size, failure);
+  tl_backend_destroy(b);
+  return nullptr;
 }
 
 }  // namespace

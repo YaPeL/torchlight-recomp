@@ -115,6 +115,7 @@ void LiveMode::Start(const LiveOptions& options) {
   capture::Session::Get().EnableLive(&queue_, &store_);
   finished_ = false;
   thread_ = std::thread([this] {
+    platform::SetCurrentThreadName("tl backend");
     Run();
     finished_ = true;
   });
@@ -232,6 +233,7 @@ void LiveMode::Run() {
                               "Torchlight - native OGRE backend (live)", err, sizeof(err));
   if (!backend) {
     REXLOG_ERROR("live: backend creation failed: {}", err);
+    if (options_.on_backend_failed) options_.on_backend_failed(err);
     return;
   }
   REXLOG_INFO("live: renderer {}", tl_backend_renderer(backend));

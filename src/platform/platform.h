@@ -69,6 +69,9 @@ GamepadState ReadGamepad();
 // Whether there is a display to open windows on (tests that need a GL context skip without one).
 // Linux: $DISPLAY or $WAYLAND_DISPLAY set. Windows: always.
 bool HasDisplay();
+// Names the calling thread for profilers and debuggers (Linux keeps 15 characters): our threads
+// next to the SDK's, which it names itself ("Main XThread", "GPU Commands").
+void SetCurrentThreadName(const char* name);
 
 // ---- first start ------------------------------------------------------------------------------
 // The game's files are installed before the runtime's window exists (game_setup/first_run.h): plain

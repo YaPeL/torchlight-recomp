@@ -15,6 +15,7 @@
 #include <vector>
 
 #include <mach-o/dyld.h>
+#include <pthread.h>
 #include <sys/sysctl.h>
 
 #import <AppKit/AppKit.h>
@@ -274,6 +275,8 @@ std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string
   }
   return std::make_unique<CocoaTopLevelWindow>(window);
 }
+
+void SetCurrentThreadName(const char* name) { pthread_setname_np(name); }
 
 bool HasDirect3D11(const std::string&) { return false; }
 bool SetDirect3D11FrameLatency(void*, uint32_t) { return false; }

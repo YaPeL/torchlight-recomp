@@ -11,6 +11,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <cstring>
+#include <pthread.h>
 #include <filesystem>
 #include <system_error>
 #include <tuple>
@@ -71,6 +72,12 @@ std::string UserDir(UserFolderKind kind, const std::filesystem::path& sub = {}) 
 }  // namespace
 
 bool HasDisplay() { return std::getenv("DISPLAY") || std::getenv("WAYLAND_DISPLAY"); }
+
+void SetCurrentThreadName(const char* name) {
+  char shortened[16] = {};
+  std::strncpy(shortened, name, sizeof(shortened) - 1);
+  pthread_setname_np(pthread_self(), shortened);
+}
 
 std::string ShaderCacheDir() {
   return UserDir(UserFolderKind::kCache, "ogre");

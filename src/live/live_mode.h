@@ -55,6 +55,8 @@ struct LiveOptions {
   // presenting; request_ui_frame asks for the next UI frame after each present.
   UiOverlay* ui = nullptr;
   std::function<void()> request_ui_frame;
+  // The backend could not start (its thread): tells the player (DialogHost::renderer_failed).
+  std::function<void(const std::string& reason)> on_backend_failed;
   // The producer's cost per hook and section, timed and logged (--native_producer_timing).
   bool producer_timing = false;
   // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue); 0:

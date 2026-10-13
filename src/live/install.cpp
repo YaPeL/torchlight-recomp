@@ -530,6 +530,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
+  options.on_backend_failed = dialogs.renderer_failed;
   options.frame_queue = size_t(std::max(0, REXCVAR_GET(native_frame_queue)));
   options.frame_latency = uint32_t(std::max(0, REXCVAR_GET(native_frame_latency)));
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.

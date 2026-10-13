@@ -667,7 +667,7 @@ What is left for later, each documented where it was evaluated:
   limited by the guest's thread, not the backend; it waits for a machine where the backend falls
   behind on the real route.
 - **The buffer bindings** (`setVertexBufferBinding`, slot 85; docs/native-skip-guest-d3d.md, class
-  B): not read yet; after steps c and d brought nothing measurable here, it goes with a machine
+  B): weighed 2026-10-13 (below, 0.2 %); after steps c and d brought nothing measurable here, it goes with a machine
   that can show small gains.
 - **Backpressure with vsync and no frame cap** (above): the one case where the guest makes frames
   that are dropped (about two thirds at 60 Hz); it could save CPU and battery (the Steam Deck).
@@ -752,8 +752,49 @@ The player could not tell them apart by feel. **Taken**: since `develop` (this s
 queue holds one frame with vsync and two without (`--native_frame_queue`, 0 = that rule;
 `live/frame_queue.h` `FrameQueueDepth`).
 
+**The display's own clock, last try (closed for this iteration).** With Wayland's presentation
+times as the vblank clock (development builds), on top of the queue of one: the guest's vblank in
+phase with the display's, its phase moved by the queue's wait (later while frames waited, earlier
+at once when the backend waited for one), so each guest frame would be cut just before the backend
+takes it (an SDK patch, `AlignGuestVblank`, on `feature/vsync-latency` only). Two runs against the
+queue of one: 49-50 ms to the screen against 43-54 ms, the queue's wait unchanged (about 17.5 ms),
+the phase never settled (11-14 ms after the display's vblank, about 85 frames a period late): the
+guest's frame time moves too much from frame to frame for one phase to be both just before the
+backend and not late. The criterion (10 ms less than the queue of one, the same presented rate, no
+more gaps) was not met, so the display's clock is not pursued on other platforms in this iteration;
+the branch keeps the code (presentation-time measurement aside, which is in `develop`).
+
 Pending: Windows (Direct3D 11 queues up to three frames in DXGI by default; one is a candidate,
-`--native_frame_latency` on `feature/vsync-latency`, measured by the Windows agent) and macOS.
+`--native_frame_latency` on `feature/d3d11-frame-latency`, draft pull request 1, measured by the
+Windows agent) and macOS.
+
+### The buffer bindings and OGRE 14's interface: evaluated (2026-10-13)
+
+From the town square's DWARF profile of the stage's last runs (`cdq-off2`: develop with the D3D skip
+on, no cap, no vsync, 10 s from the town square mark; percentages of all the process's samples):
+
+- **The buffer bindings (slot 85, `setVertexBufferBinding` `0x821C3E78`)**: 0.20 % (0.16 % in its
+  body, 0.04 % in its thunk), its device call (`SetStreamSource`) already skipped since 2026-10-07.
+  The rest is its loop over the bindings and the members it keeps (`mLastVertexSourceCount`, the
+  buffers' tracking), which a host implementation would have to write as the guest does. The same
+  order as the device `SetTexture` and step d (0.10-0.15 %), which brought nothing measurable on
+  this laptop: **not done**; it waits for a machine that can show gains that small.
+- **OGRE 14's interface**: the backend's thread is 29.4 % of the samples: our translation and
+  frontend 9.8, the NVIDIA GL driver 9.5 (`libnvidia-eglcore` 8.6, EGL and the dispatch 1.0), OGRE
+  5.4 (`OgreMain` 3.2, the GL3+ render system 2.2), the C library 2.5. OGRE's share has no hot
+  spot: the shader constants' path (`GLSLSeparableProgram::updateUniforms`,
+  `GpuProgramParameters::_updateAutoParams`, `bindGpuProgramParameters`) 0.9, the vertex bindings
+  (`bindVertexElementToGpu`, `GLVertexArrayObject::bindToGpu`, `VertexBufferBinding::setBinding`
+  and its map) 0.5, the camera and frustum per draw (`Frustum::updateFrustumImpl`,
+  `isViewOutOfDate`, `setCustomProjectionMatrix`, `Matrix4::inverse`) 0.4, `_render` 0.1. What
+  OGRE 14 offers instead (shared parameters in uniform buffers, fewer automatic parameters, one
+  camera update per pass instead of per draw) would take a part of those 1.8 points of a thread
+  that is not the limit: on the reference route the guest's thread is (stage 2). **Not done**; if
+  a machine shows the backend behind (the two-stage pipeline's condition, above), these three are
+  the first places to cut, before the pipeline, and the driver's 9.5 points (the number of GL calls)
+  come with them.
+- **The two-stage pipeline** stays paused for the same reason: no machine measured so far shows the
+  backend behind on the reference route.
 
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 

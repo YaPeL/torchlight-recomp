@@ -242,6 +242,14 @@ bool SetDirect3D11FrameLatency(void* device, uint32_t frames) {
   return SUCCEEDED(dxgi->SetMaximumFrameLatency(frames));
 }
 
+void SetCurrentThreadName(const char* name) {
+  const int n = MultiByteToWideChar(CP_UTF8, 0, name, -1, nullptr, 0);
+  if (n <= 0) return;
+  std::wstring wide(size_t(n), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, name, -1, wide.data(), n);
+  SetThreadDescription(GetCurrentThread(), wide.c_str());
+}
+
 bool HasDirect3D11(const std::string& plugin_dir) {
   // OGRE appends _d to the plugin's name in its Debug build.
   std::error_code ec;

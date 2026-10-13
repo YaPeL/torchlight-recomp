@@ -3,6 +3,8 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
+#include <string>
 
 #include "settings/host_settings.h"
 
@@ -39,6 +41,9 @@ struct DialogHost {
   rex::Runtime* runtime = nullptr;
   rex::ui::ImGuiDrawer::FontSetupCallback fonts;
   rex::ui::ImGuiDrawer::StyleSetupCallback style;
+  // The native backend could not start (any thread; `reason` is the render system's): the app tells
+  // the player and closes, instead of leaving the window black.
+  std::function<void(const std::string& reason)> renderer_failed;
 };
 
 // Only mode, at the start of OnPostSetup (the window exists, the guest has not run): the video
