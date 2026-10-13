@@ -725,9 +725,11 @@ appeared in hers (slot 77). The save written in that same session, with no level
 sales, kept both. So a sold item stays with the merchant, in the stock and in the save, until the
 next load of that level rebuilds the stock.
 
-**[open, low priority]** In the run with `JCC - Map` turned off, a weapon sold to the remade Tarn
-did not appear. His first range was full (42 goods, slots 19-60). The ranges that Tarn has were not
-read.
+**[closed without further work, 2026-10-13]** In the run with `JCC - Map` turned off, a weapon
+sold to the remade Tarn did not appear. His first range was full (42 goods, slots 19-60). The likely
+cause is that this Tarn has no range for weapons, so the sold weapon had nowhere to go and was lost,
+as an item whose range is full is (above). **[inferred]** The ranges that Tarn has were not read,
+and the user decided not to look further.
 
 ## 7i. Mods that ship PC-compiled `.ADM` files crashed at startup (2026-10-10, fixed)
 
@@ -1025,6 +1027,13 @@ mod's `charactercreate.layout` class buttons with a player unit behind them. Wit
 that is 28 classes (JCC - Main's layout); a mod's class that no layout lists is not offered, as on
 PC. Icons: the game's classes keep theirs; the others show an empty frame with the class name. The
 mods' own PC icons (their `logo.imageset`) are a later improvement.
+
+**A skill a mod's file loses (2026-10-13).** The Kensai's tree (JCC - Class Skills - Fury, Kensai
+and Nethermage) places 15 skills in its third column, and the game holds 14: RAGEECHO (Rage, the
+level 10 row) is missing. Its definition, `JCC - Abomination/media/skills/Abomination/RageEcho/
+rageecho.dat`, is the one file of that folder written in 8-bit text instead of UTF-16. PC's text
+reader takes every file as UTF-16 (`mods/text_encoding.h`), so the file does not read there either:
+the skill is lost on PC too, a fault of the mod. **[read: the files; the PC reader as in 7e]**
 
 ## 8. Where mods go on our side
 
