@@ -12,6 +12,7 @@
 #include <optional>
 #include <string>
 
+#include <rex/chrono/clock.h>
 #include <rex/cvar.h>
 #include <rex/graphics/graphics_system.h>
 #include <rex/input/input_system.h>
@@ -47,6 +48,10 @@ REXCVAR_DEFINE_BOOL(native_present_latch_auto, false, "Torchlight",
                     "Live mode with vsync: late latch on the display's own clock where the window "
                     "system reports presentation times (Wayland, development builds), with the lead "
                     "adjusted to what makes the next refresh (docs/performance-profile.md)");
+REXCVAR_DEFINE_BOOL(native_vblank_phase, false, "Torchlight",
+                    "Live mode with vsync: the guest's vblank in phase with the display's where the "
+                    "window system reports presentation times (Wayland, development builds), so "
+                    "frames are cut just before the backend takes them (docs/performance-profile.md)");
 REXCVAR_DEFINE_INT32(native_frame_latency, 0, "Torchlight",
                      "Live mode: how many frames the render system may queue ahead of the display "
                      "(Direct3D 11's maximum frame latency); 0 (the default) leaves the driver's "
@@ -549,6 +554,16 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.present_lead_ms = std::max(0.0, REXCVAR_GET(native_present_lead_ms));
   options.frame_latency = uint32_t(std::max(0, REXCVAR_GET(native_frame_latency)));
   options.present_latch_auto = REXCVAR_GET(native_present_latch_auto);
+  if (REXCVAR_GET(native_vblank_phase) && dialogs.runtime) {
+    auto* graphics = static_cast<rex::graphics::GraphicsSystem*>(dialogs.runtime->graphics_system());
+    options.align_guest_vblank = [graphics](std::chrono::steady_clock::time_point at) {
+      const auto ago = std::chrono::steady_clock::now() - at;
+      const uint64_t now_ticks = rex::chrono::Clock::QueryGuestTickCount();
+      const uint64_t ago_ticks = uint64_t(std::chrono::duration<double>(ago).count() *
+                                          double(rex::chrono::Clock::guest_tick_frequency()));
+      if (graphics && ago_ticks < now_ticks) graphics->AlignGuestVblank(now_ticks - ago_ticks);
+    };
+  }
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);

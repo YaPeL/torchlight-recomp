@@ -327,6 +327,14 @@ void LiveMode::Run() {
   // vblank, and its feedback says whether it made it. A miss raises the lead at once, hits lower it
   // slowly, so it settles at what this compositor and machine need.
   const bool latch_auto = options_.vsync && options_.present_latch_auto && presentation;
+  // The guest's vblank in phase with the display's (--native_vblank_phase, presentation times):
+  // the guest's vblank falls `phase` after the display's, and `phase` moves so that each guest
+  // frame is cut just before the backend takes it: later while frames wait in the queue, earlier
+  // at once when the backend had to wait for one.
+  const bool guest_phase = options_.vsync && options_.align_guest_vblank && presentation;
+  double phase_ms = 0;
+  size_t phase_late = 0;
+  if (guest_phase) REXLOG_INFO("live: the guest's vblank in phase with the display's");
   Clock::time_point display_vblank{};
   double display_refresh_ms = 0;
   double auto_lead_ms = options_.present_lead_ms > 0 ? options_.present_lead_ms : 8.0;
@@ -386,6 +394,7 @@ void LiveMode::Run() {
   };
 
   while (running_) {
+    const auto pop_begin = Clock::now();
     // Late latch: with vsync the next present can go out at the display's next refresh, about one
     // interval after the last present returned; the frame is taken only `lead` before it, so it is
     // the newest the guest made by then and the present waits little.
@@ -417,6 +426,17 @@ void LiveMode::Run() {
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
     dropped_since_present += frame->dropped_before;
+    if (guest_phase && display_refresh_ms > 0) {
+      const double waited_ms = Ms(start - pop_begin);  // the backend waited for the guest
+      const double queued_ms = Ms(start - frame->cut);  // the frame waited for the backend
+      if (waited_ms > 0.5) {
+        ++phase_late;
+        phase_ms -= 1.5;
+      } else if (queued_ms > 2.5) {
+        phase_ms += 0.25;
+      }
+      phase_ms = std::fmod(phase_ms + display_refresh_ms, display_refresh_ms);
+    }
     FrameRecord record;
     record.swap = frame->swap;
     record.guest_ms = frame->producer.guest_ms;
@@ -477,6 +497,15 @@ void LiveMode::Run() {
         if (presentation) {
           cuts.emplace_back(frame->swap, frame->cut);
           take_shown();
+          if (guest_phase && display_refresh_ms > 0 && display_vblank.time_since_epoch().count()) {
+            const auto period = std::chrono::duration_cast<Clock::duration>(
+                std::chrono::duration<double, std::milli>(display_refresh_ms));
+            auto anchor = display_vblank + std::chrono::duration_cast<Clock::duration>(
+                                               std::chrono::duration<double, std::milli>(phase_ms));
+            const auto now = Clock::now();
+            while (anchor > now) anchor -= period;
+            options_.align_guest_vblank(anchor);
+          }
         }
         if (window_open) {
           PresentLatency latency;
@@ -568,6 +597,12 @@ void LiveMode::Run() {
         REXLOG_INFO("mods: texture check: {} named textures compared with what the game opened, {} differ, "
                     "{} not reported by the game",
                     c.compared, c.differing, c.unreported);
+      }
+      if (guest_phase) {
+        REXLOG_INFO("live guest phase: {:.2f} ms after the display's vblank, {} frames late this "
+                    "period",
+                    phase_ms, phase_late);
+        phase_late = 0;
       }
       if (latch_auto) {
         REXLOG_INFO("live late latch: lead {:.2f} ms, {} frames on their vblank, {} late this period "

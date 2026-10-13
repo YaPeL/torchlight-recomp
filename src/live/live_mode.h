@@ -66,6 +66,9 @@ struct LiveOptions {
   // Late latch on the display's clock where the window system reports presentation times
   // (--native_present_latch_auto): the lead adjusts itself, from present_lead_ms or 8 ms.
   bool present_latch_auto = false;
+  // Places the guest's next vblank a whole number of its intervals after `at` (a past instant);
+  // set with --native_vblank_phase.
+  std::function<void(std::chrono::steady_clock::time_point at)> align_guest_vblank;
   // Frames the render system may queue ahead of the display (--native_frame_latency); 0: the
   // driver's.
   uint32_t frame_latency = 0;
