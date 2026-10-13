@@ -752,8 +752,21 @@ The player could not tell them apart by feel. **Taken**: since `develop` (this s
 queue holds one frame with vsync and two without (`--native_frame_queue`, 0 = that rule;
 `live/frame_queue.h` `FrameQueueDepth`).
 
+**The display's own clock, last try (closed for this iteration).** With Wayland's presentation
+times as the vblank clock (development builds), on top of the queue of one: the guest's vblank in
+phase with the display's, its phase moved by the queue's wait (later while frames waited, earlier
+at once when the backend waited for one), so each guest frame would be cut just before the backend
+takes it (an SDK patch, `AlignGuestVblank`, on `feature/vsync-latency` only). Two runs against the
+queue of one: 49-50 ms to the screen against 43-54 ms, the queue's wait unchanged (about 17.5 ms),
+the phase never settled (11-14 ms after the display's vblank, about 85 frames a period late): the
+guest's frame time moves too much from frame to frame for one phase to be both just before the
+backend and not late. The criterion (10 ms less than the queue of one, the same presented rate, no
+more gaps) was not met, so the display's clock is not pursued on other platforms in this iteration;
+the branch keeps the code (presentation-time measurement aside, which is in `develop`).
+
 Pending: Windows (Direct3D 11 queues up to three frames in DXGI by default; one is a candidate,
-`--native_frame_latency` on `feature/vsync-latency`, measured by the Windows agent) and macOS.
+`--native_frame_latency` on `feature/d3d11-frame-latency`, draft pull request 1, measured by the
+Windows agent) and macOS.
 
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
