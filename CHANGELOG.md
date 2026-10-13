@@ -5,6 +5,13 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
+### Changed
+
+- With vsync on (the default), what you do reaches the screen about one frame sooner: from about
+  70 ms to about 52 ms on the development laptop. The frame counter (F3) shows the latency.
+
+## v0.7.6-beta (2026-10-12)
+
 Everything integrated into `develop` since v0.1.0-beta. Player-facing notes first, the technical
 details after them.
 

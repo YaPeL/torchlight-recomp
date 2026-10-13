@@ -57,9 +57,24 @@ struct LiveFrame {
   void AbsorbDropped(LiveFrame&& older);
 };
 
+// The frame queue's depth: `chosen` (--native_frame_queue), or automatic for 0. With vsync the
+// display takes one frame a refresh and a guest paced at the same rate (its own vblank, not the
+// display's) fills any queue: each frame then waits in it a refresh per frame ahead of it
+// (measured: about 35-40 ms of the 70 ms from the guest's swap to the screen with two). One keeps
+// only the newest. Without vsync the backend presents as fast as it can and a second frame keeps
+// it busy while the guest makes the next (one showed fewer presented frames standing still in the
+// dungeon). docs/performance-profile.md, vsync latency.
+constexpr size_t FrameQueueDepth(size_t chosen, bool vsync) {
+  if (chosen) return chosen;
+  return vsync ? 1 : 2;
+}
+
 class FrameQueue {
  public:
   explicit FrameQueue(size_t capacity = 2) : capacity_(capacity) {}
+
+  // How many frames wait for the backend (at least one); any thread, applied at the next push.
+  void SetCapacity(size_t capacity);
 
   // Producer: never blocks.
   void Push(LiveFrame frame);

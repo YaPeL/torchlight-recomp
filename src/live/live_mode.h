@@ -57,6 +57,9 @@ struct LiveOptions {
   std::function<void()> request_ui_frame;
   // The producer's cost per hook and section, timed and logged (--native_producer_timing).
   bool producer_timing = false;
+  // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue); 0:
+  // one with vsync, two without (frame_queue.h FrameQueueDepth).
+  size_t frame_queue = 0;
   // OGRE's log file; empty: none (debugger output only).
   std::string ogre_log_path;
   // Session recording (session_file.h): every consumed frame to this file, up to the cap.

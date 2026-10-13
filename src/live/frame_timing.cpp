@@ -87,11 +87,65 @@ void FrameTiming::OnSwap() {
     REXLOG_INFO("frame time (guest swap to swap): {}", *summary);
 }
 
-void FrameTiming::OnPresent(size_t dropped) {
+LatencyMeans MeanLatency(const std::vector<PresentLatency>& frames) {
+  LatencyMeans m;
+  for (const PresentLatency& f : frames) {
+    m.queue_ms += f.queue_ms;
+    m.render_ms += f.render_ms;
+    m.present_ms += f.present_ms;
+  }
+  m.frames = frames.size();
+  if (m.frames) {
+    m.queue_ms /= double(m.frames);
+    m.render_ms /= double(m.frames);
+    m.present_ms /= double(m.frames);
+  }
+  m.total_ms = m.queue_ms + m.render_ms + m.present_ms;
+  return m;
+}
+
+LatencyMeans FrameTiming::RecentLatency(std::chrono::milliseconds window) {
+  const auto since = FrameSeries::Clock::now() - window;
+  std::vector<PresentLatency> frames;
+  std::lock_guard lock(latency_mutex_);
+  for (auto it = latency_.rbegin(); it != latency_.rend() && it->time >= since; ++it) {
+    frames.push_back(it->latency);
+  }
+  return MeanLatency(frames);
+}
+
+void FrameTiming::OnScreen(double ms, double gap_ms) {
+  const auto now = FrameSeries::Clock::now();
+  {
+    std::lock_guard lock(latency_mutex_);
+    screen_.emplace_back(now, ms);
+    while (!screen_.empty() && now - screen_.front().first > kRecent) screen_.pop_front();
+  }
+  if (FrameObserver* observer = g_observer.load()) observer->OnScreenFrame(ms, gap_ms);
+}
+
+double FrameTiming::RecentScreenLatency(std::chrono::milliseconds window, size_t* frames) {
+  const auto since = FrameSeries::Clock::now() - window;
+  double sum = 0;
+  size_t n = 0;
+  std::lock_guard lock(latency_mutex_);
+  for (auto it = screen_.rbegin(); it != screen_.rend() && it->first >= since; ++it, ++n) {
+    sum += it->second;
+  }
+  if (frames) *frames = n;
+  return n ? sum / double(n) : 0.0;
+}
+
+void FrameTiming::OnPresent(size_t dropped, const PresentLatency& latency) {
   const auto now = FrameSeries::Clock::now();
   const auto ms = presented_.Add(now, dropped);
+  {
+    std::lock_guard lock(latency_mutex_);
+    latency_.push_back({now, latency});
+    while (!latency_.empty() && now - latency_.front().time > kRecent) latency_.pop_front();
+  }
   if (FrameObserver* observer = g_observer.load(); observer && ms) {
-    observer->OnPresentedFrame(*ms, dropped);
+    observer->OnPresentedFrame(*ms, dropped, latency);
   }
   size_t period_dropped = 0;
   if (auto summary = presented_.TakeSummary(now, &period_dropped)) {

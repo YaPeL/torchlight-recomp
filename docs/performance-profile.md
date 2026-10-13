@@ -700,6 +700,61 @@ resolution, `--native_skip_guest_d3d=true`), develop at dfc354a or later:
 3. What to send back: the machine (CPU, GPU, driver, monitor refresh), the numbers above, and
    whether the game runs in a window or full screen.
 
+### Vsync latency (2026-10-13)
+
+With the player's defaults (frame rate cap 60, vsync on) the time from the guest's swap to the
+screen was about 70 ms. Measured in parts since this stage:
+
+- **Swap to presented**, in three parts per presented frame (`live/frame_timing.h`
+  `PresentLatency`): in the frame queue until the backend takes it, the backend's work up to the
+  present, and the present itself (with vsync, its wait for the display). In the live summary
+  (`swap-to-presented latency`, `of it waiting in the frame queue`), the measurement scripts'
+  `perf step '...' latency:` lines and a line of the frame counter (F3).
+- **Swap to screen**: the window system's presentation time of each frame. Wayland's
+  presentation-time protocol, in development builds with `TORCHLIGHT_PRESENTATION_TIME`
+  (`platform/presentation_time.h`): the `swap-to-screen latency` line, `perf step '...' on
+  screen:` (with the gaps over 25 ms between shown frames, a refresh shown twice) and "to the
+  screen" in F3. Elsewhere only the first.
+
+Where the 70 ms went (automatic runs, `measure-fight-town` with vsync at 60 Hz, this laptop on
+Wayland): 35-40 ms in the frame queue, about 2 ms of the backend's work, about 14 ms in the
+present's wait, and about 15 ms from the present's return to the screen (the compositor shows a
+commit at its next refresh). The queue was full: the guest is paced by the SDK's vblank, a 60 Hz
+clock of its own (patch 10), and the display by its own; the two never line up, so the two frames
+of the queue fill and each frame waits almost two refreshes. **Synthetic numbers** (two runs each,
+the steps' means), swap to screen:
+
+| Lever | Presented fps | Swap to screen | Gaps over 25 ms per step |
+|---|---|---|---|
+| None (two frames queued) | 59.8-60.0 | 64-77 ms | 1-2 |
+| A queue of one frame (`--native_frame_queue=1`) | 59.7-60.0 | 44-57 ms | 0-4 |
+| Backpressure at the guest's swap (`feature/backpressure`) | 59.7-59.9 | no change (swap to presented 48-50 ms) | — |
+| The guest's vblank aligned with each present's return | 36.6-38.9 | — | — |
+| Late latch, a fixed lead of 5 or 8 ms | 31-37 | — | hundreds |
+| Late latch, 11 ms | 59.7-60.0 | 40-53 ms | 2-3 |
+| Late latch on the display's clock (presentation times), lead adjusted | 59.2-59.9 | 35-42 ms | 3-24 |
+
+- **The alignment and the fixed latches** take the present's return as the display's vblank. It
+  is one only while the present blocks: once the backend is early, the present returns at once,
+  the phase moves later each frame and a refresh of every two is lost.
+- **The auto latch** on Wayland's presentation times got 7-10 ms more than the queue of one, but
+  its lead did not settle: first it kept probing down into missed refreshes (21-24 gaps a step),
+  then, kept above the leads that had missed, it rose to the top (15.7 ms of 16.7) because refreshes
+  are missed now and then whatever the lead (the compositor, a late guest frame). Not taken.
+- **Without vsync** (no cap), the queue of one gave 4-5 ms less to the screen in the fight and the
+  town square at the same presented rate, but fewer presented frames standing still in the dungeon
+  in both runs (176-193 against 198-203 fps, more drops). So it applies with vsync only.
+
+**The hand runs decide** (four blind runs, the reference route with the step overlay, the player's
+defaults; 1 and 4 two frames, 2 and 3 one): swap to screen 63-76 ms against 49-55 ms, the same
+presented rate (59.4-60.0) and drops; the fan and the package the same (3050-3280 rpm, 75-76 C).
+The player could not tell them apart by feel. **Taken**: since `develop` (this stage), the frame
+queue holds one frame with vsync and two without (`--native_frame_queue`, 0 = that rule;
+`live/frame_queue.h` `FrameQueueDepth`).
+
+Pending: Windows (Direct3D 11 queues up to three frames in DXGI by default; one is a candidate,
+`--native_frame_latency` on `feature/vsync-latency`, measured by the Windows agent) and macOS.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
