@@ -65,15 +65,17 @@ class WaylandPresentationClock final : public PresentationClock {
     static const wp_presentation_feedback_listener kFeedback = {
         [](void*, struct wp_presentation_feedback*, wl_output*) {},
         [](void* data, struct wp_presentation_feedback* feedback, uint32_t sec_hi, uint32_t sec_lo,
-           uint32_t nsec, uint32_t, uint32_t, uint32_t, uint32_t) {
+           uint32_t nsec, uint32_t refresh, uint32_t, uint32_t, uint32_t) {
           auto* self = static_cast<WaylandPresentationClock*>(data);
           const auto ns = std::chrono::seconds((uint64_t(sec_hi) << 32) | sec_lo) +
                           std::chrono::nanoseconds(nsec);
-          self->Done(feedback, std::chrono::steady_clock::time_point(
-                                   std::chrono::duration_cast<std::chrono::steady_clock::duration>(ns)));
+          self->Done(feedback,
+                     std::chrono::steady_clock::time_point(
+                         std::chrono::duration_cast<std::chrono::steady_clock::duration>(ns)),
+                     std::chrono::nanoseconds(refresh));
         },
         [](void* data, struct wp_presentation_feedback* feedback) {
-          static_cast<WaylandPresentationClock*>(data)->Done(feedback, std::nullopt);
+          static_cast<WaylandPresentationClock*>(data)->Done(feedback, std::nullopt, {});
         }};
     wp_presentation_feedback_add_listener(feedback, &kFeedback, this);
     pending_[feedback] = id;
@@ -88,10 +90,11 @@ class WaylandPresentationClock final : public PresentationClock {
 
  private:
   void Done(struct wp_presentation_feedback* feedback,
-            std::optional<std::chrono::steady_clock::time_point> time) {
+            std::optional<std::chrono::steady_clock::time_point> time,
+            std::chrono::nanoseconds refresh) {
     auto it = pending_.find(feedback);
     if (it != pending_.end()) {
-      if (time) shown_.push_back({it->second, *time});
+      if (time) shown_.push_back({it->second, *time, refresh});
       pending_.erase(it);
     }
     wp_presentation_feedback_destroy(feedback);

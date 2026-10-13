@@ -64,6 +64,9 @@ struct LiveOptions {
   // With vsync, take the newest frame only this long before the display's next refresh (late
   // latch, --native_present_lead_ms); 0: as soon as the backend is free.
   double present_lead_ms = 0;
+  // Late latch on the display's clock where the window system reports presentation times
+  // (--native_present_latch_auto): the lead adjusts itself, from present_lead_ms or 8 ms.
+  bool present_latch_auto = false;
   // Frames the render system may queue ahead of the display (--native_frame_latency); 0: the
   // driver's.
   uint32_t frame_latency = 0;

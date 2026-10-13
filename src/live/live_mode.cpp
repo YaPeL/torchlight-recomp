@@ -312,14 +312,71 @@ void LiveMode::Run() {
   // The display's refresh interval, from the presents' (late latch).
   double refresh_ms = 1000.0 / 60.0;
   Clock::time_point last_shown{};  // the screen's previous frame (presentation times)
+  // Late latch on the display's own clock (--native_present_latch_auto, presentation times): the
+  // last vblank the window system reported and its period are the grid; each frame aims at a
+  // vblank, and its feedback says whether it made it. A miss raises the lead at once, hits lower it
+  // slowly, so it settles at what this compositor and machine need.
+  const bool latch_auto = options_.vsync && options_.present_latch_auto && presentation;
+  Clock::time_point display_vblank{};
+  double display_refresh_ms = 0;
+  double auto_lead_ms = options_.present_lead_ms > 0 ? options_.present_lead_ms : 8.0;
+  std::deque<std::pair<uint64_t, Clock::time_point>> targets;  // frame id, vblank aimed at
+  size_t latch_hits = 0, latch_misses = 0;
+  if (latch_auto) REXLOG_INFO("live: late latch on the display's clock, lead from {:.1f} ms", auto_lead_ms);
+  auto vblank_after = [&](Clock::time_point t) {
+    const auto period = std::chrono::duration<double, std::milli>(display_refresh_ms);
+    const double k = std::ceil(std::chrono::duration<double, std::milli>(t - display_vblank) / period);
+    return display_vblank +
+           std::chrono::duration_cast<Clock::duration>(period * std::max(1.0, k));
+  };
+  // The presentation feedback that arrived: the swap-to-screen latency, the vblank grid, the
+  // auto latch's hits and misses.
+  auto take_shown = [&] {
+    for (const auto& shown : presentation->TakeShown()) {
+      if (shown.time > display_vblank) display_vblank = shown.time;
+      if (shown.refresh.count() > 0) {
+        display_refresh_ms = std::chrono::duration<double, std::milli>(shown.refresh).count();
+      }
+      while (!targets.empty() && targets.front().first < shown.id) targets.pop_front();
+      if (!targets.empty() && targets.front().first == shown.id && display_refresh_ms > 0) {
+        const double late = Ms(shown.time - targets.front().second);
+        if (late > display_refresh_ms / 2) {
+          ++latch_misses;
+          auto_lead_ms = std::min(display_refresh_ms - 1.0, auto_lead_ms + 2.0);
+        } else {
+          ++latch_hits;
+          auto_lead_ms = std::max(1.0, auto_lead_ms - 0.05);
+        }
+      }
+      while (!cuts.empty() && cuts.front().first < shown.id) cuts.pop_front();
+      if (cuts.empty() || cuts.front().first != shown.id) continue;
+      const double ms = Ms(shown.time - cuts.front().second);
+      screen_ms.Add(ms);
+      const double gap = last_shown.time_since_epoch().count() ? Ms(shown.time - last_shown) : 0.0;
+      last_shown = shown.time;
+      FrameTiming::Get().OnScreen(ms, gap);
+    }
+    while (cuts.size() > 64) cuts.pop_front();
+    while (targets.size() > 64) targets.pop_front();
+  };
 
   while (running_) {
     // Late latch: with vsync the next present can go out at the display's next refresh, about one
     // interval after the last present returned; the frame is taken only `lead` before it, so it is
     // the newest the guest made by then and the present waits little.
-    const bool latch = options_.vsync && options_.present_lead_ms > 0 &&
-                       last_present.time_since_epoch().count() != 0;
-    if (latch) {
+    if (latch_auto) take_shown();
+    const bool auto_ready = latch_auto && display_refresh_ms > 0 &&
+                            display_vblank.time_since_epoch().count() != 0;
+    const bool latch = auto_ready || (options_.vsync && options_.present_lead_ms > 0 &&
+                                      !latch_auto && last_present.time_since_epoch().count() != 0);
+    const auto lead = [&] {
+      return std::chrono::duration_cast<Clock::duration>(
+          std::chrono::duration<double, std::milli>(auto_lead_ms));
+    };
+    if (auto_ready) {
+      const auto wake = vblank_after(Clock::now() + lead()) - lead();
+      if (wake > Clock::now()) std::this_thread::sleep_until(wake);
+    } else if (latch) {
       const auto wake = last_present + std::chrono::duration_cast<Clock::duration>(
                                            std::chrono::duration<double, std::milli>(
                                                std::max(0.0, refresh_ms - options_.present_lead_ms)));
@@ -327,6 +384,7 @@ void LiveMode::Run() {
     }
     auto frame = queue_.Pop(std::chrono::milliseconds(100), latch);
     if (!frame) continue;
+    if (auto_ready) targets.emplace_back(frame->swap, vblank_after(Clock::now() + lead()));
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
     dropped_since_present += frame->dropped_before;
@@ -388,17 +446,7 @@ void LiveMode::Run() {
         const auto present_end = Clock::now();
         if (presentation) {
           cuts.emplace_back(frame->swap, frame->cut);
-          for (const auto& shown : presentation->TakeShown()) {
-            while (!cuts.empty() && cuts.front().first < shown.id) cuts.pop_front();
-            if (cuts.empty() || cuts.front().first != shown.id) continue;
-            const double ms = Ms(shown.time - cuts.front().second);
-            screen_ms.Add(ms);
-            const double gap =
-                last_shown.time_since_epoch().count() ? Ms(shown.time - last_shown) : 0.0;
-            last_shown = shown.time;
-            FrameTiming::Get().OnScreen(ms, gap);
-          }
-          while (cuts.size() > 64) cuts.pop_front();
+          take_shown();
         }
         if (window_open) {
           PresentLatency latency;
@@ -491,6 +539,12 @@ void LiveMode::Run() {
         REXLOG_INFO("mods: texture check: {} named textures compared with what the game opened, {} differ, "
                     "{} not reported by the game",
                     c.compared, c.differing, c.unreported);
+      }
+      if (latch_auto) {
+        REXLOG_INFO("live late latch: lead {:.2f} ms, {} frames on their vblank, {} late this period "
+                    "(display refresh {:.3f} ms)",
+                    auto_lead_ms, latch_hits, latch_misses, display_refresh_ms);
+        latch_hits = latch_misses = 0;
       }
       if (options_.backpressure) {
         const FrameQueue::Waits w = queue_.waits();

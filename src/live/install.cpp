@@ -43,6 +43,10 @@ REXCVAR_DEFINE_STRING(live_record, "", "Torchlight",
 REXCVAR_DEFINE_INT32(native_frame_queue, 2, "Torchlight",
                      "Live mode: how many guest frames wait for the backend before the oldest is "
                      "dropped (docs/performance-profile.md, vsync latency); for measurements");
+REXCVAR_DEFINE_BOOL(native_present_latch_auto, false, "Torchlight",
+                    "Live mode with vsync: late latch on the display's own clock where the window "
+                    "system reports presentation times (Wayland, development builds), with the lead "
+                    "adjusted to what makes the next refresh (docs/performance-profile.md)");
 REXCVAR_DEFINE_INT32(native_frame_latency, 0, "Torchlight",
                      "Live mode: how many frames the render system may queue ahead of the display "
                      "(Direct3D 11's maximum frame latency); 0 (the default) leaves the driver's "
@@ -573,6 +577,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.backpressure = REXCVAR_GET(live_backpressure);
   options.present_lead_ms = std::max(0.0, REXCVAR_GET(native_present_lead_ms));
   options.frame_latency = uint32_t(std::max(0, REXCVAR_GET(native_frame_latency)));
+  options.present_latch_auto = REXCVAR_GET(native_present_latch_auto);
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);

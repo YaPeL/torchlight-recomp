@@ -23,7 +23,8 @@ class PresentationClock {
   // Frames the compositor never showed (replaced by a later one) are left out.
   struct Shown {
     uint64_t id;
-    std::chrono::steady_clock::time_point time;
+    std::chrono::steady_clock::time_point time;  // the refresh that showed it (its vblank)
+    std::chrono::nanoseconds refresh{0};         // the display's refresh period; 0 if unknown
   };
   virtual std::vector<Shown> TakeShown() = 0;
 };
