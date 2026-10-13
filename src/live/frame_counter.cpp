@@ -78,6 +78,12 @@ class CounterDialog : public rex::ui::ImGuiDialog {
       ImGui::Text("game %.0f FPS, %zu dropped", s.fps, dropped);
       ImGui::Text("shown: 1%% low %.0f FPS", p.low_1pct_fps);
       ImGui::Text("game: 1%% low %.0f FPS", s.low_1pct_fps);
+      // The last second's swap-to-present latency and its parts (frame_timing.h PresentLatency).
+      const LatencyMeans l = FrameTiming::Get().RecentLatency(std::chrono::seconds(1));
+      if (l.frames) {
+        ImGui::Text("latency %.0f ms: queue %.0f, render %.0f, present %.0f", l.total_ms,
+                    l.queue_ms, l.render_ms, l.present_ms);
+      }
     } else {
       ImGui::Text("%.1f ms", s.last_ms);
       ImGui::Text("1%% low %.0f FPS", s.low_1pct_fps);

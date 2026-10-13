@@ -39,6 +39,14 @@ REXCVAR_DEFINE_STRING(native_live, "only", "Torchlight",
 REXCVAR_DEFINE_STRING(live_record, "", "Torchlight",
                       "Live mode: record every frame the native backend consumes to this file "
                       "(session recording, replay --session); empty does not record");
+REXCVAR_DEFINE_INT32(native_frame_queue, 2, "Torchlight",
+                     "Live mode: how many guest frames wait for the backend before the oldest is "
+                     "dropped (docs/performance-profile.md, vsync latency); for measurements");
+REXCVAR_DEFINE_BOOL(native_vblank_follows_display, false, "Torchlight",
+                    "Live mode with vsync: align the guest's vblank with the display's (each "
+                    "vsynced present), so a frame starts right after the display's vblank and is "
+                    "shown at the next one; only while the frame rate cap is the display's refresh "
+                    "rate (docs/performance-profile.md, vsync latency)");
 REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
                     "Live mode: time the recording cost per hook and section and log it (live "
                     "producer, live measurements); off by default, it costs the guest's render "
@@ -283,6 +291,22 @@ void ApplyLanguage(const std::string& language, const std::filesystem::path& gam
   REXLOG_INFO("settings: language {} (console language {})", language, *id);
 }
 
+// The guest's vblank follows the display's (--native_vblank_follows_display): set while the guest's
+// vblank rate is the display's refresh rate, read by the backend thread after each vsynced present.
+std::atomic<rex::graphics::GraphicsSystem*> g_vblank_graphics{nullptr};
+std::atomic<bool> g_vblank_follows{false};
+
+void UpdateVblankFollows(uint32_t guest_hz, rex::graphics::GraphicsSystem* graphics) {
+  const uint32_t display_hz = platform::GameDisplay().refresh_hz;
+  const bool follows = REXCVAR_GET(native_vblank_follows_display) && graphics && guest_hz &&
+                       display_hz && guest_hz == display_hz;
+  g_vblank_graphics = graphics;
+  if (follows != g_vblank_follows.exchange(follows) || follows) {
+    REXLOG_INFO("live: the guest's vblank {} the display's ({} Hz guest, {} Hz display)",
+                follows ? "follows" : "does not follow", guest_hz, display_hz);
+  }
+}
+
 // Frame rate cap = the guest's vblank: with the runtime's --vsync cvar on, its vblank thread runs
 // at SetGuestVblankRate (patches/rexglue-guest-vblank-rate.patch); off, unthrottled (no cap). Both
 // are read by the vblank thread every tick. A --vsync given on the command line wins. The cvar
@@ -301,9 +325,12 @@ void ApplyFpsCap(uint32_t fps_cap, rex::Runtime* runtime) {
   if (flag->source == rex::cvar::Source::kCommandLine) {
     REXLOG_INFO("settings: fps cap left to --vsync={} from the command line",
                 rex::cvar::Query<bool>("vsync"));
+    // The video mode's rate (patch 10's 0), 60 Hz for this game's modes.
+    UpdateVblankFollows(rex::cvar::Query<bool>("vsync") ? 60 : 0, graphics);
     return;
   }
   graphics->SetGuestVblankRate(fps_cap);
+  UpdateVblankFollows(fps_cap, graphics);
   rex::cvar::SetFlagByName("vsync", fps_cap == 0 ? "false" : "true");
 }
 
@@ -522,6 +549,11 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
+  options.frame_queue = size_t(std::max(1, REXCVAR_GET(native_frame_queue)));
+  options.on_vsynced_present = [] {
+    if (!g_vblank_follows.load(std::memory_order_relaxed)) return;
+    if (rex::graphics::GraphicsSystem* graphics = g_vblank_graphics.load()) graphics->AlignGuestVblank();
+  };
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);

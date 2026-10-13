@@ -107,6 +107,7 @@ LiveMode& LiveMode::Get() {
 
 void LiveMode::Start(const LiveOptions& options) {
   options_ = options;
+  queue_.SetCapacity(options.frame_queue);
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
   capture::Session::Get().EnableLive(&queue_, &store_);
@@ -269,7 +270,7 @@ void LiveMode::Run() {
   }
   uint64_t recorded_bytes_before = recorder.bytes_written();
 
-  Series backend_ms, latency_ms, texture_ms, present_ms, record_ms;
+  Series backend_ms, latency_ms, queue_ms, texture_ms, present_ms, record_ms;
   // Consumer breakdown per frame (FrameStep), means over the period.
   double content_ms = 0, commands_ms = 0, draws_ms = 0, end_ms = 0, after_ms = 0, release_ms = 0;
   size_t frames = 0, frames_dropped = 0, textures_created = 0, slow_texture_frames = 0;
@@ -345,8 +346,15 @@ void LiveMode::Run() {
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();
         if (window_open) {
-          FrameTiming::Get().OnPresent(dropped_since_present);
+          PresentLatency latency;
+          latency.queue_ms = Ms(start - frame->cut);
+          latency.render_ms = Ms(present_start - start);
+          latency.present_ms = Ms(present_end - present_start);
+          if (options_.vsync && options_.on_vsynced_present) options_.on_vsynced_present();
+          FrameTiming::Get().OnPresent(dropped_since_present, latency);
           dropped_since_present = 0;
+          latency_ms.Add(latency.total_ms());
+          queue_ms.Add(latency.queue_ms);
         }
         record.present_ms = Ms(present_end - present_start);
         present_ms.Add(record.present_ms);
@@ -381,7 +389,6 @@ void LiveMode::Run() {
     }
     auto end = Clock::now();
     backend_ms.Add(Ms(end - start));
-    latency_ms.Add(Ms(end - frame->cut));
     reclaimer.Free(std::move(*frame));
     ++frames;
     record.backend_ms = Ms(end - start);
@@ -407,12 +414,13 @@ void LiveMode::Run() {
           "live: {} frames rendered, {} dropped (backend behind), {} draws ({} drawn), "
           "{} draws with a texture not ready, {} textures created ({} preparation(s) over 16.7 ms)"
           "\n  backend frame: {}\n  present (vsync wait included): {}"
-          "\n  swap-to-presented latency: {}\n  texture preparation per "
+          "\n  swap-to-presented latency: {}\n    of it waiting in the frame queue: {}"
+          "\n  texture preparation per "
           "frame: {}\n  live content held: {:.1f} MiB (store {:.1f} MiB)"
           "\n  skipped:{}\n  degraded:{}\n  texture problems:{}",
           frames, frames_dropped, s.draws_total - draws_before, s.draws_drawn - drawn_before,
           s.textures_not_ready - not_ready_before, textures_created, slow_texture_frames,
-          backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(),
+          backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(), queue_ms.Summary(),
           texture_ms.Summary(),
           content.content_bytes() / 1048576.0, store_.bytes() / 1048576.0,
           Delta(s.skipped, skipped_before), Delta(s.degraded, degraded_before),

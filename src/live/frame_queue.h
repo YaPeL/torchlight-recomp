@@ -61,6 +61,9 @@ class FrameQueue {
  public:
   explicit FrameQueue(size_t capacity = 2) : capacity_(capacity) {}
 
+  // Before the producer starts (LiveMode::Start): how many frames wait for the backend.
+  void SetCapacity(size_t capacity) { capacity_ = capacity < 1 ? 1 : capacity; }
+
   // Producer: never blocks.
   void Push(LiveFrame frame);
   // Consumer: waits up to `timeout` for a frame.

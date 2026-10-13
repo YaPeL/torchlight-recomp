@@ -52,6 +52,21 @@ class FrameSeries {
   std::deque<Entry> recent_;
 };
 
+// A presented frame's latency: from the guest's swap that cut it to the return of its present, in
+// three parts. In the frame queue until the backend took it; the backend's work up to the present
+// (resources, commands, draws); the present itself, which with vsync waits for the display. What
+// happens after the present returns (the driver's queue, the scanout) is not measured.
+struct PresentLatency {
+  double queue_ms = 0, render_ms = 0, present_ms = 0;
+  double total_ms() const { return queue_ms + render_ms + present_ms; }
+};
+// The mean of each part over some frames, for the frame counter and the measurement scripts.
+struct LatencyMeans {
+  double total_ms = 0, queue_ms = 0, render_ms = 0, present_ms = 0;
+  size_t frames = 0;
+};
+LatencyMeans MeanLatency(const std::vector<PresentLatency>& frames);
+
 class FrameTiming {
  public:
   static FrameTiming& Get();
@@ -59,16 +74,26 @@ class FrameTiming {
   // Guest render thread, at every device swap.
   void OnSwap();
   // Live mode's backend thread, after every present that reached the window: `dropped` guest
-  // frames were skipped since the previous one (the backend was behind).
-  void OnPresent(size_t dropped);
+  // frames were skipped since the previous one (the backend was behind); `latency` is the
+  // presented frame's.
+  void OnPresent(size_t dropped, const PresentLatency& latency = {});
   // The last kRecent seconds, oldest first, for the frame counter (any thread).
   std::vector<float> Recent() { return guest_.Recent(); }
   // Empty unless frames are being presented (the native mode).
   std::vector<float> RecentPresented(size_t* dropped) { return presented_.Recent(dropped); }
+  // The presented frames' latency over the last `window` (any thread); no frames outside the native
+  // mode.
+  LatencyMeans RecentLatency(std::chrono::milliseconds window);
 
  private:
   FrameTiming() = default;
   FrameSeries guest_, presented_;
+  std::mutex latency_mutex_;
+  struct LatencyEntry {
+    FrameSeries::Clock::time_point time;
+    PresentLatency latency;
+  };
+  std::deque<LatencyEntry> latency_;  // the last kRecent
 };
 
 // "level load: N ms" in the log: one call of the guest's level load (guest_abi kLevelLoad).
@@ -82,7 +107,7 @@ class FrameObserver {
   virtual ~FrameObserver() = default;
   // Every guest swap; `ms` is the frame's time (0 for the first).
   virtual void OnGuestFrame(double ms) = 0;
-  virtual void OnPresentedFrame(double ms, size_t dropped) = 0;
+  virtual void OnPresentedFrame(double ms, size_t dropped, const PresentLatency& latency) = 0;
   virtual void OnLevelLoaded() = 0;
 };
 // Before the guest runs; null removes it.

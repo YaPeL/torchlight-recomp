@@ -80,6 +80,7 @@ std::string ClassName(const uint8_t* base, uint32_t object) {
 struct Segment {
   std::string name;
   std::vector<double> frames, presented;
+  std::vector<live::PresentLatency> latency;
   size_t dropped = 0;
 
   void Log() const {
@@ -103,6 +104,14 @@ struct Segment {
     REXLOG_INFO("perf step '{}' presented: {} frames, {:.1f} fps, mean {:.2f} ms, p99 {:.2f}, max "
                 "{:.2f}, {} guest frames dropped",
                 name, p.size(), 1000.0 * p.size() / sum, sum / p.size(), p99, p.back(), dropped);
+    if (latency.empty()) return;
+    const live::LatencyMeans m = live::MeanLatency(latency);
+    std::vector<double> totals;
+    for (const auto& l : latency) totals.push_back(l.total_ms());
+    const auto t = stats(totals, sum, p99);
+    REXLOG_INFO("perf step '{}' latency: mean {:.2f} ms (queue {:.2f}, render {:.2f}, present "
+                "{:.2f}), p99 {:.2f}, max {:.2f}",
+                name, m.total_ms, m.queue_ms, m.render_ms, m.present_ms, p99, t.back());
   }
 };
 
@@ -220,9 +229,10 @@ class ScriptRunner : public live::FrameObserver {
     driver_->Set(pad);
     for (const auto& a : actions) Run(a);
   }
-  void OnPresentedFrame(double ms, size_t dropped) override {
+  void OnPresentedFrame(double ms, size_t dropped, const live::PresentLatency& latency) override {
     std::lock_guard lock(mutex_);
     segment_.presented.push_back(ms);
+    segment_.latency.push_back(latency);
     segment_.dropped += dropped;
   }
   void OnLevelLoaded() override {
