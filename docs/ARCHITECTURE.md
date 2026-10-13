@@ -107,7 +107,9 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
 - `src/live/`: live mode: frame queue, content snapshots by version, the frame counter (F3) and
   frame timing, session recording (`--live_record`). The threads (`live_mode.h`):
   - the guest's render thread runs the producer: the hooks record each frame into a `LiveFrame`
-    (`capture/session.h`) and push it to a bounded queue at the swap, never waiting on the backend;
+    (`capture/session.h`) and push it to a bounded queue at the swap, never waiting on the backend
+    (one frame with vsync, two without: `frame_queue.h` `FrameQueueDepth`; the frame the backend
+    has not taken is replaced by the newer one);
   - one backend thread owns OGRE and its context: it applies each frame's resources, runs it
     through the `Frontend` and presents it; when it falls behind, guest frames are dropped (counted
     as dropped, next to the presented rate);
