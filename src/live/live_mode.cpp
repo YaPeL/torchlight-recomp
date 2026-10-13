@@ -332,6 +332,18 @@ void LiveMode::Run() {
   double auto_lead_ms = options_.present_lead_ms > 0 ? options_.present_lead_ms : 8.0;
   std::deque<std::pair<uint64_t, Clock::time_point>> targets;  // frame id, vblank aimed at
   size_t latch_hits = 0, latch_misses = 0;
+  // The leads that missed lately: the lead does not come back down to them for kMissMemory, so it
+  // does not keep probing the edge (each probe is a refresh shown twice).
+  constexpr auto kMissMemory = std::chrono::seconds(30);
+  std::deque<std::pair<Clock::time_point, double>> missed_leads;
+  auto lead_floor = [&](Clock::time_point now) {
+    while (!missed_leads.empty() && now - missed_leads.front().first > kMissMemory) {
+      missed_leads.pop_front();
+    }
+    double floor = 1.0;
+    for (const auto& [time, lead] : missed_leads) floor = std::max(floor, lead + 1.5);
+    return std::min(floor, display_refresh_ms - 1.0);
+  };
   if (latch_auto) REXLOG_INFO("live: late latch on the display's clock, lead from {:.1f} ms", auto_lead_ms);
   auto vblank_after = [&](Clock::time_point t) {
     const auto period = std::chrono::duration<double, std::milli>(display_refresh_ms);
@@ -350,12 +362,15 @@ void LiveMode::Run() {
       while (!targets.empty() && targets.front().first < shown.id) targets.pop_front();
       if (!targets.empty() && targets.front().first == shown.id && display_refresh_ms > 0) {
         const double late = Ms(shown.time - targets.front().second);
+        const auto now = Clock::now();
         if (late > display_refresh_ms / 2) {
           ++latch_misses;
-          auto_lead_ms = std::min(display_refresh_ms - 1.0, auto_lead_ms + 2.0);
+          missed_leads.emplace_back(now, auto_lead_ms);
+          auto_lead_ms = std::min(display_refresh_ms - 1.0,
+                                  std::max(auto_lead_ms + 2.0, lead_floor(now)));
         } else {
           ++latch_hits;
-          auto_lead_ms = std::max(1.0, auto_lead_ms - 0.05);
+          auto_lead_ms = std::max(lead_floor(now), auto_lead_ms - 0.02);
         }
       }
       while (!cuts.empty() && cuts.front().first < shown.id) cuts.pop_front();
