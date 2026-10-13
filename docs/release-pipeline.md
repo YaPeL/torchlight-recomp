@@ -478,7 +478,12 @@ announces it.
   build stops until the pin and `THIRD_PARTY_NOTICES.md` are updated. To be independent of that,
   the owner uploads the same verified file (`runtime-x86_64`, SHA-256 `156f4bdb…`, signed by
   type2-runtime's key) as an asset of a release of this repository, and `get_tools.sh` downloads
-  it from there with the same hash.
+  it from there with the same hash. Since 2026-10-13 `get_tools.sh` reads it from the prerelease
+  `appimage-runtime-8f39b89` of this repository (never latest; `store.sh` prunes only `deps-*`, and
+  the README badge reads `v*` tags) and falls back to upstream's continuous release while that
+  prerelease does not exist. To make it: `gh release create appimage-runtime-8f39b89 --prerelease
+  --title "AppImage runtime (type2-runtime 8f39b89)" runtime-x86_64` with the file
+  `get_tools.sh` checks.
 - **Re-running a release whose symbols were already pushed.** Each game job's Symbols step
   commits `<tag>/<platform>/` to `torchlight-symbols` and fails when there is nothing new to commit
   (a re-run with the same binaries: `git commit` exits 1). For v0.1.0-beta the owner deleted the
