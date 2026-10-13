@@ -1,0 +1,821 @@
+diff --git a/include/rex/codegen/config.h b/include/rex/codegen/config.h
+index 8200139..55ba2b2 100644
+--- a/include/rex/codegen/config.h
++++ b/include/rex/codegen/config.h
+@@ -96,6 +96,18 @@ struct RecompilerConfig {
+   bool crRegistersAsLocalVariables = false;
+   bool nonArgumentRegistersAsLocalVariables = false;
+   bool nonVolatileRegistersAsLocalVariables = false;
++  /// Registers that nonArgumentRegistersAsLocalVariables leaves in the context, from the TOML
++  /// list `non_argument_in_context` (r0, r2, r11, r12, f0, v32-v63): a title that passes one of
++  /// them between functions outside the ABI keeps it in PPCContext.
++  uint32_t nonArgumentGprsInContext = 0;  ///< bit N = rN
++  uint32_t nonArgumentFprsInContext = 0;  ///< bit N = fN
++  uint64_t nonArgumentVmxInContext = 0;   ///< bit N = v(32 + N)
++  /// Checking build for nonArgumentRegistersAsLocalVariables (`verify_non_argument_locals`):
++  /// every local non-argument register is also written through to the context, and each read
++  /// compares the local with the context first. They differ only where the title reads a value
++  /// another function left in the register (after a call, or at entry); the first difference at
++  /// each site is logged and the local value is used. Slower; for checking the option only.
++  bool verifyNonArgumentLocals = false;
+   bool generateExceptionHandlers = false;  ///< Generate SEH exception handler wrappers
+ 
+   // === Analysis tuning (optional) ===
+diff --git a/resources/templates/codegen/pch_h.inja b/resources/templates/codegen/pch_h.inja
+index 68274d2..88cafb3 100644
+--- a/resources/templates/codegen/pch_h.inja
++++ b/resources/templates/codegen/pch_h.inja
+@@ -16,6 +16,7 @@
+ {% endif %}{% if config_flags.cr_as_local %}#define REX_CONFIG_CR_AS_LOCAL
+ {% endif %}{% if config_flags.non_argument_as_local %}#define REX_CONFIG_NON_ARGUMENT_AS_LOCAL
+ {% endif %}{% if config_flags.non_volatile_as_local %}#define REX_CONFIG_NON_VOLATILE_AS_LOCAL
++{% endif %}{% if config_flags.verify_non_argument_locals %}#define REX_CONFIG_VERIFY_NON_ARGUMENT_LOCALS
+ {% endif %}
+ #define REX_IMAGE_BASE {{ image_base }}ull
+ #define REX_IMAGE_SIZE {{ image_size }}ull
+@@ -282,7 +283,51 @@ inline std::unordered_map<u32, jmp_buf>& get_jmp_buf_map() {
+   std::abort();
+ }
+ 
++{% if config_flags.verify_non_argument_locals %}//=============================================================================
++// non_argument_as_local check (verify_non_argument_locals)
+ //=============================================================================
++
++// The checking build writes every local non-argument register through to the context, so the two
++// differ only where the guest reads a value another function left in the register. The first
++// difference at each site is logged (64 sites at most) and the local value is used.
++#include <cstring>
++#include <string>
++
++inline void ppc_report_local_difference(const char* function, u32 address, const char* reg,
++                                        const void* local, const void* context, size_t size) {
++  static std::atomic<int> logged{0};
++  int count = logged.fetch_add(1, std::memory_order_relaxed);
++  if (count >= 64) {
++    if (count == 64) {
++      REXCPU_WARN("non_argument_as_local check: more differing sites, not logged");
++    }
++    return;
++  }
++  auto words = [size](const void* p) {
++    std::string text;
++    for (size_t i = 0; i < size; i += 4) {
++      u32 word;
++      std::memcpy(&word, static_cast<const u8*>(p) + i, 4);
++      text += fmt::format("{}{:08X}", i ? " " : "", word);
++    }
++    return text;
++  };
++  REXCPU_WARN("non_argument_as_local check: {} at {:08X} in {}: local {}, context {}", reg,
++              address, function, words(local), words(context));
++}
++
++#define REX_VERIFY_LOCAL(reg, address)                                          \
++  do {                                                                          \
++    if (__builtin_memcmp(&(reg), &ctx.reg, sizeof(reg)) != 0) [[unlikely]] {    \
++      static std::atomic<bool> rex_verify_reported{false};                      \
++      if (!rex_verify_reported.exchange(true, std::memory_order_relaxed)) {     \
++        ppc_report_local_difference(__func__, (address), #reg, &(reg), &ctx.reg, \
++                                    sizeof(reg));                               \
++      }                                                                         \
++    }                                                                           \
++  } while (0)
++
++{% endif %}//=============================================================================
+ // Trap Handling
+ //=============================================================================
+ 
+diff --git a/src/codegen/CMakeLists.txt b/src/codegen/CMakeLists.txt
+index cdd4f13..7d88d1c 100644
+--- a/src/codegen/CMakeLists.txt
++++ b/src/codegen/CMakeLists.txt
+@@ -12,6 +12,7 @@ set(CODEGEN_CORE_SOURCES
+     output_stamp.cpp
+     config.cpp
+     function_graph.cpp
++    verify_locals.cpp
+     function_scanner.cpp
+     sig_scanner.cpp
+     vtable_scanner.cpp
+diff --git a/src/codegen/builders/context.cpp b/src/codegen/builders/context.cpp
+index f78e0d8..a90ac2f 100644
+--- a/src/codegen/builders/context.cpp
++++ b/src/codegen/builders/context.cpp
+@@ -51,7 +51,8 @@ bool BuilderContext::localizeNonVolatiles() const {
+ std::string BuilderContext::r(size_t index) {
+   const auto& cfg = config();
+   if ((cfg.nonArgumentRegistersAsLocalVariables &&
+-       (index == 0 || index == 2 || index == 11 || index == 12)) ||
++       (index == 0 || index == 2 || index == 11 || index == 12) &&
++       !(cfg.nonArgumentGprsInContext & (1u << index))) ||
+       (localizeNonVolatiles() && index >= 14)) {
+     locals.r[index] = true;
+     return fmt::format("r{}", index);
+@@ -61,7 +62,8 @@ std::string BuilderContext::r(size_t index) {
+ 
+ std::string BuilderContext::f(size_t index) {
+   const auto& cfg = config();
+-  if ((cfg.nonArgumentRegistersAsLocalVariables && index == 0) ||
++  if ((cfg.nonArgumentRegistersAsLocalVariables && index == 0 &&
++       !(cfg.nonArgumentFprsInContext & 1u)) ||
+       (localizeNonVolatiles() && index >= 14)) {
+     locals.f[index] = true;
+     return fmt::format("f{}", index);
+@@ -71,7 +73,8 @@ std::string BuilderContext::f(size_t index) {
+ 
+ std::string BuilderContext::v(size_t index) {
+   const auto& cfg = config();
+-  if ((cfg.nonArgumentRegistersAsLocalVariables && (index >= 32 && index <= 63)) ||
++  if ((cfg.nonArgumentRegistersAsLocalVariables && (index >= 32 && index <= 63) &&
++       !(cfg.nonArgumentVmxInContext & (uint64_t{1} << (index - 32)))) ||
+       (localizeNonVolatiles() && ((index >= 14 && index <= 31) || (index >= 64 && index <= 127)))) {
+     locals.v[index] = true;
+     return fmt::format("v{}", index);
+diff --git a/src/codegen/codegen_writer.cpp b/src/codegen/codegen_writer.cpp
+index a0484fb..2e05d8f 100644
+--- a/src/codegen/codegen_writer.cpp
++++ b/src/codegen/codegen_writer.cpp
+@@ -89,6 +89,8 @@ nlohmann::json buildTemplateData(const rex::codegen::CodegenContext& ctx,
+       {"cr_as_local", cfg.crRegistersAsLocalVariables},
+       {"non_argument_as_local", cfg.nonArgumentRegistersAsLocalVariables},
+       {"non_volatile_as_local", cfg.nonVolatileRegistersAsLocalVariables},
++      {"verify_non_argument_locals",
++       cfg.verifyNonArgumentLocals && cfg.nonArgumentRegistersAsLocalVariables},
+   };
+ 
+   return {
+diff --git a/src/codegen/config.cpp b/src/codegen/config.cpp
+index 5da54a0..8076840 100644
+--- a/src/codegen/config.cpp
++++ b/src/codegen/config.cpp
+@@ -13,6 +13,7 @@
+ // TOML config file loading
+ 
+ #include <algorithm>
++#include <cstdio>
+ #include <map>
+ #include <set>
+ 
+@@ -77,6 +78,44 @@ void MergeBool(bool& dst, bool src, bool present, const char* name) {
+   dst = src;
+ }
+ 
++/// `non_argument_in_context`: the registers non_argument_as_local leaves in the context. The list
++/// replaces any earlier one; a name outside r0, r2, r11, r12, f0, v32-v63 is an error and is
++/// ignored.
++void ApplyNonArgumentInContext(toml::node_view<const toml::node> node, RecompilerConfig& cfg) {
++  cfg.nonArgumentGprsInContext = 0;
++  cfg.nonArgumentFprsInContext = 0;
++  cfg.nonArgumentVmxInContext = 0;
++  auto* list = node.as_array();
++  if (!list) {
++    REXCODEGEN_ERROR("non_argument_in_context: expected an array of register names");
++    return;
++  }
++  for (const auto& item : *list) {
++    auto name = item.value<std::string>();
++    unsigned index = 0;
++    char kind = 0;
++    char rest = 0;
++    if (name && name->size() >= 2 &&
++        std::sscanf(name->c_str(), "%c%u%c", &kind, &index, &rest) == 2) {
++      if (kind == 'r' && (index == 0 || index == 2 || index == 11 || index == 12)) {
++        cfg.nonArgumentGprsInContext |= 1u << index;
++        continue;
++      }
++      if (kind == 'f' && index == 0) {
++        cfg.nonArgumentFprsInContext |= 1u;
++        continue;
++      }
++      if (kind == 'v' && index >= 32 && index <= 63) {
++        cfg.nonArgumentVmxInContext |= uint64_t{1} << (index - 32);
++        continue;
++      }
++    }
++    REXCODEGEN_ERROR("non_argument_in_context: '{}' is not a non-argument register (r0, r2, r11, "
++                     "r12, f0, v32-v63)",
++                     name ? *name : std::string("?"));
++  }
++}
++
+ // ---------------------------------------------------------------------------
+ // Apply a single parsed TOML table onto the config (merge semantics)
+ // ---------------------------------------------------------------------------
+@@ -114,6 +153,11 @@ void ApplyToml(const toml::table& toml, RecompilerConfig& cfg, const std::string
+             hasBool("non_argument_as_local"), "non_argument_as_local");
+   MergeBool(cfg.nonVolatileRegistersAsLocalVariables, toml["non_volatile_as_local"].value_or(false),
+             hasBool("non_volatile_as_local"), "non_volatile_as_local");
++  MergeBool(cfg.verifyNonArgumentLocals, toml["verify_non_argument_locals"].value_or(false),
++            hasBool("verify_non_argument_locals"), "verify_non_argument_locals");
++  if (toml.contains("non_argument_in_context")) {
++    ApplyNonArgumentInContext(toml["non_argument_in_context"], cfg);
++  }
+   MergeBool(cfg.generateExceptionHandlers, toml["generate_exception_handlers"].value_or(false),
+             hasBool("generate_exception_handlers"), "generate_exception_handlers");
+   if (hasBool("is_dll")) {
+diff --git a/src/codegen/function_graph.cpp b/src/codegen/function_graph.cpp
+index fc918bb..6b87e9f 100644
+--- a/src/codegen/function_graph.cpp
++++ b/src/codegen/function_graph.cpp
+@@ -12,6 +12,7 @@
+ #include "ppc/disasm.h"
+ #include "builders/builder_context.h"
+ #include "builders.h"
++#include "verify_locals.h"
+ 
+ #include <algorithm>
+ #include <cassert>
+@@ -572,6 +573,7 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
+ 
+         // Emit comment with instruction disassembly
+         emit_println(body, "\t// {} {}", insn.opcode->name, insn.op_str);
++        const size_t insnStart = body.size();
+ 
+         // Check for mid-asm hook BEFORE instruction
+         auto hookIt = ctx.config.midAsmHooks.find(blockBase);
+@@ -596,6 +598,13 @@ std::string FunctionNode::emitCpp(const EmitContext& ctx) const {
+         if (hookIt != ctx.config.midAsmHooks.end() && hookIt->second.afterInstruction) {
+           builderCtx.emit_mid_asm_hook();
+         }
++
++        if (ctx.config.verifyNonArgumentLocals) {
++          std::string instrumented = InstrumentNonArgumentLocals(
++              std::string_view(body).substr(insnStart), ctx.config, blockBase);
++          body.resize(insnStart);
++          body += instrumented;
++        }
+       }
+ 
+       blockBase += 4;
+diff --git a/src/codegen/verify_locals.cpp b/src/codegen/verify_locals.cpp
+new file mode 100644
+index 0000000..3109257
+--- /dev/null
++++ b/src/codegen/verify_locals.cpp
+@@ -0,0 +1,276 @@
++/**
++ * @file        codegen/verify_locals.cpp
++ * @brief       Checking build for non_argument_as_local (verify_non_argument_locals)
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include "verify_locals.h"
++
++#include <algorithm>
++#include <cctype>
++#include <cstddef>
++#include <map>
++#include <set>
++#include <vector>
++
++#include <fmt/format.h>
++
++#include <rex/codegen/config.h>
++
++namespace rex::codegen {
++
++namespace {
++
++/// The non-argument registers this config keeps in locals, by the name the builders emit.
++std::set<std::string> LocalNonArgumentNames(const RecompilerConfig& cfg) {
++  std::set<std::string> names;
++  if (!cfg.nonArgumentRegistersAsLocalVariables) {
++    return names;
++  }
++  for (unsigned index : {0u, 2u, 11u, 12u}) {
++    if (!(cfg.nonArgumentGprsInContext & (1u << index))) {
++      names.insert(fmt::format("r{}", index));
++    }
++  }
++  if (!(cfg.nonArgumentFprsInContext & 1u)) {
++    names.insert("f0");
++  }
++  for (unsigned index = 32; index <= 63; ++index) {
++    if (!(cfg.nonArgumentVmxInContext & (uint64_t{1} << (index - 32)))) {
++      names.insert(fmt::format("v{}", index));
++    }
++  }
++  return names;
++}
++
++bool IsWordChar(char c) {
++  return std::isalnum(static_cast<unsigned char>(c)) || c == '_';
++}
++
++/// Lanes of a vector register for an element field; 0 if not a lane field.
++unsigned LaneCount(std::string_view field) {
++  if (field == "u8" || field == "s8")
++    return 16;
++  if (field == "u16" || field == "s16")
++    return 8;
++  if (field == "u32" || field == "s32" || field == "f32")
++    return 4;
++  if (field == "u64" || field == "s64" || field == "f64")
++    return 2;
++  return 0;
++}
++
++enum class Use { kRead, kFullWrite, kLaneWrite, kPartialWrite };
++
++struct Mention {
++  std::string name;
++  Use use;
++  unsigned lanes = 0;  // kLaneWrite: lanes of its element type (16 for u8, 4 for u32 and f32)
++  unsigned lane = 0;   // kLaneWrite: which lane
++};
++
++/// How one occurrence of a register name at `pos` in `line` is used.
++Mention Classify(std::string_view line, size_t pos, const std::string& name) {
++  Mention m{name, Use::kRead};
++  size_t i = pos + name.size();
++  std::string field;
++  bool indexed = false;
++  unsigned lane = 0;
++  if (i < line.size() && line[i] == '.') {
++    size_t start = ++i;
++    while (i < line.size() && IsWordChar(line[i]))
++      ++i;
++    field = std::string(line.substr(start, i - start));
++    if (i < line.size() && line[i] == '[') {
++      indexed = true;
++      size_t close = line.find(']', i);
++      size_t length = close == std::string_view::npos ? 0 : close - i - 1;
++      std::string_view idx = line.substr(i + 1, length);
++      bool digits = !idx.empty();
++      for (char c : idx)
++        digits = digits && std::isdigit(static_cast<unsigned char>(c));
++      lane = digits ? static_cast<unsigned>(std::stoul(std::string(idx))) : ~0u;
++      i = close == std::string_view::npos ? line.size() : close + 1;
++    }
++  }
++  while (i < line.size() && line[i] == ' ')
++    ++i;
++  bool assign = i < line.size() && line[i] == '=' && (i + 1 >= line.size() || line[i + 1] != '=');
++  bool compound = false;
++  static constexpr std::string_view kCompound[] = {"+=", "-=", "*=", "/=", "|=", "&=",
++                                                   "^=", "<<=", ">>=", "++", "--"};
++  for (std::string_view op : kCompound) {
++    if (line.substr(i, op.size()) == op)
++      compound = true;
++  }
++  if (pos >= 2 && (line.substr(pos - 2, 2) == "++" || line.substr(pos - 2, 2) == "--"))
++    compound = true;
++
++  // A store intrinsic whose first argument is this register writes all of it.
++  size_t first = line.find_first_not_of(" \t");
++  std::string_view head = line.substr(first == std::string_view::npos ? line.size() : first);
++  if (head.starts_with("simde_mm_store_")) {
++    size_t paren = head.find('(');
++    size_t comma = head.find(',');
++    size_t at = pos - (line.size() - head.size());
++    if (paren != std::string_view::npos && comma != std::string_view::npos && at > paren &&
++        at < comma) {
++      m.use = Use::kFullWrite;
++      return m;
++    }
++  }
++  if (compound) {
++    m.use = Use::kPartialWrite;
++    return m;
++  }
++  if (!assign) {
++    return m;
++  }
++  bool atLineStart = line.find_first_not_of(" \t") == pos;
++  if (!atLineStart) {
++    m.use = Use::kPartialWrite;  // a conditional or nested assignment
++    return m;
++  }
++  if (field.empty()) {
++    m.use = Use::kFullWrite;
++  } else if (!indexed && (field == "u64" || field == "s64" || field == "f64")) {
++    m.use = Use::kFullWrite;
++  } else if (indexed && name[0] == 'v' && LaneCount(field) != 0 && lane != ~0u) {
++    m.use = Use::kLaneWrite;
++    m.lanes = LaneCount(field);
++    m.lane = lane;
++  } else {
++    m.use = Use::kPartialWrite;
++  }
++  return m;
++}
++
++/// The register names in one line, in order, outside `//` comments and not as ctx.<name>.
++std::vector<std::pair<size_t, std::string>> FindNames(std::string_view line,
++                                                      const std::set<std::string>& names) {
++  std::vector<std::pair<size_t, std::string>> found;
++  size_t end = line.find("//");
++  if (end == std::string_view::npos)
++    end = line.size();
++  for (size_t i = 0; i < end; ++i) {
++    char c = line[i];
++    if (c != 'r' && c != 'f' && c != 'v')
++      continue;
++    if (i > 0 && (IsWordChar(line[i - 1]) || line[i - 1] == '.'))
++      continue;
++    size_t j = i + 1;
++    while (j < end && std::isdigit(static_cast<unsigned char>(line[j])))
++      ++j;
++    if (j == i + 1 || (j < end && IsWordChar(line[j])))
++      continue;
++    std::string name(line.substr(i, j - i));
++    if (names.count(name))
++      found.emplace_back(i, std::move(name));
++    i = j - 1;
++  }
++  return found;
++}
++
++bool TransfersControl(std::string_view line) {
++  return line.find("goto ") != std::string_view::npos ||
++         line.find("return") != std::string_view::npos ||
++         line.find("(ctx, base") != std::string_view::npos ||
++         line.find("REX_CALL_INDIRECT_FUNC") != std::string_view::npos ||
++         line.find("__builtin_trap") != std::string_view::npos;
++}
++
++}  // namespace
++
++std::string InstrumentNonArgumentLocals(std::string_view text, const RecompilerConfig& config,
++                                        uint32_t address) {
++  if (!config.verifyNonArgumentLocals) {
++    return std::string(text);
++  }
++  auto names = LocalNonArgumentNames(config);
++  if (names.empty()) {
++    return std::string(text);
++  }
++
++  std::vector<std::string_view> lines;
++  for (size_t start = 0; start < text.size();) {
++    size_t nl = text.find('\n', start);
++    size_t stop = nl == std::string_view::npos ? text.size() : nl + 1;
++    lines.push_back(text.substr(start, stop - start));
++    start = stop;
++  }
++
++  // Which registers the instruction reads before overwriting them whole, and which lines write
++  // which registers. Lane writes complete a register when every lane of one width is written.
++  std::vector<std::string> reads;
++  std::set<std::string> decided;
++  std::map<std::string, std::map<unsigned, std::set<unsigned>>> lanes;
++  std::vector<std::set<std::string>> writes(lines.size());
++  std::set<std::string> named;
++  auto decide = [&](const std::string& name, bool read) {
++    if (decided.insert(name).second && read)
++      reads.push_back(name);
++  };
++  for (size_t k = 0; k < lines.size(); ++k) {
++    // A statement evaluates its operands before it stores, so a line's reads come first.
++    std::vector<Mention> mentions;
++    for (auto& [pos, name] : FindNames(lines[k], names))
++      mentions.push_back(Classify(lines[k], pos, name));
++    std::stable_partition(mentions.begin(), mentions.end(),
++                          [](const Mention& m) { return m.use == Use::kRead; });
++    for (const Mention& m : mentions) {
++      const std::string& name = m.name;
++      named.insert(name);
++      if (m.use != Use::kRead)
++        writes[k].insert(name);
++      switch (m.use) {
++        case Use::kRead:
++        case Use::kPartialWrite:
++          decide(name, true);
++          break;
++        case Use::kFullWrite:
++          decide(name, false);
++          break;
++        case Use::kLaneWrite: {
++          auto& set = lanes[name][m.lanes];
++          set.insert(m.lane);
++          if (set.size() >= m.lanes)
++            decide(name, false);
++          break;
++        }
++      }
++    }
++  }
++  if (named.empty()) {
++    return std::string(text);
++  }
++  for (const auto& name : named) {
++    decide(name, true);  // lanes written only in part keep the rest of the old value
++  }
++
++  std::string out;
++  for (const auto& name : reads) {
++    out += fmt::format("\tREX_VERIFY_LOCAL({}, 0x{:08X});\n", name, address);
++  }
++  // Write each local through to the context after the line that writes it, or before a line that
++  // leaves the instruction, so a callee and the next check see the local's value.
++  std::set<std::string> pending;
++  auto flush = [&] {
++    for (const auto& name : pending)
++      out += fmt::format("\tctx.{0} = {0};\n", name);
++    pending.clear();
++  };
++  for (size_t k = 0; k < lines.size(); ++k) {
++    if (TransfersControl(lines[k]))
++      flush();
++    out += lines[k];
++    pending.insert(writes[k].begin(), writes[k].end());
++    if (!TransfersControl(lines[k]))
++      flush();
++  }
++  flush();
++  return out;
++}
++
++}  // namespace rex::codegen
+diff --git a/src/codegen/verify_locals.h b/src/codegen/verify_locals.h
+new file mode 100644
+index 0000000..5261222
+--- /dev/null
++++ b/src/codegen/verify_locals.h
+@@ -0,0 +1,36 @@
++/**
++ * @file        codegen/verify_locals.h
++ * @brief       Checking build for non_argument_as_local (verify_non_argument_locals)
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#pragma once
++
++#include <cstdint>
++#include <string>
++#include <string_view>
++
++namespace rex::codegen {
++
++struct RecompilerConfig;
++
++/**
++ * @brief Instrument the C++ emitted for one PPC instruction.
++ *
++ * For each non-argument register the config keeps in a local (r0, r2, r11, r12, f0, v32-v63,
++ * minus `non_argument_in_context`): if the instruction reads the register's previous value, a
++ * REX_VERIFY_LOCAL check comparing the local with the context goes before it; after each line
++ * that names the register, the local is written through to the context. The two then differ only
++ * where the guest reads a value another function left there, which non_argument_as_local changes.
++ *
++ * @param text     The instruction's emitted lines (each ending in '\n'), comment line excluded
++ * @param config   The recompiler configuration
++ * @param address  Guest address of the instruction (logged on a difference)
++ * @return The instrumented lines; `text` unchanged when no such register is named
++ */
++std::string InstrumentNonArgumentLocals(std::string_view text, const RecompilerConfig& config,
++                                        uint32_t address);
++
++}  // namespace rex::codegen
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index b74cb2e..4c52f74 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -26,6 +26,7 @@ add_executable(unit_tests
+     system/guest_fatal_test.cpp
+     input/input_assignment_test.cpp
+     input/keystroke_repeat_test.cpp
++    codegen/argument_locals_test.cpp
+     codegen/codegen_writer_test.cpp
+     codegen/output_partition_test.cpp
+     codegen/output_stamp_test.cpp
+diff --git a/tests/unit/codegen/argument_locals_test.cpp b/tests/unit/codegen/argument_locals_test.cpp
+new file mode 100644
+index 0000000..f20a5c8
+--- /dev/null
++++ b/tests/unit/codegen/argument_locals_test.cpp
+@@ -0,0 +1,230 @@
++/**
++ * @file        codegen/argument_locals_test.cpp
++ * @brief       non_argument_in_context and the verify_non_argument_locals checking build
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <filesystem>
++#include <fstream>
++#include <iterator>
++#include <optional>
++#include <string>
++#include <vector>
++
++#include <toml++/toml.hpp>
++
++#include <rex/codegen/codegen_context.h>
++#include <rex/codegen/codegen_writer.h>
++#include <rex/codegen/config.h>
++#include <rex/codegen/test_support.h>
++
++#include "codegen/verify_locals.h"
++
++namespace fs = std::filesystem;
++using namespace rex::codegen;
++
++namespace {
++
++constexpr uint32_t kBase = 0x82000000;
++
++/// A config from TOML options, with the two fields every config needs.
++RecompilerConfig ConfigFrom(std::string_view options) {
++  std::string text = "file_path = \"default.xex\"\nout_directory_path = \"generated\"\n";
++  text += options;
++  RecompilerConfig config;
++  REQUIRE(config.LoadFromTable(toml::parse(text), fs::temp_directory_path()));
++  return config;
++}
++
++RecompilerConfig CheckingConfig() {
++  return ConfigFrom(R"(
++non_argument_as_local = true
++non_argument_in_context = ["r12"]
++verify_non_argument_locals = true
++)");
++}
++
++bool Contains(const std::string& text, std::string_view part) {
++  return text.find(part) != std::string::npos;
++}
++
++std::string ReadAll(const fs::path& path) {
++  std::ifstream in(path, std::ios::binary);
++  return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
++}
++
++/// One function of big-endian instruction words, generated with `config`; the output text.
++struct Generated {
++  std::string recomp;
++  std::string pch;
++};
++
++Generated Generate(std::string_view name, const std::vector<uint32_t>& words,
++                   RecompilerConfig config) {
++  fs::path root = fs::temp_directory_path() / "rexglue_argument_locals_test" / fs::path(name);
++  fs::remove_all(root);
++  fs::create_directories(root);
++  std::vector<uint8_t> data;
++  for (uint32_t w : words) {
++    data.insert(data.end(), {uint8_t(w >> 24), uint8_t(w >> 16), uint8_t(w >> 8), uint8_t(w)});
++  }
++  TestModule module;
++  module.Load(kBase, data.data(), data.size());
++  config.projectName = "testproj";
++  config.outDirectoryPath = "generated";
++  auto ctx = CodegenContext::Create(BinaryView::fromModule(module), std::move(config));
++  ctx.setConfigDir(root);
++  ctx.analysisState().format = "xex";
++  ctx.analysisState().loadAddress = kBase;
++  ctx.analysisState().entryPoint = kBase + 0x1000;  // not this function: keep its sub_ name
++  ctx.analysisState().imageSize = static_cast<uint32_t>(data.size());
++  auto size = static_cast<uint32_t>(data.size());
++  auto* node = ctx.graph.addFunction(kBase, size, FunctionAuthority::DISCOVERED, true);
++  REQUIRE(node != nullptr);
++  node->discover({{kBase, size}}, {}, {});
++  node->seal();
++  CodegenWriter writer(ctx);
++  REQUIRE(writer.write(false));
++
++  Generated out;
++  for (const auto& entry : fs::directory_iterator(root / "generated")) {
++    auto file = entry.path().filename().string();
++    if (file.find("_recomp.") != std::string::npos)
++      out.recomp += ReadAll(entry.path());
++    if (file == "testproj_pch.h")
++      out.pch = ReadAll(entry.path());
++  }
++  fs::remove_all(root);
++  return out;
++}
++
++// addi r11,r3,1 / addi r12,r3,2 / stw r11,0(r12) / blr
++const std::vector<uint32_t> kStoreThroughR12 = {0x39630001, 0x39830002, 0x916C0000, 0x4E800020};
++
++}  // namespace
++
++TEST_CASE("non_argument_in_context reads the registers it names", "[codegen][argument_locals]") {
++  auto config = ConfigFrom(R"(non_argument_in_context = ["r12", "r0", "f0", "v40"])");
++  CHECK(config.nonArgumentGprsInContext == ((1u << 12) | 1u));
++  CHECK(config.nonArgumentFprsInContext == 1u);
++  CHECK(config.nonArgumentVmxInContext == (uint64_t{1} << 8));
++}
++
++TEST_CASE("non_argument_in_context ignores registers outside the non-argument set",
++          "[codegen][argument_locals]") {
++  auto config = ConfigFrom(R"(non_argument_in_context = ["r3", "f1", "v31", "v64", "r12x"])");
++  CHECK(config.nonArgumentGprsInContext == 0);
++  CHECK(config.nonArgumentFprsInContext == 0);
++  CHECK(config.nonArgumentVmxInContext == 0);
++}
++
++TEST_CASE("A register kept in the context stays in ctx; the others become locals",
++          "[codegen][argument_locals]") {
++  auto plain = ConfigFrom(R"(
++non_argument_as_local = true
++non_argument_in_context = ["r12"]
++)");
++  auto out = Generate("kept", kStoreThroughR12, plain);
++  CHECK(Contains(out.recomp, "\tr11.s64 = ctx.r3.s64 + 1;"));
++  CHECK(Contains(out.recomp, "\tctx.r12.s64 = ctx.r3.s64 + 2;"));
++  CHECK(Contains(out.recomp, "PPCRegister r11{};"));
++  CHECK_FALSE(Contains(out.recomp, "PPCRegister r12{};"));
++  CHECK_FALSE(Contains(out.recomp, "REX_VERIFY_LOCAL"));
++  CHECK_FALSE(Contains(out.pch, "REX_CONFIG_VERIFY_NON_ARGUMENT_LOCALS"));
++
++  auto all = Generate("all", kStoreThroughR12, ConfigFrom("non_argument_as_local = true"));
++  CHECK(Contains(all.recomp, "\tr12.s64 = ctx.r3.s64 + 2;"));
++}
++
++TEST_CASE("The checking build writes locals through and checks reads",
++          "[codegen][argument_locals]") {
++  auto out = Generate("checking", kStoreThroughR12, CheckingConfig());
++  CHECK(Contains(out.recomp, "\tr11.s64 = ctx.r3.s64 + 1;\n\tctx.r11 = r11;\n"));
++  CHECK(Contains(out.recomp, "\tREX_VERIFY_LOCAL(r11, 0x82000008);\n"));
++  CHECK_FALSE(Contains(out.recomp, "REX_VERIFY_LOCAL(r11, 0x82000000)"));  // a full write
++  CHECK_FALSE(Contains(out.recomp, "REX_VERIFY_LOCAL(r12"));               // kept in ctx
++  CHECK(Contains(out.pch, "#define REX_CONFIG_VERIFY_NON_ARGUMENT_LOCALS"));
++  CHECK(Contains(out.pch, "#define REX_VERIFY_LOCAL(reg, address)"));
++}
++
++TEST_CASE("Checks go only where an instruction reads the register's old value",
++          "[codegen][argument_locals]") {
++  auto config = CheckingConfig();
++  auto instrument = [&](std::string_view text) {
++    return InstrumentNonArgumentLocals(text, config, 0x82001234);
++  };
++  const std::string check = "\tREX_VERIFY_LOCAL(r11, 0x82001234);\n";
++
++  SECTION("a read") {
++    auto out = instrument("\tctx.r3.u64 = r11.u64 + 1;\n");
++    CHECK(out == check + "\tctx.r3.u64 = r11.u64 + 1;\n");
++  }
++  SECTION("a full write, then a read of the new value") {
++    auto out = instrument("\tr11.u64 = ctx.r3.u64;\n\tcr6.compare<int32_t>(r11.s32, 0, xer);\n");
++    CHECK(out ==
++          "\tr11.u64 = ctx.r3.u64;\n\tctx.r11 = r11;\n\tcr6.compare<int32_t>(r11.s32, 0, xer);\n");
++  }
++  SECTION("a write of 32 bits keeps the upper half") {
++    auto out = instrument("\tr11.u32 = ea;\n");
++    CHECK(out == check + "\tr11.u32 = ea;\n\tctx.r11 = r11;\n");
++  }
++  SECTION("a read and a write in one statement") {
++    auto out = instrument("\tr11.u64 = r11.u64 | 4;\n");
++    CHECK(out == check + "\tr11.u64 = r11.u64 | 4;\n\tctx.r11 = r11;\n");
++  }
++  SECTION("a conditional write") {
++    auto out = instrument("\tif (temp.u32 > 3) r11.u64 = 0;\n");
++    CHECK(out == check + "\tif (temp.u32 > 3) r11.u64 = 0;\n\tctx.r11 = r11;\n");
++  }
++  SECTION("every lane written replaces the vector") {
++    std::string lanes;
++    for (int i = 0; i < 4; ++i)
++      lanes += "\tv40.f32[" + std::to_string(i) + "] = log2f(ctx.v1.f32[" + std::to_string(i) +
++               "]);\n";
++    auto out = instrument(lanes);
++    CHECK_FALSE(Contains(out, "REX_VERIFY_LOCAL"));
++    CHECK(Contains(out, "\tctx.v40 = v40;\n"));
++  }
++  SECTION("lanes of one width written in two element types") {
++    auto out = instrument(
++        "\tv59.u32[3] = vTemp.u32[0];\n\tv59.u32[2] = vTemp.u32[0];\n"
++        "\tv59.f32[1] = 0.0f;\n\tv59.f32[0] = 1.0f;\n");
++    CHECK_FALSE(Contains(out, "REX_VERIFY_LOCAL"));
++  }
++  SECTION("some lanes written keep the others") {
++    auto out = instrument("\tv40.u32[0] = vTemp.u32[0];\n");
++    CHECK(Contains(out, "\tREX_VERIFY_LOCAL(v40, 0x82001234);\n"));
++  }
++  SECTION("a store intrinsic writes the whole vector") {
++    auto out = instrument(
++        "\tsimde_mm_store_si128((simde__m128i*)v40.u8, "
++        "simde_mm_load_si128((simde__m128i*)v41.u8));\n");
++    CHECK(Contains(out, "\tREX_VERIFY_LOCAL(v41, 0x82001234);\n"));
++    CHECK_FALSE(Contains(out, "REX_VERIFY_LOCAL(v40"));
++    CHECK(Contains(out, "\tctx.v40 = v40;\n"));
++    CHECK_FALSE(Contains(out, "\tctx.v41 = v41;\n"));  // only read
++  }
++  SECTION("the write-through goes before a line that leaves the instruction") {
++    auto out = instrument("\tr11.s64 = 5;\n\tif (cr6.eq) goto loc_82001240;\n");
++    CHECK(out == "\tr11.s64 = 5;\n\tctx.r11 = r11;\n\tif (cr6.eq) goto loc_82001240;\n");
++  }
++  SECTION("context registers, temporaries and other names are left alone") {
++    std::string text =
++        "\tctx.r11.u64 = ctx.r12.u64;\n\ttemp.u32 = cr0.eq;\n\tvTemp.u32[0] = ctx.f0.u32;\n";
++    CHECK(instrument(text) == text);
++  }
++  SECTION("a register kept in the context is not checked") {
++    std::string text = "\tctx.r3.u64 = r12.u64;\n";
++    CHECK(instrument(text) == text);
++  }
++}
++
++TEST_CASE("Without the checking option nothing is instrumented", "[codegen][argument_locals]") {
++  auto config = ConfigFrom("non_argument_as_local = true");
++  std::string text = "\tctx.r3.u64 = r11.u64 + 1;\n";
++  CHECK(InstrumentNonArgumentLocals(text, config, 0x82001234) == text);
++}

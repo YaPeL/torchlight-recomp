@@ -61,7 +61,7 @@ Other topics:
 | `-mcmodel=large` on Linux | Still forced for the SDK and every consumer target | Propose an opt-out |
 | `*.*` in the wildcard engine | Same as patch 20 | See patch 20 |
 | `non_volatile_as_local` with `setjmp` (D21) | The generated `setjmp` saves only `ctx`; the localized r14-r31 are lost across a `longjmp` | Issue, for when we want that flag |
-| `non_argument_as_local` and values passed in r11/r12 (D26) | The funclets' frame in r12 and the stack probe's size are lost: deadlock seen | Issue, with fix directions |
+| `non_argument_as_local` and values passed in r11/r12 (D26) | The funclets' frame in r12 and the stack probe's size are lost: deadlock seen | Issue, with fix directions; PR (patch 32) after the measurement |
 | Guest file flushes are no-ops (D27) | `NtFlushBuffersFile`, `FlushFileBuffers`, `XamContentFlush` return success without flushing | Issue and PR; our patch 27 |
 | Every missing file is a warning (D28) | `NtCreateFile` logs each not-found open at WARN | Issue and PR; our patch 28 |
 | Case variants of one name in a host folder (D30) | A replace onto another spelling leaves the old file on case-sensitive hosts | Issue and PR; our patch 29 |
@@ -728,7 +728,7 @@ entry. MSVC's Xbox 360 code breaks that assumption in two places:
   r14-r31 from localization, and the copy through `ctx` around the call (`ctx.r{i} = r{i}` before,
   back after) covers only those registers.
 - **The stack probe (`__chkstk`-like) takes the allocation size in r12**:
-  `neg r11,r12` at entry. Some other functions also read r11 set by their caller.
+  `neg r11,r12` at entry.
 
 Seen in Torchlight: 88 functions start with `r31 = r12 - N`. With `reserved`, `xer`, `ctr`, `cr`,
 `non_volatile` and `non_argument_as_local` on, the game deadlocks about 3 s after start:
@@ -747,7 +747,25 @@ Seen in Torchlight: 88 functions start with `r31 = r12 - N`. With `reserved`, `x
 The non-volatile save and restore helpers are already elided under `non_volatile_as_local`, so they
 are not affected.
 
-We keep `non_argument_as_local` off.
+**Which registers, measured (2026-10-13).** A backward liveness pass over Torchlight's 43,927
+generated functions (per PPC instruction, following direct calls to a fixpoint): r12 is read
+before it is written in 306 functions (the funclets, the stack probe with 28 callers, and the
+`__savevmx`/`__restvmx`/`__restfpr` helpers); r11 only in two tails of a function the codegen
+never emitted (0x826231F0, referenced by no code or data); r0, r2, f0 and v32-v63 in none. So r12
+alone is the problem here, and a title can need a different set.
+
+**PR: `[Codegen]: non_argument_in_context, and a checking build for non_argument_as_local`**
+(patch 32). A manifest list, `non_argument_in_context = ["r12"]`, names the registers the option
+leaves in `PPCContext`. `verify_non_argument_locals = true` makes a checking build: every write to
+such a local is written through to the context, and each instruction that reads the old value
+first compares the local with the context (`REX_VERIFY_LOCAL`, in the PCH). They can differ only
+where a function reads a value another left in the register, which is what the option changes; the
+first difference per site is logged and the local value is used. A static pass cannot rule out
+every such read (path-insensitive, it flags r11 after 2,159 calls, all we read on paths that are
+never taken), so the checking build lets a title test the option in play. Measured here before it
+is proposed: Torchlight with r12 kept, against develop.
+
+We keep `non_argument_as_local` off until that measurement.
 
 ---
 
@@ -1305,7 +1323,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 29 | `rexglue-case-variants.patch` (D30) | `sdk/case-variants` | `bd833a2` |
 | 30 | `rexglue-posix-chain-unclaimed-faults.patch` (D25) | `sdk/fault-chain` | `bd833a2` |
 | 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2`, after 30 |
-| 32 | next free | | |
+| 32 | `rexglue-codegen-non-argument-in-context.patch` (D26) | `sdk/argument-locals` | `bd833a2`, after 31 |
+| 33 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

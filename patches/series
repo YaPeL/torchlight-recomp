@@ -30,3 +30,4 @@ rexglue-sdl-software-renderer.patch
 rexglue-posix-chain-unclaimed-faults.patch
 rexglue-vfs-wildcard-dos-semantics.patch
 rexglue-guest-fatal-hook.patch
+rexglue-codegen-non-argument-in-context.patch

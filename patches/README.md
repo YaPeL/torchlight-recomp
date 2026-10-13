@@ -41,7 +41,8 @@ in number order; a branch adds its own line at its number's place.
 | 29 | `rexglue-case-variants.patch` | `develop` | In the series |
 | 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `develop` | In the series |
 | 31 | `rexglue-guest-fatal-hook.patch` | `develop` | In the series |
-| 32 | | | Next free number |
+| 32 | `rexglue-codegen-non-argument-in-context.patch` | `sdk/argument-locals` | Experiment, not for integration yet |
+| 33 | | | Next free number |
 
 ## The patches
 
@@ -515,21 +516,27 @@ in number order; a branch adds its own line at its number's place.
     no call in three scripted runs (load and quit, a new character, a fight and the town), so
     normal play reaches none of these paths. Upstream draft D31.
 
-30. `rexglue-posix-chain-unclaimed-faults.patch`: on Linux and macOS, a fault no SDK handler
-    claimed made `ExceptionHandlerCallback` return, so the instruction ran again and faulted
-    again, forever: a crash became a hang at 100 % of a core. For a guest address outside the
-    physical heaps, `Memory::AccessViolationCallback` logged `Unhandled guest access violation` on
-    every retry (a mods run wrote 6010 such lines in 89 s, `docs/crash-handling.md` section 1).
-    Now an unclaimed fault goes to the handler installed before the SDK's (`sa_sigaction` or
-    `sa_handler`), which is where our crash reporter goes (CR.3). With none, or with `SIG_IGN`,
-    the signal's default action is restored, so the instruction faults once more and the process
-    ends with that signal. The SDK's handler stays installed (restoring the old `sigaction`
-    instead would leave the next MMIO access unhandled). Windows needs nothing: the vectored
-    handler already returns `EXCEPTION_CONTINUE_SEARCH`. Tests in `unclaimed_fault_test.cpp`,
-    each case in a new process (`tests/unit/child_process.h` runs a hidden case of `unit_tests`,
-    so no handler an earlier test installed is in it; no core file): an unclaimed read of
-    address 16 ends by SIGSEGV; a previous handler gets the fault after the SDK's handlers saw it
-    once; a handler that fixes the page and claims the fault still lets the write succeed.
-    Without the fix the first two hang until a 3 s alarm. POSIX only. Upstream draft D25.
+32. `rexglue-codegen-non-argument-in-context.patch`: `non_argument_as_local` put r0, r2, r11,
+    r12, f0 and v32-v63 in C++ locals as one set, and Torchlight cannot take r12 there: it passes
+    data in it outside the ABI (to its `__finally` funclets and its stack probe), and with r12 a
+    local the game deadlocks about 3 s after start (`docs/guest-hot-paths.md`, upstream D26). The
+    manifest list `non_argument_in_context` now names the registers the option leaves in
+    `PPCContext` (`["r12"]` here); a name outside that set is an error and is ignored. A second
+    option, `verify_non_argument_locals`, makes a checking build for the option: every write to
+    such a local is also written through to the context, and before each instruction that reads
+    the register's old value a `REX_VERIFY_LOCAL` check compares the local with the context. The
+    two can differ only where the guest reads a value another function left in the register
+    (after a call, or at its entry), which is what the option changes; the first difference at
+    each site is logged (register, address, function, both values; 64 sites at most) and the
+    local value is used, so the game goes on as the experiment build would. Only the codegen and
+    its PCH template change; the runtime library is the same. Tests in
+    `argument_locals_test.cpp`: the list is read and a wrong name is refused; a kept register
+    stays in `ctx` while the others become locals, in a generated function; and where the checks
+    and the write-through go, for each kind of write the builders emit (whole, 32-bit, in one
+    statement with a read, conditional, all lanes, some lanes, lanes of one width in two element
+    types, a store intrinsic, before a jump). The checking build of Torchlight generates and
+    compiles, and its 86 tests pass. For the measured experiment of `non_argument_as_local` with r12 kept (2026-10-13):
+    on `sdk/argument-locals` it is the series' last line, so the experiment's SDK builds from
+    that branch, which is not for integration unless the experiment pays off.
 
 The observation and diagnostic patches there were before remain in the git history.
