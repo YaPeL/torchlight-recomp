@@ -81,7 +81,8 @@ std::optional<std::string> AddClassLabels(std::string_view xml) {
     bool select = false;
     for (size_t p = tag_end; (p = xml.find("<Property", p)) != std::string_view::npos && p < own_end; ++p) {
       const std::string_view tag = xml.substr(p, xml.find('>', p) - p);
-      if (Upper(Attribute(tag, "Name")) == "ONCLICK" && Upper(Attribute(tag, "Value")) == "GUISELECT1") {
+      const std::string command = Upper(Attribute(tag, "Value"));
+      if (Upper(Attribute(tag, "Name")) == "ONCLICK" && (command == "GUISELECT1" || command == "GUISELECT2")) {
         select = true;
         break;
       }

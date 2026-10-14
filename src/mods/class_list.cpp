@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iterator>
 #include <optional>
+#include <span>
 
 #include "mods/dat_text.h"
 
@@ -139,7 +140,10 @@ std::string LayoutText(const std::vector<uint8_t>& bytes) {
   return std::string(bytes.begin() + skip, bytes.end());
 }
 
-std::vector<std::string> ClassButtons(std::string_view xml) {
+namespace {
+
+// The windows whose onClick is one of `commands` (upper case).
+std::vector<std::string> ButtonsWithClick(std::string_view xml, std::initializer_list<std::string_view> commands) {
   std::vector<std::string> names;
   for (size_t pos = 0; (pos = xml.find("<Window", pos)) != std::string_view::npos; ++pos) {
     const size_t tag_end = xml.find('>', pos);
@@ -156,7 +160,8 @@ std::vector<std::string> ClassButtons(std::string_view xml) {
       const std::string_view tag = xml.substr(p, p_end - p);
       const auto key = Attribute(tag, "Name");
       const auto value = Attribute(tag, "Value");
-      if (key && value && Upper(*key) == "ONCLICK" && Upper(*value) == "GUISELECT1") {
+      if (key && value && Upper(*key) == "ONCLICK" &&
+          std::find(commands.begin(), commands.end(), Upper(*value)) != commands.end()) {
         names.push_back(*name);
         break;
       }
@@ -165,18 +170,18 @@ std::vector<std::string> ClassButtons(std::string_view xml) {
   return names;
 }
 
-std::vector<std::string> ClassList(const std::vector<std::vector<std::string>>& buttons_by_mod,
-                                   const std::set<std::string>& player_units) {
+std::vector<std::string> ListOf(std::span<const std::string_view> game, const std::vector<std::vector<std::string>>& buttons_by_mod,
+                                const std::set<std::string>& units) {
   std::vector<std::string> list;
   std::set<std::string> seen;
-  for (std::string_view game_class : kGameClasses) {
-    list.emplace_back(game_class);
-    seen.insert(ClassKey(game_class));
+  for (std::string_view name : game) {
+    list.emplace_back(name);
+    seen.insert(ClassKey(name));
   }
   for (const auto& buttons : buttons_by_mod) {
     for (const std::string& name : buttons) {
       const std::string key = ClassKey(name);
-      if (seen.contains(key) || !player_units.contains(key)) continue;
+      if (seen.contains(key) || !units.contains(key)) continue;
       seen.insert(key);
       list.push_back(name);
     }
@@ -184,15 +189,16 @@ std::vector<std::string> ClassList(const std::vector<std::vector<std::string>>& 
   return list;
 }
 
-std::set<std::string> ModPlayerUnits(const std::filesystem::path& mods_folder, const ModPlan& plan) {
+// The NAMEs (ClassKey) of the units the enabled mods define under media/units/<group>/.
+std::set<std::string> ModUnitNames(const std::filesystem::path& mods_folder, const ModPlan& plan, std::string_view group) {
   std::set<std::string> names;
   for (const PlannedMod* mod : EnabledInSearchOrder(plan)) {
     auto media = FindNoCase(mods_folder / mod->folder, "media");
     auto units = media ? FindNoCase(*media, "units") : std::nullopt;
-    auto players = units ? FindNoCase(*units, "players") : std::nullopt;
-    if (!players) continue;
+    auto folder = units ? FindNoCase(*units, group) : std::nullopt;
+    if (!folder) continue;
     std::error_code ec;
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(*players, ec)) {
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(*folder, ec)) {
       if (!entry.is_regular_file(ec) || Upper(entry.path().extension().string()) != ".DAT") continue;
       const std::vector<uint8_t> bytes = ReadFile(entry.path());
       std::optional<std::string> name;
@@ -206,17 +212,45 @@ std::set<std::string> ModPlayerUnits(const std::filesystem::path& mods_folder, c
   return names;
 }
 
-std::vector<std::vector<std::string>> ModClassButtons(const std::filesystem::path& mods_folder,
-                                                      const ModPlan& plan) {
+std::vector<std::vector<std::string>> ModButtons(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                                 std::vector<std::string> (*buttons_of)(std::string_view)) {
   std::vector<std::vector<std::string>> buttons;
   for (const PlannedMod* mod : EnabledInSearchOrder(plan)) {
     auto media = FindNoCase(mods_folder / mod->folder, "media");
     auto ui = media ? FindNoCase(*media, "ui") : std::nullopt;
     auto layout = ui ? FindNoCase(*ui, "charactercreate.layout") : std::nullopt;
     if (!layout) continue;
-    buttons.push_back(ClassButtons(LayoutText(ReadFile(*layout))));
+    buttons.push_back(buttons_of(LayoutText(ReadFile(*layout))));
   }
   return buttons;
+}
+
+}  // namespace
+
+std::vector<std::string> ClassButtons(std::string_view xml) { return ButtonsWithClick(xml, {"GUISELECT1"}); }
+std::vector<std::string> PetButtons(std::string_view xml) { return ButtonsWithClick(xml, {"GUIPET1", "GUISELECT2"}); }
+
+std::vector<std::string> ClassList(const std::vector<std::vector<std::string>>& buttons_by_mod,
+                                   const std::set<std::string>& player_units) {
+  return ListOf(kGameClasses, buttons_by_mod, player_units);
+}
+std::vector<std::string> PetList(const std::vector<std::vector<std::string>>& buttons_by_mod,
+                                 const std::set<std::string>& monster_units) {
+  return ListOf(kGamePets, buttons_by_mod, monster_units);
+}
+
+std::set<std::string> ModPlayerUnits(const std::filesystem::path& mods_folder, const ModPlan& plan) {
+  return ModUnitNames(mods_folder, plan, "players");
+}
+std::set<std::string> ModMonsterUnits(const std::filesystem::path& mods_folder, const ModPlan& plan) {
+  return ModUnitNames(mods_folder, plan, "monsters");
+}
+
+std::vector<std::vector<std::string>> ModClassButtons(const std::filesystem::path& mods_folder, const ModPlan& plan) {
+  return ModButtons(mods_folder, plan, ClassButtons);
+}
+std::vector<std::vector<std::string>> ModPetButtons(const std::filesystem::path& mods_folder, const ModPlan& plan) {
+  return ModButtons(mods_folder, plan, PetButtons);
 }
 
 }  // namespace torchlight::mods

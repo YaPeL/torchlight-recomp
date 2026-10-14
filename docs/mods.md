@@ -1028,6 +1028,13 @@ that is 28 classes (JCC - Main's layout); a mod's class that no layout lists is 
 PC. Icons: the game's classes keep theirs; the others show an empty frame with the class name. The
 mods' own PC icons (their `logo.imageset`) are a later improvement.
 
+**Pets too (2026-10-14).** PC's layout lists the pets as buttons with onClick `guiPet1`, each named
+after a monster unit (Enhanced Edition: `Pet_BigCat` in `media/units/monsters/PET_BIGCAT.DAT`). The
+Xbox screen's pet row (Dog, Cat, Chakawary, onClick GUISELECT2) becomes a window onto the game's
+three and the mods' pets the same way as the classes; the pet selection (`sub_82214188`) copies the
+name in and makes the pet by it, as the class selection does. Enhanced Edition offers 11 pets, the
+29-mod pack 56.
+
 **A skill a mod's file loses (2026-10-13).** The Kensai's tree (JCC - Class Skills - Fury, Kensai
 and Nethermage) places 15 skills in its third column, and the game holds 14: RAGEECHO (Rage, the
 level 10 row) is missing. Its definition, `JCC - Abomination/media/skills/Abomination/RageEcho/

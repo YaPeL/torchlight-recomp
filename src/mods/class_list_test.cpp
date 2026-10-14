@@ -133,6 +133,29 @@ int main() {
     Check(m::ClassList({{name}}, {upper}).back() == name, "offered when its unit's NAME matches in any case");
   }
 
+  // Pets: guiPet1 (PC) or GUISELECT2 (Xbox) buttons, the game's three first, monster units only.
+  {
+    const std::string xml = Button("GuiLook/StandardButton", "Dog", "guiPet1") +
+                            Button("GuiLook/StandardButton", "Pet_Wolf", "guiPet1") +
+                            Button("GuiLook/StandardButton", "Pet_Ghost", "GUISELECT2") +
+                            Button("GuiLook/RadioButton", "Paladin", "guiSelect1");
+    Check(m::PetButtons(xml) == std::vector<std::string>({"Dog", "Pet_Wolf", "Pet_Ghost"}), "pet buttons");
+    Check(m::PetList({m::PetButtons(xml)}, {"PET_WOLF", "PALADIN"}) ==
+              std::vector<std::string>({"Dog", "Cat", "Chakawary", "Pet_Wolf"}),
+          "the game's pets first, then the mods' with a monster unit");
+    const fs::path root = fs::temp_directory_path() / "class_list_test_pets";
+    fs::remove_all(root);
+    Write(root / "Pets" / "media" / "UI" / "charactercreate.layout", xml);
+    WriteUnit(root / "Pets" / "media" / "units" / "monsters" / "PET_WOLF.DAT", "Pet_Wolf");
+    WriteUnit(root / "Pets" / "media" / "units" / "players" / "Paladin.dat", "Paladin");
+    m::ModPlan plan;
+    plan.mods = {{"Pets", 0}};
+    Check(m::ModMonsterUnits(root, plan) == std::set<std::string>({"PET_WOLF"}), "monster units only");
+    Check(m::PetList(m::ModPetButtons(root, plan), m::ModMonsterUnits(root, plan)).back() == "Pet_Wolf",
+          "a mod's pet offered");
+    fs::remove_all(root);
+  }
+
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return EXIT_FAILURE;
