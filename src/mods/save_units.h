@@ -154,4 +154,21 @@ void ProtectFromUnitsNotLoaded(const std::filesystem::path& user_data_root, cons
                                std::chrono::system_clock::time_point now,
                                const std::function<void(const std::string&)>& log, SaveUnitsReport& report);
 
+// Character saves already written with the Xbox writer's mod list bug (docs/mods.md 7d,
+// saved_mod_list.h RepairModListAtLoad), repaired before the game reads them: every character file
+// in the same containers as ProtectSaves whose digest is right but whose body does not parse is
+// tried with `candidates` (the names mods have had). When any is repaired, the saves are backed up
+// first (save-backups/<UTC>-modlist) and each repaired file is written whole and renamed into
+// place, with its digest; nothing is written if the backup fails.
+struct ModListRepairReport {
+  std::vector<std::filesystem::path> repaired;
+  std::vector<std::string> left_alone;  // "<file>: why" (files that do not parse and were not repaired)
+  std::filesystem::path backup;
+  bool failed = false;
+};
+ModListRepairReport RepairModListSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                                       const save_import::Schema& schema, const std::vector<std::u16string>& candidates,
+                                       std::chrono::system_clock::time_point now,
+                                       const std::function<void(const std::string&)>& log);
+
 }  // namespace torchlight::mods

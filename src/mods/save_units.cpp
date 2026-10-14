@@ -8,6 +8,8 @@
 #include <utility>
 
 #include "mods/save_safety.h"
+#include "mods/saved_mod_list.h"
+#include "save_import/digest.h"
 #include "save_import/pak.h"
 
 namespace torchlight::mods {
@@ -350,6 +352,62 @@ void ProtectFromUnitsNotLoaded(const std::filesystem::path& user_data_root, cons
   }
   const SaveBackup backup = BackUpSaves(user_data_root, title_folder, now, log, "units-not-loaded");
   if (backup.result == SaveBackup::Result::kDone) report.not_loaded_backup = backup.folder;
+}
+
+}  // namespace torchlight::mods
+
+namespace torchlight::mods {
+
+ModListRepairReport RepairModListSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                                       const si::Schema& schema, const std::vector<std::u16string>& candidates,
+                                       std::chrono::system_clock::time_point now,
+                                       const std::function<void(const std::string&)>& log) {
+  namespace fs = std::filesystem;
+  ModListRepairReport report;
+  std::vector<std::pair<fs::path, std::vector<uint8_t>>> changes;
+  ForEachSaveFile(user_data_root, title_folder, [&](const fs::path& path, bool character) {
+    if (!character) return;
+    const auto bytes = ReadAll(path);
+    if (!bytes) return;
+    si::SaveError error;
+    std::span<const uint8_t> body;
+    if (!si::Split360(*bytes, body, error)) return;  // not ours to judge: the game rejects it too
+    if (si::ParseBody(schema, *schema.root(), body, si::Endian::kBig, error)) return;
+    std::string why;
+    const auto repaired = RepairModListAtLoad(body, candidates, [&](std::span<const uint8_t> b) {
+      si::SaveError e;
+      return si::ParseBody(schema, *schema.root(), b, si::Endian::kBig, e) != nullptr;
+    }, &why);
+    if (!repaired) {
+      report.left_alone.push_back(path.string() + ": does not read (" + error.message + "); " + why);
+      return;
+    }
+    std::vector<uint8_t> file = *repaired;
+    const si::Sha256Digest digest = si::Sha256(file);
+    file.insert(file.end(), digest.begin(), digest.end());
+    changes.emplace_back(path, std::move(file));
+  });
+  for (const auto& line : report.left_alone) {
+    if (log) log("mods: save left alone " + line);
+  }
+  if (changes.empty()) return report;
+  const SaveBackup backup = BackUpSaves(user_data_root, title_folder, now, log, "modlist");
+  if (backup.result != SaveBackup::Result::kDone) {
+    report.failed = true;
+    if (log) log("mods: no backup, so the saves with a broken mod list are not repaired");
+    return report;
+  }
+  report.backup = backup.folder;
+  for (const auto& [path, file] : changes) {
+    if (!WriteWhole(path, file)) {
+      report.failed = true;
+      if (log) log("mods: cannot write " + path.string() + "; the saves before are in " + backup.folder.string());
+      return report;
+    }
+    if (log) log("mods: repaired the mod list of " + path.string() + " (written by the Xbox bug, 7d)");
+    report.repaired.push_back(path);
+  }
+  return report;
 }
 
 }  // namespace torchlight::mods

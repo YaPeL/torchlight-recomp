@@ -347,11 +347,17 @@ host wraps `sub_822A68F0`.
   only read. Tested with a stand-in writer in `src/game_menu/save_mod_list_test.cpp` (repair,
   moved buffer, fallback, no names).
 
-**Not done: repair at load.** Saves already written with the bug cannot load. Only test saves
-exist today. **Condition for any release that ships mods without this repair** (or for builds of
-this branch from before it that reached players): add a check at startup, before the guest runs,
-that finds this pattern in the character saves with the schema, repairs the lengths in place
-after a backup, and logs it.
+**Repair at load (2026-10-14).** Saves already written with the bug cannot load, so before the
+guest runs (`InstallSaveUnits`, `mods/save_units.h` `RepairModListSaves`), every character file
+whose digest is right but whose body does not parse is tried. Without the lengths, the units alone
+do not say where a name ends, so the names are matched against those mods have had: each mod
+folder's name and its `mod.dat` NAME, and every folder `mods.dat` still lists (a mod since
+removed). Every way of splitting the list with those names is tried, and a repair counts when the
+whole save then parses; exactly one must (`saved_mod_list.h` `RepairModListAtLoad`). The saves are
+backed up first (`save-backups/<UTC>-modlist`), the file is written whole with its digest, and the
+log says so. A save holding a name no mod folder or `mods.dat` knows is left alone (logged): it
+cannot be split safely. Tested on a damaged copy of the synthetic fixture
+(`save_units_test`) and on stand-in bytes (`saved_mod_list_test`).
 
 ## 7e. New-item mods in validation: what kept the unit out (2026-10-08)
 
