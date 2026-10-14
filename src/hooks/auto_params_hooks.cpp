@@ -1,5 +1,5 @@
 // GpuProgramParameters::_updateAutoParams (guest_abi/auto_params.h) replayed as host code
-// (--native_auto_params, native mode only, on by default).
+// (--native_auto_params, native mode only, off by default: no demonstrated gain yet).
 //
 // Per pass and renderable the guest walks the program's automatic constants and, for each, calls
 // the data source's getter and copies the result into the float constant buffer: a switch of 126
@@ -26,10 +26,10 @@
 #include "hooks/auto_params.h"
 #include "hooks/auto_params_hooks.h"
 
-REXCVAR_DEFINE_BOOL(native_auto_params, true, "Torchlight",
+REXCVAR_DEFINE_BOOL(native_auto_params, false, "Torchlight",
                     "Native mode only: GpuProgramParameters::_updateAutoParams runs as host code "
-                    "calling the guest's data source getters (hooks/auto_params_hooks.cpp); false "
-                    "runs the recompiled function");
+                    "calling the guest's data source getters (hooks/auto_params_hooks.cpp). Off: "
+                    "no demonstrated gain yet (docs/game-thread-parallelism.md, section 11)");
 
 namespace {
 
