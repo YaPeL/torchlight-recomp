@@ -761,7 +761,7 @@ profile of the scripted route against the base's (`out/runs/` of the worktree: `
 | 3 | Game thread CPU per frame, base -> steps 3a+3b (profile runs) | fight 5.09 -> 4.98 ms (-2.2 %), town 5.63 -> 5.39 ms (-4.3 %); fps 196 -> 201, 177 -> 185 | | |
 | 4 | RTSS listener: the SGPass lookup and type check as host code (`--native_rtss_listener`) | listener subtree 5.0 -> 3.5 (fight), 4.6 -> 2.9 (town) points; the host lookup 0.1-0.9 of that: net about -1 point | yes: 2,000,000 calls, none left to the guest; replays and tests unchanged; the still captures' draw sets differ no more than two base runs' | kept |
 | 4 | Game thread CPU per frame, base -> steps 3+4 | fight 5.09 -> 4.87 ms (-4.3 %), town 5.63 -> 5.31 ms (-5.6 %); fps 196 -> 205, 177 -> 188 | | |
-| 5 | `_updateAutoParams` replayed as host code (`--native_auto_params`): the dispatch and the copies host, every getter the guest's | auto params subtree 1.6 -> 1.1 (fight), 2.5 -> 0.8 (town) points in one run each; CPU per frame of the thread: no gain shown (base -> 3+4: -4.3 / -5.6 %; base -> 3+4+5: -3.1 / -4.2 %, one run each, within the spread) | yes: 6,000,000 updates, none left to the guest; the captures' constant checks and command types unchanged | in the branch as its own commit, off by default: no demonstrated gain |
+| 5 | `_updateAutoParams` replayed as host code (`--native_auto_params`): the dispatch and the copies host, every getter the guest's | auto params subtree 1.6 -> 1.1 (fight), 2.5 -> 0.8 (town) points in one run each; CPU per frame of the thread: no gain shown (base -> 3+4: -4.3 / -5.6 %; base -> 3+4+5: -3.1 / -4.2 %, one run each, within the spread) | yes: 6,000,000 updates, none left to the guest; the captures' constant checks and command types unchanged | in its own branch `perf/auto-params-replay`, off by default: no demonstrated gain |
 | 3+4 | Game thread CPU per frame, base -> the kept steps | fight 5.09 -> 4.87 ms (-4.3 %), town 5.63 -> 5.31 ms (-5.6 %) (profile runs, one each; the laptop's run-to-run spread is about 2 %) | | the blind pair |
 | 6 | Skeletal animation, shadow mode | not started | - | suspended by the user: only 2-4 % without a parallel tier (section 2.4); after what comes of 11.2 |
 
@@ -820,8 +820,9 @@ guest (none did in 6,000,000 updates). The gain would be the recompiled dispatch
 the subtree lost 0.6-1.7 points of the thread in one run each, but the thread's CPU per frame
 came out no better than without it (one run each; the laptop's spread is about 2 %), so there is
 no demonstrated gain and the step adds a hook that calls guest code with its own conventions.
-The user's decision: it stays in the branch as its own commit with `--native_auto_params` off by
-default, outside the blind pair. To defend it: several interleaved runs (base, 3+4, 3+4+5),
+The user's decision: it stays in its own branch, `perf/auto-params-replay` (two commits on top
+of `perf/game-thread-native`), with `--native_auto_params` off by default, outside the blind pair
+and outside what is integrated. To defend it: several interleaved runs (base, 3+4, 3+4+5),
 compared by the subtree's CPU time and by the thread's CPU per frame, not one run each. The gate's "commands identical" rests
 here on the captures' constant checks (the same match and mismatch counts as step 4, the
 tool's own pre-existing mismatches included) and the per-frame command types, since two live
