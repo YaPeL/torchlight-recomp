@@ -562,11 +562,6 @@ namespace matrix4 {
 // [confirmed] 16 contiguous floats, OGRE row-major m[row][col]: the D3D9 conversion 0x824639B8
 // reads +0x00..+0x3C and writes the transpose.
 inline constexpr Size kSize{0x40, Confidence::kConfirmed};
-// [confirmed] Matrix4::concatenate(const Matrix4&) const (OgreMatrix4.h:174; operator* calls it):
-// r3 the result, r4 this, r5 the other matrix, 64 multiply-adds and no calls (@0x821C2CC8..
-// 0x821C2EB0); AutoParamDataSource slot 17 (0x821C2C38, @0x8244AC70) and FFPTexturing slot 5
-// (0x821C30B0) call it. hooks/matrix_hooks.cpp runs it as host code (hooks/matrix_concat.h).
-inline constexpr uint32_t kConcatenate = 0x821C2CC8;
 }  // namespace matrix4
 
 namespace colour_value {
