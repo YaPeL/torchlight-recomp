@@ -1,5 +1,4 @@
-Patch 33. Not in the series and not installed until the user decides on it, together with the
-shared SDK.
+Patch 33. In the series since 2026-10-14, after patch 31.
 
 The SDK's timer queue (src/core/timer_queue.cpp) waits for new timers and the next due time with
 disruptorplus' spin_wait_strategy: its dispatch thread polls and took about 20 % of a core in a

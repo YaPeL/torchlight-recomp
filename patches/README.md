@@ -42,7 +42,7 @@ in number order; a branch adds its own line at its number's place.
 | 30 | `rexglue-posix-chain-unclaimed-faults.patch` | `develop` | In the series |
 | 31 | `rexglue-guest-fatal-hook.patch` | `develop` | In the series |
 | 32 | `rexglue-codegen-non-argument-in-context.patch` | `sdk/argument-locals` | Not integrated: no gain in hand runs (upstream D26) |
-| 33 | `rexglue-timer-queue-blocking-wait.patch` | `sdk/timer-queue` | Not in the series: being measured |
+| 33 | `rexglue-timer-queue-blocking-wait.patch` | `develop` | In the series (after 31) |
 | 34 | | | Next free number |
 
 ## The patches
@@ -545,7 +545,11 @@ in number order; a branch adds its own line at its number's place.
     queue, so in this game nothing it delivers is read. Tests in `timer_queue_test.cpp`: the
     strategy's timed waits time out and return when another thread publishes; timers fire, recur
     and stop when disarmed; and on Linux the dispatch thread's CPU over 1 s with a 1 ms timer stays
-    under 100 ms (0-10 ms with the patch, 190-230 ms spinning, which fails it). Being measured
-    against the installed series (2026-10-14); not in the series until the user decides.
+    under 100 ms (0-10 ms with the patch, 190-230 ms spinning, which fails it). Measured in the
+    game on Linux (2026-10-14; one build, three runs with each runtime, alternated, the same
+    scripted route): the dispatch thread went from about 24 % of a core to 1.2 %, and the
+    process from 2.26 to 2.05 cores at the menu (9-10 % less in every step); the frame rate, its
+    p99 and the frames over 33 ms did not change beyond the runs' spread, and no audio or vblank
+    warnings appeared. In the series since 2026-10-14, as its last line. Upstream draft D32.
 
 The observation and diagnostic patches there were before remain in the git history.
