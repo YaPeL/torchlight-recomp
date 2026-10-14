@@ -652,6 +652,45 @@ commits, `src/native_ogre/README.md`, `docs/re/*`, `docs/alpha/v0.1.0-alpha-read
   one level up: expressing the guest's pass logic natively, and validating it without a replay of
   the guest's side; the second wall is lower today (session recordings exist), the first is not.
 
+### 11.2 The layout update of the fight, read only (2026-10-14)
+
+`0x82198878` (7.3 % of the thread in the scripted fight, 2.1 % in the town square) is the level's
+per-frame update of its layouts: for each `CLayout` (slot 64, `0x821B7650`: an enabled byte and a
+virtual check), each `CLayoutScene`/`CEditorScene` (slot 64, `0x821B7588`) walks its objects
+(the vector at `+240`, with Runic's `dcbt` prefetches: they knew it is memory bound) and calls
+each descriptor's slot 7 with `dt`; `CLayoutDescriptor` (`0x821B7510`) recurses into its children.
+Where the time goes (fight, inclusive): `CGenericModelDescriptor` slot 7 `0x821DEDF8` 4.2 %, the
+two walks' own loops 2.0 % (self: the vtable load of every object misses the cache), room pieces
+0.35, sound objects 0.27, logic timers 0.13, triggers 0.04. `CGenericModelDescriptor::Update`
+walks the model's children, `dynamic_cast`s each one (`0x821E1828`, two type descriptors) and,
+for those that are animation players, calls `0x821BB578` with `dt`: 4.0 % of the thread, all of it
+the animation player update and the bone evaluation it forces (`Entity::_updateAnimation`). So the
+fight's extra over the town is the dungeon's animated props (the mine's decor: generic models with
+skeletal animations) having their bones evaluated every frame by the layout update, on screen or
+not; in the town the animation players belong to the units (`CCharacter` slot 83, 10.6 %) and
+the props are few.
+
+Is it repeated work? The walk itself repeats the same vtable loads over thousands of static
+objects each frame (2.0 %), and the animation players advance their states and force the bone
+evaluation for every animated prop regardless of visibility, while OGRE would evaluate the bones of
+a visible entity lazily at `_updateRenderQueue` and never those of an invisible one. Two isolable
+proposals, neither implemented:
+
+- **Skip the forced bone evaluation of a layout prop not rendered last frame** (hook at the
+  animation player's call to `Entity::_updateAnimation` `0x821B9478`, deciding by the entity's
+  last rendered frame, which OGRE keeps): the picture is unchanged for visible props (the render
+  path evaluates them), and the time position still advances (the player writes the animation
+  states before the call). Gain up to ~3 % in dungeons, ~0 in the town. Size S-M. Risk M-H: it
+  changes behaviour for anything that reads an off-screen prop's bone or attachment transforms
+  (`TagPoint`s: lights or effects attached to a bone), which a replay cannot show; it needs a
+  reading of what reads those transforms before anything else.
+- **The walk's loops as host code** (two functions, the vtable call per object left to the guest):
+  the self time is the cache misses on the objects, which a host loop pays too (the controller
+  walk experiment of 2026-10-09). Not proposed.
+
+What the doc's candidate A (section 3) said about the game-update path is therefore more
+specific now: in dungeons, about half of the forced evaluations are props, not units.
+
 ### 11.1 The blind hand test (ready, not run)
 
 `out/blind/` of the worktree `~/tl-fable` (local, not in the repository): `setup.sh` copied the
