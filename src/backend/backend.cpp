@@ -368,6 +368,9 @@ struct tl_backend {
   std::unique_ptr<Ogre::RTShader::SubRenderStateFactory> guest_texgen_factory, guest_pixel_fog,
       guest_alpha_test, guest_lighting;
   const Program* bound_program = nullptr;
+  // The constants last bound per stage for bound_program (BindChangedParameters); emptied when
+  // another program is bound.
+  std::vector<Ogre::uchar> bound_constants[Ogre::GPT_COUNT];
   std::unique_ptr<Ogre::AutoParamDataSource> params_source;
   Ogre::SceneManager* scene = nullptr;  // never rendered
   Ogre::Camera* camera = nullptr;
@@ -1086,6 +1089,32 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
   p.failed = true;
 }
 
+// Hands the render system the classes of constants (GpuParamVariability) whose values changed
+// since this stage's constants were last bound for the same program, and nothing when none did.
+// What was bound stays bound while the stage's program does (the render system's contract: OGRE's
+// own scene manager binds only GPV_PER_OBJECT between objects of one pass). The last values are
+// kept per stage, and forgotten when another program is bound (ApplyProgram): Direct3D 11 keeps one
+// constant buffer per stage, not per program.
+void BindChangedParameters(tl_backend* b, Ogre::GpuProgramType type,
+                           const Ogre::GpuProgramParametersSharedPtr& params) {
+  std::vector<Ogre::uchar>& last = b->bound_constants[type];
+  const Ogre::ConstantList& now = params->getConstantList();
+  uint16_t mask = 0;
+  if (last.size() != now.size()) {
+    mask = Ogre::GPV_ALL;
+  } else {
+    for (const auto& [name, def] : params->getConstantDefinitions().map) {
+      const size_t bytes = size_t(def.elementSize) * def.arraySize * (def.isDouble() ? 8 : 4);
+      if (std::memcmp(&now[def.physicalIndex], &last[def.physicalIndex], bytes) != 0) {
+        mask |= def.variability;
+      }
+    }
+  }
+  if (mask == 0) return;
+  last = now;
+  b->rs->bindGpuProgramParameters(type, params, mask);
+}
+
 // Binds the draw's program and writes its auto constants. Returns false when the RTSS could not
 // generate it.
 bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
@@ -1109,6 +1138,7 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
     rs->bindGpuProgram(p.pass->getVertexProgram()->_getBindingDelegate());
     rs->bindGpuProgram(p.pass->getFragmentProgram()->_getBindingDelegate());
     b->bound_program = &p;
+    for (auto& constants : b->bound_constants) constants.clear();
   }
   // Values the data source reads from the pass and the scene objects.
   p.pass->setDiffuse(f.diffuse);
@@ -1175,8 +1205,8 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
     p.vertex_params->_writeRawConstant(index, clip, count);
   }
   p.fragment_params->_updateAutoParams(&source, Ogre::GPV_ALL);
-  rs->bindGpuProgramParameters(Ogre::GPT_VERTEX_PROGRAM, p.vertex_params, Ogre::GPV_ALL);
-  rs->bindGpuProgramParameters(Ogre::GPT_FRAGMENT_PROGRAM, p.fragment_params, Ogre::GPV_ALL);
+  BindChangedParameters(b, Ogre::GPT_VERTEX_PROGRAM, p.vertex_params);
+  BindChangedParameters(b, Ogre::GPT_FRAGMENT_PROGRAM, p.fragment_params);
   return true;
 }
 
