@@ -861,6 +861,50 @@ slot and sub pairs in use get a memo, instead of a 1.7 MB table with one per pai
 gives each `SetConstants` one array of values that its ranges point into, instead of a vector per
 range (the capture format is unchanged). Its other commits are in `develop`.
 
+## The backend behind in the mine: three per-draw cuts (2026-10-14)
+
+With the game thread's steps 3a and 4 in (docs/game-thread-parallelism.md), the mine standing still
+became the backend's limit: the game at 215-249 fps, 190-205 presented, 7-18 % of the guest's frames
+dropped. A hand profile of that step and the fight (the step overlay's marks, DWARF, the whole
+process) put the backend thread at about 29 % of the samples: our translation and frontend 10, the
+NVIDIA driver 7-8, OGRE 5, the C library 3.5. Three cuts, each its own commit (`perf/backend-mine`):
+
+- **The camera and the light set only when they change.** The custom projection was set for every
+  draw, which marked the frustum out of date, and the data source rebuilt it and its inverse
+  (`Frustum::updateFrustumImpl`, `Matrix4::inverse`); likewise the light's node orientation.
+- **A stage's constants bound only for the classes that changed** (`BindChangedParameters`):
+  compared with what the stage last received for the same program, the render system gets only the
+  variability classes that changed, and no call when none did (`bindGpuProgramParameters`,
+  `getActiveProgram`, the uniform walk). GL3+ already skips unchanged uniforms in its own cache, so
+  the gain is the calls and walks. The last values are kept per stage and forgotten when another
+  program is bound: Direct3D 11 has one constant buffer per stage.
+- **A draw's vertex bindings touched only where they change**, without the three allocations per
+  draw.
+
+Validation: the unit tests, the 20 parity captures replayed byte for byte, 34 frames of the town
+walk's session identical. Replay bench of that session (presenting, no vsync; three of each,
+interleaved, the 55 C cool-down before each): the frontend and backend commands 3.03 -> 2.90 ms per
+frame (-4.2 %), the backend's draws 1.37 -> 1.30 ms (-5.1 %), lower in each of the three pairs; the
+present's wait, outside the cuts, moves by more than that between runs.
+
+The blind hand batch (fixed-floor save, no cap, no vsync, A B B A, the package at 82 C throughout):
+
+| | Cuts (runs 1, 4) | Base (runs 2, 3) |
+|---|---|---|
+| Mine still, presented fps (dropped) | 179.6 (211), 173.7 (144) | 170.7 (94), 179.9 (197) |
+| Fight, presented fps (dropped) | 168.5 (183), 168.1 (245) | 156.0 (229), 169.8 (494) |
+| Town square, presented fps (dropped) | 142.4 (74), 140.4 (136) | 141.6 (310), 136.1 (284) |
+
+The town square drops fewer frames in both runs with the cuts than in both without, the fight leans
+their way, the mine standing still (a 5 s step, its game rate 189-222 fps between runs) shows no
+difference; by feel the two were not told apart, everything above 120 fps. Taken: same images, the
+work measured lower, nothing worse.
+
+The buffer bindings of the guest (slot 85, `setVertexBufferBinding`) stay out: besides the stream
+bindings it finds or creates each buffer's device copy and uploads the system-memory shadow into
+it, which is what our producer reads; a host version would have to do the same, for 0.2 % of the
+game's thread.
+
 ## The ~45 ms presented hitch on this laptop: the platform's (2026-10-14)
 
 The blind hand runs of the game thread study showed, in every step, a presented maximum of 46-61 ms
