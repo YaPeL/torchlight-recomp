@@ -344,6 +344,10 @@ struct tl_backend {
     std::vector<uint64_t> bound;  // HostVertex serial per stream, 0 = none
   };
   std::unordered_map<uint64_t, VertexLayout> vertex_layouts;
+  // Scratch of the draw's vertex binding, kept to avoid an allocation per draw.
+  std::vector<uint64_t> scratch_bound;
+  std::vector<std::pair<uint32_t, uint32_t>> scratch_colour_elements;
+  std::vector<uint32_t> scratch_colours;
   uint64_t host_buffer_serial = 0;
   std::unordered_map<uint64_t, HostIndex> host_index;
   std::unordered_map<uint64_t, Ogre::TexturePtr> textures;
@@ -2410,9 +2414,12 @@ static int Draw(tl_backend* b, const tl_draw* d) {
       ++b->counters.vertex_layouts_created;
     }
     Ogre::VertexData& vertex_data = *layout.data;
-    std::vector<uint64_t> bound(d->stream_count, 0);
+    // Scratch reused from draw to draw (no allocation per draw).
+    std::vector<uint64_t>& bound = b->scratch_bound;
+    bound.assign(d->stream_count, 0);
     // Colour elements (converted per stream below): (stream, offset).
-    std::vector<std::pair<uint32_t, uint32_t>> colour_elements;
+    std::vector<std::pair<uint32_t, uint32_t>>& colour_elements = b->scratch_colour_elements;
+    colour_elements.clear();
     for (uint32_t i = 0; i < d->element_count; ++i) {
       const tl_vertex_element& e = d->elements[i];
       Ogre::VertexElementType type;
@@ -2428,10 +2435,14 @@ static int Draw(tl_backend* b, const tl_draw* d) {
       }
       if (is_colour) colour_elements.push_back({e.stream, e.offset});
     }
-    vertex_data.vertexBufferBinding->unsetAllBindings();
-    std::vector<uint32_t> colours;
+    // The streams this draw binds; the layout's binding is only touched where it differs.
+    Ogre::VertexBufferBinding& binding = *vertex_data.vertexBufferBinding;
+    std::vector<uint32_t>& colours = b->scratch_colours;
     for (uint32_t s = 0; s < d->stream_count; ++s) {
-      if (d->stream_buffers[s] == 0) continue;
+      if (d->stream_buffers[s] == 0) {
+        if (binding.isBufferBound(Ogre::ushort(s))) binding.unsetBinding(Ogre::ushort(s));
+        continue;
+      }
       auto it = b->vertex_buffers.find(d->stream_buffers[s]);
       if (it == b->vertex_buffers.end()) return TL_SKIP_MISSING_BUFFER;
       uint32_t stride = d->stream_strides[s];
@@ -2485,8 +2496,14 @@ static int Draw(tl_backend* b, const tl_draw* d) {
         host.buffer->writeData(0, converted.size(), converted.data(), true);
         host.content = content;
       }
-      vertex_data.vertexBufferBinding->setBinding(Ogre::ushort(s), host.buffer);
+      if (!binding.isBufferBound(Ogre::ushort(s)) || binding.getBuffer(Ogre::ushort(s)) != host.buffer) {
+        binding.setBinding(Ogre::ushort(s), host.buffer);
+      }
       bound[s] = host.serial;
+    }
+    // Streams a previous draw of this layout bound beyond this draw's.
+    while (binding.getBufferCount() > 0 && binding.getLastBoundIndex() > d->stream_count) {
+      binding.unsetBinding(Ogre::ushort(binding.getLastBoundIndex() - 1));
     }
     if (bound != layout.bound) {
       layout.bound = bound;
