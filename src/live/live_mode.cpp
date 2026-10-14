@@ -455,12 +455,6 @@ void LiveMode::Run() {
           Delta(s.skipped, skipped_before), Delta(s.degraded, degraded_before),
           Delta(s.texture_problems, problems_before));
       const double per = double(std::max<size_t>(frames, 1));
-      if (mods::TextureCheckOn()) {
-        const mods::TextureCheckCounts c = mods::TextureCheckTotals();
-        REXLOG_INFO("mods: texture check: {} named textures compared with what the game opened, {} differ, "
-                    "{} not reported by the game",
-                    c.compared, c.differing, c.unreported);
-      }
       REXLOG_INFO("live consumer (backend thread, ms per frame): content and textures {:.2f}, "
                   "commands {:.2f} (frontend {:.2f}, backend draws {:.2f}), frame end {:.2f}, "
                   "present {:.2f}, content release {:.2f}",

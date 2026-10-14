@@ -871,11 +871,11 @@ way: the file's bytes once, as the texture's content, and the group and file in 
 each frame's commands, which recordings made before do not have. Without mods or replacements the
 images do not change; a capture only adds each named texture's group to its TXFL chunk.
 
-**Checking the host's choice** (`TORCHLIGHT_MODS_DIAGNOSTICS`, `--mods_texture_check`): the guest
-reports the archive and path it opened for each named texture (`mods::NoteGuestTextureOpen`), and the
-live frontend compares its own choice with it: each difference is logged as
-`mods: texture check: NAME: the game opened ..., the host chose ...`, and the live summary counts
-the textures compared, differing and not reported. Validation runs expect no difference.
+**Checking the host's choice** (a diagnostics build, `--mods_texture_check`; removed 2026-10-14):
+the guest reported the archive and path it opened for each named texture, and the live frontend
+compared its own choice with it, logging each difference and counting the textures compared,
+differing and not reported. Its last result, in every validation run below: 0 differences. The
+resolver's rules stay covered by its unit tests (`texture_files_test`).
 
 ## 7k. The replacements folder: files as if inside the pak (2026-10-12)
 
@@ -899,12 +899,12 @@ folder next to `mods` in the user data folder (`platform::DataDir()`), with the 
   host side"): this folder first for the pak's groups. Captures and session recordings keep the
   folder's bytes, since replay has no replacements folder.
 
-**The texture check (diagnostics).** With `TORCHLIGHT_MODS_DIAGNOSTICS` and `--mods_texture_check`,
-the guest reports which archive its OGRE opened each named texture from. `mods_install.cpp` follows
-`ResourceGroupManager::openResource` and the archives' `open` (guest_abi `game_ui.h`
-`kOpenResource`; `game_menu/texture_open.h`, tested). The live frontend compares that with its own
-choice. It logs each difference and, every 10 s, how many textures were compared, how many differ
-and how many the game did not report.
+**The texture check (diagnostics, removed 2026-10-14 after the validations below, last result 0
+differences).** The guest reported which archive its OGRE opened each named texture from, following
+`ResourceGroupManager::openResource` (0x8242B070) and the archives' `open` (`FileSystemArchive`
+0x824B3D48, `ZipArchive` 0x824BD3D0, the archive's name at `+4`). The live frontend compared that
+with its own choice, logged each difference and, every 10 s, how many textures were compared, how
+many differed and how many the game did not report.
 
 **What the check found: names with a device.** The guest's data loader gives a mod's file by its
 full path, device included (`TLMOD002:/MEDIA/...`, the mod's file-map value). OGRE opens that name
@@ -1051,8 +1051,9 @@ selector or the text reading; the unit tests (`class_skill_check_test`) cover it
 diagnostics behind `TORCHLIGHT_MODS_DIAGNOSTICS` were removed: `--mods_unit_index_check` (every base
 unit read through our path and compared with the Xbox index), `--mods_unit_index_base_only`, the
 build memory log, the log of each mod's file map and the log of the guest's searches on the mods'
-devices. The texture check (`--mods_texture_check`, 7j) stays behind the same option: its other
-half is in the live frontend's code.
+devices; and the texture check (`--mods_texture_check`, 7j), with the render agent's agreement,
+since none of the render agent's runs used it any more. `TORCHLIGHT_MODS_DIAGNOSTICS` itself is gone. The findings
+of each stay in the sections above.
 
 ## 8. Where mods go on our side
 

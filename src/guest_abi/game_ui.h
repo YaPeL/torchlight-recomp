@@ -283,20 +283,6 @@ inline constexpr GuestFunction kMaterialPtrRelease{0x8220D490, Confidence::kConf
 // mods/unit_cache.h UnitIndexFileName), with the game's own spelling when the game asks by its own
 // name through CEGUI or OGRE (our layout, the widened layouts, which keep the pak's names).
 
-// [confirmed] Where a resource's file is opened, for the mods' texture check (docs/mods.md 7j,
-// mods_install.cpp behind TORCHLIGHT_MODS_DIAGNOSTICS):
-// - ResourceGroupManager::openResource (OgreResourceGroupManager.cpp 1.7): r3 the returned
-//   DataStreamPtr, r4 this, r5 the resource name (std::string), r6 the group, r7
-//   searchGroupsIfNotFound, r8 resourceBeingLoaded (prologue @0x8242B070-@0x8242B08C; "Cannot locate
-//   resource " @0x820DB61C). Not found in its group, it calls itself for the group that has the file.
-// - FileSystemArchive::open ("FileSystemArchive::open" @0x820E5E10) and ZipArchive::open (" - Unable
-//   to open file " @0x820E8710): r3 the returned DataStreamPtr, r4 this, r5 the file name
-//   (std::string). The archive's name (Archive::mName, a std::string) is at this+4: concatenate_path
-//   (mName, filename) @0x824B3D5C; mName + " - Unable to open file " @0x824BD460.
-inline constexpr GuestFunction kOpenResource{0x8242B070, Confidence::kConfirmed};
-inline constexpr GuestFunction kFileSystemArchiveOpen{0x824B3D48, Confidence::kConfirmed};
-inline constexpr GuestFunction kZipArchiveOpen{0x824BD3D0, Confidence::kConfirmed};
-inline constexpr Field kArchiveName{4, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // Calling into the guest from a hook (on the game's thread: CEGUI is not thread-safe).

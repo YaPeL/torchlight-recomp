@@ -16,7 +16,6 @@
 
 #include "game_menu/guest_call.h"
 #include "game_menu/mod_scripts.h"
-#include "game_menu/texture_open.h"
 #include "game_menu/save_mod_list.h"
 #include "game_menu/video_menu.h"
 #include "game_setup/game_files.h"
@@ -28,13 +27,6 @@
 #include "mods/save_safety.h"
 #include "mods/texture_files.h"
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-#include <rex/cvar.h>
-
-REXCVAR_DEFINE_BOOL(mods_texture_check, false, "Torchlight",
-                    "Diagnostics: compare the file the host takes for each named texture with the one "
-                    "the game opened, and log every difference (mods/texture_files.h)");
-#endif
 
 namespace torchlight::game_menu {
 
@@ -165,12 +157,6 @@ void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_
 
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
                  const std::filesystem::path& user_data_root) {
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-  if (REXCVAR_GET(mods_texture_check)) {
-    mods::SetTextureCheck(true);
-    REXLOG_INFO("mods: texture check on: the host's choice of each named texture is compared with the game's");
-  }
-#endif
   if (data_dir.empty()) return;
   MountReplacements(runtime, data_dir);
   const std::filesystem::path folder = data_dir / "mods";
@@ -412,11 +398,6 @@ void HookScriptListener(PPCContext& ctx, uint8_t* base, void (*original)(PPCCont
 }  // namespace torchlight::game_menu
 
 REX_EXTERN(__imp__sub_8239B490);
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-REX_EXTERN(__imp__sub_8242B070);
-REX_EXTERN(__imp__sub_824B3D48);
-REX_EXTERN(__imp__sub_824BD3D0);
-#endif
 REX_EXTERN(__imp__sub_82429D78);
 REX_EXTERN(__imp__sub_822A68F0);
 
@@ -448,36 +429,6 @@ void HookUnitSave(PPCContext& ctx, uint8_t* base) {
   }
 }
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-// The mods' texture check (mods/texture_files.h NoteGuestTextureOpen): which archive the game's
-// OGRE opened each named texture from (guest_abi game_ui.h kOpenResource, kFileSystemArchiveOpen,
-// kZipArchiveOpen). Off, the hooks only call the originals.
-thread_local TextureOpenRecorder g_texture_opens;
-
-void HookOpenResource(PPCContext& ctx, uint8_t* base) {
-  if (!mods::TextureCheckOn()) {
-    __imp__sub_8242B070(ctx, base);
-    return;
-  }
-  g_texture_opens.Begin(abi::ogre::ReadString(base, ctx.r5.u32, 1024), ctx.r1.u32);
-  __imp__sub_8242B070(ctx, base);
-  if (auto opened = g_texture_opens.End()) {
-    mods::NoteGuestTextureOpen(opened->name, opened->container, opened->path);
-  }
-}
-
-void HookArchiveOpen(PPCContext& ctx, uint8_t* base, void (*original)(PPCContext&, uint8_t*)) {
-  if (!mods::TextureCheckOn()) {
-    original(ctx, base);
-    return;
-  }
-  const uint32_t stream = ctx.r3.u32, archive = ctx.r4.u32;
-  const std::string file = abi::ogre::ReadString(base, ctx.r5.u32, 1024);
-  original(ctx, base);
-  if (abi::ReadU32(base, stream + abi::ogre::shared_ptr::kPRep.offset) == 0) return;  // not opened
-  g_texture_opens.ArchiveOpened(abi::ogre::ReadString(base, archive + ui::kArchiveName.offset, 1024), file);
-}
-#endif
 
 }  // namespace
 
@@ -496,14 +447,5 @@ static_assert(torchlight::guest_abi::game_ui::kInitialiseAllResourceGroups.addre
               "game_ui mismatch");
 REX_FUNC(sub_82429D78) { torchlight::game_menu::HookInitialiseAll(ctx, base, __imp__sub_82429D78); }
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-static_assert(torchlight::guest_abi::game_ui::kOpenResource.address == 0x8242B070u &&
-                  torchlight::guest_abi::game_ui::kFileSystemArchiveOpen.address == 0x824B3D48u &&
-                  torchlight::guest_abi::game_ui::kZipArchiveOpen.address == 0x824BD3D0u,
-              "game_ui mismatch");
-REX_FUNC(sub_8242B070) { torchlight::game_menu::HookOpenResource(ctx, base); }
-REX_FUNC(sub_824B3D48) { torchlight::game_menu::HookArchiveOpen(ctx, base, __imp__sub_824B3D48); }
-REX_FUNC(sub_824BD3D0) { torchlight::game_menu::HookArchiveOpen(ctx, base, __imp__sub_824BD3D0); }
-#endif
 
 }  // extern "C"
