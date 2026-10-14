@@ -230,12 +230,19 @@ the mod's own folder, next to its source. **[read]** So the device must be writa
 writes stay in the user's mods folder; the game's data is never written (its device stays
 read-only). The exact compiled name (`X.DAT.adm`, as in `pak.zip`) is **[to verify]** in a run.
 
-**Saves that reference a removed mod.** **[to verify]** for PC and the guest: what loading a
-character does with an item whose unit no longer exists (dropped, kept as unknown, or a failure).
-Characters reference their class data; the guest has "Missing datagroup for character " in its
-unit spawner (`sub_82287868`, logs and continues) but the save loading path for a missing item was
-not read. To check in a run on copies: a synthetic mod that adds an item, a character that holds
-it, the mod removed, the character loaded.
+**Saves that reference a removed mod.** What loading a character does with an item whose unit no
+longer exists:
+- **Xbox (our build):** it drops the item and the next save writes the character without it
+  (guided run of 2026-10-08, section 7h). **[observed]** Our protection now removes such items
+  before the game reads the save, with a copy, or blocks saving (7h).
+- **PC:** the main menu compares the character's mod list with the active mods and shows
+  `CharacterModsWarning` when they differ (Torchlight.exe: the window is looked up @0x5b5d34 and
+  stored at `+0xd4`; the comparison loop @0x5b3c81..@0x5b3d59 calls `setVisible` on it,
+  @0x5b3d78..@0x5b3d7f). PC's layout gives that window a text; the Xbox one has none (7d).
+  **[read]** What PC then does with the unknown item while loading was not read; being the same
+  Runic code as the Xbox build, it most likely drops it the same way. **[inferred]**
+- Characters reference their class data; the guest has "Missing datagroup for character " in its
+  unit spawner (`sub_82287868`, logs and continues), as PC does (0x49cee0).
 
 **Safety net.** Today the runtime backs a save container up only before deleting it (SDK patch 12,
 `<user_data_root>/save-backups/<UTC>-<package>/`, kept by `save_import/backup_retention.h`).
@@ -434,10 +441,17 @@ a resource location is named exactly as the game asks for it: in upper case when
 it through the data loader (the unit index), with the game's own spelling when it asks by its own
 name through CEGUI or OGRE (our video layout on `tlhost:`, which we load by our own name; the
 widened layouts on `tllayouts:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
-and the rule. **[to verify]** with a mod whose files are named in lower case, as PC mods often
-are (Windows ignores case): the mods' file maps, which the game fills from the folder listing and
-looks up in upper case, and the mods' assets that OGRE finds through the mod folders' locations.
-Those are the player's files, so the fix, if needed, cannot be renaming them.
+and the rule. **Mods with files named in lower case, as PC mods often are (Windows ignores case),
+checked (2026-10-14):** both ways the game reaches a mod's file work with them.
+- **The data loader** (the mods' file maps, filled from the folder listing and looked up in upper
+  case): class units in `valkyrie.dat` and `enchanter.dat` (Enhanced Edition) are offered at
+  creation and made, and the Kensai's skills in `kensaibase/explorer.dat`, `ritual.dat`,
+  `titanic.dat` show in his tree (hand runs of 2026-10-13); a lower-case axe mod changed its data
+  (2026-10-09).
+- **OGRE** (the mods' assets, found through the mod folders' locations): the Enchantress's
+  `eyes.png` and `body.png` load as `MEDIA/MODELS/ENCHANTRESS/EYES.PNG` and `BODY.PNG` (run logs)
+  and she is drawn with them (captures).
+**[observed in runs]**
 
 **Rule: folders we mount, and files created in them later.** A host folder mounted as a device
 (`HostPathDevice`) is read into memory when it is mounted. Opening a file by its path still finds
