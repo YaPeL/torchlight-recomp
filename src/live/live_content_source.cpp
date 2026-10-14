@@ -130,12 +130,6 @@ std::optional<std::vector<uint8_t>> LiveContentSource::NamedTexture(const comman
   if (!resolver) return GameFile(t.name);
   const mods::TextureFile found =
       resolver->Find(t.name, t.group, [this](std::string_view key) { return pak_.Contains(std::string(key)); });
-  if (mods::TextureCheckOn()) {
-    if (auto difference = mods::CheckTextureChoice(t.name, found)) {
-      static int logged = 0;
-      if (logged++ < 50) REXLOG_WARN("mods: texture check: {}", *difference);
-    }
-  }
   switch (found.source) {
     case mods::TextureSource::kPak:
       return GameFile(t.name);

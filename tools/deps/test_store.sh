@@ -4,7 +4,6 @@
 # (.github/workflows/ci.yml). Usage: tools/deps/test_store.sh
 set -euo pipefail
 here=$(cd "$(dirname "$0")" && pwd)
-export GITHUB_REPOSITORY=test/store
 # shellcheck source=store.sh
 source "$here/store.sh"
 

@@ -10,6 +10,15 @@ project(torchlight LANGUAGES C CXX)  # C: miniz, for the save import
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Profiling builds keep the frame pointer in every target, the recompiled game included, so that
+# `perf record --call-graph fp` unwinds the guest's thread (its DWARF unwinding fails on the guest
+# stack; docs/game-thread-parallelism.md). Off in every preset and release: it costs a register.
+option(TORCHLIGHT_FRAME_POINTERS
+    "Keep frame pointers in every target, for perf --call-graph fp (profiling builds only)" OFF)
+if(TORCHLIGHT_FRAME_POINTERS)
+    add_compile_options(-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer)
+endif()
+
 option(TORCHLIGHT_GAME
     "Build the game executable (needs generated/, the recompiled code); OFF: libraries, tests and tools only"
     ON)
@@ -66,6 +75,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/guest_copy_hooks.cpp
     src/hooks/guest_io_hooks.cpp
     src/hooks/render_system_hooks.cpp
+    src/hooks/rtss_listener_hooks.cpp
     src/hooks/resource_hooks.cpp
     src/hooks/video_mode_hooks.cpp
     src/hooks/find_file_hooks.cpp
@@ -79,8 +89,10 @@ set(TORCHLIGHT_SOURCES
     src/mods/text_reader_hooks.cpp
     src/mods/save_block_hooks.cpp
     src/mods/wardrobe_hooks.cpp
+    src/game_menu/class_selector.cpp
     src/game_menu/save_import_menu.cpp
     src/game_menu/save_indicator.cpp
+    src/game_menu/skill_tree.cpp
     src/game_menu/video_menu.cpp
 )
 
@@ -154,6 +166,7 @@ add_subdirectory(tools/replay)
 add_subdirectory(tools/run_capped)
 add_subdirectory(tools/translations)
 add_subdirectory(tools/achievement_coverage)
+add_subdirectory(tools/class_skill_check)
 add_subdirectory(tools/release)
 add_subdirectory(tests/save_convert)
 
@@ -166,16 +179,6 @@ if(TORCHLIGHT_DEV_COMMANDS)
     # Only the file that uses it, so switching the option does not rebuild the recompiled code.
     set_source_files_properties(src/dev/guest_command.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_COMMANDS=1)
-endif()
-# Mods diagnostics for validation runs (mods/unit_index_install.cpp: --mods_unit_index_check; the
-# mods' file maps in the log, game_menu/mods_install.cpp; the guest's directory searches on tlmods:
-# and those whose path the hook changes, hooks/find_file_hooks.cpp). Off by default; the release
-# workflows and presets never set it, so release builds have no such flag.
-option(TORCHLIGHT_MODS_DIAGNOSTICS "Mods diagnostics (--mods_unit_index_check)" OFF)
-if(TORCHLIGHT_MODS_DIAGNOSTICS)
-    set_source_files_properties(src/mods/unit_index_install.cpp src/game_menu/mods_install.cpp
-        src/hooks/find_file_hooks.cpp PROPERTIES
-        COMPILE_DEFINITIONS TORCHLIGHT_MODS_DIAGNOSTICS=1)
 endif()
 # Controller input scripts for unattended runs (dev/script_input.h). Off by default; the release
 # workflows never set it, so release builds ignore --dev_input_script.
@@ -194,7 +197,7 @@ add_dependencies(torchlight torchlight_data)
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods torchlight_texture_files
     torchlight_save_mod_list torchlight_video_mode torchlight_guest_path
     torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull
-    torchlight_dev_input_script)
+    torchlight_native_render_system torchlight_dev_input_script)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)

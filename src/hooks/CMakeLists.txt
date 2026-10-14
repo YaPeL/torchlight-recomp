@@ -53,3 +53,22 @@ add_executable(bucket_cull_test bucket_cull_test.cpp)
 target_link_libraries(bucket_cull_test PRIVATE torchlight_bucket_cull)
 target_compile_options(bucket_cull_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME bucket_cull_test COMMAND bucket_cull_test)
+
+# Host implementations of render system member writes (native_render_system.h): pure over a guest
+# memory base; the hooks that call them (render_system_hooks.cpp) are part of the executable.
+add_library(torchlight_native_render_system STATIC native_render_system.cpp)
+target_include_directories(torchlight_native_render_system PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_native_render_system PUBLIC cxx_std_23)
+target_compile_options(torchlight_native_render_system PRIVATE -Wall -Wextra -Werror)
+
+add_executable(native_render_system_test native_render_system_test.cpp)
+target_link_libraries(native_render_system_test PRIVATE torchlight_native_render_system)
+target_compile_options(native_render_system_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME native_render_system_test COMMAND native_render_system_test)
+
+# The fields a SetTextureBlend record keeps (texture_blend_record.h, header only).
+add_executable(texture_blend_record_test texture_blend_record_test.cpp)
+target_include_directories(texture_blend_record_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(texture_blend_record_test PRIVATE cxx_std_23)
+target_compile_options(texture_blend_record_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME texture_blend_record_test COMMAND texture_blend_record_test)

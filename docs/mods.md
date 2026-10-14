@@ -207,7 +207,7 @@ of reading 1), which is the mechanism the project already uses.
 **Mounting the folder.** The guest reads files through the runtime's virtual file system. The SDK
 already offers what is needed, with no patch: `rex::filesystem::HostPathDevice` on a host folder,
 `RegisterDevice` and `RegisterSymbolicLink`; the video menu mounts `data/ui/` as `tlhost:` and the
-wide layouts as `tlwide:` this way (`src/game_menu/video_menu.cpp`). The mods folder would be a
+wide layouts as `tllayouts:` this way (`src/game_menu/video_menu.cpp`). The mods folder would be a
 device of its own on `DataDir()/mods/` (for example `tlmods:`), **writable** (`read_only` false)
 because of the compiled files below, and only that folder: never the game's data. **[read]**
 
@@ -409,7 +409,8 @@ gaps.
    "Destroyer", in a `CResourceManager` (`sub_823DE8F0`, returning to 0x822131C4), and when that
    fails, again with a fallback name (returning to 0x82213210), whose result it does not check
    (`lwz r11,428(r3)` with r3 = 0). With our index built from the base alone
-   (`--mods_unit_index_base_only`, diagnostics), the file we write is byte for byte the Xbox
+   (`--mods_unit_index_base_only`, a diagnostics switch since removed), the file we write is byte
+   for byte the Xbox
    `media/UNITDATA.RAW`, and the loop still came. The loader's reader then held 0 bytes and the
    index's GUID map 0 entries: the game looked for `<key>.RAW` in the mod (both misses are in the
    log) and nowhere else, so the loader skipped the whole file with no error (guest_abi
@@ -433,7 +434,7 @@ default, so the same mistake would not show there). A file we create for the gam
 a resource location is named exactly as the game asks for it: in upper case when the game reaches
 it through the data loader (the unit index), with the game's own spelling when it asks by its own
 name through CEGUI or OGRE (our video layout on `tlhost:`, which we load by our own name; the
-widened layouts on `tlwide:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
+widened layouts on `tllayouts:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
 and the rule. **[to verify]** with a mod whose files are named in lower case, as PC mods often
 are (Windows ignores case): the mods' file maps, which the game fills from the folder listing and
 looks up in upper case, and the mods' assets that OGRE finds through the mod folders' locations.
@@ -451,7 +452,7 @@ That is what kept our unit index out: written by the host after `tlunits:` was m
 never listed (case did not matter: with the file there at the mount, its lower-case name was read
 too). `tlunits:` is now mounted in the index loader's hook, once the file exists
 (`MountIndexFolder`). The other mounts: `tlhost:` holds files shipped with the executable,
-`tlwide:` is written before it is mounted, and the language pack is on the game's own device, so
+`tllayouts:` is written before it is mounted, and the language pack is on the game's own device, so
 none of them is affected. On `tlmods:` the game itself writes the `.ADM` files it compiles, through
 the device, so the device lists them; but a `.ADM` compiled during a session is in neither the
 mod's file map nor OGRE's index until the next start. In that session the game reads and compiles
@@ -622,11 +623,11 @@ released key was not traced. It also explains why halving the mod's files gave n
 breaks depends on which definitions the build reads and which names end up released.
 
 The fix: the builder keeps the nodes. Nothing it reads is released, so every name it made stays.
-The memory they hold stays with the game for the session; a diagnostics build
-(`TORCHLIGHT_MODS_DIAGNOSTICS`) logs it after each build (`mods: build memory: ...`: the used
-physical pages and virtual heaps, the name table's size, and the nodes, properties and subgroups
-kept). The wardrobe guard of 7f stays as a net; the player notice planned for a class without a
-model is dropped if the fix holds.
+The memory they hold stays with the game for the session; a diagnostics build logged it after each
+build (`mods: build memory: ...`: the used physical pages and virtual heaps, the name table's
+size, and the nodes, properties and subgroups kept), until that log was removed with the other
+unit diagnostics (2026-10-14). The wardrobe guard of 7f stays as a net; the player notice planned
+for a class without a model is dropped if the fix holds.
 
 Validated on 2026-10-09, building the index in the session: `JCC - Main` twice and the
 Ultimate Torchlight Mod-Pack (29 mods) twice, no wardrobe guard warning and no fault in any; then a
@@ -725,9 +726,11 @@ appeared in hers (slot 77). The save written in that same session, with no level
 sales, kept both. So a sold item stays with the merchant, in the stock and in the save, until the
 next load of that level rebuilds the stock.
 
-**[open, low priority]** In the run with `JCC - Map` turned off, a weapon sold to the remade Tarn
-did not appear. His first range was full (42 goods, slots 19-60). The ranges that Tarn has were not
-read.
+**[closed without further work, 2026-10-13]** In the run with `JCC - Map` turned off, a weapon
+sold to the remade Tarn did not appear. His first range was full (42 goods, slots 19-60). The likely
+cause is that this Tarn has no range for weapons, so the sold weapon had nowhere to go and was lost,
+as an item whose range is full is (above). **[inferred]** The ranges that Tarn has were not read,
+and the user decided not to look further.
 
 ## 7i. Mods that ship PC-compiled `.ADM` files crashed at startup (2026-10-10, fixed)
 
@@ -868,11 +871,11 @@ way: the file's bytes once, as the texture's content, and the group and file in 
 each frame's commands, which recordings made before do not have. Without mods or replacements the
 images do not change; a capture only adds each named texture's group to its TXFL chunk.
 
-**Checking the host's choice** (`TORCHLIGHT_MODS_DIAGNOSTICS`, `--mods_texture_check`): the guest
-reports the archive and path it opened for each named texture (`mods::NoteGuestTextureOpen`), and the
-live frontend compares its own choice with it: each difference is logged as
-`mods: texture check: NAME: the game opened ..., the host chose ...`, and the live summary counts
-the textures compared, differing and not reported. Validation runs expect no difference.
+**Checking the host's choice** (a diagnostics build, `--mods_texture_check`; removed 2026-10-14):
+the guest reported the archive and path it opened for each named texture, and the live frontend
+compared its own choice with it, logging each difference and counting the textures compared,
+differing and not reported. Its last result, in every validation run below: 0 differences. The
+resolver's rules stay covered by its unit tests (`texture_files_test`).
 
 ## 7k. The replacements folder: files as if inside the pak (2026-10-12)
 
@@ -896,12 +899,12 @@ folder next to `mods` in the user data folder (`platform::DataDir()`), with the 
   host side"): this folder first for the pak's groups. Captures and session recordings keep the
   folder's bytes, since replay has no replacements folder.
 
-**The texture check (diagnostics).** With `TORCHLIGHT_MODS_DIAGNOSTICS` and `--mods_texture_check`,
-the guest reports which archive its OGRE opened each named texture from. `mods_install.cpp` follows
-`ResourceGroupManager::openResource` and the archives' `open` (guest_abi `game_ui.h`
-`kOpenResource`; `game_menu/texture_open.h`, tested). The live frontend compares that with its own
-choice. It logs each difference and, every 10 s, how many textures were compared, how many differ
-and how many the game did not report.
+**The texture check (diagnostics, removed 2026-10-14 after the validations below, last result 0
+differences).** The guest reported which archive its OGRE opened each named texture from, following
+`ResourceGroupManager::openResource` (0x8242B070) and the archives' `open` (`FileSystemArchive`
+0x824B3D48, `ZipArchive` 0x824BD3D0, the archive's name at `+4`). The live frontend compared that
+with its own choice, logged each difference and, every 10 s, how many textures were compared, how
+many differed and how many the game did not report.
 
 **What the check found: names with a device.** The guest's data loader gives a mod's file by its
 full path, device included (`TLMOD002:/MEDIA/...`, the mod's file-map value). OGRE opens that name
@@ -1008,6 +1011,48 @@ list's source to verify]**
 data, or the PC screen would have to be brought back. This is deferred to the work on the PC
 interface and controls (section 9). A mod's class can still be loaded where it already exists, for
 example a character imported from PC with that class. That case was not tested.
+
+**Played with a character made outside that screen (2026-10-13).** An Enchantress (JCC -
+Enchantress) made from a copy of a Destroyer save loads, levels up, learns and uses a skill, and
+saves and loads again; the 3D character behind the main menu shows her. Her skill tree did not
+show a third of her skills: the Xbox tree has two columns per pane, PC's have three, and every
+class of the 29-mod pack uses the third (2 to 15 skills each). Worse, the game's table of the
+tree's skills gave a third-column skill the slot of the cell below it, so that cell could describe
+and learn the wrong skill. **[read; seen in a capture]** The tree now gets a third column for a
+class that uses one (ARCHITECTURE.md, "a third column in the skill tree"); the game's classes keep
+their tree as it was.
+
+**Offered at creation (2026-10-13).** The creation screen now lists the mods' classes as well
+(ARCHITECTURE.md, "mods' classes at character creation"): the game's three, then each enabled
+mod's `charactercreate.layout` class buttons with a player unit behind them. With the 29-mod pack
+that is 28 classes (JCC - Main's layout); a mod's class that no layout lists is not offered, as on
+PC. Icons: the game's classes keep theirs; the others show an empty frame with the class name. The
+mods' own PC icons (their `logo.imageset`) are a later improvement.
+
+**A skill a mod's file loses (2026-10-13).** The Kensai's tree (JCC - Class Skills - Fury, Kensai
+and Nethermage) places 15 skills in its third column, and the game holds 14: RAGEECHO (Rage, the
+level 10 row) is missing. Its definition, `JCC - Abomination/media/skills/Abomination/RageEcho/
+rageecho.dat`, is the one file of that folder written in 8-bit text instead of UTF-16. PC's text
+reader takes every file as UTF-16 (`mods/text_encoding.h`), so the file does not read there either:
+the skill is lost on PC too, a fault of the mod. **[read: the files; the PC reader as in 7e]**
+
+**Checked for every class (`tools/class_skill_check`).** `class_skill_check PAK MODS_FOLDER` reads
+each class the creation screen offers (the game's and the mods') and compares the skills of its
+`.dat` with what the skill tree shows, through the tree's own model. Skills the mod's own data keeps
+out are reported, not failures, since PC does the same: placed nowhere (a missing PANE, ROW or
+COLUMN reads as -1), defined by no file, or replaced in their cell by a later skill of the same
+`.dat`. A failure is a definition the game cannot read, or a defined, placed skill the tree drops;
+known losses are listed in `check.h` (`kKnownLosses`, only the Kensai's RAGEECHO). On 2026-10-13:
+the 29-mod pack, 28 classes, 43 kept out by the mods' data, 1 known, 0 failures; Enhanced Edition,
+8 classes, 2 kept out, 0 failures. Run it on the player's data after a change to the tree, the
+selector or the text reading; the unit tests (`class_skill_check_test`) cover its rules.
+
+**Diagnostics removed (2026-10-14).** Once the validations they served were done, the mods
+diagnostics behind `TORCHLIGHT_MODS_DIAGNOSTICS` were removed: `--mods_unit_index_check` (every base
+unit read through our path and compared with the Xbox index), `--mods_unit_index_base_only`, the
+build memory log, the log of each mod's file map and the log of the guest's searches on the mods'
+devices; and the texture check (`--mods_texture_check`, 7j), since no run used it any more.
+`TORCHLIGHT_MODS_DIAGNOSTICS` itself is gone. The findings of each stay in the sections above.
 
 ## 8. Where mods go on our side
 

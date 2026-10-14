@@ -16,7 +16,6 @@
 
 #include "game_menu/guest_call.h"
 #include "game_menu/mod_scripts.h"
-#include "game_menu/texture_open.h"
 #include "game_menu/save_mod_list.h"
 #include "game_menu/video_menu.h"
 #include "game_setup/game_files.h"
@@ -28,13 +27,6 @@
 #include "mods/save_safety.h"
 #include "mods/texture_files.h"
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-#include <rex/cvar.h>
-
-REXCVAR_DEFINE_BOOL(mods_texture_check, false, "Torchlight",
-                    "Diagnostics: compare the file the host takes for each named texture with the one "
-                    "the game opened, and log every difference (mods/texture_files.h)");
-#endif
 
 namespace torchlight::game_menu {
 
@@ -130,53 +122,6 @@ uint32_t GuestWString(GuestCall& call, uint8_t* base, const std::string& ascii) 
   return str;
 }
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-// Diagnostics: each mod's file map (CMod +36, a std::map keyed by std::wstring; header node at +4,
-// its parent the root, nodes: left +0, right +8, key +12, "nil" byte +69, sub_82328868), its size
-// and its first keys in order, to see how the game spells them.
-std::string NarrowGuestWString(const uint8_t* base, uint32_t str) {
-  const uint32_t length = abi::ReadU32(base, str + abi::ogre::stl_string::kLength.offset);
-  const uint32_t capacity = abi::ReadU32(base, str + abi::ogre::stl_string::kCapacity.offset);
-  const uint32_t text = capacity > mods_abi::manager::kWStringInlineCapacity ? abi::ReadU32(base, str) : str;
-  std::string out;
-  for (uint32_t i = 0; i < length && i < 200; ++i) {
-    const uint16_t c = abi::ReadU16(base, text + 2 * i);
-    out.push_back(c < 0x80 ? static_cast<char>(c) : '?');
-  }
-  return out;
-}
-
-void LogModFileMaps(const uint8_t* base, uint32_t manager) {
-  const uint32_t list = abi::ReadU32(base, manager + mods_abi::manager::kListData.offset);
-  const uint32_t count = abi::ReadU32(base, manager + mods_abi::manager::kListCount.offset);
-  for (uint32_t i = 0; i < count && i < 64; ++i) {
-    const uint32_t mod = abi::ReadU32(base, list + 4 * i);
-    if (!mod) continue;
-    const uint32_t map = mod + mods_abi::mod::kFiles.offset;
-    const uint32_t head = abi::ReadU32(base, map + 4);
-    const uint32_t size = abi::ReadU32(base, map + 8);
-    std::vector<std::string> keys;
-    std::vector<uint32_t> stack;
-    uint32_t node = head ? abi::ReadU32(base, head + 4) : 0;
-    auto nil = [&](uint32_t n) { return !n || n == head || base[n + 69] != 0; };
-    while ((!nil(node) || !stack.empty()) && keys.size() < 8) {
-      while (!nil(node)) {
-        stack.push_back(node);
-        node = abi::ReadU32(base, node + 0);
-      }
-      node = stack.back();
-      stack.pop_back();
-      keys.push_back("\"" + NarrowGuestWString(base, node + 12) + "\" -> \"" +
-                     NarrowGuestWString(base, node + 40) + "\"");
-      node = abi::ReadU32(base, node + 8);
-    }
-    REXLOG_INFO("mods: diagnostics: mod {} \"{}\" file map: {} keys", i,
-                NarrowGuestWString(base, mod + mods_abi::mod::kFolder.offset), size);
-    for (const auto& k : keys) REXLOG_INFO("mods: diagnostics:   {}", k);
-  }
-}
-#endif
-
 // The replacements folder, when it holds any file: mounted read-only, its files are added to the
 // pak's groups before they are initialised (HookInitialiseAll).
 void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_dir) {
@@ -212,12 +157,6 @@ void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_
 
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
                  const std::filesystem::path& user_data_root) {
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-  if (REXCVAR_GET(mods_texture_check)) {
-    mods::SetTextureCheck(true);
-    REXLOG_INFO("mods: texture check on: the host's choice of each named texture is compared with the game's");
-  }
-#endif
   if (data_dir.empty()) return;
   MountReplacements(runtime, data_dir);
   const std::filesystem::path folder = data_dir / "mods";
@@ -334,9 +273,6 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
   }
   REXLOG_INFO("mods: manager 0x{:08X} with {} mods, {} active", manager, count,
               mods_abi::ActiveModCount(base, manager));
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-  LogModFileMaps(base, manager);
-#endif
   // As PC does (docs/mods.md 7j): each active mod's folder goes only into the mod's own resource
   // group (guest_abi mods.h, mod::kResourceGroup; OGRE makes the group when a location is added to
   // it), which is then initialised, after the game's groups and in mods.dat's order (ModPlan
@@ -462,11 +398,6 @@ void HookScriptListener(PPCContext& ctx, uint8_t* base, void (*original)(PPCCont
 }  // namespace torchlight::game_menu
 
 REX_EXTERN(__imp__sub_8239B490);
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-REX_EXTERN(__imp__sub_8242B070);
-REX_EXTERN(__imp__sub_824B3D48);
-REX_EXTERN(__imp__sub_824BD3D0);
-#endif
 REX_EXTERN(__imp__sub_82429D78);
 REX_EXTERN(__imp__sub_822A68F0);
 
@@ -498,36 +429,6 @@ void HookUnitSave(PPCContext& ctx, uint8_t* base) {
   }
 }
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-// The mods' texture check (mods/texture_files.h NoteGuestTextureOpen): which archive the game's
-// OGRE opened each named texture from (guest_abi game_ui.h kOpenResource, kFileSystemArchiveOpen,
-// kZipArchiveOpen). Off, the hooks only call the originals.
-thread_local TextureOpenRecorder g_texture_opens;
-
-void HookOpenResource(PPCContext& ctx, uint8_t* base) {
-  if (!mods::TextureCheckOn()) {
-    __imp__sub_8242B070(ctx, base);
-    return;
-  }
-  g_texture_opens.Begin(abi::ogre::ReadString(base, ctx.r5.u32, 1024), ctx.r1.u32);
-  __imp__sub_8242B070(ctx, base);
-  if (auto opened = g_texture_opens.End()) {
-    mods::NoteGuestTextureOpen(opened->name, opened->container, opened->path);
-  }
-}
-
-void HookArchiveOpen(PPCContext& ctx, uint8_t* base, void (*original)(PPCContext&, uint8_t*)) {
-  if (!mods::TextureCheckOn()) {
-    original(ctx, base);
-    return;
-  }
-  const uint32_t stream = ctx.r3.u32, archive = ctx.r4.u32;
-  const std::string file = abi::ogre::ReadString(base, ctx.r5.u32, 1024);
-  original(ctx, base);
-  if (abi::ReadU32(base, stream + abi::ogre::shared_ptr::kPRep.offset) == 0) return;  // not opened
-  g_texture_opens.ArchiveOpened(abi::ogre::ReadString(base, archive + ui::kArchiveName.offset, 1024), file);
-}
-#endif
 
 }  // namespace
 
@@ -546,14 +447,5 @@ static_assert(torchlight::guest_abi::game_ui::kInitialiseAllResourceGroups.addre
               "game_ui mismatch");
 REX_FUNC(sub_82429D78) { torchlight::game_menu::HookInitialiseAll(ctx, base, __imp__sub_82429D78); }
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-static_assert(torchlight::guest_abi::game_ui::kOpenResource.address == 0x8242B070u &&
-                  torchlight::guest_abi::game_ui::kFileSystemArchiveOpen.address == 0x824B3D48u &&
-                  torchlight::guest_abi::game_ui::kZipArchiveOpen.address == 0x824BD3D0u,
-              "game_ui mismatch");
-REX_FUNC(sub_8242B070) { torchlight::game_menu::HookOpenResource(ctx, base); }
-REX_FUNC(sub_824B3D48) { torchlight::game_menu::HookArchiveOpen(ctx, base, __imp__sub_824B3D48); }
-REX_FUNC(sub_824BD3D0) { torchlight::game_menu::HookArchiveOpen(ctx, base, __imp__sub_824BD3D0); }
-#endif
 
 }  // extern "C"

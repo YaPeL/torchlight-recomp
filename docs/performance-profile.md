@@ -796,6 +796,135 @@ on, no cap, no vsync, 10 s from the town square mark; percentages of all the pro
 - **The two-stage pipeline** stays paused for the same reason: no machine measured so far shows the
   backend behind on the reference route.
 
+### The guest's thread is the limit; codegen with r0, r2, r11, f0 in locals: not taken (2026-10-13)
+
+**Where the limit is.** Per thread, without vsync or a cap, on the reference route (automatic runs,
+`/proc` sampled every 0.5 s): the guest's main thread (`Main XThread`, the recompiled PPC code) at
+99.8-100 % of one core in every step; the backend (`tl backend`) 62-68 %, the SDK's `GPU Commands`
+39-49 %, the UI thread 28-32 %, the rest under 2 % each. It hardly waits: 0.3 ms a second for the
+GPU's progress (`guest GPU waits:` in the log), about nothing on our locks (0.005 ms a frame on the
+frame queue). One thread computing is the limit, which is why a much faster desktop is only as much
+faster as its single core. Of that thread (town square DWARF profile): the recompiled guest code
+79 % (flat: the octree walk `0x821C7158` and `Frustum::isVisible` `0x821C74A0` at 1.8 % each are
+the top), our producer 8.4 %, the C library's allocator and `mem*` 4.6 %, `fma` through libm 1.6 %,
+the SDK's runtime 1.5 %, our hooks 1.1 %, the register save and restore helpers 0.2 % (4.6 % before
+the non-volatile registers went into locals). The floating point mode switches (`ldmxcsr`) are
+about 0.02 %.
+
+**SDK patch 32** (`sdk/argument-locals`, the ReXGlue agent's; not in `patches/series`):
+`non_argument_in_context` lets `non_argument_as_local` keep r12 in the context (the SEH funclets
+and the stack probe read it outside the ABI) and put r0, r2, r11, f0 and v32-v63 in locals, 23 % of
+the generated code's register references to the context. A live-in survey of the 43,927 functions
+found those registers live at entry only in two dead tails. A checking mode
+(`verify_non_argument_locals`) compares, at each read after a call, the local with what the context
+would hold, and logs the first difference per site:
+- three automatic routes with it (the fixed-floor game: a fight, `FAME`, two `LEVELUP`, `ASCEND`
+  and its save; that save loaded, `DESCEND`, a fight; the town by the vendors, an NPC, the
+  inventory): one line, `subfe r10,r11,r11` at `0x824BFEAC`, whose result does not depend on r11
+  (`~x + x + CA`): the compiler's way to turn a carry into a mask. The check now skips repeated
+  operands of `subfe`, `subf`, `subfc`, `xor`, `eqv` and `andc`.
+- **synthetic** (three runs each, alternated): game fps +3.6 % main menu, +3.2 % dungeon still,
+  +2.7 % fight, +1.1 % town square, the runs' ranges overlapping; the executable 3.5 % smaller.
+- **by hand** (four blind runs, two each, the reference route, no vsync or cap): dungeon still
+  227.9 -> 226.9 fps, fight 170.2 -> 177.3 (one run with it lacked the lightning effect; without it,
+  between the two without), town square 141.7 -> 140.8. No visible gain.
+
+**Not taken**: only what the hand runs back goes in. The patch, its checking mode and the filter
+stay on `sdk/argument-locals`; `~/rexglue-sdk` was not swapped. This laptop measures at its thermal
+limit (82 C, throttling throughout), where a 1-3 % gain is below what it can show: to measure again
+on a machine without that limit (the Windows desktop, the Steam Deck). The interprocedural
+liveness analysis that would also take the argument registers (r3-r10, about 60 % of the context
+references; at best about +3-8 %, weeks of codegen work upstream) is left for after the producer,
+if the guest's thread is still the limit.
+
+### Producer: the state early out and the constant ranges' allocations (2026-10-13)
+
+The two cuts left from phase A, on `perf/producer-small-cuts` (not in `develop`):
+- **The early out's cache misses.** `Session::Unchanged` read each shadow entry's presence and
+  version through a pointer to the entry, a command payload of about 1.5 KB: in the town square's
+  annotated profile 47 % of its samples were that load and 21 % the memo's pointer. Each entry now
+  keeps its version (0 while erased) in one dense array and the memo keeps its slot there.
+- **The constant ranges' vector** was grown by doubling; it is reserved at its first kept range from
+  the last count of the same kind (a command whose ranges are all left out still allocates nothing).
+
+Profiles of the town square (one run each): `Unchanged` 0.67 -> 0.46 % of the process's samples,
+`_int_malloc` 0.75 -> 0.62 %, `ReadConstants` 0.47 -> 0.57 %; about 0.25 points, 0.5 % of the
+guest's thread. Synthetic runs (three each, no vsync, no cap), game fps: dungeon still 221.8 ->
+220.2, fight 205.0 -> 198.5, town square 181.5 -> 182.4, within the runs' spread (3-10 % between
+runs of one binary). **Not taken**: they do what they aim at, but 0.5 % is below what this laptop
+can show, by hand or scripted. Phase B (the producer off the guest's thread, estimated 1.5-2 %)
+is left for the same reason; both wait for a machine without a thermal limit.
+
+An alternative take on the same two costs, from phase A, is on `perf/producer-a-full` (not in
+`develop`, **not measured**): `fee774a` packs the state memos behind a small index table (only the
+slot and sub pairs in use get a memo, instead of a 1.7 MB table with one per pair), and `66b6b43`
+gives each `SetConstants` one array of values that its ranges point into, instead of a vector per
+range (the capture format is unchanged). Its other commits are in `develop`.
+
+## The backend behind in the mine: three per-draw cuts (2026-10-14)
+
+With the game thread's steps 3a and 4 in (docs/game-thread-parallelism.md), the mine standing still
+became the backend's limit: the game at 215-249 fps, 190-205 presented, 7-18 % of the guest's frames
+dropped. A hand profile of that step and the fight (the step overlay's marks, DWARF, the whole
+process) put the backend thread at about 29 % of the samples: our translation and frontend 10, the
+NVIDIA driver 7-8, OGRE 5, the C library 3.5. Three cuts, each its own commit (`perf/backend-mine`):
+
+- **The camera and the light set only when they change.** The custom projection was set for every
+  draw, which marked the frustum out of date, and the data source rebuilt it and its inverse
+  (`Frustum::updateFrustumImpl`, `Matrix4::inverse`); likewise the light's node orientation.
+- **A stage's constants bound only for the classes that changed** (`BindChangedParameters`):
+  compared with what the stage last received for the same program, the render system gets only the
+  variability classes that changed, and no call when none did (`bindGpuProgramParameters`,
+  `getActiveProgram`, the uniform walk). GL3+ already skips unchanged uniforms in its own cache, so
+  the gain is the calls and walks. The last values are kept per stage and forgotten when another
+  program is bound: Direct3D 11 has one constant buffer per stage.
+- **A draw's vertex bindings touched only where they change**, without the three allocations per
+  draw.
+
+Validation: the unit tests, the 20 parity captures replayed byte for byte, 34 frames of the town
+walk's session identical. Replay bench of that session (presenting, no vsync; three of each,
+interleaved, the 55 C cool-down before each): the frontend and backend commands 3.03 -> 2.90 ms per
+frame (-4.2 %), the backend's draws 1.37 -> 1.30 ms (-5.1 %), lower in each of the three pairs; the
+present's wait, outside the cuts, moves by more than that between runs.
+
+The blind hand batch (fixed-floor save, no cap, no vsync, A B B A, the package at 82 C throughout):
+
+| | Cuts (runs 1, 4) | Base (runs 2, 3) |
+|---|---|---|
+| Mine still, presented fps (dropped) | 179.6 (211), 173.7 (144) | 170.7 (94), 179.9 (197) |
+| Fight, presented fps (dropped) | 168.5 (183), 168.1 (245) | 156.0 (229), 169.8 (494) |
+| Town square, presented fps (dropped) | 142.4 (74), 140.4 (136) | 141.6 (310), 136.1 (284) |
+
+The town square drops fewer frames in both runs with the cuts than in both without, the fight leans
+their way, the mine standing still (a 5 s step, its game rate 189-222 fps between runs) shows no
+difference; by feel the two were not told apart, everything above 120 fps. Taken: same images, the
+work measured lower, nothing worse.
+
+The buffer bindings of the guest (slot 85, `setVertexBufferBinding`) stay out: besides the stream
+bindings it finds or creates each buffer's device copy and uploads the system-memory shadow into
+it, which is what our producer reads; a host version would have to do the same, for 0.2 % of the
+game's thread.
+
+## The ~45 ms presented hitch on this laptop: the platform's (2026-10-14)
+
+The blind hand runs of the game thread study showed, in every step, a presented maximum of 46-61 ms
+while the game's own maximum stayed at 7-28 ms. The live mode's slow frame lines place it in the
+present: `backend` 35-60 ms with `present` 35-59 ms, against 2-3 ms in the frame before, with no
+texture, program, buffer or layout created in that frame (`textures=0`, `programs=0`) and the
+content and draws at their usual cost. It is not ours:
+- It comes every 10-30 s, always at the same fraction of the wall-clock second (xx.71 s) in every
+  run, spaced by whole seconds, while the game's own periodic summaries fall at another phase.
+- It is the same with the NVIDIA GPU (3-6 per scripted run, `present` 41-61 ms) and with the Intel
+  one (Mesa UHD 630, no PRIME; 5-6 per run, 35-54 ms).
+- It is the same with and without `thermal.py`'s `nvidia-smi` polling.
+- The step overlay's changes and the scripted steps do not line up with it.
+
+What both GPUs share here is the compositor and the display: GNOME's Mutter on Wayland, with our
+window through XWayland, and the panel on the Intel GPU. An X11 session would separate the two, but
+this Ubuntu ships no GNOME session on Xorg; not pursued. Do not read a presented maximum of about
+45 ms on this laptop as the game's or the backend's; the per-step means, the drops and the p99 are
+unaffected by a handful of such frames.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked

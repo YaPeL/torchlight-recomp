@@ -18,10 +18,16 @@
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
 #include "hooks/guest_d3d_skip.h"
+#include "hooks/native_render_system.h"
+#include "hooks/texture_blend_record.h"
 
 REXCVAR_DEFINE_BOOL(native_skip_guest_d3d, true, "Torchlight",
                     "Native mode only: skip the guest's D3D work for RenderSystem calls whose only "
                     "effect is the Xenos device (docs/native-skip-guest-d3d.md)");
+REXCVAR_DEFINE_BOOL(native_render_system_members, true, "Torchlight",
+                    "Native mode only: RenderSystem functions that only write the render system's "
+                    "members run as host code writing the same members (hooks/native_render_system.h); "
+                    "false runs the recompiled guest functions");
 
 namespace {
 
@@ -33,6 +39,9 @@ namespace ogre = torchlight::guest_abi::ogre;
 
 // InstallGuestD3DSkip's decision for the session (guest_d3d_skip.h).
 bool g_skip_guest_d3d = false;
+// InstallGuestD3DSkip: the member-only RenderSystem functions run as host code
+// (native_render_system.h) instead of the recompiled guest function.
+bool g_native_members = false;
 
 uint32_t R(const PPCRegister& r) { return r.u32; }
 float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
@@ -240,35 +249,48 @@ RECORD_HOOK(42, 821CB0F0,
                       [&] { return cmd::SetTexCoordCalc{R(ctx.r4), R(ctx.r5)}; }))
 
 RECORD_HOOK(43, 821C9100, ({
+  // The fields the operation does not read are stack leftovers in the guest (OGRE 1.7 never
+  // initializes them): recorded as zero, so the early out sees only real changes and two
+  // recordings of one scene compare (hooks/texture_blend_record.h).
   namespace lb = ogre::layer_blend_mode_ex;
   uint32_t unit = R(ctx.r4);
   uint32_t mode = R(ctx.r5);
   uint32_t blend_type = abi::ReadU32(base, mode, lb::kBlendType);
+  uint32_t operation = abi::ReadU32(base, mode, lb::kOperation);
+  uint32_t source1 = abi::ReadU32(base, mode, lb::kSource1);
+  uint32_t source2 = abi::ReadU32(base, mode, lb::kSource2);
+  const auto fields = torchlight::hooks::TextureBlendRecordedFields(blend_type, operation, source1, source2);
+  const bool colour_args = fields.colour_args, alpha_args = fields.alpha_args, factor_used = fields.factor;
   uint32_t c1 = mode + lb::kColourArg1.offset, c2 = mode + lb::kColourArg2.offset;
+  auto word = [&](bool used, uint32_t address) { return used ? abi::ReadU32(base, address) : 0u; };
+  auto real = [&](bool used, uint32_t address) { return used ? abi::ReadF32(base, address) : 0.0f; };
   uint32_t sub = unit * 2 + (blend_type & 1);
   MemoState(s, 43, sub, Key<cmd::SetTextureBlend>(sub),
-            {unit, blend_type, abi::ReadU32(base, mode, lb::kOperation),
-             abi::ReadU32(base, mode, lb::kSource1), abi::ReadU32(base, mode, lb::kSource2),
-             abi::ReadU32(base, c1), abi::ReadU32(base, c1 + 4), abi::ReadU32(base, c1 + 8),
-             abi::ReadU32(base, c1 + 12), abi::ReadU32(base, c2), abi::ReadU32(base, c2 + 4),
-             abi::ReadU32(base, c2 + 8), abi::ReadU32(base, c2 + 12),
-             abi::ReadU32(base, mode, lb::kAlphaArg1), abi::ReadU32(base, mode, lb::kAlphaArg2),
-             abi::ReadU32(base, mode, lb::kFactor)},
+            {unit, blend_type, operation, source1, source2,
+             word(colour_args, c1), word(colour_args, c1 + 4), word(colour_args, c1 + 8),
+             word(colour_args, c1 + 12), word(colour_args, c2), word(colour_args, c2 + 4),
+             word(colour_args, c2 + 8), word(colour_args, c2 + 12),
+             word(alpha_args, mode + lb::kAlphaArg1.offset),
+             word(alpha_args, mode + lb::kAlphaArg2.offset),
+             word(factor_used, mode + lb::kFactor.offset)},
             [&] {
               cmd::SetTextureBlend c;
               c.unit = unit;
               c.raw_blend_type = blend_type;
-              c.raw_operation = abi::ReadU32(base, mode, lb::kOperation);
-              c.raw_source1 = abi::ReadU32(base, mode, lb::kSource1);
-              c.raw_source2 = abi::ReadU32(base, mode, lb::kSource2);
-              c.is_modulate = c.raw_operation == ogre::layer_blend_operation_ex::kModulate.value;
-              c.colour_arg1 = cap::ReadColour(base, c1);
-              c.colour_arg2 = cap::ReadColour(base, c2);
-              c.alpha_arg1 = abi::ReadF32(base, mode, lb::kAlphaArg1);
-              c.alpha_arg2 = abi::ReadF32(base, mode, lb::kAlphaArg2);
-              c.factor = abi::ReadF32(base, mode, lb::kFactor);
+              c.raw_operation = operation;
+              c.raw_source1 = source1;
+              c.raw_source2 = source2;
+              c.is_modulate = operation == ogre::layer_blend_operation_ex::kModulate.value;
+              if (colour_args) {
+                c.colour_arg1 = cap::ReadColour(base, c1);
+                c.colour_arg2 = cap::ReadColour(base, c2);
+              }
+              c.alpha_arg1 = real(alpha_args, mode + lb::kAlphaArg1.offset);
+              c.alpha_arg2 = real(alpha_args, mode + lb::kAlphaArg2.offset);
+              c.factor = real(factor_used, mode + lb::kFactor.offset);
               return c;
             });
+  if (g_native_members && torchlight::hooks::NativeSetTextureBlendMode(base, R(ctx.r3), unit, mode)) return;
 }))
 
 // ---- blend, depth, raster --------------------------------------------------------------------
@@ -553,6 +575,10 @@ namespace torchlight::hooks {
 
 void InstallGuestD3DSkip(bool native_only) {
   g_skip_guest_d3d = SkipGuestD3D(native_only, REXCVAR_GET(native_skip_guest_d3d));
+  g_native_members = native_only && REXCVAR_GET(native_render_system_members);
+  REXLOG_INFO("render system members: {} (--native_render_system_members={}, native mode {})",
+              g_native_members ? "written by host code (_setTextureBlendMode)" : "written by the guest",
+              REXCVAR_GET(native_render_system_members), native_only ? "on" : "off");
   REXLOG_INFO("guest D3D: {} (--native_skip_guest_d3d={}, native mode {})",
               g_skip_guest_d3d ? "skipped for the device-only calls (sampler states, draws, bindings)"
                                : "runs in full",
