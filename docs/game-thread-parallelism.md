@@ -695,13 +695,13 @@ specific now: in dungeons, about half of the forced evaluations are props, not u
 
 `out/blind/` of the worktree `~/tl-fable` (local, not in the repository): `setup.sh` copied the
 base build (develop `df10a44` with the frame-pointer option only) and the branch's build (steps
-3 and 4) to `out/blind/A` and `out/blind/B` in a random order, the key sealed in
+3, 4 and 5) to `out/blind/A` and `out/blind/B` in a random order, the key sealed in
 `out/blind/.key`; `run.sh A 1` (then `B 1`, `A 2`, `B 2`...) does the cool-down, a fresh copy of
 the fixed-floor save with the measurement settings (no cap, no vsync, 720p, NVIDIA) and launches
 that build by hand: the reference route (Continue, the mine standing still, the fight west over the
 bridge, the stairs up, the town square round), F3 for the two frame rates, the log's frame time
 summaries every 10 s kept under `out/blind/runs/`; `reveal.sh` opens the key afterwards. Expected
-from the profiles: about 4-6 % less game-thread CPU per frame on the branch, at this laptop's
+from the profiles: about 3-5 % less game-thread CPU per frame on the branch, at this laptop's
 noise level by hand (3-10 % between runs), so alternate and repeat.
 
 ## 10. Open
@@ -738,8 +738,9 @@ profile of the scripted route against the base's (`out/runs/` of the worktree: `
 | 3 | Game thread CPU per frame, base -> steps 3a+3b (profile runs) | fight 5.09 -> 4.98 ms (-2.2 %), town 5.63 -> 5.39 ms (-4.3 %); fps 196 -> 201, 177 -> 185 | | |
 | 4 | RTSS listener: the SGPass lookup and type check as host code (`--native_rtss_listener`) | listener subtree 5.0 -> 3.5 (fight), 4.6 -> 2.9 (town) points; the host lookup 0.1-0.9 of that: net about -1 point | yes: 2,000,000 calls, none left to the guest; replays and tests unchanged; the still captures' draw sets differ no more than two base runs' | kept |
 | 4 | Game thread CPU per frame, base -> steps 3+4 | fight 5.09 -> 4.87 ms (-4.3 %), town 5.63 -> 5.31 ms (-5.6 %); fps 196 -> 205, 177 -> 188 | | |
-| 5 | `_updateAutoParams` as host code | not started | - | next (below) |
-| 6 | Skeletal animation, shadow mode | not started | - | after 5 (below) |
+| 5 | `_updateAutoParams` replayed as host code (`--native_auto_params`): the dispatch and the copies host, every getter the guest's | auto params subtree 1.6 -> 1.1 (fight), 2.5 -> 0.8 (town) points, the replay's own 0.2-0.4 included; CPU per frame within noise | yes: 6,000,000 updates, none left to the guest; the captures' constant checks and command types unchanged | kept, marginal |
+| 3+4+5 | Game thread CPU per frame, base -> all kept steps | fight 5.09 -> 4.93 ms (-3.1 %), town 5.63 -> 5.39 ms (-4.2 %) (profile runs; the laptop's run-to-run spread is about 2 %) | | |
+| 6 | Skeletal animation, shadow mode | not started | - | suspended by the user: only 2-4 % without a parallel tier (section 2.4); after what comes of 11.2 |
 
 **Step 1, why nothing.** The hook worked as designed (every object of a visible node was tested
 against the planes with its cached world box), and dropped none in 2,400 walks of the dungeon
@@ -783,8 +784,23 @@ render states' own math: `FFPLighting` 0.5, the matrix product `0x821C2CC8` 0.5-
 `_writeRawConstants` 0.4, `FFPFog` 0.3, `FFPTexturing` 0.2: candidate 9.1 row 3 proper, a port of
 their parameter updates, not done.
 
-**Steps 5 and 6, not started; what the night's data says for them.** The game's RTSS programs use
-17 automatic constant types (from the 42 program sources of the captures: `worldviewproj_matrix`,
+**Step 5, what happened.** The guest's `_updateAutoParams` is a 126-case switch over the
+program's entries (type, physical index, element count, data, variability), each case a call to
+a data source getter and a copy into the float buffer (`0x821C2868` for matrices, transposed when
+`mTransposeMatrices` is set, at most 16 floats; `0x82467DE0` for colours, at most 4; 48 bytes per
+matrix for the 3x4 array; the derived light diffuse as four single multiplies; the light position
+through the guest's fused matrix-vector product `0x823FDEF8`). The host version keeps every
+getter the guest's (called by vtable slot, by reference or by value into the guest frame's own
+slots, the float in `f1`), so the values are the guest's to the bit, and does the dispatch and the
+copies itself; any entry of a type outside the 19 the programs use hands the whole update to the
+guest (none did in 6,000,000 updates). The gain is the recompiled dispatch and copy loops:
+0.6-1.7 points of the thread, which the CPU per frame of a single run cannot separate from the
+noise; kept on the profile's evidence, with that caveat. The gate's "commands identical" rests
+here on the captures' constant checks (the same match and mismatch counts as step 4, the
+tool's own pre-existing mismatches included) and the per-frame command types, since two live
+runs never give equal constant values (camera and animation move).
+
+**Step 6, suspended by the user.** The game's RTSS programs use 17 automatic constant types (from the 42 program sources of the captures: `worldviewproj_matrix`,
 `viewproj_matrix`, `world_matrix`, `view_matrix`, `inverse_world_matrix`,
 `inverse_transpose_world_matrix`, `inverse_transpose_worldview_matrix`, `world_matrix_array_3x4`,
 the four `surface_*` colours, `derived_scene_colour`, `derived_ambient_light_colour`,
