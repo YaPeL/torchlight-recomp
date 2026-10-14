@@ -371,8 +371,13 @@ struct tl_backend {
   std::unique_ptr<Ogre::AutoParamDataSource> params_source;
   Ogre::SceneManager* scene = nullptr;  // never rendered
   Ogre::Camera* camera = nullptr;
+  // The projection last given to `camera` (ApplyProgram): setting it again marks the frustum out of
+  // date, and the data source then rebuilds it (and its inverse) for every draw.
+  std::optional<Ogre::Matrix4> camera_projection;
   Ogre::Light* light = nullptr;
   Ogre::SceneNode* light_node = nullptr;
+  float light_towards[3] = {};  // the direction last given to light_node (ApplyProgram)
+  bool light_set = false;
   Ogre::TexturePtr placeholder_2d, placeholder_cube;  // texture types for program generation
   bool unit_cube[TL_MAX_STAGES] = {};  // texture bound per unit is a cube map
   uint32_t unit_coord_set[TL_MAX_STAGES] = {};
@@ -1117,14 +1122,24 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   Ogre::LightList lights;
   if (f.lighting && f.light) {
     // Directional, in view space (the host view is the identity).
-    float direction[3];
-    conv::DirectionalLightForHost(f.towards_light, direction);
-    b->light_node->setOrientation(Ogre::Vector3::NEGATIVE_UNIT_Z.getRotationTo(
-        Ogre::Vector3(direction[0], direction[1], direction[2]).normalisedCopy()));
+    // Only when it changes: a new orientation marks the node, and the light's derived direction
+    // is then rebuilt for the draw.
+    if (std::memcmp(b->light_towards, f.towards_light, sizeof b->light_towards) != 0 ||
+        !b->light_set) {
+      float direction[3];
+      conv::DirectionalLightForHost(f.towards_light, direction);
+      b->light_node->setOrientation(Ogre::Vector3::NEGATIVE_UNIT_Z.getRotationTo(
+          Ogre::Vector3(direction[0], direction[1], direction[2]).normalisedCopy()));
+      std::memcpy(b->light_towards, f.towards_light, sizeof b->light_towards);
+      b->light_set = true;
+    }
     b->light->setDiffuseColour(f.light_diffuse);
     lights.push_back(b->light);
   }
-  b->camera->setCustomProjectionMatrix(true, f.projection);
+  if (!b->camera_projection || *b->camera_projection != f.projection) {
+    b->camera->setCustomProjectionMatrix(true, f.projection);
+    b->camera_projection = f.projection;
+  }
   // The host world, then (skinned) the guest's bones (object-space bones: array[0] is the world).
   std::vector<Ogre::Affine3>& world = b->world_matrices;
   world.assign(1, Ogre::Affine3(f.world));
