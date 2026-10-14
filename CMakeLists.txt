@@ -206,7 +206,7 @@ add_dependencies(torchlight torchlight_data)
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods torchlight_texture_files
     torchlight_save_mod_list torchlight_video_mode torchlight_guest_path
     torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull
-    torchlight_dev_input_script)
+    torchlight_native_render_system torchlight_dev_input_script)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)
