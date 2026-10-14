@@ -409,7 +409,8 @@ gaps.
    "Destroyer", in a `CResourceManager` (`sub_823DE8F0`, returning to 0x822131C4), and when that
    fails, again with a fallback name (returning to 0x82213210), whose result it does not check
    (`lwz r11,428(r3)` with r3 = 0). With our index built from the base alone
-   (`--mods_unit_index_base_only`, diagnostics), the file we write is byte for byte the Xbox
+   (`--mods_unit_index_base_only`, a diagnostics switch since removed), the file we write is byte
+   for byte the Xbox
    `media/UNITDATA.RAW`, and the loop still came. The loader's reader then held 0 bytes and the
    index's GUID map 0 entries: the game looked for `<key>.RAW` in the mod (both misses are in the
    log) and nowhere else, so the loader skipped the whole file with no error (guest_abi
@@ -622,10 +623,10 @@ released key was not traced. It also explains why halving the mod's files gave n
 breaks depends on which definitions the build reads and which names end up released.
 
 The fix: the builder keeps the nodes. Nothing it reads is released, so every name it made stays.
-The memory they hold stays with the game for the session; a diagnostics build
-(`TORCHLIGHT_MODS_DIAGNOSTICS`) logs it after each build (`mods: build memory: ...`: the used
-physical pages and virtual heaps, the name table's size, and the nodes, properties and subgroups
-kept). The wardrobe guard of 7f stays as a net; the player notice planned for a class without a
+The memory they hold stays with the game for the session; a diagnostics build logged it after each
+build (`mods: build memory: ...`: the used physical pages and virtual heaps, the name table's size,
+and the nodes, properties and subgroups kept), until that log was removed with the other unit
+diagnostics (2026-10-14). The wardrobe guard of 7f stays as a net; the player notice planned for a class without a
 model is dropped if the fix holds.
 
 Validated on 2026-10-09, building the index in the session: `JCC - Main` twice and the
@@ -1045,6 +1046,13 @@ known losses are listed in `check.h` (`kKnownLosses`, only the Kensai's RAGEECHO
 the 29-mod pack, 28 classes, 43 kept out by the mods' data, 1 known, 0 failures; Enhanced Edition,
 8 classes, 2 kept out, 0 failures. Run it on the player's data after a change to the tree, the
 selector or the text reading; the unit tests (`class_skill_check_test`) cover its rules.
+
+**Diagnostics removed (2026-10-14).** Once the validations they served were done, the mods
+diagnostics behind `TORCHLIGHT_MODS_DIAGNOSTICS` were removed: `--mods_unit_index_check` (every base
+unit read through our path and compared with the Xbox index), `--mods_unit_index_base_only`, the
+build memory log, the log of each mod's file map and the log of the guest's searches on the mods'
+devices. The texture check (`--mods_texture_check`, 7j) stays behind the same option: its other
+half is in the live frontend's code.
 
 ## 8. Where mods go on our side
 
