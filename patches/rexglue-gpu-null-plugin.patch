@@ -1,8 +1,8 @@
-diff --git a/cmake/rexglue_install.cmake b/cmake/rexglue_install.cmake
-index d9a64eb..63116c3 100644
---- a/cmake/rexglue_install.cmake
-+++ b/cmake/rexglue_install.cmake
-@@ -15,6 +15,7 @@ include(${CMAKE_CURRENT_LIST_DIR}/rexglue_helpers.cmake)
+diff --git a/cmake/rexglue_export_targets.cmake b/cmake/rexglue_export_targets.cmake
+index 2d40e1f..f5d31d9 100644
+--- a/cmake/rexglue_export_targets.cmake
++++ b/cmake/rexglue_export_targets.cmake
+@@ -9,6 +9,7 @@ set_target_properties(rexcodegen PROPERTIES EXPORT_NAME codegen)
  set(REXGLUE_INSTALL_TARGETS
      rexruntime
      rexgpu-xenos
@@ -11,10 +11,10 @@ index d9a64eb..63116c3 100644
      aes128 mspack o1heap disasm xxhash
      libavcodec libavutil
 diff --git a/src/graphics/CMakeLists.txt b/src/graphics/CMakeLists.txt
-index 0d8f8af..2bbe9ea 100644
+index da7ae1a..15a629a 100644
 --- a/src/graphics/CMakeLists.txt
 +++ b/src/graphics/CMakeLists.txt
-@@ -158,3 +158,30 @@ if(REXGLUE_USE_D3D12)
+@@ -159,3 +159,31 @@ if(REXGLUE_USE_D3D12)
          dxguid
      )
  endif()
@@ -31,6 +31,7 @@ index 0d8f8af..2bbe9ea 100644
 +    CXX_VISIBILITY_PRESET hidden
 +    VISIBILITY_INLINES_HIDDEN ON
 +)
++rexglue_add_version_resource(rexgpu-null DESCRIPTION "ReXGlue null GPU (command processing only)")
 +target_include_directories(rexgpu-null PRIVATE
 +    ${REXGLUE_ROOT}/thirdparty/renderdoc
 +    ${REXGLUE_ROOT}

@@ -8,6 +8,8 @@
 
 #pragma once
 
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -34,7 +36,16 @@ class ResourceRegistry {
                                              BufferInfo info = {});
   // A destruction. Returns the destroyed id.
   std::optional<commands::ResourceId> Destroy(uint32_t address);
+  // Answered from a small per-thread cache while nothing changed in the address's cache bucket
+  // since (bucket_versions_): the guest's render thread looks up the same few resources for every
+  // draw, and buffers created and destroyed elsewhere do not invalidate the rest of the cache.
   std::optional<BufferInfo> Lookup(commands::ResourceKind kind, uint32_t address) const;
+  // Changes with every creation, destruction or renewal at `address` (and at the other addresses
+  // of its cache bucket): an answer looked up after reading the stamp stays valid while the stamp
+  // reads the same.
+  uint64_t Stamp(uint32_t address) const {
+    return bucket_versions_[Bucket(address)].load(std::memory_order_acquire);
+  }
 
   struct Renewal {
     commands::ResourceId id;                     // current identity
@@ -55,8 +66,20 @@ class ResourceRegistry {
     bool loaded = false;  // textures: a load completed since construction
   };
   commands::ResourceId NewGeneration(commands::ResourceKind kind, uint32_t address);
+  // Lookup's cache: one slot per bucket of addresses, and the bucket's version, bumped under the
+  // lock by every change at an address of the bucket (Touched).
+  static constexpr size_t kCacheSlots = 256;
+  static size_t Bucket(uint32_t address) { return (address >> 2) & (kCacheSlots - 1); }
+  void Touched(uint32_t address) {
+    bucket_versions_[Bucket(address)].fetch_add(1, std::memory_order_release);
+  }
 
   mutable live::MeasuredMutex mutex_{"resource registry"};
+  // A cached answer is valid while its bucket holds the version it was read at. An empty cache
+  // entry (instance 0) never matches.
+  std::array<std::atomic<uint64_t>, kCacheSlots> bucket_versions_{};
+  const uint64_t instance_ = next_instance_.fetch_add(1);  // tells registries apart in the cache
+  static inline std::atomic<uint64_t> next_instance_{1};
   std::unordered_map<uint32_t, Live> live_;
   std::unordered_map<uint32_t, uint32_t> generations_;
 };

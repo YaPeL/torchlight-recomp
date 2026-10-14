@@ -8,6 +8,7 @@
 #include <set>
 #include <sstream>
 
+#include "platform/durable_file.h"
 #include "save_import/pak.h"
 #include "save_import/stash.h"
 
@@ -55,11 +56,13 @@ bool WriteAtomic(const fs::path& path, const Bytes& data, std::string& error) {
       return false;
     }
   }
-  std::error_code ec;
-  fs::rename(temporary, path, ec);
-  if (ec) {
-    error = "could not replace " + NameOf(path) + ": " + ec.message();
-    fs::remove(temporary, ec);
+  // On the disk before it replaces the old file, so a power cut leaves one or the other whole.
+  std::string reason;
+  if (!platform::FlushFileToDisk(temporary, reason) ||
+      !platform::CommitReplace(temporary, path, reason)) {
+    error = "could not replace " + NameOf(path) + ": " + reason;
+    std::error_code ignored;
+    fs::remove(temporary, ignored);
     return false;
   }
   return true;
@@ -286,7 +289,11 @@ ImportPlan BuildImportPlan(const Schema& schema, const ImportFolder& folder, con
       std::vector<Problem> problems;
       CheckReferences(*parsed, *target, source.get(), replacements, problems);
       for (const auto& p : problems) {
-        character.problems.push_back("the save references data that does not exist in the 360 game: " + p.Text());
+        if (IsRemovableUnit(p)) {
+          character.changes.push_back("removed when imported (not in the 360 game): " + p.Text());
+        } else {
+          character.problems.push_back("the save references data that does not exist in the 360 game: " + p.Text());
+        }
       }
       if (character.ok()) {
         ApplyReplacements(*parsed, replacements);
@@ -323,7 +330,9 @@ ImportPlan BuildImportPlan(const Schema& schema, const ImportFolder& folder, con
       std::vector<Problem> problems;
       CheckReferences(*parsed, *target, source.get(), replacements, problems);
       for (const auto& p : problems) {
-        stash.problems.push_back("the stash references data that does not exist in the 360 game: " + p.Text());
+        if (!IsRemovableUnit(p)) {
+          stash.problems.push_back("the stash references data that does not exist in the 360 game: " + p.Text());
+        }
       }
       for (const auto& p : StashSlotProblems(*parsed)) stash.problems.push_back(p);
       if (stash.ok()) {
@@ -397,7 +406,9 @@ bool ConfirmImport(const ImportPlan& plan, const ImportFolder& folder, const fs:
       if (!RenameAside(character.source, kImportedSuffix, error)) return false;
       log(NameOf(character.source) + ": imported as " + character.destination() + " (" +
           character.name + ", " + character.class_name + ")");
-      for (const auto& change : character.changes) log("  adapted " + change);
+      for (const auto& change : character.changes) {
+        log(change.starts_with("removed") ? "  " + change : "  adapted " + change);
+      }
     } else {
       if (!RenameAside(character.source, kRejectedSuffix, error)) return false;
       log(NameOf(character.source) + ": not imported");

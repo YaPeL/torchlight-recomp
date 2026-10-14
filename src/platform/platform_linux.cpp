@@ -11,6 +11,7 @@
 #include <fstream>
 #include <cstdlib>
 #include <cstring>
+#include <pthread.h>
 #include <filesystem>
 #include <system_error>
 #include <tuple>
@@ -71,6 +72,12 @@ std::string UserDir(UserFolderKind kind, const std::filesystem::path& sub = {}) 
 }  // namespace
 
 bool HasDisplay() { return std::getenv("DISPLAY") || std::getenv("WAYLAND_DISPLAY"); }
+
+void SetCurrentThreadName(const char* name) {
+  char shortened[16] = {};
+  std::strncpy(shortened, name, sizeof(shortened) - 1);
+  pthread_setname_np(pthread_self(), shortened);
+}
 
 std::string ShaderCacheDir() {
   return UserDir(UserFolderKind::kCache, "ogre");
@@ -250,6 +257,10 @@ std::string LogDir() {
   return UserDir(UserFolderKind::kState, "logs");
 }
 
+void BringToFront() {}
+
+std::string ResourceDir() { return ExecutableDir(); }
+
 std::string OgrePluginDir() {
   const std::string exe = ExecutableDir();
   return exe.empty() ? "" : exe + "ogre/plugins/";
@@ -296,6 +307,19 @@ std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWi
   }
   return {{"parentWindowHandle", std::to_string(window.window)}};
 }
+
+// OGRE's GL window creates its own top-level windows here.
+std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string&, uint32_t,
+                                                               uint32_t, bool) {
+  return nullptr;
+}
+
+// OGRE's windows have no thread of their own here: the work runs where it is asked.
+void RunOnWindowThread(const std::function<void()>& work) { work(); }
+
+void WaitServingWindowThread(const std::function<bool()>&) {}
+
+bool OgreWindowFollowsGameWindow() { return false; }
 
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow* window) {
   if (window && window->system == NativeWindow::kWayland) {

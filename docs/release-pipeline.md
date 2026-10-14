@@ -23,7 +23,7 @@ Sources were consulted on 2026-10-05. Repositories were read at the commit given
 | Zelda64Recomp/Zelda64Recomp (branch `dev`) | `b65c482e` (2026-09-25) |
 | birabittoh/NocturneRecomp | `5390d5ec` (2026-08-27) |
 | thefixinhixon/hells-gate-recomp | `69a4b770` (2026-09-28) |
-| rexglue/rexglue-sdk (local checkout, our base) | `0c7b01a` |
+| rexglue/rexglue-sdk (local checkout, our base) | `bd833a2` |
 
 ## Summary
 
@@ -246,7 +246,7 @@ references avoids it.
 
 Neither one contains game content, so both can be cached and even published:
 
-1. **ReXGlue SDK with our patches.** Base `0c7b01a` (`patches/README.md`), the patches of `patches/series` in their
+1. **ReXGlue SDK with our patches.** Base `bd833a2` (`patches/README.md`), the patches of `patches/series` in their
    order with `git apply`, install with the platform preset (`linux-amd64`, `win-amd64`). Inside
    `ubuntu:22.04` with the SDK CI's toolchain (clang 20, g++-13, Kitware CMake, its `apt` package
    list). On Windows the POSIX patch (`rexglue-posix-wait-fraction.patch`) does not apply
@@ -361,7 +361,9 @@ On push and `pull_request` (never `pull_request_target`), no secrets, `permissio
    (`measured_mutex`, `snapshot_store`, `session_file`, `frame_queue`, `slow_frames`,
    `live_content_source`, `ui_overlay`, `ui_gamepad`), `detile_test` and the Python tests
    (`save_convert_test`, `tl_translate_test`). `ui_pass_test` and `render_scale_test` need a display
-   and skip with code 77; with Mesa llvmpipe and Xvfb (or surfaceless EGL) they could run.
+   and skip with code 77; with Mesa llvmpipe and Xvfb (or surfaceless EGL) they could run. On
+   Windows they also run with Direct3D 11 (`<name>_d3d11`), which the runner draws in software
+   (WARP); their GL3+ runs (label `opengl33`) are left out there, as the runner has no OpenGL 3.3.
 3. **package-check** job: package the `replay` tool (it links the backend and loads the OGRE plugins
    and media like the game) with the same AppImage layout and run it in clean `ubuntu:22.04` and
    `archlinux` containers on a synthetic capture. It validates relocatable paths and bundled
@@ -458,6 +460,9 @@ only).
 5. **The patched SDK and OGRE are published as prebuilt downloads** (no game content).
 6. **Windows**: no signing, with `SHA256SUMS` and the build attestation (confirmed for the beta on
    2026-10-06; the README and the release notes explain SmartScreen's prompt and how to pass it).
+7. **macOS** (decided 2026-10-08, for the beta): no signing and no notarization either, with
+   `SHA256SUMS` and the build attestation; the README and the release notes explain Gatekeeper's
+   "Open Anyway" step by step (`docs/macos-port.md`, section 6).
 
 **Scope**: first a Linux-only beta (AppImage). Windows is added when the port is ready; the owner
 announces it.
@@ -473,12 +478,48 @@ announces it.
   build stops until the pin and `THIRD_PARTY_NOTICES.md` are updated. To be independent of that,
   the owner uploads the same verified file (`runtime-x86_64`, SHA-256 `156f4bdb…`, signed by
   type2-runtime's key) as an asset of a release of this repository, and `get_tools.sh` downloads
-  it from there with the same hash.
+  it from there with the same hash. Since 2026-10-13 `get_tools.sh` reads it from the prerelease
+  `appimage-runtime-8f39b89` of this repository (never latest; `store.sh` prunes only `deps-*`, and
+  the README badge reads `v*` tags) and falls back to upstream's continuous release while that
+  prerelease does not exist. To make it: `gh release create appimage-runtime-8f39b89 --prerelease
+  --title "AppImage runtime (type2-runtime 8f39b89)" runtime-x86_64` with the file
+  `get_tools.sh` checks.
 - **Re-running a release whose symbols were already pushed.** Each game job's Symbols step
   commits `<tag>/<platform>/` to `torchlight-symbols` and fails when there is nothing new to commit
   (a re-run with the same binaries: `git commit` exits 1). For v0.1.0-beta the owner deleted the
-  folders and re-ran. To fix: skip the commit and the push when the tree did not change, and say
-  so in the log.
+  folders and re-ran. Fixed 2026-10-12 (`tools/release/push_symbols.sh`, used by the three jobs):
+  a re-run replaces `<tag>/<platform>/`, and a tree that did not change is neither committed nor
+  pushed, with a line in the log. The same script compresses each platform's symbols into one
+  `symbols.tar.zst` and stops before the push when it is over 95 MB: `v0.7.6-beta.rc1`'s macOS
+  job failed on GitHub's 100 MB limit (the dSYM's DWARF is 105.85 MB). Unpacking:
+  `docs/crash-handling.md`, section 3.
+- **The symbols as release assets, if the symbols repository grows too much.** Each release adds
+  its three archives to `torchlight-symbols` as git blobs (v0.7.6-beta: 19.5, 36.6 and 20.1 MB),
+  and git keeps every one forever: the history grows by about 76 MB a release, and a clone takes
+  all of it (deleting a release's folder does not shrink it; rc1's uncompressed 293 MB stay in the
+  history). Once that weighs (GitHub warns about repositories over a few GB), the same archives
+  can go as assets of a release of `torchlight-symbols` named after the tag instead of commits:
+  `gh release create TAG --repo SYMBOLS_REPOSITORY` and `gh release upload` from each game job
+  (a token with write access to that repository instead of the deploy key, which only pushes),
+  `--clobber` keeping the step idempotent, the 95 MB check kept (assets take up to 2 GB, but the
+  check also catches a symbol file that suddenly grew). Resolving a crash then downloads one
+  release's assets instead of cloning (docs/crash-handling.md, section 3). Not needed yet.
+- **Guest memory reads on Windows and macOS arm64, before the macOS port.** The generated code
+  translates a guest address as `base + address`, plus 0x1000 from 0xE0000000 up on Windows and
+  macOS arm64 (`REX_PHYS_HOST_OFFSET`, `rex::memory::GuestPtr`). The content snapshots of buffers
+  and textures translate that way since 2026-10-07 (`capture/guest_readers.cpp`, `GuestBytes`), but
+  the scalar readers of `guest_abi` (`ReadU32`, `ReadU64` and the rest, `ogre_layout.h`) add
+  nothing. On Linux that is right; on those platforms a read from 0xE0000000 up would be 4 KB
+  off. They read the game's OGRE and Xbox D3D objects, expected in the guest's virtual heaps, below
+  0xE0000000; that is not checked for every reader yet.
+  To resolve, without platform `#ifdef`s in `guest_abi`, one of:
+  1. the readers take a guest memory view instead of a bare `membase` (the base plus the
+     translation, built once by the caller with `rex::memory::GuestPtr`), so `guest_abi` stays
+     free of the SDK and is still testable with a fake memory (preferred);
+  2. `guest_abi` includes the SDK's `rex/system/xmemory.h` and uses `GuestPtr` (simple, but
+     `guest_abi` stops building on its own);
+  3. the readers keep `base + address` and state the invariant (no reads from 0xE0000000 up),
+     checked in a test and in the diagnostics build.
 
 ### 5.9 Branches and releases (since 2026-10-07)
 
@@ -491,11 +532,21 @@ announces it.
 - **Hotfix**: a branch from `main` with the fix, merged into `main` and tagged there, then merged
   back into `develop` so the fix is not lost at the next freeze.
 - **CI** (`ci.yml`) runs on pushes to `develop` and `main`, on pull requests into either, and by
-  hand. The SDK and OGRE builds (`deps-<key>`, `deps-windows-<key>`) are published from pushes to
-  either branch, at the commit that built them (`--target`), and every run first looks for a
-  published one with its key. After a freeze merge both branches point at the same commit and two
-  runs may build the same key at once: the second `gh release create` fails, and the step then
-  counts the release it finds as published.
+  hand. The SDK and OGRE builds are published from pushes to either branch as assets of one
+  prerelease, `deps`, never marked latest (since 2026-10-09; before, one release per key,
+  `deps-<key>` and `deps-windows-<key>`, which filled the release page): `sdk-` and
+  `ogre-linux-amd64-<key>.tar.zst`, and `-windows-amd64-<key>.zip` (`tools/deps/store.sh`). Every
+  run first looks for its key's assets. After a freeze merge both branches point at the same commit
+  and two runs may build the same key at once; both upload the same archives (`--clobber`). On
+  pushes the Linux deps job prunes the store: it reads the keys of `main` and `develop` (each with
+  its own `key.sh`, both platforms), copies the old per-key releases those keys still need into the
+  store, deletes the old releases (with their tags) except those a branch whose `ci.yml` still
+  downloads `deps-<key>` reads (`main` until the freeze that brings the store), and deletes the
+  assets of any other key. The keys are read again right before the deletions, and an asset
+  uploaded in the last 24 hours is never deleted, so a run does not remove what a concurrent run on
+  the other branch has just published. Run by hand (`workflow_dispatch`), it copies but only
+  reports what it would delete. The README's release badge filters `v*` tags, so the store never
+  shows as the latest version.
 - **Release** (`release.yml`): only from `v*` tags whose commit is on `main`. The `release`
   environment allows deployments from `v*` tags but cannot tell which branch a tag is on, so the
   first job, *Tag on main*, checks that the tagged commit is an ancestor of `origin/main` and stops
@@ -506,14 +557,48 @@ announces it.
   marked inline), while the game and the SDK are Release and the Linux release's OGRE is `-O3`.
   `ci.yml`'s deps-windows builds it with `tools/build-deps/windows.ps1 -Configs RelWithDebInfo`, and
   the top `CMakeLists.txt` maps the game's Release to those libraries
-  (`CMAKE_MAP_IMPORTED_CONFIG_RELEASE Release RelWithDebInfo`). To do: build OGRE Release (`/O2 /Ob2`)
-  for the package, measure it against RelWithDebInfo on Windows (docs/performance-profile.md, the
-  native/Xenos method), and keep RelWithDebInfo only where symbols are wanted. Careful with the
-  dependency key: `tools/deps/key.sh windows` hashes `windows.ps1` and `windows_toolchain.ps1` but
-  not the `-Configs` that `ci.yml` passes, so changing only `-Configs` keeps the key and CI keeps
-  downloading the published `deps-windows-<key>` with RelWithDebInfo. The change has to reach what
-  the key covers (for example windows.ps1's default configurations), or the key has to include the
-  configurations.
+  (`CMAKE_MAP_IMPORTED_CONFIG_RELEASE Release RelWithDebInfo`). Measured 2026-10-07 against OGRE
+  Release (`/O2 /Ob2`) in the native mode on Direct3D 11 (docs/performance-profile.md, "OGRE Release
+  against RelWithDebInfo on Windows"): no measurable difference, the game's main thread being the
+  limit. The release keeps RelWithDebInfo, and with it OGRE's symbols. The dependency key
+  covers the configurations since 2026-10-07: `tools/deps/key.sh` holds the ones CI builds for
+  Windows, hashes them into `key.sh windows`, and prints them with `key.sh windows-configs`, which
+  `ci.yml`'s deps-windows passes to `windows.ps1 -Configs` and `-SdkConfigs`. Changing them there
+  changes the Windows key (and not the Linux one), so CI builds and publishes new Windows archives
+  instead of reusing the RelWithDebInfo ones.
+
+### 5.10 Version numbers (since 2026-10-12)
+
+Releases are numbered `vZ.X.Y` (the owner's scheme), counted from the previous release's number:
+
+- **X** goes up by one for each new feature the release brings (several features, several steps).
+- **Y** goes up by one for each bug the release fixes. When X goes up, Y first goes back to 0 and
+  then counts the release's fixes.
+- **Z** stays 0 until the project's list of features is complete.
+- A suffix (`-beta`) is decided per release by the owner.
+
+The two lists come from the release's CHANGELOG section (its player-facing part): features are the
+new things a player can use, and bugs are fixes to behaviour a previous release shipped. A fix to
+something new in the same release is part of that feature, not a bug. At each freeze the integrator
+proposes both lists and the number, and the owner confirms them before the tag. The release notes
+are the CHANGELOG's player-facing part, with its known limitations and the platforms' first-start
+steps (SmartScreen, Gatekeeper), written into `release.yml`'s draft step at each freeze.
+
+Example, the release after `v0.1.0-beta` (2026-10-12): six features (macOS; PC mods, with their
+textures, the save protection and the mods' achievements; the replacements folder; the guest D3D
+skip on by default; the frame counter with presented and dropped frames; the other performance
+work) take X from 1 to 7 and Y back to 0; six fixes to the beta's behaviour (16-bit colour on
+Wayland; saves not reaching the disk; a renamed save leaving its old spelling behind on Linux; a
+crash hanging instead of ending; the log folder growing without limit; a renderer that could not
+start crashing instead of saying why) take Y to 6: **`v0.7.6-beta`**. Fixes to things new in the
+same iteration were not counted.
+
+Validation before the release: the freeze is merged into `main` and tagged as a release candidate
+(`v0.7.6-beta.rc1`), whose run leaves a draft release with the three platforms' packages, never
+published. A draft is invisible to anyone without write access and is not the README badge's
+latest release. Fixes found there go through `develop` into `main` again; the final tag
+(`v0.7.6-beta`) makes the draft that is published, and the candidate's draft is deleted (its tag
+stays).
 
 ## Sources
 
@@ -527,7 +612,7 @@ announces it.
   `ci.yml`, `release.yml`, `scripts/build.py`, `README.md`).
 - Dante's Inferno AppImage fork: <https://github.com/thefixinhixon/hells-gate-recomp>
   (`packaging/appimage/`).
-- ReXGlue SDK: local checkout `~/rexglue-sdk` at `0c7b01a` (`.github/workflows/_build-platform.yaml`,
+- ReXGlue SDK: local checkout `~/rexglue-sdk` at `bd833a2` (`.github/workflows/_build-platform.yaml`,
   `cmake/rexglue_helpers.cmake`, `src/ui/rex_app.cpp`); <https://github.com/rexglue/rexglue-sdk>.
 - AppImage runtime: <https://github.com/AppImage/type2-runtime>; appimagetool:
   <https://github.com/AppImage/appimagetool>; exclusion list:

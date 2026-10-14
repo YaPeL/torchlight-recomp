@@ -5,9 +5,8 @@
 # UI text drops anything beyond it.
 
 [de]
-Achievements (PC, incomplete) = Erfolge (PC, unvollständig)
+Achievements (PC) = Erfolge (PC)
 Unlocked = Freigeschaltet
-Not available in this version = In dieser Version nicht verfügbar
 Close = Schließen
 Achievement Unlocked = Erfolg freigeschaltet
 Entered the first dungeon = Den ersten Dungeon betreten
@@ -78,9 +77,8 @@ Talked to the horse 100 times = 100-mal mit dem Pferd gesprochen
 Defeated Ordrak without ever dying = Ordrak besiegt, ohne je zu sterben
 
 [fr]
-Achievements (PC, incomplete) = Succès (PC, incomplet)
+Achievements (PC) = Succès (PC)
 Unlocked = Débloqués
-Not available in this version = Indisponible dans cette version
 Close = Fermer
 Achievement Unlocked = Succès débloqué
 Entered the first dungeon = Premier donjon atteint
@@ -151,9 +149,8 @@ Talked to the horse 100 times = 100 conversations avec le cheval
 Defeated Ordrak without ever dying = Ordrak vaincu sans jamais mourir
 
 [es]
-Achievements (PC, incomplete) = Logros (PC, incompletos)
+Achievements (PC) = Logros (PC)
 Unlocked = Desbloqueados
-Not available in this version = No disponible en esta versión
 Close = Cerrar
 Achievement Unlocked = Logro desbloqueado
 Entered the first dungeon = Entraste en la primera mazmorra

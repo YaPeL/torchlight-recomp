@@ -73,6 +73,20 @@ class FormatTest(unittest.TestCase):
             position += size
         self.assertEqual(position, len(body))
 
+    def test_pc_mod_list_reaches_the_360_save_with_its_lengths(self):
+        # A PC character saved with mods records their names (player/names). The 360 file must
+        # hold each one as the 360 reader takes it (u16 length, then the UTF-16 units, both
+        # big-endian), not with the zero lengths the 360 writer itself leaves (docs/mods.md, 7d).
+        _, parsed = read_pc(SCHEMA, self.save)
+        mods = ['First Mod', 'another_mod', 'Z']
+        parsed.tree['player']['names'] = list(mods)
+        pc_body = write_body(SCHEMA, parsed.tree, 'little')
+        x360 = split_360(pc_to_360(SCHEMA, pc_body + struct.pack('<I', len(pc_body) + 4)))
+        expected = struct.pack('>I', len(mods)) + b''.join(
+            struct.pack('>H', len(m)) + m.encode('utf-16-be') for m in mods)
+        self.assertEqual(x360.count(expected), 1)
+        self.assertEqual(parse_body(SCHEMA, x360, 'big').tree['player']['names'], mods)
+
     def test_synthetic_save_covers_every_struct(self):
         visited = set()
         synthetic.make_save(SCHEMA, visited=visited)
@@ -351,6 +365,68 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(code, 0)
         self.assertEqual(os.stat(self.destination).st_mode & 0o777, mode)
 
+    def tsv_files(self):
+        return sorted(f for f in os.listdir(self.dir.name) if f.lower().endswith('.tsv'))
+
+    def test_destination_is_written_upper_case(self):
+        code, out, err = self.run_cli(self.source, os.path.join(self.dir.name, '0.tsv'),
+                                      '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.tsv_files(), ['0.TSV'])
+        self.assertIn('0.TSV', out)
+
+    def test_same_name_in_another_case_is_kept_without_force(self):
+        other = os.path.join(self.dir.name, '0.tsv')
+        with open(other, 'wb') as f:
+            f.write(b'keep me')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 1)
+        self.assertIn('--force', err)
+        self.assertEqual(self.tsv_files(), ['0.tsv'])
+        with open(other, 'rb') as f:
+            self.assertEqual(f.read(), b'keep me')
+
+    def test_force_replaces_the_same_name_in_another_case(self):
+        with open(os.path.join(self.dir.name, '0.tsv'), 'wb') as f:
+            f.write(b'old')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak,
+                                    '--force')
+        self.assertEqual(code, 0, err)
+        # Never two spellings of one character: only N.TSV is left, with the new save.
+        self.assertEqual(self.tsv_files(), ['0.TSV'])
+        with open(self.destination, 'rb') as f:
+            self.assertEqual(x360_to_pc(SCHEMA, f.read()), self.source_bytes)
+
+    def test_another_name_with_the_same_number_is_refused(self):
+        # The game numbers its characters as wcstol reads the name: 00.tsv is character 0 too.
+        with open(os.path.join(self.dir.name, '00.tsv'), 'wb') as f:
+            f.write(b'keep me')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak,
+                                    '--force')
+        self.assertEqual(code, 1)
+        self.assertIn('already 00.tsv', err)
+        self.assertEqual(self.tsv_files(), ['00.tsv'])
+
+    def test_other_numbers_do_not_block(self):
+        with open(os.path.join(self.dir.name, '1.tsv'), 'wb') as f:
+            f.write(b'another character')
+        code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertEqual(self.tsv_files(), ['0.TSV', '1.tsv'])
+
+    def test_destination_not_named_n_tsv_is_refused(self):
+        code, _, err = self.run_cli(self.source, os.path.join(self.dir.name, 'hero.tsv'),
+                                    '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 1)
+        self.assertIn('N.TSV', err)
+        self.assertEqual(self.tsv_files(), [])
+
+    def test_character_number_reads_like_wcstol(self):
+        self.assertEqual(convert.character_number('12.TSV'), 12)
+        self.assertEqual(convert.character_number(' 7.tsv'), 7)
+        self.assertEqual(convert.character_number('03.tsv'), 3)
+        self.assertEqual(convert.character_number('abc.tsv'), 0)
+
     def test_destination_equal_to_source_is_refused(self):
         code, _, err = self.run_cli(self.source, self.source, '--pak', self.pak, '--pc-pak', self.pc_pak, '--force')
         self.assertEqual(code, 1)
@@ -363,6 +439,25 @@ class CommandLineTest(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('does not exist in the 360 game', err)
         self.assertFalse(os.path.exists(self.destination))
+
+    def test_item_of_a_missing_unit_is_removed_and_reported(self):
+        # A PC mod's item: its unit is in neither game's data. The item is taken out, the rest
+        # converts, and the output says so (docs/mods.md, 7f).
+        _, parsed = read_pc(SCHEMA, self.source_bytes)
+        parsed.tree['player']['items'][0]['unit_guid'] = 0x0777000000000001
+        body = write_body(SCHEMA, parsed.tree, 'little')
+        with open(self.source, 'wb') as f:
+            f.write(body + struct.pack('<I', len(body) + 4))
+        with open(self.source, 'rb') as f:
+            self.source_bytes = f.read()
+        items_before = len(parsed.tree['player']['items'])
+        code, out, err = self.run_cli(self.source, self.destination, '--pak', self.pak, '--pc-pak', self.pc_pak)
+        self.assertEqual(code, 0, err)
+        self.assertIn('removed player/items/item %d' % 0x0777000000000001, out)
+        with open(self.destination, 'rb') as f:
+            converted = parse_body(SCHEMA, split_360(f.read()), 'big')
+        self.assertEqual(len(converted.tree['player']['items']), items_before - 1)
+        self.assertNotIn(0x0777000000000001, [i['unit_guid'] for i in converted.tree['player']['items']])
 
     def test_missing_pc_pak_explains_why_and_where(self):
         code, _, err = self.run_cli(self.source, self.destination, '--pak', self.pak)

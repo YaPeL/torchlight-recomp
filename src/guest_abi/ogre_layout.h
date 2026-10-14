@@ -29,6 +29,8 @@
 #include <cstring>
 #include <string>
 
+#include "guest_abi/xbox_memory.h"
+
 namespace torchlight::guest_abi {
 
 enum class Confidence : uint8_t {
@@ -66,25 +68,28 @@ struct SlotInfo {
 };
 
 // ---------------------------------------------------------------------------------------------
-// Big-endian guest memory reads. `membase` is the host address of guest address 0.
+// Big-endian guest memory reads. `membase` is the host address of guest address 0; addresses are
+// translated by xbox_memory::HostAddress.
 
-inline uint8_t ReadU8(const uint8_t* membase, uint32_t addr) { return membase[addr]; }
+inline uint8_t ReadU8(const uint8_t* membase, uint32_t addr) {
+  return *xbox_memory::HostAddress(membase, addr);
+}
 
 inline uint16_t ReadU16(const uint8_t* membase, uint32_t addr) {
   uint16_t v;
-  std::memcpy(&v, membase + addr, sizeof(v));
+  std::memcpy(&v, xbox_memory::HostAddress(membase, addr), sizeof(v));
   return std::endian::native == std::endian::big ? v : std::byteswap(v);
 }
 
 inline uint32_t ReadU32(const uint8_t* membase, uint32_t addr) {
   uint32_t v;
-  std::memcpy(&v, membase + addr, sizeof(v));
+  std::memcpy(&v, xbox_memory::HostAddress(membase, addr), sizeof(v));
   return std::endian::native == std::endian::big ? v : std::byteswap(v);
 }
 
 inline uint64_t ReadU64(const uint8_t* membase, uint32_t addr) {
   uint64_t v;
-  std::memcpy(&v, membase + addr, sizeof(v));
+  std::memcpy(&v, xbox_memory::HostAddress(membase, addr), sizeof(v));
   return std::endian::native == std::endian::big ? v : std::byteswap(v);
 }
 
@@ -98,10 +103,10 @@ inline bool ReadBool(const uint8_t* membase, uint32_t addr) { return ReadU8(memb
 // function reads it).
 inline void WriteU32(uint8_t* membase, uint32_t addr, uint32_t value) {
   if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
-  std::memcpy(membase + addr, &value, sizeof(value));
+  std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
 }
 inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
-  std::memcpy(membase + addr, data, size);
+  std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
 }
 
 inline uint8_t ReadU8(const uint8_t* membase, uint32_t obj, Field f) {
@@ -199,7 +204,19 @@ inline std::string ReadString(const uint8_t* membase, uint32_t str, uint32_t max
   uint32_t capacity = ReadU32(membase, str + stl_string::kCapacity.offset);
   if (length > max_length) length = max_length;
   uint32_t data = capacity > stl_string::kInlineCapacity ? ReadU32(membase, str) : str;
-  return std::string(reinterpret_cast<const char*>(membase + data), length);
+  const uint8_t* text = xbox_memory::HostAddress(membase, data);
+  return std::string(reinterpret_cast<const char*>(text), length);
+}
+
+// A NUL-terminated guest char string at `address` (bytes as they are in memory), at most
+// `max_length` bytes; empty for a null address.
+inline std::string ReadCString(const uint8_t* membase, uint32_t address,
+                               uint32_t max_length = 4096) {
+  std::string s;
+  if (!address) return s;
+  const uint8_t* text = xbox_memory::HostAddress(membase, address);
+  for (uint32_t i = 0; i < max_length && text[i]; ++i) s.push_back(static_cast<char>(text[i]));
+  return s;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -435,6 +452,9 @@ inline constexpr Field kLockOptions{0x10, Confidence::kConfirmed};
 namespace resource {
 // [confirmed] Resource::getName (Texture vtable slot 22, 0x824E5010) returns this+0x2C.
 inline constexpr Field kName{0x2C, Confidence::kConfirmed};
+// [confirmed] Resource::getGroup (Texture vtable slot 33, 0x824E51D8) returns this+0x48: mGroup,
+// the resource group the resource was loaded in (OgreResource.h:146), a std::string.
+inline constexpr Field kGroup{0x48, Confidence::kConfirmed};
 // [confirmed] getHandle (slot 23, 0x824312E0) loads a u64 from +0x68.
 inline constexpr Field kHandle{0x68, Confidence::kConfirmed};
 // [confirmed] getLoadingState (slot 27, 0x821910A8) loads +0x70.
@@ -528,6 +548,14 @@ inline constexpr Field kDeriveDepthBias{0x2A0, Confidence::kConfirmed};
 inline constexpr Field kDeriveDepthBiasBase{0x2A4, Confidence::kConfirmed};
 inline constexpr Field kDeriveDepthBiasMultiplier{0x2A8, Confidence::kConfirmed};
 inline constexpr Field kDeriveDepthBiasSlopeScale{0x2AC, Confidence::kConfirmed};
+// [confirmed] mManualBlendColours[unit][2] (ColourValue, 16 bytes each, 32 per unit; OgreD3D9RenderSystem.h):
+// _setTextureBlendMode 0x821C9100 stores colourArg1 at this + 144 + 32 * unit (`rlwinm r11,r4,5,0,26`,
+// `std r9,144(r11)`, `std r8,152(r11)` @0x821C91A8..0x821C91B0) and colourArg2 at +160 + 32 * unit
+// (`stdx r9,r10,r3` with r10 = (unit + 5) << 5, `std r8,8(r11)` @0x821C92BC..0x821C92C4), for the
+// colour blend type only; the alpha type reads them (@0x821C91E4.., @0x821C92D4..) and stores nothing.
+// Runic's build has no device call in that function (docs/native-skip-guest-d3d.md, step a).
+inline constexpr Field kManualBlendColours{0x90, Confidence::kConfirmed};
+inline constexpr uint32_t kManualBlendColoursUnitStride = 32;
 }  // namespace render_system
 
 namespace matrix4 {

@@ -12,7 +12,7 @@
 #include <functional>
 #include <map>
 #include <optional>
-#include <set>
+#include <unordered_set>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -20,6 +20,7 @@
 #include "backend/backend_api.h"
 #include "commands/types.h"
 #include "frontend/content_source.h"
+#include "frontend/physical_constants.h"
 
 namespace torchlight::frontend {
 
@@ -86,7 +87,7 @@ class Frontend {
   enum class LayoutSource { kFlag, kInferred, kUnknown };
   using Mat = std::array<float, 16>;
   struct StageConstants {
-    std::unordered_map<uint32_t, float> physical;  // guest float constants by physical index
+    PhysicalConstants physical;  // guest float constants by physical index
     std::vector<commands::AutoConstant> autos;     // from the latest upload
     bool transposed = false;  // GpuProgramParameters::mTransposeMatrices (format 1.2+)
     LayoutSource layout = LayoutSource::kUnknown;
@@ -105,7 +106,7 @@ class Frontend {
   Stats stats_;
   std::function<bool(size_t)> filter_;
   std::function<void(size_t)> observer_;
-  std::set<uint64_t> ready_textures_, uploaded_buffers_;
+  std::unordered_set<uint64_t> ready_textures_, uploaded_buffers_;
   std::unordered_map<uint64_t, commands::Hash> texture_content_;  // PackId -> content key
 
   tl_state state_{};

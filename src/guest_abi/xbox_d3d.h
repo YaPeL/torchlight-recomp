@@ -23,12 +23,6 @@ inline constexpr uint32_t PhysicalToVirtual(uint32_t physical) {
   return 0xC0000000u + (physical & 0x1FFFFFFFu) + page_bias;
 }
 
-// Host pointer for a guest virtual address. The generated code adds 0x1000 for addresses at or
-// above 0xE0000000 (REX_PHYS_HOST_OFFSET in generated/default/torchlight_pch.h).
-inline const uint8_t* HostPointer(const uint8_t* membase, uint32_t guest_virtual) {
-  return membase + guest_virtual + (guest_virtual >= 0xE0000000u ? 0x1000u : 0u);
-}
-
 namespace vertex_buffer {
 // Vertex fetch constant inside the Xbox vertex buffer object (BufferResources::mBuffer).
 // [confirmed] lock 0x821A70D8: address = dword0 & ~3 (@0x821A70F4), size in bytes =

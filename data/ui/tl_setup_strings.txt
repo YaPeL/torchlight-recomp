@@ -16,9 +16,9 @@ The file chooser could not be opened ({error}).\n\nOn the Steam Deck, do this fi
 Extracting the game files... = Spieldateien werden entpackt ...
 Copying the game files... = Spieldateien werden kopiert ...
 Checking the game files... = Spieldateien werden geprüft ...
-Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version; some cannot be earned yet. Each set keeps its own progress. You can change this later in the settings (restart required). = Wähle, welche Erfolge du verdienen möchtest. Xbox 360: die 12 ursprünglichen Erfolge des Spiels. PC: die 66 Erfolge der PC-Version; einige lassen sich noch nicht verdienen. Jede Auswahl behält ihren eigenen Fortschritt. Du kannst das später in den Optionen ändern (Neustart erforderlich).
+Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version. Each set keeps its own progress. You can change this later in the settings (restart required). = Wähle, welche Erfolge du verdienen möchtest. Xbox 360: die 12 ursprünglichen Erfolge des Spiels. PC: die 66 Erfolge der PC-Version. Jede Auswahl behält ihren eigenen Fortschritt. Du kannst das später in den Optionen ändern (Neustart erforderlich).
 Xbox 360 = Xbox 360
-PC (incomplete) = PC (unvollständig)
+PC = PC
 This file is not an Xbox 360 package (no LIVE, CON or PIRS header). = Diese Datei ist kein Xbox-360-Paket (kein LIVE-, CON- oder PIRS-Header).
 This package is not an Xbox Live Arcade game (content type {value}). = Dieses Paket ist kein Xbox-Live-Arcade-Spiel (Inhaltstyp {value}).
 This package is not Torchlight (title ID {value}, expected {expected}). = Dieses Paket ist nicht Torchlight (Titel-ID {value}, erwartet {expected}).
@@ -34,6 +34,8 @@ Cannot write {path}. = {path} kann nicht geschrieben werden.
 Cannot create {path}: {error} = {path} kann nicht erstellt werden: {error}
 Cannot move the previous {path} aside: {error} = Der bisherige Ordner {path} kann nicht beiseitegelegt werden: {error}
 Cannot finish the install in {path}: {error} = Die Installation in {path} kann nicht abgeschlossen werden: {error}
+The game could not start its renderer: {error}\n\nIt needs OpenGL 3.3, or Direct3D 11 on Windows. Update the graphics driver, and on a computer with two GPUs make sure the game runs on the one with the driver installed. = Das Spiel konnte seinen Renderer nicht starten: {error}\n\nEs braucht OpenGL 3.3 oder unter Windows Direct3D 11. Aktualisiere den Grafiktreiber und achte auf einem Computer mit zwei Grafikkarten darauf, dass das Spiel auf der mit dem installierten Treiber läuft.
+Torchlight Recomp = Torchlight Recomp
 
 [fr]
 Torchlight setup = Configuration de Torchlight
@@ -47,9 +49,9 @@ The file chooser could not be opened ({error}).\n\nOn the Steam Deck, do this fi
 Extracting the game files... = Extraction des fichiers du jeu...
 Copying the game files... = Copie des fichiers du jeu...
 Checking the game files... = Vérification des fichiers du jeu...
-Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version; some cannot be earned yet. Each set keeps its own progress. You can change this later in the settings (restart required). = Choisissez les succès à obtenir. Xbox 360 : les 12 succès d'origine du jeu. PC : les 66 succès de la version PC ; certains ne peuvent pas encore être obtenus. Chaque ensemble conserve sa propre progression. Vous pourrez modifier ce choix plus tard dans les options (redémarrage nécessaire).
+Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version. Each set keeps its own progress. You can change this later in the settings (restart required). = Choisissez les succès à obtenir. Xbox 360 : les 12 succès d'origine du jeu. PC : les 66 succès de la version PC. Chaque ensemble conserve sa propre progression. Vous pourrez modifier ce choix plus tard dans les options (redémarrage nécessaire).
 Xbox 360 = Xbox 360
-PC (incomplete) = PC (incomplet)
+PC = PC
 This file is not an Xbox 360 package (no LIVE, CON or PIRS header). = Ce fichier n'est pas un paquet Xbox 360 (aucun en-tête LIVE, CON ou PIRS).
 This package is not an Xbox Live Arcade game (content type {value}). = Ce paquet n'est pas un jeu Xbox Live Arcade (type de contenu {value}).
 This package is not Torchlight (title ID {value}, expected {expected}). = Ce paquet n'est pas Torchlight (identifiant de titre {value}, attendu {expected}).
@@ -65,6 +67,8 @@ Cannot write {path}. = Impossible d'écrire {path}.
 Cannot create {path}: {error} = Impossible de créer {path} : {error}
 Cannot move the previous {path} aside: {error} = Impossible de mettre de côté l'ancien dossier {path} : {error}
 Cannot finish the install in {path}: {error} = Impossible de terminer l'installation dans {path} : {error}
+The game could not start its renderer: {error}\n\nIt needs OpenGL 3.3, or Direct3D 11 on Windows. Update the graphics driver, and on a computer with two GPUs make sure the game runs on the one with the driver installed. = Le jeu n'a pas pu démarrer son moteur de rendu : {error}\n\nIl a besoin d'OpenGL 3.3, ou de Direct3D 11 sous Windows. Mettez à jour le pilote graphique et, sur un ordinateur avec deux cartes graphiques, vérifiez que le jeu tourne sur celle dont le pilote est installé.
+Torchlight Recomp = Torchlight Recomp
 
 [es]
 Torchlight setup = Configuración de Torchlight
@@ -78,9 +82,9 @@ The file chooser could not be opened ({error}).\n\nOn the Steam Deck, do this fi
 Extracting the game files... = Extrayendo los archivos del juego...
 Copying the game files... = Copiando los archivos del juego...
 Checking the game files... = Comprobando los archivos del juego...
-Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version; some cannot be earned yet. Each set keeps its own progress. You can change this later in the settings (restart required). = Elige qué logros quieres conseguir. Xbox 360: los 12 logros originales del juego. PC: los 66 logros de la versión de PC; algunos todavía no se pueden conseguir. Cada conjunto conserva su propio progreso. Puedes cambiarlo más adelante en las opciones (requiere reiniciar).
+Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 achievements of the PC version. Each set keeps its own progress. You can change this later in the settings (restart required). = Elige qué logros quieres conseguir. Xbox 360: los 12 logros originales del juego. PC: los 66 logros de la versión de PC. Cada conjunto conserva su propio progreso. Puedes cambiarlo más adelante en las opciones (requiere reiniciar).
 Xbox 360 = Xbox 360
-PC (incomplete) = PC (incompletos)
+PC = PC
 This file is not an Xbox 360 package (no LIVE, CON or PIRS header). = Este archivo no es un paquete de Xbox 360 (no tiene cabecera LIVE, CON ni PIRS).
 This package is not an Xbox Live Arcade game (content type {value}). = Este paquete no es un juego de Xbox Live Arcade (tipo de contenido {value}).
 This package is not Torchlight (title ID {value}, expected {expected}). = Este paquete no es Torchlight (ID de título {value}, se esperaba {expected}).
@@ -96,3 +100,5 @@ Cannot write {path}. = No se puede escribir {path}.
 Cannot create {path}: {error} = No se puede crear {path}: {error}
 Cannot move the previous {path} aside: {error} = No se puede apartar la carpeta anterior {path}: {error}
 Cannot finish the install in {path}: {error} = No se puede terminar la instalación en {path}: {error}
+The game could not start its renderer: {error}\n\nIt needs OpenGL 3.3, or Direct3D 11 on Windows. Update the graphics driver, and on a computer with two GPUs make sure the game runs on the one with the driver installed. = El juego no pudo iniciar su renderizador: {error}\n\nNecesita OpenGL 3.3, o Direct3D 11 en Windows. Actualizá el controlador gráfico y, en una computadora con dos GPU, comprobá que el juego se ejecute en la que tiene el controlador instalado.
+Torchlight Recomp = Torchlight Recomp

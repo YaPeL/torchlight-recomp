@@ -11,6 +11,12 @@ Converts a Torchlight PC character save (`N.SVT`, v1.15) to the 360 format (`N.T
   cannot be placed without guessing stops the conversion). It also resolves, by name, quests whose
   GUID changed.
 - The source is only read. The destination is not replaced if it exists, unless `--force` is given.
+- The destination is named `N.TSV` (`N` the character number) and written upper case, as the game
+  and the in-game import name their saves (`0.tsv` is written as `0.TSV`). The game finds its
+  characters ignoring case and numbers them as `wcstol` reads the name, so the folder may not hold
+  that number already in any spelling: the same name in another case is the destination (kept
+  without `--force`; with it, replaced, and only `N.TSV` is left), and another name with the same
+  number (`00.tsv`) is refused.
 
 The shared stash and the settings have their own commands (same rules: the source is only read,
 nothing is replaced without `--force`, and nothing is written unless it validates):

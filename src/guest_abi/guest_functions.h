@@ -137,10 +137,11 @@ inline constexpr GuestFunction kSleep{0x8287D878, Confidence::kConfirmed};
 // [confirmed] WriteFile(handle r3, buffer r4, length r5, written r6, overlapped r7): calls the
 // NtWriteFile import, then NtWaitForSingleObjectEx on the handle while it returns 259 (pending).
 inline constexpr GuestFunction kWriteFile{0x82882DB0, Confidence::kConfirmed};
-// [inferred] ReadFile: same shape and arguments as kWriteFile, with the system call made through
-// a table (the pointer at 0x8304ECB8, entry +16) instead of an import; its callers pass read
-// buffers.
-inline constexpr GuestFunction kReadFile{0x8287F408, Confidence::kInferred};
+// [confirmed] ReadFile (handle r3, buffer r4, length r5, read r6, overlapped r7): same shape and
+// arguments as kWriteFile, with the system call made through a table (the pointer at 0x8304ECB8,
+// entry +16) instead of an import; zeroes *r6 (@0x8287F434). DWARF call stacks of a native run:
+// every NtReadFile of the session came through it, from the C runtime's read (0x82864F80).
+inline constexpr GuestFunction kReadFile{0x8287F408, Confidence::kConfirmed};
 // [confirmed] Xbox D3D internal waits: the callers of the KeWaitForSingleObject import
 // (0x827359E0, 0x82762190, 0x8277E840) and of KeWaitForMultipleObjects (0x82735170, 0x827388B8)
 // in the D3D runtime's address range; arguments not decoded.
@@ -238,5 +239,38 @@ inline constexpr GuestFunction kMemcpy{0x82860A50, Confidence::kConfirmed};
 // @0x821A71D8). Its one direct caller (0x821A71E8 @0x821A7270) copies into a buffer it has just
 // locked.
 inline constexpr GuestFunction kLargeCopy{0x821A7138, Confidence::kConfirmed};
+
+// Xbox D3D device calls of the D3D9 render system's _render (0x821C4058) that only feed the Xenos
+// GPU (hooks/guest_d3d_skip.h; evidence in docs/native-skip-guest-d3d.md, "Draw and bindings").
+// [confirmed] DrawIndexedPrimitive: flushes the dirty device state into the ring (0x821CFF38),
+// allocates ring space and fences (0x821EA6F0, 0x821F3D78), waits for ring space (0x821A5C10);
+// called only by _render (@0x821C43F4). DrawPrimitive: the same without indices (@0x821C4490).
+inline constexpr GuestFunction kD3DDrawIndexed{0x821CF830, Confidence::kConfirmed};
+inline constexpr GuestFunction kD3DDraw{0x821D0A10, Confidence::kConfirmed};
+// [confirmed] SetIndices (device in r3, buffer in r4): stores the buffer at device+12684
+// (@0x821C3A7C); the buffer it replaces gets the current fence in its +8 (@0x821C3A24) or a
+// pending fence entry (@0x821C3A74). Callers: _render (@0x821C4368, @0x821C4500) and 0x827746B0.
+inline constexpr GuestFunction kD3DSetIndices{0x821C39F8, Confidence::kConfirmed};
+// [confirmed] SetStreamSource (device r3, stream r4, buffer r5, offset r6, stride r7): writes the
+// stream's vertex fetch constant and dirty bit (@0x821C3DB4..@0x821C3DC4), stores the buffer at
+// device+4*(stream+3177) (@0x821C3E44) and its stride (@0x821C3E50); the replaced buffer gets its
+// fence like SetIndices (@0x821C3DE8, @0x821C3E38). Callers: setVertexBufferBinding 0x821C3E78,
+// _render (unbinding), the device's unbind-all 0x821CECF0 (from _beginFrame) and 0x827746B0.
+inline constexpr GuestFunction kD3DSetStreamSource{0x821C3D58, Confidence::kConfirmed};
+
+// The guest's file and memory calls timed for the long frame report (live/guest_events.h). From
+// DWARF call stacks of the game's main thread in a native run, every NtOpenFile/NtCreateFile,
+// NtReadFile and MmAllocatePhysicalMemoryEx of the session came through these.
+// [confirmed] A path's attributes (r3: the path, a char string; r4: the output): builds an
+// OBJECT_ATTRIBUTES for it (RtlInitAnsiString @0x8287E0EC, root -3, OBJ_CASE_INSENSITIVE
+// @0x8287E0F0..@0x8287E108), opens and queries it (0x82883A68 @0x8287E118: NtOpenFile,
+// NtQueryInformationFile), returns -1 when that failed (@0x8287E128). The C runtime's existence
+// check (0x82863218) calls it for every resource location OGRE tries.
+inline constexpr GuestFunction kFileAttributes{0x8287E0C8, Confidence::kConfirmed};
+// ReadFile: kReadFile above (timed too).
+// [confirmed] XMemAlloc (r3 size, r4 attributes): physical allocations through 0x8287F118 and
+// 0x8287F090 (MmAllocatePhysicalMemoryEx) by the attribute bits (@0x8287D658..@0x8287D6CC).
+// Every buffer and texture the guest D3D creates allocates here (0x8276AF40, 0x8276AE78).
+inline constexpr GuestFunction kXMemAlloc{0x8287D640, Confidence::kConfirmed};
 
 }  // namespace torchlight::guest_abi::functions

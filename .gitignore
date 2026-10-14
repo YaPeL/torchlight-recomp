@@ -1,4 +1,5 @@
 out/
+deps-download/
 generated/
 
 core

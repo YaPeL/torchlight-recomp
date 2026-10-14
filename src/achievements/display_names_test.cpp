@@ -40,8 +40,8 @@ int main() {
   Check(file.good() && warnings.empty(),"strings file loads without warnings");
   texts.insert(pc::kUnlockedTitle);
   // The achievement list's own texts (achievement_list.cpp).
-  for (const char* t:{"Achievements (PC, incomplete)","Unlocked",
-                      "Not available in this version","Close"}) texts.insert(t);
+  for (const char* t:{"Achievements (PC)","Unlocked",
+                      "Close"}) texts.insert(t);
   for (const char* language:{"de","fr","es"}) {
     for (const auto english:texts) {
       const std::string translated=strings.Translate(language,std::string(english));

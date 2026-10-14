@@ -10,6 +10,7 @@
 #pragma once
 
 #include <cstdint>
+#include <string>
 
 #include <rex/ppc/context.h>
 
@@ -17,6 +18,10 @@ namespace torchlight::dev {
 
 // A game level finished loading (achievements' level-load hook): the next command may run.
 void OnGameLevelLoaded();
+// A command to run at the next game UI update that finds the game in play (the input script's
+// "command"), whatever the level loads: any thread. False in builds without
+// TORCHLIGHT_DEV_COMMANDS (nothing is queued).
+bool QueueGuestCommand(std::string command);
 // CGameUI::Update (achievements' toast hook), after the original: runs the next command when due.
 void OnGameUiUpdate(PPCContext& ctx, uint8_t* base, uint32_t game_ui, uint32_t context);
 

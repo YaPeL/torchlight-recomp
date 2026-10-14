@@ -173,6 +173,10 @@ std::string ExecutableDir() {
   return Utf8(std::filesystem::path(path).parent_path().wstring()) + "\\";
 }
 
+void BringToFront() {}
+
+std::string ResourceDir() { return ExecutableDir(); }
+
 std::string OgrePluginDir() {
   const std::string exe = ExecutableDir();
   return exe.empty() ? "" : exe + "ogre\\plugins\\";
@@ -214,8 +218,29 @@ std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWi
   return {{"parentWindowHandle", std::to_string(window.window)}};
 }
 
+// OGRE's render systems create their own top-level windows here.
+std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string&, uint32_t,
+                                                               uint32_t, bool) {
+  return nullptr;
+}
+
+// OGRE's windows have no thread of their own here: the work runs where it is asked.
+void RunOnWindowThread(const std::function<void()>& work) { work(); }
+
+void WaitServingWindowThread(const std::function<bool()>&) {}
+
+bool OgreWindowFollowsGameWindow() { return false; }
+
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
   return plugin_dir;
+}
+
+void SetCurrentThreadName(const char* name) {
+  const int n = MultiByteToWideChar(CP_UTF8, 0, name, -1, nullptr, 0);
+  if (n <= 0) return;
+  std::wstring wide(size_t(n), L'\0');
+  MultiByteToWideChar(CP_UTF8, 0, name, -1, wide.data(), n);
+  SetThreadDescription(GetCurrentThread(), wide.c_str());
 }
 
 bool HasDirect3D11(const std::string& plugin_dir) {

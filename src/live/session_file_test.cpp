@@ -3,11 +3,15 @@
 
 #include "live/session_file.h"
 
+#include <fstream>
+
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <string>
+
+#include "mods/texture_files.h"
 
 using namespace torchlight;
 using live::LiveFrame;
@@ -113,6 +117,70 @@ int main() {
     std::ofstream(dir + "/bad.tlses") << "TLCAP   whatever";
     SessionReader r;
     Check(!r.Open(dir + "/bad.tlses", error), "rejects another format");
+  }
+
+  // A named texture from the replacements folder: its group and file are recorded, and its bytes
+  // come back with the frame (replay has no replacements folder).
+  {
+    const std::filesystem::path repl = std::filesystem::path(dir) / "replacements";
+    std::filesystem::create_directories(repl / "media" / "levelsets");
+    std::ofstream(repl / "media" / "levelsets" / "grass.dds", std::ios::binary) << "DDS bytes";
+    mods::TextureLocations locations;
+    locations.replacements = repl;
+    mods::SetTextureLocations(locations);
+    LiveFrame f = Frame(20);
+    commands::TextureDesc t;
+    t.id = Id(7);
+    t.name = "MEDIA/LEVELSETS/GRASS.DDS";
+    t.group = "ZIP";
+    f.textures.push_back(t);
+    {
+      SessionWriter w;
+      Check(w.Open(path, 0, error), "open for the texture file");
+      Check(w.Append(f) == SessionWriter::Result::kWritten, "frame with a replaced texture written");
+    }
+    SessionReader r;
+    LiveFrame back;
+    Check(r.Open(path, error) && r.Next(back, error), "frame with a replaced texture read");
+    Check(back.textures.size() == 1 && back.textures[0].group == "ZIP" && back.textures[0].file != 0,
+          "its group and file come back");
+    bool bytes = false;
+    for (const auto& c : back.contents) {
+      if (c.content && c.content->hash == back.textures[0].file) {
+        bytes = std::string(c.content->bytes.begin(), c.content->bytes.end()) == "DDS bytes";
+      }
+    }
+    Check(bytes, "the file's bytes come back with the frame");
+
+    // A name with a mod's device (a mod's TEXTURE_OVERRIDE, by the data loader's full path), in any
+    // case: that mod's file is kept the same way.
+    const std::filesystem::path mod = std::filesystem::path(dir) / "mods" / "Enhanced";
+    std::filesystem::create_directories(mod / "Media" / "Models");
+    std::ofstream(mod / "Media" / "Models" / "Scroll_Blue.dds", std::ios::binary) << "scroll bytes";
+    locations.mods = {{"ENHANCED", mod, "tlmod002:"}};
+    mods::SetTextureLocations(locations);
+    LiveFrame g = Frame(21);
+    commands::TextureDesc u;
+    u.id = Id(8);
+    u.name = "TLMOD002:/MEDIA/MODELS/SCROLL_BLUE.DDS";
+    u.group = "General";
+    g.textures.push_back(u);
+    {
+      SessionWriter w;
+      Check(w.Open(path, 0, error), "open for the device-named texture");
+      Check(w.Append(g) == SessionWriter::Result::kWritten, "frame with a device-named texture written");
+    }
+    SessionReader r2;
+    LiveFrame back2;
+    Check(r2.Open(path, error) && r2.Next(back2, error), "frame with a device-named texture read");
+    bool scroll = false;
+    for (const auto& c : back2.contents) {
+      if (c.content && !back2.textures.empty() && c.content->hash == back2.textures[0].file) {
+        scroll = std::string(c.content->bytes.begin(), c.content->bytes.end()) == "scroll bytes";
+      }
+    }
+    Check(scroll, "a device-named texture's mod file is kept");
+    mods::SetTextureLocations({});
   }
 
   std::filesystem::remove_all(dir);

@@ -57,4 +57,12 @@ std::optional<std::vector<uint8_t>> CaptureContentSource::GameFile(const std::st
   return pak_.Read(name);
 }
 
+std::optional<std::vector<uint8_t>> CaptureContentSource::NamedTexture(const TextureDesc& t) const {
+  if (t.file != 0) {
+    const commands::Blob* blob = Blob(t.file);
+    if (blob) return blob->bytes;
+  }
+  return GameFile(t.name);
+}
+
 }  // namespace torchlight::frontend

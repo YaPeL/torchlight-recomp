@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <map>
 #include <optional>
 #include <string>
@@ -15,10 +16,14 @@
 #include "capture/session.h"
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
+#include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
+#include "live/frame_timing.h"
 #include "live/live_content_source.h"
 #include "live/measured_mutex.h"
 #include "live/slow_frames.h"
+#include "mods/texture_files.h"
+#include "platform/presentation_time.h"
 
 namespace torchlight::live {
 
@@ -74,6 +79,7 @@ void LogMeasurements(uint64_t cuts, uint64_t measured) {
   }
   std::sort(rows.begin(), rows.end(), [](const Row& a, const Row& b) { return a.ns > b.ns; });
   std::string hooks;
+  if (!session.producer_timing()) hooks = " not timed (--native_producer_timing)";
   for (size_t i = 0; i < rows.size() && i < 8; ++i) {
     hooks += fmt::format("\n    {:.3f} ms  {:7.1f} calls  {}", rows[i].ns / 1e6 / measured_frames,
                          rows[i].calls / measured_frames, capture::HookName(rows[i].hook));
@@ -103,9 +109,16 @@ LiveMode& LiveMode::Get() {
 
 void LiveMode::Start(const LiveOptions& options) {
   options_ = options;
+  queue_.SetCapacity(FrameQueueDepth(options.frame_queue, options.vsync));
   running_ = true;
+  capture::Session::Get().SetProducerTiming(options.producer_timing);
   capture::Session::Get().EnableLive(&queue_, &store_);
-  thread_ = std::thread([this] { Run(); });
+  finished_ = false;
+  thread_ = std::thread([this] {
+    platform::SetCurrentThreadName("tl backend");
+    Run();
+    finished_ = true;
+  });
   REXLOG_INFO("live: native backend {}{}, {}x{}, frames queued at the guest swap",
               options_.only ? "as the only renderer (Xenos off)" : "in parallel",
               options_.draw ? "" : " WITHOUT DRAWING (diagnostics)", options_.width,
@@ -124,6 +137,9 @@ void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync) {
 void LiveMode::Stop() {
   if (!running_.exchange(false)) return;
   queue_.Close();
+  // The render thread may be waiting for the main thread to create, resize or destroy the
+  // backend's window (macOS, platform::RunOnWindowThread): that work runs until the thread ends.
+  platform::WaitServingWindowThread([this] { return finished_.load(); });
   if (thread_.joinable()) thread_.join();
 }
 
@@ -217,9 +233,18 @@ void LiveMode::Run() {
                               "Torchlight - native OGRE backend (live)", err, sizeof(err));
   if (!backend) {
     REXLOG_ERROR("live: backend creation failed: {}", err);
+    if (options_.on_backend_failed) options_.on_backend_failed(err);
     return;
   }
   REXLOG_INFO("live: renderer {}", tl_backend_renderer(backend));
+  // When the presents reach the screen, where the window system says (presentation_time.h): the
+  // swap-to-screen latency, next to the swap-to-presented one.
+  std::unique_ptr<platform::PresentationClock> presentation =
+      parent.system != platform::NativeWindow::kNone ? platform::CreatePresentationClock(parent)
+                                                     : nullptr;
+  if (presentation) REXLOG_INFO("live: presentation times from the window system");
+  std::deque<std::pair<uint64_t, Clock::time_point>> cuts;  // presented frames awaiting the screen
+  Clock::time_point last_shown{};  // the screen's previous frame
   // Internal render scale for the current window size (LiveOptions::render_resolution).
   settings::Resolution window_size{options_.window_width, options_.window_height};
   auto apply_render_scale = [&] {
@@ -238,6 +263,8 @@ void LiveMode::Run() {
   std::string error;
   if (!pak.Open((options_.game_data_root / "pak.zip").string(), error)) {
     REXLOG_ERROR("live: {}", error);
+  } else {
+    mods::SetPakNames(pak.names());  // what a capture's mod textures are told apart from
   }
   LiveContentSource content(pak);
   frontend::Frontend frontend(backend, content);
@@ -255,7 +282,7 @@ void LiveMode::Run() {
   }
   uint64_t recorded_bytes_before = recorder.bytes_written();
 
-  Series backend_ms, latency_ms, texture_ms, present_ms, record_ms;
+  Series backend_ms, latency_ms, queue_ms, screen_ms, texture_ms, present_ms, record_ms;
   // Consumer breakdown per frame (FrameStep), means over the period.
   double content_ms = 0, commands_ms = 0, draws_ms = 0, end_ms = 0, after_ms = 0, release_ms = 0;
   size_t frames = 0, frames_dropped = 0, textures_created = 0, slow_texture_frames = 0;
@@ -265,13 +292,16 @@ void LiveMode::Run() {
   auto last_summary = Clock::now();
   bool window_open = true;
   SlowFrameDetector slow_frames;
+  FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
+  size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
     if (!frame) continue;
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
+    dropped_since_present += frame->dropped_before;
     FrameRecord record;
     record.swap = frame->swap;
     record.guest_ms = frame->producer.guest_ms;
@@ -315,6 +345,7 @@ void LiveMode::Run() {
         if (video->vsync != options_.vsync) {
           options_.vsync = video->vsync;
           tl_backend_set_vsync(backend, video->vsync);
+          queue_.SetCapacity(FrameQueueDepth(options_.frame_queue, video->vsync));
           REXLOG_INFO("live: vsync {}", video->vsync ? "on" : "off");
         }
         if (video->render_resolution != options_.render_resolution) {
@@ -324,9 +355,34 @@ void LiveMode::Run() {
       }
       if (window_open) {
         if (options_.ui) ApplyUi(backend, *options_.ui);
+        if (presentation) presentation->BeforePresent(frame->swap);
         auto present_start = Clock::now();
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();
+        if (window_open) {
+          PresentLatency latency;
+          latency.queue_ms = Ms(start - frame->cut);
+          latency.render_ms = Ms(present_start - start);
+          latency.present_ms = Ms(present_end - present_start);
+          FrameTiming::Get().OnPresent(dropped_since_present, latency);
+          dropped_since_present = 0;
+          latency_ms.Add(latency.total_ms());
+          queue_ms.Add(latency.queue_ms);
+        }
+        if (presentation) {
+          cuts.emplace_back(frame->swap, frame->cut);
+          for (const auto& shown : presentation->TakeShown()) {
+            while (!cuts.empty() && cuts.front().first < shown.id) cuts.pop_front();
+            if (cuts.empty() || cuts.front().first != shown.id) continue;
+            const double ms = Ms(shown.time - cuts.front().second);
+            screen_ms.Add(ms);
+            const double gap =
+                last_shown.time_since_epoch().count() ? Ms(shown.time - last_shown) : 0.0;
+            last_shown = shown.time;
+            FrameTiming::Get().OnScreen(ms, gap);
+          }
+          while (cuts.size() > 64) cuts.pop_front();
+        }
         record.present_ms = Ms(present_end - present_start);
         present_ms.Add(record.present_ms);
         if (last_present.time_since_epoch().count() != 0) {
@@ -360,7 +416,7 @@ void LiveMode::Run() {
     }
     auto end = Clock::now();
     backend_ms.Add(Ms(end - start));
-    latency_ms.Add(Ms(end - frame->cut));
+    reclaimer.Free(std::move(*frame));
     ++frames;
     record.backend_ms = Ms(end - start);
     record.content_ms = step.content_ms;
@@ -374,6 +430,7 @@ void LiveMode::Run() {
     tl_backend_take_counters(backend, &counters);
     record.programs_generated = counters.programs_generated;
     record.program_ms = counters.program_ms;
+    record.program_generate_ms = counters.program_generate_ms;
     record.gpu_buffers_created = counters.gpu_buffers_created;
     record.vertex_layouts_created = counters.vertex_layouts_created;
     if (auto line = slow_frames.Add(record)) REXLOG_INFO("live: {}", *line);
@@ -384,17 +441,26 @@ void LiveMode::Run() {
           "live: {} frames rendered, {} dropped (backend behind), {} draws ({} drawn), "
           "{} draws with a texture not ready, {} textures created ({} preparation(s) over 16.7 ms)"
           "\n  backend frame: {}\n  present (vsync wait included): {}"
-          "\n  swap-to-presented latency: {}\n  texture preparation per "
+          "\n  swap-to-presented latency: {}\n    of it waiting in the frame queue: {}"
+          "\n  swap-to-screen latency (window system's presentation times): {}"
+          "\n  texture preparation per "
           "frame: {}\n  live content held: {:.1f} MiB (store {:.1f} MiB)"
           "\n  skipped:{}\n  degraded:{}\n  texture problems:{}",
           frames, frames_dropped, s.draws_total - draws_before, s.draws_drawn - drawn_before,
           s.textures_not_ready - not_ready_before, textures_created, slow_texture_frames,
-          backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(),
+          backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(), queue_ms.Summary(),
+          screen_ms.Summary(),
           texture_ms.Summary(),
           content.content_bytes() / 1048576.0, store_.bytes() / 1048576.0,
           Delta(s.skipped, skipped_before), Delta(s.degraded, degraded_before),
           Delta(s.texture_problems, problems_before));
       const double per = double(std::max<size_t>(frames, 1));
+      if (mods::TextureCheckOn()) {
+        const mods::TextureCheckCounts c = mods::TextureCheckTotals();
+        REXLOG_INFO("mods: texture check: {} named textures compared with what the game opened, {} differ, "
+                    "{} not reported by the game",
+                    c.compared, c.differing, c.unreported);
+      }
       REXLOG_INFO("live consumer (backend thread, ms per frame): content and textures {:.2f}, "
                   "commands {:.2f} (frontend {:.2f}, backend draws {:.2f}), frame end {:.2f}, "
                   "present {:.2f}, content release {:.2f}",
@@ -421,7 +487,7 @@ void LiveMode::Run() {
       double constants = per_frame(ns[size_t(PS::kConstants)]);
       double resources = per_frame(ns[size_t(PS::kResources)]);
       double commands = per_frame(ns[size_t(PS::kCommands)]) - constants - resources;
-      REXLOG_INFO(
+      if (capture::Session::Get().producer_timing()) REXLOG_INFO(
           "live producer (guest threads, ms per frame over {} measured frames): constants {:.2f}, other "
           "commands {:.2f}, resource snapshots {:.2f}, version marking {:.2f}, frame cut {:.2f}; "
           "total {:.2f}",

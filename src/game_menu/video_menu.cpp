@@ -1,6 +1,8 @@
 #include "game_menu/video_menu.h"
 
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -14,8 +16,11 @@
 #include <rex/ppc/func.h>
 #include <rex/runtime.h>
 
+#include "game_menu/class_selector_model.h"
 #include "game_menu/guest_call.h"
+#include "game_menu/mods_install.h"
 #include "game_menu/menu_strings.h"
+#include "game_menu/skill_tree_model.h"
 #include "game_menu/video_menu_model.h"
 #include "game_menu/wide_layout.h"
 #include "frontend/zip_archive.h"
@@ -40,12 +45,14 @@ constexpr const char* kResourceType = "FileSystem";
 constexpr const char* kResourceGroup = "General";
 constexpr const char* kVideoLayout = "tl_video_settings.uilayout";
 constexpr const char* kStringsFile = "tl_video_strings.txt";
-// The game's framed layouts with their bands re-anchored for a frame wider than 16:9, generated
-// into the local cache and served like a language pack's files (same paths, found first).
-constexpr const char* kWideDeviceMount = "\\Device\\TorchlightWideLayouts";
-constexpr const char* kWideDeviceLink = "tlwide:";
-constexpr const char* kWideResourceLocation = "tlwide:\\";
-bool g_wide_layouts = false;
+// The game's layouts we change, generated from the user's pak into the local cache and served like
+// a language pack's files (same paths, found first): the framed ones with their bands re-anchored
+// for a frame wider than 16:9, the skill tree with a third column (skill_tree_model.h) and the
+// character creation screen with labels for mods' classes (class_selector_model.h).
+constexpr const char* kLayoutsDeviceMount = "\\Device\\TorchlightLayouts";
+constexpr const char* kLayoutsDeviceLink = "tllayouts:";
+constexpr const char* kLayoutsResourceLocation = "tllayouts:\\";
+bool g_generated_layouts = false;
 
 // Our translations (loaded by Install) and the game's language: the console language the runtime
 // reports, read when the column is built (the host settings set it before the guest runs).
@@ -128,13 +135,24 @@ void Refresh(GuestCall& call) {
 
 namespace {
 
-// Writes the framed layouts of the user's pak with their bands re-anchored under `dir`/media/UI/;
-// how many. Nothing of the game is kept in the repository: this runs on the user's own data.
-int WriteWideLayouts(const std::filesystem::path& pak_path, const std::filesystem::path& dir) {
+// Writes the layouts of the user's pak we change under `dir`/media/UI/: the framed ones with their
+// bands re-anchored when `widen`, the skill tree with its third column and the creation screen with
+// its class labels; how many. Nothing of the
+// game is kept in the repository: this runs on the user's own data.
+// `path`'s file name is `file`, in any case.
+bool IsNamed(const std::string& path, std::string_view file) {
+  const std::string name = path.substr(path.find_last_of("/\\") + 1);
+  return name.size() == file.size() &&
+         std::equal(name.begin(), name.end(), file.begin(), [](char a, char b) {
+           return std::tolower(static_cast<unsigned char>(a)) == std::tolower(static_cast<unsigned char>(b));
+         });
+}
+
+int WriteLayouts(const std::filesystem::path& pak_path, const std::filesystem::path& dir, bool widen) {
   frontend::ZipArchive pak;
   std::string error;
   if (!pak.Open(pak_path.string(), error)) {
-    REXLOG_ERROR("wide layouts: {}", error);
+    REXLOG_ERROR("layouts: {}", error);
     return -1;
   }
   std::error_code ec;
@@ -145,36 +163,53 @@ int WriteWideLayouts(const std::filesystem::path& pak_path, const std::filesyste
     if (name.size() < 9 || name.compare(name.size() - 9, 9, ".uilayout") != 0) continue;
     const auto data = pak.Read(name);
     if (!data) continue;
-    const auto widened = WidenBands(std::string(data->begin(), data->end()));
-    if (!widened) continue;
+    std::string xml(data->begin(), data->end());
+    std::vector<std::string> changes;
+    if (widen) {
+      if (auto widened = WidenBands(xml)) {
+        xml = std::move(widened->xml);
+        changes.push_back(std::to_string(widened->windows.size()) + " band end(s) re-anchored");
+      }
+    }
+    if (auto columns = skill_tree::AddSkillColumn(xml)) {
+      xml = std::move(*columns);
+      changes.push_back("skill tree third column");
+    }
+    if (auto labels = IsNamed(name, ui::kNewGameMenuLayout) ? class_selector::AddClassLabels(xml)
+                                                             : std::nullopt) {
+      xml = std::move(*labels);
+      changes.push_back("class button labels");
+    }
+    if (changes.empty()) continue;
     const std::string file = name.substr(name.find_last_of("/\\") + 1);
     std::ofstream out(dir / "media" / "UI" / file, std::ios::binary);
-    out << widened->xml;
+    out << xml;
     if (!out) {
-      REXLOG_ERROR("wide layouts: cannot write {}", file);
+      REXLOG_ERROR("layouts: cannot write {}", file);
       return -1;
     }
-    REXLOG_INFO("wide layouts: {} ({} band end(s) re-anchored)", file, widened->windows.size());
+    std::string list;
+    for (const std::string& change : changes) list += (list.empty() ? "" : ", ") + change;
+    REXLOG_INFO("layouts: {} ({})", file, list);
     ++written;
   }
   return written;
 }
 
-void InstallWideLayouts(rex::Runtime* runtime, const std::filesystem::path& game_data_root) {
-  if (!hooks::WiderThan16x9()) return;
+void InstallGeneratedLayouts(rex::Runtime* runtime, const std::filesystem::path& game_data_root) {
   const std::string cache = platform::CacheDir("layouts");
   if (cache.empty()) {
-    REXLOG_ERROR("wide layouts: no cache folder; menus keep their 16:9 frames");
+    REXLOG_ERROR("layouts: no cache folder; menus keep their 16:9 frames and two skill columns");
     return;
   }
-  if (WriteWideLayouts(game_data_root / "pak.zip", cache) <= 0) return;
-  auto device = std::make_unique<rex::filesystem::HostPathDevice>(kWideDeviceMount, cache, true);
+  if (WriteLayouts(game_data_root / "pak.zip", cache, hooks::WiderThan16x9()) <= 0) return;
+  auto device = std::make_unique<rex::filesystem::HostPathDevice>(kLayoutsDeviceMount, cache, true);
   if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
-      !runtime->file_system()->RegisterSymbolicLink(kWideDeviceLink, kWideDeviceMount)) {
-    REXLOG_ERROR("wide layouts: cannot mount {}", cache);
+      !runtime->file_system()->RegisterSymbolicLink(kLayoutsDeviceLink, kLayoutsDeviceMount)) {
+    REXLOG_ERROR("layouts: cannot mount {}", cache);
     return;
   }
-  g_wide_layouts = true;
+  g_generated_layouts = true;
 }
 
 }  // namespace
@@ -184,10 +219,10 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
     REXLOG_ERROR("game menu: no runtime file system; video menu off");
     return;
   }
-  const std::string exe_dir = platform::ExecutableDir();
-  const std::filesystem::path data = std::filesystem::path(exe_dir) / "data" / "ui";
+  const std::string resources = platform::ResourceDir();
+  const std::filesystem::path data = std::filesystem::path(resources) / "data" / "ui";
   std::error_code ec;
-  if (exe_dir.empty() || !std::filesystem::exists(data / kVideoLayout, ec)) {
+  if (resources.empty() || !std::filesystem::exists(data / kVideoLayout, ec)) {
     REXLOG_ERROR("game menu: layouts not found in {}; video menu off", data.string());
     return;
   }
@@ -205,18 +240,16 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root)
   for (const std::string& warning : warnings) REXLOG_WARN("game menu: {}: {}", kStringsFile, warning);
   g_enabled = true;
   REXLOG_INFO("game menu: layouts from {} as {}", data.string(), kDeviceLink);
-  InstallWideLayouts(runtime, game_data_root);
+  InstallGeneratedLayouts(runtime, game_data_root);
 }
 
-namespace {
-
-// One FileSystem location in the default group; false on failure.
-bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive) {
+// One FileSystem location in a group (the default one unless told); false on failure (video_menu.h).
+bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recursive, const std::string& group_name) {
   const uint32_t manager = call.ReadU32(ui::kResourceGroupManagerGlobal);
   const uint32_t mark = call.Mark();
   const uint32_t name = call.StdString(path);
   const uint32_t type = call.StdString(kResourceType);
-  const uint32_t group = call.StdString(kResourceGroup);
+  const uint32_t group = call.StdString(group_name);
   const bool ok = manager && name && type && group;
   if (ok) {
     call.Call(ui::kAddResourceLocation.address, {manager, name, type, group, recursive ? 1u : 0u});
@@ -227,6 +260,20 @@ bool AddFileSystemLocation(GuestCall& call, const std::string& path, bool recurs
   call.Release(mark);
   return ok;
 }
+
+// One resource group initialised; false on failure (video_menu.h).
+bool InitialiseResourceGroup(GuestCall& call, const std::string& group_name) {
+  const uint32_t manager = call.ReadU32(ui::kResourceGroupManagerGlobal);
+  const uint32_t mark = call.Mark();
+  const uint32_t group = call.StdString(group_name);
+  const bool ok = manager && group;
+  if (ok) call.Call(ui::kInitialiseResourceGroup.address, {manager, group});
+  call.DestroyStdString(group);
+  call.Release(mark);
+  return ok;
+}
+
+namespace {
 
 // After the game's resources.cfg locations (once): our layouts (only mode), and a language pack's
 // folder (any mode), recursive so its files keep their game paths (media/UI/...). The game's own
@@ -245,11 +292,11 @@ void AddResourceLocations(PPCContext& ctx, uint8_t* base) {
       g_enabled = false;
     }
   }
-  if (g_wide_layouts) {
-    if (AddFileSystemLocation(call, kWideResourceLocation, true)) {
-      REXLOG_INFO("wide layouts: resource location {} added", kWideResourceLocation);
+  if (g_generated_layouts) {
+    if (AddFileSystemLocation(call, kLayoutsResourceLocation, true)) {
+      REXLOG_INFO("layouts: resource location {} added", kLayoutsResourceLocation);
     } else {
-      REXLOG_ERROR("wide layouts: cannot add {}", kWideResourceLocation);
+      REXLOG_ERROR("layouts: cannot add {}", kLayoutsResourceLocation);
     }
   }
   const std::string pack = live::LanguagePack();
@@ -389,8 +436,13 @@ extern "C" {
 FUNCTION_ADDRESS_CHECK(kResourcesCfgLoader, 8239B998);
 REX_EXTERN(__imp__sub_8239B998);
 REX_FUNC(sub_8239B998) {
+  const uint32_t data_manager = ctx.r3.u32;
+  torchlight::game_menu::NoteDataManager(data_manager);
   __imp__sub_8239B998(ctx, base);
   torchlight::game_menu::AddResourceLocations(ctx, base);
+  // The player's mods (mods_install.h): each in its own resource group, initialised after the
+  // game's groups, as on PC.
+  torchlight::game_menu::RegisterMods(ctx, base, data_manager);
 }
 
 FUNCTION_ADDRESS_CHECK(kSettingsMenuInit, 823802F8);

@@ -1,7 +1,8 @@
 # Frontend: command stream -> host backend. The one path to the backend, shared by the replay
 # (frames from a capture file) and the live mode (frames from the running guest).
 find_package(ZLIB REQUIRED)
-add_library(torchlight_frontend STATIC frontend.cpp content_source.cpp zip_archive.cpp detile.cpp)
+add_library(torchlight_frontend STATIC frontend.cpp content_source.cpp zip_archive.cpp detile.cpp
+    physical_constants.cpp)
 target_include_directories(torchlight_frontend PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_frontend PUBLIC cxx_std_23)
 # torchlight_backend (an OBJECT library) is linked by the executables themselves.
@@ -15,3 +16,8 @@ target_link_libraries(detile_test PRIVATE torchlight_frontend rex::gpu-xenos rex
 target_include_directories(detile_test SYSTEM PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_options(detile_test PRIVATE -Wall -Wextra)
 add_test(NAME detile_test COMMAND detile_test)
+
+add_executable(physical_constants_test physical_constants_test.cpp)
+target_link_libraries(physical_constants_test PRIVATE torchlight_frontend)
+target_compile_options(physical_constants_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME physical_constants_test COMMAND physical_constants_test)

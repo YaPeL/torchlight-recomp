@@ -192,6 +192,11 @@ std::string Problem::Text() const {
   return kind + " " + value + " at " + path + (context.empty() ? "" : " (" + context + ")");
 }
 
+bool IsRemovableUnit(const Problem& problem) {
+  return problem.kind == KindName("unit_guid") &&
+         (problem.path.ends_with("/item/unit_guid") || problem.path.ends_with("/unit/unit_guid"));
+}
+
 void CheckReferences(const Parsed& parsed, const GameData& target, const GameData* source,
                      std::map<size_t, int64_t>& replacements, std::vector<Problem>& problems) {
   std::set<std::pair<std::string, std::string>> seen;
@@ -200,8 +205,11 @@ void CheckReferences(const Parsed& parsed, const GameData& target, const GameDat
   effect_sources.insert(target.effect_names.begin(), target.effect_names.end());
 
   auto problem = [&](const Ref& ref, const std::string& value, const std::string& context) {
-    if (!seen.insert({ref.role, value}).second) return;
-    problems.push_back({KindName(ref.role), value, ref.path, context});
+    Problem p{KindName(ref.role), value, ref.path, context};
+    // Once per value, but apart for the places an item can be removed from and the others, so a
+    // missing unit in an item does not hide the same unit as the character's class.
+    if (!seen.insert({ref.role + (IsRemovableUnit(p) ? "/removable" : ""), value}).second) return;
+    problems.push_back(std::move(p));
   };
 
   for (const Ref& ref : parsed.refs) {

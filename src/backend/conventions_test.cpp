@@ -6,6 +6,7 @@
 #include <cstdlib>
 #include <cstdint>
 #include <initializer_list>
+#include <utility>
 
 #include "backend/xbox_to_gl_conventions.h"
 
@@ -48,6 +49,31 @@ void Normalize(float v[3]) {
 }  // namespace
 
 int main() {
+  {
+    // Fetch endian swaps against the byte-by-byte definitions, sizes with a partial last word.
+    using torchlight::backend::SwapFetchEndian;
+    for (uint32_t mode : {0u, 1u, 2u, 3u}) {
+      for (size_t size : {0u, 1u, 2u, 3u, 4u, 7u, 8u, 33u, 64u}) {
+        uint8_t got[64], want[64];
+        for (size_t i = 0; i < size; ++i) got[i] = want[i] = uint8_t(i * 37 + 11);
+        if (mode == 1) {
+          for (size_t i = 0; i + 1 < size; i += 2) std::swap(want[i], want[i + 1]);
+        } else if (mode == 2) {
+          for (size_t i = 0; i + 3 < size; i += 4) {
+            std::swap(want[i], want[i + 3]);
+            std::swap(want[i + 1], want[i + 2]);
+          }
+        } else if (mode == 3) {
+          for (size_t i = 0; i + 3 < size; i += 4) {
+            std::swap(want[i], want[i + 2]);
+            std::swap(want[i + 1], want[i + 3]);
+          }
+        }
+        SwapFetchEndian(got, size, mode);
+        Check(std::memcmp(got, want, size) == 0, "fetch endian swap");
+      }
+    }
+  }
   {
     // Skinning lanes: Runic's blend (index lane 3 - k with weight lane k, position divided by the
     // weight sum through w) against the RTSS's (lane k with lane k, w = 1) after BlendLanesForHost.

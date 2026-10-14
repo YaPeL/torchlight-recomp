@@ -2,6 +2,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <vector>
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 #include "achievements/runtime.h"
@@ -18,6 +19,17 @@ namespace {
 // potions from this path that do not count.
 constexpr bool kCountLevers = true;
 constexpr bool kCountPetPotions = true;
+// Arguments of an enclosing guest call that a hook further down needs: the item use's target
+// (potions on a pet) and the damage application's attacker (max damage). Kept per thread while the
+// call runs (calls nest), instead of read from the caller's preserved registers through ctx, which
+// the code generator may keep out of the context (codegen non_volatile_as_local).
+thread_local std::vector<uint32_t> item_use_targets, damage_attackers;
+struct Enclosing {
+  std::vector<uint32_t>& stack;
+  Enclosing(std::vector<uint32_t>& s,uint32_t value) : stack(s) { stack.push_back(value); }
+  ~Enclosing() { stack.pop_back(); }
+};
+uint32_t Innermost(const std::vector<uint32_t>& stack) { return stack.empty() ? 0 : stack.back(); }
 pc::Observation Observe(std::string_view source,const PPCContext& ctx,const uint8_t* base,
                         uint32_t actor=0,int64_t event=-1,int64_t value=0,std::string_view id={}) {
   if (!pc::NativeEnabled() || !pc::DiagnosticsEnabled()) return {};
@@ -185,12 +197,12 @@ REX_FUNC(sub_822D8548) {
 REX_EXTERN(__imp__sub_82294548);
 REX_FUNC(sub_82294548) {
   // Character event of a unit; from a potion effect (guest_abi kPotionEventReturn) PC then counts a
-  // potion given to a pet: the target, still in the caller's preserved r28, cast to CCharacter
-  // (guest_abi CastToCharacter), with an owner.
+  // potion given to a pet: the target of the enclosing item use, cast to CCharacter (guest_abi
+  // CastToCharacter), with an owner.
   const auto from = uint32_t(ctx.lr);
   __imp__sub_82294548(ctx,base);
   if (!pc::NativeEnabled() || from != abi::kPotionEventReturn) return;
-  const auto target = ctx.r28.u32;
+  const auto target = Innermost(item_use_targets);
   uint32_t character = 0, owner = 0;
   character = abi::CastToCharacter(base,target);  // the guest's cast, read from the host
   if (character) owner = torchlight::guest_abi::ReadU32(base,character+abi::kCharacterOwner);
@@ -222,7 +234,10 @@ REX_FUNC(sub_822B9A60) {
   const bool qualifies = pc::NativeEnabled() && from == abi::kPetSpellUseReturn &&
       abi::UnitIsType(base,item,abi::kTypeSpell) && abi::UnitIsType(base,user,abi::kTypePet) &&
       !abi::RejectedPetSubtype(base,user);
-  __imp__sub_822B9A60(ctx,base);
+  {
+    const Enclosing use(item_use_targets,ctx.r5.u32);  // the target, for the potion event above
+    __imp__sub_822B9A60(ctx,base);
+  }
   if (!qualifies) return;
   const auto player = abi::ActivePlayer(base);
   auto observation = Observe("pet-spell",ctx,base,player,-1,1);
@@ -321,18 +336,26 @@ REX_FUNC(sub_82217DA8) {
   else if (!observation.source.empty()) pc::Apply([](pc::Service&){},observation);
 }
 
+REX_EXTERN(__imp__sub_8229C7B0);
+REX_FUNC(sub_8229C7B0) {
+  // Damage application (guest_abi kApplyDamage): its attacker, for the health setter below.
+  const Enclosing application(damage_attackers,ctx.r9.u32);
+  __imp__sub_8229C7B0(ctx,base);
+}
+
 REX_EXTERN(__imp__sub_821D7E78);
 REX_FUNC(sub_821D7E78) {
   // PC max-damage block is just before health modification. Guest damage application
-  // 0x8229C7B0 reaches this health setter at 0x8229CAD0 after the same early exits;
-  // preserved nonvolatile r29 = attacker and f30 = actual applied damage.
-  if (pc::NativeEnabled() && uint32_t(ctx.lr) == 0x8229CAD4 && ctx.r29.u32) {
+  // (guest_abi kApplyDamage) reaches this health setter after the same early exits, with the
+  // applied damage negated in f1; the attacker is the enclosing application's.
+  const auto attacker = Innermost(damage_attackers);
+  if (pc::NativeEnabled() && uint32_t(ctx.lr) == abi::kHealthSetReturn && attacker) {
     const auto player = abi::ActivePlayer(base);
-    const double damage = ctx.f30.f64;
+    const double damage = -ctx.f1.f64;
     if (player && abi::Eligible(base,player) && std::isfinite(damage) &&
         damage > 0 && damage <= double(INT32_MAX)) {
       // 0x821D7E20 is the type test with type 28 (the player), read from the host.
-      if (abi::UnitIsType(base,ctx.r29.u32,abi::kTypePlayer)) pc::Apply([&](pc::Service& service) {
+      if (abi::UnitIsType(base,attacker,abi::kTypePlayer)) pc::Apply([&](pc::Service& service) {
         service.Maximum(3,int32_t(damage));
       },Observe("applied-damage",ctx,base,player,-1,int32_t(damage)));
     }

@@ -39,6 +39,12 @@ std::string SetupLanguage(const std::string& settings_language,
 // The interface's own texts (the message box, buttons, picker titles, progress lines), besides the
 // messages game_files.h and install.h return: listed for the translation check.
 inline constexpr std::string_view kTextTitle = "Torchlight setup";
+// The renderer could not start (ShowRendererError): the window would stay black.
+inline constexpr std::string_view kTextRendererTitle = "Torchlight Recomp";
+inline constexpr std::string_view kTextRendererFailed =
+    "The game could not start its renderer: {error}\n\nIt needs OpenGL 3.3, or Direct3D 11 on "
+    "Windows. Update the graphics driver, and on a computer with two GPUs make sure the game runs on "
+    "the one with the driver installed.";
 inline constexpr std::string_view kTextIntro =
     "Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version "
     "1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts "
@@ -58,10 +64,10 @@ inline constexpr std::string_view kTextChecking = "Checking the game files...";
 // The achievement set's page (EnsureAchievementChoice; docs/achievements-xbox.md).
 inline constexpr std::string_view kTextAchievementsChoice =
     "Choose which achievements to earn. Xbox 360: the game's original 12 achievements. PC: the 66 "
-    "achievements of the PC version; some cannot be earned yet. Each set keeps its own progress. "
-    "You can change this later in the settings (restart required).";
+    "achievements of the PC version. Each set keeps its own progress. You can change "
+    "this later in the settings (restart required).";
 inline constexpr std::string_view kTextAchievementsXbox = "Xbox 360";
-inline constexpr std::string_view kTextAchievementsPc = "PC (incomplete)";
+inline constexpr std::string_view kTextAchievementsPc = "PC";
 std::span<const std::string_view> InterfaceTexts();
 
 }  // namespace torchlight::game_setup

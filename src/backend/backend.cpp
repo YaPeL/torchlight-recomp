@@ -249,8 +249,12 @@ struct tl_backend {
   Ogre::Root* root = nullptr;
   Ogre::RenderSystem* rs = nullptr;
   Ogre::RenderWindow* window = nullptr;
+  // The native window OGRE draws in where it cannot make its own (platform.h; macOS); outlives
+  // `window`.
+  std::unique_ptr<torchlight::platform::OgreTopLevelWindow> top_level;
   bool visible_window = false;
   bool child_window = false;  // inside another application's window (tl_backend_create_child)
+  std::string window_title;    // OGRE's window's; its name on Cocoa (tl_backend_destroy)
   Ogre::Viewport* window_viewport = nullptr;
   std::unique_ptr<torchlight::platform::KeyReader> keyboard;  // top-level window only
   uint32_t keys = 0;  // tl_key bits pressed since tl_backend_take_keys
@@ -308,7 +312,7 @@ struct tl_backend {
     std::vector<uint8_t> bytes;  // fetch swap applied (vertex) / host order (index)
     uint32_t index_size = 0;
   };
-  std::map<uint64_t, Buffer> vertex_buffers, index_buffers;
+  std::unordered_map<uint64_t, Buffer> vertex_buffers, index_buffers;
   // GPU buffers per guest buffer (tl_draw stream_owners / index_owner), holding one content
   // version at a time: a new version is written over the old one (whole buffer, discarding it, so
   // draws still queued keep the data they were issued with). Vertex buffers also per stride and
@@ -341,8 +345,8 @@ struct tl_backend {
   };
   std::unordered_map<uint64_t, VertexLayout> vertex_layouts;
   uint64_t host_buffer_serial = 0;
-  std::map<uint64_t, HostIndex> host_index;
-  std::map<uint64_t, Ogre::TexturePtr> textures;
+  std::unordered_map<uint64_t, HostIndex> host_index;
+  std::unordered_map<uint64_t, Ogre::TexturePtr> textures;
   std::unordered_map<uint64_t, Ogre::SamplerPtr> samplers;  // by packed state (GetSampler)
   uint32_t texture_serial = 0;
   uint32_t enabled_units = 0;
@@ -352,7 +356,10 @@ struct tl_backend {
     Ogre::MaterialPtr material;
     Ogre::Pass* pass = nullptr;  // the generated pass: programs, colours, texture transforms
     Ogre::GpuProgramParametersSharedPtr vertex_params, fragment_params;
-    std::string alpha_function;  // the generated name of kAlphaFunctionUniform
+    // Where ApplyProgram writes, found once: kAlphaFunctionUniform's physical index, and each
+    // world-view-projection auto constant's (index, element count).
+    std::optional<size_t> alpha_function;
+    std::vector<std::pair<size_t, size_t>> worldviewproj;
     bool failed = false;
   };
   std::unordered_map<std::string, Program> programs;
@@ -392,6 +399,23 @@ void SetViewport(tl_backend* b, Ogre::Viewport* viewport) {
   b->rs->_setViewport(viewport);
   b->active = viewport->getTarget();
 }
+
+// Viewport::setDimensions marks the viewport updated even when nothing changed, and the render
+// system then binds its target and sets its rectangle again (GL3PlusRenderSystem::_setViewport
+// skips both for the active viewport while it is not updated). The guest sets its target and
+// viewport for every pass, mostly to what they already were.
+void SetViewportArea(Ogre::Viewport* viewport, Ogre::Real left, Ogre::Real top, Ogre::Real width,
+                     Ogre::Real height) {
+  if (viewport->getLeft() != left || viewport->getTop() != top ||
+      viewport->getWidth() != width || viewport->getHeight() != height) {
+    viewport->setDimensions(left, top, width, height);
+  }
+}
+
+// After reading a target back the render system may have another framebuffer bound: the next
+// SetViewport binds the target again whatever viewport it is (SetViewportArea may leave the
+// viewport not updated).
+void ForgetActiveViewport(tl_backend* b) { b->rs->_setViewport(nullptr); }
 
 // SceneClip16x9: the front end's 3D scene on a frame wider than 16:9 (tl_backend_set_scene_clip).
 // The centred 16:9 strip of the main target, in host pixels; nothing when the clip is off, the
@@ -469,7 +493,7 @@ void RemakeTarget(tl_backend* b, tl_backend::Target& t) {
 
 // Reads a target as RGBA8 at its guest size, top row first (filtered down when the render scale
 // made it larger, up when smaller).
-void ReadTarget(const tl_backend::Target& t, void* rgba, uint32_t stride) {
+void ReadTargetPixels(const tl_backend::Target& t, void* rgba, uint32_t stride) {
   const uint32_t host_w = t.rt->getWidth(), host_h = t.rt->getHeight();
   Ogre::PixelBox out(t.guest_width, t.guest_height, 1, Ogre::PF_BYTE_RGBA, rgba);
   out.rowPitch = stride / 4;
@@ -483,6 +507,11 @@ void ReadTarget(const tl_backend::Target& t, void* rgba, uint32_t stride) {
                              Ogre::RenderTarget::FB_AUTO);
   host.resize(t.guest_width, t.guest_height, Ogre::Image::FILTER_BILINEAR);
   Ogre::PixelUtil::bulkPixelConversion(host.getPixelBox(), out);
+}
+
+void ReadTarget(tl_backend* b, const tl_backend::Target& t, void* rgba, uint32_t stride) {
+  ReadTargetPixels(t, rgba, stride);
+  ForgetActiveViewport(b);
 }
 
 bool ToBlendMode(const tl_combine& c, Ogre::LayerBlendType type, Ogre::LayerBlendModeEx& out) {
@@ -1035,9 +1064,14 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
     p.fragment_params = pass->getFragmentProgramParameters();
     // The RTSS appends an index to a resolved uniform's name.
     for (const auto& [name, def] : p.fragment_params->getConstantDefinitions().map) {
-      if (name.rfind(kAlphaFunctionUniform, 0) == 0) p.alpha_function = name;
+      if (name.rfind(kAlphaFunctionUniform, 0) == 0 && def.isFloat())
+        p.alpha_function = def.physicalIndex;
     }
-    if (p.alpha_function.empty()) break;
+    if (!p.alpha_function) break;
+    for (const auto& entry : p.vertex_params->getAutoConstantList()) {
+      if (entry.paramType == Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX)
+        p.worldviewproj.push_back({entry.physicalIndex, entry.elementCount});
+    }
     return;
   }
   p.failed = true;
@@ -1050,12 +1084,15 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   tl_backend::Program& p = b->programs[MakeProgramKey(b, f, units, unit_count)];
   if (!p.pass && !p.failed) {
     ++b->counters.programs_generated;
+    const auto start = std::chrono::steady_clock::now();
     try {
       GenerateProgram(b, f, units, unit_count, p);
     } catch (Ogre::Exception& e) {
       Ogre::LogManager::getSingleton().logError("RTSS program generation: " + e.getFullDescription());
       p.failed = true;
     }
+    b->counters.program_generate_ms +=
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   }
   if (p.failed) return false;
   Ogre::RenderSystem* rs = b->rs;
@@ -1067,7 +1104,7 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   // Values the data source reads from the pass and the scene objects.
   p.pass->setDiffuse(f.diffuse);
   p.pass->setAlphaRejectValue(f.alpha_reference);
-  p.fragment_params->setNamedConstant(p.alpha_function, float(f.alpha_function));
+  p.fragment_params->_writeRawConstant(*p.alpha_function, float(f.alpha_function));
   p.pass->setSelfIllumination(f.emissive);
   for (uint32_t u = 0; u < unit_count && u < p.pass->getNumTextureUnitStates(); ++u) {
     if (units[u].has_matrix) p.pass->getTextureUnitState(u)->setTextureTransform(units[u].matrix);
@@ -1115,10 +1152,8 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   if (b->active && b->active->requiresTextureFlipping()) {
     for (int c = 0; c < 4; ++c) clip[1][c] = -clip[1][c];
   }
-  for (const auto& entry : p.vertex_params->getAutoConstantList()) {
-    if (entry.paramType == Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX) {
-      p.vertex_params->_writeRawConstant(entry.physicalIndex, clip, entry.elementCount);
-    }
+  for (const auto& [index, count] : p.worldviewproj) {
+    p.vertex_params->_writeRawConstant(index, clip, count);
   }
   p.fragment_params->_updateAutoParams(&source, Ogre::GPV_ALL);
   rs->bindGpuProgramParameters(Ogre::GPT_VERTEX_PROGRAM, p.vertex_params, Ogre::GPV_ALL);
@@ -1337,6 +1372,7 @@ bool MeasureClearArea(tl_backend* b) {
   Ogre::PixelBox box(1, 1, 1, Ogre::PF_BYTE_RGBA, pixel);
   b->output.rt->copyContentsToMemory(Ogre::Box(x, y, x + 1, y + 1), box,
                                      Ogre::RenderTarget::FB_AUTO);
+  ForgetActiveViewport(b);
   return pixel[0] > 127;
 }
 
@@ -1647,6 +1683,9 @@ void SelectGpu(Ogre::RenderSystem* rs, const char* gpu) {
   Ogre::LogManager::getSingleton().logMessage(std::string("tl_backend: GPU ") + gpu + ": " + name);
 }
 
+// OGRE's name for the backend's window.
+constexpr const char* kWindowName = "tl_backend";
+
 tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint32_t width,
                           uint32_t height, const char* log_path, const char* window_title,
                           const tl_native_window* parent, uint32_t window_width,
@@ -1658,6 +1697,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
   if (parent) parent_window = {parent->system, parent->window, parent->display};
   b->width = width;
   b->height = height;
+  std::string failure;  // an exception's description, handled after the handler
   try {
     // OGRE's log, made before the root so the root does not make its own next to the process.
     if (!Ogre::LogManager::getSingletonPtr()) {
@@ -1691,31 +1731,52 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     b->root->initialise(false);
     Ogre::NameValuePairList misc;
     misc["title"] = window_title ? window_title : "torchlight replay";
+    b->window_title = misc["title"];
     // Only a window that is the game's display waits for vertical sync; otherwise the window must
     // never pace the backend.
     misc["vsync"] = vsync ? "true" : "false";
     if (!b->visible_window) misc["hidden"] = "true";
+    // 8 bits per channel for the window, whatever the platform's default: OGRE's Wayland EGL
+    // window asks for a 16-24 bit colour buffer, where the NVIDIA driver offers RGBA8888 (32, over
+    // the maximum) and RGB565 (16), so it took RGB565 and every presented frame lost colour
+    // precision (banding in gradients). GLX, X11 EGL, WGL and D3D11 already pick 8 bits; they take
+    // these parameters as a minimum too or ignore them.
+    misc["minColourBufferSize"] = "24";
+    misc["maxColourBufferSize"] = "32";
     uint32_t window_w = b->visible_window ? width : 64, window_h = b->visible_window ? height : 64;
-    if (b->child_window) {
-      // Inside the application's window: that window keeps the focus, so key and pointer events
-      // (not selected here) reach the application.
-      for (const auto& [key, value] : torchlight::platform::OgreWindowParams(parent_window)) {
-        misc[key] = value;
+    // The window's own work on the window system's thread (platform::RunOnWindowThread; macOS:
+    // the main thread, the live mode calling from its render thread).
+    torchlight::platform::RunOnWindowThread([&] {
+      if (b->child_window) {
+        // Inside the application's window: that window keeps the focus, so key and pointer events
+        // (not selected here) reach the application.
+        for (const auto& [key, value] : torchlight::platform::OgreWindowParams(parent_window)) {
+          misc[key] = value;
+        }
+        window_w = window_width;
+        window_h = window_height;
+      } else {
+        b->top_level = torchlight::platform::OgreTopLevelWindow::Create(
+            misc["title"], window_w, window_h, b->visible_window);
+        if (b->top_level) {
+          for (const auto& [key, value] :
+               torchlight::platform::OgreWindowParams(b->top_level->native())) {
+            misc[key] = value;
+          }
+        }
       }
-      window_w = window_width;
-      window_h = window_height;
-    }
-    b->window = b->root->createRenderWindow("tl_backend", window_w, window_h, false, &misc);
+      b->window = b->root->createRenderWindow(kWindowName, window_w, window_h, false, &misc);
+      if (b->visible_window && !b->child_window) {
+        Ogre::RenderWindow* window = b->window;
+        b->keyboard = torchlight::platform::KeyReader::ForOgreWindow(
+            [window](const char* name, void* out) { window->getCustomAttribute(name, out); });
+      }
+    });
     b->window->setAutoUpdated(false);
     if (b->visible_window) {
       b->window_viewport = b->window->addViewport(nullptr);
       b->window_viewport->setClearEveryFrame(false);
       b->window_viewport->setOverlaysEnabled(false);
-      if (!b->child_window) {
-        Ogre::RenderWindow* window = b->window;
-        b->keyboard = torchlight::platform::KeyReader::ForOgreWindow(
-            [window](const char* name, void* out) { window->getCustomAttribute(name, out); });
-      }
     }
     if (!MakeTarget(b, "tl_main", width, height, true, b->main)) {
       SetError(error, error_size, "cannot create the main render texture");
@@ -1738,11 +1799,19 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
                   Ogre::RenderSystemCapabilities::vendorToString(caps->getVendor()) + " | " +
                   caps->getDriverVersion().toString();
   } catch (Ogre::Exception& e) {
-    SetError(error, error_size, e.getFullDescription());
-    tl_backend_destroy(b);
-    return nullptr;
+    failure = e.getFullDescription();
   }
-  return b;
+  if (failure.empty()) return b;
+  // Outside the handler: the exception may come from a render system plugin (GL3+'s OpenGL 3.3
+  // assertion), whose code tl_backend_destroy unloads with the root; ending the handler after that
+  // ran the exception's destructor from the unloaded library (a crash instead of the error).
+  // In OGRE's log too: a render system that cannot start says why there.
+  if (Ogre::LogManager* log = Ogre::LogManager::getSingletonPtr()) {
+    log->logError("backend creation failed: " + failure);
+  }
+  SetError(error, error_size, failure);
+  tl_backend_destroy(b);
+  return nullptr;
 }
 
 }  // namespace
@@ -1811,8 +1880,20 @@ void tl_backend_destroy(tl_backend* b) {
   b->guest_lighting.reset();
   if (b->query) b->rs->destroyHardwareOcclusionQuery(b->query);
   for (auto& p : b->projectors) p.reset();
-  b->keyboard.reset();
-  delete b->root;
+  // OGRE's window goes with the root, on the window system's thread.
+  torchlight::platform::RunOnWindowThread([b] {
+    b->keyboard.reset();
+    // A render system whose first window was made but whose context then failed to initialise (GL3+
+    // below OpenGL 3.3) has no buffer manager, and OGRE 14.6's GL3+ unregisters a window's context
+    // through it: destroying that window crashes. On that path the window is detached and left to
+    // the process, which is about to report the error. OGRE's Cocoa window is registered under
+    // its title, the others under their name.
+    if (b->rs && !Ogre::HardwareBufferManager::getSingletonPtr()) {
+      if (!b->rs->detachRenderTarget(kWindowName)) b->rs->detachRenderTarget(b->window_title);
+    }
+    delete b->root;
+    b->top_level.reset();  // after OGRE's window, which draws in it
+  });
   delete b->log_manager;
   delete b;
 }
@@ -2071,8 +2152,15 @@ void tl_backend_set_vsync(tl_backend* b, int vsync) {
 void tl_backend_resize_window(tl_backend* b, uint32_t width, uint32_t height) {
   if (!b->child_window || !width || !height) return;
   // OGRE 14 resizes the window itself (X11EGLWindow::resize, a child window; WaylandEGLWindow::
-  // resize, the EGL window on the application's surface) and updates its viewports.
-  b->window->resize(width, height);
+  // resize, the EGL window on the application's surface) and updates its viewports; on Cocoa the
+  // view already has its size, which OGRE reads (platform::OgreWindowFollowsGameWindow).
+  torchlight::platform::RunOnWindowThread([&] {
+    if (torchlight::platform::OgreWindowFollowsGameWindow()) {
+      b->window->windowMovedOrResized();
+    } else {
+      b->window->resize(width, height);
+    }
+  });
 }
 
 void tl_backend_release_buffer(tl_backend* b, uint64_t id) {
@@ -2116,7 +2204,7 @@ int tl_backend_set_target(tl_backend* b, uint64_t target_id) {
     t = &it->second;
   }
   b->current = t;
-  t->viewport->setDimensions(0, 0, 1, 1);
+  SetViewportArea(t->viewport, 0, 0, 1, 1);
   t->viewport_width = int32_t(t->guest_width);
   t->viewport_height = int32_t(t->guest_height);
   SetViewport(b, t->viewport);
@@ -2128,7 +2216,7 @@ void tl_backend_set_viewport(tl_backend* b, int32_t left, int32_t top, int32_t w
   // Relative to the guest's size of the target: the same area at any render scale.
   tl_backend::Target* t = b->current;
   Ogre::Real w = Ogre::Real(t->guest_width), h = Ogre::Real(t->guest_height);
-  t->viewport->setDimensions(left / w, top / h, width / w, height / h);
+  SetViewportArea(t->viewport, left / w, top / h, width / w, height / h);
   t->viewport_width = width;
   t->viewport_height = height;
   SetViewport(b, t->viewport);
@@ -2553,7 +2641,7 @@ uint32_t tl_backend_probe_samples(tl_backend* b) { return b->probe_samples; }
 
 int tl_backend_read_rgba(tl_backend* b, void* rgba, uint32_t stride) {
   try {
-    ReadTarget(b->output, rgba, stride);
+    ReadTarget(b, b->output, rgba, stride);
   } catch (Ogre::Exception&) {
     return 1;
   }
@@ -2566,7 +2654,7 @@ int tl_backend_read_target_rgba(tl_backend* b, uint64_t target_id, uint32_t widt
   if (it == b->targets.end()) return 1;
   if (width != it->second.guest_width || height != it->second.guest_height) return 1;
   try {
-    ReadTarget(it->second, rgba, stride);
+    ReadTarget(b, it->second, rgba, stride);
   } catch (Ogre::Exception&) {
     return 1;
   }

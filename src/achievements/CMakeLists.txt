@@ -2,10 +2,14 @@
 if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   cmake_minimum_required(VERSION 3.25)
   project(pc_achievements LANGUAGES CXX)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/../../cmake/guest_host_offset.cmake")
 endif()
 add_library(torchlight_achievements STATIC service.cpp diagnostics.cpp notifications.cpp
     toast_schedule.cpp list_model.cpp)
 target_include_directories(torchlight_achievements PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+# The state file's durable write (platform/durable_file.h), also when built on its own.
+include("${CMAKE_CURRENT_SOURCE_DIR}/../platform/durable_file.cmake")
+target_link_libraries(torchlight_achievements PRIVATE torchlight_durable_file)
 target_compile_features(torchlight_achievements PUBLIC cxx_std_23)
 target_compile_options(torchlight_achievements PRIVATE -Wall -Wextra -Werror)
 enable_testing()
