@@ -1035,6 +1035,17 @@ rageecho.dat`, is the one file of that folder written in 8-bit text instead of U
 reader takes every file as UTF-16 (`mods/text_encoding.h`), so the file does not read there either:
 the skill is lost on PC too, a fault of the mod. **[read: the files; the PC reader as in 7e]**
 
+**Checked for every class (`tools/class_skill_check`).** `class_skill_check PAK MODS_FOLDER` reads
+each class the creation screen offers (the game's and the mods') and compares the skills of its
+`.dat` with what the skill tree shows, through the tree's own model. Skills the mod's own data keeps
+out are reported, not failures, since PC does the same: placed nowhere (a missing PANE, ROW or
+COLUMN reads as -1), defined by no file, or replaced in their cell by a later skill of the same
+`.dat`. A failure is a definition the game cannot read, or a defined, placed skill the tree drops;
+known losses are listed in `check.h` (`kKnownLosses`, only the Kensai's RAGEECHO). On 2026-10-13:
+the 29-mod pack, 28 classes, 43 kept out by the mods' data, 1 known, 0 failures; Enhanced Edition,
+8 classes, 2 kept out, 0 failures. Run it on the player's data after a change to the tree, the
+selector or the text reading; the unit tests (`class_skill_check_test`) cover its rules.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
