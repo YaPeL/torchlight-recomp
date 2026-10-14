@@ -375,7 +375,7 @@ Trigger: `v*` tags and `workflow_dispatch`. All game-dependent jobs run in the `
 environment (approval first), on GitHub-hosted runners only.
 
 1. **Dependencies**: each game job downloads the SDK and OGRE CI published for the commit's key
-   (`deps-<key>`, `deps-windows-<key>`) and fails if there are none: CI on `main` publishes them.
+   (the `deps` store, below in 5.9) and fails if there are none: CI on `main` publishes them.
 2. **game-linux** (container `ubuntu:22.04`): checkout, deps from the previous job, private
    checkout + hash check, `rexglue codegen`, Release build with debug info, `ctest`,
    `cmake --install` into an AppDir, debug info split from every ELF we build (`objcopy
@@ -477,13 +477,13 @@ announces it.
   which each new upstream build replaces: from then on the download no longer matches and the
   build stops until the pin and `THIRD_PARTY_NOTICES.md` are updated. To be independent of that,
   the owner uploads the same verified file (`runtime-x86_64`, SHA-256 `156f4bdb…`, signed by
-  type2-runtime's key) as an asset of a release of this repository, and `get_tools.sh` downloads
-  it from there with the same hash. Since 2026-10-13 `get_tools.sh` reads it from the prerelease
-  `appimage-runtime-8f39b89` of this repository (never latest; `store.sh` prunes only `deps-*`, and
-  the README badge reads `v*` tags) and falls back to upstream's continuous release while that
-  prerelease does not exist. To make it: `gh release create appimage-runtime-8f39b89 --prerelease
-  --title "AppImage runtime (type2-runtime 8f39b89)" runtime-x86_64` with the file
-  `get_tools.sh` checks.
+  type2-runtime's key) as an asset of a release, and `get_tools.sh` downloads it from there with
+  the same hash, falling back to upstream's continuous release while that release does not exist.
+  Since 2026-10-14 the release is `appimage-runtime-8f39b89` of the public repository
+  `YaPeL/torchlight-recomp-deps` (2026-10-13 to 10-14 it was a prerelease of this repository): the
+  game's repository keeps only the game's releases. To make it again: `gh release create
+  appimage-runtime-8f39b89 -R YaPeL/torchlight-recomp-deps --prerelease --title "AppImage runtime
+  (type2-runtime 8f39b89)" runtime-x86_64` with the file `get_tools.sh` checks.
 - **Re-running a release whose symbols were already pushed.** Each game job's Symbols step
   commits `<tag>/<platform>/` to `torchlight-symbols` and fails when there is nothing new to commit
   (a re-run with the same binaries: `git commit` exits 1). For v0.1.0-beta the owner deleted the
@@ -533,10 +533,13 @@ announces it.
   back into `develop` so the fix is not lost at the next freeze.
 - **CI** (`ci.yml`) runs on pushes to `develop` and `main`, on pull requests into either, and by
   hand. The SDK and OGRE builds are published from pushes to either branch as assets of one
-  prerelease, `deps`, never marked latest (since 2026-10-09; before, one release per key,
-  `deps-<key>` and `deps-windows-<key>`, which filled the release page): `sdk-` and
-  `ogre-linux-amd64-<key>.tar.zst`, and `-windows-amd64-<key>.zip` (`tools/deps/store.sh`). Every
-  run first looks for its key's assets. After a freeze merge both branches point at the same commit
+  prerelease, `deps`, of the public repository `YaPeL/torchlight-recomp-deps` (since 2026-10-14;
+  2026-10-09 to 10-14 the same prerelease lived in this repository, and before that one release per
+  key, `deps-<key>` and `deps-windows-<key>`, filled the release page): `sdk-` and
+  `ogre-linux-amd64-<key>.tar.zst`, `-windows-amd64-<key>.zip` and `-macos-arm64-<key>.tar.zst`
+  (`tools/deps/store.sh`). Every run first looks for its key's assets. Reading them needs no token
+  (the public download URLs, with curl); publishing and pruning use the secret `DEPS_REPO_TOKEN`
+  (below), only on pushes to `develop` or `main` and by hand, so a pull request never writes. After a freeze merge both branches point at the same commit
   and two runs may build the same key at once; both upload the same archives (`--clobber`). On
   pushes the Linux deps job prunes the store: it reads the keys of `main` and `develop` (each with
   its own `key.sh`, both platforms), copies the old per-key releases those keys still need into the
@@ -545,8 +548,17 @@ announces it.
   assets of any other key. The keys are read again right before the deletions, and an asset
   uploaded in the last 24 hours is never deleted, so a run does not remove what a concurrent run on
   the other branch has just published. Run by hand (`workflow_dispatch`), it copies but only
-  reports what it would delete. The README's release badge filters `v*` tags, so the store never
-  shows as the latest version.
+  reports what it would delete.
+- **The deps repository's token** (`DEPS_REPO_TOKEN`, a secret of this repository): a fine-grained
+  personal access token of the owner, with access to `YaPeL/torchlight-recomp-deps` only and the
+  permission Contents: Read and write (what creating the store, uploading and deleting its assets
+  needs). Created 2026-10-14, valid one year: **it expires around 2027-10-14** (GitHub warns by
+  mail before). When it expires, the deps jobs' Publish and Prune steps fail on pushes (reading
+  still works). To renew: GitHub, Settings, Developer settings, Personal access tokens,
+  Fine-grained tokens; regenerate it (or make a new one with the same repository and permission);
+  then this repository's Settings, Secrets and variables, Actions, `DEPS_REPO_TOKEN`, Update;
+  then re-run the last failed CI run on `develop` or push to it, and check that its deps jobs
+  publish.
 - **Release** (`release.yml`): only from `v*` tags whose commit is on `main`. The `release`
   environment allows deployments from `v*` tags but cannot tell which branch a tag is on, so the
   first job, *Tag on main*, checks that the tagged commit is an ancestor of `origin/main` and stops

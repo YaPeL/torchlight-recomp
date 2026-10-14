@@ -4,8 +4,9 @@
 # on macOS (Apple Silicon) the same with preset mac-arm64-nogame. No secrets. To save Actions
 # minutes it runs on pushes to and pull requests into develop (where the work is integrated) and
 # main (releases), and by hand; the SDK and OGRE are built once per key
-# (tools/deps/key.sh), published from either branch as assets of the one prerelease "deps"
-# (tools/deps/store.sh), and reused (docs/release-pipeline.md, 5.9).
+# (tools/deps/key.sh), published from either branch as assets of the prerelease "deps" of the public
+# repository YaPeL/torchlight-recomp-deps (tools/deps/store.sh), and reused (docs/release-pipeline.md,
+# 5.9). Reading them needs no token; publishing and pruning use the secret DEPS_REPO_TOKEN.
 name: CI
 
 on:
@@ -30,9 +31,7 @@ jobs:
     name: SDK and OGRE
     runs-on: ubuntu-24.04
     container: ubuntu:22.04
-    # Writes only to publish the builds (decision 5), on pushes to develop or main.
-    permissions:
-      contents: write
+    # Writes only to the deps repository (DEPS_REPO_TOKEN), on pushes to develop or main.
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
@@ -57,14 +56,12 @@ jobs:
            (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')) ||
           github.event_name == 'workflow_dispatch'
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.DEPS_REPO_TOKEN }}
         run: >-
           tools/deps/store.sh prune
           ${{ github.event_name == 'workflow_dispatch' && '--no-delete' || '' }}
       - id: published
         name: Already published?
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           if tools/deps/store.sh has linux "${{ steps.key.outputs.key }}"; then
             echo "found=true" >> "$GITHUB_OUTPUT"
@@ -90,7 +87,7 @@ jobs:
           steps.published.outputs.found != 'true' && github.event_name == 'push' &&
           (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.DEPS_REPO_TOKEN }}
         run: |
           tar -C "$DEPS_DIR" -cf - sdk | zstd -19 -T0 > sdk-linux-amd64.tar.zst
           tar -C "$DEPS_DIR" -cf - ogre | zstd -19 -T0 > ogre-linux-amd64.tar.zst
@@ -113,8 +110,6 @@ jobs:
         run: sh tools/deps/ubuntu_toolchain.sh
       - id: published
         name: Published dependencies
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           key=${{ needs.deps.outputs.key }}
           mkdir -p "$DEPS_DIR"
@@ -161,8 +156,6 @@ jobs:
   deps-windows:
     name: SDK and OGRE (Windows)
     runs-on: windows-2022
-    permissions:
-      contents: write
     outputs:
       key: ${{ steps.key.outputs.key }}
     env:
@@ -181,8 +174,6 @@ jobs:
       - id: published
         name: Already published?
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           if tools/deps/store.sh has windows "${{ steps.key.outputs.key }}"; then
             echo "found=true" >> "$GITHUB_OUTPUT"
@@ -209,8 +200,6 @@ jobs:
           steps.published.outputs.found != 'true' && github.event_name == 'push' &&
           (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           $key = '${{ steps.key.outputs.key }}'
           tar -a -cf sdk-windows-amd64.zip -C $env:DEPS_DIR sdk
@@ -224,7 +213,7 @@ jobs:
           (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.DEPS_REPO_TOKEN }}
         run: >-
           tools/deps/store.sh publish windows "${{ steps.key.outputs.key }}"
           sdk-windows-amd64.zip ogre-windows-amd64.zip
@@ -245,8 +234,6 @@ jobs:
       - id: published
         name: Published dependencies
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           if tools/deps/store.sh fetch windows "${{ needs.deps-windows.outputs.key }}" deps-download; then
             echo "found=true" >> "$GITHUB_OUTPUT"
@@ -299,8 +286,6 @@ jobs:
   deps-macos:
     name: SDK and OGRE (macOS)
     runs-on: macos-26
-    permissions:
-      contents: write
     outputs:
       key: ${{ steps.key.outputs.key }}
     steps:
@@ -314,8 +299,6 @@ jobs:
         run: echo "key=$(tools/deps/key.sh macos)" >> "$GITHUB_OUTPUT"
       - id: published
         name: Already published?
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           if tools/deps/store.sh has macos "${{ steps.key.outputs.key }}"; then
             echo "found=true" >> "$GITHUB_OUTPUT"
@@ -343,7 +326,7 @@ jobs:
           steps.published.outputs.found != 'true' && github.event_name == 'push' &&
           (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/main')
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.DEPS_REPO_TOKEN }}
         run: |
           tar -C "$DEPS_DIR" -cf - sdk | zstd -19 -T0 > sdk-macos-arm64.tar.zst
           tar -C "$DEPS_DIR" -cf - ogre | zstd -19 -T0 > ogre-macos-arm64.tar.zst
@@ -364,8 +347,6 @@ jobs:
           command -v zstd > /dev/null || brew install zstd
       - id: published
         name: Published dependencies
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           mkdir -p "$DEPS_DIR"
           download=$RUNNER_TEMP/deps-download

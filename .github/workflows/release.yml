@@ -53,8 +53,6 @@ jobs:
       - name: Toolchain
         run: sh tools/deps/ubuntu_toolchain.sh
       - name: Dependencies (published by CI for this key)
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           key=$(tools/deps/key.sh)
           tools/deps/store.sh fetch linux "$key" /tmp/deps || {
@@ -186,8 +184,6 @@ jobs:
       # (bsdtar), which made the zips; Git Bash's is GNU tar, which reads no zip.
       - name: Dependencies (published by CI for this key)
         shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           key=${{ steps.key.outputs.key }}
           tools/deps/store.sh fetch windows "$key" deps-download || {
@@ -309,8 +305,6 @@ jobs:
           command -v ninja > /dev/null || brew install ninja
           command -v zstd > /dev/null || brew install zstd
       - name: Dependencies (published by CI for this key)
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
           key=$(tools/deps/key.sh macos)
           tools/deps/store.sh fetch macos "$key" "$RUNNER_TEMP/deps-download" || {
