@@ -72,6 +72,7 @@ set(TORCHLIGHT_SOURCES
     src/capture/session.cpp
     src/hooks/bucket_cull_hooks.cpp
     src/hooks/frustum_hooks.cpp
+    src/hooks/matrix_hooks.cpp
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
     src/hooks/guest_io_hooks.cpp
@@ -198,7 +199,7 @@ add_dependencies(torchlight torchlight_data)
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods torchlight_texture_files
     torchlight_save_mod_list torchlight_video_mode torchlight_guest_path
     torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull
-    torchlight_native_render_system torchlight_frustum_test torchlight_dev_input_script)
+    torchlight_native_render_system torchlight_frustum_test torchlight_matrix_concat torchlight_dev_input_script)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)

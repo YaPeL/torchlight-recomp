@@ -90,3 +90,15 @@ add_executable(frustum_test_test frustum_test_test.cpp)
 target_link_libraries(frustum_test_test PRIVATE torchlight_frustum_test)
 target_compile_options(frustum_test_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME frustum_test_test COMMAND frustum_test_test)
+
+# Matrix4::concatenate as host code (matrix_concat.h): pure over a guest memory base; the hook that
+# calls it (matrix_hooks.cpp) is part of the executable.
+add_library(torchlight_matrix_concat STATIC matrix_concat.cpp)
+target_include_directories(torchlight_matrix_concat PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_matrix_concat PUBLIC cxx_std_23)
+target_compile_options(torchlight_matrix_concat PRIVATE -Wall -Wextra -Werror)
+
+add_executable(matrix_concat_test matrix_concat_test.cpp)
+target_link_libraries(matrix_concat_test PRIVATE torchlight_matrix_concat)
+target_compile_options(matrix_concat_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME matrix_concat_test COMMAND matrix_concat_test)

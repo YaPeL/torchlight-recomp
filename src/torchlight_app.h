@@ -27,6 +27,7 @@
 #include "hooks/guest_d3d_skip.h"
 #include "hooks/bucket_cull_hooks.h"
 #include "hooks/frustum_hooks.h"
+#include "hooks/matrix_hooks.h"
 #include "hooks/rtss_listener_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
@@ -104,6 +105,7 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::hooks::InstallVideoMode();
     torchlight::hooks::LogGuestCopyMode();
     torchlight::hooks::InstallFrustumTest();
+    torchlight::hooks::InstallMatrixConcatenate();
     torchlight::hooks::InstallGuestD3DSkip(torchlight::live::OnlyMode());
     torchlight::hooks::InstallBucketCull(torchlight::live::OnlyMode());
     torchlight::hooks::InstallRtssListener(torchlight::live::OnlyMode());
