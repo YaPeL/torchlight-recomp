@@ -12,13 +12,17 @@
 #                                         neither main nor develop uses (see prune below);
 #                                         --no-delete migrates and only reports the deletions
 #
-# PLATFORM is linux, windows or macos. Needs gh (GH_TOKEN) and GITHUB_REPOSITORY; prune also git.
+# PLATFORM is linux, windows or macos. The store lives in its own public repository, so the game's
+# releases page shows only the game: has and fetch read it without a token (curl, public download
+# URLs); publish and prune need gh with a token that can write there (GH_TOKEN, CI's
+# DEPS_REPO_TOKEN; docs/release-pipeline.md 5.9), and prune also git (this checkout's branches).
 # Only `gh api`, `gh release upload` and `gh release download -p` are used: Ubuntu 22.04's gh (2.4)
 # has no --json on release list and no --latest.
 set -euo pipefail
 
 STORE=deps
-REPO=${GITHUB_REPOSITORY:?GITHUB_REPOSITORY is not set}
+REPO=YaPeL/torchlight-recomp-deps
+URL=https://github.com/$REPO/releases/download/$STORE
 # An asset uploaded less than this long ago is never pruned: a concurrent run (develop and main
 # after a freeze) may be publishing a key the branches it read did not have yet.
 GRACE_SECONDS=$((24 * 3600))
@@ -57,11 +61,10 @@ delete_release() {  # TAG: the release and its tag
   gh api -X DELETE "repos/$REPO/git/refs/tags/$1" > /dev/null 2>&1 || true
 }
 
-has() {
-  local list name
-  list=$(assets | cut -f2)
+has() {  # by the public download URLs: no token, no API rate limit
+  local name
   for name in $(names "$1" "$2"); do
-    grep -qxF "$name" <<< "$list" || return 1
+    curl -fsIL -o /dev/null "$URL/$name" || return 1
   done
 }
 
@@ -71,7 +74,7 @@ fetch() {
   mkdir -p "$3"
   for name in $(names "$1" "$2"); do
     rm -f "$3/$name"
-    gh release download "$STORE" -R "$REPO" -p "$name" -D "$3"
+    curl -fsSL --retry 3 -o "$3/$name" "$URL/$name"
   done
 }
 
