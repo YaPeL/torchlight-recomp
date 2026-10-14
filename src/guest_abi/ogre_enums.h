@@ -444,6 +444,9 @@ namespace layer_blend_operation_ex {
 inline constexpr EnumValue kSource1{0, Confidence::kInferred};
 inline constexpr EnumValue kSource2{1, Confidence::kInferred};
 inline constexpr EnumValue kModulate{2, Confidence::kInferred};
+// LBX_BLEND_MANUAL, the only operation that reads LayerBlendModeEx::factor (OgreBlendMode.h:103;
+// OgreD3D9RenderSystem.cpp:2153 and the RTSS FFPTexturing). Header order, like kModulate.
+inline constexpr EnumValue kBlendManual{12, Confidence::kInferred};
 }  // namespace layer_blend_operation_ex
 
 // LayerBlendSource (OgreBlendMode.h:115..123). [confirmed] kManual: _setTextureBlendMode compares

@@ -53,3 +53,10 @@ add_executable(bucket_cull_test bucket_cull_test.cpp)
 target_link_libraries(bucket_cull_test PRIVATE torchlight_bucket_cull)
 target_compile_options(bucket_cull_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME bucket_cull_test COMMAND bucket_cull_test)
+
+# The fields a SetTextureBlend record keeps (texture_blend_record.h, header only).
+add_executable(texture_blend_record_test texture_blend_record_test.cpp)
+target_include_directories(texture_blend_record_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(texture_blend_record_test PRIVATE cxx_std_23)
+target_compile_options(texture_blend_record_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME texture_blend_record_test COMMAND texture_blend_record_test)
