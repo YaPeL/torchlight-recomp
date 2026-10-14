@@ -18,11 +18,16 @@
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
 #include "hooks/guest_d3d_skip.h"
+#include "hooks/native_render_system.h"
 #include "hooks/texture_blend_record.h"
 
 REXCVAR_DEFINE_BOOL(native_skip_guest_d3d, true, "Torchlight",
                     "Native mode only: skip the guest's D3D work for RenderSystem calls whose only "
                     "effect is the Xenos device (docs/native-skip-guest-d3d.md)");
+REXCVAR_DEFINE_BOOL(native_render_system_members, true, "Torchlight",
+                    "Native mode only: RenderSystem functions that only write the render system's "
+                    "members run as host code writing the same members (hooks/native_render_system.h); "
+                    "false runs the recompiled guest functions");
 
 namespace {
 
@@ -34,6 +39,9 @@ namespace ogre = torchlight::guest_abi::ogre;
 
 // InstallGuestD3DSkip's decision for the session (guest_d3d_skip.h).
 bool g_skip_guest_d3d = false;
+// InstallGuestD3DSkip: the member-only RenderSystem functions run as host code
+// (native_render_system.h) instead of the recompiled guest function.
+bool g_native_members = false;
 
 uint32_t R(const PPCRegister& r) { return r.u32; }
 float F(const PPCRegister& r) { return static_cast<float>(r.f64); }
@@ -282,6 +290,7 @@ RECORD_HOOK(43, 821C9100, ({
               c.factor = real(factor_used, mode + lb::kFactor.offset);
               return c;
             });
+  if (g_native_members && torchlight::hooks::NativeSetTextureBlendMode(base, R(ctx.r3), unit, mode)) return;
 }))
 
 // ---- blend, depth, raster --------------------------------------------------------------------
@@ -566,6 +575,10 @@ namespace torchlight::hooks {
 
 void InstallGuestD3DSkip(bool native_only) {
   g_skip_guest_d3d = SkipGuestD3D(native_only, REXCVAR_GET(native_skip_guest_d3d));
+  g_native_members = native_only && REXCVAR_GET(native_render_system_members);
+  REXLOG_INFO("render system members: {} (--native_render_system_members={}, native mode {})",
+              g_native_members ? "written by host code (_setTextureBlendMode)" : "written by the guest",
+              REXCVAR_GET(native_render_system_members), native_only ? "on" : "off");
   REXLOG_INFO("guest D3D: {} (--native_skip_guest_d3d={}, native mode {})",
               g_skip_guest_d3d ? "skipped for the device-only calls (sampler states, draws, bindings)"
                                : "runs in full",

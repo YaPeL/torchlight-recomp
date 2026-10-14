@@ -17,6 +17,12 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   mode only and on by default: bucket culling (`bucket_cull.h`, `--native_bucket_cull`: each
   StaticGeometry bucket tested with its own boxes against the main camera) and the guest's memory
   copies run as host `memcpy` where that is the same copy (`guest_copy.h`, `--native_guest_copy`).
+  Two pieces of the guest's render submission also run as host code there
+  (`docs/game-thread-parallelism.md`, section 11): `_setTextureBlendMode`'s member writes
+  (`native_render_system.h`, `--native_render_system_members`) and the RTSS per-object listener's
+  SGPass lookup, which then calls the guest's sub render states as the guest did
+  (`rtss_listener_hooks.cpp`, `--native_rtss_listener`). `TORCHLIGHT_FRAME_POINTERS` (off; profiling
+  builds only) keeps frame pointers in every target for `perf --call-graph fp`.
   The game is built with the default code model on Linux x86-64 and the generated code keeps the
   non-volatile registers in locals, so no hook touches r12, r14-r31, f14-f31 or v14 and up through
   the context (`CMakeLists.txt`, a test checks it).
