@@ -1,0 +1,14 @@
+{
+  "game": "Torchlight",
+  "system": "Xbox 360",
+  "type": "recomp",
+  "status": "playable",
+  "targets": ["Linux", "Windows", "macOS"],
+  "toolchain": "Rexglue",
+  "project": "Torchlight Recomp",
+  "approach": "Static recompilation of the XBLA version with ReXGlue, with a native OGRE 14 renderer",
+  "notes": "Beta. Needs your own copy of the game. Supports Torchlight PC mods (items, monsters, classes, textures) and texture packs. Android is planned.",
+  "help": ["Testing achievements", "Testing PC mods", "Testing on Android consoles once the port lands"],
+  "maintainers": [{ "name": "YaPeL", "link": "https://github.com/YaPeL" }],
+  "links": [{ "label": "Releases", "url": "https://github.com/YaPeL/torchlight-recomp/releases" }]
+}
