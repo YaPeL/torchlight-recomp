@@ -545,7 +545,10 @@ in number order; a branch adds its own line at its number's place.
     queue, so in this game nothing it delivers is read. Tests in `timer_queue_test.cpp`: the
     strategy's timed waits time out and return when another thread publishes; timers fire, recur
     and stop when disarmed; and on Linux the dispatch thread's CPU over 1 s with a 1 ms timer stays
-    under 100 ms (0-10 ms with the patch, 190-230 ms spinning, which fails it). Measured in the
+    under 100 ms (0-10 ms with the patch, 190-230 ms spinning, which fails it). With the queue
+    empty for 2 s (its deadline is then `steady_clock::time_point::max()`) the thread uses under
+    50 ms of CPU, on Linux and Windows (0 ms here; a wait that returns at once, simulated, takes
+    130 ms and fails it), and the next timer still fires on time. Measured in the
     game on Linux (2026-10-14; one build, three runs with each runtime, alternated, the same
     scripted route): the dispatch thread went from about 24 % of a core to 1.2 %, and the
     process from 2.26 to 2.05 cores at the menu (9-10 % less in every step); the frame rate, its

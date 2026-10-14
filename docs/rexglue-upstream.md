@@ -1183,12 +1183,15 @@ milliseconds, with whatever timer resolution the process has. With no timer queu
 is `steady_clock::time_point::max()`; that has to hold with MSVC's `wait_until` too.
 
 Tests (`tests/unit/core/timer_queue_test.cpp`, disruptorplus linked into `unit_tests`): the timed
-waits time out, and return when another thread publishes; a one-shot timer fires and not early;
-a 1 ms recurring timer ticks and stops when disarmed; a timer disarmed before its time never
-fires; on Linux, the dispatch thread's CPU time over 1 s with a 1 ms timer queued stays under
-100 ms (0-10 ms with the change, 190-230 ms spinning). In Torchlight, one build run three times
-with each runtime on the same scripted route: the dispatch thread from about 24 % of a core to
-1.2 %, the process 9-10 % less CPU in every step, the frame rate and frame times unchanged.
+waits time out, and return when another thread publishes; a one-shot timer fires and not early; a
+1 ms recurring timer ticks and stops when disarmed; a timer disarmed before its time never fires; on
+Linux, the dispatch thread's CPU time over 1 s with a 1 ms timer queued stays under 100 ms (0-10 ms
+with the change, 190-230 ms spinning); with the queue empty for 2 s (the `time_point::max()`
+deadline) the thread stays under 50 ms of CPU (0 ms; a wait that returns at once, simulated with
+`now()` as that deadline, takes 130 ms) and the next timer fires on time. In Torchlight, one build
+run three times with each runtime on the same scripted route: the dispatch thread from about 24 % of
+a core to 1.2 %, the process 9-10 % less CPU in every step, the frame rate and frame times
+unchanged.
 
 Our patch 33 (`patches/README.md`). Before sending: the Windows measurement (section 8).
 
@@ -1473,22 +1476,22 @@ these agents lives here and in `patches/README.md`.
     condition variable's timed wait goes through `SleepConditionVariableSRW` in whole
     milliseconds, with the 1 ms timer resolution of patch 17. Please check:
     1. Rebuild the SDK with the series (`tools/deps/build_sdk.sh`) and run
-       `unit_tests "[timer_queue]"`. Three cases run on Windows (the CPU case is Linux only). The
-       recurring one wants at least 50 ticks of a 1 ms timer in 300 ms: a failure there means the
-       waits last about 15.6 ms, so patch 17's resolution is not in effect.
+       `unit_tests "[timer_queue]"`. Four cases run on Windows (the 1 ms CPU case is Linux
+       only). The recurring one wants at least 50 ticks of a 1 ms timer in 300 ms: a failure
+       there means the waits last about 15.6 ms, so patch 17's resolution is not in effect.
     2. In the game, at the main menu and in a fight, with the SDK built with and without patch 33
        (`git apply -R` of it in the SDK checkout, then reinstall), and everything else equal:
        `tools/thread_profile` per thread (the `TimerQueue` thread was 5-10 % spinning), the
        process CPU, and the frame rate and frame times (mean, p95, p99, frames over 33 and
        50 ms). Note any audio crackle or uneven pacing.
     3. The empty queue. With no timer queued, the dispatch thread waits with
-       `steady_clock::time_point::max()` as its deadline (`timer_queue.cpp`, `Run`). libstdc++
-       takes that; check that MSVC's `condition_variable::wait_until` neither overflows nor
+       `steady_clock::time_point::max()` as its deadline (`timer_queue.cpp`,
+       `TimerThreadMain`). libstdc++ takes that; check that MSVC's `condition_variable::wait_until` neither overflows nor
        returns at once with it. The game cannot show this, because its 1 ms timestamp timer
-       keeps the queue busy from boot on. Nor can the current `[timer_queue]` cases: their
-       queue is never empty for long. A case for it will be added to patch 33 (an empty queue
-       for 2 s, then a one-shot timer that must fire on time; on Linux the thread's CPU over
-       those 2 s too). Until then, mention any trouble you see in step 1's cases.
+       keeps the queue busy from boot on. The `[timer_queue]` case "The dispatch thread waits
+       for a timer when the queue is empty" covers it. It leaves the queue empty for 2 s, and
+       the thread's CPU over that time (`GetThreadTimes`) must stay under 50 ms. Then a one-shot
+       timer must fire on time. If it fails, send its output: it has the CPU figure.
     4. Send the figures, or the failing output. Anything worse than without the patch is a
        finding: the patch would then need a Windows path before going upstream.
 
