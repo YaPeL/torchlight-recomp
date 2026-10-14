@@ -71,6 +71,7 @@ Other topics:
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
 | An unclaimed host fault hangs instead of crashing on POSIX (D25) | Still there | Issue and PR; our patch 30 |
 | The guest's fatal errors return into the guest on POSIX (D31) | `Break()` returns once; every export calls it | Issue and PR; our patch 31 |
+| The timer queue's dispatch thread spins (D32) | `spin_wait_strategy`; the strategy that blocks has timed waits that do not compile | Issue and PR; our patch 33 |
 | Wiki/code mismatches (D19) | The wiki documents the TOML key `enable_exception_handlers` (the code reads `generate_exception_handlers`) and describes `reserved_as_local` and `non_argument_as_local` wrongly | Small docs issue (found during this analysis) |
 
 ## Per patch
@@ -1151,6 +1152,51 @@ longer matters to these paths. Our patch 31 (`patches/README.md`).
 
 ---
 
+### D32. Runtime: the timer queue's dispatch thread spins
+
+From the performance work on the native renderer (`docs/performance-profile.md`). Checked on
+`bd833a2`, still the head of `development` on 2026-10-14; no open issue or PR on the timer queue.
+
+**Issue: `[Runtime]: the timer queue's dispatch thread keeps a core busy`**
+
+`TimerQueue` (`src/core/timer_queue.cpp`) waits for its next due time, and for new timers, with
+disruptorplus' `spin_wait_strategy`. The kernel's 1 ms `KeTimeStampBundle` timer
+(`xboxkrnl_module.cpp`) is always queued, so the dispatch thread polls the whole time a title
+runs. Measured in Torchlight on Linux x86-64: about 24 % of a core; on Windows, 5-10 %. The
+strategy that would block, `blocking_wait_strategy`, cannot simply be swapped in: its timed
+`wait_until_published` overloads pass the predicate to `std::condition_variable::wait_for` and
+`wait_until` before the timeout, so they do not compile once instantiated (nothing in the SDK
+instantiates them today). The file is vendored in `thirdparty/disruptorplus`.
+
+**PR: `perf(core): the timer queue waits on a condition variable instead of spinning`**
+
+Fixes #NNN. Two changes:
+- `blocking_wait_strategy.hpp`: the timeout goes before the predicate in both timed waits.
+- `timer_queue.cpp`: the ring buffer, its claim strategy and its barrier use
+  `blocking_wait_strategy`.
+
+The queue serves the POSIX guest timers (`KeSetTimer` and the waitable timers in
+`threading_posix.cpp`) and the timestamp tick, so a blocking wait changes their precision a
+little. A check of the fixed strategy on Linux, 2000 deadlines 1 ms apart: late by 58 us median,
+149 us p99, 194 us max. On Windows the wait ends up in `SleepConditionVariableSRW`, in whole
+milliseconds, with whatever timer resolution the process has. With no timer queued the deadline
+is `steady_clock::time_point::max()`; that has to hold with MSVC's `wait_until` too.
+
+Tests (`tests/unit/core/timer_queue_test.cpp`, disruptorplus linked into `unit_tests`): the timed
+waits time out, and return when another thread publishes; a one-shot timer fires and not early; a
+1 ms recurring timer ticks and stops when disarmed; a timer disarmed before its time never fires; on
+Linux, the dispatch thread's CPU time over 1 s with a 1 ms timer queued stays under 100 ms (0-10 ms
+with the change, 190-230 ms spinning); with the queue empty for 2 s (the `time_point::max()`
+deadline) the thread stays under 50 ms of CPU (0 ms; a wait that returns at once, simulated with
+`now()` as that deadline, takes 130 ms) and the next timer fires on time. In Torchlight, one build
+run three times with each runtime on the same scripted route: the dispatch thread from about 24 % of
+a core to 1.2 %, the process 9-10 % less CPU in every step, the frame rate and frame times
+unchanged.
+
+Our patch 33 (`patches/README.md`). Before sending: the Windows measurement (section 8).
+
+---
+
 Not drafted, from the same port (`docs/macos-port.md`, section 1, items 5-7, and section 2):
 - No `SO_NOSIGPIPE` / `MSG_NOSIGNAL` in `xsocket.cpp`.
 - Scalar audio fallbacks, one of which truncates where x86 rounds.
@@ -1301,11 +1347,12 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   pointing the builds at the new prefix) happens then, agreed with the agents that share it.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
-- The shared SDK copies on the Linux machine (2026-10-13). The live SDK is `bd833a2` with
-  develop's series: 1-30 (21 included), then 20 and 31. One older copy stays next to it:
-  `rexglue-sdk-bd833a2-30`, the series through 30 without 20 and 31, to roll back the last swap
-  (two `mv`). It goes at the next swap, when the copy it replaces becomes the rollback. The old
-  base `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as planned.
+- The shared SDK copies on the Linux machine (2026-10-14). The live SDK is `bd833a2` with
+  develop's series: 1-30 (21 included), then 20, 31 and 33. One older copy stays next to it:
+  `rexglue-sdk-bd833a2-31`, the same series without 33, to roll back the last swap (two `mv`;
+  its install is inside it). It goes at the next swap, when the copy it replaces becomes the
+  rollback. The old base `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as
+  planned.
 
 - The swap, step by step. The new SDK is built apart with
   `tools/deps/build_sdk.sh ~/rexglue-sdk-swapNN-install ~/rexglue-sdk-swapNN all`, from a worktree
@@ -1347,7 +1394,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 30 | `rexglue-posix-chain-unclaimed-faults.patch` (D25) | `sdk/fault-chain` | `bd833a2` |
 | 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2`, after 30 |
 | 32 | `rexglue-codegen-non-argument-in-context.patch` (D26) | `sdk/argument-locals` | `bd833a2`, after 31; not in the series |
-| 33 | next free | | |
+| 33 | `rexglue-timer-queue-blocking-wait.patch` (D32) | `sdk/timer-queue` | `bd833a2`, after 31 |
+| 34 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
@@ -1423,6 +1471,30 @@ these agents lives here and in `patches/README.md`.
   22. Your version of 21 with Metal on Apple (`5a98b6f`) is now the last line of the `bd833a2`
   series (2026-10-09); it applies after the two Windows patches. When you next touch the series,
   ask for a number here first.
+  - **Patch 33 (the timer queue waits on a condition variable; 2026-10-14).** It is the last line
+    of `series`. On Linux it took the SDK's timer thread from about 24 % of a core to 1.2 % with
+    the same frame rate (`patches/README.md`, entry 33; D32). Windows waits differently: a
+    condition variable's timed wait goes through `SleepConditionVariableSRW` in whole
+    milliseconds, with the 1 ms timer resolution of patch 17. Please check:
+    1. Rebuild the SDK with the series (`tools/deps/build_sdk.sh`) and run
+       `unit_tests "[timer_queue]"`. Four cases run on Windows (the 1 ms CPU case is Linux
+       only). The recurring one wants at least 50 ticks of a 1 ms timer in 300 ms: a failure
+       there means the waits last about 15.6 ms, so patch 17's resolution is not in effect.
+    2. In the game, at the main menu and in a fight, with the SDK built with and without patch 33
+       (`git apply -R` of it in the SDK checkout, then reinstall), and everything else equal:
+       `tools/thread_profile` per thread (the `TimerQueue` thread was 5-10 % spinning), the
+       process CPU, and the frame rate and frame times (mean, p95, p99, frames over 33 and
+       50 ms). Note any audio crackle or uneven pacing.
+    3. The empty queue. With no timer queued, the dispatch thread waits with
+       `steady_clock::time_point::max()` as its deadline (`timer_queue.cpp`,
+       `TimerThreadMain`). libstdc++ takes that; check that MSVC's `condition_variable::wait_until` neither overflows nor
+       returns at once with it. The game cannot show this, because its 1 ms timestamp timer
+       keeps the queue busy from boot on. The `[timer_queue]` case "The dispatch thread waits
+       for a timer when the queue is empty" covers it. It leaves the queue empty for 2 s, and
+       the thread's CPU over that time (`GetThreadTimes`) must stay under 50 ms. Then a one-shot
+       timer must fire on time. If it fails, send its output: it has the CPU figure.
+    4. Send the figures, or the failing output. Anything worse than without the patch is a
+       finding: the patch would then need a Windows path before going upstream.
 
 Cost: the series is done; what remains is builds (SDK in all configurations, three game builds
 for the fence measurement), the measurement runs and the game validation. About a day, most of it
