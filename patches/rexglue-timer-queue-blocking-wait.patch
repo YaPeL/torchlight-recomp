@@ -1,0 +1,275 @@
+Patch 33. In the series since 2026-10-14, after patch 31.
+
+The SDK's timer queue (src/core/timer_queue.cpp) waits for new timers and the next due time with
+disruptorplus' spin_wait_strategy: its dispatch thread polls and took about 20 % of a core in a
+native profile (docs/performance-profile.md), because the kernel's 1 ms KeTimeStampBundle timer
+(xboxkrnl_module.cpp) is always queued. This patch makes it wait on a condition variable
+(blocking_wait_strategy), and fixes that strategy's timed waits, which passed the predicate before
+the timeout to std::condition_variable::wait_for/wait_until and never compiled (nothing used them).
+
+The queue runs the POSIX guest timers (threading_posix.cpp: KeSetTimer and the waitable timers) and
+the KeTimeStampBundle tick on every platform, so a blocking wait can change their precision. A
+standalone check of the fixed strategy on Linux, 2000 deadlines 1 ms apart: late by 58 us median,
+149 us p99, 194 us max (the spin was late by about nothing). On Windows the wait goes through
+SleepConditionVariableSRW in whole milliseconds, with the 1 ms timer resolution of
+rexglue-win-timer-resolution.patch. When measuring it, besides the CPU of the
+rex::thread::TimerQueue thread, compare the frame rate and the frame times (mean, p95, p99, frames
+over 33 and 50 ms) and the vblank pacing against the unpatched SDK, on Linux and on Windows.
+
+Test: tests/unit/core/timer_queue_test.cpp in the SDK's unit_tests (disruptorplus is linked into
+it for the strategy's own waits). The fixed timed waits time out, and return when another thread
+publishes; a one-shot timer fires, not early; a 1 ms recurring timer ticks and stops when disarmed;
+a timer disarmed before its time never fires; and, on Linux, the dispatch thread's own CPU time
+with a 1 ms recurring timer queued stays under 100 ms in 1 s. That last check measures 0-10 ms
+with this patch and 190-230 ms with the spinning wait, which fails it; a loaded runner can only
+lower the spinning figure. The thread is found by the id a callback records: its 23-character
+name is too long for pthread_setname_np, which then leaves it unnamed.
+
+diff --git a/src/core/timer_queue.cpp b/src/core/timer_queue.cpp
+index 5cfea05..b2f3d00 100644
+--- a/src/core/timer_queue.cpp
++++ b/src/core/timer_queue.cpp
+@@ -15,7 +15,7 @@
+ #include <disruptorplus/multi_threaded_claim_strategy.hpp>
+ #include <disruptorplus/ring_buffer.hpp>
+ #include <disruptorplus/sequence_barrier.hpp>
+-#include <disruptorplus/spin_wait_strategy.hpp>
++#include <disruptorplus/blocking_wait_strategy.hpp>
+ 
+ #include <rex/assert.h>
+ #include <rex/thread.h>
+@@ -142,9 +142,12 @@ class TimerQueue {
+   // This ring buffer will be used to introduce timers queued by the public API
+   static constexpr size_t kWaitCount = 512;
+   dp::ring_buffer<std::shared_ptr<WaitItem>> buffer_;
+-  dp::spin_wait_strategy wait_strategy_;
+-  dp::multi_threaded_claim_strategy<dp::spin_wait_strategy> claim_strategy_;
+-  dp::sequence_barrier<dp::spin_wait_strategy> consumed_;
++  // Blocking, not spinning: the dispatch thread waits for the next due time or a new timer on a
++  // condition variable instead of polling the ring buffer, which kept a core busy (about 20 % of
++  // one in a profile, with the kernel's 1 ms timestamp timer always queued).
++  dp::blocking_wait_strategy wait_strategy_;
++  dp::multi_threaded_claim_strategy<dp::blocking_wait_strategy> claim_strategy_;
++  dp::sequence_barrier<dp::blocking_wait_strategy> consumed_;
+ 
+   // This is a _sorted_ (ascending due_) list of active timers managed by a
+   // dedicated thread
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index b74cb2e..14ccce3 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -14,6 +14,7 @@ add_executable(unit_tests
+     core/vfs_flush_test.cpp
+     core/hash_test.cpp
+     core/stream_test.cpp
++    core/timer_queue_test.cpp
+     core/chrono_test.cpp
+     core/log_rotation_test.cpp
+     core/unclaimed_fault_test.cpp
+@@ -45,6 +46,7 @@ target_include_directories(unit_tests PRIVATE
+ target_link_libraries(unit_tests PRIVATE
+     rexcodegen
+     rexruntime
++    disruptorplus
+     Catch2::Catch2WithMain
+ )
+ 
+diff --git a/tests/unit/core/timer_queue_test.cpp b/tests/unit/core/timer_queue_test.cpp
+new file mode 100644
+index 0000000..7d61055
+--- /dev/null
++++ b/tests/unit/core/timer_queue_test.cpp
+@@ -0,0 +1,161 @@
++/**
++ * @file        core/timer_queue_test.cpp
++ * @brief       The timer queue waits on a condition variable: timed waits, timers, idle CPU
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <atomic>
++#include <chrono>
++#include <iterator>
++#include <thread>
++
++#include <disruptorplus/blocking_wait_strategy.hpp>
++
++#include <rex/thread/timer_queue.h>
++
++#if defined(__linux__)
++#include <unistd.h>
++
++#include <fstream>
++#include <sstream>
++#include <string>
++#endif
++
++namespace dp = disruptorplus;
++using namespace std::chrono_literals;
++using Clock = std::chrono::steady_clock;
++
++namespace {
++
++/// A sequence nothing has published yet, for the strategy's waits.
++struct Unpublished {
++  std::atomic<dp::sequence_t> sequence{static_cast<dp::sequence_t>(-1)};
++  const std::atomic<dp::sequence_t>* list[1] = {&sequence};
++};
++
++#if defined(__linux__)
++/// The dispatch thread's id: callbacks run on it. (Its name is not a way to find it: at 23
++/// characters it is too long for pthread_setname_np, which then leaves the thread unnamed.)
++pid_t DispatchThreadId() {
++  std::atomic<pid_t> tid{0};
++  rex::thread::QueueTimerOnce([&](void*) { tid = gettid(); }, nullptr, Clock::now());
++  for (auto deadline = Clock::now() + 5s; tid == 0 && Clock::now() < deadline;)
++    std::this_thread::sleep_for(1ms);
++  return tid;
++}
++
++/// CPU time (user + system) a thread of this process has used, from /proc.
++std::chrono::milliseconds ThreadCpu(pid_t tid) {
++  std::ifstream statFile("/proc/self/task/" + std::to_string(tid) + "/stat");
++  std::string stat((std::istreambuf_iterator<char>(statFile)), std::istreambuf_iterator<char>());
++  // Fields after the parenthesised name: state is field 3, utime 14 and stime 15.
++  std::istringstream fields(stat.substr(stat.rfind(')') + 2));
++  std::string field;
++  long long utime = 0, stime = 0;
++  for (int index = 3; fields >> field; ++index) {
++    if (index == 14)
++      utime = std::stoll(field);
++    if (index == 15) {
++      stime = std::stoll(field);
++      break;
++    }
++  }
++  const long ticks = sysconf(_SC_CLK_TCK);
++  return std::chrono::milliseconds((utime + stime) * 1000 / ticks);
++}
++#endif
++
++}  // namespace
++
++TEST_CASE("The blocking strategy's timed waits time out", "[timer_queue]") {
++  dp::blocking_wait_strategy strategy;
++  Unpublished unpublished;
++
++  auto start = Clock::now();
++  auto result = strategy.wait_until_published(0, 1, unpublished.list, 20ms);
++  CHECK(dp::difference(result, 0) < 0);
++  CHECK(Clock::now() - start >= 15ms);
++
++  start = Clock::now();
++  result = strategy.wait_until_published(0, 1, unpublished.list, start + 20ms);
++  CHECK(dp::difference(result, 0) < 0);
++  CHECK(Clock::now() - start >= 15ms);
++}
++
++TEST_CASE("The blocking strategy's timed waits return when a sequence is published",
++          "[timer_queue]") {
++  dp::blocking_wait_strategy strategy;
++  Unpublished unpublished;
++  std::thread publisher([&] {
++    std::this_thread::sleep_for(20ms);
++    unpublished.sequence.store(0, std::memory_order_release);
++    strategy.signal_all_when_blocking();
++  });
++  auto start = Clock::now();
++  auto result = strategy.wait_until_published(0, 1, unpublished.list, Clock::now() + 10s);
++  publisher.join();
++  CHECK(dp::difference(result, 0) >= 0);
++  CHECK(Clock::now() - start < 5s);
++}
++
++TEST_CASE("Queued timers fire, recur and stop when disarmed", "[timer_queue]") {
++  std::atomic<int> once{0};
++  auto start = Clock::now();
++  std::atomic<long long> fired_after_us{-1};
++  auto item = rex::thread::QueueTimerOnce(
++      [&](void*) {
++        fired_after_us = std::chrono::duration_cast<std::chrono::microseconds>(Clock::now() - start)
++                             .count();
++        once.fetch_add(1);
++      },
++      nullptr, start + 20ms);
++
++  std::atomic<int> ticks{0};
++  auto recurring = rex::thread::QueueTimerRecurring([&](void*) { ticks.fetch_add(1); }, nullptr,
++                                                    Clock::now(), 1ms);
++  std::this_thread::sleep_for(300ms);
++  if (auto locked = recurring.lock())
++    locked->Disarm();
++  const int after_disarm = ticks.load();
++  std::this_thread::sleep_for(50ms);
++
++  CHECK(once.load() == 1);
++  CHECK(fired_after_us.load() >= 20000);
++  CHECK(fired_after_us.load() < 250000);  // loose: a loaded runner can be late, never early
++  CHECK(after_disarm >= 50);              // about 300 at 1 ms; loose for loaded runners
++  CHECK(ticks.load() == after_disarm);
++
++  std::atomic<int> cancelled{0};
++  auto never = rex::thread::QueueTimerOnce([&](void*) { cancelled.fetch_add(1); }, nullptr,
++                                           Clock::now() + 50ms);
++  if (auto locked = never.lock())
++    locked->Disarm();
++  std::this_thread::sleep_for(100ms);
++  CHECK(cancelled.load() == 0);
++}
++
++#if defined(__linux__)
++TEST_CASE("The dispatch thread sleeps between timers", "[timer_queue]") {
++  // A 1 ms recurring timer, as the kernel's KeTimeStampBundle tick keeps queued: with a spinning
++  // wait the dispatch thread runs most of the time between ticks.
++  std::atomic<int> ticks{0};
++  auto recurring = rex::thread::QueueTimerRecurring([&](void*) { ticks.fetch_add(1); }, nullptr,
++                                                    Clock::now(), 1ms);
++  const pid_t tid = DispatchThreadId();
++  REQUIRE(tid != 0);
++  std::this_thread::sleep_for(50ms);
++  const auto before = ThreadCpu(tid);
++  std::this_thread::sleep_for(1s);
++  const auto used = ThreadCpu(tid) - before;
++  if (auto locked = recurring.lock())
++    locked->Disarm();
++  INFO("dispatch thread CPU over 1 s: " << used.count() << " ms, ticks " << ticks.load());
++  // Measured on Linux x86-64: 10 ms waiting on the condition variable, 230 ms spinning. A loaded
++  // machine can only lower the spinning figure, not raise the blocking one.
++  CHECK(used < 100ms);
++}
++#endif
+diff --git a/thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp b/thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp
+index 32d427d..23fd3e1 100644
+--- a/thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp
++++ b/thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp
+@@ -118,11 +118,11 @@ namespace disruptorplus
+                 std::unique_lock<std::mutex> lock(m_mutex);
+                 m_cv.wait_for(
+                     lock,
++                    timeout,
+                     [&]() -> bool {
+                         result = minimum_sequence_after(sequence, count, sequences);
+                         return difference(result, sequence) >= 0;
+-                    },
+-                    timeout);
++                    });
+             }
+             return result;
+         }
+@@ -171,11 +171,11 @@ namespace disruptorplus
+                 std::unique_lock<std::mutex> lock(m_mutex);
+                 m_cv.wait_until(
+                     lock,
++                    timeoutTime,
+                     [&]() -> bool {
+                         result = minimum_sequence_after(sequence, count, sequences);
+                         return difference(result, sequence) >= 0;
+-                    },
+-                    timeoutTime);
++                    });
+             }
+             return result;
+         }
