@@ -10,6 +10,15 @@ project(torchlight LANGUAGES C CXX)  # C: miniz, for the save import
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
+# Profiling builds keep the frame pointer in every target, the recompiled game included, so that
+# `perf record --call-graph fp` unwinds the guest's thread (its DWARF unwinding fails on the guest
+# stack; docs/game-thread-parallelism.md). Off in every preset and release: it costs a register.
+option(TORCHLIGHT_FRAME_POINTERS
+    "Keep frame pointers in every target, for perf --call-graph fp (profiling builds only)" OFF)
+if(TORCHLIGHT_FRAME_POINTERS)
+    add_compile_options(-fno-omit-frame-pointer -mno-omit-leaf-frame-pointer)
+endif()
+
 option(TORCHLIGHT_GAME
     "Build the game executable (needs generated/, the recompiled code); OFF: libraries, tests and tools only"
     ON)
