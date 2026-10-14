@@ -925,6 +925,10 @@ constexpr const char* kProgramScheme = "tl_rtss";
 // fog, texture matrices).
 constexpr size_t kProgramRegisterReserve = 64;
 
+// A unit's combination as it reaches the RTSS: the operations and sources, and the constant
+// arguments where a source reads them. The blend factor is not in the key: only
+// LBX_BLEND_MANUAL reads it, and no operation of the API maps to it (ToOgre(tl_combine_op)), so it
+// is always the default. An operation that reads it must add it here.
 #pragma pack(push, 1)
 struct UnitKey {
   uint8_t present, cube, texgen, coord_set, has_matrix, guest_texgen;
