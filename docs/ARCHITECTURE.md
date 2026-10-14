@@ -149,9 +149,7 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   group first. The `replacements` folder (`tlrepl:`) is added last to the pak's groups, so its
   files win over the pak's at the same path. Saves are checked against the loaded unit index at
   every start (`save_safety`, `save_units`): units the game no longer knows are taken out after a
-  backup, or nothing is saved in that session when mods' units failed to load. Diagnostics
-  (`TORCHLIGHT_MODS_DIAGNOSTICS`) add the mods' file maps and the texture check
-  (`--mods_texture_check`).
+  backup, or nothing is saved in that session when mods' units failed to load.
 - Achievements (`src/achievements/`; `docs/achievements.md`, `docs/achievement-coverage.md`): the
   player chooses the Xbox 360 set (the guest's own, through the SDK) or the PC set (66, from the
   guest's retained completions, character events and stats, with PC's flush points), each with its

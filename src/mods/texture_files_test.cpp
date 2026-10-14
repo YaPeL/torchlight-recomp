@@ -106,31 +106,6 @@ int main() {
   SetPakNames({"media/levelsets/town1/bricks.dds"});
   Check(PakHas("MEDIA\\LEVELSETS\\TOWN1\\BRICKS.DDS") && !PakHas("MEDIA/X.DDS"), "the pak's names");
 
-  // The validation check: the guest's container against the host's choice.
-  Check(SourceOfGuestContainer("TLMOD001:\\", locations).source == TextureSource::kMod &&
-            SourceOfGuestContainer("TLMOD001:\\", locations).path == root / "b",
-        "a mod's device stands for its folder");
-  Check(SourceOfGuestContainer("tlrepl:\\", locations).source == TextureSource::kReplacements, "the replacements");
-  Check(SourceOfGuestContainer("game:\\pak.zip", locations).source == TextureSource::kPak, "anything else: the pak");
-  SetTextureCheck(true);
-  NoteGuestTextureOpen("MEDIA/MODELS/SWORD/NEW_SWORD.DDS", "tlmod001:\\", "media\\models\\sword\\NEW_SWORD.DDS");
-  NoteGuestTextureOpen("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "game:\\pak.zip", "media/levelsets/town1/grass001.dds");
-  Check(!CheckTextureChoice("MEDIA/MODELS/SWORD/NEW_SWORD.DDS",
-                            resolver.Find("MEDIA/MODELS/SWORD/NEW_SWORD.DDS", "MOD B", pak)),
-        "the same mod: no difference");
-  Check(CheckTextureChoice("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS",
-                           resolver.Find("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "ZIP", pak))
-            .has_value(),
-        "the host took the replacements, the game the pak: a difference");
-  Check(!CheckTextureChoice("MEDIA/OTHER.DDS", {}), "nothing reported: nothing compared");
-  // A mod whose folder name starts like another's is another mod.
-  NoteGuestTextureOpen("MEDIA/X.DDS", "tlmod000:\\", "media\\x.dds");
-  Check(CheckTextureChoice("MEDIA/X.DDS", {TextureSource::kMod, root / "a2" / "media" / "x.dds"})
-            .has_value(),
-        "folder a against a file of folder a2: a difference");
-  const TextureCheckCounts counts = TextureCheckTotals();
-  Check(counts.compared == 3 && counts.differing == 2 && counts.unreported == 1, "the counts");
-
   std::error_code ec;
   fs::remove_all(root, ec);
   if (failures) return EXIT_FAILURE;

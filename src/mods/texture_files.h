@@ -79,23 +79,6 @@ class TextureResolver {
 void SetTextureLocations(const TextureLocations& locations);
 std::shared_ptr<const TextureResolver> CurrentTextureResolver();
 
-// Validation (TORCHLIGHT_MODS_DIAGNOSTICS, --mods_texture_check): the guest reports the file it
-// opened for each named texture, and the host compares its own choice with it.
-// `container` is the archive as the guest names it ("tlmod003:\\", "tlrepl:\\", or the pak's zip),
-// `path` the file inside it.
-void SetTextureCheck(bool on);
-bool TextureCheckOn();
-void NoteGuestTextureOpen(std::string_view name, std::string_view container, std::string_view path);
-// Compares the host's choice for `name` with what the guest opened. Empty when they agree or the
-// guest reported nothing for it; otherwise a line for the log. Counts both (TextureCheckCounts).
-std::optional<std::string> CheckTextureChoice(std::string_view name, const TextureFile& chosen);
-struct TextureCheckCounts {
-  uint64_t compared = 0, differing = 0, unreported = 0;
-};
-TextureCheckCounts TextureCheckTotals();
-// Which source a guest container stands for: a mod's (its folder), the replacements, or the pak.
-TextureFile SourceOfGuestContainer(std::string_view container, const TextureLocations& locations);
-
 // The pak's entry names (TextureNameKey), published by whoever opens the pak (the live mode), for
 // a resolver used where the pak is not open (the capture). Empty until set: a pak that did not
 // open counts as empty, so a texture would then be taken from a mod's folder when one has it.

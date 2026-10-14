@@ -71,12 +71,6 @@ void PutText(std::vector<uint8_t>& out, const std::u16string& s) {
   for (size_t i = 0; i < s.size() && i < 0xFFFF; ++i) PutU16(out, s[i]);
 }
 
-std::string Narrow(const std::u16string& s) {
-  std::string out;
-  for (char16_t c : s) out.push_back(c < 0x80 ? static_cast<char>(c) : '?');
-  return out;
-}
-
 }  // namespace
 
 size_t UnitIndex::size() const {
@@ -154,47 +148,6 @@ std::optional<UnitGroup> GroupOfUnitFile(std::u16string_view path) {
     if (p.size() > prefix.size() && p.compare(0, prefix.size(), prefix) == 0) return group;
   }
   return std::nullopt;
-}
-
-std::vector<std::string> CompareUnitIndexes(const UnitIndex& expected, const UnitIndex& actual,
-                                            size_t limit) {
-  std::vector<std::string> lines;
-  size_t more = 0;
-  auto add = [&](std::string line) {
-    if (lines.size() < limit) lines.push_back(std::move(line));
-    else ++more;
-  };
-  for (size_t g = 0; g < kUnitGroupCount; ++g) {
-    std::map<int64_t, const UnitEntry*> want, got;
-    for (const UnitEntry& e : expected.groups[g]) want[e.guid] = &e;
-    for (const UnitEntry& e : actual.groups[g]) got[e.guid] = &e;
-    const std::string where = "group " + std::to_string(g) + ", ";
-    for (const auto& [guid, e] : want) {
-      auto it = got.find(guid);
-      if (it == got.end()) {
-        add(where + "missing " + Narrow(e->file));
-        continue;
-      }
-      const UnitEntry& a = *it->second;
-      auto field = [&](const char* name, auto x, auto y) {
-        if (!(x == y)) add(where + Narrow(e->file) + ": " + name + " differs");
-      };
-      field("NAME", e->name, a.name);
-      field("file", NormalizeUnitFile(e->file), NormalizeUnitFile(a.file));
-      field("EQUIPMENT", e->equipment, a.equipment);
-      field("LEVEL", e->level, a.level);
-      field("MINLEVEL", e->min_level, a.min_level);
-      field("MAXLEVEL", e->max_level, a.max_level);
-      field("RARITY", e->rarity, a.rarity);
-      field("RARITY_HARDCORE", e->rarity_hardcore, a.rarity_hardcore);
-      field("UNITTYPE", e->unit_type, a.unit_type);
-    }
-    for (const auto& [guid, a] : got) {
-      if (!want.count(guid)) add(where + "extra " + Narrow(a->file));
-    }
-  }
-  if (more) lines.push_back("... and " + std::to_string(more) + " more");
-  return lines;
 }
 
 UnitIndex MergeUnitIndex(const UnitIndex& base, const std::vector<UnitEntry>& units,

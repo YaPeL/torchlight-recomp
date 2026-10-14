@@ -53,11 +53,6 @@ std::optional<UnitGroup> GroupOfUnitFile(std::u16string_view path);
 // Paths compared the way the game's files are: any case, '/' and '\' alike.
 std::u16string NormalizeUnitFile(std::u16string_view path);
 
-// Differences between two indexes, entry by entry (matched by GUID within each group, order
-// ignored), as readable lines; at most `limit` lines plus a count of the rest. Empty: equivalent.
-std::vector<std::string> CompareUnitIndexes(const UnitIndex& expected, const UnitIndex& actual,
-                                            size_t limit = 50);
-
 // `base` with the mods' units, `units` in increasing precedence (the last wins; see
 // unit_cache.h UnitPathsByPriority). A unit whose file is also a base unit's (same path) takes that
 // entry's place; one whose GUID another entry has replaces it; any other goes to the end of its

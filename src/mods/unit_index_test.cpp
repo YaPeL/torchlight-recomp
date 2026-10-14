@@ -90,20 +90,6 @@ int main() {
     Check(!GroupOfUnitFile(u"MEDIA/UNITS/OTHER/X.DAT") && !GroupOfUnitFile(u"MEDIA/UNITS/ITEMS/"),
           "outside the four folders: none");
   }
-  // Comparison: order does not matter, every field does.
-  {
-    const UnitIndex a = Sample();
-    UnitIndex b = Sample();
-    std::swap(b.groups[0][0], b.groups[0][1]);
-    b.groups[0][0].file = u"media\\units\\items\\base.dat";
-    Check(CompareUnitIndexes(a, b).empty(), "same entries in another order, path spelled otherwise");
-    b.groups[1][0].unit_type = u"MONSTER";
-    b.groups[3].clear();
-    b.groups[3].push_back(Unit(99, u"NEW", u"MEDIA/UNITS/PROPS/NEW.DAT"));
-    const auto diff = CompareUnitIndexes(a, b);
-    Check(diff.size() == 3, "type change, a missing and an extra entry");
-    Check(CompareUnitIndexes(a, b, 1).size() == 2, "limit and the count of the rest");
-  }
   // Merge: same file replaces in place, new GUID goes to its group's end, a GUID clash goes to the
   // higher priority, units outside the folders are left out.
   {

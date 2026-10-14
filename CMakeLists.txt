@@ -180,16 +180,6 @@ if(TORCHLIGHT_DEV_COMMANDS)
     set_source_files_properties(src/dev/guest_command.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_COMMANDS=1)
 endif()
-# Mods diagnostics for validation runs (mods/unit_index_install.cpp: --mods_unit_index_check; the
-# mods' file maps in the log, game_menu/mods_install.cpp; the guest's directory searches on tlmods:
-# and those whose path the hook changes, hooks/find_file_hooks.cpp). Off by default; the release
-# workflows and presets never set it, so release builds have no such flag.
-option(TORCHLIGHT_MODS_DIAGNOSTICS "Mods diagnostics (--mods_unit_index_check)" OFF)
-if(TORCHLIGHT_MODS_DIAGNOSTICS)
-    set_source_files_properties(src/mods/unit_index_install.cpp src/game_menu/mods_install.cpp
-        src/hooks/find_file_hooks.cpp PROPERTIES
-        COMPILE_DEFINITIONS TORCHLIGHT_MODS_DIAGNOSTICS=1)
-endif()
 # Controller input scripts for unattended runs (dev/script_input.h). Off by default; the release
 # workflows never set it, so release builds ignore --dev_input_script.
 option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_script" OFF)

@@ -78,9 +78,6 @@ namespace names {
 // address in every run (gdb, 2026-10-09), also the default table a group's destructor compares
 // with (@0x82391AA4).
 inline constexpr uint32_t kTable = 0x8355C2D0;
-// [confirmed] The map's head node (compared with the lookup's result @0x821A1648) and size.
-inline constexpr Field kTableHead{8, Confidence::kConfirmed};
-inline constexpr Field kTableSize{12, Confidence::kConfirmed};
 // [confirmed] Releases a name: r3 = table, r4 = key; gets the name (@0x823932C4) and, unless it is
 // the table's default (+0x50, @0x82393314), hands it to sub_823933E8 (@0x8239333C), which takes
 // the key out of the table once nothing uses it. Called by CDataGroup's destructor for the group's
@@ -99,16 +96,6 @@ inline constexpr Field kTableSize{12, Confidence::kConfirmed};
 // empty mesh. With the index from the cache (no build) and without mods, 0.
 inline constexpr GuestFunction kReleaseName{0x823932A8, Confidence::kConfirmed};
 }  // namespace names
-
-namespace group {
-// [confirmed] A CDataGroup (vtable 0x820D2808): its properties, data +16 and count +20 (sub_821A1510
-// @0x821A1538, @0x821A151C), and its subgroups, data +32 and count +36 (its destructor
-// sub_82391950 @0x823919A0, @0x82391990).
-inline constexpr Field kPropertyData{16, Confidence::kConfirmed};
-inline constexpr Field kPropertyCount{20, Confidence::kConfirmed};
-inline constexpr Field kSubgroupData{32, Confidence::kConfirmed};
-inline constexpr Field kSubgroupCount{36, Confidence::kConfirmed};
-}  // namespace group
 
 namespace node_list {
 // [confirmed] The builder's list on its stack (@0x8232A170..@0x8232A17C): data, count, capacity,
