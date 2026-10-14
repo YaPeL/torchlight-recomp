@@ -1179,7 +1179,8 @@ The queue serves the POSIX guest timers (`KeSetTimer` and the waitable timers in
 `threading_posix.cpp`) and the timestamp tick, so a blocking wait changes their precision a
 little. A check of the fixed strategy on Linux, 2000 deadlines 1 ms apart: late by 58 us median,
 149 us p99, 194 us max. On Windows the wait ends up in `SleepConditionVariableSRW`, in whole
-milliseconds, with whatever timer resolution the process has.
+milliseconds, with whatever timer resolution the process has. With no timer queued the deadline
+is `steady_clock::time_point::max()`; that has to hold with MSVC's `wait_until` too.
 
 Tests (`tests/unit/core/timer_queue_test.cpp`, disruptorplus linked into `unit_tests`): the timed
 waits time out, and return when another thread publishes; a one-shot timer fires and not early;
@@ -1480,7 +1481,15 @@ these agents lives here and in `patches/README.md`.
        `tools/thread_profile` per thread (the `TimerQueue` thread was 5-10 % spinning), the
        process CPU, and the frame rate and frame times (mean, p95, p99, frames over 33 and
        50 ms). Note any audio crackle or uneven pacing.
-    3. Send the figures, or the failing output. Anything worse than without the patch is a
+    3. The empty queue. With no timer queued, the dispatch thread waits with
+       `steady_clock::time_point::max()` as its deadline (`timer_queue.cpp`, `Run`). libstdc++
+       takes that; check that MSVC's `condition_variable::wait_until` neither overflows nor
+       returns at once with it. The game cannot show this, because its 1 ms timestamp timer
+       keeps the queue busy from boot on. Nor can the current `[timer_queue]` cases: their
+       queue is never empty for long. A case for it will be added to patch 33 (an empty queue
+       for 2 s, then a one-shot timer that must fire on time; on Linux the thread's CPU over
+       those 2 s too). Until then, mention any trouble you see in step 1's cases.
+    4. Send the figures, or the failing output. Anything worse than without the patch is a
        finding: the patch would then need a Windows path before going upstream.
 
 Cost: the series is done; what remains is builds (SDK in all configurations, three game builds
