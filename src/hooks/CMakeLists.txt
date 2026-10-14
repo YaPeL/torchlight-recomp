@@ -72,3 +72,10 @@ target_include_directories(texture_blend_record_test PRIVATE "${CMAKE_CURRENT_SO
 target_compile_features(texture_blend_record_test PRIVATE cxx_std_23)
 target_compile_options(texture_blend_record_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME texture_blend_record_test COMMAND texture_blend_record_test)
+
+# The pure parts of the automatic parameter replay (auto_params.h, header only).
+add_executable(auto_params_test auto_params_test.cpp)
+target_include_directories(auto_params_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(auto_params_test PRIVATE cxx_std_23)
+target_compile_options(auto_params_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME auto_params_test COMMAND auto_params_test)

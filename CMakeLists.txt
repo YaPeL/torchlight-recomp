@@ -76,6 +76,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/guest_io_hooks.cpp
     src/hooks/render_system_hooks.cpp
     src/hooks/rtss_listener_hooks.cpp
+    src/hooks/auto_params_hooks.cpp
     src/hooks/resource_hooks.cpp
     src/hooks/video_mode_hooks.cpp
     src/hooks/find_file_hooks.cpp

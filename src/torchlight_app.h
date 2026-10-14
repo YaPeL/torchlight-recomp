@@ -26,6 +26,7 @@
 #include "hooks/guest_copy_hooks.h"
 #include "hooks/guest_d3d_skip.h"
 #include "hooks/bucket_cull_hooks.h"
+#include "hooks/auto_params_hooks.h"
 #include "hooks/rtss_listener_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
@@ -105,6 +106,7 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::hooks::InstallGuestD3DSkip(torchlight::live::OnlyMode());
     torchlight::hooks::InstallBucketCull(torchlight::live::OnlyMode());
     torchlight::hooks::InstallRtssListener(torchlight::live::OnlyMode());
+    torchlight::hooks::InstallAutoParams(torchlight::live::OnlyMode());
     auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
     torchlight::capture::Install(graphics ? graphics->presenter() : nullptr);
     // The video menu changes what the native backend draws: only mode.
