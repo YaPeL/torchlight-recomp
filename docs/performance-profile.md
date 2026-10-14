@@ -861,6 +861,26 @@ slot and sub pairs in use get a memo, instead of a 1.7 MB table with one per pai
 gives each `SetConstants` one array of values that its ranges point into, instead of a vector per
 range (the capture format is unchanged). Its other commits are in `develop`.
 
+## The ~45 ms presented hitch on this laptop: the platform's (2026-10-14)
+
+The blind hand runs of the game thread study showed, in every step, a presented maximum of 46-61 ms
+while the game's own maximum stayed at 7-28 ms. The live mode's slow frame lines place it in the
+present: `backend` 35-60 ms with `present` 35-59 ms, against 2-3 ms in the frame before, with no
+texture, program, buffer or layout created in that frame (`textures=0`, `programs=0`) and the
+content and draws at their usual cost. It is not ours:
+- It comes every 10-30 s, always at the same fraction of the wall-clock second (xx.71 s) in every
+  run, spaced by whole seconds, while the game's own periodic summaries fall at another phase.
+- It is the same with the NVIDIA GPU (3-6 per scripted run, `present` 41-61 ms) and with the Intel
+  one (Mesa UHD 630, no PRIME; 5-6 per run, 35-54 ms).
+- It is the same with and without `thermal.py`'s `nvidia-smi` polling.
+- The step overlay's changes and the scripted steps do not line up with it.
+
+What both GPUs share here is the compositor and the display: GNOME's Mutter on Wayland, with our
+window through XWayland, and the panel on the Intel GPU. An X11 session would separate the two, but
+this Ubuntu ships no GNOME session on Xorg; not pursued. Do not read a presented maximum of about
+45 ms on this laptop as the game's or the backend's; the per-step means, the drops and the p99 are
+unaffected by a handful of such frames.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
