@@ -624,10 +624,10 @@ breaks depends on which definitions the build reads and which names end up relea
 
 The fix: the builder keeps the nodes. Nothing it reads is released, so every name it made stays.
 The memory they hold stays with the game for the session; a diagnostics build logged it after each
-build (`mods: build memory: ...`: the used physical pages and virtual heaps, the name table's size,
-and the nodes, properties and subgroups kept), until that log was removed with the other unit
-diagnostics (2026-10-14). The wardrobe guard of 7f stays as a net; the player notice planned for a class without a
-model is dropped if the fix holds.
+build (`mods: build memory: ...`: the used physical pages and virtual heaps, the name table's
+size, and the nodes, properties and subgroups kept), until that log was removed with the other
+unit diagnostics (2026-10-14). The wardrobe guard of 7f stays as a net; the player notice planned
+for a class without a model is dropped if the fix holds.
 
 Validated on 2026-10-09, building the index in the session: `JCC - Main` twice and the
 Ultimate Torchlight Mod-Pack (29 mods) twice, no wardrobe guard warning and no fault in any; then a
@@ -1051,9 +1051,8 @@ selector or the text reading; the unit tests (`class_skill_check_test`) cover it
 diagnostics behind `TORCHLIGHT_MODS_DIAGNOSTICS` were removed: `--mods_unit_index_check` (every base
 unit read through our path and compared with the Xbox index), `--mods_unit_index_base_only`, the
 build memory log, the log of each mod's file map and the log of the guest's searches on the mods'
-devices; and the texture check (`--mods_texture_check`, 7j), with the render agent's agreement,
-since none of the render agent's runs used it any more. `TORCHLIGHT_MODS_DIAGNOSTICS` itself is gone. The findings
-of each stay in the sections above.
+devices; and the texture check (`--mods_texture_check`, 7j), since no run used it any more.
+`TORCHLIGHT_MODS_DIAGNOSTICS` itself is gone. The findings of each stay in the sections above.
 
 ## 8. Where mods go on our side
 
