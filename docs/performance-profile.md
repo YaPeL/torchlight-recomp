@@ -861,6 +861,21 @@ slot and sub pairs in use get a memo, instead of a 1.7 MB table with one per pai
 gives each `SetConstants` one array of values that its ranges point into, instead of a vector per
 range (the capture format is unchanged). Its other commits are in `develop`.
 
+`66b6b43` measured (2026-10-14, branch `perf/constants-array`, on develop after the game thread's
+steps 3a and 4): in the fight's frame-pointer profile `capture::ReadConstants` was 3.8 % of the
+game's thread inclusive, about 2 points of it the per-range vectors (`_M_assign_aux`, `malloc` and
+its family, `memset`). Same images (the 20 parity captures byte for byte, 12 frames of the town
+walk's session) and the unit tests green. Game-thread CPU per guest frame, three scripted runs of
+each, interleaved, the package at 82 C throughout: standing still 4.43 -> 4.47 ms, the fight 4.71
+-> 4.79, the town square 5.26 -> 5.26, the menu 4.00 -> 4.01, all within the base's own spread
+between runs (4.30-4.50 still, 4.51-4.82 fight). **Not taken**: what it removes (at most about
+0.1 ms per frame) is below what this laptop shows; to measure again on a machine without the
+thermal limit.
+
+Also written down, not measured: the `std::visit` dispatch of the session's state and live append
+(`__gen_vtable_impl` thunks under `Session::State` and `LiveAppend`), about 1 % of the game's
+thread in the same profile. The same order as the above, so left for the same machine.
+
 ## The backend behind in the mine: three per-draw cuts (2026-10-14)
 
 With the game thread's steps 3a and 4 in (docs/game-thread-parallelism.md), the mine standing still
