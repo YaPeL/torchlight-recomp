@@ -1183,14 +1183,15 @@ milliseconds, with whatever timer resolution the process has. With no timer queu
 is `steady_clock::time_point::max()`; that has to hold with MSVC's `wait_until` too.
 
 Tests (`tests/unit/core/timer_queue_test.cpp`, disruptorplus linked into `unit_tests`): the timed
-waits time out, and return when another thread publishes; a one-shot timer fires and not early;
-a 1 ms recurring timer ticks and stops when disarmed; a timer disarmed before its time never
-fires; on Linux, the dispatch thread's CPU time over 1 s with a 1 ms timer queued stays under
-100 ms (0-10 ms with the change, 190-230 ms spinning); with the queue empty for 2 s (the
-`time_point::max()` deadline) the thread stays under 50 ms of CPU (0 ms; a wait that returns at
-once, simulated with `now()` as that deadline, takes 130 ms) and the next timer fires on time. In Torchlight, one build run three times
-with each runtime on the same scripted route: the dispatch thread from about 24 % of a core to
-1.2 %, the process 9-10 % less CPU in every step, the frame rate and frame times unchanged.
+waits time out, and return when another thread publishes; a one-shot timer fires and not early; a
+1 ms recurring timer ticks and stops when disarmed; a timer disarmed before its time never fires; on
+Linux, the dispatch thread's CPU time over 1 s with a 1 ms timer queued stays under 100 ms (0-10 ms
+with the change, 190-230 ms spinning); with the queue empty for 2 s (the `time_point::max()`
+deadline) the thread stays under 50 ms of CPU (0 ms; a wait that returns at once, simulated with
+`now()` as that deadline, takes 130 ms) and the next timer fires on time. In Torchlight, one build
+run three times with each runtime on the same scripted route: the dispatch thread from about 24 % of
+a core to 1.2 %, the process 9-10 % less CPU in every step, the frame rate and frame times
+unchanged.
 
 Our patch 33 (`patches/README.md`). Before sending: the Windows measurement (section 8).
 
