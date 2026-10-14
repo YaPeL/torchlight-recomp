@@ -704,6 +704,29 @@ summaries every 10 s kept under `out/blind/runs/`; `reveal.sh` opens the key aft
 from the profiles: about 4-6 % less game-thread CPU per frame on the branch, at this laptop's
 noise level by hand (3-10 % between runs), so alternate and repeat.
 
+### 11.3 The blind hand test, done (2026-10-14, 11:30-11:50)
+
+Base (develop `df10a44`) against the branch at step 4 (steps 3 and 4), both built with the render
+agent's local step overlay commits (not pushed), Release, no input scripts; four runs A B A B on
+fresh copies of the fixed-floor save, no cap, no vsync, 720p, the 55 C cool-down before each; the
+user played the reference route and gave impressions before seeing numbers. Game frame rate per
+step (the overlay's marks), with the mean CPU clock of the step (the package at 82 C in every
+run):
+
+| Run | Dungeon, still | Dungeon, fight | Town square | CPU MHz (still / fight / town) |
+|---|---|---|---|---|
+| A 1 (base) | 224.0 | 178.2 | 141.5 | 3136 / 3253 / 3102 |
+| B 1 (branch) | 249.0 | 184.1 | 148.3 | 3653 / 3191 / 3278 |
+| A 2 (base) | 215.3 | 168.8 | 138.4 | 3033 / 3027 / 3138 |
+| B 2 (branch) | 231.6 | 174.5 | 148.2 | 3184 / 3099 / 3244 |
+
+Both branch runs beat both base runs in every step: standing still +7.6 to +11 %, the fight +3.3 to
++3.4 %, the town square +4.8 to +7.1 %. The user's impressions, written before the numbers: "B felt
+faster" after B 1, "still the same opinion" after A 2. The branch's runs also had the slightly
+higher clocks (B 1 standing still at 3653 MHz against 3136), so part of the gap is thermal luck;
+the fight's +3 % is the floor of what the profiles predicted (steps 3 and 4: -4.3 / -5.6 % CPU per
+frame) and the town square's +5-7 % matches it.
+
 ## 10. Open
 
 - A profile with usable call chains (town square and fight), coordinated with the render agent:
