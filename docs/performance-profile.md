@@ -855,6 +855,12 @@ runs of one binary). **Not taken**: they do what they aim at, but 0.5 % is below
 can show, by hand or scripted. Phase B (the producer off the guest's thread, estimated 1.5-2 %)
 is left for the same reason; both wait for a machine without a thermal limit.
 
+An alternative take on the same two costs, from phase A, is on `perf/producer-a-full` (not in
+`develop`, **not measured**): `fee774a` packs the state memos behind a small index table (only the
+slot and sub pairs in use get a memo, instead of a 1.7 MB table with one per pair), and `66b6b43`
+gives each `SetConstants` one array of values that its ranges point into, instead of a vector per
+range (the capture format is unchanged). Its other commits are in `develop`.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
