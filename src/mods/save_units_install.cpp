@@ -15,6 +15,7 @@
 #include "mods/class_list.h"
 #include "mods/mod_list.h"
 #include "mods/save_units.h"
+#include "mods/settled_saves.h"
 #include "mods/unit_cache.h"
 #include "save_import/schema.h"
 
@@ -38,6 +39,10 @@ struct Assumed {
 Assumed g_assumed;
 // Set on the game's thread by CompareWithLoadedUnits, read by the save hook (save_block_hooks.cpp).
 std::atomic<bool> g_saving_blocked{false};
+// The saves settled at this start (settled_saves.h), forgotten when the check's assumptions prove
+// wrong after the load.
+std::filesystem::path g_settled_file;
+using Skip = std::function<bool(const std::filesystem::path&)>;
 
 std::string TitleFolder() {
   char title[16];
@@ -45,7 +50,8 @@ std::string TitleFolder() {
   return title;
 }
 
-void Run(const std::filesystem::path& user_data_root, const KnownUnits& known) {
+void Run(const std::filesystem::path& user_data_root, const KnownUnits& known, const Skip& skip,
+         SettledSaves& settled) {
   std::string error;
   const auto schema = save_import::Schema::Embedded(error);
   if (!schema) {
@@ -54,7 +60,11 @@ void Run(const std::filesystem::path& user_data_root, const KnownUnits& known) {
   }
   if (!known.complete) REXLOG_WARN("units: saves not changed: {}", known.incomplete_why);
   SaveUnitsReport report = ProtectSaves(user_data_root, TitleFolder(), *schema, known, std::chrono::system_clock::now(),
-                                        [](const std::string& line) { REXLOG_INFO("{}", line); });
+                                        [](const std::string& line) { REXLOG_INFO("{}", line); }, skip);
+  for (const auto& path : report.settled) settled.Settle(path);
+  if (report.skipped) {
+    REXLOG_INFO("units: {} save(s) unchanged since they were last checked, not read again", report.skipped);
+  }
   if (!report.changed.empty() || report.failed) g_changes = std::move(report);
 }
 
@@ -76,10 +86,9 @@ KnownUnits ExpectedUnits(const std::filesystem::path& data_dir, const std::files
   return MakeExpectedUnits(base, ModUnitEntries(files, &why), why);
 }
 
-// Saves written with the Xbox writer's mod list bug (docs/mods.md 7d), from before the repair while
-// writing: repaired before anything reads them, with the names of the mods in the folder and those
-// mods.dat still lists (a mod since removed) as the names they may hold.
-void RepairModLists(const std::filesystem::path& data_dir, const std::filesystem::path& user_data_root) {
+// The names a save's broken mod list may hold: the mods in the folder (folder and mod.dat NAME) and
+// those mods.dat still lists (a mod since removed).
+std::vector<std::u16string> RepairNames(const std::filesystem::path& data_dir) {
   const std::filesystem::path folder = data_dir / "mods";
   std::vector<std::u16string> candidates;
   auto add = [&](const std::string& name) {
@@ -98,13 +107,20 @@ void RepairModLists(const std::filesystem::path& data_dir, const std::filesystem
       add(directory.substr(directory.find_last_of("/\\") + 1));
     }
   }
+  return candidates;
+}
+
+// Saves written with the Xbox writer's mod list bug (docs/mods.md 7d), from before the repair while
+// writing: repaired before anything reads them, with `candidates` (RepairNames).
+void RepairModLists(const std::filesystem::path& user_data_root, const std::vector<std::u16string>& candidates,
+                    const Skip& skip) {
   if (candidates.empty()) return;
   std::string error;
   const auto schema = save_import::Schema::Embedded(error);
   if (!schema) return;
   const ModListRepairReport report =
       RepairModListSaves(user_data_root, TitleFolder(), *schema, candidates, std::chrono::system_clock::now(),
-                         [](const std::string& line) { REXLOG_INFO("{}", line); });
+                         [](const std::string& line) { REXLOG_INFO("{}", line); }, skip);
   if (!report.repaired.empty()) {
     REXLOG_WARN("mods: {} save(s) written by the Xbox mod list bug repaired (copy: {})", report.repaired.size(),
                 report.backup.string());
@@ -118,23 +134,39 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   g_changes.reset();
   g_assumed = {};
   g_saving_blocked = false;
+  g_settled_file.clear();
   if (user_data_root.empty()) return;
-  RepairModLists(data_dir, user_data_root);
   std::string error;
   const auto base = ReadPakUnitIndex(pak, &error);
   if (!base) REXLOG_WARN("units: the game's unit index not read ({})", error);
   const auto files = plan ? ScanModUnitFiles(data_dir / "mods", *plan) : std::vector<ModUnitFile>{};
+  KnownUnits known;
   if (files.empty()) {
-    Run(user_data_root, MakeKnownUnits(base, {}, true));
-    return;
+    known = MakeKnownUnits(base, {}, true);
+  } else {
+    g_assumed.pending = true;
+    g_assumed.user_data_root = user_data_root;
+    g_assumed.known = ExpectedUnits(data_dir, pak, files, base);
+    if (base) g_assumed.base_guids = KnownUnitsOfIndex(*base).guids;
+    REXLOG_INFO("units: mods bring units; saves checked against the {} units the game is expected to load",
+                g_assumed.known.guids.size());
+    known = g_assumed.known;
   }
-  g_assumed.pending = true;
-  g_assumed.user_data_root = user_data_root;
-  g_assumed.known = ExpectedUnits(data_dir, pak, files, base);
-  if (base) g_assumed.base_guids = KnownUnitsOfIndex(*base).guids;
-  REXLOG_INFO("units: mods bring units; saves checked against the {} units the game is expected to load",
-              g_assumed.known.guids.size());
-  Run(user_data_root, g_assumed.known);
+  // Saves settled at the last start under the same context and unchanged since are not read again;
+  // those still settled, and those found settled now, are remembered for the next start.
+  const std::vector<std::u16string> names = RepairNames(data_dir);
+  const std::string context = SettledSaves::Context(known, names);
+  g_settled_file = user_data_root / "cache" / "settled-saves.txt";
+  const SettledSaves last = SettledSaves::Load(g_settled_file, user_data_root, context);
+  SettledSaves next(user_data_root, context);
+  const Skip skip = [&](const std::filesystem::path& path) {
+    if (!last.Unchanged(path)) return false;
+    next.Settle(path);
+    return true;
+  };
+  RepairModLists(user_data_root, names, skip);
+  Run(user_data_root, known, skip, next);
+  if (!next.Store(g_settled_file)) REXLOG_WARN("units: cannot write {}", g_settled_file.string());
 }
 
 void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& loaded) {
@@ -143,6 +175,9 @@ void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& lo
   // Not known what the game holds: every mods' unit the check counted on may be missing.
   const std::vector<int64_t> missing = UnitsNotLoaded(g_assumed.known, loaded ? *loaded : g_assumed.base_guids);
   if (missing.empty()) return;
+  // The saves were settled against units the game does not hold: check them all at the next start.
+  std::error_code ec;
+  if (!g_settled_file.empty()) std::filesystem::remove(g_settled_file, ec);
   REXLOG_WARN("units: {} units the saves' check counted on are not in the index the game loaded{}; the game "
               "drops saved items of them when it loads a character",
               missing.size(), loaded ? "" : " (its content is not known)");

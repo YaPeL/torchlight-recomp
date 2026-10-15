@@ -177,6 +177,7 @@ UnitCheck CheckCharacterFile(const si::Schema& schema, std::span<const uint8_t> 
   }
   if (!parsed) {
     check.result = UnitCheck::Result::kLeftAlone;
+    check.unreadable = true;
     check.why = "unreadable: " + error.message;
     return check;
   }
@@ -192,6 +193,7 @@ UnitCheck CheckStashFile(const si::Schema& schema, std::span<const uint8_t> file
   auto parsed = si::Read360Stash(schema, file, error);
   if (!parsed) {
     check.result = UnitCheck::Result::kLeftAlone;
+    check.unreadable = true;
     check.why = "unreadable: " + error.message;
     return check;
   }
@@ -258,11 +260,16 @@ void ForEachSaveFile(const std::filesystem::path& user_data_root, const std::str
 SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
                              const si::Schema& schema, const KnownUnits& known,
                              std::chrono::system_clock::time_point now,
-                             const std::function<void(const std::string&)>& log) {
+                             const std::function<void(const std::string&)>& log,
+                             const std::function<bool(const std::filesystem::path&)>& skip) {
   namespace fs = std::filesystem;
   SaveUnitsReport report;
   std::vector<std::pair<fs::path, UnitCheck>> changes;
   ForEachSaveFile(user_data_root, title_folder, [&](const fs::path& path, bool character) {
+    if (skip && skip(path)) {
+      ++report.skipped;
+      return;
+    }
     const auto bytes = ReadAll(path);
     if (!bytes) {
       report.left_alone.push_back(path.string() + ": cannot read the file");
@@ -277,8 +284,11 @@ SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const 
     }
     if (check.result == UnitCheck::Result::kLeftAlone) {
       report.left_alone.push_back(path.string() + ": " + check.why);
+      if (check.unreadable) report.settled.push_back(path);
     } else if (check.result == UnitCheck::Result::kRemoved) {
       changes.emplace_back(path, std::move(check));
+    } else {
+      report.settled.push_back(path);
     }
   });
   for (const auto& line : report.left_alone) {
@@ -361,12 +371,17 @@ namespace torchlight::mods {
 ModListRepairReport RepairModListSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
                                        const si::Schema& schema, const std::vector<std::u16string>& candidates,
                                        std::chrono::system_clock::time_point now,
-                                       const std::function<void(const std::string&)>& log) {
+                                       const std::function<void(const std::string&)>& log,
+                                       const std::function<bool(const std::filesystem::path&)>& skip) {
   namespace fs = std::filesystem;
   ModListRepairReport report;
   std::vector<std::pair<fs::path, std::vector<uint8_t>>> changes;
   ForEachSaveFile(user_data_root, title_folder, [&](const fs::path& path, bool character) {
     if (!character) return;
+    if (skip && skip(path)) {
+      ++report.skipped;
+      return;
+    }
     const auto bytes = ReadAll(path);
     if (!bytes) return;
     si::SaveError error;
