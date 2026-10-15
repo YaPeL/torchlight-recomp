@@ -6,7 +6,8 @@
 // three choices only runs the game's code unchanged. With more, its three buttons show a window
 // onto the list: a move off either end of the row scrolls it, A picks what the focused button shows
 // (the screen sends the button's window name, which is mapped to that choice), and a choice without
-// an Xbox button image shows its mod's own PC icon when it has one (mods/class_list.h ModClassIcons:
+// an Xbox button image shows its mod's own PC icon when it has one (mods/class_list.h ModClassIcons,
+// ModPetIcons for a pet whose mod gives its button images:
 // the imageset is loaded into CEGUI the first time, game_ui.h kImagesetManagerCreate), or else an
 // empty frame with its name on the label the layout cache added (AddClassLabels).
 
@@ -94,7 +95,9 @@ void List() {
     pet_buttons = mods::ModPetButtons(folder, *plan);
     monsters = mods::ModMonsterUnits(folder, *plan);
     g_pets.shown_names = mods::ModMonsterDisplayNames(folder, *plan);
-    g_classes.icons = mods::ModClassIcons(folder, *plan, mods::ModImagesets(folder, *plan));
+    const auto imagesets = mods::ModImagesets(folder, *plan);
+    g_classes.icons = mods::ModClassIcons(folder, *plan, imagesets);
+    g_pets.icons = mods::ModPetIcons(folder, *plan, imagesets);
   }
   g_classes.list = mods::ClassList(class_buttons, players);
   g_pets.list = mods::PetList(pet_buttons, monsters);

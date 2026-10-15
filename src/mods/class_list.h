@@ -80,6 +80,9 @@ struct ButtonImages {
 // The class buttons' images of a layout (ClassButtons' windows), by the button's ClassKey; a button
 // whose images are missing, unreadable or from more than one imageset has none.
 std::map<std::string, ButtonImages> ClassButtonImages(std::string_view layout_xml);
+// The same for the pet buttons (onClick GUIPET1 or GUISELECT2). PC's own pet buttons are text
+// buttons without images; a mod may give its pets images the same way as its classes.
+std::map<std::string, ButtonImages> PetButtonImages(std::string_view layout_xml);
 
 struct ImagesetInfo {
   std::string name;
@@ -96,7 +99,8 @@ struct ModImageset {
   ImagesetInfo info;
 };
 // The enabled mods' imagesets (*.imageset under media/ui/, any case), by Name; only those whose
-// image file exists in the same mod. A Name two files define is left out: the game loads the mods'
+// image file exists in the same mod and starts as an image format the game reads (DDS, PNG, JPEG, BMP,
+// TGA). A Name two files define is left out: the game loads the mods'
 // item icon imagesets itself, and which file it took is not known.
 std::map<std::string, ModImageset> ModImagesets(const std::filesystem::path& mods_folder, const ModPlan& plan);
 
@@ -114,5 +118,8 @@ struct ClassIcon {
 // holds every image the button names. By the class's ClassKey.
 std::map<std::string, ClassIcon> ModClassIcons(const std::filesystem::path& mods_folder, const ModPlan& plan,
                                                const std::map<std::string, ModImageset>& imagesets);
+// The same for the mods' pet buttons (PetButtonImages), by the pet button's ClassKey.
+std::map<std::string, ClassIcon> ModPetIcons(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                             const std::map<std::string, ModImageset>& imagesets);
 
 }  // namespace torchlight::mods
