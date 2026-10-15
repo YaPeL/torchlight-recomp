@@ -1,5 +1,41 @@
 # Gameplay performance profile — 2026-09-12
 
+## Native renderer against Xenos, again (2026-10-14)
+
+The comparison of 2026-10-07 (next section) repeated with everything taken since: the backend's
+cuts, the D3D skip, the game thread's steps 3a and 4, the frustum test as host code, and SDK patch
+33 (which applies to both renderers). Develop `0aec8a7` with the step overlay (local), the same
+executable in both modes, the reference route played by hand (the fixed-floor saved game: the
+mine standing still and fighting, the stairs, the town square; not the 2026-10-07 route of a new
+character), no cap, no vsync, 720p, warm shader caches, the 55 C cool-down before each run; one
+run of each mode. Xenos draws with Vulkan, which chooses its own device: the runs force the NVIDIA
+one (`VK_ICD_FILENAMES`, as the 2026-10-07 script did); without it the loader picked the Intel UHD
+630, which gave the Intel pair below.
+
+GeForce GTX 1050 Ti, the game's frame rate (presented, native only), mean over the step:
+
+| Step | Native | Xenos | Native over Xenos |
+|---|---|---|---|
+| Mine, standing still | 239.3 (180.5) | 63.7 | 3.76x (2.83x presented) |
+| Mine, fighting | 187.5 (175.4) | 51.6 | 3.63x (3.40x) |
+| Town square | 149.6 (142.9) | 43.8 | 3.42x (3.26x) |
+| Frames over 33 ms (per step) | 0, 1, 0 | 0, 8, 42 | |
+| Level loads (Continue; the stairs) | 3951, 4225 ms | 5426, 9076 ms | 1.4x, 2.1x |
+
+Intel UHD 630 (the native backend on GL, Xenos on Vulkan), the game's frame rate:
+
+| Step | Native | Xenos | Native over Xenos |
+|---|---|---|---|
+| Mine, standing still | 208.1 | 28.0 | 7.4x |
+| Mine, fighting | 165.1 | 26.2 | 6.3x |
+| Town square | 138.8 | 26.3 | 5.3x |
+
+On the NVIDIA GPU the native renderer went from 1.9-2.5 times Xenos's frame rate (2026-10-07) to
+3.4-3.8 times; the route differs, and each mode ran once, but the change is far beyond the runs'
+spread (3-10 %). On the Intel GPU the native renderer loses little (CPU-bound: 208 against 239 fps
+standing still) while Xenos falls to 26-28 fps. The package sat at 82 C in every step of every run
+(3080-3740 MHz).
+
 ## Native renderer against Xenos (2026-10-07)
 
 The same build of the game run twice with each renderer: the native backend (`--native_live=only`,
