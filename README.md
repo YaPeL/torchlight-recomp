@@ -117,6 +117,11 @@ game about three and a half times as fast as the same build with ReXGlue's emula
 faster, and has almost no frames over 33 ms. **On the laptop's Intel UHD 630 the difference is 5–7
 times** ([measurements](docs/performance-profile.md#native-renderer-against-xenos-again-2026-10-14)).
 
+As a rough estimate, performance is comparable to the PC version of Torchlight run through Proton
+on the same laptop: in some places the PC version is faster (up to about 20 %, the town square on
+the NVIDIA GPU), in others this port is (up to about 15 %, the mine on the Intel GPU)
+([measurements](docs/performance-profile.md#against-the-pc-version-through-proton-2026-10-14)).
+
 ### Display settings
 
 The game's own Options → Settings menu has an extra **Video** column:
