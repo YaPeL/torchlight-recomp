@@ -9,6 +9,10 @@
 #pragma once
 
 #include <filesystem>
+#include <optional>
+#include <set>
+#include <string>
+#include <string_view>
 
 #include <rex/ppc/context.h>
 
@@ -23,9 +27,10 @@ namespace torchlight::game_menu {
 // Before the guest runs (OnPostSetup), any mode: scans the mods folder, keeps mods.dat up to date,
 // backs the saves up when the set of mods changed since the previous start (mods/save_safety.h),
 // and mounts the folder when there are mods. `data_dir` is platform::DataDir() (mods/ and the
-// record live there); `user_data_root` holds the saves.
+// record live there); `user_data_root` holds the saves; `game_pak` is the game's pak.zip (the names
+// of its own CEGUI imagesets, GameImagesetNames).
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
-                 const std::filesystem::path& user_data_root);
+                 const std::filesystem::path& user_data_root, const std::filesystem::path& game_pak);
 
 // The data manager was just built (its constructor's hook, on the game's thread, before the
 // global data loader checks the MODS achievements and loads the data): builds the mod manager,
@@ -40,5 +45,13 @@ void NoteDataManager(uint32_t data_manager);
 
 // The plan InstallMods mounted (the mods the guest gets), or null when there are none.
 const mods::ModPlan* MountedModPlan();
+
+// The resource group RegisterMods put an active mod's folder in (`folder`: its name in the mods
+// folder), or none (not active, or not registered yet).
+std::optional<std::string> ModResourceGroup(std::string_view folder);
+
+// The names of the game's own CEGUI imagesets (mods/class_list.h PakImagesetNames on the pak
+// InstallMods was given), read the first time.
+const std::set<std::string>& GameImagesetNames();
 
 }  // namespace torchlight::game_menu

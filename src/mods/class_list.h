@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <map>
+#include <optional>
 #include <set>
 #include <string>
 #include <string_view>
@@ -66,5 +67,52 @@ std::set<std::string> ModMonsterUnits(const std::filesystem::path& mods_folder, 
 std::map<std::string, std::string> ModMonsterDisplayNames(const std::filesystem::path& mods_folder,
                                                           const ModPlan& plan);
 std::vector<std::vector<std::string>> ModPetButtons(const std::filesystem::path& mods_folder, const ModPlan& plan);
+
+// A mod class's own icon (docs/mods.md 7l, "option B"): PC's creation layout gives each class
+// button the images of a CEGUI imageset ("set:<imageset> image:<image>"; a radio button's
+// UnselectedImage, HoverImage and SelectedImage, or a button's NormalImage, HoverImage and
+// PushedImage), and the imageset is a mod's .imageset file (XML: its Name, its Imagefile, a path in
+// the mod, and its images).
+struct ButtonImages {
+  std::string imageset;
+  std::string normal, hover, pushed;  // image names; hover and pushed are the normal one when missing
+};
+// The class buttons' images of a layout (ClassButtons' windows), by the button's ClassKey; a button
+// whose images are missing, unreadable or from more than one imageset has none.
+std::map<std::string, ButtonImages> ClassButtonImages(std::string_view layout_xml);
+
+struct ImagesetInfo {
+  std::string name;
+  std::string image_file;  // as written (a path in the mod, '/' or '\\')
+  std::set<std::string> images;
+};
+// An imageset file's text (LayoutText); none when it has no Imageset element with a Name and an
+// Imagefile.
+std::optional<ImagesetInfo> ParseImageset(std::string_view xml);
+
+struct ModImageset {
+  std::string mod_folder;      // the mod's folder name in the mods folder
+  std::string file;            // the .imageset's path in the mod, '/' separated, as found on disk
+  ImagesetInfo info;
+};
+// The enabled mods' imagesets (*.imageset under media/ui/, any case), by Name; only those whose
+// image file exists in the same mod. A Name two files define is left out: the game loads the mods'
+// item icon imagesets itself, and which file it took is not known.
+std::map<std::string, ModImageset> ModImagesets(const std::filesystem::path& mods_folder, const ModPlan& plan);
+
+// The Names of the imagesets in the game's pak (*.imageset under media/ui/): an imageset of one of
+// those names is the game's, whatever a mod defines. Empty, with `error` set, when the pak does not
+// read.
+std::set<std::string> PakImagesetNames(const std::filesystem::path& pak, std::string* error);
+
+struct ClassIcon {
+  ButtonImages images;
+  ModImageset imageset;
+};
+// The mods' classes that have their own icon: each enabled mod's layout class buttons (ModClassButtons'
+// order, the first mod with a button for a class kept), whose imageset is one of `imagesets` and
+// holds every image the button names. By the class's ClassKey.
+std::map<std::string, ClassIcon> ModClassIcons(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                               const std::map<std::string, ModImageset>& imagesets);
 
 }  // namespace torchlight::mods

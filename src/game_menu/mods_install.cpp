@@ -22,6 +22,7 @@
 #include "guest_abi/game_ui.h"
 #include "guest_abi/mods.h"
 #include "hooks/guest_path.h"
+#include "mods/class_list.h"
 #include "mods/mod_list.h"
 #include "save_import/pak.h"
 #include "mods/save_safety.h"
@@ -52,6 +53,7 @@ bool g_replacements = false;
 // replacements folder from InstallMods, the mods' groups and folders from RegisterMods.
 mods::TextureLocations g_texture_locations;
 std::filesystem::path g_mods_folder;
+std::filesystem::path g_game_pak;
 // The data manager the resources.cfg loader is building (NoteDataManager), for its group list.
 uint32_t g_data_manager = 0;
 // The active mods' resource groups (RegisterMods), to tell a mod's material script.
@@ -156,7 +158,8 @@ void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_
 }  // namespace
 
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
-                 const std::filesystem::path& user_data_root) {
+                 const std::filesystem::path& user_data_root, const std::filesystem::path& game_pak) {
+  g_game_pak = game_pak;
   if (data_dir.empty()) return;
   MountReplacements(runtime, data_dir);
   const std::filesystem::path folder = data_dir / "mods";
@@ -303,6 +306,23 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
 }
 
 void NoteDataManager(uint32_t data_manager) { g_data_manager = data_manager; }
+
+const std::set<std::string>& GameImagesetNames() {
+  static const std::set<std::string> names = [] {
+    std::string error;
+    auto names = mods::PakImagesetNames(g_game_pak, &error);
+    if (!error.empty()) REXLOG_WARN("mods: the game's imagesets not read ({})", error);
+    return names;
+  }();
+  return names;
+}
+
+std::optional<std::string> ModResourceGroup(std::string_view folder) {
+  for (const auto& mod : g_texture_locations.mods) {
+    if (mod.folder.filename() == std::filesystem::path(folder)) return mod.group;
+  }
+  return std::nullopt;
+}
 
 namespace {
 

@@ -46,7 +46,9 @@ size_t ClosingTag(std::string_view xml, size_t start) {
   return std::string_view::npos;
 }
 
-// A class button's label: the game's Serif font in the frame's lower part, wrapped. A pet button is
+// A class button's label: the game's Serif font in the frame's lower part, wrapped, as wide as the
+// button but for its frame's border (4 px each side: a long single word such as "Enchantress" was cut
+// at 80% of the width). A pet button is
 // 48 px (charactercreate.uilayout): SerifSmall, centred over the button's whole height and over the
 // frame around it (9 px each side), not clipped by the button. The formatting properties and their
 // values are ceguiWidget/StaticText's (ceguiWidgets.looknfeel: HorzTextFormatting, VertFormatting,
@@ -61,7 +63,7 @@ std::string Label(std::string_view button, bool pet) {
          (pet ? "<Property Name=\"VertFormatting\" Value=\"CentreAligned\" />"
                 "<Property Name=\"ClippedByParent\" Value=\"False\" />"
                 "<Property Name=\"UnifiedAreaRect\" Value=\"{{0,-9},{0,0},{1,9},{1,0}}\" />"
-              : "<Property Name=\"UnifiedAreaRect\" Value=\"{{0.1,0},{0.3,0},{0.9,0},{0.9,0}}\" />") +
+              : "<Property Name=\"UnifiedAreaRect\" Value=\"{{0,4},{0.3,0},{1,-4},{0.9,0}}\" />") +
          "<Property Name=\"MousePassThroughEnabled\" Value=\"True\" />"
          "</Window>";
 }

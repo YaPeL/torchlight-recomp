@@ -115,7 +115,8 @@ class TorchlightApp : public rex::ReXApp {
     // before the guest runs; old save backups are pruned too.
     torchlight::game_menu::InstallSaveImport(runtime(), game_data_root(), user_data_root());
     // The player's PC mods (any mode): mounted and their saves protected before the guest runs.
-    torchlight::game_menu::InstallMods(runtime(), torchlight::platform::DataDir(), user_data_root());
+    torchlight::game_menu::InstallMods(runtime(), torchlight::platform::DataDir(), user_data_root(),
+                                       game_data_root() / "pak.zip");
     // Their units in the game's unit index (cached in the user's folder when mods bring any).
     torchlight::mods::InstallUnitIndex(runtime(), torchlight::platform::DataDir(),
                                        game_data_root() / "pak.zip",

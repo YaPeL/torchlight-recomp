@@ -526,6 +526,26 @@ inline constexpr Field kId{0x180, Confidence::kConfirmed};
 inline constexpr uint32_t kResourceGroupManagerGlobal = 0x83582A4C;
 
 // ---------------------------------------------------------------------------------------------
+// CEGUI imagesets (a mod class's own icon at character creation, docs/mods.md 7l).
+// [confirmed] CEGUI::ImagesetManager singleton pointer: sub_823392E8 (the call returning to
+// 0x8233A5DC) and sub_825E7A08 load it from here (lis -31912, lwz +10984) as r3 of
+// kImagesetManagerCreate and kImagesetManagerFind.
+inline constexpr uint32_t kImagesetManagerGlobal = 0x83582AE8;
+// [confirmed] ImagesetManager::createImageset(filename, resourceGroup): r3 = manager, r4 and r5 =
+// String*; logs "Attempting to create an Imageset from the information specified in file '"
+// (0x82101940, the log call returning to 0x825BA368), constructs the Imageset from the file
+// (sub_825B8A70, which parses the XML and loads its image file through the resource group), looks
+// its name up in the map (sub_825C9F10) and, when absent, inserts it (sub_825C9E20, @0x825BA428);
+// returns the Imageset*. A name already present deletes the new one (sub_825BA448) and goes to
+// sub_8287D560 (@0x825BA41C), CEGUI 0.6's AlreadyExistsException; a file or an image file that
+// cannot be read throws inside the constructor. Callers make sure of all three first.
+inline constexpr GuestFunction kImagesetManagerCreate{0x825BA338, Confidence::kConfirmed};
+// [confirmed] The imageset of a name, or null (a Runic addition; CEGUI 0.6's getImageset throws):
+// r3 = manager, r4 = String*; map find (sub_825C9F10, the call returning to 0x825BA73C), the value
+// at +164 when found, 0 otherwise (loc_825BA754).
+inline constexpr GuestFunction kImagesetManagerFind{0x825BA718, Confidence::kConfirmed};
+
+// ---------------------------------------------------------------------------------------------
 // Translations.
 // [confirmed] Resource config reader (resourceconfig.dat, looked for in SAVE:\ and absent, so
 // every key keeps its default): registers "Translate File" with a default chosen by the console

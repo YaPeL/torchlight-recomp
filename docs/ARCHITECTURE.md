@@ -236,8 +236,10 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   search order, kept when a player unit of that name exists. With more than three, the three
   buttons show a window onto the list: left on the first or right on the last scrolls it by one,
   wrapping, and A picks the class the button shows (the screen sends the button's window name; the
-  selection maps it to that class). A class without an Xbox button image shows the empty skill
-  frame with its name, on a label the layout cache adds to each class button (hidden otherwise).
+  selection maps it to that class). A class without an Xbox button image shows its mod's own PC
+  icon (the imageset its PC layout names, loaded into CEGUI when the game has not), or else the
+  empty skill frame with its name, on a label the layout cache adds to each class button (hidden
+  otherwise).
   The class's name and description come from its unit data, as for the game's classes. The pets
   work the same way on the grid's pet row: the game's three (Dog, Cat, Chakawary), then the mods'
   pet buttons (onClick guiPet1 on PC) whose name is a monster unit's; A picks the pet the button
