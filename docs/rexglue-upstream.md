@@ -1471,30 +1471,78 @@ these agents lives here and in `patches/README.md`.
   22. Your version of 21 with Metal on Apple (`5a98b6f`) is now the last line of the `bd833a2`
   series (2026-10-09); it applies after the two Windows patches. When you next touch the series,
   ask for a number here first.
-  - **Patch 33 (the timer queue waits on a condition variable; 2026-10-14).** It is the last line
-    of `series`. On Linux it took the SDK's timer thread from about 24 % of a core to 1.2 % with
-    the same frame rate (`patches/README.md`, entry 33; D32). Windows waits differently: a
-    condition variable's timed wait goes through `SleepConditionVariableSRW` in whole
-    milliseconds, with the 1 ms timer resolution of patch 17. Please check:
-    1. Rebuild the SDK with the series (`tools/deps/build_sdk.sh`) and run
-       `unit_tests "[timer_queue]"`. Four cases run on Windows (the 1 ms CPU case is Linux
-       only). The recurring one wants at least 50 ticks of a 1 ms timer in 300 ms: a failure
-       there means the waits last about 15.6 ms, so patch 17's resolution is not in effect.
-    2. In the game, at the main menu and in a fight, with the SDK built with and without patch 33
-       (`git apply -R` of it in the SDK checkout, then reinstall), and everything else equal:
-       `tools/thread_profile` per thread (the `TimerQueue` thread was 5-10 % spinning), the
-       process CPU, and the frame rate and frame times (mean, p95, p99, frames over 33 and
-       50 ms). Note any audio crackle or uneven pacing.
-    3. The empty queue. With no timer queued, the dispatch thread waits with
-       `steady_clock::time_point::max()` as its deadline (`timer_queue.cpp`,
-       `TimerThreadMain`). libstdc++ takes that; check that MSVC's `condition_variable::wait_until` neither overflows nor
-       returns at once with it. The game cannot show this, because its 1 ms timestamp timer
-       keeps the queue busy from boot on. The `[timer_queue]` case "The dispatch thread waits
-       for a timer when the queue is empty" covers it. It leaves the queue empty for 2 s, and
-       the thread's CPU over that time (`GetThreadTimes`) must stay under 50 ms. Then a one-shot
-       timer must fire on time. If it fails, send its output: it has the CPU figure.
-    4. Send the figures, or the failing output. Anything worse than without the patch is a
-       finding: the patch would then need a Windows path before going upstream.
+  - **The SDK update and patch 33 (one pass; revised 2026-10-15).** Since your last SDK the
+    series gained patches up to 33 (`patches/series`, 20 and 30-31 among them), and on Linux the
+    shared SDK carries all of them since 2026-10-14. Patch 33 makes the SDK's timer queue wait
+    on a condition variable instead of spinning: on Linux its thread went from about 24 % of a
+    core to 1.2 %, the process 9-10 % less CPU, the same frame rate (`patches/README.md`, entry
+    33; D32). Windows waits differently: a condition variable's timed wait goes through
+    `SleepConditionVariableSRW` in whole milliseconds, with the 1 ms timer resolution of patch 17.
+    D32 is not sent upstream until this pass is back. Take `develop`, then:
+    1. **The SDK, into a new prefix** (keep the current one to roll back):
+       `tools\build-deps\windows.ps1 -SdkPrefix <new prefix>` (every configuration by default).
+       Its `patch:` lines should be `patches/series` without the `posix` ones, ending with
+       `rexglue-timer-queue-blocking-wait.patch`.
+    2. **The SDK's unit tests**, in the checkout the script used (`<WorkDir>\rexglue-sdk`):
+       `cmake -B out/build/win-amd64 -DREXGLUE_BUILD_TESTS=ON`, then
+       `cmake --build out/build/win-amd64 --config Release --target unit_tests`. Run all of
+       `unit_tests.exe` (expected: only `output_stamp_test.cpp:227-228` fail, as before), then
+       `unit_tests.exe "[timer_queue]" -s`. Four cases run on Windows; the 1 ms CPU case is
+       Linux only. What each one catches:
+       - The recurring case wants at least 50 ticks of a 1 ms timer in 300 ms. A failure there
+         means the waits last about 15.6 ms, so patch 17's resolution is not in effect.
+       - "The dispatch thread waits for a timer when the queue is empty" covers the empty
+         queue. With no timer queued, the dispatch thread waits with
+         `steady_clock::time_point::max()` as its deadline (`timer_queue.cpp`,
+         `TimerThreadMain`), and MSVC's `condition_variable::wait_until` has to take it without
+         overflowing or returning at once. The game cannot show this: its 1 ms timestamp timer
+         keeps the queue busy from boot on. The case leaves the queue empty for 2 s; the
+         thread's CPU over that time (`GetThreadTimes`) must stay under 50 ms, then a one-shot
+         timer must fire on time. A wait that returns at once measures about 130 ms on Linux.
+       Send the line `dispatch thread CPU over 2 s of an empty queue: N ms` whether it passes or
+       not.
+    3. **The game against the new SDK**: a fresh `win-amd64-relwithdebinfo` build with
+       `-DCMAKE_PREFIX_PATH=<new prefix>`, plus `-DTORCHLIGHT_DEV_INPUT=ON
+       -DTORCHLIGHT_DEV_COMMANDS=ON` for the scripted route below; `ctest` (expected: as
+       before). Then one short run to the town and back to the menu, quitting from it: nothing
+       new in the log at error level.
+    4. **A runtime without patch 33**, for the comparison. In the same SDK checkout:
+       `git apply -R <repo>\patches\rexglue-timer-queue-blocking-wait.patch`, then
+       `cmake --build out/build/win-amd64 --config RelWithDebInfo --target rexruntime` (no
+       install: the new prefix stays as it is). Copy the `rexruntimerd.dll` it built (under
+       `out\`) somewhere apart, then `git apply` the patch again so the checkout matches the
+       prefix.
+    5. **The measurement: one game build, two runtimes**, as on Linux. "With" is the build of
+       step 3 as it is. "Without" is the same build with step 4's `rexruntimerd.dll` copied
+       next to `torchlight.exe` (the executable's folder is searched first; keep whatever was
+       there, to put it back). In each run, check which file was loaded, with
+       `(Get-Process torchlight).Modules | Where-Object ModuleName -like 'rexruntime*' |
+       Select-Object FileName`, and `Get-FileHash` of that file. Three runs of each, alternated
+       (with, without, with, ...), the same settings and an idle machine; if it is a laptop, on
+       the charger and cooled between runs. In each run:
+       - **The main menu**, 60 s after it appears: `thread_cpu torchlight.exe 30`
+         (`tools/thread_profile`). It gives the `rex::thread::TimerQueue` thread's %, and the
+         total of all threads (the process CPU). The timer thread was 5-10 % here before.
+       - **The game**: with a save on the mine's first floor, by the stairs,
+         `--dev_input_script tools/input_scripts/measure-fight-town.txt`, run through
+         `tools/run_capped/run_capped.py` (`docs/dev-input-script.md`); without one, by hand:
+         60 s standing in the town square and 60 s fighting. Run `thread_cpu torchlight.exe 30`
+         during each part. From the log's 10 s summaries: `frame time (guest swap to swap)` and
+         `frame time (presented, present to present)`: mean FPS, p95, p99, frames over 33 and
+         over 50 ms.
+       - Any audio crackle or uneven pacing heard or seen, and any log line about audio, vblank
+         or timers that the other runtime does not show.
+       If the TimerQueue figure is the same with both runtimes, the swap of the DLL did not take
+       effect: stop there and send what you have.
+    6. **Send back**:
+       - steps 1-3: pass or fail, with the failing output;
+       - step 2: the `[timer_queue]` result and its CPU line;
+       - per run of step 5: the runtime (file and hash), the TimerQueue %, the process CPU, and
+         the frame figures per part;
+       - anything heard or seen.
+       Anything worse than without the patch is a finding: the patch would then need a Windows
+       path before D32 goes upstream. Keep the new prefix if all is well. It is the SDK the
+       series asks for from now on.
 
 Cost: the series is done; what remains is builds (SDK in all configurations, three game builds
 for the fence measurement), the measurement runs and the game validation. About a day, most of it
