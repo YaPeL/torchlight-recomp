@@ -227,7 +227,7 @@ std::string LabelText(const Row& row, std::string name) {
 // shows its portraits as on PC), the game's other choices their Xbox images and the others a frame
 // with the name.
 void Refresh(PPCContext& ctx, uint8_t* base, uint32_t menu, Row& row) {
-  if (!row.Active() && !row.GameIconsReplaced()) return;
+  if (row.carousel.Disabled() || (!row.Active() && !row.GameIconsReplaced())) return;
   GuestCall call(ctx, base);
   const uint32_t root = abi::ReadU32(base, menu + ui::dropdown_menu::kRoot.offset);
   if (!root) return;
