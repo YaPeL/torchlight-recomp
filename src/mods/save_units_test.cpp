@@ -523,7 +523,7 @@ int main() {
     write(saves / "2.tsv", si::Bytes{'n', 'o', 't', ' ', 'a', ' ', 's', 'a', 'v', 'e'});  // unreadable
     write(saves / "4.TSV", x360);                                 // holds kMod: changed at the first start
     const fs::path memory = root / "cache" / "settled-saves.txt";
-    const std::string context = SettledSaves::Context(known, {u"Some Mod"});
+    const std::string context = SettledSaves::Context(known, {u"Some Mod"}, {});
     const auto now = std::chrono::system_clock::now();
     struct Start {
       SaveUnitsReport report;
@@ -586,12 +586,12 @@ int main() {
     Check(grown.report.skipped == 2 && mentions(grown, "unreadable"), "an unreadable save that changed is told again");
 
     // Another context (other units, other names a broken list may hold) forgets every save.
-    Check(SettledSaves::Context(known, {u"Some Mod"}) == SettledSaves::Context(known, {u"Some Mod", u"Some Mod"}) &&
-              SettledSaves::Context(known, {u"Other Mod"}) != context &&
-              SettledSaves::Context(MakeKnownUnits(IndexWith(all), {}, true), {u"Some Mod"}) != context,
+    Check(SettledSaves::Context(known, {u"Some Mod"}, {}) == SettledSaves::Context(known, {u"Some Mod", u"Some Mod"}, {}) &&
+              SettledSaves::Context(known, {u"Other Mod"}, {}) != context &&
+              SettledSaves::Context(MakeKnownUnits(IndexWith(all), {}, true), {u"Some Mod"}, {}) != context,
           "the context follows the units and the names");
     const Start other = start(MakeKnownUnits(IndexWith(all), {}, true),
-                             SettledSaves::Context(MakeKnownUnits(IndexWith(all), {}, true), {u"Some Mod"}));
+                             SettledSaves::Context(MakeKnownUnits(IndexWith(all), {}, true), {u"Some Mod"}, {}));
     Check(other.report.skipped == 0 && mentions(other, "unreadable"), "another context: every save read");
 
     // A save left alone with an unknown unit (here because the known units are incomplete) is not
@@ -600,7 +600,7 @@ int main() {
     KnownUnits incomplete = known;
     incomplete.complete = false;
     incomplete.incomplete_why = "test";
-    const std::string incomplete_context = SettledSaves::Context(incomplete, {u"Some Mod"});
+    const std::string incomplete_context = SettledSaves::Context(incomplete, {u"Some Mod"}, {});
     Check(incomplete_context != context, "an incomplete set is another context");
     const Start left = start(incomplete, incomplete_context);
     Check(!settled(left, "5.TSV") && settled(left, "1.tsv") && settled(left, "2.tsv") &&
@@ -613,6 +613,69 @@ int main() {
     std::ofstream(memory, std::ios::binary) << "garbage\n";
     Check(SettledSaves::Load(memory, root, context).size() == 0, "an unreadable memory: nothing settled");
     fs::remove_all(root, cleanup);
+  }
+
+  // Characters last saved with other mods than the active ones (the game's main menu warning): told
+  // and not settled; the lists compared in count and by name at each place, as the game does.
+  {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "save_units_test_other_mods";
+    std::error_code cleanup;
+    fs::remove_all(root, cleanup);
+    const fs::path saves = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav";
+    fs::create_directories(saves);
+    const KnownUnits known = MakeKnownUnits(IndexWith(base), {}, true);
+    auto parsed = Parse(*schema, x360);
+    RemoveUnknownUnits(*parsed, known);
+    si::Node* names = parsed->tree.Find("player")->Find("names");
+    Check(names && names->kind == si::Node::Kind::kList, "player/names is a list");
+    names->items.clear();
+    for (const char16_t* name : {u"Mod A", u"Mod B"}) {
+      si::Node text;
+      text.kind = si::Node::Kind::kText;
+      text.text = name;
+      names->items.push_back(text);
+    }
+    const si::Bytes bytes = si::Write360(*schema, *parsed);
+    std::ofstream(saves / "3.TSV", std::ios::binary)
+        .write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+    const auto check = CheckCharacterFile(*schema, bytes, known);
+    Check(check.mods && *check.mods == std::vector<std::u16string>{u"Mod A", u"Mod B"}, "the saved list read");
+    const auto now = std::chrono::system_clock::now();
+    auto pass = [&](const std::vector<std::u16string>* active) {
+      return ProtectSaves(root, "58410A7E", *schema, known, now, {}, {}, active);
+    };
+    const std::vector<std::u16string> same = {u"Mod A", u"Mod B"}, reordered = {u"Mod B", u"Mod A"},
+                                      fewer = {u"Mod A"}, none;
+    const auto equal = pass(&same);
+    Check(equal.other_mods.empty() && equal.settled.size() == 1, "the same list: nothing told, settled");
+    Check(pass(nullptr).other_mods.empty(), "no active list given: not compared");
+    for (const auto* active : {&reordered, &fewer, &none}) {
+      const auto other = pass(active);
+      Check(other.other_mods.size() == 1 && other.other_mods[0].saved == same && other.settled.empty() &&
+                !other.other_mods[0].owner.empty(),
+            "another order, fewer mods or none: told, with the character's name, and not settled");
+    }
+    fs::remove_all(root, cleanup);
+
+    // The context changes with the active list, its order too.
+    Check(SettledSaves::Context(known, {}, same) != SettledSaves::Context(known, {}, reordered) &&
+              SettledSaves::Context(known, {}, same) != SettledSaves::Context(known, {}, {}),
+          "the active mods are part of the context, in order");
+
+    SaveUnitsReport report;
+    report.other_mods.push_back({"/saves/a/3.TSV", "Ronan", same});
+    report.other_mods.push_back({"/saves/a/5.TSV", "", {}});
+    const auto notice = SaveUnitsNotice(report, English);
+    Check(notice && notice->title == "Mods changed" &&
+              notice->text.find("These characters were last saved with other mods:\n  Ronan\n  5.TSV\n") !=
+                  std::string::npos &&
+              notice->text.find("at your own risk") != std::string::npos,
+          "the notice: the characters (a file name without one) and the risk");
+    report.failed = true;
+    const auto both = SaveUnitsNotice(report, English);
+    Check(both && both->title == "Mod items removed" && both->text.find("Ronan") != std::string::npos,
+          "with another notice: added to it");
   }
 
   // A failure, and every notice text in each language of the translations, its {words} kept (a text

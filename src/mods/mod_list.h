@@ -84,4 +84,11 @@ inline bool ModManagerNeeded(const ModPlan& plan) { return !plan.mods.empty(); }
 // order. Empty when there are none. The save safety net compares it between starts.
 std::string ModSetFingerprint(const ModPlan& plan, const ScanResult& scan);
 
+// The names the game records in a character save for the active mods, in its order (docs/mods.md
+// 7d): every registered mod, in plan order, disabled ones too (sub_8239E718 lists each CMod with
+// +192 set, which kAddMod sets for every mod; it does not look at the priority), each by its
+// mod.dat NAME, or by its folder without one (as the host names it, mods_install.cpp). Empty
+// without mods.
+std::vector<std::u16string> ActiveModNames(const ModPlan& plan, const ScanResult& scan);
+
 }  // namespace torchlight::mods
