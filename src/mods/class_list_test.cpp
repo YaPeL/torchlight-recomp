@@ -244,6 +244,8 @@ int main() {
     Write(root / "Classes" / "media" / "UI" / "z.imageset", "<Imageset Name=\"Broken\" Imagefile=\"media/ui/z.png\"></Imageset>");
     Write(root / "Classes" / "media" / "UI" / "z.png", "not an image");
     Check(m::ModImagesets(root, plan).size() == 1, "one whose image file is not an image format left out");
+    Write(root / "Classes" / "media" / "UI" / "z.png", "\xFF\xD8\xFF\xE0 JFIF");
+    Check(m::ModImagesets(root, plan).size() == 1, "a JPEG (the game has no JPEG codec) left out");
     Write(root / "Classes" / "media" / "UI" / "z.png", "DDS |...");
     Check(m::ModImagesets(root, plan).size() == 2, "a DDS by its signature");
     fs::remove(root / "Classes" / "media" / "UI" / "z.imageset");

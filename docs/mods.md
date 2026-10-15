@@ -1102,8 +1102,10 @@ or an imageset it does not have, so an icon is used only when every image it nam
 the file's image file exists in the mod, the name is not one of the game's own imagesets (read from
 the pak, `PakImagesetNames`), no other mod file defines the same name (which of them the game
 loaded would not be known), and the image file starts as a format the game's codec reads (DDS, PNG,
-JPEG, BMP by their signatures, TGA by its extension: creating an imageset whose image does not decode
-throws inside the guest, which a call started from the host may not unwind cleanly). Anything else
+BMP by their signatures, TGA by its extension), since creating an imageset whose image does not
+decode throws inside the guest, which a call started from the host may not unwind cleanly. The
+guest's FreeImage has no JPEG plugin (its MIME types and extension lists in the executable name PNG,
+BMP, DDS and TGA, but no `image/jpeg` and no "jpg"), so a JPEG is left out. **[read]** Anything else
 falls back to the frame with the name. Checked in automatic runs with captures: Enhanced Edition's
 five classes, all 28 classes of the 29-mod pack (JCC's `Logo` created by the selector), drawn with the
 mods' textures, and the fallback with two of the pack's imagesets taken out (the frame with the whole
