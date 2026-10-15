@@ -172,6 +172,11 @@ int main() {
     Check(!m::MergeAtlases(game_xml, game_tex, outside, mod_tex, "x", &why), "an image outside its texture: no merge");
     Check(!m::MergeAtlases(game_xml, game_tex, mod_xml, std::vector<uint8_t>(10, 0), "x", &why),
           "a texture that does not decode: no merge");
+    // Two 8192-wide atlases would need a 16384-wide one, past the Xbox's largest side.
+    std::vector<uint8_t> wide = Header(8192, 8, nullptr);
+    wide.resize(wide.size() + 8192 * 8 * 4, 0);
+    Check(!m::MergeAtlases(game_xml, wide, mod_xml, wide, "x", &why) && why.starts_with("too large"),
+          "a merged atlas wider than 8192: no merge");
   }
 
   // Files: a synthetic pak and mods folder.

@@ -27,6 +27,7 @@ void Put32(std::vector<uint8_t>& b, size_t at, uint32_t v) {
 
 constexpr size_t kHeader = 128;  // "DDS " and the 124-byte header (no DX10 extension)
 constexpr uint32_t kFourCcFlag = 0x4;
+constexpr uint32_t kMaxSide = 8192;  // the largest texture side the Xbox takes
 
 uint32_t FourCc(const char (&s)[5]) { return uint32_t(s[0]) | uint32_t(s[1]) << 8 | uint32_t(s[2]) << 16 | uint32_t(s[3]) << 24; }
 
@@ -275,7 +276,8 @@ std::vector<uint8_t> EncodeDdsArgb(const RgbaImage& image) {
   std::vector<uint8_t> out(kHeader + size_t(image.width) * image.height * 4, 0);
   Put32(out, 0, FourCc("DDS "));
   Put32(out, 4, 124);
-  Put32(out, 8, 0x1007);  // caps, height, width, pixel format (as the pak's envmap.dds)
+  Put32(out, 8, 0x100F);  // caps, height, width, pitch, pixel format
+  Put32(out, 20, image.width * 4);
   Put32(out, 12, image.height);
   Put32(out, 16, image.width);
   Put32(out, 76, 32);
@@ -351,6 +353,9 @@ std::optional<MergedAtlas> MergeAtlases(std::string_view game_xml, const std::ve
   RgbaImage out;
   out.width = PowerOfTwo(gi->width + mi->width);
   out.height = PowerOfTwo(std::max(gi->height, mi->height));
+  if (out.width > kMaxSide || out.height > kMaxSide) {
+    return fail("too large (" + std::to_string(out.width) + "x" + std::to_string(out.height) + ")");
+  }
   out.rgba.assign(size_t(out.width) * out.height * 4, 0);
   auto blit = [&](const RgbaImage& src, uint32_t x0) {
     for (uint32_t y = 0; y < src.height; ++y) {

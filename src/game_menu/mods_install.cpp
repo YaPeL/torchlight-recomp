@@ -187,6 +187,7 @@ void InstallAtlases(rex::Runtime* runtime) {
     REXLOG_INFO("icon atlases: {} of {} merged with the game's ({} of the game's images kept, {} of the mod's)",
                 atlas.key, atlas.mod_folder, atlas.game_only, atlas.from_mod);
   }
+  REXLOG_INFO("icon atlases: {} merged, served as {}", written.size(), hooks::kAtlasDeviceLink);
   g_texture_locations.generated = cache;
   g_texture_locations.generated_device = std::string(hooks::kAtlasDeviceLink);
   mods::SetTextureLocations(g_texture_locations);
