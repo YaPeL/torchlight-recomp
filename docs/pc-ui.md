@@ -48,7 +48,7 @@ layouts do not use: every change is to look, text, images, or removing windows. 
 | Every PC menu (skin) | EE | `ui1/ui2.dds`, the 3D frames' textures (pet, journal, merchant, quest, character, skill, inventory, dropdown) | skin | PC's menus |
 | Fonts | EE | the same three fonts at a smaller size (9 and 11 instead of 11 and 15) | aesthetic | probably nothing, on PC either: the game loads its fonts first (below) |
 | Item and skill icons | almost all | new imagesets | icons | **Works today**: the game loads the mods' `itemicons/` imagesets itself (the selector's log: "already loaded by the game") **[read: run logs]** |
-| | EE, JCC - Main | `itemicons13/14/16` replaced | icons | **[to verify]**, see below |
+| | EE, JCC - Main | `itemicons13/14/16` replaced | icons | **The mod's file wins and Xbox icons go missing** (checked 2026-10-15), see below |
 
 **The replaced icon atlases are a real risk.** The Xbox build's `itemicons13`, `itemicons14` and
 `itemicons16` are not PC's: 40, 61 and 38 images against PC's 48, 64 and 8, and of the images both
@@ -58,10 +58,19 @@ side shows wrong icons: the Xbox file, and the mods' new items that use those at
 or throw; the mod's file, and some of the Xbox game's own items show another item's picture. The
 game reads these through its own file layer (`GAME:\MEDIA\UI\ITEMICONS\ITEMICONS14.IMAGESET` in
 the run logs), which also searches the mods (`kFindModFile`, `guest_abi/mods.h`), so which one wins
-is not known from reading. **[to verify]** with an automatic run: EE, an inventory holding one of
-the Xbox game's items drawn from `itemicons14` and one of EE's, a capture of each icon. If the mod
-wins, a fix is generic: merge at load (the Xbox file's images plus the mod's that the Xbox file
-lacks, the mod's texture for those), done on the host before the guest reads it.
+was not known from reading. **Checked (2026-10-15):** the mod's file wins, both its imageset and
+its texture. The run logs load EE's `itemicons13/14.dds` (DXT5 with mipmaps; the Xbox files are
+DXT3 without) and JCC - Main's `itemicons16.dds` (DXT1). An automatic A/B run on the Vanquisher's
+skill tree with the 29-mod pack, the same save and binary, with and without JCC - Main's
+`itemicons16` files: with them, 8 of the Vanquisher's skill icons are empty frames; without them,
+all are drawn. **[read: run logs, captures]** The images the mods' files lack are the Xbox build's
+own: in `itemicons13` the 360 armor sets (`360_destroyer_body`, ...) and three alchemist bodies
+(18), in `itemicons14` the spell scrolls' icons and three weapons (26), in `itemicons16` the skill
+icons the Xbox build moved there (30). **[read]** On PC nothing is lost: each mod file holds every
+image of PC's own file plus its own. So on the Xbox build the wrong side wins for the game's own
+items and skills. The fix proposed (not made, the user's call): merge at load, on the host, before
+the guest reads it: the Xbox file's images plus the mod's that the Xbox file lacks, which needs the
+two textures in one (or the mod's extra images moved into an imageset of their own).
 
 Two points of the native renderer's side (render agent, 2026-10-15). **[read: the code]**
 - **The XML and the texture are chosen in two places.** The guest picks the `.imageset` file
