@@ -308,7 +308,11 @@ std::map<std::string, std::string> OwnProperties(std::string_view xml, size_t po
 
 }  // namespace
 
-std::map<std::string, ButtonImages> ClassButtonImages(std::string_view xml) {
+namespace {
+
+// The images of the buttons whose onClick is one of `commands` (upper case), by ClassKey.
+std::map<std::string, ButtonImages> ButtonImagesWithClick(std::string_view xml,
+                                                         std::initializer_list<std::string_view> commands) {
   std::map<std::string, ButtonImages> out;
   for (size_t pos = 0; (pos = xml.find("<Window", pos)) != std::string_view::npos; ++pos) {
     const size_t tag_end = xml.find('>', pos);
@@ -317,7 +321,10 @@ std::map<std::string, ButtonImages> ClassButtonImages(std::string_view xml) {
     if (!name) continue;
     const auto props = OwnProperties(xml, pos);
     const auto click = props.find("ONCLICK");
-    if (click == props.end() || Upper(click->second) != "GUISELECT1") continue;
+    if (click == props.end() ||
+        std::find(commands.begin(), commands.end(), Upper(click->second)) == commands.end()) {
+      continue;
+    }
     auto image_of = [&](std::initializer_list<const char*> keys, std::string& set, std::string& image) {
       for (const char* key : keys) {
         if (const auto it = props.find(key); it != props.end()) return ParseImageRef(it->second, set, image);
@@ -336,6 +343,15 @@ std::map<std::string, ButtonImages> ClassButtonImages(std::string_view xml) {
     out.try_emplace(ClassKey(*name), images);
   }
   return out;
+}
+
+}  // namespace
+
+std::map<std::string, ButtonImages> ClassButtonImages(std::string_view xml) {
+  return ButtonImagesWithClick(xml, {"GUISELECT1"});
+}
+std::map<std::string, ButtonImages> PetButtonImages(std::string_view xml) {
+  return ButtonImagesWithClick(xml, {"GUIPET1", "GUISELECT2"});
 }
 
 namespace {
@@ -402,6 +418,23 @@ std::optional<std::filesystem::path> FindPathNoCase(const std::filesystem::path&
   return std::filesystem::is_regular_file(at, ec) ? std::optional(at) : std::nullopt;
 }
 
+// Whether an image file starts as a format the game's image codec reads: DDS, PNG, JPEG or BMP by
+// their signatures, TGA (no signature) by its extension and its 18-byte header. Creating an imageset
+// whose image does not decode throws inside the guest, which a call started from the host may not
+// unwind cleanly; such an imageset is left out (its classes show the frame with the name).
+bool ImageHeaderReadable(const std::filesystem::path& file) {
+  std::ifstream in(file, std::ios::binary);
+  char head[8] = {};
+  in.read(head, sizeof(head));
+  const std::string_view h(head, size_t(in.gcount()));
+  if (h.starts_with("DDS ") || h.starts_with("\x89PNG\r\n\x1a\n") || h.starts_with("\xFF\xD8\xFF") ||
+      h.starts_with("BM")) {
+    return true;
+  }
+  std::error_code ec;
+  return Upper(file.extension().string()) == ".TGA" && std::filesystem::file_size(file, ec) >= 18 && !ec;
+}
+
 }  // namespace
 
 std::map<std::string, ModImageset> ModImagesets(const std::filesystem::path& mods_folder, const ModPlan& plan) {
@@ -427,7 +460,8 @@ std::map<std::string, ModImageset> ModImagesets(const std::filesystem::path& mod
         twice.insert(info->name);
         continue;
       }
-      if (!FindPathNoCase(root, info->image_file)) continue;
+      const auto image = FindPathNoCase(root, info->image_file);
+      if (!image || !ImageHeaderReadable(*image)) continue;
       const std::u8string relative = file.lexically_relative(root).generic_u8string();
       out.emplace(info->name, ModImageset{mod->folder, std::string(relative.begin(), relative.end()), *info});
     }
@@ -457,15 +491,18 @@ std::set<std::string> PakImagesetNames(const std::filesystem::path& pak, std::st
   return names;
 }
 
-std::map<std::string, ClassIcon> ModClassIcons(const std::filesystem::path& mods_folder, const ModPlan& plan,
-                                               const std::map<std::string, ModImageset>& imagesets) {
+namespace {
+
+std::map<std::string, ClassIcon> ModIcons(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                          const std::map<std::string, ModImageset>& imagesets,
+                                          std::map<std::string, ButtonImages> (*buttons)(std::string_view)) {
   std::map<std::string, ClassIcon> out;
   for (const PlannedMod* mod : EnabledInSearchOrder(plan)) {
     auto media = FindNoCase(mods_folder / mod->folder, "media");
     auto ui = media ? FindNoCase(*media, "ui") : std::nullopt;
     auto layout = ui ? FindNoCase(*ui, "charactercreate.layout") : std::nullopt;
     if (!layout) continue;
-    for (const auto& [key, images] : ClassButtonImages(LayoutText(ReadFile(*layout)))) {
+    for (const auto& [key, images] : buttons(LayoutText(ReadFile(*layout)))) {
       if (out.contains(key)) continue;
       const auto set = imagesets.find(images.imageset);
       if (set == imagesets.end()) continue;
@@ -475,6 +512,17 @@ std::map<std::string, ClassIcon> ModClassIcons(const std::filesystem::path& mods
     }
   }
   return out;
+}
+
+}  // namespace
+
+std::map<std::string, ClassIcon> ModClassIcons(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                               const std::map<std::string, ModImageset>& imagesets) {
+  return ModIcons(mods_folder, plan, imagesets, ClassButtonImages);
+}
+std::map<std::string, ClassIcon> ModPetIcons(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                             const std::map<std::string, ModImageset>& imagesets) {
+  return ModIcons(mods_folder, plan, imagesets, PetButtonImages);
 }
 
 }  // namespace torchlight::mods

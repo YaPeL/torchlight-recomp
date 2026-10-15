@@ -198,6 +198,10 @@ int main() {
     Check(!images.contains("MONK"), "images from two imagesets: none");
     Check(images.at("DRUID").hover == "druid" && images.at("DRUID").pushed == "druid", "a lone image for all three");
     Check(!images.contains("PET_X"), "only class buttons");
+    const auto pet_images = m::PetButtonImages(radio);
+    Check(pet_images.size() == 1 && pet_images.at("PET_X").imageset == "PalLogo" &&
+              pet_images.at("PET_X").normal == "pal" && pet_images.at("PET_X").hover == "pal",
+          "a pet button's images, by the pet buttons' commands only");
 
     const std::string set_xml =
         "<?xml version=\"1.0\"?>\n<Imageset Name=\"PalLogo\" Imagefile=\"media\\UI\\Icons\\pal.png\" >\n"
@@ -219,11 +223,12 @@ int main() {
     fs::remove_all(root);
     Write(root / "Classes" / "media" / "UI" / "charactercreate.layout", radio);
     Write(root / "Classes" / "media" / "UI" / "itemicons" / "pallogo.imageset", set_xml);
-    Write(root / "Classes" / "media" / "UI" / "ICONS" / "Pal.PNG", "png");
+    const std::string png("\x89PNG\r\n\x1a\n....", 12);
+    Write(root / "Classes" / "media" / "UI" / "ICONS" / "Pal.PNG", png);
     // A second mod with an imageset of the same name: the first in the search order is kept.
     Write(root / "Later" / "media" / "UI" / "x.imageset",
           "<Imageset Name=\"PalLogo\" Imagefile=\"media/ui/x.png\"><Image Name=\"ghost\" /></Imageset>");
-    Write(root / "Later" / "media" / "UI" / "x.png", "png");
+    Write(root / "Later" / "media" / "UI" / "x.png", png);
     m::ModPlan plan;
     plan.mods = {{"Classes", 0}, {"Later", 1}};
     const auto sets = m::ModImagesets(root, plan);
@@ -236,11 +241,20 @@ int main() {
           "imagesets by name, the image file found in any case");
     Write(root / "Classes" / "media" / "UI" / "y.imageset", "<Imageset Name=\"Gone\" Imagefile=\"media/ui/gone.png\"></Imageset>");
     Check(m::ModImagesets(root, plan).size() == 1, "one without its image file left out");
+    Write(root / "Classes" / "media" / "UI" / "z.imageset", "<Imageset Name=\"Broken\" Imagefile=\"media/ui/z.png\"></Imageset>");
+    Write(root / "Classes" / "media" / "UI" / "z.png", "not an image");
+    Check(m::ModImagesets(root, plan).size() == 1, "one whose image file is not an image format left out");
+    Write(root / "Classes" / "media" / "UI" / "z.png", "DDS |...");
+    Check(m::ModImagesets(root, plan).size() == 2, "a DDS by its signature");
+    fs::remove(root / "Classes" / "media" / "UI" / "z.imageset");
     const auto& sets_used = one;
     const auto icons = m::ModClassIcons(root, plan, sets_used);
     Check(icons.size() == 2 && icons.contains("PALADIN") && icons.contains("DRUID"),
           "classes with every image in the imageset have an icon");
     Check(!icons.contains("GHOST"), "an image the imageset does not hold: no icon (the frame with the name)");
+    const auto pet_icons = m::ModPetIcons(root, plan, sets_used);
+    Check(pet_icons.size() == 1 && pet_icons.contains("PET_X") && pet_icons.at("PET_X").imageset.mod_folder == "Classes",
+          "a mod pet with its images has an icon");
     fs::remove_all(root);
   }
 

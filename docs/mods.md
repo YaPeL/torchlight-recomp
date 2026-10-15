@@ -1100,11 +1100,36 @@ there); one it has not loaded (JCC - Main's `Logo`, in `media/UI/logo.imageset`)
 mod's file in the mod's resource group (game_ui.h `kImagesetManagerCreate`). CEGUI throws on an image
 or an imageset it does not have, so an icon is used only when every image it names is in the file,
 the file's image file exists in the mod, the name is not one of the game's own imagesets (read from
-the pak, `PakImagesetNames`), and no other mod file defines the same name (which of them the game
-loaded would not be known). Anything else falls back to the frame with the name. The pets have no
-icons on PC (their buttons are text), so they keep the frame with the name. Checked in automatic runs
-with captures: Enhanced Edition's five classes and the pack's (25 of its 28 classes have an icon,
-JCC's `Logo` created by the selector), drawn with the mods' textures.
+the pak, `PakImagesetNames`), no other mod file defines the same name (which of them the game
+loaded would not be known), and the image file starts as a format the game's codec reads (DDS, PNG,
+JPEG, BMP by their signatures, TGA by its extension: creating an imageset whose image does not decode
+throws inside the guest, which a call started from the host may not unwind cleanly). Anything else
+falls back to the frame with the name. Checked in automatic runs with captures: Enhanced Edition's
+five classes, all 28 classes of the 29-mod pack (JCC's `Logo` created by the selector), drawn with the
+mods' textures, and the fallback with two of the pack's imagesets taken out (the frame with the whole
+name; the label is as wide as the button but for its border, so "Enchantress" fits).
+
+**Pet icons from a mod (2026-10-15).** PC's own pet buttons are text buttons with no images, and no
+mod of the pack or of Enhanced Edition gives its pets any, so today every mod pet shows the frame with
+its name. A mod may give a pet an icon the same way as a class (`mods/class_list.h` `ModPetIcons`):
+in its `media/UI/charactercreate.layout`, on the pet's button (the window with onClick `guiPet1`,
+named after the pet's monster unit), add
+
+    <Property Name="NormalImage" Value="set:<imageset> image:<image>"/>
+    <Property Name="HoverImage" Value="set:<imageset> image:<image when focused>"/>
+    <Property Name="PushedImage" Value="set:<imageset> image:<image when chosen>"/>
+
+(`UnselectedImage`/`SelectedImage`, a radio button's names, are read too; `HoverImage` and
+`PushedImage` are optional and default to the normal image, but without a `HoverImage` the focused
+button looks like the others, so give one; all three from one imageset), and ship
+the imageset in the mod under `media/UI/` (any sub-folder, a `.imageset` file whose `Imagefile` is a
+path in the mod) with its image. The rules of the class icons apply: every named image in the
+imageset, an image file that exists and reads, a name that is neither the game's nor defined twice.
+The Xbox pet buttons are 48 px square, so a square image reads best. What PC draws for these
+properties on its text buttons (`GuiLook/StandardButton`) was not checked: a mod that wants both
+should look at its pets on PC too. Checked with a copy of
+Enhanced Edition given images on two pets (the panther and the bat showed them, the others their
+frame with the name), and the pack's pet row is the same as before, pixel for pixel.
 
 **Pets too (2026-10-14).** PC's layout lists the pets as buttons with onClick `guiPet1`, each named
 after a monster unit (Enhanced Edition: `Pet_BigCat` in `media/units/monsters/PET_BIGCAT.DAT`). The
