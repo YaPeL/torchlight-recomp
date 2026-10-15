@@ -63,6 +63,21 @@ the Xbox game's items drawn from `itemicons14` and one of EE's, a capture of eac
 wins, a fix is generic: merge at load (the Xbox file's images plus the mod's that the Xbox file
 lacks, the mod's texture for those), done on the host before the guest reads it.
 
+Two points of the native renderer's side (render agent, 2026-10-15). **[read: the code]**
+- **The XML and the texture are chosen in two places.** The guest picks the `.imageset` file
+  through its file layer (above); the host picks the atlas's image file by the texture's name and
+  resource group, following OGRE's rule (`mods/texture_files.h`: the replacements, then the game's
+  groups before the mods'). A mod's XML laid over the Xbox atlas, or the reverse, draws wrong
+  icons even if each choice alone looks right. The check has to establish both: the imageset file
+  the game opened (its log) and the texture file the capture holds for that atlas (a capture's
+  `TXFL` chunk records a mod's or the replacements' file; no entry means the pak's).
+- **A merge needs a new atlas.** An imageset has one image file, so "the Xbox images plus the
+  mod's" is a recomposed texture: decode both atlases, place the mod's extra images in free space
+  or a larger texture, write the combined image and an imageset with the new coordinates, and
+  serve both from one place to the guest and the host (as the generated layouts are, so the host
+  resolver finds the same file). The game's item definitions name the imageset and the image, so
+  those names must stay. That is 2-3 days, not a few hours, if the check shows it is needed.
+
 **Fonts and pictures at a game path.** PC's rule (`docs/mods.md` 7j): textures are global by name
 and the first loaded wins, and the game's groups come before the mods'. The game loads its fonts and
 its loading pictures from its own groups at start, so the mods' copies are most likely unused on PC
@@ -159,6 +174,12 @@ skill points), driving the game's own data and commands, or to keep the Xbox scr
      calls the menus already use) that moves the game's pad focus to the window under the cursor and
      turns a click into the window's command (`kWindowCommandSlot`) or the pad's A. Works for every
      Xbox menu today (they are built for focus and commands); no drag and drop, no PC behaviour.
+  For either way, the host's cursor position has to be mapped to the guest's 1280x720: the native
+  renderer knows the presented rectangle (render scale, aspect, letterboxing), so the mapping
+  belongs to the backend's present, not to the hooks. CEGUI's own rects are already in the guest's
+  pixels, the widened layouts included. The cursor is drawn by the host: in the native mode in the
+  backend's UI pass (as the frame counter is); in the Xenos mode only through the SDK's own overlay,
+  a separate path.
   Way 2 is a first stage worth having on its own (mouse on the 360 UI); way 1 is what PC's screens
   need.
 - **Keyboard:** the recomp already maps keys to the pad; PC's hotkeys (I, S, K, J, P, Q, T, Tab
@@ -182,12 +203,21 @@ skill points), driving the game's own data and commands, or to keep the Xbox scr
 
 | Stage | What | Cost | Risk |
 |-------|------|------|------|
-| 0 | The icon atlas check (1b): one automatic run; a merge on the host if the mod wins | 0.5-1 day | low |
+| 0 | The icon atlas check (1b): one automatic run, checking both the imageset the game opened and the atlas texture the host drew; if they disagree or the mod wins, a recomposed atlas served to both | 0.5 day for the check; 2-3 days with the merge | low for the check; medium for the merge |
 | 1 | Mouse on the 360 UI by hit test (2c way 2): cursor drawn by the host, hover moves the focus, click = command/A, wheel = scroll where the menu scrolls | 3-5 days | medium: window rects through guest calls, per-menu quirks |
-| 2 | PC's skin in the guest: serve PC's scheme, looknfeel, imagesets and textures from the user's PC copy (like the generated layouts), load the scheme after the game's (`sub_825C9500`); the host frontend must read those textures from the PC copy (as the mods' textures, `mods/texture_files.h`) | 3-4 days | medium: name clashes (`Loading`, the fonts) are skipped by CEGUI 0.6 when present; texture lookup on the host |
+| 2 | PC's skin in the guest: serve PC's scheme, looknfeel, imagesets and textures from the user's PC copy (like the generated layouts), load the scheme after the game's (`sub_825C9500`); the host frontend must read those textures from the PC copy (as the mods' textures, `mods/texture_files.h`) | 3-4 days | medium: name clashes (`Loading`, the fonts) are skipped by CEGUI 0.6 when present; texture lookup on the host (below) |
 | 3 | PC's small shared screens: pet HUD, waypoints, modal, tip, character load, death (2b), PC's layout with the missing Xbox windows added by the layout cache | 1-2 days each | low-medium |
 | 4 | Mouse as PC (2c way 1): find CEGUI's inject functions, feed them; hover and click events on PC's windows | 3-5 days if present, much more if stripped | high: unknown until read |
 | 5 | PC's gameplay screens (HUD, inventory, stash, merchant, enchant, skills, stats, pet, journal, quests): their behaviour written on the host against the game's data | weeks per screen family; the inventory with drag and drop alone is the biggest | high: a re-implementation, not a port |
+
+What the host's renderer reads for stage 2 (render agent, 2026-10-15; **[read: the code]**): not the
+layouts, schemes, looknfeel or imageset XML, which only the guest reads; only the image files of
+named textures, by name and resource group (`mods/texture_files.h`), and the font glyphs, which
+FreeType renders into textures the guest fills and the host receives as content, with nothing to
+add. So the host side of stage 2 is one more location for the resolver, the PC copy's
+`Pak.zip` (a reader for its entries and where it ranks against the Xbox pak, the mods and the
+replacements), plus the group the guest gives PC's skin. A capture keeps such a file's bytes in its
+`TXFL` chunk, so replay needs no PC copy.
 
 Stages 0-3 are a few weeks in all and stand on their own; stage 5 is a project of its own and only
 makes sense if the mods' reskins (EE's cleaner HUD, the Diablo 3 HUD) matter enough to the players.
