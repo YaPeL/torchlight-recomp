@@ -28,9 +28,8 @@ std::string Utf8Path(const std::filesystem::path& path) {
 // A backup folder as the player finds it: from the user data folder on (save-backups/<name>,
 // save_safety.h), or the whole path for one elsewhere.
 std::string BackupPath(const std::filesystem::path& folder) {
-  if (folder.parent_path().filename() == "save-backups") {
-    return Utf8Path(std::filesystem::path("save-backups") / folder.filename());
-  }
+  // Always with "/" (a path's own separator is "\" on Windows): the text is the same everywhere.
+  if (folder.parent_path().filename() == "save-backups") return "save-backups/" + Utf8Path(folder.filename());
   return Utf8Path(folder);
 }
 

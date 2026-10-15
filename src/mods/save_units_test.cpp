@@ -469,7 +469,8 @@ int main() {
             "the damaged save does not read");
     }
     const fs::path root = fs::temp_directory_path() / "save_units_test_modlist";
-    fs::remove_all(root);
+    std::error_code cleanup;
+    fs::remove_all(root, cleanup);
     const fs::path file = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav" / "1.TSV";
     fs::create_directories(file.parent_path());
     std::ofstream(file, std::ios::binary).write(reinterpret_cast<const char*>(damaged.data()),
@@ -484,13 +485,17 @@ int main() {
     auto report = RepairModListSaves(root, "58410A7E", *schema, {u"Unrelated", u"JCC - Map", u"Another Mod", u"JCC"},
                                      now, [&](const std::string& l) { lines.push_back(l); });
     Check(report.repaired.size() == 1 && !report.failed && fs::exists(report.backup), "repaired after a backup");
-    std::ifstream in(file, std::ios::binary);
-    const si::Bytes after((std::istreambuf_iterator<char>(in)), {});
-    Check(after == good, "the repaired file is the save as it should have been written");
+    {
+      // Closed before the folder is removed: Windows does not delete a file that is open.
+      std::ifstream in(file, std::ios::binary);
+      const si::Bytes after((std::istreambuf_iterator<char>(in)), {});
+      Check(after == good, "the repaired file is the save as it should have been written");
+    }
     // A good save is not touched.
     auto again = RepairModListSaves(root, "58410A7E", *schema, {u"JCC - Map", u"Another Mod"}, now, nullptr);
     Check(again.repaired.empty() && again.left_alone.empty(), "a save that reads is left as it is");
-    fs::remove_all(root);
+    std::error_code ec;
+    fs::remove_all(root, ec);
   }
 
   // A failure, and every notice text in each language of the translations, its {words} kept (a text
