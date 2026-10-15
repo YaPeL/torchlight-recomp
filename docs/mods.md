@@ -375,7 +375,10 @@ broken mod list may hold (the mods' folders and names, and those `mods.dat` list
 rules (`SettledSaves::kRulesVersion`). A save left alone with an unknown unit is never settled, so
 it is checked, and listed in the player's notice, at every start. When the comparison after the
 game's load finds units the check counted on missing, the memory is deleted and the next start
-reads everything. Tested in `save_units_test` (settled, skipped, read again when written,
+reads everything. The weak spot is a file system with coarse times (FAT and exFAT keep 2 s): a save
+rewritten with the same size within those 2 s of being settled would not be read again; the game
+only writes a save minutes after the start settles it, and a missed unknown item is dropped by the
+game itself when it loads the character (7e). Tested in `save_units_test` (settled, skipped, read again when written,
 unreadable told once, another context, left alone not settled, the repair skipping too).
 
 ## 7e. New-item mods in validation: what kept the unit out (2026-10-08)

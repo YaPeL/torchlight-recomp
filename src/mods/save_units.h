@@ -88,7 +88,8 @@ struct UnitCheck {
 };
 
 // The checks on a parsed save (character, or a shared stash with `stash_file`), changing its tree
-// when entries are removed:
+// when entries are removed (a change to these rules must bump settled_saves.h kRulesVersion, or
+// saves settled under the old rules are not checked again):
 // - an item, a pet or a creature of the player's (PlayerOwnedUnitRef; an item or unit element of
 //   a list) whose unit GUID is unknown is removed, and so is an unknown GUID in a list of GUIDs;
 // - an unknown unit that is not the player's (a saved level's creatures and what they carry, a
