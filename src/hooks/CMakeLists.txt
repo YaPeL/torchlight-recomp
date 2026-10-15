@@ -90,15 +90,3 @@ add_executable(frustum_test_test frustum_test_test.cpp)
 target_link_libraries(frustum_test_test PRIVATE torchlight_frustum_test)
 target_compile_options(frustum_test_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME frustum_test_test COMMAND frustum_test_test)
-
-# The pathfinder's neighbour opening as host code (pathfinder_open.h): pure over a guest memory
-# base; the hook that calls it (pathfinder_hooks.cpp) is part of the executable.
-add_library(torchlight_pathfinder_open STATIC pathfinder_open.cpp)
-target_include_directories(torchlight_pathfinder_open PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-target_compile_features(torchlight_pathfinder_open PUBLIC cxx_std_23)
-target_compile_options(torchlight_pathfinder_open PRIVATE -Wall -Wextra -Werror)
-
-add_executable(pathfinder_open_test pathfinder_open_test.cpp)
-target_link_libraries(pathfinder_open_test PRIVATE torchlight_pathfinder_open)
-target_compile_options(pathfinder_open_test PRIVATE -Wall -Wextra -Werror)
-add_test(NAME pathfinder_open_test COMMAND pathfinder_open_test)
