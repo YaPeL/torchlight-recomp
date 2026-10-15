@@ -2202,6 +2202,18 @@ void tl_backend_set_vsync(tl_backend* b, int vsync) {
   if (b->visible_window && b->window) b->window->setVSyncEnabled(vsync != 0);
 }
 
+int tl_backend_set_frame_latency(tl_backend* b, uint32_t frames) {
+  if (!b->window) return 1;
+  // Direct3D 11's window answers with its device; GL3+'s has none by that name.
+  void* device = nullptr;
+  try {
+    b->window->getCustomAttribute("D3DDEVICE", &device);
+  } catch (const Ogre::Exception&) {
+    return 1;
+  }
+  return torchlight::platform::SetDirect3D11FrameLatency(device, frames) ? 0 : 1;
+}
+
 void tl_backend_resize_window(tl_backend* b, uint32_t width, uint32_t height) {
   if (!b->child_window || !width || !height) return;
   // OGRE 14 resizes the window itself (X11EGLWindow::resize, a child window; WaylandEGLWindow::

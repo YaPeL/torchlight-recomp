@@ -196,6 +196,10 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 // Whether OGRE's Direct3D 11 render system is installed under the plugin directory (Windows only),
 // offered in the video menu next to GL3+.
 bool HasDirect3D11(const std::string& plugin_dir);
+// How many frames Direct3D 11 may queue ahead of the display (DXGI's maximum frame latency, 3 by
+// default) for `device`, OGRE's ID3D11Device: fewer queued frames, less vsync latency
+// (docs/performance-profile.md). False where there is no Direct3D 11 or it was refused.
+bool SetDirect3D11FrameLatency(void* device, uint32_t frames);
 // Whether OGRE's GL3+ render system can run here: an OpenGL 3.3 core context can be created (Windows:
 // a probe with a hidden window, released before returning; without a GPU driver Windows has only
 // OpenGL 1.1, on which OGRE crashes). Linux and macOS: true without probing, GL3+ being the only

@@ -235,6 +235,13 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   return plugin_dir;
 }
 
+bool SetDirect3D11FrameLatency(void* device, uint32_t frames) {
+  if (!device || frames == 0) return false;
+  Microsoft::WRL::ComPtr<IDXGIDevice1> dxgi;
+  if (FAILED(static_cast<IUnknown*>(device)->QueryInterface(IID_PPV_ARGS(&dxgi)))) return false;
+  return SUCCEEDED(dxgi->SetMaximumFrameLatency(frames));
+}
+
 void SetCurrentThreadName(const char* name) {
   const int n = MultiByteToWideChar(CP_UTF8, 0, name, -1, nullptr, 0);
   if (n <= 0) return;
