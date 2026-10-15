@@ -88,7 +88,9 @@ void Log(const Row& row) {
   std::string names;
   for (const std::string& c : row.list) names += (names.empty() ? "" : ", ") + c;
   REXLOG_INFO("class selector: {} {} ({}){}", row.list.size(), row.what, names,
-              row.Active() ? "" : "; the game's row as it is");
+              row.Active()               ? ""
+              : row.GameIconsReplaced() ? "; the game's row with a mod's portraits"
+                                        : "; the game's row as it is");
 }
 
 void List() {
