@@ -25,6 +25,14 @@ std::string Utf8Path(const std::filesystem::path& path) {
   return std::string(s.begin(), s.end());
 }
 
+// A backup folder as the player finds it: from the user data folder on (save-backups/<name>,
+// save_safety.h), or the whole path for one elsewhere.
+std::string BackupPath(const std::filesystem::path& folder) {
+  // Always with "/" (a path's own separator is "\" on Windows): the text is the same everywhere.
+  if (folder.parent_path().filename() == "save-backups") return "save-backups/" + Utf8Path(folder.filename());
+  return Utf8Path(folder);
+}
+
 }  // namespace
 
 std::optional<save_import::ImportMessage> SaveUnitsNotice(const SaveUnitsReport& report,
@@ -44,53 +52,48 @@ std::optional<save_import::ImportMessage> SaveUnitsNotice(const SaveUnitsReport&
 
   save_import::ImportMessage message;
   if (report.saving_blocked) {
-    message.title = Text(tr, "Nothing will be saved in this session");
+    message.title = Text(tr, "Saving is off this session");
   } else if (report.changed.empty() && report.units_not_loaded) {
-    message.title = Text(tr, "Items from mods not loaded");
+    message.title = Text(tr, "Mod items not loaded");
   } else {
-    message.title = Text(tr, "Items removed from saved characters");
+    message.title = Text(tr, "Mod items removed");
   }
   std::string text;
   const std::string count = std::to_string(report.units_not_loaded);
   if (report.saving_blocked) {
-    text += Text(tr, "{count} kinds of items or creatures from mods could not be loaded this time, and these saves "
-                     "carry them:",
-                 {{"count", count}}) + "\n";
+    text += Text(tr, "{count} kinds of mod items did not load. These saves have them:", {{"count", count}}) + "\n";
     for (const std::string& owner : report.holding_not_loaded) {
       text += "  " + (owner.empty() ? Text(tr, "Shared stash") : owner) + "\n";
     }
-    text += Text(tr, "So that they do not lose those items, NOTHING WILL BE SAVED IN THIS SESSION: no progress, no "
-                     "new characters, no changes to the stash. Quit the game and see the log.") + "\n";
+    text += Text(tr, "NOTHING WILL BE SAVED THIS SESSION, so they keep those items.") + "\n";
+    text += Text(tr, "Quit the game and see the log.") + "\n";
     if (!report.not_loaded_backup.empty()) {
-      text += Text(tr, "A copy of the saves is in:") + "\n  " + Utf8Path(report.not_loaded_backup) + "\n";
+      text += Text(tr, "Backup: {path}", {{"path", BackupPath(report.not_loaded_backup)}}) + "\n";
     } else {
       text += Text(tr, "The saves could not be copied (see the log).") + "\n";
     }
   } else if (report.units_not_loaded) {
-    text += Text(tr, "{count} kinds of items or creatures from mods could not be loaded this time, so the game does "
-                     "not know them; no save carries them (see the log).",
+    text += Text(tr, "{count} kinds of mod items did not load this time (see the log). No save has them.",
                  {{"count", count}}) + "\n";
   }
   if (!report.changed.empty()) {
     size_t total = 0;
     for (const auto& file : report.changed) total += file.removed.size();
-    text += Text(tr, "{count} items from mods that are no longer installed were removed so these saved characters can load:",
+    text += Text(tr, "Removed {count} items from mods that are no longer installed:",
                  {{"count", std::to_string(total)}}) + "\n";
     for (const auto& file : report.changed) {
       const std::string count = std::to_string(file.removed.size());
-      text += "  " + (file.owner.empty() ? Text(tr, "Shared stash: {count} items", {{"count", count}})
-                                          : Text(tr, "{name}: {count} items", {{"name", file.owner}, {"count", count}})) +
+      text += "  " + (file.owner.empty() ? Text(tr, "Shared stash: {count}", {{"count", count}})
+                                          : Text(tr, "{name}: {count}", {{"name", file.owner}, {"count", count}})) +
               "\n";
     }
-    text += Text(tr, "A copy of the saves from before is in:") + "\n  " + Utf8Path(report.backup) + "\n";
+    text += Text(tr, "Backup: {path}", {{"path", BackupPath(report.backup)}}) + "\n";
   }
   if (report.failed) {
-    text += Text(tr, "The saves could not be backed up or written, so not every save was changed; "
-                     "characters holding items of removed mods may not load (see the log).") + "\n";
+    text += Text(tr, "Some saves could not be backed up or changed (see the log).") + "\n";
   }
   if (!risky.empty()) {
-    text += Text(tr, "These saves hold items the game does not know but were left unchanged, so they "
-                     "may not load (see the log):") + "\n";
+    text += Text(tr, "These saves have unknown items and were left unchanged (see the log):") + "\n";
     for (const auto& name : risky) text += "  " + name + "\n";
   }
   message.text = text;

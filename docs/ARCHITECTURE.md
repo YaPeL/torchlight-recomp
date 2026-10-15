@@ -21,7 +21,10 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   (`docs/game-thread-parallelism.md`, section 11): `_setTextureBlendMode`'s member writes
   (`native_render_system.h`, `--native_render_system_members`) and the RTSS per-object listener's
   SGPass lookup, which then calls the guest's sub render states as the guest did
-  (`rtss_listener_hooks.cpp`, `--native_rtss_listener`). `TORCHLIGHT_FRAME_POINTERS` (off; profiling
+  (`rtss_listener_hooks.cpp`, `--native_rtss_listener`). The culling's `Frustum::isVisible(box)`
+  runs as host code in every mode (`frustum_test.h`, `--native_frustum_test`: the same SIMDe
+  operations as the recompiled function, the guest's result bit for bit; section 12 of the same
+  document). `TORCHLIGHT_FRAME_POINTERS` (off; profiling
   builds only) keeps frame pointers in every target for `perf --call-graph fp`.
   The game is built with the default code model on Linux x86-64 and the generated code keeps the
   non-volatile registers in locals, so no hook touches r12, r14-r31, f14-f31 or v14 and up through
@@ -149,7 +152,9 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   group first. The `replacements` folder (`tlrepl:`) is added last to the pak's groups, so its
   files win over the pak's at the same path. Saves are checked against the loaded unit index at
   every start (`save_safety`, `save_units`): units the game no longer knows are taken out after a
-  backup, or nothing is saved in that session when mods' units failed to load.
+  backup, or nothing is saved in that session when mods' units failed to load. Saves those checks
+  had nothing to do with are remembered (`settled_saves`) and not read again while neither they
+  nor the units and mod names the checks depend on change.
 - Achievements (`src/achievements/`; `docs/achievements.md`, `docs/achievement-coverage.md`): the
   player chooses the Xbox 360 set (the guest's own, through the SDK) or the PC set (66, from the
   guest's retained completions, character events and stats, with PC's flush points), each with its
@@ -231,10 +236,15 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   search order, kept when a player unit of that name exists. With more than three, the three
   buttons show a window onto the list: left on the first or right on the last scrolls it by one,
   wrapping, and A picks the class the button shows (the screen sends the button's window name; the
-  selection maps it to that class). A class without an Xbox button image shows the empty skill
-  frame with its name, on a label the layout cache adds to each class button (hidden otherwise).
-  The class's name and description come from its unit data, as for the game's classes. With the
-  game's three classes only, the hooks run the game's code unchanged.
+  selection maps it to that class). A class without an Xbox button image shows its mod's own PC
+  icon (the imageset its PC layout names, loaded into CEGUI when the game has not), or else the
+  empty skill frame with its name, on a label the layout cache adds to each class button (hidden
+  otherwise).
+  The class's name and description come from its unit data, as for the game's classes. The pets
+  work the same way on the grid's pet row: the game's three (Dog, Cat, Chakawary), then the mods'
+  pet buttons (onClick guiPet1 on PC) whose name is a monster unit's; A picks the pet the button
+  shows, and a mod pet's label is its unit's DISPLAYNAME, in a smaller font that fits the 48 px
+  button. With the game's three classes or pets only, that row's hooks run the game's code unchanged.
 - Screens other than 16:9 and 4:3 (ultrawide 21:9 and 32:9, and 16:10; TLR-006), only mode. With
   Xenos the game keeps its 16:9. Validated with captures at 21:9 (1680x720), 32:9 (2560x720) and
   16:10 (1280x800):

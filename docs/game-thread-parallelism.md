@@ -854,3 +854,118 @@ fetch dwords: address, size and endian mode). Skipping them means the producer r
 change with its own validation, for at most 1.3 % of the thread. The texture and program lookups
 feed device calls the user decided to keep (steps c and d). Not done tonight; left as a note for
 the producer's owner.
+
+## 12. Second batch: three pure guest functions as host code (2026-10-14, branch `perf/game-thread-native-2`)
+
+After the first batch and the backend's per-draw cuts (`docs/performance-profile.md`), the game's
+thread is still the limit in the fight and the town square (99.9 % busy, 4.9 and 5.3 ms of CPU
+per frame against the backend's 3.2-3.3). Re-reading the step 4 profile for what is left: the
+controller walk (6.4 % in the fight) was already tried as host code by the render agent with no
+gain (memory bound, `docs/performance-profile.md`), and the three hot guest `std` tree lookups
+(3.9 %) are the same short loops of loads. What remains isolable with a gain is three functions
+whose cost is their own arithmetic and loops, not cache misses: the culling's `Frustum::isVisible`
+(4.0 % town / 1.5 % fight self), `Matrix4::concatenate` (0.8 / 1.2 %) and the pathfinder's
+neighbour opening (1.7 % town / 0.5 % fight self). Each is one guest function with no calls (the
+pathfinder's calls the game's allocator and, rarely, a propagation; both stay guest calls), so
+each becomes one hook that does the same reads, the same operations and the same writes.
+
+Gate per step, as before: unit tests on a fake memory, the 20 parity captures replayed byte for
+byte, the live recording compared command by command with the base's, and the game thread's CPU
+per frame against the base in interleaved scripted runs (`out/runs/cpu_gate.sh`: base, step,
+base, step, base, step on the frame-pointer builds; the profile's subtree is reported but does not
+decide). Before the gate, a local verification build (not committed) runs both the host and the
+guest versions on every call and compares the results, as in step 3a. The base is `develop`
+9fb8990 rebuilt against the swapped SDK (patch 33), so both sides share the SDK.
+
+### 12.1 `Frustum::isVisible(AABB)` as host code (`--native_frustum_test`)
+
+Runic's build compiles it as straight-line VMX code with no calls (`0x821C74A0`): the box's extent
+first (null: not visible; infinite: visible), then the scalar sums min+max and min-max per axis,
+then six plane tests: a four-component dot of the plane with the scaled sum vector (the centre's
+distance, the fourth component the plane's d times a constant) and a three-component dot of the
+plane's absolute values with the scaled difference vector (minus the box's extent along the
+normal), outside when the latter is larger. The recompiled code emits the VMX ops as SIMDe/SSE
+calls (`_mm_dp_ps`, `_mm_max_ps`, `_mm_cmpgt_ps`) with the guest's elements in reversed lanes; the
+host version (`hooks/frustum_test.cpp`) calls the same SIMDe functions in the same lane order with
+the same flush-to-zero mode, so the bool is the guest's by construction (`hooks/frustum_hooks.cpp`
+sets the FPU modes as the recompiled function does). The three rodata constants (scale, the two
+fourth components) are read at the call from `0x820AA328`, `0x820AA33C`, `0x820AA304`. Callers:
+Runic's `_findVisibleObjects` (2.1 % town) and the octree walk (1.9 %).
+
+The first verification run found 25 % of the calls disagreeing: the constants were read from the
+wrong page (a mis-decoded `lis`, `0x82080000` for `0x820B0000`), so the host saw zeros and admitted
+everything. That is what the verification build is for; corrected before any measurement. With
+the right page (the constants are 0.5, 2 and 0: half the sums give the centre with w 1 and the
+negated half size with w 0), the scripted route compared 28,000,000 calls: 0 differences
+(1,640,587 decided by the extent, 9,827,491 visible).
+
+### 12.2 `Matrix4::concatenate` as host code (`--native_matrix_concatenate`)
+
+`0x821C2CC8` (r3 the result, r4 this, r5 the other; callers `AutoParamDataSource` slot 17 and the
+RTSS `FFPTexturing` slot 5) is 16 times the same sequence: the row's second element times the
+column's second as a product, then the first, third and fourth terms as fused multiply-adds, each
+rounded to float through a double (`float(std::fma(a, b, acc))`, what the recompiled `fmadd` is).
+`hooks/matrix_concat.cpp` reads both operands first (the guest's result may alias an operand) and
+forms each element in that order with the same expressions; bit identity needs nothing else, since
+`fma` is correctly rounded on every host. The verification build compared the 16 words of every
+product on the scripted route: 7,000,000 calls, 0 differences.
+
+### 12.3 The pathfinder's neighbour opening as host code (`--native_pathfinder_open`)
+
+`0x8221FEB0` (`guest_abi/pathfinder.h`: this, parent, x, y, goal x, goal y) is the A* inner step:
+find the cell in the open list (a linear walk), else in the closed list (another), else allocate a
+64-byte node, fill it (g = parent's g + the step cost, h = the squared distance to the goal as
+`float(dx*dx)` then `fma(dy, dy, ...)`, f = h + g) and insert it in the open list before the first
+node whose f is not below; then take the parent's first free child slot (slot 8, with all taken, is
+the parent's `next`: the guest writes there, so does the host version), and make the new node the
+search's best when its h is lower. A cell found open or closed with a lower g through the parent
+gets the parent, g and f rewritten; a closed one also goes to the guest's propagation
+(`0x82220110`). `hooks/pathfinder_open.cpp` splits it in a plan (reads only: which case, the
+values, the insertion point, the slot) and its application, so the verification build can compare
+the plan with what the guest wrote. The node still comes from the game's allocator
+(`kAlloc(0, 64)`, zeroed on the host as the guest's `memset` did). The verification build ran
+the guest after planning and checked its writes against the plan (the new node's place, fields,
+successor and child slot, the best; a found node's slot and its parent, g and f): 1,800,000 calls
+on the scripted route, 0 differences (454,726 new, 656,785 found open, 688,489 found closed,
+78,718 improvements).
+
+### 12.4 Results
+
+Game thread CPU per frame in ms, the mean of three interleaved scripted runs per side (the run
+with the lowest and the highest value in brackets); the profile's shares in points of the thread.
+
+| Step | Fight | Town square | Mine still | Identical | State |
+|---|---|---|---|---|---|
+| base2 (`develop` 9fb8990, SDK 33) | 4.76 [4.50, 4.91] | 5.43 [5.34, 5.57] | 4.51 [4.30, 4.80] | | |
+| 12.1 frustum test | 4.75 [4.60, 4.98] (0 %) | 5.28 [5.22, 5.38] (-2.7 %) | 4.48 [4.29, 4.70] (-0.6 %) | yes: 28,000,000 calls 0 differences; 20 replays byte for byte; recording same frame signatures and 32 sampler states | kept (fa0edc5) |
+| 12.2 matrix product, against 12.1 (second set of runs of 12.1: 4.80 / 5.27 / 4.34) | 4.77 [4.67, 4.87] (-0.6 %) | 5.37 [5.35, 5.41] (+1.9 %) | 4.43 [4.35, 4.55] (+2.1 %) | yes: 7,000,000 products 0 differences; replays and recording as above | reverted (8cc3f70, 8240819) |
+| 12.3 pathfinder opening, against 12.1 (third set of runs of 12.1: 4.87 / 5.20 / 4.46) | 4.80 [4.62, 4.94] (-1.5 %) | 5.35 [5.32, 5.39] (+2.8 %) | 4.47 [4.31, 4.68] (+0.2 %) | yes: 1,800,000 calls 0 differences; replays and recording as above | reverted (f4eb8e3, deb7d3f) |
+
+**12.2, why reverted.** The host `ConcatenateMatrices` costs 1.07 (fight) / 0.90 (town) points
+of the thread where the guest function cost 1.22 / 0.80: the function is 32 loads, 64
+multiply-adds and 16 stores, and the recompiled code was already close to the host's (the saving
+of the other steps is the context traffic and the dispatch, which this function has little of).
+No CPU per frame moved past the runs' spread. Kept in the history as a reverted commit.
+
+**12.3, why reverted.** The town square's A* subtree 2.44 -> 1.01 points, but the host
+`PlanOpenNeighbour` takes 1.53: the cost is the two linear list walks (one 64-byte node per step,
+scattered by the game's allocator) and the host reads them as the guest did; the recompiled
+overhead the plan removes is small next to the loads. The same lesson as the controller walk
+(`docs/performance-profile.md`): a guest loop over scattered nodes gains nothing as host code.
+A real gain there needs a different data structure (an index by cell), which would have to
+mirror every mutation of the lists by the other pathfinder functions; not attempted.
+
+**What the batch leaves.** One step kept, the frustum test (12.1): town square -2.7 % of game
+thread CPU per frame, the fight unchanged. The blind hand batch is `develop` 9fb8990 against
+`perf/game-thread-native-2` at fa0edc5 (the two release products, `out/blind/`). Of the three,
+the gain came from the one function whose cost was arithmetic on data already in cache; the two
+reverted ones were loads (the matrix's 32, the lists' nodes) that the host executes the same way.
+The remaining candidate of section 11.4, the rest of the RTSS listener (12.2 of the first list),
+is of the first kind in part (the sub render states' arithmetic) and of the second in part (their
+reads of pass and light objects); it waits for the user's call.
+
+**12.1, what the profile says.** The town square's culling 10.6 -> 6.8 points of the thread: the
+guest `isVisible` (4.0) gone, the host `PlanesAdmit` 0.9; the fight's culling 6.8 -> 5.5. The
+CPU per frame follows in the town (-2.7 %, every host run below two of the three base runs) and
+not in the fight, where the function was 1.5 % and the runs spread 9 %. Kept: the town square is
+the lowest-rate scene and the gain is there.

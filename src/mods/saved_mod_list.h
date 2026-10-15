@@ -9,6 +9,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <optional>
 #include <span>
 #include <string>
 #include <vector>
@@ -37,5 +39,15 @@ ModListRepair RepairSavedModList(std::span<uint8_t> written, uint32_t before,
                                  const std::vector<std::u16string>& names);
 
 const char* ToString(ModListRepair result);
+
+// Repair at load: a save already written with the bug (docs/mods.md 7d). In a whole character
+// save's body, the list as the bug left it is a count followed by that many names, each a u16 length
+// of 0 and its UTF-16 units; the units alone do not tell where a name ends, so the names are
+// matched against `candidates` (the names mods have had: their mod.dat NAME or folder). Every way
+// the bytes can be split that way is tried; a split counts when the repaired body `reads` (the
+// save parses). The repaired body when exactly one split reads; nothing otherwise, with `why`.
+std::optional<std::vector<uint8_t>> RepairModListAtLoad(
+    std::span<const uint8_t> body, const std::vector<std::u16string>& candidates,
+    const std::function<bool(std::span<const uint8_t>)>& reads, std::string* why);
 
 }  // namespace torchlight::mods

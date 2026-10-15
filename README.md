@@ -112,9 +112,24 @@ The game runs on the native renderer: menus, town, dungeons, character creation,
 saves.
 
 On a laptop with a GeForce GTX 1050 Ti (Linux, 720p, no frame cap), the native renderer runs the
-game about twice as fast as the same build with ReXGlue's emulated Xenos GPU (1.9–2.5 times the
-frame rate), loads levels 1.5–2 times faster, and has almost no frames over 33 ms
-([measurements](docs/performance-profile.md#native-renderer-against-xenos-2026-10-07)).
+game about three and a half times as fast as the same build with ReXGlue's emulated Xenos GPU
+(3.4–3.8 times the game's frame rate, 2.8–3.4 times the presented one), loads levels 1.4–2 times
+faster, and has almost no frames over 33 ms. **On the laptop's Intel UHD 630 the difference is 5–7
+times** ([measurements](docs/performance-profile.md#native-renderer-against-xenos-again-2026-10-14)).
+
+As a rough estimate, performance is comparable to the PC version of Torchlight run through Proton
+on the same laptop: in some places the PC version is faster (up to about 20 %, the town square on
+the NVIDIA GPU), in others this port is (up to about 15 %, the mine on the Intel GPU)
+([measurements](docs/performance-profile.md#against-the-pc-version-through-proton-2026-10-14)).
+
+On laptops with a hybrid GPU (a dedicated GPU drawing, the built-in screen on the integrated one),
+copying each frame to the built-in screen caps the presented frame rate at about 180 fps with no
+frame limit. It goes away with the laptop's MUX switch set to discrete/dGPU-only in the BIOS, or
+with an external monitor on a port of the dedicated GPU. Playing on the integrated GPU avoids it
+too, and since the game is limited by the CPU it often presents as many frames or more (in the mine
+on this laptop: 208 fps on the Intel UHD 630 against 181 on the GeForce). With vertical sync on it
+does not matter
+([details](docs/performance-profile.md#the-presented-ceiling-on-hybrid-gpu-laptops-2026-10-14)).
 
 ### Display settings
 

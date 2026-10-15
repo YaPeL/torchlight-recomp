@@ -33,7 +33,28 @@ namespace frustum {
 // right, top, bottom; normals point inside.
 inline constexpr Field kPlanes{0x100, Confidence::kConfirmed};
 inline constexpr uint32_t kPlaneCount = 6;
+// [confirmed] Frustum::isVisible(const AxisAlignedBox&, FrustumPlane*) as Runic's build compiles
+// it: straight-line VMX code with no calls (@0x821C74A0..0x821C7940), the box's extent first, then
+// the six planes in order with the box's min+max and min-max vectors; the culled-plane argument is
+// never written. hooks/frustum_hooks.cpp runs it as host code (hooks/frustum_test.h).
+inline constexpr uint32_t kIsVisibleBox = 0x821C74A0;
+// The three rodata floats that test reads (r30 = 0x820AA2C0 @0x821C74D4): the scale applied to
+// both box vectors (the first float of the 16 bytes at +104, splat @0x821C7698), the fourth
+// component of the min+max vector (+124) and of the min-max vector (+68). Read at the call.
+inline constexpr uint32_t kBoxScale = 0x820AA328;
+inline constexpr uint32_t kBoxSumW = 0x820AA33C;
+inline constexpr uint32_t kBoxDifferenceW = 0x820AA304;
 }  // namespace frustum
+
+namespace axis_aligned_box {
+// [confirmed] OgreAxisAlignedBox.h:65-67: mMinimum, mMaximum, then Extent mExtent; the test reads
+// the minimum at +0, the maximum at +12 and the extent at +24 (@0x821C74A8, 0x821C74D4..).
+inline constexpr Field kMinimum{0x00, Confidence::kConfirmed};
+inline constexpr Field kMaximum{0x0C, Confidence::kConfirmed};
+inline constexpr Field kExtent{0x18, Confidence::kConfirmed};
+// OgreAxisAlignedBox.h:59-61.
+inline constexpr uint32_t kExtentNull = 0, kExtentFinite = 1, kExtentInfinite = 2;
+}  // namespace axis_aligned_box
 
 namespace camera {
 // [confirmed] mCullFrustum (OgreCamera.h:175): Camera::isVisible and friends delegate to it when

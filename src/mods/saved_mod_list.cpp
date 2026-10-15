@@ -1,6 +1,9 @@
 #include "mods/saved_mod_list.h"
 
 #include <algorithm>
+#include <functional>
+#include <set>
+#include <utility>
 
 namespace torchlight::mods {
 
@@ -55,6 +58,68 @@ ModListRepair RepairSavedModList(std::span<uint8_t> written, uint32_t before,
     at += 2 + 2 * name.size();
   }
   return ModListRepair::kRepaired;
+}
+
+std::optional<std::vector<uint8_t>> RepairModListAtLoad(
+    std::span<const uint8_t> body, const std::vector<std::u16string>& candidates,
+    const std::function<bool(std::span<const uint8_t>)>& reads, std::string* why) {
+  // The candidates' units, big-endian, without repeats or empty names.
+  std::vector<std::vector<uint8_t>> names;
+  {
+    std::set<std::u16string> seen;
+    for (const std::u16string& c : candidates) {
+      if (c.empty() || c.size() > 0xFFFF || !seen.insert(c).second) continue;
+      std::vector<uint8_t> bytes;
+      for (char16_t u : c) PutU16(bytes, u);
+      names.push_back(std::move(bytes));
+    }
+  }
+  constexpr uint32_t kMaxNames = 256;
+  constexpr size_t kMaxSplits = 16;
+  // A split: per name, where its length goes and the length (in units).
+  using Split = std::vector<std::pair<size_t, size_t>>;
+  std::vector<Split> splits;
+  Split current;
+  // Matches `left` names from `at` (each: a 0 length, then one candidate's units).
+  std::function<void(size_t, uint32_t)> match = [&](size_t at, uint32_t left) {
+    if (splits.size() >= kMaxSplits) return;
+    if (left == 0) {
+      splits.push_back(current);
+      return;
+    }
+    if (at + 2 > body.size() || body[at] != 0 || body[at + 1] != 0) return;
+    for (const auto& name : names) {
+      if (at + 2 + name.size() > body.size()) continue;
+      if (!std::equal(name.begin(), name.end(), body.begin() + static_cast<std::ptrdiff_t>(at + 2))) continue;
+      current.emplace_back(at, name.size() / 2);
+      match(at + 2 + name.size(), left - 1);
+      current.pop_back();
+    }
+  };
+  for (size_t p = 0; p + 6 <= body.size(); ++p) {
+    const uint32_t count = uint32_t(body[p]) << 24 | uint32_t(body[p + 1]) << 16 | uint32_t(body[p + 2]) << 8 |
+                           uint32_t(body[p + 3]);
+    if (count == 0 || count > kMaxNames || body[p + 4] != 0 || body[p + 5] != 0) continue;
+    match(p + 4, count);
+  }
+  std::vector<std::vector<uint8_t>> repaired;
+  for (const Split& split : splits) {
+    std::vector<uint8_t> copy(body.begin(), body.end());
+    for (const auto& [at, length] : split) {
+      copy[at] = uint8_t(length >> 8);
+      copy[at + 1] = uint8_t(length);
+    }
+    if (reads(copy) && std::find(repaired.begin(), repaired.end(), copy) == repaired.end()) {
+      repaired.push_back(std::move(copy));
+    }
+  }
+  if (repaired.size() == 1) return std::move(repaired.front());
+  if (why) {
+    *why = splits.empty()     ? "no list of known mod names with empty lengths in it"
+           : repaired.empty() ? "no repair of the list makes the save read"
+                              : "more than one repair of the list makes the save read";
+  }
+  return std::nullopt;
 }
 
 const char* ToString(ModListRepair result) {

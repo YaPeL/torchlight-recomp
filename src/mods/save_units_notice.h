@@ -1,7 +1,8 @@
 // The player's notice for what ProtectSaves did (save_units.h): which saved characters lost how
 // many items, where the copy from before is, which saves were left unchanged although they hold
 // unknown items, and, when the game could not load some mods' units after the saves were checked,
-// how many, which saves carry them and that nothing is saved in the session. Texts translated by the import messages' strings
+// how many, which saves carry them and that nothing is saved in the session. Short texts, the
+// backups shown from the user data folder on, translated by the import messages' strings
 // (data/ui/tl_import_strings.txt). No guest, OGRE or platform types.
 
 #pragma once

@@ -68,12 +68,19 @@ int main() {
       Check(out->find(label) != std::string::npos, "a label named after its button");
       Check(out->find(label) < out->find("Name=\"Alchemist\""), "inside its own button");
       Check(out->find(cs::LabelName("Alchemist")) != std::string::npos, "any case of GUISELECT1");
-      Check(out->find(cs::LabelName("Dog")) == std::string::npos &&
-                out->find(cs::LabelName("DoneButton")) == std::string::npos,
-            "other buttons get none");
+      Check(out->find(cs::LabelName("Dog")) != std::string::npos, "a pet button (GUISELECT2) gets one");
+      Check(out->find(cs::LabelName("DoneButton")) == std::string::npos, "other buttons get none");
       Check(out->find("Name=\"Visible\" Value=\"False\"") != std::string::npos, "labels start hidden");
+      // ceguiWidget/StaticText's formatting values (an unknown one leaves the text on one line).
+      Check(out->find("WordWrapCentred") == std::string::npos &&
+                out->find("Name=\"HorzTextFormatting\" Value=\"WordWrapCentreAligned\"") != std::string::npos,
+            "labels wrap with the widget's own value");
+      const size_t dog = out->find("Name=\"" + cs::LabelName("Dog") + "\"");
+      const size_t destroyer = out->find("Name=\"" + cs::LabelName("Destroyer") + "\"");
+      Check(out->find("Value=\"SerifSmall\"", dog) < out->find("</Window>", dog), "a pet's label: the small font");
+      Check(out->find("Value=\"Serif\"", destroyer) < out->find("</Window>", destroyer), "a class's: Serif");
       std::string back = *out;
-      for (const char* name : {"Destroyer", "Alchemist"}) {
+      for (const char* name : {"Destroyer", "Alchemist", "Dog"}) {
         const size_t at = back.find("<Window Type=\"ceguiWidget/StaticText\" Name=\"" + cs::LabelName(name));
         back.erase(at, back.find("</Window>", at) + 9 - at);
       }
