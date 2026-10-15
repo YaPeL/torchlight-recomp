@@ -22,7 +22,9 @@
 #include "guest_abi/game_ui.h"
 #include "guest_abi/mods.h"
 #include "hooks/guest_path.h"
+#include "platform/platform.h"
 #include "mods/class_list.h"
+#include "mods/icon_atlas.h"
 #include "mods/mod_list.h"
 #include "save_import/pak.h"
 #include "mods/save_safety.h"
@@ -58,6 +60,10 @@ std::filesystem::path g_game_pak;
 uint32_t g_data_manager = 0;
 // The active mods' resource groups (RegisterMods), to tell a mod's material script.
 ModScriptGroups g_mod_groups;
+// The merged icon atlases (mods/icon_atlas.h), written and mounted by InstallMods: the imagesets'
+// keys, as the game's data loader asks for them ("MEDIA/UI/ITEMICONS/ITEMICONS16.IMAGESET"), set
+// before the guest runs and read on the game's thread afterwards.
+std::set<std::string> g_atlas_keys;
 
 std::optional<std::vector<uint8_t>> ReadFile(const std::filesystem::path& path) {
   std::ifstream in(path, std::ios::binary);
@@ -155,6 +161,37 @@ void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_
   REXLOG_INFO("replacements: {} as {}", folder.string(), hooks::kReplacementsDeviceLink);
 }
 
+// The mods' imagesets that hide images of the game's own file, merged with it (mods/icon_atlas.h)
+// into the cache folder, regenerated at every start, and mounted for the guest (HookModFileLookup)
+// and the host's texture lookup.
+void InstallAtlases(rex::Runtime* runtime) {
+  const std::string cache = platform::CacheDir("atlases");
+  if (cache.empty()) {
+    REXLOG_ERROR("icon atlases: no cache folder; the mods' imagesets are used as they are");
+    return;
+  }
+  std::vector<std::string> log;
+  const auto written =
+      mods::WriteMergedAtlases(g_game_pak, g_mods_folder, g_plan, cache, std::string(hooks::kAtlasDeviceLink), log);
+  for (const std::string& line : log) REXLOG_INFO("icon atlases: {}", line);
+  if (written.empty()) return;
+  const std::string mount(hooks::kAtlasDeviceMount);
+  auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, cache, /*read_only=*/true);
+  if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
+      !runtime->file_system()->RegisterSymbolicLink(std::string(hooks::kAtlasDeviceLink), mount)) {
+    REXLOG_ERROR("icon atlases: cannot mount {}; the mods' imagesets are used as they are", cache);
+    return;
+  }
+  for (const auto& atlas : written) {
+    g_atlas_keys.insert(atlas.key);
+    REXLOG_INFO("icon atlases: {} of {} merged with the game's ({} of the game's images kept, {} of the mod's)",
+                atlas.key, atlas.mod_folder, atlas.game_only, atlas.from_mod);
+  }
+  g_texture_locations.generated = cache;
+  g_texture_locations.generated_device = std::string(hooks::kAtlasDeviceLink);
+  mods::SetTextureLocations(g_texture_locations);
+}
+
 }  // namespace
 
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
@@ -226,6 +263,7 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
                 mod.priority < 0 ? ", disabled" : "");
   }
   g_mounted = true;
+  InstallAtlases(runtime);
 }
 
 const mods::ModPlan* MountedModPlan() {
@@ -300,6 +338,17 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
       REXLOG_INFO("mods: {} in resource group \"{}\", initialised", location, group);
     } else {
       REXLOG_ERROR("mods: cannot initialise resource group \"{}\"", group);
+    }
+  }
+  // The merged icon atlases: the imageset the game is handed (HookModFileLookup) and its texture
+  // are named on their device, which a location in the default group resolves.
+  if (!g_atlas_keys.empty()) {
+    const std::string location = std::string(hooks::kAtlasDeviceLink) + "\\";
+    if (AddFileSystemLocation(call, location, true)) {
+      REXLOG_INFO("icon atlases: {} in the default resource group", location);
+    } else {
+      REXLOG_ERROR("icon atlases: cannot add {}", location);
+      g_atlas_keys.clear();
     }
   }
   mods::SetTextureLocations(g_texture_locations);  // before any texture is loaded
@@ -417,6 +466,7 @@ void HookScriptListener(PPCContext& ctx, uint8_t* base, void (*original)(PPCCont
 
 }  // namespace torchlight::game_menu
 
+REX_EXTERN(__imp__sub_823AA988);
 REX_EXTERN(__imp__sub_8239B490);
 REX_EXTERN(__imp__sub_82429D78);
 REX_EXTERN(__imp__sub_822A68F0);
@@ -424,6 +474,44 @@ REX_EXTERN(__imp__sub_822A68F0);
 namespace torchlight::game_menu {
 
 namespace {
+
+// A guest std::wstring's text (ASCII paths; anything else as '?').
+std::string ReadAsciiWString(const uint8_t* base, uint32_t str) {
+  const uint32_t length = abi::ReadU32(base, str + abi::ogre::stl_string::kLength.offset);
+  const uint32_t capacity = abi::ReadU32(base, str + abi::ogre::stl_string::kCapacity.offset);
+  if (length > 1024) return {};
+  const uint32_t text = capacity > mods_abi::manager::kWStringInlineCapacity ? abi::ReadU32(base, str) : str;
+  std::string out;
+  for (uint32_t i = 0; i < length; ++i) {
+    const uint16_t c = uint16_t(base[text + 2 * i] << 8 | base[text + 2 * i + 1]);
+    out += c < 0x80 ? char(c) : '?';
+  }
+  return out;
+}
+
+// The mods' file lookup (guest_abi/mods.h kModFileLookup): when a mod has an imageset that was
+// merged with the game's (mods/icon_atlas.h), the game is handed the merged file on our device
+// instead of the mod's. The other outputs (the mod's group) stay the mod's. Every other request
+// only calls the original.
+void HookModFileLookup(PPCContext& ctx, uint8_t* base) {
+  const uint32_t result = ctx.r3.u32, request = ctx.r5.u32;
+  __imp__sub_823AA988(ctx, base);
+  if (g_atlas_keys.empty() || !result || !request) return;
+  const std::string key = mods::TextureNameKey(ReadAsciiWString(base, request));
+  if (!g_atlas_keys.contains(key)) return;
+  if (abi::ReadU32(base, result + abi::ogre::stl_string::kLength.offset) == 0) return;  // no mod has it
+  GuestCall call(ctx, base);
+  const uint32_t mark = call.Mark();
+  const std::string path = std::string(hooks::kAtlasDeviceLink) + "/" + key;
+  const uint32_t merged = GuestWString(call, base, path);
+  if (merged) {
+    call.Call(mods_abi::mod::kWStringAssign.address, {result, merged, 0, 0xFFFFFFFFu});
+    call.Call(ui::kWStringDtor.address, {merged});
+    static std::set<std::string> told;
+    if (told.insert(key).second) REXLOG_INFO("icon atlases: the game gets {}", path);
+  }
+  call.Release(mark);
+}
 
 // The unit save writer (guest_abi/mods.h kUnitSaveWriter) with its mod-list bug repaired
 // (save_mod_list.h). Units without names (every unit when there are no mods) only call the original.
@@ -458,6 +546,9 @@ extern "C" {
 
 static_assert(torchlight::guest_abi::mods::kUnitSaveWriter.address == 0x822A68F0u, "mods mismatch");
 REX_FUNC(sub_822A68F0) { torchlight::game_menu::HookUnitSave(ctx, base); }
+
+static_assert(torchlight::guest_abi::mods::kModFileLookup.address == 0x823AA988u, "mods mismatch");
+REX_FUNC(sub_823AA988) { torchlight::game_menu::HookModFileLookup(ctx, base); }
 
 static_assert(torchlight::guest_abi::game_ui::kScriptListenerHandleEvent.address == 0x8239B490u,
               "game_ui mismatch");

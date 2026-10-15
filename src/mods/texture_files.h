@@ -39,9 +39,21 @@ struct TextureLocations {
     std::string device;              // the guest's name for it ("tlmod003:"), for the check
   };
   std::vector<Mod> mods;
+  // Files the app generates for the guest (the merged icon atlases, mods/icon_atlas.h): a folder
+  // mounted as `generated_device` ("tlatlas:"), whose names reach the host with that device first.
+  std::filesystem::path generated;  // empty: none
+  std::string generated_device;
 };
 
-enum class TextureSource { kNone, kReplacements, kMod, kPak };
+enum class TextureSource { kNone, kReplacements, kMod, kPak, kGenerated };
+
+// Whether the file is one of the host's folders (a mod's, the replacements', a generated one), not
+// the pak's: the live frontend reads it, and captures and session recordings keep its bytes, since
+// replay has none of those folders.
+inline bool FromHostFile(TextureSource source) {
+  return source == TextureSource::kMod || source == TextureSource::kReplacements ||
+         source == TextureSource::kGenerated;
+}
 
 struct TextureFile {
   TextureSource source = TextureSource::kNone;
@@ -61,7 +73,7 @@ class TextureResolver {
   TextureFile Find(std::string_view name, std::string_view group,
                    const std::function<bool(std::string_view)>& pak_has) const;
 
-  bool empty() const { return !replacements_ && mods_.empty(); }
+  bool empty() const { return !replacements_ && mods_.empty() && !generated_; }
 
  private:
   struct Folder {
@@ -70,6 +82,8 @@ class TextureResolver {
   };
   static Folder List(const std::filesystem::path& root);
   std::optional<Folder> replacements_;
+  std::optional<Folder> generated_;
+  std::string generated_device_;  // TextureNameKey'd ("TLATLAS:")
   std::vector<std::pair<std::string, Folder>> mods_;
   std::vector<std::string> devices_;  // mods_'s devices, TextureNameKey'd ("TLMOD002:")
 };

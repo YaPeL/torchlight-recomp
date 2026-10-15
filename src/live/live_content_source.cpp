@@ -134,7 +134,8 @@ std::optional<std::vector<uint8_t>> LiveContentSource::NamedTexture(const comman
     case mods::TextureSource::kPak:
       return GameFile(t.name);
     case mods::TextureSource::kMod:
-    case mods::TextureSource::kReplacements: {
+    case mods::TextureSource::kReplacements:
+    case mods::TextureSource::kGenerated: {
       std::ifstream in(found.path, std::ios::binary);
       if (!in) return std::nullopt;
       return std::vector<uint8_t>((std::istreambuf_iterator<char>(in)), {});

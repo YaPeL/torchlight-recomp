@@ -70,7 +70,7 @@ SessionWriter::Result SessionWriter::Append(const LiveFrame& frame) {
     for (auto& t : s.textures) {
       if (t.name.empty() || t.manual || t.render_target || t.file != 0) continue;
       const mods::TextureFile found = resolver->Find(t.name, t.group, mods::PakHas);
-      if (found.source != mods::TextureSource::kMod && found.source != mods::TextureSource::kReplacements) continue;
+      if (!mods::FromHostFile(found.source)) continue;
       std::ifstream in(found.path, std::ios::binary);
       commands::Blob blob;
       blob.bytes.assign(std::istreambuf_iterator<char>(in), {});
