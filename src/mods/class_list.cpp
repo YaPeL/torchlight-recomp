@@ -418,8 +418,11 @@ std::optional<std::filesystem::path> FindPathNoCase(const std::filesystem::path&
   return std::filesystem::is_regular_file(at, ec) ? std::optional(at) : std::nullopt;
 }
 
-// Whether an image file starts as a format the game's image codec reads: DDS, PNG, JPEG or BMP by
-// their signatures, TGA (no signature) by its extension and its 18-byte header. Creating an imageset
+// Whether an image file starts as a format the game's image codec reads: DDS, PNG or BMP by their
+// signatures, TGA (no signature) by its extension and its 18-byte header. The guest's FreeImage has
+// plugins for these (their MIME types and extension lists are in the executable: image/png,
+// image/bmp, image/freeimage-dds, image/freeimage-tga "tga,targa") but none for JPEG (no image/jpeg,
+// no "jpg" extension), so a JPEG is left out. Creating an imageset
 // whose image does not decode throws inside the guest, which a call started from the host may not
 // unwind cleanly; such an imageset is left out (its classes show the frame with the name).
 bool ImageHeaderReadable(const std::filesystem::path& file) {
@@ -427,8 +430,7 @@ bool ImageHeaderReadable(const std::filesystem::path& file) {
   char head[8] = {};
   in.read(head, sizeof(head));
   const std::string_view h(head, size_t(in.gcount()));
-  if (h.starts_with("DDS ") || h.starts_with("\x89PNG\r\n\x1a\n") || h.starts_with("\xFF\xD8\xFF") ||
-      h.starts_with("BM")) {
+  if (h.starts_with("DDS ") || h.starts_with("\x89PNG\r\n\x1a\n") || h.starts_with("BM")) {
     return true;
   }
   std::error_code ec;

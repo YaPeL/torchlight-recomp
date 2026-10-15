@@ -99,8 +99,8 @@ struct ModImageset {
   ImagesetInfo info;
 };
 // The enabled mods' imagesets (*.imageset under media/ui/, any case), by Name; only those whose
-// image file exists in the same mod and starts as an image format the game reads (DDS, PNG, JPEG, BMP,
-// TGA). A Name two files define is left out: the game loads the mods'
+// image file exists in the same mod and starts as an image format the game reads (DDS, PNG, BMP, TGA;
+// the game has no JPEG codec). A Name two files define is left out: the game loads the mods'
 // item icon imagesets itself, and which file it took is not known.
 std::map<std::string, ModImageset> ModImagesets(const std::filesystem::path& mods_folder, const ModPlan& plan);
 
