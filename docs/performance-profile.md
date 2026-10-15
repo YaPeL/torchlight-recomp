@@ -36,6 +36,29 @@ spread (3-10 %). On the Intel GPU the native renderer loses little (CPU-bound: 2
 standing still) while Xenos falls to 26-28 fps. The package sat at 82 C in every step of every run
 (3080-3740 MHz).
 
+## The presented ceiling on hybrid-GPU laptops (2026-10-14)
+
+On this laptop, with the NVIDIA GPU drawing and the panel on the Intel one, the native renderer
+presents fewer frames than the game makes once it runs above about 180 fps: in the mine standing
+still, 239 fps for the game against 181 presented; on the Intel GPU the two are equal (208 and
+208). Measured cause: the backend thread's present takes 2.6-3.3 ms per frame on the NVIDIA GPU
+against 0.4-0.5 ms on the Intel one (the live mode's `live consumer` lines over the hand runs of
+2026-10-14), while the rest of its frame (content, frontend, draws) costs the same on both. The
+profile of the mine standing still shows no hot spot inside the swap (the NVIDIA library's
+samples are the scattered GL calls): the time is off the CPU, `eglSwapBuffers` blocking until the
+driver's PRIME copy of the frame to the Intel GPU completes. It is not the driver's frame queue
+(replay benches with `__GL_MaxFramesAllowed=2`, as a local test only, kept the present at 1.8-2.9
+ms as without it) and not our work. With content, frontend and draws at about 2.6 ms plus that
+present, the backend's frame is about 5.5 ms: a ceiling near 180 fps presented. The PC version
+through DXVK does not show it (Vulkan presents with IMMEDIATE and three images and returns).
+
+It matters only above about 180 fps presented, on laptops with a hybrid GPU, with no frame limit:
+with vsync at 60 or 144 Hz nothing changes. Not pursued (2026-10-14). The known solution, should
+it ever be needed, is the two-stage backend pipeline (below, "Paused: a two-stage backend
+pipeline"): with the translation on its own thread, the next frame's commands are translated
+while the render thread waits in the present, for an estimated 4.2-4.4 ms per frame (about
+230-240 fps in the mine standing still).
+
 ## Against the PC version through Proton (2026-10-14)
 
 A rough reference, not a like-for-like comparison: Torchlight for PC (OGRE 1.6, Direct3D 9, the PC
@@ -604,6 +627,9 @@ it work means changes to that render system or a frame recorded the way it wants
 clears as load actions), not a swap of plugins.
 
 ### Paused: a two-stage backend pipeline
+
+(2026-10-14: the known solution for the presented ceiling on hybrid-GPU laptops, above
+"The presented ceiling on hybrid-GPU laptops"; not started, by decision.)
 
 With the cuts, the backend presents 99 % of the guest's frames in the town square on this laptop
 (5364 of 5426 in one run): the limit there is the guest's render thread, not the backend. The
