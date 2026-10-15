@@ -11,11 +11,13 @@
 #include <vector>
 
 #include <rex/logging.h>
+#include <rex/thread.h>
 
 #include "backend/backend_api.h"
 #include "capture/session.h"
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
+#include "live/frame_pacer.h"
 #include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
 #include "live/frame_timing.h"
@@ -32,6 +34,12 @@ namespace {
 using Clock = std::chrono::steady_clock;
 
 double Ms(Clock::duration d) { return std::chrono::duration<double, std::milli>(d).count(); }
+
+// The pacer's period for a frame rate cap; zero (no pacing) without one.
+Clock::duration PacerPeriod(uint32_t fps_cap) {
+  if (!fps_cap) return Clock::duration::zero();
+  return std::chrono::duration_cast<Clock::duration>(std::chrono::seconds(1)) / fps_cap;
+}
 
 struct Series {
   std::vector<double> values;
@@ -129,9 +137,9 @@ void LiveMode::ResizeWindow(uint32_t width, uint32_t height) {
   if (width && height) pending_window_size_ = uint64_t(width) << 32 | height;
 }
 
-void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync) {
+void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync, uint32_t fps_cap) {
   std::lock_guard lock(pending_video_mutex_);
-  pending_video_ = PendingVideo{render_resolution, vsync};
+  pending_video_ = PendingVideo{render_resolution, vsync, fps_cap};
 }
 
 void LiveMode::Stop() {
@@ -294,6 +302,9 @@ void LiveMode::Run() {
   SlowFrameDetector slow_frames;
   FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
+  FramePacer pacer;
+  pacer.SetPeriod(PacerPeriod(options_.fps_cap));
+  if (options_.fps_cap) REXLOG_INFO("live: presents paced at the fps cap ({} Hz)", options_.fps_cap);
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
 
   while (running_) {
@@ -348,6 +359,10 @@ void LiveMode::Run() {
           queue_.SetCapacity(FrameQueueDepth(options_.frame_queue, video->vsync));
           REXLOG_INFO("live: vsync {}", video->vsync ? "on" : "off");
         }
+        if (video->fps_cap != options_.fps_cap) {
+          options_.fps_cap = video->fps_cap;
+          pacer.SetPeriod(PacerPeriod(options_.fps_cap));
+        }
         if (video->render_resolution != options_.render_resolution) {
           options_.render_resolution = video->render_resolution;
           apply_render_scale();
@@ -356,6 +371,14 @@ void LiveMode::Run() {
       if (window_open) {
         if (options_.ui) ApplyUi(backend, *options_.ui);
         if (presentation) presentation->BeforePresent(frame->swap);
+        // Each frame in its slot, one cap period after the previous present (frame_pacer.h).
+        if (pacer.period() != Clock::duration::zero()) {
+          const auto now = Clock::now();
+          const auto slot = pacer.Slot(now);
+          if (slot > now) {
+            rex::thread::Sleep(std::chrono::duration_cast<std::chrono::microseconds>(slot - now));
+          }
+        }
         auto present_start = Clock::now();
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();

@@ -225,6 +225,7 @@ struct RunningSettings {
   settings::Capabilities caps;
   settings::HostSettings startup, current;
   rex::Runtime* runtime = nullptr;
+  uint32_t fps_cap = 0;  // the cap the guest's vblank runs at (ApplyFpsCap's answer)
   bool ready = false;
 };
 RunningSettings g_running;
@@ -291,7 +292,8 @@ void ApplyLanguage(const std::string& language, const std::filesystem::path& gam
 // at SetGuestVblankRate (patches/rexglue-guest-vblank-rate.patch); off, unthrottled (no cap). Both
 // are read by the vblank thread every tick. A --vsync given on the command line wins. The cvar
 // lives in the GPU plugin, loaded after PreSetup: applied in Install, before the guest runs.
-void ApplyFpsCap(uint32_t fps_cap, rex::Runtime* runtime) {
+// Returns the cap the guest's vblank runs at: 0 when unlimited or left to the command line.
+uint32_t ApplyFpsCap(uint32_t fps_cap, rex::Runtime* runtime) {
   const rex::cvar::FlagEntry* flag = rex::cvar::GetFlagInfo("vsync");
   // Both GPU plugins (xenos, null) derive their graphics system from rex::graphics::GraphicsSystem;
   // its type info lives in the plugin, so no dynamic_cast from here.
@@ -300,15 +302,16 @@ void ApplyFpsCap(uint32_t fps_cap, rex::Runtime* runtime) {
                            : nullptr;
   if (!flag || !graphics) {
     REXLOG_ERROR("settings: no runtime vsync cvar or graphics system; fps cap not applied");
-    return;
+    return 0;
   }
   if (flag->source == rex::cvar::Source::kCommandLine) {
     REXLOG_INFO("settings: fps cap left to --vsync={} from the command line",
                 rex::cvar::Query<bool>("vsync"));
-    return;
+    return 0;
   }
   graphics->SetGuestVblankRate(fps_cap);
   rex::cvar::SetFlagByName("vsync", fps_cap == 0 ? "false" : "true");
+  return fps_cap;
 }
 
 // What the video settings in the game's menu offer: the game display's modes, the languages in the
@@ -548,8 +551,12 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
     }
     // The guest's vblank is the frame rate cap (with Xenos, the runtime's own presentation keeps
     // its --vsync).
-    ApplyFpsCap(g_host_settings.values.fps_cap, dialogs.runtime);
+    options.fps_cap = ApplyFpsCap(g_host_settings.values.fps_cap, dialogs.runtime);
     InitRunningSettings(game_data_root, dialogs.runtime);
+    {
+      std::lock_guard lock(g_running.mutex);
+      g_running.fps_cap = options.fps_cap;
+    }
     // The game's display: vertical sync and internal resolution from the host settings.
     options.vsync = g_host_settings.values.vsync;
     options.render_resolution = g_host_settings.values.render_resolution;
@@ -612,10 +619,13 @@ void ChangeHostSettings(const settings::HostSettings& changed) {
   if (!g_running.ready) return;
   const settings::HostSettings before = g_running.current;
   g_running.current = changed;
-  if (changed.render_resolution != before.render_resolution || changed.vsync != before.vsync) {
-    LiveMode::Get().SetVideo(changed.render_resolution, changed.vsync);
+  uint32_t fps_cap = g_running.fps_cap;
+  if (changed.fps_cap != before.fps_cap) fps_cap = ApplyFpsCap(changed.fps_cap, g_running.runtime);
+  if (changed.render_resolution != before.render_resolution || changed.vsync != before.vsync ||
+      fps_cap != g_running.fps_cap) {
+    g_running.fps_cap = fps_cap;
+    LiveMode::Get().SetVideo(changed.render_resolution, changed.vsync, fps_cap);
   }
-  if (changed.fps_cap != before.fps_cap) ApplyFpsCap(changed.fps_cap, g_running.runtime);
   if (g_host_settings.path.empty()) return;
   std::string error;
   if (!settings::Save(g_host_settings.path, changed, error)) {

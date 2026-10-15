@@ -42,6 +42,10 @@ struct LiveOptions {
   uint32_t window_width = 0, window_height = 0;
   // The child window waits for vertical sync when presenting (it is the game's display).
   bool vsync = false;
+  // The frame rate cap the guest's vblank runs at (host settings); nonzero: presents are spaced one
+  // period apart (frame_pacer.h). 0: unlimited, or a cap this mode does not know (--vsync given on
+  // the command line).
+  uint32_t fps_cap = 0;
   // The OGRE render system the backend draws with (host settings, only mode).
   tl_render_system render_system = TL_RENDER_SYSTEM_GL3PLUS;
   // Platform GPU id the render system draws on, where it takes one (tl_backend_create); empty:
@@ -78,9 +82,9 @@ class LiveMode {
   void Stop();
   // The game window's new size in pixels (any thread); a child backend window follows it.
   void ResizeWindow(uint32_t width, uint32_t height);
-  // New internal render resolution and vertical sync (any thread), applied by the backend thread
-  // between frames.
-  void SetVideo(settings::Resolution render_resolution, bool vsync);
+  // New internal render resolution, vertical sync and frame rate cap (any thread), applied by the
+  // backend thread between frames.
+  void SetVideo(settings::Resolution render_resolution, bool vsync, uint32_t fps_cap);
 
  private:
   LiveMode() = default;
@@ -98,6 +102,7 @@ class LiveMode {
   struct PendingVideo {
     settings::Resolution render_resolution;
     bool vsync = true;
+    uint32_t fps_cap = 0;
   };
   std::mutex pending_video_mutex_;
   std::optional<PendingVideo> pending_video_;  // guarded by pending_video_mutex_
