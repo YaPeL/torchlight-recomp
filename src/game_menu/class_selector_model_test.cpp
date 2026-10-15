@@ -37,6 +37,16 @@ int main() {
     Check(!three.Scrolls(2, +1) && !three.Scrolls(0, -1), "the game's own wrap at the row's ends");
   }
 
+  // Turned off (a button missing from the screen): no division by zero, each button its own.
+  {
+    cs::Carousel off(0);
+    Check(off.Disabled() && !off.Active(), "no classes: disabled and off");
+    for (size_t slot = 0; slot < 3; ++slot) Check(off.ClassAt(slot) == slot, "disabled: each button its class");
+    off.Scroll(+1);
+    Check(off.offset() == 0, "disabled: no scroll");
+    Check(!cs::Carousel(3).Disabled(), "the game's three: not disabled");
+  }
+
   // More classes: the buttons slide over the list, wrapping both ways.
   {
     cs::Carousel c(5);
