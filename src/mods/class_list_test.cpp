@@ -257,6 +257,18 @@ int main() {
     const auto pet_icons = m::ModPetIcons(root, plan, sets_used);
     Check(pet_icons.size() == 1 && pet_icons.contains("PET_X") && pet_icons.at("PET_X").imageset.mod_folder == "Classes",
           "a mod pet with its images has an icon");
+    // A mod that redraws one of the game's classes: its icon is keyed as the game's class, so the
+    // selector shows the mod's portrait (the mod wins, as on PC).
+    Write(root / "Classes" / "media" / "UI" / "charactercreate.layout",
+          radio +
+              "<Window Type=\"GuiLook/RadioButton\" Name=\"Destroyer\">\n"
+              "  <Property Name=\"UnselectedImage\" Value=\"set:PalLogo image:pal\" />\n"
+              "  <Property Name=\"onClick\" Value=\"guiSelect1\" />\n"
+              "</Window>\n");
+    const auto game_icons = m::ModClassIcons(root, plan, sets_used);
+    Check(game_icons.contains(m::ClassKey("Destroyer")) &&
+              game_icons.at(m::ClassKey("Destroyer")).images.normal == "pal",
+          "a mod's portrait for one of the game's classes");
     fs::remove_all(root);
   }
 

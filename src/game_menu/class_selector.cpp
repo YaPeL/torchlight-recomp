@@ -63,6 +63,15 @@ struct Row {
   bool picking = false;               // inside OnCommand(command)
 
   bool Active() const { return carousel.Active(); }
+  // A mod gives one of the game's own choices its icon (JCC - Main and Enhanced Edition redraw the
+  // three classes): the row's buttons are set even with the game's choices only, as PC shows the
+  // mod's portraits.
+  bool GameIconsReplaced() const {
+    for (const std::string_view name : game) {
+      if (icons.contains(mods::ClassKey(name))) return true;
+    }
+    return false;
+  }
   // The game choice `name` is (its slot in the game's order), or none.
   std::optional<size_t> GameSlot(std::string_view name) const {
     for (size_t i = 0; i < cs::kSlots; ++i) {
@@ -79,7 +88,9 @@ void Log(const Row& row) {
   std::string names;
   for (const std::string& c : row.list) names += (names.empty() ? "" : ", ") + c;
   REXLOG_INFO("class selector: {} {} ({}){}", row.list.size(), row.what, names,
-              row.Active() ? "" : "; the game's row as it is");
+              row.Active()               ? ""
+              : row.GameIconsReplaced() ? "; the game's row with a mod's portraits"
+                                        : "; the game's row as it is");
 }
 
 void List() {
@@ -211,9 +222,12 @@ std::string LabelText(const Row& row, std::string name) {
   return name;
 }
 
-// The row's three buttons show its carousel's choices.
+// The row's three buttons show its carousel's choices: a choice with a mod's icon shows it (a mod
+// wins over the game, as with its materials and textures, so a mod that redraws the game's classes
+// shows its portraits as on PC), the game's other choices their Xbox images and the others a frame
+// with the name.
 void Refresh(PPCContext& ctx, uint8_t* base, uint32_t menu, Row& row) {
-  if (!row.Active()) return;
+  if (!row.Active() && !row.GameIconsReplaced()) return;
   GuestCall call(ctx, base);
   const uint32_t root = abi::ReadU32(base, menu + ui::dropdown_menu::kRoot.offset);
   if (!root) return;
@@ -235,16 +249,17 @@ void Refresh(PPCContext& ctx, uint8_t* base, uint32_t menu, Row& row) {
   }
   for (size_t s = 0; s < cs::kSlots; ++s) {
     const std::string& shown = row.list[row.carousel.ClassAt(s)];
-    if (const auto game = row.GameSlot(shown)) {
-      for (size_t i = 0; i < 3; ++i) SetProperty(call, buttons[s], kImageProperties[i], row.images[*game][i]);
-      SetProperty(call, labels[s], "Visible", "False");
-    } else if (const auto icon = row.icons.find(mods::ClassKey(shown));
-               icon != row.icons.end() && EnsureImageset(call, base, icon->second.imageset)) {
+    const auto game = row.GameSlot(shown);
+    if (const auto icon = row.icons.find(mods::ClassKey(shown));
+        icon != row.icons.end() && EnsureImageset(call, base, icon->second.imageset)) {
       const auto& images = icon->second.images;
       auto ref = [&](const std::string& image) { return "set:" + images.imageset + " image:" + image; };
       SetProperty(call, buttons[s], "NormalImage", ref(images.normal));
       SetProperty(call, buttons[s], "HoverImage", ref(images.hover));
       SetProperty(call, buttons[s], "PushedImage", ref(images.pushed));
+      SetProperty(call, labels[s], "Visible", "False");
+    } else if (game) {
+      for (size_t i = 0; i < 3; ++i) SetProperty(call, buttons[s], kImageProperties[i], row.images[*game][i]);
       SetProperty(call, labels[s], "Visible", "False");
     } else {
       SetProperty(call, buttons[s], "NormalImage", kFrameImage);
