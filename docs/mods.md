@@ -230,12 +230,30 @@ the mod's own folder, next to its source. **[read]** So the device must be writa
 writes stay in the user's mods folder; the game's data is never written (its device stays
 read-only). The exact compiled name (`X.DAT.adm`, as in `pak.zip`) is **[to verify]** in a run.
 
-**Saves that reference a removed mod.** **[to verify]** for PC and the guest: what loading a
-character does with an item whose unit no longer exists (dropped, kept as unknown, or a failure).
-Characters reference their class data; the guest has "Missing datagroup for character " in its
-unit spawner (`sub_82287868`, logs and continues) but the save loading path for a missing item was
-not read. To check in a run on copies: a synthetic mod that adds an item, a character that holds
-it, the mod removed, the character loaded.
+**Saves that reference a removed mod (read 2026-10-15).**
+- **The guest (Xbox): verified by a run.** Loading a character whose item's unit is no longer in
+  the index drops the item, and the next save writes the character without it (guided run of
+  2026-10-08, 7e). Read so far: the character reader `sub_822A7D78` reads the saved items as
+  384-byte records into a list at the unit's `+476` (`@0x822A8B64`..`@0x822A8BA4`: allocate,
+  construct with `sub_822C96E8`, append with `sub_822FB020`, read with `sub_822CA9A0`); the units
+  are made from those records later, by GUID. Where the record of an unknown GUID is skipped was
+  not traced (the list is read in some sixty places). **[read: the reader; observed: the drop]**
+- **PC: the same code, inferred.** PC's executable has the same unit spawner message ("Missing
+  datagroup for character", @0x49cee0, which logs and continues) and no message of any kind for an
+  item whose unit is unknown. **[read]** That it drops such an item silently, like the guest, is
+  **[inferred]**: the guest is a port of the same code, and the Xbox build's run shows the drop.
+  The item reader was not found in PC's executable by reading (a search by the record's size did
+  not find it: the layouts differ).
+- **PC does warn, before loading.** When the character's saved mod list (7d) differs from the
+  mods enabled, PC shows a line under the character on the main menu and on the character load
+  screen (`CharacterModsWarning` in `mainmenuframe.layout` and `characterload.layout`), telling the
+  player the mods do not match the character's last save and that going on is at their own risk.
+  **[read: the layouts; the visibility call as in 7d for the guest]** It does not say which items
+  are affected, back the saves up, or stop the load.
+- **Against ours:** the outcome for the item is the same (it is gone after the next save), but
+  ours takes it out before the game runs, after a backup, and tells the player which characters
+  lost how many items (7e, 7h). PC warns that the mods differ, even when every item is
+  still known; ours says nothing in that case (see the empty warning in 7d). Not changed.
 
 **Safety net.** Today the runtime backs a save container up only before deleting it (SDK patch 12,
 `<user_data_root>/save-backups/<UTC>-<package>/`, kept by `save_import/backup_retention.h`).
@@ -316,6 +334,20 @@ Nothing showed it before because without a mod manager the list is always empty.
   (`main_xenon.layout`, bottom right of the main menu) and no code gives it one (`CMainMenu`
   only finds it and hides it, `@0x8238C0A8`..`@0x8238C0C4`), so the warning shows nothing.
   Making it visible would be new UI work (a translated text); not done.
+- **What PC shows there (read 2026-10-15).** PC's `CharacterModsWarning` is a wrapped, centred
+  line in the small serif font under the character, on the main menu frame and on the character
+  load screen, saying that the game's mods do not match those enabled when the character was last
+  saved and that going on is at the player's own risk. The Xbox pak still carries those two PC
+  layouts (unused), with the English text; no translation of it exists in the Xbox data
+  (`translations/`), and the Xbox layouts' own widget (`mainmenu.uilayout`,
+  `charactercreate.uilayout`, `main_xenon.layout`) has no text, a large font and a right-aligned
+  box of 255 x 33 px at the bottom right. **[read]**
+- **Proposal (not done; the user decides).** Give the Xbox widget a short text of our own, not
+  PC's (no game text in the repository), translated like the import messages (de, fr, es), for
+  example "Mods changed since this character was last saved", set through the layout cache as the
+  class labels are, with a smaller font and wrapping so it fits the box. The warning then shows
+  when PC would show it. Or leave it empty: the start's checks already protect the saves and the
+  notice tells what was removed, and the warning would mostly say that a mod was added.
 - **Checked on the run's save** (outside the repository): with only the ten lengths written, the
   save parses completely with `tools/save_convert`'s schema; the saves made without mods have an
   empty list.
@@ -1114,6 +1146,16 @@ devices; and the texture check (`--mods_texture_check`, 7j), since no run used i
   copy, never move, and keep PC's `mods.dat` priorities. Not needed to start.
 
 ## 8b. For the launcher's mods page (2026-10-09)
+
+**What PC itself has (read 2026-10-15).** No mod manager in the game: no screen or button in
+its UI layouts (the only mod window is the warning of 7d), no UI text about mods in the
+executable, and nothing in the manual (`TorchlightManual.pdf`). **[read]** Installing a mod is
+copying its folder into `%APPDATA%\Runic Games\Torchlight\mods\`; at the next start the game's
+mod manager (7c) finds new folders (`CHECKFORNEW`), adds them to `mods.dat` and restarts itself to
+load them (6). Turning a mod off or reordering means editing `mods.dat` by hand (a negative
+`PRIORITY`) or with an outside tool; Runic's editor (TorchED) packages mods into that folder, but
+it is not part of the game's files here, so how it lists or orders them is not read. So "8b" is a
+page of our own, for the launcher, not a port of something PC has.
 
 What the launcher needs from `src/mods/` to list, turn on or off and order the player's mods. Every
 piece is host-only (no guest, OGRE or platform types), works on any system, and is tested in
