@@ -221,7 +221,9 @@ int main() {
       Check(notice->text.find("Removed 3 items from mods") != std::string::npos, "the total");
       Check(notice->text.find("  Ronan: 2\n") != std::string::npos, "per character");
       Check(notice->text.find("  Shared stash: 1\n") != std::string::npos, "the stash");
-      Check(notice->text.find("Backup: save-backups/20261008-120000-units\n") != std::string::npos,
+      // The platform's own separator (a backslash on Windows).
+      const std::u8string shown = (std::filesystem::path("save-backups") / "20261008-120000-units").u8string();
+      Check(notice->text.find("Backup: " + std::string(shown.begin(), shown.end()) + "\n") != std::string::npos,
             "where the copy is, from the user data folder on");
       Check(notice->text.find("7.TSV") != std::string::npos && notice->text.find("9.TSV") == std::string::npos,
             "a save left alone with unknown units listed; an unreadable one not");
