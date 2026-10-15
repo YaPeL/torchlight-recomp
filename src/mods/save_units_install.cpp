@@ -51,7 +51,7 @@ std::string TitleFolder() {
 }
 
 void Run(const std::filesystem::path& user_data_root, const KnownUnits& known, const Skip& skip,
-         SettledSaves& settled) {
+         const std::vector<std::u16string>& active_mods, SettledSaves& settled) {
   std::string error;
   const auto schema = save_import::Schema::Embedded(error);
   if (!schema) {
@@ -60,12 +60,13 @@ void Run(const std::filesystem::path& user_data_root, const KnownUnits& known, c
   }
   if (!known.complete) REXLOG_WARN("units: saves not changed: {}", known.incomplete_why);
   SaveUnitsReport report = ProtectSaves(user_data_root, TitleFolder(), *schema, known, std::chrono::system_clock::now(),
-                                        [](const std::string& line) { REXLOG_INFO("{}", line); }, skip);
+                                        [](const std::string& line) { REXLOG_INFO("{}", line); }, skip,
+                                        &active_mods);
   for (const auto& path : report.settled) settled.Settle(path);
   if (report.skipped) {
     REXLOG_INFO("units: {} save(s) unchanged since they were last checked, not read again", report.skipped);
   }
-  if (!report.changed.empty() || report.failed) g_changes = std::move(report);
+  if (!report.changed.empty() || report.failed || !report.other_mods.empty()) g_changes = std::move(report);
 }
 
 // The units of the index the game is expected to load with the mods' units: the cached one when
@@ -155,7 +156,10 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   // Saves settled at the last start under the same context and unchanged since are not read again;
   // those still settled, and those found settled now, are remembered for the next start.
   const std::vector<std::u16string> names = RepairNames(data_dir);
-  const std::string context = SettledSaves::Context(known, names);
+  // The names the game records for the active mods: a character last saved with others is told.
+  const std::vector<std::u16string> active =
+      plan ? ActiveModNames(*plan, ScanModsFolder(data_dir / "mods")) : std::vector<std::u16string>{};
+  const std::string context = SettledSaves::Context(known, names, active);
   g_settled_file = user_data_root / "cache" / "settled-saves.txt";
   const SettledSaves last = SettledSaves::Load(g_settled_file, user_data_root, context);
   SettledSaves next(user_data_root, context);
@@ -165,7 +169,7 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
     return true;
   };
   RepairModLists(user_data_root, names, skip);
-  Run(user_data_root, known, skip, next);
+  Run(user_data_root, known, skip, active, next);
   if (!next.Store(g_settled_file)) REXLOG_WARN("units: cannot write {}", g_settled_file.string());
 }
 

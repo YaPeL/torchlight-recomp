@@ -46,7 +46,7 @@ std::optional<save_import::ImportMessage> SaveUnitsNotice(const SaveUnitsReport&
     }
   }
   if (report.changed.empty() && risky.empty() && !report.failed && !report.units_not_loaded &&
-      !report.saving_blocked) {
+      !report.saving_blocked && report.other_mods.empty()) {
     return std::nullopt;
   }
 
@@ -55,6 +55,8 @@ std::optional<save_import::ImportMessage> SaveUnitsNotice(const SaveUnitsReport&
     message.title = Text(tr, "Saving is off this session");
   } else if (report.changed.empty() && report.units_not_loaded) {
     message.title = Text(tr, "Mod items not loaded");
+  } else if (report.changed.empty() && risky.empty() && !report.failed && !report.units_not_loaded) {
+    message.title = Text(tr, "Mods changed");
   } else {
     message.title = Text(tr, "Mod items removed");
   }
@@ -95,6 +97,14 @@ std::optional<save_import::ImportMessage> SaveUnitsNotice(const SaveUnitsReport&
   if (!risky.empty()) {
     text += Text(tr, "These saves have unknown items and were left unchanged (see the log):") + "\n";
     for (const auto& name : risky) text += "  " + name + "\n";
+  }
+  // The game's own main menu warning (docs/mods.md 7d), which the Xbox build shows empty.
+  if (!report.other_mods.empty()) {
+    text += Text(tr, "These characters were last saved with other mods:") + "\n";
+    for (const auto& other : report.other_mods) {
+      text += "  " + (other.owner.empty() ? Utf8Path(other.path.filename()) : other.owner) + "\n";
+    }
+    text += Text(tr, "Playing them is at your own risk.") + "\n";
   }
   message.text = text;
   message.buttons = {Text(tr, "OK")};

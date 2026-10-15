@@ -6,8 +6,9 @@
 // and told to the player, at every start.
 //
 // What the checks depend on besides the file is the context: the units the game is expected to
-// know (the game data and the mods), the names a broken mod list may hold, and the checks' own
-// rules (kRulesVersion). A different context forgets every save. A save is unchanged when its size
+// know (the game data and the mods), the names a broken mod list may hold, the active mods' names
+// (a save's list is compared with them: one last saved with other mods is not settled, so the
+// player is told at every start) and the checks' own rules (kRulesVersion). A different context forgets every save. A save is unchanged when its size
 // and modification time are the ones recorded; one written since (by the game, a repair or a
 // removal, or put back from a backup) is read again. No guest, OGRE or platform types.
 
@@ -26,10 +27,12 @@ namespace torchlight::mods {
 class SettledSaves {
  public:
   // Bumped when a check's rules change, so saves settled under the old ones are read again.
-  static constexpr int kRulesVersion = 1;
+  // 2: a character last saved with other mods than the active ones is not settled.
+  static constexpr int kRulesVersion = 2;
 
   // The context of the checks, as a digest (hex).
-  static std::string Context(const KnownUnits& known, const std::vector<std::u16string>& repair_names);
+  static std::string Context(const KnownUnits& known, const std::vector<std::u16string>& repair_names,
+                             const std::vector<std::u16string>& active_mods);
 
   // The saves settled under `context` at the last start, from `file` (none when it is missing,
   // unreadable or of another context). Paths are kept relative to `root`.
