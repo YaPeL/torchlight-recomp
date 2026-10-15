@@ -26,7 +26,8 @@ std::string Hex(const save_import::Sha256Digest& digest) {
 
 }  // namespace
 
-std::string SettledSaves::Context(const KnownUnits& known, const std::vector<std::u16string>& repair_names) {
+std::string SettledSaves::Context(const KnownUnits& known, const std::vector<std::u16string>& repair_names,
+                                  const std::vector<std::u16string>& active_mods) {
   std::vector<int64_t> guids(known.guids.begin(), known.guids.end());
   std::sort(guids.begin(), guids.end());
   std::vector<std::string> names;
@@ -37,6 +38,9 @@ std::string SettledSaves::Context(const KnownUnits& known, const std::vector<std
   for (int64_t guid : guids) text += std::to_string(guid) + "\n";
   text += "names\n";
   for (const auto& name : names) text += name + "\n";
+  // In order, as the game compares a save's list with them.
+  text += "active\n";
+  for (const auto& name : active_mods) text += Utf16ToUtf8(name) + "\n";
   return Hex(save_import::Sha256(std::span<const uint8_t>(reinterpret_cast<const uint8_t*>(text.data()), text.size())));
 }
 

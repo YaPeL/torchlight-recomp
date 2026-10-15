@@ -342,7 +342,19 @@ Nothing showed it before because without a mod manager the list is always empty.
   (`translations/`), and the Xbox layouts' own widget (`mainmenu.uilayout`,
   `charactercreate.uilayout`, `main_xenon.layout`) has no text, a large font and a right-aligned
   box of 255 x 33 px at the bottom right. **[read]**
-- **Proposal (not done; the user decides).** Give the Xbox widget a short text of our own, not
+- **Done instead (2026-10-15, the user's choice): a box at the start.** Putting PC's text in the
+  Xbox window did not work (the layout path turned accented letters into mojibake, and the small red
+  text ran behind the copyright line), so the warning is told by the start's notice box, the one of
+  the save checks (`mods/save_units_notice.h`), in its readable font and translated (de, fr, es):
+  "These characters were last saved with other mods:", the characters, and "Playing them is at your
+  own risk." The check compares each character's list (player/names) with the names the game records
+  for the active mods (`mods/mod_list.h` `ActiveModNames`: every registered mod in order, disabled ones
+  too, as `sub_8239E718` lists every CMod with `+192` set), in count and by name at each place, as
+  the main menu does (`@0x8238C818..@0x8238C930`: the counts, then each pair). Such a character is not
+  settled (`settled_saves.h`, rules 2; the active names are part of the context), so it is read and
+  told at every start until it is saved with these mods, as PC warns whenever it shows the
+  character. The game's empty window stays as it is.
+- **Proposal (superseded by the box above).** Give the Xbox widget a short text of our own, not
   PC's (no game text in the repository), translated like the import messages (de, fr, es), for
   example "Mods changed since this character was last saved", set through the layout cache as the
   class labels are, with a smaller font and wrapping so it fits the box. The warning then shows

@@ -85,6 +85,9 @@ struct UnitCheck {
   std::string why;
   std::string owner;     // the character's name (a character file)
   bool unreadable = false;  // left alone because the file does not parse
+  // A character file's mod list: the names of the mods active when it was last saved (player/names,
+  // docs/mods.md 7d). None for a stash or a file that does not parse.
+  std::optional<std::vector<std::u16string>> mods;
 };
 
 // The checks on a parsed save (character, or a shared stash with `stash_file`), changing its tree
@@ -127,18 +130,31 @@ struct SaveUnitsReport {
   std::vector<std::string> holding_not_loaded;
   std::filesystem::path not_loaded_backup;
   bool saving_blocked = false;
+  // Characters last saved with other mods than the active ones (the game's main menu warning,
+  // docs/mods.md 7d): the file, the character's name and its saved list. Not settled, so they are
+  // read, and told, at every start until the character is saved with these mods.
+  struct OtherMods {
+    std::filesystem::path path;
+    std::string owner;
+    std::vector<std::u16string> saved;
+  };
+  std::vector<OtherMods> other_mods;
 };
 
 // Every save container under <user_data_root>/<profile>/<title_folder>/: character files (*.tsv)
 // and shared stashes (sharedstash*.bin) checked; when any would change, the saves are backed up
 // first (save-backups/<UTC>-units, save_safety.h) and each changed file is written whole and
 // renamed into place. Nothing is written if the backup fails. `log` gets a line per removed entry
-// and per file left alone. A file `skip` returns true for is not read (settled_saves.h).
+// and per file left alone. A file `skip` returns true for is not read (settled_saves.h). With
+// `active_mods` (the names the game records for the active mods, in its order: ActiveModNames),
+// a character whose saved list differs from it, in count or in any name at its place (as the game's
+// main menu compares them), is listed in `other_mods`.
 SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
                              const save_import::Schema& schema, const KnownUnits& known,
                              std::chrono::system_clock::time_point now,
                              const std::function<void(const std::string&)>& log,
-                             const std::function<bool(const std::filesystem::path&)>& skip = {});
+                             const std::function<bool(const std::filesystem::path&)>& skip = {},
+                             const std::vector<std::u16string>* active_mods = nullptr);
 
 // A save file holding some of the units asked for, with its owner ("" for a stash).
 struct SaveHolding {

@@ -7,6 +7,8 @@
 #include <iterator>
 #include <system_error>
 
+#include "save_import/pak.h"
+
 namespace torchlight::mods {
 
 namespace {
@@ -202,6 +204,17 @@ std::string ModSetFingerprint(const ModPlan& plan, const ScanResult& scan) {
     out += planned.folder + "|" + std::to_string(planned.priority) + "|" + hex + "\n";
   }
   return out;
+}
+
+std::vector<std::u16string> ActiveModNames(const ModPlan& plan, const ScanResult& scan) {
+  std::vector<std::u16string> names;
+  for (const PlannedMod& mod : plan.mods) {
+    const auto found = std::find_if(scan.mods.begin(), scan.mods.end(),
+                                    [&](const ModFolder& folder) { return folder.folder == mod.folder; });
+    const std::string& name = found != scan.mods.end() && !found->name.empty() ? found->name : mod.folder;
+    names.push_back(save_import::Utf16(name));
+  }
+  return names;
 }
 
 }  // namespace torchlight::mods

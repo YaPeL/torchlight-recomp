@@ -183,6 +183,12 @@ UnitCheck CheckCharacterFile(const si::Schema& schema, std::span<const uint8_t> 
   }
   check = RemoveUnknownUnits(*parsed, known, false);
   check.owner = NameOf(parsed->tree.Find("player"));
+  if (const si::Node* player = parsed->tree.Find("player")) {
+    if (const si::Node* names = player->Find("names"); names && names->kind == si::Node::Kind::kList) {
+      check.mods.emplace();
+      for (const si::Node& name : names->items) check.mods->push_back(name.text);
+    }
+  }
   if (check.result == UnitCheck::Result::kRemoved) check.bytes = si::Write360(schema, *parsed);
   return check;
 }
@@ -261,7 +267,8 @@ SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const 
                              const si::Schema& schema, const KnownUnits& known,
                              std::chrono::system_clock::time_point now,
                              const std::function<void(const std::string&)>& log,
-                             const std::function<bool(const std::filesystem::path&)>& skip) {
+                             const std::function<bool(const std::filesystem::path&)>& skip,
+                             const std::vector<std::u16string>* active_mods) {
   namespace fs = std::filesystem;
   SaveUnitsReport report;
   std::vector<std::pair<fs::path, UnitCheck>> changes;
@@ -276,6 +283,11 @@ SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const 
       return;
     }
     UnitCheck check = character ? CheckCharacterFile(schema, *bytes, known) : CheckStashFile(schema, *bytes, known);
+    const bool other_mods = active_mods && check.mods && *check.mods != *active_mods;
+    if (other_mods) {
+      report.other_mods.push_back({path, check.owner, *check.mods});
+      if (log) log("units: " + path.string() + ": last saved with other mods (" + std::to_string(check.mods->size()) + ")");
+    }
     for (const RemovedUnit& r : check.kept_level) {
       if (log) {
         log("units: " + path.string() + ": unknown " + r.path + " " + std::to_string(r.guid) +
@@ -287,7 +299,7 @@ SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const 
       if (check.unreadable) report.settled.push_back(path);
     } else if (check.result == UnitCheck::Result::kRemoved) {
       changes.emplace_back(path, std::move(check));
-    } else {
+    } else if (!other_mods) {
       report.settled.push_back(path);
     }
   });
