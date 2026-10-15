@@ -88,6 +88,12 @@ void WriteFile(const fs::path& path, const std::string& bytes) {
   std::ofstream(path, std::ios::binary).write(bytes.data(), std::streamsize(bytes.size()));
 }
 
+// The whole file, closed on return: Windows cannot delete a file a stream still holds.
+std::string ReadAll(const fs::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+}
+
 std::string Str(const std::vector<uint8_t>& b) { return std::string(b.begin(), b.end()); }
 
 }  // namespace
@@ -182,7 +188,8 @@ int main() {
   // Files: a synthetic pak and mods folder.
   {
     const fs::path root = fs::temp_directory_path() / "icon_atlas_test";
-    fs::remove_all(root);
+    std::error_code ec;
+    fs::remove_all(root, ec);
     mz_zip_archive zip{};
     Check(mz_zip_writer_init_heap(&zip, 0, 0), "zip writer");
     auto add = [&](const char* name, const std::string& bytes) {
@@ -210,8 +217,7 @@ int main() {
     Check(written.size() == 1 && written[0].key == "MEDIA/UI/ITEMICONS/ICONS.IMAGESET" && written[0].mod_folder == "First",
           "the first mod's file merged, by the game's path in upper case");
     Check(!fs::exists(root / "out" / "STALE.DDS"), "the folder emptied first");
-    std::ifstream in(root / "out" / "MEDIA/UI/ITEMICONS/ICONS.IMAGESET", std::ios::binary);
-    const std::string xml((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const std::string xml = ReadAll(root / "out" / "MEDIA/UI/ITEMICONS/ICONS.IMAGESET");
     const auto atlas = m::ParseAtlas(xml);
     const std::string file = atlas ? atlas->Attribute(atlas->imageset, "Imagefile") : "";
     Check(file.starts_with("tlatlas:/MEDIA/UI/ITEMICONS/ICONS.") && file.ends_with(".DDS"),
@@ -220,19 +226,17 @@ int main() {
     // The same inputs: the same name; another mod texture: another name.
     log.clear();
     m::WriteMergedAtlases(root / "pak.zip", root / "mods", plan, root / "out", "tlatlas:", log);
-    std::ifstream again(root / "out" / "MEDIA/UI/ITEMICONS/ICONS.IMAGESET", std::ios::binary);
-    const std::string xml2((std::istreambuf_iterator<char>(again)), std::istreambuf_iterator<char>());
+    const std::string xml2 = ReadAll(root / "out" / "MEDIA/UI/ITEMICONS/ICONS.IMAGESET");
     Check(xml2 == xml, "deterministic");
     WriteFile(root / "mods" / "First" / "media" / "UI" / "Icons.DDS", Str(Solid(8, 8, "DXT1", 0x07E0)));
     m::WriteMergedAtlases(root / "pak.zip", root / "mods", plan, root / "out", "tlatlas:", log);
-    std::ifstream third(root / "out" / "MEDIA/UI/ITEMICONS/ICONS.IMAGESET", std::ios::binary);
-    const std::string xml3((std::istreambuf_iterator<char>(third)), std::istreambuf_iterator<char>());
+    const std::string xml3 = ReadAll(root / "out" / "MEDIA/UI/ITEMICONS/ICONS.IMAGESET");
     Check(xml3 != xml, "a changed mod texture: another texture name");
     // No mods: nothing written.
     log.clear();
     Check(m::WriteMergedAtlases(root / "pak.zip", root / "mods", {}, root / "out", "tlatlas:", log).empty(),
           "no mods: nothing");
-    fs::remove_all(root);
+    fs::remove_all(root, ec);
   }
 
   if (failures) {
