@@ -8,7 +8,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
 endif()
 
 add_library(torchlight_mods STATIC dat_text.cpp mod_list.cpp save_safety.cpp saved_mod_list.cpp
-    unit_index.cpp unit_cache.cpp save_units.cpp
+    unit_index.cpp unit_cache.cpp save_units.cpp settled_saves.cpp
     save_units_notice.cpp text_encoding.cpp wardrobe_guard.cpp class_list.cpp)
 target_include_directories(torchlight_mods PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_mods PUBLIC cxx_std_23)

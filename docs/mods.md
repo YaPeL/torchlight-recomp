@@ -362,12 +362,21 @@ cannot be split safely. Tested on a damaged copy of the synthetic fixture
 file then equal, byte for byte, to the save as it should have been written, and the backup made)
 and loaded with all its items.
 
-**Pending, no priority: not reading the saves again when nothing changed.** With a mods folder,
-every start parses every character save twice (`RepairModListSaves`, then `ProtectSaves`), and a
-save that does not parse for another reason is logged again at each start. With a few saves this
-costs nothing noticeable. For someone with dozens, both passes could be skipped when neither the
-mods (folder and `mods.dat`) nor the saves (size and modification time) changed since the last
-start.
+**Saves not read again when nothing changed (2026-10-15).** Every start parsed every character save
+twice (`RepairModListSaves`, then `ProtectSaves`), and a save that does not parse was logged again
+at each start. Now the saves those checks had nothing to do with are remembered as settled
+(`mods/settled_saves.h`, in `<user data>/cache/settled-saves.txt`): a save with no unknown unit of
+the player's, and one that does not parse and cannot be repaired. At the next start both passes
+skip a settled save whose size and modification time are unchanged, and the log says how many
+("N save(s) unchanged since they were last checked, not read again"). A save written since (by the
+game, a repair, a removal, or put back from a backup) is read again. Everything is read again when
+the context changes: the units the game is expected to know (game data and mods), the names a
+broken mod list may hold (the mods' folders and names, and those `mods.dat` lists), or the checks'
+rules (`SettledSaves::kRulesVersion`). A save left alone with an unknown unit is never settled, so
+it is checked, and listed in the player's notice, at every start. When the comparison after the
+game's load finds units the check counted on missing, the memory is deleted and the next start
+reads everything. Tested in `save_units_test` (settled, skipped, read again when written,
+unreadable told once, another context, left alone not settled, the repair skipping too).
 
 ## 7e. New-item mods in validation: what kept the unit out (2026-10-08)
 

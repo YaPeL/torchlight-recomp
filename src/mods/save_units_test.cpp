@@ -20,6 +20,7 @@
 #include "mods/saved_mod_list.h"
 #include "save_import/digest.h"
 #include "mods/save_units_notice.h"
+#include "mods/settled_saves.h"
 #include "save_import/schema.h"
 
 using namespace torchlight::mods;
@@ -496,6 +497,122 @@ int main() {
     Check(again.repaired.empty() && again.left_alone.empty(), "a save that reads is left as it is");
     std::error_code ec;
     fs::remove_all(root, ec);
+  }
+
+  // Saves settled at a start are not read again at the next while neither they nor the context
+  // changed (settled_saves.h); a save that changes is read again, and an unreadable one is logged
+  // once, not at every start.
+  {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "save_units_test_settled";
+    std::error_code cleanup;
+    fs::remove_all(root, cleanup);
+    const fs::path saves = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav";
+    fs::create_directories(saves);
+    auto write = [](const fs::path& p, const si::Bytes& b) {
+      std::ofstream(p, std::ios::binary).write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
+    };
+    const KnownUnits known = MakeKnownUnits(IndexWith(base), {}, true);
+    si::Bytes clean_bytes;
+    {
+      auto clean = Parse(*schema, x360);
+      RemoveUnknownUnits(*clean, known);
+      clean_bytes = si::Write360(*schema, *clean);
+    }
+    write(saves / "1.tsv", clean_bytes);                          // clean
+    write(saves / "2.tsv", si::Bytes{'n', 'o', 't', ' ', 'a', ' ', 's', 'a', 'v', 'e'});  // unreadable
+    write(saves / "4.TSV", x360);                                 // holds kMod: changed at the first start
+    const fs::path memory = root / "cache" / "settled-saves.txt";
+    const std::string context = SettledSaves::Context(known, {u"Some Mod"});
+    const auto now = std::chrono::system_clock::now();
+    struct Start {
+      SaveUnitsReport report;
+      std::vector<std::string> lines;
+    };
+    // One start: what was settled before is skipped, and what is settled now is remembered.
+    auto start = [&](const KnownUnits& units, const std::string& ctx) {
+      Start out;
+      const SettledSaves last = SettledSaves::Load(memory, root, ctx);
+      SettledSaves next(root, ctx);
+      out.report = ProtectSaves(root, "58410A7E", *schema, units, now,
+                                [&](const std::string& l) { out.lines.push_back(l); },
+                                [&](const fs::path& p) {
+                                  if (!last.Unchanged(p)) return false;
+                                  next.Settle(p);
+                                  return true;
+                                });
+      for (const auto& p : out.report.settled) next.Settle(p);
+      Check(next.Store(memory), "the settled saves are written");
+      return out;
+    };
+    auto mentions = [](const Start& s, const std::string& part) {
+      return std::any_of(s.lines.begin(), s.lines.end(), [&](const std::string& l) { return l.find(part) != std::string::npos; });
+    };
+    auto settled = [](const Start& s, const char* name) {
+      return std::any_of(s.report.settled.begin(), s.report.settled.end(),
+                         [&](const fs::path& p) { return p.filename() == name; });
+    };
+
+    const Start first = start(known, context);
+    Check(first.report.skipped == 0 && first.report.changed.size() == 1 && settled(first, "1.tsv") &&
+              settled(first, "2.tsv") && !settled(first, "4.TSV") && mentions(first, "unreadable"),
+          "first start: everything read, the clean and the unreadable settled, the changed one not");
+    const Start second = start(known, context);
+    Check(second.report.skipped == 2 && settled(second, "4.TSV") && second.report.changed.empty() &&
+              !mentions(second, "unreadable"),
+          "second start: the settled two not read (the unreadable one not logged again); the save written "
+          "at the first is read, now settled");
+    const Start third = start(known, context);
+    Check(third.report.skipped == 3 && third.lines.empty(), "third start: nothing read, nothing logged");
+
+    // The mod list repair skips them too: the unreadable save it cannot repair is not tried, nor
+    // logged, again.
+    {
+      const SettledSaves last = SettledSaves::Load(memory, root, context);
+      std::vector<std::string> lines;
+      const auto repair = RepairModListSaves(root, "58410A7E", *schema, {u"Some Mod"}, now,
+                                             [&](const std::string& l) { lines.push_back(l); },
+                                             [&](const fs::path& p) { return last.Unchanged(p); });
+      Check(repair.skipped == 3 && repair.left_alone.empty() && lines.empty(), "the repair skips the settled saves");
+      const auto unskipped = RepairModListSaves(root, "58410A7E", *schema, {u"Some Mod"}, now, nullptr);
+      Check(unskipped.skipped == 0, "without the memory it reads them all");
+    }
+    // A save that changes is read again.
+    fs::last_write_time(saves / "1.tsv", fs::last_write_time(saves / "1.tsv") + std::chrono::seconds(2));
+    const Start touched = start(known, context);
+    Check(touched.report.skipped == 2 && settled(touched, "1.tsv"), "a save written since is read again");
+    write(saves / "2.tsv", si::Bytes{'n', 'o', 't', ' ', 'a', ' ', 's', 'a', 'v', 'e', '!'});
+    const Start grown = start(known, context);
+    Check(grown.report.skipped == 2 && mentions(grown, "unreadable"), "an unreadable save that changed is told again");
+
+    // Another context (other units, other names a broken list may hold) forgets every save.
+    Check(SettledSaves::Context(known, {u"Some Mod"}) == SettledSaves::Context(known, {u"Some Mod", u"Some Mod"}) &&
+              SettledSaves::Context(known, {u"Other Mod"}) != context &&
+              SettledSaves::Context(MakeKnownUnits(IndexWith(all), {}, true), {u"Some Mod"}) != context,
+          "the context follows the units and the names");
+    const Start other = start(MakeKnownUnits(IndexWith(all), {}, true),
+                             SettledSaves::Context(MakeKnownUnits(IndexWith(all), {}, true), {u"Some Mod"}));
+    Check(other.report.skipped == 0 && mentions(other, "unreadable"), "another context: every save read");
+
+    // A save left alone with an unknown unit (here because the known units are incomplete) is not
+    // settled: it is checked, and told, at every start.
+    write(saves / "5.TSV", x360);  // holds kMod
+    KnownUnits incomplete = known;
+    incomplete.complete = false;
+    incomplete.incomplete_why = "test";
+    const std::string incomplete_context = SettledSaves::Context(incomplete, {u"Some Mod"});
+    Check(incomplete_context != context, "an incomplete set is another context");
+    const Start left = start(incomplete, incomplete_context);
+    Check(!settled(left, "5.TSV") && settled(left, "1.tsv") && settled(left, "2.tsv") &&
+              left.report.changed.empty() && mentions(left, "5.TSV"),
+          "a save left alone with an unknown unit: not settled; the others are");
+    const Start again = start(incomplete, incomplete_context);
+    Check(again.report.skipped == 3 && mentions(again, "5.TSV"), "so it is read, and told, again");
+
+    // A memory file that does not read, or of another format, is no memory.
+    std::ofstream(memory, std::ios::binary) << "garbage\n";
+    Check(SettledSaves::Load(memory, root, context).size() == 0, "an unreadable memory: nothing settled");
+    fs::remove_all(root, cleanup);
   }
 
   // A failure, and every notice text in each language of the translations, its {words} kept (a text
