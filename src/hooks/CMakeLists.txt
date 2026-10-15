@@ -72,3 +72,21 @@ target_include_directories(texture_blend_record_test PRIVATE "${CMAKE_CURRENT_SO
 target_compile_features(texture_blend_record_test PRIVATE cxx_std_23)
 target_compile_options(texture_blend_record_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME texture_blend_record_test COMMAND texture_blend_record_test)
+
+# Frustum::isVisible(box) as host code (frustum_test.h): pure over a guest memory base, with the
+# SIMDe functions the recompiled code uses (the SDK's include root) and its SSE4.1 target, so the
+# vector operations are the same ones; the hook that calls it (frustum_hooks.cpp) is part of the
+# executable.
+add_library(torchlight_frustum_test STATIC frustum_test.cpp)
+target_include_directories(torchlight_frustum_test PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_include_directories(torchlight_frustum_test SYSTEM PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
+target_compile_features(torchlight_frustum_test PUBLIC cxx_std_23)
+target_compile_options(torchlight_frustum_test PRIVATE -Wall -Wextra -Werror)
+if(NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    target_compile_options(torchlight_frustum_test PRIVATE -msse4.1)
+endif()
+
+add_executable(frustum_test_test frustum_test_test.cpp)
+target_link_libraries(frustum_test_test PRIVATE torchlight_frustum_test)
+target_compile_options(frustum_test_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME frustum_test_test COMMAND frustum_test_test)
