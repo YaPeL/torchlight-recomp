@@ -6,8 +6,9 @@
 // three choices only runs the game's code unchanged. With more, its three buttons show a window
 // onto the list: a move off either end of the row scrolls it, A picks what the focused button shows
 // (the screen sends the button's window name, which is mapped to that choice), and a choice without
-// an Xbox button image shows an empty frame with its name on the label the layout cache added
-// (AddClassLabels).
+// an Xbox button image shows its mod's own PC icon when it has one (mods/class_list.h ModClassIcons:
+// the imageset is loaded into CEGUI the first time, game_ui.h kImagesetManagerCreate), or else an
+// empty frame with its name on the label the layout cache added (AddClassLabels).
 
 #include <algorithm>
 #include <filesystem>
@@ -54,6 +55,7 @@ struct Row {
   uint32_t command;                         // OnCommand's command for it
   std::vector<std::string> list;
   std::map<std::string, std::string> shown_names;  // a choice's label (by ClassKey), if not its name
+  std::map<std::string, mods::ClassIcon> icons;     // a choice's own PC icon (by ClassKey), if any
   cs::Carousel carousel{0};
   bool images_saved = false;
   std::string images[cs::kSlots][3];  // each game choice's button images, as the layout had them
@@ -92,6 +94,7 @@ void List() {
     pet_buttons = mods::ModPetButtons(folder, *plan);
     monsters = mods::ModMonsterUnits(folder, *plan);
     g_pets.shown_names = mods::ModMonsterDisplayNames(folder, *plan);
+    g_classes.icons = mods::ModClassIcons(folder, *plan, mods::ModImagesets(folder, *plan));
   }
   g_classes.list = mods::ClassList(class_buttons, players);
   g_pets.list = mods::PetList(pet_buttons, monsters);
@@ -155,6 +158,48 @@ void SetProperty(GuestCall& call, uint32_t window, const char* name, const std::
   call.Release(mark);
 }
 
+// Whether a mod's imageset is in CEGUI for its icons. The game loads the mods' item icon imagesets
+// itself; one it has not loaded is created from the mod's file in the mod's resource group the
+// first time. Not when the name is one of the game's own imagesets (its images are not the mod's:
+// setting one CEGUI does not have would throw), when the mod has no group, or when the creation did
+// not leave it there. (ModImagesets leaves out a name two files define, so an imageset of that
+// name the game holds is this mod's file.)
+bool EnsureImageset(GuestCall& call, uint8_t* base, const mods::ModImageset& set) {
+  static std::map<std::string, bool> known;
+  if (const auto it = known.find(set.info.name); it != known.end()) return it->second;
+  bool& ok = known[set.info.name];
+  if (GameImagesetNames().contains(set.info.name)) {
+    REXLOG_WARN("class selector: {} is one of the game's imagesets; {}'s icons from it not used", set.info.name,
+                set.mod_folder);
+    return ok = false;
+  }
+  const uint32_t manager = abi::ReadU32(base, ui::kImagesetManagerGlobal);
+  const auto group = ModResourceGroup(set.mod_folder);
+  if (!manager || !group) {
+    REXLOG_WARN("class selector: imageset {} not loaded ({})", set.info.name,
+                manager ? "the mod has no resource group" : "no imageset manager");
+    return ok = false;
+  }
+  const uint32_t mark = call.Mark();
+  const uint32_t name = call.CeguiString(set.info.name);
+  if (name && call.Call(ui::kImagesetManagerFind.address, {manager, name})) {
+    REXLOG_INFO("class selector: imageset {} already loaded by the game", set.info.name);
+    ok = true;
+  } else if (name) {
+    const uint32_t file = call.CeguiString(set.file);
+    const uint32_t group_text = call.CeguiString(*group);
+    if (file && group_text) call.Call(ui::kImagesetManagerCreate.address, {manager, file, group_text});
+    ok = call.Call(ui::kImagesetManagerFind.address, {manager, name}) != 0;
+    REXLOG_INFO("class selector: imageset {} from {} ({}) {}", set.info.name, set.file, *group,
+                ok ? "loaded" : "NOT loaded");
+    call.DestroyCeguiString(group_text);
+    call.DestroyCeguiString(file);
+  }
+  call.DestroyCeguiString(name);
+  call.Release(mark);
+  return ok;
+}
+
 // A label's text: the name the game shows for the choice (a pet's DISPLAYNAME), else its name as
 // written with its underscores as spaces ("Pet_Wolf").
 std::string LabelText(const Row& row, std::string name) {
@@ -189,6 +234,14 @@ void Refresh(PPCContext& ctx, uint8_t* base, uint32_t menu, Row& row) {
     const std::string& shown = row.list[row.carousel.ClassAt(s)];
     if (const auto game = row.GameSlot(shown)) {
       for (size_t i = 0; i < 3; ++i) SetProperty(call, buttons[s], kImageProperties[i], row.images[*game][i]);
+      SetProperty(call, labels[s], "Visible", "False");
+    } else if (const auto icon = row.icons.find(mods::ClassKey(shown));
+               icon != row.icons.end() && EnsureImageset(call, base, icon->second.imageset)) {
+      const auto& images = icon->second.images;
+      auto ref = [&](const std::string& image) { return "set:" + images.imageset + " image:" + image; };
+      SetProperty(call, buttons[s], "NormalImage", ref(images.normal));
+      SetProperty(call, buttons[s], "HoverImage", ref(images.hover));
+      SetProperty(call, buttons[s], "PushedImage", ref(images.pushed));
       SetProperty(call, labels[s], "Visible", "False");
     } else {
       SetProperty(call, buttons[s], "NormalImage", kFrameImage);

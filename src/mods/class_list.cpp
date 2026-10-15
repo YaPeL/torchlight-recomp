@@ -8,6 +8,7 @@
 #include <span>
 
 #include "mods/dat_text.h"
+#include "save_import/pak.h"
 
 namespace torchlight::mods {
 
@@ -270,6 +271,210 @@ std::vector<std::vector<std::string>> ModClassButtons(const std::filesystem::pat
 }
 std::vector<std::vector<std::string>> ModPetButtons(const std::filesystem::path& mods_folder, const ModPlan& plan) {
   return ModButtons(mods_folder, plan, PetButtons);
+}
+
+namespace {
+
+// "set:<imageset> image:<image>", either part optional in CEGUI; both required here.
+bool ParseImageRef(const std::string& value, std::string& set, std::string& image) {
+  const size_t s = value.find("set:");
+  const size_t i = value.find("image:");
+  if (s == std::string::npos || i == std::string::npos) return false;
+  auto word = [&](size_t from) {
+    size_t end = value.find(' ', from);
+    return value.substr(from, end == std::string::npos ? std::string::npos : end - from);
+  };
+  set = word(s + 4);
+  image = word(i + 6);
+  return !set.empty() && !image.empty();
+}
+
+// The properties of the window whose start tag is at `pos` (its own, before any child window).
+std::map<std::string, std::string> OwnProperties(std::string_view xml, size_t pos) {
+  std::map<std::string, std::string> props;
+  const size_t tag_end = xml.find('>', pos);
+  if (tag_end == std::string_view::npos || xml[tag_end - 1] == '/') return props;
+  const size_t own_end = std::min(xml.find("<Window", tag_end), xml.find("</Window", tag_end));
+  for (size_t p = tag_end; (p = xml.find("<Property", p)) != std::string_view::npos && p < own_end; ++p) {
+    const size_t p_end = xml.find('>', p);
+    if (p_end == std::string_view::npos) break;
+    const std::string_view tag = xml.substr(p, p_end - p);
+    const auto key = Attribute(tag, "Name");
+    const auto value = Attribute(tag, "Value");
+    if (key && value) props[Upper(*key)] = *value;
+  }
+  return props;
+}
+
+}  // namespace
+
+std::map<std::string, ButtonImages> ClassButtonImages(std::string_view xml) {
+  std::map<std::string, ButtonImages> out;
+  for (size_t pos = 0; (pos = xml.find("<Window", pos)) != std::string_view::npos; ++pos) {
+    const size_t tag_end = xml.find('>', pos);
+    if (tag_end == std::string_view::npos) break;
+    const auto name = Attribute(xml.substr(pos, tag_end - pos), "Name");
+    if (!name) continue;
+    const auto props = OwnProperties(xml, pos);
+    const auto click = props.find("ONCLICK");
+    if (click == props.end() || Upper(click->second) != "GUISELECT1") continue;
+    auto image_of = [&](std::initializer_list<const char*> keys, std::string& set, std::string& image) {
+      for (const char* key : keys) {
+        if (const auto it = props.find(key); it != props.end()) return ParseImageRef(it->second, set, image);
+      }
+      return false;
+    };
+    ButtonImages images;
+    std::string set;
+    if (!image_of({"UNSELECTEDIMAGE", "NORMALIMAGE"}, images.imageset, images.normal)) continue;
+    bool same = true;
+    if (image_of({"HOVERIMAGE"}, set, images.hover)) same = same && set == images.imageset;
+    if (image_of({"SELECTEDIMAGE", "PUSHEDIMAGE"}, set, images.pushed)) same = same && set == images.imageset;
+    if (!same) continue;
+    if (images.hover.empty()) images.hover = images.normal;
+    if (images.pushed.empty()) images.pushed = images.normal;
+    out.try_emplace(ClassKey(*name), images);
+  }
+  return out;
+}
+
+namespace {
+
+// An attribute of a start tag, as an XML reader takes it: spaces around the '=' allowed
+// (the game's own imagesets write `Name= "widgets"`), double or single quotes.
+std::optional<std::string> XmlAttribute(std::string_view tag, std::string_view name) {
+  for (size_t at = tag.find(name); at != std::string_view::npos; at = tag.find(name, at + 1)) {
+    if (at == 0 || !std::isspace(static_cast<unsigned char>(tag[at - 1]))) continue;
+    size_t p = at + name.size();
+    while (p < tag.size() && std::isspace(static_cast<unsigned char>(tag[p]))) ++p;
+    if (p >= tag.size() || tag[p] != '=') continue;
+    ++p;
+    while (p < tag.size() && std::isspace(static_cast<unsigned char>(tag[p]))) ++p;
+    if (p >= tag.size() || (tag[p] != '"' && tag[p] != '\'')) continue;
+    const size_t end = tag.find(tag[p], p + 1);
+    if (end == std::string_view::npos) return std::nullopt;
+    return std::string(tag.substr(p + 1, end - p - 1));
+  }
+  return std::nullopt;
+}
+
+}  // namespace
+
+std::optional<ImagesetInfo> ParseImageset(std::string_view xml) {
+  const size_t at = xml.find("<Imageset");
+  if (at == std::string_view::npos) return std::nullopt;
+  const size_t end = xml.find('>', at);
+  if (end == std::string_view::npos) return std::nullopt;
+  ImagesetInfo info;
+  const std::string_view tag = xml.substr(at, end - at);
+  const auto name = XmlAttribute(tag, "Name");
+  const auto file = XmlAttribute(tag, "Imagefile");
+  if (!name || name->empty() || !file || file->empty()) return std::nullopt;
+  info.name = *name;
+  info.image_file = *file;
+  for (size_t pos = end; (pos = xml.find("<Image ", pos)) != std::string_view::npos; ++pos) {
+    const size_t image_end = xml.find('>', pos);
+    if (image_end == std::string_view::npos) break;
+    if (const auto image = XmlAttribute(xml.substr(pos, image_end - pos), "Name")) info.images.insert(*image);
+  }
+  return info;
+}
+
+namespace {
+
+// `relative` ('/' or '\\' separated) under `root`, each part matched in any case, or nothing.
+std::optional<std::filesystem::path> FindPathNoCase(const std::filesystem::path& root, std::string relative) {
+  std::replace(relative.begin(), relative.end(), '\\', '/');
+  std::filesystem::path at = root;
+  size_t from = 0;
+  while (from <= relative.size()) {
+    const size_t slash = relative.find('/', from);
+    const std::string part = relative.substr(from, slash == std::string::npos ? std::string::npos : slash - from);
+    if (!part.empty()) {
+      const auto next = FindNoCase(at, part);
+      if (!next) return std::nullopt;
+      at = *next;
+    }
+    if (slash == std::string::npos) break;
+    from = slash + 1;
+  }
+  std::error_code ec;
+  return std::filesystem::is_regular_file(at, ec) ? std::optional(at) : std::nullopt;
+}
+
+}  // namespace
+
+std::map<std::string, ModImageset> ModImagesets(const std::filesystem::path& mods_folder, const ModPlan& plan) {
+  std::map<std::string, ModImageset> out;
+  std::set<std::string> names, twice;
+  for (const PlannedMod* mod : EnabledInSearchOrder(plan)) {
+    const std::filesystem::path root = mods_folder / mod->folder;
+    auto media = FindNoCase(root, "media");
+    auto ui = media ? FindNoCase(*media, "ui") : std::nullopt;
+    if (!ui) continue;
+    std::vector<std::filesystem::path> files;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(*ui, ec)) {
+      if (entry.is_regular_file(ec) && Upper(entry.path().extension().string()) == ".IMAGESET") {
+        files.push_back(entry.path());
+      }
+    }
+    std::sort(files.begin(), files.end());
+    for (const auto& file : files) {
+      const auto info = ParseImageset(LayoutText(ReadFile(file)));
+      if (!info) continue;
+      if (!names.insert(info->name).second) {
+        twice.insert(info->name);
+        continue;
+      }
+      if (!FindPathNoCase(root, info->image_file)) continue;
+      const std::u8string relative = file.lexically_relative(root).generic_u8string();
+      out.emplace(info->name, ModImageset{mod->folder, std::string(relative.begin(), relative.end()), *info});
+    }
+  }
+  for (const std::string& name : twice) out.erase(name);
+  return out;
+}
+
+std::set<std::string> PakImagesetNames(const std::filesystem::path& pak, std::string* error) {
+  std::set<std::string> names;
+  std::string e;
+  const auto archive = save_import::Pak::Open(pak, e);
+  if (!archive) {
+    if (error) *error = e;
+    return names;
+  }
+  std::vector<uint32_t> entries;
+  archive->ForEach([&](uint32_t index, const std::string& name) {
+    if (name.starts_with("media/ui/") && name.ends_with(".imageset")) entries.push_back(index);
+    return true;
+  });
+  for (const uint32_t index : entries) {
+    std::vector<uint8_t> bytes;
+    if (!archive->Read(index, bytes, e)) continue;
+    if (const auto info = ParseImageset(LayoutText(bytes))) names.insert(info->name);
+  }
+  return names;
+}
+
+std::map<std::string, ClassIcon> ModClassIcons(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                               const std::map<std::string, ModImageset>& imagesets) {
+  std::map<std::string, ClassIcon> out;
+  for (const PlannedMod* mod : EnabledInSearchOrder(plan)) {
+    auto media = FindNoCase(mods_folder / mod->folder, "media");
+    auto ui = media ? FindNoCase(*media, "ui") : std::nullopt;
+    auto layout = ui ? FindNoCase(*ui, "charactercreate.layout") : std::nullopt;
+    if (!layout) continue;
+    for (const auto& [key, images] : ClassButtonImages(LayoutText(ReadFile(*layout)))) {
+      if (out.contains(key)) continue;
+      const auto set = imagesets.find(images.imageset);
+      if (set == imagesets.end()) continue;
+      const auto& known = set->second.info.images;
+      if (!known.contains(images.normal) || !known.contains(images.hover) || !known.contains(images.pushed)) continue;
+      out.emplace(key, ClassIcon{images, set->second});
+    }
+  }
+  return out;
 }
 
 }  // namespace torchlight::mods

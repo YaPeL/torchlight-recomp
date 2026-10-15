@@ -1086,8 +1086,25 @@ their tree as it was.
 (ARCHITECTURE.md, "mods' classes at character creation"): the game's three, then each enabled
 mod's `charactercreate.layout` class buttons with a player unit behind them. With the 29-mod pack
 that is 28 classes (JCC - Main's layout); a mod's class that no layout lists is not offered, as on
-PC. Icons: the game's classes keep theirs; the others show an empty frame with the class name. The
-mods' own PC icons (their `logo.imageset`) are a later improvement.
+PC. Icons: the game's classes keep theirs; a mod's class shows its own PC icon when it has one, and
+otherwise an empty frame with the class name.
+
+**Mods' own class icons (2026-10-15, "option B").** PC's creation layout gives each class button the
+three images of a CEGUI imageset (`UnselectedImage`, `HoverImage`, `SelectedImage`, as
+"set:<imageset> image:<image>"), and the imageset is a file of the mod (XML: its `Name`, its
+`Imagefile`, a path in the mod, and its images). The selector reads them on the host
+(`mods/class_list.h` `ModClassIcons`, `ModImagesets`) and puts them on the Xbox button as its
+`NormalImage`, `HoverImage` and `PushedImage`. The imageset must be in CEGUI first: the game itself
+loads the mods' item icon imagesets (Enhanced Edition's `enchantlogo`, JCC's `MyIcons` were already
+there); one it has not loaded (JCC - Main's `Logo`, in `media/UI/logo.imageset`) is created from the
+mod's file in the mod's resource group (game_ui.h `kImagesetManagerCreate`). CEGUI throws on an image
+or an imageset it does not have, so an icon is used only when every image it names is in the file,
+the file's image file exists in the mod, the name is not one of the game's own imagesets (read from
+the pak, `PakImagesetNames`), and no other mod file defines the same name (which of them the game
+loaded would not be known). Anything else falls back to the frame with the name. The pets have no
+icons on PC (their buttons are text), so they keep the frame with the name. Checked in automatic runs
+with captures: Enhanced Edition's five classes and the pack's (25 of its 28 classes have an icon,
+JCC's `Logo` created by the selector), drawn with the mods' textures.
 
 **Pets too (2026-10-14).** PC's layout lists the pets as buttons with onClick `guiPet1`, each named
 after a monster unit (Enhanced Edition: `Pet_BigCat` in `media/units/monsters/PET_BIGCAT.DAT`). The

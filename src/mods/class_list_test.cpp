@@ -164,6 +164,86 @@ int main() {
     fs::remove_all(root);
   }
 
+  // A mod class's own icon (option B): the layout button's images, the imageset with its image
+  // file in the mod, every image present; otherwise no icon (the frame with the name).
+  {
+    const std::string radio =
+        "<Window Type=\"GuiLook/RadioButton\" Name=\"Paladin\">\n"
+        "  <Property Name=\"SelectedImage\" Value=\"set:PalLogo image:palsel\" />\n"
+        "  <Property Name=\"HoverImage\" Value=\"set:PalLogo image:pallit\" />\n"
+        "  <Property Name=\"UnselectedImage\" Value=\"set:PalLogo image:pal\" />\n"
+        "  <Property Name=\"onClick\" Value=\"guiSelect1\" />\n"
+        "</Window>\n"
+        "<Window Type=\"GuiLook/RadioButton\" Name=\"Monk\">\n"
+        "  <Property Name=\"UnselectedImage\" Value=\"set:PalLogo image:monk\" />\n"
+        "  <Property Name=\"HoverImage\" Value=\"set:Other image:monklit\" />\n"
+        "  <Property Name=\"onClick\" Value=\"guiSelect1\" />\n"
+        "</Window>\n"
+        "<Window Type=\"GuiLook/RadioButton\" Name=\"Druid\">\n"
+        "  <Property Name=\"UnselectedImage\" Value=\"set:PalLogo image:druid\" />\n"
+        "  <Property Name=\"onClick\" Value=\"guiSelect1\" />\n"
+        "</Window>\n"
+        "<Window Type=\"GuiLook/RadioButton\" Name=\"Ghost\">\n"
+        "  <Property Name=\"UnselectedImage\" Value=\"set:PalLogo image:ghost\" />\n"
+        "  <Property Name=\"onClick\" Value=\"guiSelect1\" />\n"
+        "</Window>\n"
+        "<Window Type=\"GuiLook/StandardButton\" Name=\"Pet_X\">\n"
+        "  <Property Name=\"NormalImage\" Value=\"set:PalLogo image:pal\" />\n"
+        "  <Property Name=\"onClick\" Value=\"guiPet1\" />\n"
+        "</Window>\n";
+    const auto images = m::ClassButtonImages(radio);
+    Check(images.size() == 3 && images.at("PALADIN").imageset == "PalLogo" && images.at("PALADIN").normal == "pal" &&
+              images.at("PALADIN").hover == "pallit" && images.at("PALADIN").pushed == "palsel",
+          "a radio button's three images");
+    Check(!images.contains("MONK"), "images from two imagesets: none");
+    Check(images.at("DRUID").hover == "druid" && images.at("DRUID").pushed == "druid", "a lone image for all three");
+    Check(!images.contains("PET_X"), "only class buttons");
+
+    const std::string set_xml =
+        "<?xml version=\"1.0\"?>\n<Imageset Name=\"PalLogo\" Imagefile=\"media\\UI\\Icons\\pal.png\" >\n"
+        "  <Image Name=\"pal\" XPos=\"0\" YPos=\"0\" Width=\"8\" Height=\"8\" />\n"
+        "  <Image Name=\"pallit\" XPos=\"0\" YPos=\"8\" Width=\"8\" Height=\"8\" />\n"
+        "  <Image Name=\"palsel\" XPos=\"0\" YPos=\"16\" Width=\"8\" Height=\"8\" />\n"
+        "  <Image Name=\"druid\" XPos=\"8\" YPos=\"0\" Width=\"8\" Height=\"8\" />\n"
+        "</Imageset>\n";
+    const auto info = m::ParseImageset(set_xml);
+    Check(info && info->name == "PalLogo" && info->image_file == "media\\UI\\Icons\\pal.png" &&
+              info->images.size() == 4,
+          "an imageset's name, file and images");
+    Check(!m::ParseImageset("<Imageset Imagefile=\"a.png\"></Imageset>"), "no Name: none");
+    const auto spaced = m::ParseImageset("<Imageset Name= \"widgets\" Imagefile = 'w.dds'>\n\t<Image Name =\"a\" />");
+    Check(spaced && spaced->name == "widgets" && spaced->image_file == "w.dds" && spaced->images.contains("a"),
+          "spaces around '=' and single quotes, as XML allows");
+
+    const fs::path root = fs::temp_directory_path() / "class_list_test_icons";
+    fs::remove_all(root);
+    Write(root / "Classes" / "media" / "UI" / "charactercreate.layout", radio);
+    Write(root / "Classes" / "media" / "UI" / "itemicons" / "pallogo.imageset", set_xml);
+    Write(root / "Classes" / "media" / "UI" / "ICONS" / "Pal.PNG", "png");
+    // A second mod with an imageset of the same name: the first in the search order is kept.
+    Write(root / "Later" / "media" / "UI" / "x.imageset",
+          "<Imageset Name=\"PalLogo\" Imagefile=\"media/ui/x.png\"><Image Name=\"ghost\" /></Imageset>");
+    Write(root / "Later" / "media" / "UI" / "x.png", "png");
+    m::ModPlan plan;
+    plan.mods = {{"Classes", 0}, {"Later", 1}};
+    const auto sets = m::ModImagesets(root, plan);
+    Check(sets.empty(), "a name two mods define: left out (which one the game loaded is not known)");
+    fs::remove_all(root / "Later");
+    plan.mods = {{"Classes", 0}};
+    const auto one = m::ModImagesets(root, plan);
+    Check(one.size() == 1 && one.at("PalLogo").mod_folder == "Classes" &&
+              one.at("PalLogo").file == "media/UI/itemicons/pallogo.imageset",
+          "imagesets by name, the image file found in any case");
+    Write(root / "Classes" / "media" / "UI" / "y.imageset", "<Imageset Name=\"Gone\" Imagefile=\"media/ui/gone.png\"></Imageset>");
+    Check(m::ModImagesets(root, plan).size() == 1, "one without its image file left out");
+    const auto& sets_used = one;
+    const auto icons = m::ModClassIcons(root, plan, sets_used);
+    Check(icons.size() == 2 && icons.contains("PALADIN") && icons.contains("DRUID"),
+          "classes with every image in the imageset have an icon");
+    Check(!icons.contains("GHOST"), "an image the imageset does not hold: no icon (the frame with the name)");
+    fs::remove_all(root);
+  }
+
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
     return EXIT_FAILURE;
