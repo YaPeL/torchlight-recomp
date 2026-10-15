@@ -940,6 +940,34 @@ this Ubuntu ships no GNOME session on Xorg; not pursued. Do not read a presented
 45 ms on this laptop as the game's or the backend's; the per-step means, the drops and the p99 are
 unaffected by a handful of such frames.
 
+## Where the optimisation work closes (2026-10-14)
+
+Taken into `develop` in this round: the game thread's steps 3a (`_setTextureBlendMode`'s member
+writes as host code) and 4 (the RTSS listener's SGPass lookup as host code) with the 3b fix of the
+`SetTextureBlend` records; the backend's three per-draw cuts (camera and light, constants by
+changed class, vertex bindings); SDK patch 33 (the timer queue's blocking wait); and the culling's
+`Frustum::isVisible` as host code (`perf/game-thread-native-2`, fa0edc5, after the user's hand
+check). Game thread CPU per frame, base to steps 3+4: fight -4.3 %, town square -5.6 %; the
+frustum test another -2.7 % in the town square; the blind hand test of the first batch +3 to +11 %
+presented fps (docs/game-thread-parallelism.md, sections 11 and 12).
+
+Tried and measured without a demonstrated gain, all kept in the history: SDK patch 32 (argument
+locals), step 5 (`_updateAutoParams` replayed as host code), `66b6b43` (one values array per
+`SetConstants`), `Matrix4::concatenate` as host code, the pathfinder's neighbour opening as host
+code, and before them the controller walk as host code. Noted, not measured: the `std::visit`
+thunks of the session (about 1 %). The pattern: what gained was host code replacing dispatch and
+context traffic over data already in cache; what did not was loads over scattered or already
+cheap data, which the host reads as the guest did.
+
+Left for a machine without the thermal limit (this laptop's run-to-run spread, 2-9 %, hides
+anything under about 2 %): the rest of the RTSS listener (the texturing, lighting and fog
+updates as host code, 3.5-4 % of the thread), the layout props' forced bone evaluation (the
+study's 11.2, up to 3 % in dungeons, risk M-H), the producer's phase B and `66b6b43`, and the
+large one, emitting the render submission from another thread, only viable as native emission
+over a snapshot of the render queue (the study's 9.3 and F2, the legacy's road, XL). The game's
+thread remains the limit in the fight and the town square; the backend in the mine standing
+still.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
