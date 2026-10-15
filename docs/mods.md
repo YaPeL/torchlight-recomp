@@ -1223,6 +1223,25 @@ Two ideas, outside the mods task, recorded for later:
   only come from the player's own Xbox copy; PC's menu classes look windows up by other names, so a
   bridge or adapted layouts are needed.
 
+**Mods' UI layouts, surveyed (2026-10-15).** The PC `.layout` files the mods at hand ship (Enhanced
+Edition, the 29-mod pack), compared with PC's own, window by window. **[read: the files]**
+- **On the Xbox screen already, or adapted:** `charactercreate.layout` (Enhanced Edition, JCC -
+  Main). Its additions are the class and pet buttons (offered by the selector, 7l), the classes'
+  icons (option B, 7l) and a few texts. The texts are about PC's arrangement of the screen:
+  Enhanced Edition's line says the classes on the right are alternative versions of those on the
+  left, and JCC's are the headers of its two columns of classes ("Original" and "Custom"). The Xbox
+  screen is a carousel with no sides or columns, so shown there they would mislead; they are not
+  applied. What else these layouts change (sizes and positions, a scroll bar) is PC's screen.
+- **Needing PC's interface:** the in-game HUD (`bottomhud.layout`: Enhanced Edition takes out the
+  eight menu buttons; JCC - Diablo 3 Hud Shell Overlap replaces the health globe and the bars with
+  its own images), `inventorymenu.layout` (both move the paper doll's slots and the money),
+  `enchantmenu.layout` and `pethud.layout` (Enhanced Edition moves their parts and takes out the
+  pet's feed button), and the top bar sizes of `mainmenuframe`, `characterload`, `loading` and
+  `cinematicmenu` (Enhanced Edition, for wide screens). The Xbox build draws its own versions of
+  those screens (`*_xenon` and `.uilayout`, a different set of windows, driven by the pad), so a PC
+  layout has nothing to apply to: they come with the PC interface above.
+- **Not seen:** a mod with a `.uilayout` of its own (the Xbox format); none exists for PC.
+
 ## 10. Validation mods (candidates, not downloaded)
 
 Development uses synthetic mods made by the tests. For the final validation the user downloads real
