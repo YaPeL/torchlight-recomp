@@ -112,9 +112,10 @@ The game runs on the native renderer: menus, town, dungeons, character creation,
 saves.
 
 On a laptop with a GeForce GTX 1050 Ti (Linux, 720p, no frame cap), the native renderer runs the
-game about twice as fast as the same build with ReXGlue's emulated Xenos GPU (1.9–2.5 times the
-frame rate), loads levels 1.5–2 times faster, and has almost no frames over 33 ms
-([measurements](docs/performance-profile.md#native-renderer-against-xenos-2026-10-07)).
+game about three and a half times as fast as the same build with ReXGlue's emulated Xenos GPU
+(3.4–3.8 times the game's frame rate, 2.8–3.4 times the presented one), loads levels 1.4–2 times
+faster, and has almost no frames over 33 ms. **On the laptop's Intel UHD 630 the difference is 5–7
+times** ([measurements](docs/performance-profile.md#native-renderer-against-xenos-again-2026-10-14)).
 
 ### Display settings
 
