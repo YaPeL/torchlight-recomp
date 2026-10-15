@@ -99,6 +99,36 @@ int main() {
     Check(stream == original, "no names: unchanged");
   }
 
+  // Repair at load: the names found by the candidates, the split the save accepts.
+  {
+    const std::vector<std::u16string> names = {u"Alpha", u"Beta Mod"};
+    std::vector<uint8_t> good = {0xAA, 0xBB};
+    const auto list = EncodeSavedModList(7, names, false);
+    good.insert(good.end(), list.begin(), list.end());
+    good.push_back(0xCC);
+    std::vector<uint8_t> broken = {0xAA, 0xBB};
+    const auto bug = EncodeSavedModList(7, names, true);
+    broken.insert(broken.end(), bug.begin(), bug.end());
+    broken.push_back(0xCC);
+    auto reads_like_good = [&](std::span<const uint8_t> body) {
+      return std::vector<uint8_t>(body.begin(), body.end()) == good;
+    };
+    std::string why;
+    const auto fixed = RepairModListAtLoad(broken, {u"Beta", u"Beta Mod", u"Alpha"}, reads_like_good, &why);
+    Check(fixed && *fixed == good, "repaired with the names, a prefix name tried and refused");
+    Check(!RepairModListAtLoad(broken, {u"Alpha"}, reads_like_good, &why) &&
+              why == "no list of known mod names with empty lengths in it",
+          "a name missing from the candidates: not repaired");
+    // Two splits that both read: left alone.
+    std::vector<uint8_t> one = {0, 0, 0, 1, 0, 0, 0, 'A', 0, 'B'};
+    Check(!RepairModListAtLoad(one, {u"A", u"AB"}, [](std::span<const uint8_t>) { return true; }, &why) &&
+              why == "more than one repair of the list makes the save read",
+          "ambiguous: left alone");
+    Check(!RepairModListAtLoad(broken, names, [](std::span<const uint8_t>) { return false; }, &why) &&
+              why == "no repair of the list makes the save read",
+          "nothing that reads: left alone");
+  }
+
   if (failures) return EXIT_FAILURE;
   std::puts("saved_mod_list_test: ok");
   return EXIT_SUCCESS;

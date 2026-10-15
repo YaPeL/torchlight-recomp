@@ -12,6 +12,9 @@
 #include <rex/logging.h>
 
 #include "game_setup/game_files.h"
+#include "mods/class_list.h"
+#include "mods/mod_list.h"
+#include "mods/save_units.h"
 #include "mods/unit_cache.h"
 #include "save_import/schema.h"
 
@@ -73,6 +76,41 @@ KnownUnits ExpectedUnits(const std::filesystem::path& data_dir, const std::files
   return MakeExpectedUnits(base, ModUnitEntries(files, &why), why);
 }
 
+// Saves written with the Xbox writer's mod list bug (docs/mods.md 7d), from before the repair while
+// writing: repaired before anything reads them, with the names of the mods in the folder and those
+// mods.dat still lists (a mod since removed) as the names they may hold.
+void RepairModLists(const std::filesystem::path& data_dir, const std::filesystem::path& user_data_root) {
+  const std::filesystem::path folder = data_dir / "mods";
+  std::vector<std::u16string> candidates;
+  auto add = [&](const std::string& name) {
+    if (!name.empty()) candidates.push_back(Utf8ToUtf16(name));
+  };
+  for (const ModFolder& mod : ScanModsFolder(folder).mods) {
+    add(mod.folder);
+    add(mod.name);
+  }
+  std::ifstream in(folder / "mods.dat", std::ios::binary);
+  const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
+  if (const auto list = ParseModList(bytes, nullptr)) {
+    for (const ModListEntry& entry : list->entries) {
+      std::string directory = entry.directory;
+      while (!directory.empty() && (directory.back() == '/' || directory.back() == '\\')) directory.pop_back();
+      add(directory.substr(directory.find_last_of("/\\") + 1));
+    }
+  }
+  if (candidates.empty()) return;
+  std::string error;
+  const auto schema = save_import::Schema::Embedded(error);
+  if (!schema) return;
+  const ModListRepairReport report =
+      RepairModListSaves(user_data_root, TitleFolder(), *schema, candidates, std::chrono::system_clock::now(),
+                         [](const std::string& line) { REXLOG_INFO("{}", line); });
+  if (!report.repaired.empty()) {
+    REXLOG_WARN("mods: {} save(s) written by the Xbox mod list bug repaired (copy: {})", report.repaired.size(),
+                report.backup.string());
+  }
+}
+
 }  // namespace
 
 void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesystem::path& pak,
@@ -81,6 +119,7 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   g_assumed = {};
   g_saving_blocked = false;
   if (user_data_root.empty()) return;
+  RepairModLists(data_dir, user_data_root);
   std::string error;
   const auto base = ReadPakUnitIndex(pak, &error);
   if (!base) REXLOG_WARN("units: the game's unit index not read ({})", error);

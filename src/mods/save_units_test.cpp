@@ -15,6 +15,8 @@
 #include <string>
 
 #include "mods/save_units.h"
+#include "mods/saved_mod_list.h"
+#include "save_import/digest.h"
 #include "mods/save_units_notice.h"
 #include "save_import/schema.h"
 
@@ -419,6 +421,66 @@ int main() {
           "a mod's unit at a base path replaces the base GUID; a new path adds one");
     const KnownUnits unread = MakeExpectedUnits(base, std::nullopt, "a mod unreadable");
     Check(!unread.complete && unread.incomplete_why == "a mod unreadable", "mods' units not all read: incomplete");
+  }
+
+  // Repair at load (docs/mods.md 7d): a character saved by the Xbox writer's bug (every mod name's
+  // length written as 0) is found, repaired with the mods' names and written back with its digest,
+  // after a backup.
+  {
+    namespace fs = std::filesystem;
+    const std::vector<std::u16string> names = {u"JCC - Map", u"Another Mod"};
+    auto good_parsed = si::ReadPc(*schema, Fixture("pc_save.svt"), save_error);
+    si::Node* list = good_parsed->tree.Find("player")->Find("names");
+    Check(list != nullptr, "the player has a mod list");
+    list->items.clear();
+    for (const auto& n : names) {
+      si::Node name;
+      name.kind = si::Node::Kind::kText;
+      name.text = n;
+      list->items.push_back(name);
+    }
+    const si::Bytes good = si::Write360(*schema, *good_parsed);
+    // The list in the body: the count, then each name's length and units (EncodeSavedModList less
+    // its leading u32); damage it as the bug does.
+    std::vector<uint8_t> correct = EncodeSavedModList(0, names, false);
+    correct.erase(correct.begin(), correct.begin() + 4);
+    std::vector<uint8_t> broken = EncodeSavedModList(0, names, true);
+    broken.erase(broken.begin(), broken.begin() + 4);
+    std::vector<uint8_t> damaged(good.begin(), good.end() - 32);
+    const auto at = std::search(damaged.begin(), damaged.end(), correct.begin(), correct.end());
+    Check(at != damaged.end(), "the list is in the body");
+    if (at != damaged.end()) std::copy(broken.begin(), broken.end(), at);
+    const si::Sha256Digest digest = si::Sha256(damaged);
+    damaged.insert(damaged.end(), digest.begin(), digest.end());
+    {
+      std::span<const uint8_t> body;
+      si::SaveError e;
+      Check(si::Split360(damaged, body, e) && !si::ParseBody(*schema, *schema->root(), body, si::Endian::kBig, e),
+            "the damaged save does not read");
+    }
+    const fs::path root = fs::temp_directory_path() / "save_units_test_modlist";
+    fs::remove_all(root);
+    const fs::path file = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav" / "1.TSV";
+    fs::create_directories(file.parent_path());
+    std::ofstream(file, std::ios::binary).write(reinterpret_cast<const char*>(damaged.data()),
+                                                 static_cast<std::streamsize>(damaged.size()));
+    std::vector<std::string> lines;
+    const auto now = std::chrono::system_clock::now();
+    // Without the names, nothing can be repaired: left alone, nothing written.
+    auto none = RepairModListSaves(root, "58410A7E", *schema, {u"Unrelated"}, now,
+                                   [&](const std::string& l) { lines.push_back(l); });
+    Check(none.repaired.empty() && none.left_alone.size() == 1 && none.backup.empty(),
+          "unknown names: left alone, no backup");
+    auto report = RepairModListSaves(root, "58410A7E", *schema, {u"Unrelated", u"JCC - Map", u"Another Mod", u"JCC"},
+                                     now, [&](const std::string& l) { lines.push_back(l); });
+    Check(report.repaired.size() == 1 && !report.failed && fs::exists(report.backup), "repaired after a backup");
+    std::ifstream in(file, std::ios::binary);
+    const si::Bytes after((std::istreambuf_iterator<char>(in)), {});
+    Check(after == good, "the repaired file is the save as it should have been written");
+    // A good save is not touched.
+    auto again = RepairModListSaves(root, "58410A7E", *schema, {u"JCC - Map", u"Another Mod"}, now, nullptr);
+    Check(again.repaired.empty() && again.left_alone.empty(), "a save that reads is left as it is");
+    fs::remove_all(root);
   }
 
   if (failures) return EXIT_FAILURE;
