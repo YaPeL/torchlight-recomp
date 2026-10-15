@@ -1353,6 +1353,19 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   its install is inside it). It goes at the next swap, when the copy it replaces becomes the
   rollback. The old base `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as
   planned.
+- The SDK copies on the Windows machine (2026-10-15). The live SDK is `D:\rexglue-sdk-33\install`:
+  `bd833a2` with develop's series up to 33, built by `tools\build-deps\windows.ps1 -SdkPrefix`
+  (its checkout in the script's work folder, `D:\ogre-build\rexglue-sdk`), every configuration.
+  It is the only entry of CMake's user package registry
+  (`HKCU\Software\Kitware\CMake\Packages\rexglue`), and the build trees were deleted and
+  configured again against it, not edited in their cache.
+  The rollback copy is `D:\rexglue-sdk` (`bd833a2`, the series of 2026-10-12, without 33; its
+  install in `out\install\win-amd64`), kept until the next swap. The old base `0c7b01a` was
+  deleted on 2026-10-12. The private archive (`D:\torchlight-recomp`, branch `windows-port`)
+  expects `0c7b01a` (its `build_sdk.sh` pins it) and no longer builds against either copy:
+  `src/achievements/runtime_test.cpp:14` calls `InitLogging` with the old signature, which
+  `bd833a2` changed (log options moved into `LogConfig`, upstream `b971840`). It is left without
+  build trees on purpose; it is reference code, not built.
 
 - The swap, step by step. The new SDK is built apart with
   `tools/deps/build_sdk.sh ~/rexglue-sdk-swapNN-install ~/rexglue-sdk-swapNN all`, from a worktree
