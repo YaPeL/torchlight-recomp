@@ -68,9 +68,30 @@ own: in `itemicons13` the 360 armor sets (`360_destroyer_body`, ...) and three a
 (18), in `itemicons14` the spell scrolls' icons and three weapons (26), in `itemicons16` the skill
 icons the Xbox build moved there (30). **[read]** On PC nothing is lost: each mod file holds every
 image of PC's own file plus its own. So on the Xbox build the wrong side wins for the game's own
-items and skills. The fix proposed (not made, the user's call): merge at load, on the host, before
-the guest reads it: the Xbox file's images plus the mod's that the Xbox file lacks, which needs the
-two textures in one (or the mod's extra images moved into an imageset of their own).
+items and skills.
+
+**The merge (2026-10-15, branch feature/icon-atlas-merge).** The fix is in `mods/icon_atlas.h`.
+- **When:** at start, for each pak imageset under `media/ui/` that an enabled mod also has (the
+  first in the search order, the file the game's data loader takes), and only when the game's file
+  has images the mod's lacks.
+- **The texture:** a new one, the game's atlas at the left and the mod's at its right, decoded and
+  written uncompressed (A8R8G8B8, power-of-two sides).
+- **The imageset:** keeps its name, native resolution and image names. The game's images stay at
+  their places, the mod's are moved by the game texture's width, and an image both files name is
+  the mod's.
+- **Where it goes:** both files go to the cache (`CacheDir("atlases")`), regenerated at every
+  start. The texture's name carries a hash of the inputs, so a changed mod never meets an old
+  atlas in a capture.
+- **Serving it:** the folder is mounted as `tlatlas:` and added to the default resource group. The
+  mods' file lookup (`kModFileLookup`, hooked) hands the game `tlatlas:/<path>` instead of the
+  mod's file. On the host, the texture lookup resolves that device (`TextureSource::kGenerated`),
+  and captures and session recordings keep the file's bytes as they do a mod's, so replay needs no
+  cache.
+
+With the pack it merges `itemicons16` (30 of the Xbox images kept, JCC - Main's 24); with Enhanced
+Edition `itemicons13` (18 kept, EE's 48) and `itemicons14` (26 kept, EE's 64). The Vanquisher's
+skill tree with the pack draws every icon again, the same as without JCC - Main's file, and its
+capture replayed without the cache folder draws the same. **[read: run logs, captures]**
 
 Two points of the native renderer's side (render agent, 2026-10-15). **[read: the code]**
 - **The XML and the texture are chosen in two places.** The guest picks the `.imageset` file
