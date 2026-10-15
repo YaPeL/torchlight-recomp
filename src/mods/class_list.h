@@ -10,6 +10,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <set>
 #include <string>
 #include <string_view>
@@ -60,6 +61,10 @@ std::vector<std::string> PetButtons(std::string_view layout_xml);
 std::vector<std::string> PetList(const std::vector<std::vector<std::string>>& buttons_by_mod,
                                  const std::set<std::string>& monster_units);
 std::set<std::string> ModMonsterUnits(const std::filesystem::path& mods_folder, const ModPlan& plan);
+// The name the game shows for each of those monster units (its DISPLAYNAME, else its NAME), by the
+// NAME's ClassKey: a mod pet's button label.
+std::map<std::string, std::string> ModMonsterDisplayNames(const std::filesystem::path& mods_folder,
+                                                          const ModPlan& plan);
 std::vector<std::vector<std::string>> ModPetButtons(const std::filesystem::path& mods_folder, const ModPlan& plan);
 
 }  // namespace torchlight::mods

@@ -11,6 +11,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <set>
 #include <span>
@@ -52,6 +53,7 @@ struct Row {
   int32_t grid_row;                         // the pad grid's row (game_ui.h)
   uint32_t command;                         // OnCommand's command for it
   std::vector<std::string> list;
+  std::map<std::string, std::string> shown_names;  // a choice's label (by ClassKey), if not its name
   cs::Carousel carousel{0};
   bool images_saved = false;
   std::string images[cs::kSlots][3];  // each game choice's button images, as the layout had them
@@ -89,6 +91,7 @@ void List() {
     players = mods::ModPlayerUnits(folder, *plan);
     pet_buttons = mods::ModPetButtons(folder, *plan);
     monsters = mods::ModMonsterUnits(folder, *plan);
+    g_pets.shown_names = mods::ModMonsterDisplayNames(folder, *plan);
   }
   g_classes.list = mods::ClassList(class_buttons, players);
   g_pets.list = mods::PetList(pet_buttons, monsters);
@@ -152,8 +155,10 @@ void SetProperty(GuestCall& call, uint32_t window, const char* name, const std::
   call.Release(mark);
 }
 
-// A label's text: the name as written, its underscores as spaces ("Pet_Wolf").
-std::string LabelText(std::string name) {
+// A label's text: the name the game shows for the choice (a pet's DISPLAYNAME), else its name as
+// written with its underscores as spaces ("Pet_Wolf").
+std::string LabelText(const Row& row, std::string name) {
+  if (const auto it = row.shown_names.find(mods::ClassKey(name)); it != row.shown_names.end()) return it->second;
   std::replace(name.begin(), name.end(), '_', ' ');
   return name;
 }
@@ -189,7 +194,7 @@ void Refresh(PPCContext& ctx, uint8_t* base, uint32_t menu, Row& row) {
       SetProperty(call, buttons[s], "NormalImage", kFrameImage);
       SetProperty(call, buttons[s], "HoverImage", kFrameRolloverImage);
       SetProperty(call, buttons[s], "PushedImage", kFrameRolloverImage);
-      SetProperty(call, labels[s], "Text", LabelText(shown));
+      SetProperty(call, labels[s], "Text", LabelText(row, shown));
       SetProperty(call, labels[s], "Visible", "True");
     }
   }

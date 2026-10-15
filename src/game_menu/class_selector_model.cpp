@@ -46,14 +46,22 @@ size_t ClosingTag(std::string_view xml, size_t start) {
   return std::string_view::npos;
 }
 
-std::string Label(std::string_view button) {
+// A class button's label: the game's Serif font in the frame's lower part, wrapped. A pet button is
+// 48 px (charactercreate.uilayout): SerifSmall, centred over the button's whole height and over the
+// frame around it (9 px each side), not clipped by the button. The formatting properties and their
+// values are ceguiWidget/StaticText's (ceguiWidgets.looknfeel: HorzTextFormatting, VertFormatting,
+// Falagard's CentreAligned family); an unknown value leaves the text on one line.
+std::string Label(std::string_view button, bool pet) {
   return "<Window Type=\"ceguiWidget/StaticText\" Name=\"" + LabelName(button) + "\" >"
-         "<Property Name=\"Font\" Value=\"Serif\" />"
+         "<Property Name=\"Font\" Value=\"" + (pet ? "SerifSmall" : "Serif") + "\" />"
          "<Property Name=\"Text\" Value=\"\" />"
          "<Property Name=\"Visible\" Value=\"False\" />"
          "<Property Name=\"AlwaysOnTop\" Value=\"True\" />"
-         "<Property Name=\"HorzTextFormatting\" Value=\"WordWrapCentred\" />"
-         "<Property Name=\"UnifiedAreaRect\" Value=\"{{0.1,0},{0.3,0},{0.9,0},{0.9,0}}\" />"
+         "<Property Name=\"HorzTextFormatting\" Value=\"WordWrapCentreAligned\" />" +
+         (pet ? "<Property Name=\"VertFormatting\" Value=\"CentreAligned\" />"
+                "<Property Name=\"ClippedByParent\" Value=\"False\" />"
+                "<Property Name=\"UnifiedAreaRect\" Value=\"{{0,-9},{0,0},{1,9},{1,0}}\" />"
+              : "<Property Name=\"UnifiedAreaRect\" Value=\"{{0.1,0},{0.3,0},{0.9,0},{0.9,0}}\" />") +
          "<Property Name=\"MousePassThroughEnabled\" Value=\"True\" />"
          "</Window>";
 }
@@ -78,16 +86,15 @@ std::optional<std::string> AddClassLabels(std::string_view xml) {
     if (closing == std::string_view::npos) continue;
     // The window's own properties: before its first child window.
     const size_t own_end = std::min(xml.find("<Window", tag_end), closing);
-    bool select = false;
+    std::string command;
     for (size_t p = tag_end; (p = xml.find("<Property", p)) != std::string_view::npos && p < own_end; ++p) {
       const std::string_view tag = xml.substr(p, xml.find('>', p) - p);
-      const std::string command = Upper(Attribute(tag, "Value"));
-      if (Upper(Attribute(tag, "Name")) == "ONCLICK" && (command == "GUISELECT1" || command == "GUISELECT2")) {
-        select = true;
+      if (Upper(Attribute(tag, "Name")) == "ONCLICK") {
+        command = Upper(Attribute(tag, "Value"));
         break;
       }
     }
-    if (select) inserts.push_back({closing, Label(name)});
+    if (command == "GUISELECT1" || command == "GUISELECT2") inserts.push_back({closing, Label(name, command == "GUISELECT2")});
   }
   if (inserts.empty()) return std::nullopt;
   std::string out(xml);

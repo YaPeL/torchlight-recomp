@@ -189,26 +189,41 @@ std::vector<std::string> ListOf(std::span<const std::string_view> game, const st
   return list;
 }
 
-// The NAMEs (ClassKey) of the units the enabled mods define under media/units/<group>/.
-std::set<std::string> ModUnitNames(const std::filesystem::path& mods_folder, const ModPlan& plan, std::string_view group) {
-  std::set<std::string> names;
+// The units the enabled mods define under media/units/<group>/: each NAME (ClassKey) with the name
+// the game shows for it (its DISPLAYNAME, else its NAME). A NAME defined twice keeps the first in
+// the search order.
+std::map<std::string, std::string> ModUnits(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                            std::string_view group) {
+  std::map<std::string, std::string> units;
   for (const PlannedMod* mod : EnabledInSearchOrder(plan)) {
     auto media = FindNoCase(mods_folder / mod->folder, "media");
-    auto units = media ? FindNoCase(*media, "units") : std::nullopt;
-    auto folder = units ? FindNoCase(*units, group) : std::nullopt;
+    auto dir = media ? FindNoCase(*media, "units") : std::nullopt;
+    auto folder = dir ? FindNoCase(*dir, group) : std::nullopt;
     if (!folder) continue;
     std::error_code ec;
     for (const auto& entry : std::filesystem::recursive_directory_iterator(*folder, ec)) {
       if (!entry.is_regular_file(ec) || Upper(entry.path().extension().string()) != ".DAT") continue;
       const std::vector<uint8_t> bytes = ReadFile(entry.path());
-      std::optional<std::string> name;
+      std::optional<std::string> name, shown;
       if (auto blocks = ParseDatText(bytes, nullptr); blocks && !blocks->empty()) {
         if (const DatValue* value = blocks->front().Find("NAME")) name = value->value;
+        if (const DatValue* value = blocks->front().Find("DISPLAYNAME")) shown = value->value;
+      } else {
+        // A file the reader cannot parse: its first DISPLAYNAME line, as for the NAME.
+        shown = FindDatValueAnywhere(bytes, "DISPLAYNAME");
       }
       if (!name) name = FindDatValueAnywhere(bytes, "NAME");
-      if (name && !name->empty()) names.insert(ClassKey(*name));
+      if (!name || name->empty()) continue;
+      units.try_emplace(ClassKey(*name), shown && !shown->empty() ? *shown : *name);
     }
   }
+  return units;
+}
+
+std::set<std::string> ModUnitNames(const std::filesystem::path& mods_folder, const ModPlan& plan,
+                                   std::string_view group) {
+  std::set<std::string> names;
+  for (const auto& [key, shown] : ModUnits(mods_folder, plan, group)) names.insert(key);
   return names;
 }
 
@@ -244,6 +259,10 @@ std::set<std::string> ModPlayerUnits(const std::filesystem::path& mods_folder, c
 }
 std::set<std::string> ModMonsterUnits(const std::filesystem::path& mods_folder, const ModPlan& plan) {
   return ModUnitNames(mods_folder, plan, "monsters");
+}
+std::map<std::string, std::string> ModMonsterDisplayNames(const std::filesystem::path& mods_folder,
+                                                          const ModPlan& plan) {
+  return ModUnits(mods_folder, plan, "monsters");
 }
 
 std::vector<std::vector<std::string>> ModClassButtons(const std::filesystem::path& mods_folder, const ModPlan& plan) {
