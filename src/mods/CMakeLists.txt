@@ -42,9 +42,10 @@ target_link_libraries(mods_unit_cache_test PRIVATE torchlight_mods)
 target_compile_options(mods_unit_cache_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mods_unit_cache_test COMMAND mods_unit_cache_test)
 add_executable(mods_save_units_test save_units_test.cpp)
-target_link_libraries(mods_save_units_test PRIVATE torchlight_mods)
+target_link_libraries(mods_save_units_test PRIVATE torchlight_mods torchlight_game_menu_model)
 target_compile_definitions(mods_save_units_test PRIVATE
-  SAVE_IMPORT_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/save_import/fixtures")
+  SAVE_IMPORT_FIXTURES="${CMAKE_CURRENT_SOURCE_DIR}/../../tests/save_import/fixtures"
+  TL_IMPORT_STRINGS_FILE="${CMAKE_CURRENT_SOURCE_DIR}/../../data/ui/tl_import_strings.txt")
 target_compile_options(mods_save_units_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mods_save_units_test COMMAND mods_save_units_test)
 add_executable(mods_text_encoding_test text_encoding_test.cpp)

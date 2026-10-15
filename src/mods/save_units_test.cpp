@@ -6,6 +6,7 @@
 // them (copied, saving off for the session) and their notice.
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -14,6 +15,7 @@
 #include <set>
 #include <string>
 
+#include "game_menu/menu_strings.h"
 #include "mods/save_units.h"
 #include "mods/save_units_notice.h"
 #include "save_import/schema.h"
@@ -22,6 +24,12 @@ using namespace torchlight::mods;
 namespace si = torchlight::save_import;
 
 namespace {
+
+std::set<std::string> g_notice_texts;  // every English text the notices asked for
+std::string English(const std::string& text) {
+  g_notice_texts.insert(text);
+  return text;
+}
 int failures = 0;
 void Check(bool ok, const std::string& what) {
   if (!ok) {
@@ -197,7 +205,7 @@ int main() {
 
   // The player's notice: nothing to tell, the removed items with the backup, risky saves.
   {
-    const auto english = [](const std::string& s) { return s; };
+    const auto english = English;
     Check(!SaveUnitsNotice(SaveUnitsReport{}, english), "nothing changed: no notice");
     SaveUnitsReport report;
     report.backup = "/saves/save-backups/20261008-120000-units";
@@ -208,10 +216,11 @@ int main() {
     const auto notice = SaveUnitsNotice(report, english);
     Check(notice && notice->buttons.size() == 1, "a notice with one button");
     if (notice) {
-      Check(notice->text.find("3 items from mods") != std::string::npos, "the total");
-      Check(notice->text.find("Ronan: 2 items") != std::string::npos, "per character");
-      Check(notice->text.find("Shared stash: 1 items") != std::string::npos, "the stash");
-      Check(notice->text.find("20261008-120000-units") != std::string::npos, "where the copy is");
+      Check(notice->text.find("Removed 3 items from mods") != std::string::npos, "the total");
+      Check(notice->text.find("  Ronan: 2\n") != std::string::npos, "per character");
+      Check(notice->text.find("  Shared stash: 1\n") != std::string::npos, "the stash");
+      Check(notice->text.find("Backup: save-backups/20261008-120000-units\n") != std::string::npos,
+            "where the copy is, from the user data folder on");
       Check(notice->text.find("7.TSV") != std::string::npos && notice->text.find("9.TSV") == std::string::npos,
             "a save left alone with unknown units listed; an unreadable one not");
     }
@@ -233,20 +242,20 @@ int main() {
     Check(none.size() == assumed.guids.size() && std::is_sorted(none.begin(), none.end()),
           "nothing loaded: every unit missing, sorted");
 
-    const auto english = [](const std::string& s) { return s; };
+    const auto english = English;
     SaveUnitsReport only;
     only.units_not_loaded = 3;
     const auto notice = SaveUnitsNotice(only, english);
-    Check(notice && notice->title == "Items from mods not loaded" &&
-              notice->text.find("3 kinds of items or creatures from mods could not be loaded") != std::string::npos,
+    Check(notice && notice->title == "Mod items not loaded" &&
+              notice->text.find("3 kinds of mod items did not load this time") != std::string::npos,
           "units not loaded alone: their own title and text");
     SaveUnitsReport both;
     both.changed.push_back({"/saves/a/4.TSV", "Ronan", {{"player/items/item", "", 1}}});
     both.units_not_loaded = 2;
     const auto with_removed = SaveUnitsNotice(both, english);
-    Check(with_removed && with_removed->title == "Items removed from saved characters" &&
+    Check(with_removed && with_removed->title == "Mod items removed" &&
               with_removed->text.find("2 kinds") != std::string::npos &&
-              with_removed->text.find("Ronan: 1 items") != std::string::npos,
+              with_removed->text.find("Ronan: 1\n") != std::string::npos,
           "with items removed: the removal's title, both texts");
   }
 
@@ -307,12 +316,13 @@ int main() {
             "the stash holding the unit listed, with no owner");
     }
 
-    const auto english = [](const std::string& s) { return s; };
+    const auto english = English;
     report.units_not_loaded = 1;
     report.holding_not_loaded.push_back("");
     const auto notice = SaveUnitsNotice(report, english);
-    Check(notice && notice->title == "Nothing will be saved in this session" &&
-              notice->text.find("NOTHING WILL BE SAVED IN THIS SESSION") != std::string::npos &&
+    Check(notice && notice->title == "Saving is off this session" &&
+              notice->text.find("NOTHING WILL BE SAVED THIS SESSION") != std::string::npos &&
+              notice->text.find("Quit the game and see the log.") != std::string::npos &&
               notice->text.find("(4.TSV)") != std::string::npos &&
               notice->text.find("Shared stash") != std::string::npos &&
               notice->text.find("-units-not-loaded") != std::string::npos,
@@ -323,8 +333,8 @@ int main() {
     SaveUnitsReport not_held;
     not_held.units_not_loaded = 2;
     const auto plain = SaveUnitsNotice(not_held, english);
-    Check(plain && plain->title == "Items from mods not loaded" &&
-              plain->text.find("no save carries them") != std::string::npos &&
+    Check(plain && plain->title == "Mod items not loaded" &&
+              plain->text.find("No save has them.") != std::string::npos &&
               plain->text.find("NOTHING WILL BE SAVED") == std::string::npos,
           "units not loaded that no save carries: told, saving not off");
     std::error_code ec;
@@ -419,6 +429,37 @@ int main() {
           "a mod's unit at a base path replaces the base GUID; a new path adds one");
     const KnownUnits unread = MakeExpectedUnits(base, std::nullopt, "a mod unreadable");
     Check(!unread.complete && unread.incomplete_why == "a mod unreadable", "mods' units not all read: incomplete");
+  }
+
+  // A failure, and every notice text in each language of the translations, its {words} kept (a text
+  // of {words} only, like "{name}: {count}", may stay as it is).
+  {
+    SaveUnitsReport report;
+    report.failed = true;
+    const auto notice = SaveUnitsNotice(report, English);
+    Check(notice && notice->text.find("Some saves could not be backed up or changed") != std::string::npos,
+          "a failure told");
+    torchlight::game_menu::MenuStrings strings;
+    std::vector<std::string> warnings;
+    std::string error;
+    Check(strings.Load(TL_IMPORT_STRINGS_FILE, warnings, error) && warnings.empty(), "the translations load");
+    for (const char* language : {"de", "fr", "es"}) {
+      for (const std::string& english : g_notice_texts) {
+        const std::string translated = strings.Translate(language, english);
+        bool words_only = true;
+        for (size_t i = 0, depth = 0; i < english.size(); ++i) {
+          if (english[i] == '{') ++depth;
+          if (depth == 0 && std::isalpha(static_cast<unsigned char>(english[i])) && english != "OK") words_only = false;
+          if (english[i] == '}') --depth;
+        }
+        Check(translated != english || words_only || english == "OK",
+              std::string("missing ") + language + " translation: " + english);
+        for (size_t at = english.find('{'); at != std::string::npos; at = english.find('{', at + 1)) {
+          const std::string word = english.substr(at, english.find('}', at) - at + 1);
+          Check(translated.find(word) != std::string::npos, std::string(language) + " drops " + word);
+        }
+      }
+    }
   }
 
   if (failures) return EXIT_FAILURE;
