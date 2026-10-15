@@ -94,6 +94,31 @@ int main() {
   f = resolver.Find("GAME:\\MEDIA\\SHAREDTEXTURES\\RIMLIGHT.DDS", "General", pak);
   Check(f.source == TextureSource::kNone, "a device that is no mod's: nothing");
 
+  // A generated file (a merged icon atlas, mods/icon_atlas.h): by its device only.
+  {
+    Touch(root / "g" / "MEDIA" / "UI" / "ITEMICONS" / "ITEMICONS16.0123.DDS");
+    TextureLocations with = locations;
+    with.generated = root / "g";
+    with.generated_device = "tlatlas:";
+    const TextureResolver gen(with);
+    TextureFile g = gen.Find("TLATLAS:/MEDIA/UI/ITEMICONS/ITEMICONS16.0123.DDS", "Autodetect", pak);
+    Check(g.source == TextureSource::kGenerated && g.path.filename() == "ITEMICONS16.0123.DDS",
+          "a generated atlas by its device");
+    g = gen.Find("tlatlas:\\media\\ui\\itemicons\\itemicons16.0123.dds", "MOD A", pak);
+    Check(g.source == TextureSource::kGenerated, "any case and separator, any group");
+    g = gen.Find("MEDIA/LEVELSETS/TOWN1/BRICKS.DDS", "General", pak);
+    Check(g.source == TextureSource::kPak, "the pak's name still the pak's");
+    g = gen.Find("TLATLAS:/MEDIA/UI/ITEMICONS/OTHER.DDS", "General", pak);
+    Check(g.source == TextureSource::kNone, "not in the generated folder: nothing");
+    Check(FromHostFile(TextureSource::kGenerated) && FromHostFile(TextureSource::kMod) &&
+              !FromHostFile(TextureSource::kPak),
+          "generated files are kept like a mod's");
+    TextureLocations only;
+    only.generated = root / "g";
+    only.generated_device = "tlatlas:";
+    Check(!TextureResolver(only).empty(), "a resolver with generated files only");
+  }
+
   // Nowhere.
   f = resolver.Find("MEDIA/NOWHERE.DDS", "MOD A", pak);
   Check(f.source == TextureSource::kNone, "not found anywhere");

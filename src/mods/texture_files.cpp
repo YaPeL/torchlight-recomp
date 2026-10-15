@@ -41,6 +41,10 @@ std::optional<std::filesystem::path> TextureResolver::Folder::Find(const std::st
 
 TextureResolver::TextureResolver(const TextureLocations& locations) {
   if (!locations.replacements.empty()) replacements_ = List(locations.replacements);
+  if (!locations.generated.empty() && !locations.generated_device.empty()) {
+    generated_ = List(locations.generated);
+    generated_device_ = TextureNameKey(locations.generated_device);
+  }
   for (const auto& mod : locations.mods) {
     mods_.emplace_back(mod.group, List(mod.folder));
     devices_.push_back(TextureNameKey(mod.device));
@@ -59,6 +63,10 @@ TextureFile TextureResolver::Find(std::string_view name, std::string_view group,
       if (replacements_) {
         if (auto file = replacements_->Find(rest)) return {TextureSource::kReplacements, *file};
       }
+      return {};
+    }
+    if (generated_ && device == generated_device_) {
+      if (auto file = generated_->Find(rest)) return {TextureSource::kGenerated, *file};
       return {};
     }
     for (size_t i = 0; i < devices_.size() && i < mods_.size(); ++i) {

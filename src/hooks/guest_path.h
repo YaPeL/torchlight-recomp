@@ -32,6 +32,11 @@ inline constexpr std::string_view kReplacementsDeviceMount = "\\Device\\Torchlig
 // Whether `path` is on the replacements' device (any case).
 bool OnReplacementsDevice(std::string_view path);
 
+// The device the merged icon atlases are mounted as (mods/icon_atlas.h): the app's cache folder of
+// files generated at start, served to the guest in place of a mod's imageset.
+inline constexpr std::string_view kAtlasDeviceLink = "tlatlas:";
+inline constexpr std::string_view kAtlasDeviceMount = "\\Device\\TorchlightAtlases";
+
 // The search path the guest's FindFirstFileA is given instead of `path`: WindowsSeparators for a
 // path on a mod's device or the replacements', nothing for any other (kept as the Xbox reads it;
 // guest_abi xapi_files.h says why).
