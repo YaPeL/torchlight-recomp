@@ -1355,9 +1355,10 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   planned.
 - The SDK copies on the Windows machine (2026-10-15). The live SDK is `D:\rexglue-sdk-33\install`:
   `bd833a2` with develop's series up to 33, built by `tools\build-deps\windows.ps1 -SdkPrefix`
-  (its checkout in the script's work folder, `D:\ogre-build\rexglue-sdk`), every configuration;
-  the only entry of CMake's user package registry (`HKCU\Software\Kitware\CMake\Packages\rexglue`),
-  and the build trees were deleted and configured again against it, not edited in their cache.
+  (its checkout in the script's work folder, `D:\ogre-build\rexglue-sdk`), every configuration.
+  It is the only entry of CMake's user package registry
+  (`HKCU\Software\Kitware\CMake\Packages\rexglue`), and the build trees were deleted and
+  configured again against it, not edited in their cache.
   The rollback copy is `D:\rexglue-sdk` (`bd833a2`, the series of 2026-10-12, without 33; its
   install in `out\install\win-amd64`), kept until the next swap. The old base `0c7b01a` was
   deleted on 2026-10-12. The private archive (`D:\torchlight-recomp`, branch `windows-port`)
