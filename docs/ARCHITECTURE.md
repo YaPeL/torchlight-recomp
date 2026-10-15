@@ -236,8 +236,11 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   wrapping, and A picks the class the button shows (the screen sends the button's window name; the
   selection maps it to that class). A class without an Xbox button image shows the empty skill
   frame with its name, on a label the layout cache adds to each class button (hidden otherwise).
-  The class's name and description come from its unit data, as for the game's classes. With the
-  game's three classes only, the hooks run the game's code unchanged.
+  The class's name and description come from its unit data, as for the game's classes. The pets
+  work the same way on the grid's pet row: the game's three (Dog, Cat, Chakawary), then the mods'
+  pet buttons (onClick guiPet1 on PC) whose name is a monster unit's; A picks the pet the button
+  shows, and a mod pet's label is its unit's DISPLAYNAME, in a smaller font that fits the 48 px
+  button. With the game's three classes or pets only, that row's hooks run the game's code unchanged.
 - Screens other than 16:9 and 4:3 (ultrawide 21:9 and 32:9, and 16:10; TLR-006), only mode. With
   Xenos the game keeps its 16:9. Validated with captures at 21:9 (1680x720), 32:9 (2560x720) and
   16:10 (1280x800):

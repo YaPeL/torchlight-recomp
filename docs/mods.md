@@ -1029,6 +1029,25 @@ that is 28 classes (JCC - Main's layout); a mod's class that no layout lists is 
 PC. Icons: the game's classes keep theirs; the others show an empty frame with the class name. The
 mods' own PC icons (their `logo.imageset`) are a later improvement.
 
+**Pets too (2026-10-14).** PC's layout lists the pets as buttons with onClick `guiPet1`, each named
+after a monster unit (Enhanced Edition: `Pet_BigCat` in `media/units/monsters/PET_BIGCAT.DAT`). The
+Xbox screen's pet row (Dog, Cat, Chakawary, onClick GUISELECT2) becomes a window onto the game's
+three and the mods' pets the same way as the classes; the pet selection (`sub_82214188`) copies the
+name in and makes the pet by it, as the class selection does. Enhanced Edition offers 11 pets, the
+29-mod pack 56. A mod pet's button shows the name the game shows for it, its unit's DISPLAYNAME
+(the unit's NAME without one), in the smaller SerifSmall font, wrapped and centred over the 48 px
+button and its frame.
+
+**What the mods' creation layouts change (2026-10-14).** Compared with PC's own
+`charactercreate.layout`, the two mods that ship one (JCC - Main and Enhanced Edition) only add
+buttons, all with the game's own handlers: classes with `guiSelect1` (28 in JCC - Main, 8 in
+Enhanced Edition), pets with `guiPet1` (55 and 10), and the same `guiBack` and `guiNewGame`. No
+new handler. The 3D scene behind the screen is not in the layout: it is the game's, and the
+selection loads the chosen unit through the game's own code, so it shows as on PC. **[read: the
+three layouts]** That the Xbox build does not load a mod's layout therefore loses only the
+layout's decorative text, for example Enhanced Edition's line explaining that some of its classes
+are alternative versions of others.
+
 **A skill a mod's file loses (2026-10-13).** The Kensai's tree (JCC - Class Skills - Fury, Kensai
 and Nethermage) places 15 skills in its third column, and the game holds 14: RAGEECHO (Rage, the
 level 10 row) is missing. Its definition, `JCC - Abomination/media/skills/Abomination/RageEcho/

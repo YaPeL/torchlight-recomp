@@ -413,6 +413,9 @@ inline constexpr uint32_t kNewGameMenuVtable = 0x820D2658;
 // characterload, difficulty), for other things.
 inline constexpr const char* kNewGameMenuLayout = "charactercreate.uilayout";
 inline constexpr uint32_t kNewGameClassRow = 0;
+// [confirmed] The pets' buttons ("Dog", "Cat", "Chakawary", onClick GUISELECT2) are the grid's third
+// row (the table's entries 6-8, sub_82EB3258).
+inline constexpr uint32_t kNewGamePetRow = 2;
 inline constexpr uint32_t kNewGameClassColumns = 3;
 // [confirmed] Slot 8 (0x820D2674), on show: puts the pad focus on the grid's first cell
 // (@0x8238DDB0) and selects the class "Destroyer" (@0x8238DDC0..@0x8238DDD4).
@@ -422,6 +425,7 @@ inline constexpr GuestFunction kNewGameMenuOnShow{0x8238DCA8, Confidence::kConfi
 // kSelectClass); 15 selects the pet.
 inline constexpr GuestFunction kNewGameMenuOnCommand{0x8238E7F0, Confidence::kConfirmed};
 inline constexpr uint32_t kCommandSelectClass = 14;
+inline constexpr uint32_t kCommandSelectPet = 15;
 // [confirmed] Slot 12 (0x820D2688), the pad: A sends the focused grid cell's command and name to
 // OnCommand (@0x8238F408); left/right/up/down move the focus by (r4, r5) = (-1/+1, 0) or
 // (0, -1/+1) (@0x8238F48C into kNewGameMenuMoveFocus).
@@ -439,6 +443,12 @@ inline constexpr Field kFocusRow{0x210, Confidence::kConfirmed};
 // (@0x8221403C), the name is copied in (+0x174) and the player unit made by that name
 // (kMakeUnit @0x822140C8, wardrobe.h).
 inline constexpr GuestFunction kSelectClass{0x82214000, Confidence::kConfirmed};
+// [confirmed] Select a pet, as kSelectClass: r3 = the player choice, r4 = the pet's name
+// (std::wstring*, @0x82214194); unless it is the pet already chosen (@0x822141C4), the name is
+// copied in (+0x190, @0x822141A4) and the pet made by that name (sub_823DEB40), kept only when made.
+// OnCommand(15) calls it with the button's name (@0x8238EA70); the screen's show with "Dog"
+// (@0x8238DDF8).
+inline constexpr GuestFunction kSelectPet{0x82214188, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // CCharSkillsMenuXenon: the skill tree page of the character screen (RTTI

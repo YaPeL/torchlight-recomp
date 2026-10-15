@@ -1,5 +1,5 @@
-// The character creation screen's class selector with mods (docs/mods.md, section 7l): the parts
-// that need no guest.
+// The character creation screen's class and pet selectors with mods (docs/mods.md, section 7l): the
+// parts that need no guest.
 //
 // The Xbox screen has three class buttons on the pad grid's first row. With more classes (the
 // mods' list, mods/class_list.h) the three buttons become a window onto the list: left on the first
@@ -46,8 +46,8 @@ class Carousel {
 // The window holding a class button's label: a child of the button, named after it.
 std::string LabelName(std::string_view button);
 
-// The creation layout with a hidden text label in each button whose onClick is GUISELECT1 (any
-// case), for a class without a button image; nothing when the layout has no such button or already
+// The creation layout with a hidden text label in each button whose onClick is GUISELECT1 or
+// GUISELECT2 (any case: the classes and the pets), for a choice without a button image; nothing when the layout has no such button or already
 // has the labels. Every original byte is kept.
 std::optional<std::string> AddClassLabels(std::string_view xml);
 

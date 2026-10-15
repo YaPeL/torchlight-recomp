@@ -1,18 +1,22 @@
-// The character creation screen's class selector with mods (class_selector_model.h; guest_abi
-// game_ui.h CNewGameMenu): hooks on the screen's show, pad move and command, and on the class
-// selection.
+// The character creation screen's class and pet selectors with mods (class_selector_model.h;
+// guest_abi game_ui.h CNewGameMenu): hooks on the screen's show, pad move and command, and on the
+// class and pet selections.
 //
-// The class list (mods/class_list.h) is read when the screen is first shown. With the game's three
-// classes only, every hook runs the game's code unchanged. With more, the three buttons show a
-// window onto the list: a move off either end of the class row scrolls it, A picks the class the
-// focused button shows (the screen sends the button's window name, which is mapped to that class),
-// and a class without an Xbox button image shows an empty frame with its name on the label the
-// layout cache added (AddClassLabels).
+// The lists (mods/class_list.h) are read when the screen is first shown. A row with the game's
+// three choices only runs the game's code unchanged. With more, its three buttons show a window
+// onto the list: a move off either end of the row scrolls it, A picks what the focused button shows
+// (the screen sends the button's window name, which is mapped to that choice), and a choice without
+// an Xbox button image shows an empty frame with its name on the label the layout cache added
+// (AddClassLabels).
 
+#include <algorithm>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <rex/logging.h>
@@ -34,48 +38,67 @@ namespace torchlight::game_menu {
 
 namespace {
 
-// A class without an Xbox button image: the empty frame of the skill tree's cells.
+// A choice without an Xbox button image: the empty frame of the skill tree's cells.
 constexpr const char* kFrameImage = "set:widgets2 image:skills_window_active";
 constexpr const char* kFrameRolloverImage = "set:widgets2 image:skills_window_active_rollover";
 constexpr const char* kImageProperties[] = {"NormalImage", "HoverImage", "PushedImage"};
 
-struct Selector {
-  bool listed = false;
-  std::vector<std::string> classes;
+// One row of the screen: the classes or the pets.
+struct Row {
+  Row(const char* what_, std::span<const std::string_view> game_, int32_t grid_row_, uint32_t command_)
+      : what(what_), game(game_), grid_row(grid_row_), command(command_) {}
+
+  const char* what;                         // for the log
+  std::span<const std::string_view> game;   // the game's three, in the row's order
+  int32_t grid_row;                         // the pad grid's row (game_ui.h)
+  uint32_t command;                         // OnCommand's command for it
+  std::vector<std::string> list;
+  std::map<std::string, std::string> shown_names;  // a choice's label (by ClassKey), if not its name
   cs::Carousel carousel{0};
   bool images_saved = false;
-  std::string images[cs::kSlots][3];  // each game class's button images, as the layout had them
-  bool picking = false;               // inside OnCommand(GUISELECT1)
-};
-Selector g;
+  std::string images[cs::kSlots][3];  // each game choice's button images, as the layout had them
+  bool picking = false;               // inside OnCommand(command)
 
-bool Active() { return g.listed && g.carousel.Active(); }
-
-// The game class `name` is (its slot in the game's order), or none.
-std::optional<size_t> GameClass(std::string_view name) {
-  for (size_t i = 0; i < cs::kSlots; ++i) {
-    if (mods::ClassKey(mods::kGameClasses[i]) == mods::ClassKey(name)) return i;
+  bool Active() const { return carousel.Active(); }
+  // The game choice `name` is (its slot in the game's order), or none.
+  std::optional<size_t> GameSlot(std::string_view name) const {
+    for (size_t i = 0; i < cs::kSlots; ++i) {
+      if (mods::ClassKey(game[i]) == mods::ClassKey(name)) return i;
+    }
+    return std::nullopt;
   }
-  return std::nullopt;
+};
+Row g_classes("classes", mods::kGameClasses, int32_t(ui::kNewGameClassRow), ui::kCommandSelectClass);
+Row g_pets("pets", mods::kGamePets, int32_t(ui::kNewGamePetRow), ui::kCommandSelectPet);
+bool g_listed = false;
+
+void Log(const Row& row) {
+  std::string names;
+  for (const std::string& c : row.list) names += (names.empty() ? "" : ", ") + c;
+  REXLOG_INFO("class selector: {} {} ({}){}", row.list.size(), row.what, names,
+              row.Active() ? "" : "; the game's row as it is");
 }
 
 void List() {
-  if (g.listed) return;
-  g.listed = true;
+  if (g_listed) return;
+  g_listed = true;
   const mods::ModPlan* plan = MountedModPlan();
-  std::vector<std::vector<std::string>> buttons;
-  std::set<std::string> units;
+  std::vector<std::vector<std::string>> class_buttons, pet_buttons;
+  std::set<std::string> players, monsters;
   if (plan) {
     const std::filesystem::path folder = std::filesystem::path(platform::DataDir()) / "mods";
-    buttons = mods::ModClassButtons(folder, *plan);
-    units = mods::ModPlayerUnits(folder, *plan);
+    class_buttons = mods::ModClassButtons(folder, *plan);
+    players = mods::ModPlayerUnits(folder, *plan);
+    pet_buttons = mods::ModPetButtons(folder, *plan);
+    monsters = mods::ModMonsterUnits(folder, *plan);
+    g_pets.shown_names = mods::ModMonsterDisplayNames(folder, *plan);
   }
-  g.classes = mods::ClassList(buttons, units);
-  g.carousel = cs::Carousel(g.classes.size());
-  std::string list;
-  for (const std::string& c : g.classes) list += (list.empty() ? "" : ", ") + c;
-  REXLOG_INFO("class selector: {} classes ({}){}", g.classes.size(), list,
-              g.carousel.Active() ? "" : "; the game's screen as it is");
+  g_classes.list = mods::ClassList(class_buttons, players);
+  g_pets.list = mods::PetList(pet_buttons, monsters);
+  for (Row* row : {&g_classes, &g_pets}) {
+    row->carousel = cs::Carousel(row->list.size());
+    Log(*row);
+  }
 }
 
 uint32_t FindWindow(GuestCall& call, uint32_t root, const std::string& name) {
@@ -93,12 +116,17 @@ std::string ReadCeguiString(uint8_t* base, uint32_t str) {
   const uint32_t reserve = abi::ReadU32(base, str + s::kReserve.offset);
   const uint32_t chars = reserve > s::kInlineCapacity ? abi::ReadU32(base, str + s::kHeapBuffer.offset)
                                                       : str + s::kInlineBuffer.offset;
-  std::string text;
+  std::u16string text;
   for (uint32_t i = 0; i < length && i < 256; ++i) {
     const uint32_t c = abi::ReadU32(base, chars + 4 * i);
-    text.push_back(c < 0x80 ? char(c) : '?');
+    if (c < 0x10000) {
+      text.push_back(char16_t(c));
+    } else {
+      text.push_back(char16_t(0xD800 + ((c - 0x10000) >> 10)));
+      text.push_back(char16_t(0xDC00 + ((c - 0x10000) & 0x3FF)));
+    }
   }
-  return text;
+  return mods::Utf16ToUtf8(text);
 }
 
 std::string GetProperty(GuestCall& call, uint32_t window, const char* name) {
@@ -127,44 +155,53 @@ void SetProperty(GuestCall& call, uint32_t window, const char* name, const std::
   call.Release(mark);
 }
 
-// The three buttons show the carousel's classes.
-void Refresh(PPCContext& ctx, uint8_t* base, uint32_t menu) {
+// A label's text: the name the game shows for the choice (a pet's DISPLAYNAME), else its name as
+// written with its underscores as spaces ("Pet_Wolf").
+std::string LabelText(const Row& row, std::string name) {
+  if (const auto it = row.shown_names.find(mods::ClassKey(name)); it != row.shown_names.end()) return it->second;
+  std::replace(name.begin(), name.end(), '_', ' ');
+  return name;
+}
+
+// The row's three buttons show its carousel's choices.
+void Refresh(PPCContext& ctx, uint8_t* base, uint32_t menu, Row& row) {
+  if (!row.Active()) return;
   GuestCall call(ctx, base);
   const uint32_t root = abi::ReadU32(base, menu + ui::dropdown_menu::kRoot.offset);
   if (!root) return;
   uint32_t buttons[cs::kSlots], labels[cs::kSlots];
   for (size_t s = 0; s < cs::kSlots; ++s) {
-    buttons[s] = FindWindow(call, root, std::string(mods::kGameClasses[s]));
-    labels[s] = FindWindow(call, root, cs::LabelName(mods::kGameClasses[s]));
+    buttons[s] = FindWindow(call, root, std::string(row.game[s]));
+    labels[s] = FindWindow(call, root, cs::LabelName(row.game[s]));
     if (!buttons[s]) {
-      REXLOG_ERROR("class selector: no button {}; the screen keeps its classes", mods::kGameClasses[s]);
-      g.carousel = cs::Carousel(0);
+      REXLOG_ERROR("class selector: no button {}; the screen keeps its {}", row.game[s], row.what);
+      row.carousel = cs::Carousel(0);
       return;
     }
   }
-  if (!g.images_saved) {
+  if (!row.images_saved) {
     for (size_t s = 0; s < cs::kSlots; ++s) {
-      for (size_t i = 0; i < 3; ++i) g.images[s][i] = GetProperty(call, buttons[s], kImageProperties[i]);
+      for (size_t i = 0; i < 3; ++i) row.images[s][i] = GetProperty(call, buttons[s], kImageProperties[i]);
     }
-    g.images_saved = true;
+    row.images_saved = true;
   }
   for (size_t s = 0; s < cs::kSlots; ++s) {
-    const std::string& shown = g.classes[g.carousel.ClassAt(s)];
-    if (const auto game = GameClass(shown)) {
-      for (size_t i = 0; i < 3; ++i) SetProperty(call, buttons[s], kImageProperties[i], g.images[*game][i]);
+    const std::string& shown = row.list[row.carousel.ClassAt(s)];
+    if (const auto game = row.GameSlot(shown)) {
+      for (size_t i = 0; i < 3; ++i) SetProperty(call, buttons[s], kImageProperties[i], row.images[*game][i]);
       SetProperty(call, labels[s], "Visible", "False");
     } else {
       SetProperty(call, buttons[s], "NormalImage", kFrameImage);
       SetProperty(call, buttons[s], "HoverImage", kFrameRolloverImage);
       SetProperty(call, buttons[s], "PushedImage", kFrameRolloverImage);
-      SetProperty(call, labels[s], "Text", shown);
+      SetProperty(call, labels[s], "Text", LabelText(row, shown));
       SetProperty(call, labels[s], "Visible", "True");
     }
   }
 }
 
-// The class name as the game's std::wstring (UTF-16 in the guest; the inline buffer while the
-// capacity is below 8, ogre_layout.h stl_string in wchar_t units), as UTF-8.
+// The name as the game's std::wstring (UTF-16 in the guest; the inline buffer while the capacity is
+// below 8, ogre_layout.h stl_string in wchar_t units), as UTF-8.
 std::string ReadWString(uint8_t* base, uint32_t str) {
   namespace s = abi::ogre::stl_string;
   const uint32_t length = abi::ReadU32(base, str + s::kLength.offset);
@@ -175,12 +212,12 @@ std::string ReadWString(uint8_t* base, uint32_t str) {
   return mods::Utf16ToUtf8(text);
 }
 
-// A guest std::wstring holding class `index`'s name, on the guest heap, for one selection: made
-// before it and destroyed after (DestroyName). One kept across selections broke the second pick of
-// the same class (the unit lookup found no unit by that name).
-uint32_t MakeName(PPCContext& ctx, uint8_t* base, size_t index) {
+// A guest std::wstring holding `utf8`, on the guest heap, for one selection: made before it and
+// destroyed after (DestroyName). One kept across selections broke the second pick of the same
+// class (the unit lookup found no unit by that name).
+uint32_t MakeName(PPCContext& ctx, uint8_t* base, const std::string& utf8) {
   GuestCall call(ctx, base);
-  const std::u16string name = mods::Utf8ToUtf16(g.classes[index]);
+  const std::u16string name = mods::Utf8ToUtf16(utf8);
   const uint32_t text = call.Call(ui::kAlloc.address, {0, uint32_t(2 * (name.size() + 1))});
   const uint32_t str = call.Call(ui::kAlloc.address, {0, abi::ogre::stl_string::kSize.bytes});
   if (!text || !str) return 0;
@@ -200,6 +237,34 @@ void DestroyName(PPCContext& ctx, uint8_t* base, uint32_t str) {
   call.Call(ui::kFree.address, {str});
 }
 
+// A move of the pad's focus: scrolls a row's list instead of leaving the row at either end.
+bool Scroll(PPCContext& ctx, uint8_t* base, uint32_t menu, int columns, int rows) {
+  if (rows != 0 || columns == 0) return false;
+  const int32_t focus_row = int32_t(abi::ReadU32(base, menu + ui::new_game_menu::kFocusRow.offset));
+  const int32_t column = int32_t(abi::ReadU32(base, menu + ui::new_game_menu::kFocusColumn.offset));
+  for (Row* row : {&g_classes, &g_pets}) {
+    if (!row->Active() || focus_row != row->grid_row || column < 0) continue;
+    if (!row->carousel.Scrolls(size_t(column), columns)) return false;
+    row->carousel.Scroll(columns > 0 ? 1 : -1);
+    Refresh(ctx, base, menu, *row);
+    return true;  // the focus stays on the button, which now shows the next choice
+  }
+  return false;
+}
+
+// A selection by a button's name: the name of what the button shows instead (0: the button's own).
+uint32_t PickedName(PPCContext& ctx, uint8_t* base, Row& row, uint32_t name_arg) {
+  if (!row.picking) return 0;
+  const std::string button = ReadWString(base, name_arg);
+  const auto slot = row.GameSlot(button);
+  if (!slot) return 0;
+  const std::string& shown = row.list[row.carousel.ClassAt(*slot)];
+  if (mods::ClassKey(shown) == mods::ClassKey(button)) return 0;
+  const uint32_t name = MakeName(ctx, base, shown);
+  if (name) REXLOG_INFO("class selector: button {} picks {}", button, shown);
+  return name;
+}
+
 }  // namespace
 
 }  // namespace torchlight::game_menu
@@ -215,28 +280,19 @@ REX_FUNC(sub_8238DCA8) {
   using namespace torchlight::game_menu;
   const uint32_t menu = ctx.r3.u32;
   List();
-  // The game selects the Destroyer as it shows the screen: the list starts with it again.
-  g.carousel.Reset();
+  // The game selects the Destroyer and the Dog as it shows the screen: the lists start with them.
+  g_classes.carousel.Reset();
+  g_pets.carousel.Reset();
   __imp__sub_8238DCA8(ctx, base);
-  if (Active()) Refresh(ctx, base, menu);
+  Refresh(ctx, base, menu, g_classes);
+  Refresh(ctx, base, menu, g_pets);
 }
 
 FUNCTION_ADDRESS_CHECK(kNewGameMenuMoveFocus, 8238F4F8);
 REX_EXTERN(__imp__sub_8238F4F8);
 REX_FUNC(sub_8238F4F8) {
   using namespace torchlight::game_menu;
-  const uint32_t menu = ctx.r3.u32;
-  const int columns = int(ctx.r4.s32), rows = int(ctx.r5.s32);
-  if (Active() && rows == 0 && columns != 0) {
-    const int32_t row = int32_t(abi::ReadU32(base, menu + ui::new_game_menu::kFocusRow.offset));
-    const int32_t column = int32_t(abi::ReadU32(base, menu + ui::new_game_menu::kFocusColumn.offset));
-    if (row == int32_t(ui::kNewGameClassRow) && column >= 0 &&
-        g.carousel.Scrolls(size_t(column), columns)) {
-      g.carousel.Scroll(columns > 0 ? 1 : -1);
-      Refresh(ctx, base, menu);
-      return;  // the focus stays on the button, which now shows the next class
-    }
-  }
+  if (Scroll(ctx, base, ctx.r3.u32, int(ctx.r4.s32), int(ctx.r5.s32))) return;
   __imp__sub_8238F4F8(ctx, base);
 }
 
@@ -244,31 +300,29 @@ FUNCTION_ADDRESS_CHECK(kNewGameMenuOnCommand, 8238E7F0);
 REX_EXTERN(__imp__sub_8238E7F0);
 REX_FUNC(sub_8238E7F0) {
   using namespace torchlight::game_menu;
-  g.picking = Active() && ctx.r4.u32 == ui::kCommandSelectClass;
+  g_classes.picking = g_classes.Active() && ctx.r4.u32 == g_classes.command;
+  g_pets.picking = g_pets.Active() && ctx.r4.u32 == g_pets.command;
   __imp__sub_8238E7F0(ctx, base);
-  g.picking = false;
+  g_classes.picking = g_pets.picking = false;
 }
 
 FUNCTION_ADDRESS_CHECK(kSelectClass, 82214000);
 REX_EXTERN(__imp__sub_82214000);
 REX_FUNC(sub_82214000) {
   using namespace torchlight::game_menu;
-  uint32_t name = 0;
-  if (g.picking) {
-    // The button's window name: the class it shows instead.
-    const std::string button = ReadWString(base, ctx.r4.u32);
-    if (const auto slot = GameClass(button)) {
-      const size_t index = g.carousel.ClassAt(*slot);
-      if (torchlight::mods::ClassKey(g.classes[index]) != torchlight::mods::ClassKey(button)) {
-        name = MakeName(ctx, base, index);
-        if (name) {
-          REXLOG_INFO("class selector: button {} picks {}", button, g.classes[index]);
-          ctx.r4.u64 = name;
-        }
-      }
-    }
-  }
+  const uint32_t name = PickedName(ctx, base, g_classes, ctx.r4.u32);
+  if (name) ctx.r4.u64 = name;
   __imp__sub_82214000(ctx, base);
+  if (name) DestroyName(ctx, base, name);
+}
+
+FUNCTION_ADDRESS_CHECK(kSelectPet, 82214188);
+REX_EXTERN(__imp__sub_82214188);
+REX_FUNC(sub_82214188) {
+  using namespace torchlight::game_menu;
+  const uint32_t name = PickedName(ctx, base, g_pets, ctx.r4.u32);
+  if (name) ctx.r4.u64 = name;
+  __imp__sub_82214188(ctx, base);
   if (name) DestroyName(ctx, base, name);
 }
 

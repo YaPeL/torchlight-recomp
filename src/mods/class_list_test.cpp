@@ -33,10 +33,13 @@ void Write(const fs::path& path, const std::string& text) {
 }
 
 // A UTF-16LE text definition, as mods ship them.
-void WriteUnit(const fs::path& path, const std::string& name, bool commented_name = false) {
+void WriteUnit(const fs::path& path, const std::string& name, bool commented_name = false,
+               const std::string& display_name = "") {
   std::string text = "[UNIT]\r\n";
   if (commented_name) text += "//\t<STRING>NAME:Old " + name + "\r\n";
-  text += "\t<STRING>NAME:" + name + "\r\n\t<STRING>UNIT_GUID:123\r\n[/UNIT]\r\n";
+  text += "\t<STRING>NAME:" + name + "\r\n";
+  if (!display_name.empty()) text += "\t<TRANSLATE>DISPLAYNAME:" + display_name + "\r\n";
+  text += "\t<STRING>UNIT_GUID:123\r\n[/UNIT]\r\n";
   std::string bytes = "\xFF\xFE";
   for (char c : text) {
     bytes.push_back(c);
@@ -131,6 +134,34 @@ int main() {
     Check(m::ClassButtons(m::LayoutText(utf8)) == std::vector<std::string>({name}), "a UTF-8 layout's name");
     // Its unit, NAME in upper case: offered.
     Check(m::ClassList({{name}}, {upper}).back() == name, "offered when its unit's NAME matches in any case");
+  }
+
+  // Pets: guiPet1 (PC) or GUISELECT2 (Xbox) buttons, the game's three first, monster units only.
+  {
+    const std::string xml = Button("GuiLook/StandardButton", "Dog", "guiPet1") +
+                            Button("GuiLook/StandardButton", "Pet_Wolf", "guiPet1") +
+                            Button("GuiLook/StandardButton", "Pet_Ghost", "GUISELECT2") +
+                            Button("GuiLook/RadioButton", "Paladin", "guiSelect1");
+    Check(m::PetButtons(xml) == std::vector<std::string>({"Dog", "Pet_Wolf", "Pet_Ghost"}), "pet buttons");
+    Check(m::PetList({m::PetButtons(xml)}, {"PET_WOLF", "PALADIN"}) ==
+              std::vector<std::string>({"Dog", "Cat", "Chakawary", "Pet_Wolf"}),
+          "the game's pets first, then the mods' with a monster unit");
+    const fs::path root = fs::temp_directory_path() / "class_list_test_pets";
+    fs::remove_all(root);
+    Write(root / "Pets" / "media" / "UI" / "charactercreate.layout", xml);
+    WriteUnit(root / "Pets" / "media" / "units" / "monsters" / "PET_WOLF.DAT", "Pet_Wolf", false, "Dire Wolf");
+    WriteUnit(root / "Pets" / "media" / "units" / "monsters" / "PET_GHOST.DAT", "Pet_Ghost");
+    WriteUnit(root / "Pets" / "media" / "units" / "players" / "Paladin.dat", "Paladin");
+    m::ModPlan plan;
+    plan.mods = {{"Pets", 0}};
+    Check(m::ModMonsterUnits(root, plan) == std::set<std::string>({"PET_GHOST", "PET_WOLF"}), "monster units only");
+    Check(m::PetList(m::ModPetButtons(root, plan), m::ModMonsterUnits(root, plan)) ==
+              std::vector<std::string>({"Dog", "Cat", "Chakawary", "Pet_Wolf", "Pet_Ghost"}),
+          "a mod's pets offered");
+    const auto shown = m::ModMonsterDisplayNames(root, plan);
+    Check(shown.size() == 2 && shown.at("PET_WOLF") == "Dire Wolf", "a pet's label: its DISPLAYNAME");
+    Check(shown.size() == 2 && shown.at("PET_GHOST") == "Pet_Ghost", "its NAME without one");
+    fs::remove_all(root);
   }
 
   if (failures) {
