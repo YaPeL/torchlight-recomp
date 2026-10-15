@@ -1109,6 +1109,16 @@ five classes, all 28 classes of the 29-mod pack (JCC's `Logo` created by the sel
 mods' textures, and the fallback with two of the pack's imagesets taken out (the frame with the whole
 name; the label is as wide as the button but for its border, so "Enchantress" fits).
 
+**The game's own classes (2026-10-15, branch feature/class-icons-base, not integrated).** A mod
+that redraws the Destroyer, Alchemist or Vanquisher (its creation layout gives their buttons images
+of its own imageset) now shows its portraits instead of the Xbox ones, as PC does: the mod wins, as
+with its materials and textures. Without mods, or with mods that leave those buttons alone, the Xbox
+portraits stay. This holds with the game's three classes only too (the row's buttons are then set
+without the carousel). Both mods that ship a creation layout redraw them: JCC - Main with PC's own
+portraits (from its `Logo`, close to the Xbox art; its focused image is blue, not gold) and
+Enhanced Edition with portraits of its own. Checked in automatic runs with captures: the pack (JCC's
+three), Enhanced Edition (its own three) and no mods (the Xbox three).
+
 **Pet icons from a mod (2026-10-15).** PC's own pet buttons are text buttons with no images, and no
 mod of the pack or of Enhanced Edition gives its pets any, so today every mod pet shows the frame with
 its name. A mod may give a pet an icon the same way as a class (`mods/class_list.h` `ModPetIcons`):
