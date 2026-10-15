@@ -357,7 +357,17 @@ whole save then parses; exactly one must (`saved_mod_list.h` `RepairModListAtLoa
 backed up first (`save-backups/<UTC>-modlist`), the file is written whole with its digest, and the
 log says so. A save holding a name no mod folder or `mods.dat` knows is left alone (logged): it
 cannot be split safely. Tested on a damaged copy of the synthetic fixture
-(`save_units_test`) and on stand-in bytes (`saved_mod_list_test`).
+(`save_units_test`) and on stand-in bytes (`saved_mod_list_test`). Checked in the game on
+2026-10-15: a copy of a real character with its list damaged this way was repaired at start (the
+file then equal, byte for byte, to the save as it should have been written, and the backup made)
+and loaded with all its items.
+
+**Pending, no priority: not reading the saves again when nothing changed.** With a mods folder,
+every start parses every character save twice (`RepairModListSaves`, then `ProtectSaves`), and a
+save that does not parse for another reason is logged again at each start. With a few saves this
+costs nothing noticeable. For someone with dozens, both passes could be skipped when neither the
+mods (folder and `mods.dat`) nor the saves (size and modification time) changed since the last
+start.
 
 ## 7e. New-item mods in validation: what kept the unit out (2026-10-08)
 
@@ -1042,7 +1052,15 @@ three and the mods' pets the same way as the classes; the pet selection (`sub_82
 name in and makes the pet by it, as the class selection does. Enhanced Edition offers 11 pets, the
 29-mod pack 56. A mod pet's button shows the name the game shows for it, its unit's DISPLAYNAME
 (the unit's NAME without one), in the smaller SerifSmall font, wrapped and centred over the 48 px
-button and its frame.
+button and its frame. Checked in a hand test on 2026-10-15 (Enhanced Edition's bat chosen, in
+town, and again after loading the character).
+
+**A pet's missing particle effect is the mod's (2026-10-15).** Enhanced Edition's bulldog
+(`media/models/PETS/BULLDOG/PET_BULLDOG.ANIMATION`) spawns `media\particles\monsters\
+droolsmall.layout` on its jaw, and the log shows the lookup failing. No such file exists in PC's
+`Pak.zip` (where particle layouts are `.LAYOUT.cmp`; none is named DROOLSMALL), in the Xbox pak,
+or in any of the mod's files. **[read: the three]** PC cannot find it either, so the bulldog
+should show without that effect there too. **[inferred; PC not run]**
 
 **What the mods' creation layouts change (2026-10-14).** Compared with PC's own
 `charactercreate.layout`, the two mods that ship one (JCC - Main and Enhanced Edition) only add
