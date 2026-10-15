@@ -122,6 +122,15 @@ on the same laptop: in some places the PC version is faster (up to about 20 %, t
 the NVIDIA GPU), in others this port is (up to about 15 %, the mine on the Intel GPU)
 ([measurements](docs/performance-profile.md#against-the-pc-version-through-proton-2026-10-14)).
 
+On laptops with a hybrid GPU (a dedicated GPU drawing, the built-in screen on the integrated one),
+copying each frame to the built-in screen caps the presented frame rate at about 180 fps with no
+frame limit. It goes away with the laptop's MUX switch set to discrete/dGPU-only in the BIOS, or
+with an external monitor on a port of the dedicated GPU. Playing on the integrated GPU avoids it
+too, and since the game is limited by the CPU it often presents as many frames or more (in the mine
+on this laptop: 208 fps on the Intel UHD 630 against 181 on the GeForce). With vertical sync on it
+does not matter
+([details](docs/performance-profile.md#the-presented-ceiling-on-hybrid-gpu-laptops-2026-10-14)).
+
 ### Display settings
 
 The game's own Options → Settings menu has an extra **Video** column:
