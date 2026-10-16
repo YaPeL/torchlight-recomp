@@ -182,21 +182,25 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     frame fits in the chosen resolution (by default, the window's).
 - `src/guest_abi/game_ui.h`: the game's UI (Runic on CEGUI 0.6): the menus (`CDropdownMenu`), their
   `.uilayout` layouts (CEGUI XML), the `onClick` commands and pad navigation.
-- `src/game_menu/`: the host's settings inside the game's settings menu (only mode), as a "Video"
-  column to the right of its rows, in its style. It is all the game's own UI:
+- `src/game_menu/`: the host's settings inside the game's settings menu (only mode), as a column to
+  the right of its rows, in its style, in three sections picked by red buttons on top (Video:
+  resolution, aspect, frame rate cap, vsync, renderer, GPU; Controls: button prompts and the A/B
+  swap; Extras: language and achievements). It is all the game's own UI:
   - the layout is ours (`data/ui/tl_video_settings.uilayout`, copied next to the executable) and only
     references widget types, fonts and imagesets from the pak; the guest sees it through a VFS device
     (`tlhost:`) added as an OGRE `FileSystem` location after `resources.cfg`;
   - after the settings menu's init it is loaded, scaled the way the game scales its layouts and
     attached to its container; the pad order is built on the first opening, so the rows are
-    navigable. Every window has its own name (`tl_video/...`): the guest's unique name generator
-    produces names that clash;
-  - a hook on the menu's navigation handler (by identity of the menu and of our rows): left/right
-    change the value, A the vsync; the rest follows the game. "Reset Defaults" also resets the
-    column;
+    navigable. All sections' rows are in it; the ones not shown are hidden, and the menu's focus
+    moves pass over hidden and disabled windows (they test `isVisible`), so a section change needs
+    no new pad order. Every window has its own name (`tl_video/...`): the guest's unique name
+    generator produces names that clash;
+  - a hook on the menu's navigation handler (by identity of the menu and of our rows): A on a
+    section button shows its rows, left/right change a value, A a checkbox; the rest follows the
+    game. "Reset Defaults" also resets the column;
   - changes apply immediately (scale and vsync through a request to the backend thread, the cap
-    through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer and GPU show the
-    restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
+    through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button
+    prompts and the A/B swap show the restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
   - the labels and the word values are translated with `data/ui/tl_video_strings.txt` (de, fr, es;
     written by us: the game does not have those texts) into the language the runtime reports;
   - the GPU (Linux only for now) is chosen before GL is loaded: the driver variables

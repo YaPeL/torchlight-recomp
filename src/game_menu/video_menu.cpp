@@ -66,18 +66,29 @@ std::atomic<bool> g_enabled{false};
 // The column in the game's settings menu, built and used only on the game's thread (its hooks).
 struct Column {
   uint32_t settings_menu = 0;
-  // Per row (Row order): the window that takes the focus (bar or checkbox) and its value text.
+  // Per row (Row order): the window that takes the focus (bar or checkbox), its value text and its
+  // label (a value row's, beside the bar; a checkbox's is inside it).
   uint32_t focus[kRowCount] = {};
   uint32_t value[kRowCount] = {};
+  uint32_t label[kRowCount] = {};
+  // Per section (Section order): its button and the button's text.
+  uint32_t section_button[kSectionCount] = {};
+  uint32_t section_text[kSectionCount] = {};
+  // The section shown; kept while the game runs, as the menu is.
+  Section section = Section::kVideo;
   uint32_t restart_note = 0;
   std::unique_ptr<VideoMenuModel> model;
 };
 Column g_column;
 
 // Row names in the layout (tl_video_settings.uilayout), in Row order.
-constexpr const char* kRowNames[kRowCount] = {"resolution", "aspect",   "fps_cap",
-                                              "language",   "achievements", "vsync",
-                                              "renderer",   "gpu"};
+constexpr const char* kRowNames[kRowCount] = {"resolution", "aspect",      "fps_cap", "language", "achievements",
+                                              "pad_prompts", "vsync",      "swap",    "renderer", "gpu"};
+// Section button names in the layout, in Section order.
+constexpr const char* kSectionNames[kSectionCount] = {"video", "controls", "extras"};
+// The menu's yellow, for values and the chosen section's button; white for the others.
+constexpr const char* kYellow = "FFFCD615";
+constexpr const char* kWhite = "FFFFFFFF";
 
 // Loads one of our layouts (CEGUI WindowManager::loadWindowLayout, as the game's menus do);
 // returns its root window, 0 on failure.
@@ -114,15 +125,23 @@ void SetProperty(GuestCall& call, uint32_t window, const char* name, const std::
   call.Release(mark);
 }
 
-// The column shows the model: values, the checkbox and the restart notice.
+// The column shows the model: the chosen section's rows (the others hidden, which the menu's
+// navigation passes over, as it passes over disabled windows), values, checkboxes and the restart
+// notice.
 void Refresh(GuestCall& call) {
   const VideoMenuModel& model = *g_column.model;
+  for (int i = 0; i < kSectionCount; ++i) {
+    SetProperty(call, g_column.section_text[i], "TextColour", Section(i) == g_column.section ? kYellow : kWhite);
+  }
   for (int i = 0; i < kRowCount; ++i) {
     const Row row = Row(i);
+    const char* shown = SectionOf(row) == g_column.section ? "True" : "False";
+    SetProperty(call, g_column.focus[i], "Visible", shown);
+    SetProperty(call, g_column.label[i], "Visible", shown);
     const bool enabled = model.Enabled(row);
     SetProperty(call, g_column.focus[i], "Disabled", enabled ? "False" : "True");
     SetProperty(call, g_column.focus[i], "Alpha", enabled ? "1" : "0.5");
-    if (row == Row::kVsync) {
+    if (IsCheckbox(row)) {
       SetProperty(call, g_column.focus[i], "Selected", model.Checked(row) ? "True" : "False");
     } else {
       SetProperty(call, g_column.value[i], "Text", "< " + Tr(model.Text(row)) + " >");
@@ -352,6 +371,12 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
     const std::string row = std::string("tl_video/") + kRowNames[i];
     g_column.focus[i] = FindChild(call, column, row.c_str());
     g_column.value[i] = FindChild(call, column, (row + "/value").c_str());
+    g_column.label[i] = FindChild(call, column, (row + "/label").c_str());
+  }
+  for (int i = 0; i < kSectionCount; ++i) {
+    const std::string button = std::string("tl_video/section_") + kSectionNames[i];
+    g_column.section_button[i] = FindChild(call, column, button.c_str());
+    g_column.section_text[i] = FindChild(call, column, (button + "/text").c_str());
   }
   g_column.restart_note = FindChild(call, column, "tl_video/restart_note");
   // Labels in the game's language (our translations; the layout has the English texts): the
@@ -362,13 +387,17 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
       pack.empty() ? settings::LanguageCode(rex::cvar::Query<uint32_t>("user_language")) : pack;
   REXLOG_INFO("game menu: video settings in language {}", g_language);
   static const std::pair<const char*, const char*> kLabels[] = {
-      {"tl_video/header", "Video"},
+      {"tl_video/section_video/text", "Video"},
+      {"tl_video/section_controls/text", "Controls"},
+      {"tl_video/section_extras/text", "Extras"},
       {"tl_video/resolution/label", "Resolution"},
       {"tl_video/aspect/label", "Aspect Ratio"},
       {"tl_video/fps_cap/label", "Frame Rate Limit"},
       {"tl_video/language/label", "Language"},
       {"tl_video/achievements/label", "Achievements"},
       {"tl_video/vsync/label", "Vertical Sync"},
+      {"tl_video/pad_prompts/label", "Button Prompts"},
+      {"tl_video/swap/label", "Swap A/B"},
       {"tl_video/renderer/label", "Renderer"},
       {"tl_video/gpu/label", "GPU"},
       {"tl_video/restart_note", "Some changes need a restart"},
@@ -384,9 +413,10 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
               settings_menu);
 }
 
-// A navigation event in the settings menu: ours when the focus is on one of our rows. Left and
-// right move a value row, A toggles the checkbox; the settings are applied and saved at once, as
-// the menu's own sliders take effect while it is open. Returns false to let the game handle it.
+// A navigation event in the settings menu: ours when the focus is on one of our rows or section
+// buttons. A on a section button shows that section; left and right move a value row, A toggles a
+// checkbox; the settings are applied and saved at once, as the menu's own sliders take effect while
+// it is open. Returns false to let the game handle it.
 bool OnSettingsNavigation(PPCContext& ctx, uint8_t* base, uint32_t handler, uint32_t event) {
   if (!g_column.model) return false;
   GuestCall call(ctx, base);
@@ -395,6 +425,15 @@ bool OnSettingsNavigation(PPCContext& ctx, uint8_t* base, uint32_t handler, uint
   }
   const uint32_t window = call.ReadU32(event + ui::navigation::kEventWindow.offset);
   const uint32_t action = call.ReadU32(event + ui::navigation::kEventAction.offset);
+  for (int i = 0; i < kSectionCount; ++i) {
+    if (!window || window != g_column.section_button[i]) continue;
+    if (action != ui::navigation::kActionAccept) return false;
+    if (g_column.section != Section(i)) {
+      g_column.section = Section(i);
+      Refresh(call);
+    }
+    return true;
+  }
   int row = -1;
   for (int i = 0; i < kRowCount; ++i) {
     if (window && window == g_column.focus[i]) row = i;

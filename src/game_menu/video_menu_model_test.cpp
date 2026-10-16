@@ -143,6 +143,39 @@ void TestAchievements() {
         "Reset Defaults: Xbox 360, restart");
 }
 
+void TestPadPrompts() {
+  VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
+  Check(m.Text(Row::kPadPrompts) == "Auto" && !m.Step(Row::kPadPrompts, -1), "automatic first");
+  Check(m.Step(Row::kPadPrompts, +1) && m.Text(Row::kPadPrompts) == "Xbox 360", "then Xbox 360");
+  Check(!m.Enabled(Row::kSwapConfirmCancel) && !m.Toggle(Row::kSwapConfirmCancel),
+        "the swap is off with the Xbox style");
+  m.Step(Row::kPadPrompts, +1);
+  Check(m.Text(Row::kPadPrompts) == "PlayStation", "PlayStation");
+  m.Step(Row::kPadPrompts, +1);
+  Check(m.Text(Row::kPadPrompts) == "Nintendo" && m.settings().pad_prompts == PadPrompts::kNintendo &&
+            !m.Step(Row::kPadPrompts, +1),
+        "Nintendo last");
+  Check(m.RestartNeeded(), "a style change needs a restart");
+  Check(IsCheckbox(Row::kSwapConfirmCancel) && !IsCheckbox(Row::kPadPrompts), "the swap is a checkbox");
+  Check(m.Enabled(Row::kSwapConfirmCancel) && m.Toggle(Row::kSwapConfirmCancel) &&
+            m.Checked(Row::kSwapConfirmCancel) && m.settings().swap_confirm_cancel,
+        "the swap toggles with Nintendo's style");
+  VideoMenuModel automatic(Desktop(), HostSettings{}, HostSettings{});
+  Check(automatic.Enabled(Row::kSwapConfirmCancel) && automatic.Toggle(Row::kSwapConfirmCancel) &&
+            automatic.RestartNeeded(),
+        "automatic: the swap can be set (a Nintendo pad may be connected), restart");
+}
+
+void TestSections() {
+  int count[kSectionCount] = {};
+  for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
+  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 2,
+        "six video rows, two controls, two extras");
+  Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
+            SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
+        "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
+}
+
 void TestReset() {
   HostSettings spanish;
   spanish.language = "es";
@@ -250,6 +283,8 @@ int main() {
   TestGpu();
   TestAspect();
   TestAchievements();
+  TestPadPrompts();
+  TestSections();
   std::printf("video_menu_model_test: ok\n");
   return 0;
 }
