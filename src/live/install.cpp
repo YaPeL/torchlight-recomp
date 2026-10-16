@@ -247,7 +247,9 @@ void LogHostSettings() {
     REXLOG_WARN("settings: {}: {}", file.path, warning);
   }
   REXLOG_INFO("settings: {} (fps cap {}, vsync {}, language {})", file.path,
-              file.values.fps_cap ? std::to_string(file.values.fps_cap) : "unlimited",
+              file.values.fps_cap == settings::kFpsCapAuto ? std::string("auto")
+              : file.values.fps_cap ? std::to_string(file.values.fps_cap)
+                                    : std::string("unlimited"),
               file.values.vsync ? "on" : "off",
               file.values.language.empty() ? "default" : file.values.language);
 }
@@ -320,6 +322,7 @@ void InitRunningSettings(const std::filesystem::path& game_data_root, rex::Runti
   caps.display = {display.width, display.height};
   for (const auto& [w, h] : display.modes) caps.display_modes.push_back({w, h});
   caps.display_hz = display.refresh_hz;
+  caps.has_battery = platform::HasBattery();
   // The first one offered is the automatic choice: Direct3D 11 where it is installed (Windows; less
   // CPU than OpenGL there, docs/windows-port.md), else GL3+.
   caps.render_systems = {kGl3PlusRenderSystemName};
@@ -548,8 +551,16 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
     }
     // The guest's vblank is the frame rate cap (with Xenos, the runtime's own presentation keeps
     // its --vsync).
-    ApplyFpsCap(g_host_settings.values.fps_cap, dialogs.runtime);
     InitRunningSettings(game_data_root, dialogs.runtime);
+    {
+      std::lock_guard lock(g_running.mutex);
+      const uint32_t fps_cap = settings::EffectiveFpsCap(g_running.startup, g_running.caps);
+      REXLOG_INFO("settings: fps cap {} ({}; display {} Hz{})",
+                  fps_cap ? std::to_string(fps_cap) : std::string("unlimited"),
+                  g_running.startup.fps_cap == settings::kFpsCapAuto ? "automatic" : "chosen",
+                  g_running.caps.display_hz, g_running.caps.has_battery ? ", battery" : "");
+      ApplyFpsCap(fps_cap, dialogs.runtime);
+    }
     // The game's display: vertical sync and internal resolution from the host settings.
     options.vsync = g_host_settings.values.vsync;
     options.render_resolution = g_host_settings.values.render_resolution;
@@ -615,7 +626,10 @@ void ChangeHostSettings(const settings::HostSettings& changed) {
   if (changed.render_resolution != before.render_resolution || changed.vsync != before.vsync) {
     LiveMode::Get().SetVideo(changed.render_resolution, changed.vsync);
   }
-  if (changed.fps_cap != before.fps_cap) ApplyFpsCap(changed.fps_cap, g_running.runtime);
+  const uint32_t fps_cap = settings::EffectiveFpsCap(changed, g_running.caps);
+  if (fps_cap != settings::EffectiveFpsCap(before, g_running.caps)) {
+    ApplyFpsCap(fps_cap, g_running.runtime);
+  }
   if (g_host_settings.path.empty()) return;
   std::string error;
   if (!settings::Save(g_host_settings.path, changed, error)) {

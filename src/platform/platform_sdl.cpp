@@ -96,6 +96,17 @@ DisplayInfo GameDisplay() {
   return info;
 }
 
+bool HasBattery() {
+  switch (SDL_GetPowerInfo(nullptr, nullptr)) {
+    case SDL_POWERSTATE_ON_BATTERY:
+    case SDL_POWERSTATE_CHARGING:
+    case SDL_POWERSTATE_CHARGED:
+      return true;
+    default:  // no battery, unknown, error
+      return false;
+  }
+}
+
 void AllowBackgroundGamepad() { SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"); }
 
 GamepadState ReadGamepad() {

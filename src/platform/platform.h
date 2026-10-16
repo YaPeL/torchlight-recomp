@@ -52,6 +52,8 @@ struct DisplayInfo {
   std::vector<std::pair<uint32_t, uint32_t>> modes;
 };
 DisplayInfo GameDisplay();
+// Whether the machine has a battery (laptops, the Steam Deck), plugged in or not.
+bool HasBattery();
 // Gamepad input keeps reaching the game while another window (the backend's) has the focus.
 void AllowBackgroundGamepad();
 

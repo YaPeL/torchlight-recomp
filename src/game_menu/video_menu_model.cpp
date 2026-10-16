@@ -167,6 +167,9 @@ std::string VideoMenuModel::Text(Row row) const {
                  ? "Auto"
                  : std::string(settings::AspectName(current_.aspect));
     case Row::kFpsCap:
+      if (current_.fps_cap == settings::kFpsCapAuto) {
+        return "Auto (" + std::to_string(settings::EffectiveFpsCap(current_, caps_)) + ")";
+      }
       return current_.fps_cap ? std::to_string(current_.fps_cap) : "Unlimited";
     case Row::kAchievements:
       return settings::EffectiveAchievements(current_) == settings::AchievementSet::kPc

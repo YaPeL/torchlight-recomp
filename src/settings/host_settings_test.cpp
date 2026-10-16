@@ -123,6 +123,53 @@ void TestFiles() {
   std::filesystem::remove_all(dir);
 }
 
+void TestEffectiveFpsCap() {
+  HostSettings automatic;
+  Check(automatic.fps_cap == kFpsCapAuto, "automatic by default");
+  Capabilities caps = Desktop();
+  Check(EffectiveFpsCap(automatic, caps) == 144, "144 Hz display: 144");
+  caps.display_hz = 120;
+  Check(EffectiveFpsCap(automatic, caps) == 120, "120 Hz display: 120");
+  caps.display_hz = 240;
+  Check(EffectiveFpsCap(automatic, caps) == kAutoFpsCapCeiling, "240 Hz display: the ceiling");
+  caps.display_hz = 60;
+  Check(EffectiveFpsCap(automatic, caps) == 60, "60 Hz display: 60");
+  caps.display_hz = 59;
+  Check(EffectiveFpsCap(automatic, caps) == 60, "59 Hz display: 60");
+  caps.display_hz = 0;
+  Check(EffectiveFpsCap(automatic, caps) == 60, "unknown rate: 60");
+  caps.display_hz = 165;
+  caps.has_battery = true;
+  Check(EffectiveFpsCap(automatic, caps) == 60, "a battery: 60");
+  caps.has_battery = false;
+  caps.any_vblank_rate = false;
+  Check(EffectiveFpsCap(automatic, caps) == 60, "no other vblank rate: 60");
+  caps.any_vblank_rate = true;
+  caps.has_battery = true;
+  HostSettings chosen;
+  chosen.fps_cap = 90;
+  Check(EffectiveFpsCap(chosen, caps) == 90, "a chosen cap is kept, battery or not");
+  chosen.fps_cap = 0;
+  Check(EffectiveFpsCap(chosen, caps) == 0, "unlimited is kept");
+  chosen.fps_cap = 60;
+  caps.has_battery = false;
+  Check(EffectiveFpsCap(chosen, caps) == 60, "a chosen 60 on a 165 Hz display stays 60");
+}
+
+void TestAutoFpsCapFile() {
+  std::vector<std::string> warnings;
+  HostSettings s = Parse("fps_cap = auto\n", &warnings);
+  Check(s.fps_cap == kFpsCapAuto && warnings.empty(), "auto, bare");
+  s = Parse("fps_cap = \"auto\"\n", &warnings);
+  Check(s.fps_cap == kFpsCapAuto && warnings.empty(), "auto, quoted");
+  s = Parse("fps_cap = 60\n", &warnings);
+  Check(s.fps_cap == 60, "an existing file's 60 stays 60");
+  HostSettings automatic;
+  const std::string text = Serialize(automatic);
+  Check(text.find("fps_cap = \"auto\"") != std::string::npos, "written as \"auto\"");
+  Check(Parse(text, &warnings) == automatic, "automatic round trip");
+}
+
 void TestChoices() {
   const Capabilities desktop = Desktop();
   auto res = ResolutionChoices(desktop);
@@ -131,6 +178,7 @@ void TestChoices() {
   Check(res.values.size() == 4, "16:9 modes only (1366x768 counts), duplicates removed");
   Check(res.values.back() == Resolution{1280, 720}, "smallest last");
   auto fps = FpsCapChoices(desktop);
+  Check(fps.values.front() == kFpsCapAuto, "automatic first");
   Check(fps.values.back() == 0, "unlimited last");
   Check(std::count(fps.values.begin(), fps.values.end(), 144u) == 1, "display rate not duplicated");
   Check(GpuChoices(desktop).enabled, "two GPUs selectable");
@@ -140,7 +188,8 @@ void TestChoices() {
   Check(!RenderSystemChoices(deck).enabled, "one render system: disabled");
   Check(ResolutionChoices(deck).values.size() == 2, "16:10 modes on the Deck");
   fps = FpsCapChoices(deck);
-  Check(fps.values == std::vector<uint32_t>{60, 0}, "without any vblank rate: 60 and unlimited");
+  Check(fps.values == std::vector<uint32_t>{kFpsCapAuto, 60, 0},
+        "without any vblank rate: automatic, 60 and unlimited");
 
   Capabilities hybrid_unselectable = desktop;
   hybrid_unselectable.gpu_selectable = false;
@@ -163,7 +212,8 @@ void TestNormalize() {
   Check(deck.render_system.empty(), "render system not offered: automatic");
   Check(deck.gpu.empty(), "GPU not choosable: automatic");
   Check(deck.render_resolution == Resolution{}, "resolution not offered: window");
-  Check(deck.fps_cap == 60, "cap not offered: 60");
+  Check(deck.fps_cap == kFpsCapAuto, "cap not offered: automatic");
+  Check(EffectiveFpsCap(deck, SteamDeck()) == 60, "automatic on the Deck: 60");
   s.render_system = "OpenGL 3+ Rendering Subsystem";
   s.gpu_name = "NVIDIA";
   Check(Normalize(s, Desktop()) == s, "everything offered: unchanged");
@@ -353,6 +403,8 @@ int main() {
   TestTolerantParse();
   TestFiles();
   TestChoices();
+  TestEffectiveFpsCap();
+  TestAutoFpsCapFile();
   TestNormalize();
   TestRenderSystemFallback();
   TestStartupRenderSystemCheck();

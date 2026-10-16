@@ -45,8 +45,9 @@ void TestResolution() {
 
 void TestFpsAndVsync() {
   VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
-  Check(m.Text(Row::kFpsCap) == "60", "default cap");
-  Check(m.Step(Row::kFpsCap, -1) && m.Text(Row::kFpsCap) == "30", "left: 30");
+  Check(m.Text(Row::kFpsCap) == "Auto (144)", "default cap: automatic, the display's rate");
+  Check(!m.Step(Row::kFpsCap, -1), "automatic is first");
+  Check(m.Step(Row::kFpsCap, +1) && m.Text(Row::kFpsCap) == "30", "right: 30");
   for (int i = 0; i < 20; ++i) m.Step(Row::kFpsCap, +1);
   Check(m.Text(Row::kFpsCap) == "Unlimited" && m.settings().fps_cap == 0, "last: unlimited");
   Check(m.Checked(Row::kVsync), "vsync on by default");
