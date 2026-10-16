@@ -236,7 +236,8 @@ struct ProgramInputs {
 //  - viewports go to OGRE as fractions of the target's guest size (tl_backend_set_viewport);
 //  - D3D pixel centres move by half a guest pixel (the same image at any scale, DrawImpl);
 //  - the probe rectangle is scaled (tl_backend_draw);
-//  - read-backs return guest sizes, filtered down from the host size (ReadTarget).
+//  - read-backs return guest sizes, filtered down from the host size (ReadTarget), except the
+//    output's at the host size (tl_backend_read_output_rgba, for reference images).
 struct RenderScale {
   float factor = 1;
   uint32_t Host(uint32_t guest) const {
@@ -523,6 +524,16 @@ void ReadTargetPixels(const tl_backend::Target& t, void* rgba, uint32_t stride) 
 
 void ReadTarget(tl_backend* b, const tl_backend::Target& t, void* rgba, uint32_t stride) {
   ReadTargetPixels(t, rgba, stride);
+  ForgetActiveViewport(b);
+}
+
+// Reads a target as RGBA8 at the size it is drawn (its host size), top row first.
+void ReadTargetHost(tl_backend* b, const tl_backend::Target& t, void* rgba, uint32_t stride) {
+  const uint32_t host_w = t.rt->getWidth(), host_h = t.rt->getHeight();
+  Ogre::PixelBox out(host_w, host_h, 1, Ogre::PF_BYTE_RGBA, rgba);
+  out.rowPitch = stride / 4;
+  out.slicePitch = out.rowPitch * host_h;
+  t.rt->copyContentsToMemory(Ogre::Box(0, 0, host_w, host_h), out, Ogre::RenderTarget::FB_AUTO);
   ForgetActiveViewport(b);
 }
 
@@ -2708,6 +2719,20 @@ uint32_t tl_backend_probe_samples(tl_backend* b) { return b->probe_samples; }
 int tl_backend_read_rgba(tl_backend* b, void* rgba, uint32_t stride) {
   try {
     ReadTarget(b, b->output, rgba, stride);
+  } catch (Ogre::Exception&) {
+    return 1;
+  }
+  return 0;
+}
+
+void tl_backend_output_size(tl_backend* b, uint32_t* width, uint32_t* height) {
+  *width = b->output.rt->getWidth();
+  *height = b->output.rt->getHeight();
+}
+
+int tl_backend_read_output_rgba(tl_backend* b, void* rgba, uint32_t stride) {
+  try {
+    ReadTargetHost(b, b->output, rgba, stride);
   } catch (Ogre::Exception&) {
     return 1;
   }

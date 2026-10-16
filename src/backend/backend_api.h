@@ -325,6 +325,11 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
 /* Reads the frame's output (main colour target after the display gamma) as RGBA8, top row first;
  * call after tl_backend_end. */
 int tl_backend_read_rgba(tl_backend* b, void* rgba, uint32_t stride);
+/* The frame's output at the size it is drawn (the guest's size times the render scale), and the
+ * output read at that size, unfiltered (reference images at the host's resolution; call after
+ * tl_backend_end). */
+void tl_backend_output_size(tl_backend* b, uint32_t* width, uint32_t* height);
+int tl_backend_read_output_rgba(tl_backend* b, void* rgba, uint32_t stride);
 /* Reads a render target (tl_backend_render_target id) as RGBA8, top row first (diagnostics; call
  * after tl_backend_end). */
 int tl_backend_read_target_rgba(tl_backend* b, uint64_t target_id, uint32_t width,
