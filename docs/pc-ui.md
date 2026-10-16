@@ -79,8 +79,9 @@ items and skills.
 - **The imageset:** keeps its name, native resolution and image names. The game's images stay at
   their places, the mod's are moved by the game texture's width, and an image both files name is
   the mod's.
-- **Where it goes:** both files go to the cache (`CacheDir("atlases")`), regenerated at every
-  start. The texture's name carries a hash of the inputs, so a changed mod never meets an old
+- **Where it goes:** both files go to the cache (`atlases/` in the platform's cache folder, or
+  below the runtime's cache root with `--user_data_root` / `--cache_root`;
+  `settings/user_folders_in_use.h`), regenerated at every start. The texture's name carries a hash of the inputs, so a changed mod never meets an old
   atlas in a capture.
 - **Serving it:** the folder is mounted as `tlatlas:` and added to the default resource group. The
   mods' file lookup (`kModFileLookup`, hooked) hands the game `tlatlas:/<path>` instead of the
