@@ -43,6 +43,16 @@ int main() {
   Check(!Find(keys, ImGuiKey_GamepadDpadUp)->down, "small stick values do not move");
   Check(!Find(keys, ImGuiKey_GamepadLStickLeft), "the stick does not scroll");
 
+  keys = GamepadToImGui(pad, true);
+  Check(!Find(keys, ImGuiKey_GamepadFaceUp)->down && Find(keys, ImGuiKey_GamepadFaceRight)->down,
+        "swapped: the bottom button cancels");
+  torchlight::platform::GamepadState right = pad;
+  right.a = false;
+  right.b = true;
+  keys = GamepadToImGui(right, true);
+  Check(Find(keys, ImGuiKey_GamepadFaceUp)->down && !Find(keys, ImGuiKey_GamepadFaceRight)->down,
+        "swapped: the right button confirms");
+
   torchlight::platform::GamepadState idle;
   Check(!GamepadHeld(idle), "idle pad");
   Check(GamepadHeld(pad), "held pad");

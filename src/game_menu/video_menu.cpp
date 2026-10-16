@@ -369,7 +369,7 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
       {"tl_video/language/label", "Language"},
       {"tl_video/achievements/label", "Achievements"},
       {"tl_video/pad_prompts/label", "Button Prompts"},
-      {"tl_video/vsync/label", "Vertical Sync"},
+      {"tl_video/vsync/label", "VSync"},
       {"tl_video/swap_confirm_cancel/label", "Swap A/B"},
       {"tl_video/renderer/label", "Renderer"},
       {"tl_video/gpu/label", "GPU"},

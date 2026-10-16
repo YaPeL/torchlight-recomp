@@ -40,7 +40,7 @@ void TestShippedFile() {
   Check(warnings.empty(), "shipped file has no malformed lines");
   // Every label and word value the Video column shows (video_menu.cpp, video_menu_model.cpp).
   const char* texts[] = {"Video", "Resolution", "Aspect Ratio", "Frame Rate Limit", "Language",
-                         "Achievements", "Vertical Sync", "Renderer", "GPU",
+                         "Achievements", "Button Prompts", "VSync", "Swap A/B", "Renderer", "GPU",
                          "Some changes need a restart", "Unlimited", "Window", "Default", "Auto",
                          "PC"};
   for (const char* language : {"de", "fr", "es"}) {

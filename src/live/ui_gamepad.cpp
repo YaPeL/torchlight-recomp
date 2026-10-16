@@ -1,6 +1,8 @@
 #include "live/ui_gamepad.h"
 
 #include <algorithm>
+#include <atomic>
+#include <utility>
 
 namespace torchlight::live {
 
@@ -11,9 +13,16 @@ constexpr float kDeadZone = 0.25f;
 constexpr float kStickPress = 0.5f;
 
 float Past(float value) { return value > kDeadZone ? std::min(value, 1.0f) : 0.0f; }
+
+std::atomic<bool> g_swapped{false};
 }  // namespace
 
-std::vector<UiGamepadKey> GamepadToImGui(const platform::GamepadState& pad) {
+void SetConfirmCancelSwapped(bool swapped) { g_swapped = swapped; }
+bool ConfirmCancelSwapped() { return g_swapped; }
+
+std::vector<UiGamepadKey> GamepadToImGui(const platform::GamepadState& state, bool swap_confirm_cancel) {
+  platform::GamepadState pad = state;
+  if (swap_confirm_cancel) std::swap(pad.a, pad.b);
   auto button = [](ImGuiKey key, bool down) { return UiGamepadKey{key, down, down ? 1.0f : 0.0f}; };
   return {
       button(ImGuiKey_GamepadFaceUp, pad.a),

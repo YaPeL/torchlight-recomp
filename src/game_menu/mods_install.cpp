@@ -23,6 +23,7 @@
 #include "guest_abi/mods.h"
 #include "guest_abi/xinput.h"
 #include "hooks/guest_path.h"
+#include "live/ui_gamepad.h"
 #include "platform/platform.h"
 #include "mods/class_list.h"
 #include "mods/icon_atlas.h"
@@ -291,6 +292,7 @@ void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_
   }();
   const mods::PadStyle style = mods::EffectivePadStyle(chosen, kind);
   g_swap_confirm_cancel = mods::SwapsConfirmCancel(style, swap);
+  live::SetConfirmCancelSwapped(g_swap_confirm_cancel);  // the host's dialogs too
   REXLOG_INFO("pad prompts: {} ({}){}", mods::PadStyleName(style), chosen ? "chosen" : "the connected pad's",
               g_swap_confirm_cancel ? ", confirm and cancel swapped" : "");
   const std::string cache = platform::CacheDir("prompts");

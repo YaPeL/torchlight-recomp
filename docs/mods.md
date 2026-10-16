@@ -1331,12 +1331,16 @@ or Nintendo (`src/mods/pad_prompts.h`).
 - **Choice.** `settings.toml` `pad_prompts` (`auto`, `xbox`, `playstation`, `nintendo`) and the
   video column's "Button Prompts" row. Automatic follows the first connected pad's SDL type
   (`platform::ConnectedGamepadKind`) at start. A change takes effect at the next start, because the
-  game loads its imagesets once.
+  game loads its imagesets once. Automatic is a snapshot taken at start. A pad connected later, or
+  one still enumerating then (Bluetooth, some HIDAPI pads), gets the Xbox prompts until the next
+  start.
 - **Nintendo pads.** By default buttons work by position, as on the 360: the bottom button
   confirms. Each prompt shows the letter of its physical button, so the 360's A shows B. With
   `swap_confirm_cancel` (the "Swap A/B" checkbox, Nintendo style or automatic) the right button
   (A) confirms and the bottom one (B) cancels. The game's two XInput wrappers
-  (`guest_abi/xinput.h`) hand A and B swapped, and the icons follow.
+  (`guest_abi/xinput.h`) hand A and B swapped, and the icons follow. The runtime's own dialogs
+  (`live/ui_gamepad.h`) swap them too. The SDK's keyboard emulation goes through the same XInput
+  read, so its A and B keys are swapped as well.
 - **Texts that name a button: left for later.** The game's texts that name a button by its letter
   are listed here by what they say, not quoted (no game text in the repository):
   - the inventory row's hint that A identifies an unidentified item;
