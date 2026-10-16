@@ -37,13 +37,21 @@ bool OnReplacementsDevice(std::string_view path);
 inline constexpr std::string_view kAtlasDeviceLink = "tlatlas:";
 inline constexpr std::string_view kAtlasDeviceMount = "\\Device\\TorchlightAtlases";
 
+// The device the pad prompts' textures are mounted as (mods/pad_prompts.h): the app's cache folder
+// of the game's widget textures redrawn at start, read like the replacements folder (before it, so
+// the player's own replacements win).
+inline constexpr std::string_view kPromptsDeviceLink = "tlprompt:";
+inline constexpr std::string_view kPromptsDeviceMount = "\\Device\\TorchlightPrompts";
+// Whether `path` is on the pad prompts' device (any case).
+bool OnPromptsDevice(std::string_view path);
+
 // The search path the guest's FindFirstFileA is given instead of `path`: WindowsSeparators for a
-// path on a mod's device or the replacements', nothing for any other (kept as the Xbox reads it;
+// path on a mod's device, the replacements' or the prompts', nothing for any other (kept as the Xbox reads it;
 // guest_abi xapi_files.h says why).
 std::optional<std::string> ModsSearchPath(std::string_view path);
 
 // A resource name without our device, "TLMOD000:/MEDIA/X.DDS" -> "MEDIA/X.DDS", for a name on a
-// mod's device or the replacements'; nothing for any other. PC names a mod's resources without a
+// mod's device, the replacements' or the prompts'; nothing for any other. PC names a mod's resources without a
 // device (its mods are folders with relative names), and the game's listener names textures after
 // the script's full path, device included (guest_abi game_ui.h kScriptListenerHandleEvent).
 std::optional<std::string> WithoutOurDevice(std::string_view name);

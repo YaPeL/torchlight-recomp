@@ -1309,6 +1309,70 @@ Edition, the 29-mod pack), compared with PC's own, window by window. **[read: th
   layout has nothing to apply to: they come with the PC interface above.
 - **Not seen:** a mod with a `.uilayout` of its own (the Xbox format); none exists for PC.
 
+## 9b. Pad prompt styles (2026-10-16, branch feature/pad-prompt-styles)
+
+The game's button prompts drawn for the player's pad: Xbox (the game's own images), PlayStation
+or Nintendo (`src/mods/pad_prompts.h`).
+
+- **What is replaced.** The ten face, shoulder, trigger and start/back images of the game's widget
+  imagesets (`a_button`, `b_button`, `button_x`, `y_button`, `left_bumper`, `right_bumper`,
+  `left_trigger`, `right_trigger`, `start_button`, `back_button`), and its thirteen stick and
+  d-pad images (`analog_button_*`, `dpad_*`): a stick pushed in any direction (`_lrud`) becomes
+  the plain stick, since the pack has no stick with four arrows, and `analog_button_left_down`,
+  whose drawing is the right stick pressed, the right stick pressed. In the user's pak they are in
+  `widgets.dds`, `widgets1.dds`, `widgets2.dds` and `ratings.dds`. With PlayStation or Nintendo
+  the help screen's controller picture (`controller`, in `ratings.dds`) becomes that style's
+  controller silhouette, at 80% of its place (a flat silhouette at the 360 drawing's size looks
+  heavier); with Xbox it stays the 360's drawing. The silhouettes are rasterized from the pack's
+  SVGs, since the picture is drawn about 350 px wide.
+- **PlayStation models.** SDL tells a PS3, PS4 and PS5 pad apart. The controller picture, and
+  start and back, are the pad's model's: the PS3's triangle and bar, the PS4's and PS5's tall pills
+  (the PS4's without the word above them), which shrink to a thin stick at the prompts' 29x22 as
+  the buttons look on those pads (the owner's choice, 2026-10-16). The other buttons are the same on
+  the three. `pad_prompts = "playstation"` takes the connected PlayStation's model, a PS5 without
+  one.
+- **How.** The textures are rewritten at start, not the imagesets. Each image's region is cleared
+  and the icon is scaled into it with its aspect kept, so every window that names an image keeps
+  its size and place. A transparent border of one texel is kept around it, like the 360's own art:
+  the game's windows draw these images slightly smaller than their regions and clip the bottom
+  (the Options legend draws the 21-texel face buttons 19 px tall), so an icon reaching the edge
+  lost its last row. The textures go to the cache (`prompts/`), are mounted as `tlprompt:` and are
+  added to the game's resource groups before the replacements folder (7k), so a player's own
+  replacement of a widget texture still wins. The host reads them through the texture lookup like
+  the replacements' files, and captures keep their bytes. Nothing is written for Xbox.
+- **The icons.** Kenney's "Input Prompts" 1.5 (CC0, `THIRD_PARTY_NOTICES.md`), converted by
+  `tools/pad_prompts/make_icons.py` into `data/ui/prompts/`. They are flat white or coloured
+  icons, while the 360's are glossy, so they look different in style.
+- **Choice.** Automatic by default; `settings.toml` `pad_prompts` (`auto`, `xbox`, `playstation`,
+  `nintendo`) fixes one. There is no row in the Options menu: the video column has no room left
+  (the owner's choice, 2026-10-16). Automatic follows the first connected pad's SDL type
+  (`platform::ConnectedGamepadKind`) at start, then the pad last used while playing
+  (`platform::WatchGamepadKind`: a pad connected or disconnected, or a button pressed on another
+  pad). Every style (the three PlayStation models and Nintendo) is written at start, and a change
+  of pad switches the host's texture lookup to that style's folder. The live content then gets the new textures (`live::RefreshNamedTextures`),
+  and the A/B swap follows. The guest's own copy stays the start style's; only the Xenos mode
+  draws that copy. Changing the file's setting takes effect at the next start.
+- **Nintendo pads.** By default buttons work by position, as on the 360: the bottom button
+  confirms. Each prompt shows the letter of its physical button, so the 360's A shows B. With
+  `settings.toml` `swap_confirm_cancel = true` (Nintendo style, chosen or automatic) the right button
+  (A) confirms and the bottom one (B) cancels. The game's two XInput wrappers
+  (`guest_abi/xinput.h`) hand A and B swapped, and the icons follow. The runtime's own dialogs
+  (`live/ui_gamepad.h`) swap them too. The SDK's keyboard emulation goes through the same XInput
+  read, so its A and B keys are swapped as well.
+- **Texts that name a button: left for later.** The game's texts that name a button by its letter
+  are listed here by what they say, not quoted (no game text in the repository):
+  - the inventory row's hint that A identifies an unidentified item;
+  - the inventory row's hint that A uses an item;
+  - a tip that START in the inventory opens the pet's actions;
+  - a tip that the pet can be sent to town from the pet action menu (START);
+  - the merchant tip that RB and LB switch between the merchant's inventories;
+  - the fishing tip to press A when the circle turns red;
+  - one line in the skills screen's layout that names A.
+
+  Each is in the game's translations (de, fr, es) too. A later fix could hook the translator's
+  lookup and put the style's button name into those texts. A rule would find the texts from the
+  user's files at load time, so none is copied into the repository.
+
 ## 10. Validation mods (candidates, not downloaded)
 
 Development uses synthetic mods made by the tests. For the final validation the user downloads real

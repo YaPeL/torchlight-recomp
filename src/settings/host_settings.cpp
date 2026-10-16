@@ -134,6 +134,8 @@ bool RequiresRestart(Setting setting) {
     case Setting::kLanguage:
     case Setting::kAspect:
     case Setting::kAchievements:
+    case Setting::kPadPrompts:
+    case Setting::kSwapConfirmCancel:
       return true;
     case Setting::kRenderResolution:
     case Setting::kFpsCap:
@@ -349,6 +351,19 @@ std::string_view AchievementSetName(AchievementSet set) {
   return set == AchievementSet::kPc ? "pc" : "xbox";
 }
 
+std::string_view PadPromptsName(PadPrompts prompts) {
+  switch (prompts) {
+    case PadPrompts::kXbox:
+      return "xbox";
+    case PadPrompts::kPlayStation:
+      return "playstation";
+    case PadPrompts::kNintendo:
+      return "nintendo";
+    default:
+      return "auto";
+  }
+}
+
 HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
   HostSettings settings;
   auto warn = [&](int line, std::string message) {
@@ -404,6 +419,20 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
       std::string s;
       ok = ParseString(value, s) && (s == "xbox" || s == "pc");
       if (ok) settings.achievements = s == "pc" ? AchievementSet::kPc : AchievementSet::kXbox;
+    } else if (key == "pad_prompts") {
+      std::string v;
+      ok = false;
+      if (ParseString(value, v)) {
+        for (const PadPrompts p : {PadPrompts::kAuto, PadPrompts::kXbox, PadPrompts::kPlayStation, PadPrompts::kNintendo}) {
+          if (v == PadPromptsName(p)) {
+            settings.pad_prompts = p;
+            ok = true;
+          }
+        }
+      }
+    } else if (key == "swap_confirm_cancel") {
+      ok = value == "true" || value == "false";
+      if (ok) settings.swap_confirm_cancel = value == "true";
     } else if (key == "vsync") {
       ok = value == "true" || value == "false";
       if (ok) settings.vsync = value == "true";
@@ -448,6 +477,12 @@ std::string Serialize(const HostSettings& settings) {
   } else {
     out << "# achievements = \"xbox\"\n";
   }
+  out << "# Pad button prompts: \"auto\" (the connected pad's), \"xbox\", \"playstation\" or\n"
+      << "# \"nintendo\"; takes effect after a restart.\n"
+      << "pad_prompts = " << Quote(std::string(PadPromptsName(settings.pad_prompts))) << "\n"
+      << "# With Nintendo prompts: the right button (A) confirms and the bottom one (B) cancels, as\n"
+      << "# on a Switch; takes effect after a restart.\n"
+      << "swap_confirm_cancel = " << (settings.swap_confirm_cancel ? "true" : "false") << "\n";
   return out.str();
 }
 

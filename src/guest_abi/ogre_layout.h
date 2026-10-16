@@ -105,6 +105,10 @@ inline void WriteU32(uint8_t* membase, uint32_t addr, uint32_t value) {
   if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
   std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
 }
+inline void WriteU16(uint8_t* membase, uint32_t addr, uint16_t value) {
+  if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
+  std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
+}
 inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
   std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
 }

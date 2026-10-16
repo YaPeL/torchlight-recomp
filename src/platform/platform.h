@@ -73,6 +73,14 @@ struct GamepadState {
   float left_x = 0, left_y = 0;  // -1 to 1, y positive down
 };
 GamepadState ReadGamepad();
+// The kind of the first connected gamepad, by its type as SDL reports it (the pad prompts' style,
+// mods/pad_prompts.h). Starts SDL's gamepad support when nothing has yet.
+enum class GamepadKind { kNone, kXbox, kPlayStation3, kPlayStation4, kPlayStation5, kNintendo, kOther };
+GamepadKind ConnectedGamepadKind();
+// Calls `changed` with the kind of the pad last used whenever it changes: a pad connected or
+// disconnected, or a button pressed on another pad than the last one used (with none used yet, the
+// first connected). Called on the thread that pumps SDL's events; it must return quickly.
+void WatchGamepadKind(std::function<void(GamepadKind)> changed);
 
 // Whether there is a display to open windows on (tests that need a GL context skip without one).
 // Linux: $DISPLAY or $WAYLAND_DISPLAY set. Windows: always.

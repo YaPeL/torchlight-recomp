@@ -142,7 +142,7 @@ void RequestDialogFrame() {
       }
       if (open && pad.connected) {
         io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
-        for (const UiGamepadKey& k : GamepadToImGui(pad)) {
+        for (const UiGamepadKey& k : GamepadToImGui(pad, ConfirmCancelSwapped())) {
           io.AddKeyAnalogEvent(k.key, k.down, k.value);
         }
       } else {

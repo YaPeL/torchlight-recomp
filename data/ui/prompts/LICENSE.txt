@@ -1,0 +1,13 @@
+The icons in this folder come from Kenney's "Input Prompts" pack 1.5
+(https://kenney.nl/assets/input-prompts), converted by tools/pad_prompts/make_icons.py.
+
+	Input Prompts (1.5A)
+
+	Created/distributed by Kenney (www.kenney.nl)
+
+	License: (Creative Commons Zero, CC0)
+	http://creativecommons.org/publicdomain/zero/1.0/
+
+	You can use this content for personal, educational, and commercial purposes.
+
+	Support by crediting 'Kenney' or 'www.kenney.nl' (this is not a requirement)

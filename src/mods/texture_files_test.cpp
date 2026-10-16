@@ -119,6 +119,31 @@ int main() {
     Check(!TextureResolver(only).empty(), "a resolver with generated files only");
   }
 
+  // The pad prompts' textures (mods/pad_prompts.h): after the replacements, before the pak.
+  {
+    Touch(root / "p" / "media" / "levelsets" / "town1" / "bricks.dds");
+    Touch(root / "p" / "media" / "levelsets" / "town1" / "grass001.dds");
+    Touch(root / "p" / "media" / "ui" / "widgets.dds");
+    TextureLocations with = locations;
+    with.prompts = root / "p";
+    const TextureResolver prompts(with);
+    TextureFile p = prompts.Find("MEDIA/LEVELSETS/TOWN1/BRICKS.DDS", "General", pak);
+    Check(p.source == TextureSource::kGenerated && p.path.parent_path().filename() == "town1" &&
+              p.path.generic_string().find("/p/") != std::string::npos,
+          "a prompt texture before the pak's");
+    p = prompts.Find("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "General", pak);
+    Check(p.source == TextureSource::kReplacements, "the player's replacements before the prompts");
+    p = prompts.Find("tlprompt:/media/levelsets/town1/bricks.dds", "General", pak);
+    Check(p.source == TextureSource::kGenerated, "by its device too");
+    p = prompts.Find("MEDIA/UI/WIDGETS.DDS", "MOD A", pak);
+    Check(p.source == TextureSource::kGenerated, "from a mod's group without the file: the game's groups");
+    p = prompts.Find("MEDIA/LEVELSETS/TOWN1/BRICKS.DDS", "MOD A", pak);
+    Check(p.source == TextureSource::kMod, "a mod's own file still first in its group");
+    TextureLocations only;
+    only.prompts = root / "p";
+    Check(!TextureResolver(only).empty(), "a resolver with prompts only");
+  }
+
   // Nowhere.
   f = resolver.Find("MEDIA/NOWHERE.DDS", "MOD A", pak);
   Check(f.source == TextureSource::kNone, "not found anywhere");

@@ -82,6 +82,26 @@ void TestAchievementSet() {
   Check(RequiresRestart(Setting::kAchievements), "the achievement set needs a restart");
 }
 
+void TestPadPrompts() {
+  std::vector<std::string> warnings;
+  HostSettings s = Parse("", &warnings);
+  Check(s.pad_prompts == PadPrompts::kAuto && !s.swap_confirm_cancel && warnings.empty(),
+        "no keys: automatic prompts, no swap");
+  s = Parse("pad_prompts = \"nintendo\"\nswap_confirm_cancel = true\n", &warnings);
+  Check(s.pad_prompts == PadPrompts::kNintendo && s.swap_confirm_cancel && warnings.empty(), "nintendo, swapped");
+  Check(Parse(Serialize(s)) == s, "round trip");
+  for (const PadPrompts p : {PadPrompts::kAuto, PadPrompts::kXbox, PadPrompts::kPlayStation, PadPrompts::kNintendo}) {
+    HostSettings one;
+    one.pad_prompts = p;
+    Check(Parse(Serialize(one)).pad_prompts == p, "every style round trips");
+  }
+  warnings.clear();
+  s = Parse("pad_prompts = \"sega\"\n", &warnings);
+  Check(s.pad_prompts == PadPrompts::kAuto && warnings.size() == 1, "an unknown style: automatic and a warning");
+  Check(RequiresRestart(Setting::kPadPrompts) && RequiresRestart(Setting::kSwapConfirmCancel),
+        "both need a restart");
+}
+
 void TestTolerantParse() {
   std::vector<std::string> warnings;
   HostSettings s = Parse(
@@ -406,6 +426,7 @@ int main() {
   TestAspect();
   TestRoundTrip();
   TestAchievementSet();
+  TestPadPrompts();
   TestTolerantParse();
   TestFiles();
   TestChoices();

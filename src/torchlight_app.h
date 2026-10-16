@@ -70,8 +70,8 @@ class TorchlightApp : public rex::ReXApp {
     // or invalid (the settings log reports an invalid value).
     // Read here from the file (as live's PreCreate did): live's startup settings are only filled
     // later, when only mode finishes its setup. live already logs any bad value.
+    torchlight::settings::HostSettings host;
     {
-      torchlight::settings::HostSettings host;
       std::vector<std::string> warnings;
       std::string error;
       const std::string config_dir = torchlight::platform::ConfigDir();
@@ -117,6 +117,17 @@ class TorchlightApp : public rex::ReXApp {
     // The player's PC mods (any mode): mounted and their saves protected before the guest runs.
     torchlight::game_menu::InstallMods(runtime(), torchlight::platform::DataDir(), user_data_root(),
                                        game_data_root() / "pak.zip");
+    // The pad prompts in the style of the player's pad (settings.toml "pad_prompts",
+    // "swap_confirm_cancel"), before the guest loads its imagesets.
+    {
+      using torchlight::settings::PadPrompts;
+      std::optional<torchlight::mods::PadFamily> chosen;
+      if (host.pad_prompts == PadPrompts::kXbox) chosen = torchlight::mods::PadFamily::kXbox;
+      if (host.pad_prompts == PadPrompts::kPlayStation) chosen = torchlight::mods::PadFamily::kPlayStation;
+      if (host.pad_prompts == PadPrompts::kNintendo) chosen = torchlight::mods::PadFamily::kNintendo;
+      torchlight::game_menu::InstallPadPrompts(runtime(), game_data_root() / "pak.zip", chosen,
+                                               host.swap_confirm_cancel);
+    }
     // Their units in the game's unit index (cached in the user's folder when mods bring any).
     torchlight::mods::InstallUnitIndex(runtime(), torchlight::platform::DataDir(),
                                        game_data_root() / "pak.zip",
