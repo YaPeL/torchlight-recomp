@@ -373,8 +373,10 @@ struct tl_backend {
       guest_alpha_test, guest_lighting;
   const Program* bound_program = nullptr;
   // The constants last bound per stage for bound_program (BindChangedParameters); emptied when
-  // another program is bound.
+  // another program is bound and when the render system binds a render target (SetViewport).
   std::vector<Ogre::uchar> bound_constants[Ogre::GPT_COUNT];
+  // The viewport last given to the render system (SetViewport; null after ForgetActiveViewport).
+  Ogre::Viewport* render_system_viewport = nullptr;
   std::unique_ptr<Ogre::AutoParamDataSource> params_source;
   Ogre::SceneManager* scene = nullptr;  // never rendered
   Ogre::Camera* camera = nullptr;
@@ -408,7 +410,16 @@ void SetError(char* error, uint32_t size, const std::string& message) {
 }
 
 void SetViewport(tl_backend* b, Ogre::Viewport* viewport) {
+  // A viewport other than the last one, or one marked updated, makes the render system bind its
+  // target again; Direct3D 11's _setRenderTarget then calls ClearState, which unbinds the shader
+  // constant buffers too. The constants BindChangedParameters believes bound are gone: bind them
+  // again on the next draw (otherwise a draw whose constants did not change reads none, e.g. an
+  // alpha test function of 0, CMPF_ALWAYS_FAIL, that drops every pixel).
+  if (viewport != b->render_system_viewport || viewport->_isUpdated()) {
+    for (auto& constants : b->bound_constants) constants.clear();
+  }
   b->rs->_setViewport(viewport);
+  b->render_system_viewport = viewport;
   b->active = viewport->getTarget();
 }
 
@@ -427,7 +438,10 @@ void SetViewportArea(Ogre::Viewport* viewport, Ogre::Real left, Ogre::Real top, 
 // After reading a target back the render system may have another framebuffer bound: the next
 // SetViewport binds the target again whatever viewport it is (SetViewportArea may leave the
 // viewport not updated).
-void ForgetActiveViewport(tl_backend* b) { b->rs->_setViewport(nullptr); }
+void ForgetActiveViewport(tl_backend* b) {
+  b->rs->_setViewport(nullptr);
+  b->render_system_viewport = nullptr;
+}
 
 // SceneClip16x9: the front end's 3D scene on a frame wider than 16:9 (tl_backend_set_scene_clip).
 // The centred 16:9 strip of the main target, in host pixels; nothing when the clip is off, the
