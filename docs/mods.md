@@ -1344,8 +1344,8 @@ or Nintendo (`src/mods/pad_prompts.h`).
   `tools/pad_prompts/make_icons.py` into `data/ui/prompts/`. They are flat white or coloured
   icons, while the 360's are glossy, so they look different in style.
 - **Choice.** Automatic by default; `settings.toml` `pad_prompts` (`auto`, `xbox`, `playstation`,
-  `nintendo`) fixes one. There is no row in the Options menu: the video column has no room left
-  (the owner's choice, 2026-10-16). Automatic follows the first connected pad's SDL type
+  `nintendo`) fixes one, as does the Options menu's Controls section (Button Prompts, Swap A/B;
+  both after a restart). Automatic follows the first connected pad's SDL type
   (`platform::ConnectedGamepadKind`) at start, then the pad last used while playing
   (`platform::WatchGamepadKind`: a pad connected or disconnected, or a button pressed on another
   pad). Every style (the three PlayStation models and Nintendo) is written at start, and a change
