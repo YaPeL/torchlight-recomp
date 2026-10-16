@@ -38,8 +38,13 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<M
 // The game's thread, in the unit index loader once the index is built and before the game loads
 // it: the check InstallSaveUnits left, if any. No character is loaded before the index (the
 // game loads it with its data), so the saves are checked before anything reads them, as at the
-// start.
+// start; nor is the save content mounted then (the game's SAVE:\ lookups during its data load
+// find no device; EE run, 2026-10-16), so the check's backups and rewrites meet no open file.
+// While a check is left, saving is off (SavingBlocked): if the loader never ran it, nothing is
+// written unchecked.
 void CheckDeferredSaves();
+// Whether a check InstallSaveUnits left has not run yet. Any thread.
+bool SaveCheckPending();
 
 // After the game loaded its unit index with the mods' units (mods/unit_index_install.cpp): the
 // GUIDs it holds, or none when that is not known (it loaded part of a file); then every mods' unit
@@ -48,7 +53,8 @@ void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& lo
 
 // True once CompareWithLoadedUnits found saves holding units the game did not load: the game would
 // drop those items when it loads such a character and lose them at the next save, so nothing is
-// saved for the rest of the session (save_block_hooks.cpp). Any thread.
+// saved for the rest of the session (save_block_hooks.cpp); also while the saves' check is left
+// for later (SaveCheckPending). Any thread.
 bool SavingBlocked();
 
 // What the start changed or found, when there is anything to tell (for the notice).

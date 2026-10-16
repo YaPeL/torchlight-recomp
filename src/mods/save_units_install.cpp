@@ -136,6 +136,9 @@ struct Deferred {
   std::optional<ModPlan> plan;
 };
 Deferred g_deferred;
+// g_deferred.pending, for SavingBlocked on any thread: saving stays off while the saves are not
+// checked, so a session whose check never ran writes nothing unchecked.
+std::atomic<bool> g_check_pending{false};
 
 void CheckSaves(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
                 const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
@@ -194,10 +197,12 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<M
   g_saving_blocked = false;
   g_settled_file.clear();
   g_deferred = {};
+  g_check_pending = false;
   if (user_data_root.empty()) return;
   if (!files.empty() && index_built_in_game) {
     g_deferred = {true, data_dir, cache_dir, pak, user_data_root, files,
                   plan ? std::optional<ModPlan>(*plan) : std::nullopt};
+    g_check_pending = true;
     REXLOG_INFO("units: the saves are checked once the game has built the mods' unit index");
     return;
   }
@@ -210,7 +215,10 @@ void CheckDeferredSaves() {
   const Deferred d = std::move(g_deferred);
   g_deferred = {};
   CheckSaves(d.data_dir, d.files, d.cache_dir, d.pak, d.user_data_root, d.plan ? &*d.plan : nullptr);
+  g_check_pending = false;
 }
+
+bool SaveCheckPending() { return g_check_pending; }
 
 
 void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& loaded) {
@@ -247,6 +255,6 @@ void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& lo
   }
 }
 
-bool SavingBlocked() { return g_saving_blocked; }
+bool SavingBlocked() { return g_saving_blocked || g_check_pending; }
 
 }  // namespace torchlight::mods

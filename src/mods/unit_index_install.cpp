@@ -367,8 +367,9 @@ bool MountIndexFolder() {
 // The game's unit index loader (guest_abi/unit_index.h kLoadIndex): with mods' units, our index
 // is built if needed and loaded in place of the Xbox file, by a name under tlunits: (mounted and
 // added as a resource location once the file exists, since both list the folder then), and what the
-// game kept is checked (VerifyLoadedIndex). The saves were checked before the guest ran
-// (save_units_install.h); this only compares.
+// game kept is checked (VerifyLoadedIndex). The saves were checked before the guest ran, or, at a
+// start that builds the index, are checked here right after the build (save_units_install.h
+// CheckDeferredSaves); then the load only compares.
 void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
   if (!g.active) {
     __imp__sub_823296D0(ctx, base);
@@ -385,6 +386,8 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
       live::SetBusyNoticeProgress(1, 1);
       CheckDeferredSaves();
     }
+    // Whatever happened above: a check left for this point always runs before the load.
+    CheckDeferredSaves();
     if (g.ready && !g.mounted) g.mounted = MountIndexFolder();
     if (g.ready && g.mounted && !g.located) {
       g.located = game_menu::AddFileSystemLocation(call, std::string(kDeviceLink) + "\\", false);
