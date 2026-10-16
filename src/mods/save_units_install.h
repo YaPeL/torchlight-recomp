@@ -27,9 +27,19 @@ namespace torchlight::mods {
 // `plan` is the mounted plan (none without mods) and `files` its unit definitions (unit_cache.h
 // ScanModUnitFiles); `pak` the game's pak.zip; `data_dir` holds mods/ and `cache_dir` the unit
 // index cache's unitdata/ (settings/user_folders_in_use.h data, cache).
+// With mods' units and `index_built_in_game` (no cached index: the game's loader builds it,
+// unit_index_install.h UnitIndexBuiltInGame), the check is left for CheckDeferredSaves: the units
+// to expect then come from the index just built instead of every mod's definition read here, with
+// nothing drawn yet (EE: about 2000 files opened, seconds on Windows).
 void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
                       const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
-                      const std::filesystem::path& user_data_root, const ModPlan* plan);
+                      const std::filesystem::path& user_data_root, const ModPlan* plan, bool index_built_in_game);
+
+// The game's thread, in the unit index loader once the index is built and before the game loads
+// it: the check InstallSaveUnits left, if any. No character is loaded before the index (the
+// game loads it with its data), so the saves are checked before anything reads them, as at the
+// start.
+void CheckDeferredSaves();
 
 // After the game loaded its unit index with the mods' units (mods/unit_index_install.cpp): the
 // GUIDs it holds, or none when that is not known (it loaded part of a file); then every mods' unit

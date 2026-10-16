@@ -128,16 +128,18 @@ void RepairModLists(const std::filesystem::path& user_data_root, const std::vect
   }
 }
 
-}  // namespace
+// The check InstallSaveUnits left for after the game's unit index build (CheckDeferredSaves).
+struct Deferred {
+  bool pending = false;
+  std::filesystem::path data_dir, cache_dir, pak, user_data_root;
+  std::vector<ModUnitFile> files;
+  std::optional<ModPlan> plan;
+};
+Deferred g_deferred;
 
-void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
-                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
-                      const std::filesystem::path& user_data_root, const ModPlan* plan) {
-  g_changes.reset();
-  g_assumed = {};
-  g_saving_blocked = false;
-  g_settled_file.clear();
-  if (user_data_root.empty()) return;
+void CheckSaves(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
+                const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
+                const std::filesystem::path& user_data_root, const ModPlan* plan) {
   using Clock = std::chrono::steady_clock;
   const auto ms = [](Clock::time_point from, Clock::time_point to) {
     return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
@@ -181,6 +183,35 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<M
   REXLOG_INFO("units: game's index {} ms, expected units {} ms, saves {} ms", ms(t0, t2), ms(t2, t3),
               ms(t3, Clock::now()));
 }
+
+}  // namespace
+
+void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
+                      const std::filesystem::path& user_data_root, const ModPlan* plan, bool index_built_in_game) {
+  g_changes.reset();
+  g_assumed = {};
+  g_saving_blocked = false;
+  g_settled_file.clear();
+  g_deferred = {};
+  if (user_data_root.empty()) return;
+  if (!files.empty() && index_built_in_game) {
+    g_deferred = {true, data_dir, cache_dir, pak, user_data_root, files,
+                  plan ? std::optional<ModPlan>(*plan) : std::nullopt};
+    REXLOG_INFO("units: the saves are checked once the game has built the mods' unit index");
+    return;
+  }
+  CheckSaves(data_dir, files, cache_dir, pak, user_data_root, plan);
+}
+
+void CheckDeferredSaves() {
+  if (!g_deferred.pending) return;
+  g_deferred.pending = false;
+  const Deferred d = std::move(g_deferred);
+  g_deferred = {};
+  CheckSaves(d.data_dir, d.files, d.cache_dir, d.pak, d.user_data_root, d.plan ? &*d.plan : nullptr);
+}
+
 
 void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& loaded) {
   if (!g_assumed.pending) return;

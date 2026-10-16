@@ -169,7 +169,8 @@ class TorchlightApp : public rex::ReXApp {
     {
       const StartupStep step("saves' units");
       torchlight::mods::InstallSaveUnits(folders.data, unit_files, folders.cache, game_data_root() / "pak.zip",
-                                         user_data_root(), torchlight::game_menu::MountedModPlan());
+                                         user_data_root(), torchlight::game_menu::MountedModPlan(),
+                                         torchlight::mods::UnitIndexBuiltInGame());
     }
     // Development builds: a controller script (before live::Install sets the input's active
     // callback, which the script's controller follows too).

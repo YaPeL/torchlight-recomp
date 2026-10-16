@@ -30,4 +30,8 @@ namespace torchlight::mods {
 void InstallUnitIndex(rex::Runtime* runtime, const std::vector<ModUnitFile>& files,
                       const std::filesystem::path& cache_dir, const std::filesystem::path& pak);
 
+// After InstallUnitIndex: whether the game's loader will build the index at this start (mods'
+// units and no cached index for them), under the busy notice.
+bool UnitIndexBuiltInGame();
+
 }  // namespace torchlight::mods

@@ -179,15 +179,15 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
   return entry;
 }
 
-// The notice over the still screen while the index is built (live/busy_notice.h): with a large
-// pack it takes many seconds (1984 units, about 17 s), and the game's thread draws nothing meanwhile.
+// The notice over the still screen while the index is built and the saves checked against it
+// (live/busy_notice.h): with a large pack it takes seconds (1984 units: about 4 s on Linux, 17 s on
+// a Windows pass), and nothing else is drawn meanwhile.
 struct BuildNotice {
   BuildNotice() { live::ShowBusyNotice(game_menu::NoticeText(live::kPreparingModsText)); }
   ~BuildNotice() { live::HideBusyNotice(); }
 };
 
 void BuildIndex(GuestCall& call) {
-  const BuildNotice notice;
   std::string error;
   const auto start = std::chrono::steady_clock::now();
   const auto base_index = ReadPakUnitIndex(g.pak, &error);
@@ -267,6 +267,8 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::vector<ModUnitFile>& fil
               "{} ms)",
               g.unit_paths.size(), g.ready ? "found" : "to build", ms(t1, t2), ms(t2, t3), ms(t3, t4));
 }
+
+bool UnitIndexBuiltInGame() { return g.active && !g.ready; }
 
 namespace {
 
@@ -377,7 +379,12 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
   uint32_t our_path = 0, our_text = 0;
   {
     GuestCall call(ctx, base, 0x4000);
-    if (!g.unit_paths.empty() && !g.ready) BuildIndex(call);
+    if (!g.unit_paths.empty() && !g.ready) {
+      const BuildNotice notice;
+      BuildIndex(call);
+      live::SetBusyNoticeProgress(1, 1);
+      CheckDeferredSaves();
+    }
     if (g.ready && !g.mounted) g.mounted = MountIndexFolder();
     if (g.ready && g.mounted && !g.located) {
       g.located = game_menu::AddFileSystemLocation(call, std::string(kDeviceLink) + "\\", false);
