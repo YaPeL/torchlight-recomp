@@ -41,6 +41,7 @@ std::optional<std::filesystem::path> TextureResolver::Folder::Find(const std::st
 
 TextureResolver::TextureResolver(const TextureLocations& locations) {
   if (!locations.replacements.empty()) replacements_ = List(locations.replacements);
+  if (!locations.prompts.empty()) prompts_ = List(locations.prompts);
   if (!locations.generated.empty() && !locations.generated_device.empty()) {
     generated_ = List(locations.generated);
     generated_device_ = TextureNameKey(locations.generated_device);
@@ -65,6 +66,12 @@ TextureFile TextureResolver::Find(std::string_view name, std::string_view group,
       }
       return {};
     }
+    if (device == "TLPROMPT:") {
+      if (prompts_) {
+        if (auto file = prompts_->Find(rest)) return {TextureSource::kGenerated, *file};
+      }
+      return {};
+    }
     if (generated_ && device == generated_device_) {
       if (auto file = generated_->Find(rest)) return {TextureSource::kGenerated, *file};
       return {};
@@ -79,6 +86,9 @@ TextureFile TextureResolver::Find(std::string_view name, std::string_view group,
   auto game = [&]() -> std::optional<TextureFile> {
     if (replacements_) {
       if (auto file = replacements_->Find(key)) return TextureFile{TextureSource::kReplacements, *file};
+    }
+    if (prompts_) {
+      if (auto file = prompts_->Find(key)) return TextureFile{TextureSource::kGenerated, *file};
     }
     if (pak_has && pak_has(key)) return TextureFile{TextureSource::kPak, {}};
     return std::nullopt;

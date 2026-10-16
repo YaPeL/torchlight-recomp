@@ -41,21 +41,29 @@ bool OnModDevice(std::string_view path) {
   return at > kPrefix.size() && at < path.size() && path[at] == ':';
 }
 
-bool OnReplacementsDevice(std::string_view path) {
-  if (path.size() < kReplacementsDeviceLink.size()) return false;
-  for (size_t i = 0; i < kReplacementsDeviceLink.size(); ++i) {
-    if (std::tolower(static_cast<unsigned char>(path[i])) != kReplacementsDeviceLink[i]) return false;
+namespace {
+
+bool OnDevice(std::string_view path, std::string_view link) {
+  if (path.size() < link.size()) return false;
+  for (size_t i = 0; i < link.size(); ++i) {
+    if (std::tolower(static_cast<unsigned char>(path[i])) != link[i]) return false;
   }
   return true;
 }
 
+}  // namespace
+
+bool OnReplacementsDevice(std::string_view path) { return OnDevice(path, kReplacementsDeviceLink); }
+
+bool OnPromptsDevice(std::string_view path) { return OnDevice(path, kPromptsDeviceLink); }
+
 std::optional<std::string> ModsSearchPath(std::string_view path) {
-  if (!OnModDevice(path) && !OnReplacementsDevice(path)) return std::nullopt;
+  if (!OnModDevice(path) && !OnReplacementsDevice(path) && !OnPromptsDevice(path)) return std::nullopt;
   return WindowsSeparators(path);
 }
 
 std::optional<std::string> WithoutOurDevice(std::string_view name) {
-  if (!OnModDevice(name) && !OnReplacementsDevice(name)) return std::nullopt;
+  if (!OnModDevice(name) && !OnReplacementsDevice(name) && !OnPromptsDevice(name)) return std::nullopt;
   size_t at = name.find(':') + 1;
   while (at < name.size() && (name[at] == '/' || name[at] == '\\')) ++at;
   return std::string(name.substr(at));

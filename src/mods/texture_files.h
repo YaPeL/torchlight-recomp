@@ -8,7 +8,8 @@
 //   the order they were made: the game's (the replacements folder, then the pak), then the mods in
 //   activation order.
 // - In any other group (the game's): the replacements folder (added last to the pak's groups, it
-//   wins their index), then the pak, then the mods in activation order.
+//   wins their index), then the pad prompts' folder, then the pak, then the mods in activation
+//   order.
 // Names are the guest's ("MEDIA/LEVELSETS/..."); files in the folders match ignoring case, with
 // '/' and '\' alike. A name that starts with a device ("TLMOD002:/MEDIA/...", "TLREPL:/...") is
 // absolute: the guest's data loader gives a mod's file by its full path (a mod's TEXTURE_OVERRIDE,
@@ -43,6 +44,9 @@ struct TextureLocations {
   // mounted as `generated_device` ("tlatlas:"), whose names reach the host with that device first.
   std::filesystem::path generated;  // empty: none
   std::string generated_device;
+  // The pad prompts' textures (mods/pad_prompts.h): in the game's groups after the replacements
+  // folder and before the pak, as files of the pak.
+  std::filesystem::path prompts;  // empty: none (the Xbox style)
 };
 
 enum class TextureSource { kNone, kReplacements, kMod, kPak, kGenerated };
@@ -73,7 +77,7 @@ class TextureResolver {
   TextureFile Find(std::string_view name, std::string_view group,
                    const std::function<bool(std::string_view)>& pak_has) const;
 
-  bool empty() const { return !replacements_ && mods_.empty() && !generated_; }
+  bool empty() const { return !replacements_ && mods_.empty() && !generated_ && !prompts_; }
 
  private:
   struct Folder {
@@ -83,13 +87,14 @@ class TextureResolver {
   static Folder List(const std::filesystem::path& root);
   std::optional<Folder> replacements_;
   std::optional<Folder> generated_;
+  std::optional<Folder> prompts_;
   std::string generated_device_;  // TextureNameKey'd ("TLATLAS:")
   std::vector<std::pair<std::string, Folder>> mods_;
   std::vector<std::string> devices_;  // mods_'s devices, TextureNameKey'd ("TLMOD002:")
 };
 
 // The session's resolver: set once before the guest loads textures (the mods' registration), read
-// from any thread. Null without mods or replacements.
+// from any thread. Null without mods, replacements or pad prompts.
 void SetTextureLocations(const TextureLocations& locations);
 std::shared_ptr<const TextureResolver> CurrentTextureResolver();
 
