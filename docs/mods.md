@@ -1309,6 +1309,48 @@ Edition, the 29-mod pack), compared with PC's own, window by window. **[read: th
   layout has nothing to apply to: they come with the PC interface above.
 - **Not seen:** a mod with a `.uilayout` of its own (the Xbox format); none exists for PC.
 
+## 9b. Pad prompt styles (2026-10-16, branch feature/pad-prompts)
+
+The game's button prompts drawn for the player's pad: Xbox (the game's own images), PlayStation
+or Nintendo (`src/mods/pad_prompts.h`).
+
+- **What is replaced.** The ten face, shoulder, trigger and start/back images of the game's widget
+  imagesets (`a_button`, `b_button`, `button_x`, `y_button`, `left_bumper`, `right_bumper`,
+  `left_trigger`, `right_trigger`, `start_button`, `back_button`). The d-pad and stick images
+  (`dpad_*`, `analog_button_*`) are drawn the same on every pad and stay the game's. In the
+  user's pak these are in `widgets.dds` (one) and `widgets1.dds` (nine).
+- **How.** The textures are rewritten at start, not the imagesets. Each image's region is cleared
+  and the icon is scaled into it with its aspect kept, so every window that names an image keeps
+  its size and place. The textures go to the cache (`prompts/`), are mounted as `tlprompt:` and are
+  added to the game's resource groups before the replacements folder (7k), so a player's own
+  replacement of a widget texture still wins. The host reads them through the texture lookup like
+  the replacements' files, and captures keep their bytes. Nothing is written for Xbox.
+- **The icons.** Kenney's "Input Prompts" 1.5 (CC0, `THIRD_PARTY_NOTICES.md`), converted by
+  `tools/pad_prompts/make_icons.py` into `data/ui/prompts/`. They are flat white or coloured
+  icons, while the 360's are glossy, so they look different in style.
+- **Choice.** `settings.toml` `pad_prompts` (`auto`, `xbox`, `playstation`, `nintendo`) and the
+  video column's "Button Prompts" row. Automatic follows the first connected pad's SDL type
+  (`platform::ConnectedGamepadKind`) at start. A change takes effect at the next start, because the
+  game loads its imagesets once.
+- **Nintendo pads.** By default buttons work by position, as on the 360: the bottom button
+  confirms. Each prompt shows the letter of its physical button, so the 360's A shows B. With
+  `swap_confirm_cancel` (the "Swap A/B" checkbox, Nintendo style or automatic) the right button
+  (A) confirms and the bottom one (B) cancels. The game's two XInput wrappers
+  (`guest_abi/xinput.h`) hand A and B swapped, and the icons follow.
+- **Texts that name a button: left for later.** The game's texts that name a button by its letter
+  are listed here by what they say, not quoted (no game text in the repository):
+  - the inventory row's hint that A identifies an unidentified item;
+  - the inventory row's hint that A uses an item;
+  - a tip that START in the inventory opens the pet's actions;
+  - a tip that the pet can be sent to town from the pet action menu (START);
+  - the merchant tip that RB and LB switch between the merchant's inventories;
+  - the fishing tip to press A when the circle turns red;
+  - one line in the skills screen's layout that names A.
+
+  Each is in the game's translations (de, fr, es) too. A later fix could hook the translator's
+  lookup and put the style's button name into those texts. A rule would find the texts from the
+  user's files at load time, so none is copied into the repository.
+
 ## 10. Validation mods (candidates, not downloaded)
 
 Development uses synthetic mods made by the tests. For the final validation the user downloads real
