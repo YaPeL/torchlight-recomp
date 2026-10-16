@@ -179,15 +179,15 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
   return entry;
 }
 
-// The notice over the still screen while the index is built (live/busy_notice.h): with a large
-// pack it takes many seconds (1984 units, about 17 s), and the game's thread draws nothing meanwhile.
+// The notice over the still screen while the index is built and the saves checked against it
+// (live/busy_notice.h): with a large pack it takes seconds (1984 units: about 4 s on Linux, 17 s on
+// a Windows pass), and nothing else is drawn meanwhile.
 struct BuildNotice {
   BuildNotice() { live::ShowBusyNotice(game_menu::NoticeText(live::kPreparingModsText)); }
   ~BuildNotice() { live::HideBusyNotice(); }
 };
 
 void BuildIndex(GuestCall& call) {
-  const BuildNotice notice;
   std::string error;
   const auto start = std::chrono::steady_clock::now();
   const auto base_index = ReadPakUnitIndex(g.pak, &error);
@@ -234,18 +234,21 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base);
 
 }  // namespace
 
-void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_dir,
-                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
-                      const ModPlan* plan) {
+void InstallUnitIndex(rex::Runtime* runtime, const std::vector<ModUnitFile>& files,
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak) {
   g = {};
   g.pak = pak;
   g.folder = cache_dir / "unitdata";
-  std::vector<ModUnitFile> files;
-  if (plan) files = ScanModUnitFiles(data_dir / "mods", *plan);
   if (files.empty()) return;  // the Xbox index as it is
+  using Clock = std::chrono::steady_clock;
+  const auto ms = [](Clock::time_point from, Clock::time_point to) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+  };
+  const auto t1 = Clock::now();
   g.active = true;
 
   const auto identity = PakIdentity(pak);
+  const auto t2 = Clock::now();
   if (!identity || !runtime || !runtime->file_system()) {
     REXLOG_ERROR("mods: cannot identify {}; mods' units left out", pak.string());
     g.active = false;
@@ -255,12 +258,17 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
   g.key = UnitCacheKey(files, *identity);
   std::string log;
   g.name = g.key;
+  const auto t3 = Clock::now();
   g.ready = FindCachedUnitIndex(g.folder, g.key, &log).has_value();
+  const auto t4 = Clock::now();
   if (!log.empty()) REXLOG_WARN("mods: {}", log);
   g.runtime = runtime;
-  REXLOG_INFO("mods: {} unit definitions from mods; cached index {}", g.unit_paths.size(),
-              g.ready ? "found" : "to build");
+  REXLOG_INFO("mods: {} unit definitions from mods; cached index {} (pak identity {} ms, key {} ms, cache lookup "
+              "{} ms)",
+              g.unit_paths.size(), g.ready ? "found" : "to build", ms(t1, t2), ms(t2, t3), ms(t3, t4));
 }
+
+bool UnitIndexBuiltInGame() { return g.active && !g.ready; }
 
 namespace {
 
@@ -359,8 +367,9 @@ bool MountIndexFolder() {
 // The game's unit index loader (guest_abi/unit_index.h kLoadIndex): with mods' units, our index
 // is built if needed and loaded in place of the Xbox file, by a name under tlunits: (mounted and
 // added as a resource location once the file exists, since both list the folder then), and what the
-// game kept is checked (VerifyLoadedIndex). The saves were checked before the guest ran
-// (save_units_install.h); this only compares.
+// game kept is checked (VerifyLoadedIndex). The saves were checked before the guest ran, or, at a
+// start that builds the index, are checked here right after the build (save_units_install.h
+// CheckDeferredSaves); then the load only compares.
 void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
   if (!g.active) {
     __imp__sub_823296D0(ctx, base);
@@ -371,7 +380,14 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
   uint32_t our_path = 0, our_text = 0;
   {
     GuestCall call(ctx, base, 0x4000);
-    if (!g.unit_paths.empty() && !g.ready) BuildIndex(call);
+    if (!g.unit_paths.empty() && !g.ready) {
+      const BuildNotice notice;
+      BuildIndex(call);
+      live::SetBusyNoticeProgress(1, 1);
+      CheckDeferredSaves();
+    }
+    // Whatever happened above: a check left for this point always runs before the load.
+    CheckDeferredSaves();
     if (g.ready && !g.mounted) g.mounted = MountIndexFolder();
     if (g.ready && g.mounted && !g.located) {
       g.located = game_menu::AddFileSystemLocation(call, std::string(kDeviceLink) + "\\", false);

@@ -128,20 +128,30 @@ void RepairModLists(const std::filesystem::path& user_data_root, const std::vect
   }
 }
 
-}  // namespace
+// The check InstallSaveUnits left for after the game's unit index build (CheckDeferredSaves).
+struct Deferred {
+  bool pending = false;
+  std::filesystem::path data_dir, cache_dir, pak, user_data_root;
+  std::vector<ModUnitFile> files;
+  std::optional<ModPlan> plan;
+};
+Deferred g_deferred;
+// g_deferred.pending, for SavingBlocked on any thread: saving stays off while the saves are not
+// checked, so a session whose check never ran writes nothing unchecked.
+std::atomic<bool> g_check_pending{false};
 
-void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesystem::path& cache_dir,
-                      const std::filesystem::path& pak, const std::filesystem::path& user_data_root,
-                      const ModPlan* plan) {
-  g_changes.reset();
-  g_assumed = {};
-  g_saving_blocked = false;
-  g_settled_file.clear();
-  if (user_data_root.empty()) return;
+void CheckSaves(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
+                const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
+                const std::filesystem::path& user_data_root, const ModPlan* plan) {
+  using Clock = std::chrono::steady_clock;
+  const auto ms = [](Clock::time_point from, Clock::time_point to) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+  };
+  const auto t0 = Clock::now();
   std::string error;
   const auto base = ReadPakUnitIndex(pak, &error);
   if (!base) REXLOG_WARN("units: the game's unit index not read ({})", error);
-  const auto files = plan ? ScanModUnitFiles(data_dir / "mods", *plan) : std::vector<ModUnitFile>{};
+  const auto t2 = Clock::now();
   KnownUnits known;
   if (files.empty()) {
     known = MakeKnownUnits(base, {}, true);
@@ -154,6 +164,7 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
                 g_assumed.known.guids.size());
     known = g_assumed.known;
   }
+  const auto t3 = Clock::now();
   // Saves settled at the last start under the same context and unchanged since are not read again;
   // those still settled, and those found settled now, are remembered for the next start.
   const std::vector<std::u16string> names = RepairNames(data_dir);
@@ -172,7 +183,43 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   RepairModLists(user_data_root, names, skip);
   Run(user_data_root, known, skip, active, next);
   if (!next.Store(g_settled_file)) REXLOG_WARN("units: cannot write {}", g_settled_file.string());
+  REXLOG_INFO("units: game's index {} ms, expected units {} ms, saves {} ms", ms(t0, t2), ms(t2, t3),
+              ms(t3, Clock::now()));
 }
+
+}  // namespace
+
+void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
+                      const std::filesystem::path& user_data_root, const ModPlan* plan, bool index_built_in_game) {
+  g_changes.reset();
+  g_assumed = {};
+  g_saving_blocked = false;
+  g_settled_file.clear();
+  g_deferred = {};
+  g_check_pending = false;
+  if (user_data_root.empty()) return;
+  if (!files.empty() && index_built_in_game) {
+    g_deferred = {true, data_dir, cache_dir, pak, user_data_root, files,
+                  plan ? std::optional<ModPlan>(*plan) : std::nullopt};
+    g_check_pending = true;
+    REXLOG_INFO("units: the saves are checked once the game has built the mods' unit index");
+    return;
+  }
+  CheckSaves(data_dir, files, cache_dir, pak, user_data_root, plan);
+}
+
+void CheckDeferredSaves() {
+  if (!g_deferred.pending) return;
+  g_deferred.pending = false;
+  const Deferred d = std::move(g_deferred);
+  g_deferred = {};
+  CheckSaves(d.data_dir, d.files, d.cache_dir, d.pak, d.user_data_root, d.plan ? &*d.plan : nullptr);
+  g_check_pending = false;
+}
+
+bool SaveCheckPending() { return g_check_pending; }
+
 
 void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& loaded) {
   if (!g_assumed.pending) return;
@@ -208,6 +255,6 @@ void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& lo
   }
 }
 
-bool SavingBlocked() { return g_saving_blocked; }
+bool SavingBlocked() { return g_saving_blocked || g_check_pending; }
 
 }  // namespace torchlight::mods

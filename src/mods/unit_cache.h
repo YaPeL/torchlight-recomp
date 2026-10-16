@@ -27,13 +27,22 @@ namespace torchlight::mods {
 inline constexpr uint32_t kUnitIndexVersion = 4;
 
 // One unit definition a mod brings: the mod's folder, the path inside it as the game names it
-// ("MEDIA/UNITS/..."; upper case, '/') and a digest of its bytes.
+// ("MEDIA/UNITS/..."; upper case, '/') and its FileDigest.
 struct ModUnitFile {
   std::string mod_folder;
   std::u16string game_path;
   uint64_t digest = 0;
   std::filesystem::path file;  // on disk
 };
+
+// What tells a unit file's version apart without opening it: its size and modification time, as
+// the folder listing gives them. Opening every file was the cost of a start with a large pack (EE:
+// about 4000 files; on Windows each open is scanned, about 14 s at every start). A file whose
+// contents change keeping its size and time is missed: within the 2 s a FAT/exFAT time can tell
+// (USB drives, SD cards), or copied by a tool that keeps the time. That is the usual trade-off of
+// a cache keyed by file times; a file added, removed or renamed always changes the key (its game
+// path is in it, and the count).
+uint64_t FileDigest(uintmax_t size, int64_t modified);
 
 // The enabled mods' unit definitions (*.dat under media/units/, any case), in the plan's
 // registration order: the game's search order, where the first mod that has a file wins (the
@@ -57,7 +66,8 @@ std::optional<UnitIndex> ReadPakUnitIndex(const std::filesystem::path& pak, std:
 // and CRC-32), cheap to read; none when the file is not a zip.
 std::optional<uint64_t> PakIdentity(const std::filesystem::path& pak);
 
-// The cache key (hex) for the mods' unit files, the base and kUnitIndexVersion.
+// The cache key (hex) for the mods' unit files (their count, and each one's mod, game path and
+// digest), the base and kUnitIndexVersion.
 std::string UnitCacheKey(const std::vector<ModUnitFile>& files, uint64_t base_identity);
 
 // The file an index is stored and loaded under: the name in upper case, then ".RAW". The game asks

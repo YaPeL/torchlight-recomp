@@ -1,5 +1,5 @@
-// No saving in a session where the game did not load units that saves hold (save_units_install.h,
-// SavingBlocked): the game drops a saved item it does not know when it loads the character, and
+// No saving in a session where the game did not load units that saves hold, or whose saves' check
+// has not run (save_units_install.h, SavingBlocked, SaveCheckPending): the game drops a saved item it does not know when it loads the character, and
 // its next save would write the character without it. The character save (guest_abi save_menu.h
 // kSaveCharacter) is the only code that writes save data, the stash included, and its callers
 // do not read its result, so it is skipped whole: nothing is written, nothing renamed, and the game
@@ -19,6 +19,10 @@ REX_EXTERN(__imp__sub_8221CC70);
 extern "C" {
 
 REX_FUNC(sub_8221CC70) {
+  if (torchlight::mods::SaveCheckPending()) {
+    REXLOG_ERROR("units: character not saved: the saves' check left for the unit index build never ran");
+    return;
+  }
   if (torchlight::mods::SavingBlocked()) {
     REXLOG_WARN("units: character not saved: saving is off for this session (saves hold units the game did not "
                 "load)");

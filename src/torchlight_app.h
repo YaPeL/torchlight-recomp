@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdio>
 
 #include <rex/cvar.h>
@@ -35,6 +36,21 @@
 #include "platform/platform.h"
 #include "platform/user_folders.h"
 #include "settings/host_settings.h"
+
+// The time a step before the guest runs takes, logged when it ends ("startup: <what> in N ms"):
+// with mods some of them read many files, and nothing is drawn meanwhile.
+class StartupStep {
+ public:
+  explicit StartupStep(const char* what) : what_(what), start_(std::chrono::steady_clock::now()) {}
+  ~StartupStep() {
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start_);
+    REXLOG_INFO("startup: {} in {} ms", what_, ms.count());
+  }
+
+ private:
+  const char* what_;
+  std::chrono::steady_clock::time_point start_;
+};
 
 class TorchlightApp : public rex::ReXApp {
  public:
@@ -114,13 +130,20 @@ class TorchlightApp : public rex::ReXApp {
     if (torchlight::live::OnlyMode()) torchlight::game_menu::Install(runtime(), game_data_root());
     // PC saves from the game files' import/ folder: the part confirmed before is applied here,
     // before the guest runs; old save backups are pruned too.
-    torchlight::game_menu::InstallSaveImport(runtime(), game_data_root(), user_data_root());
+    {
+      const StartupStep step("save import");
+      torchlight::game_menu::InstallSaveImport(runtime(), game_data_root(), user_data_root());
+    }
     // The player's PC mods (any mode): mounted and their saves protected before the guest runs.
-    torchlight::game_menu::InstallMods(runtime(), folders.data, folders.generated, user_data_root(),
-                                       game_data_root() / "pak.zip");
+    {
+      const StartupStep step("mods");
+      torchlight::game_menu::InstallMods(runtime(), folders.data, folders.generated, user_data_root(),
+                                         game_data_root() / "pak.zip");
+    }
     // The pad prompts in the style of the player's pad (settings.toml "pad_prompts",
     // "swap_confirm_cancel"), before the guest loads its imagesets.
     {
+      const StartupStep step("pad prompts");
       using torchlight::settings::PadPrompts;
       std::optional<torchlight::mods::PadFamily> chosen;
       if (host.pad_prompts == PadPrompts::kXbox) chosen = torchlight::mods::PadFamily::kXbox;
@@ -130,12 +153,25 @@ class TorchlightApp : public rex::ReXApp {
                                                chosen, host.swap_confirm_cancel);
     }
     // Their units in the game's unit index (cached in the user's folder when mods bring any).
-    torchlight::mods::InstallUnitIndex(runtime(), folders.data, folders.cache, game_data_root() / "pak.zip",
-                                       torchlight::game_menu::MountedModPlan());
+    // The mods' unit definitions, listed once for both steps below (their sizes and times, the
+    // files not opened).
+    std::vector<torchlight::mods::ModUnitFile> unit_files;
+    if (const torchlight::mods::ModPlan* plan = torchlight::game_menu::MountedModPlan()) {
+      const StartupStep step("mods' unit files");
+      unit_files = torchlight::mods::ScanModUnitFiles(torchlight::game_menu::ModsFolder(), *plan);
+    }
+    {
+      const StartupStep step("unit index");
+      torchlight::mods::InstallUnitIndex(runtime(), unit_files, folders.cache, game_data_root() / "pak.zip");
+    }
     // Items and creatures the game would not know (a removed mod's) out of the saves, backed up
     // first, so a save never stops the game.
-    torchlight::mods::InstallSaveUnits(folders.data, folders.cache, game_data_root() / "pak.zip",
-                                       user_data_root(), torchlight::game_menu::MountedModPlan());
+    {
+      const StartupStep step("saves' units");
+      torchlight::mods::InstallSaveUnits(folders.data, unit_files, folders.cache, game_data_root() / "pak.zip",
+                                         user_data_root(), torchlight::game_menu::MountedModPlan(),
+                                         torchlight::mods::UnitIndexBuiltInGame());
+    }
     // Development builds: a controller script (before live::Install sets the input's active
     // callback, which the script's controller follows too).
     torchlight::dev::InstallInputScript(runtime(), [this] {
