@@ -553,6 +553,10 @@ in number order; a branch adds its own line at its number's place.
     scripted route): the dispatch thread went from about 24 % of a core to 1.2 %, and the
     process from 2.26 to 2.05 cores at the menu (9-10 % less in every step); the frame rate, its
     p99 and the frames over 33 ms did not change beyond the runs' spread, and no audio or vblank
-    warnings appeared. In the series since 2026-10-14, as its last line. Upstream draft D32.
+    warnings appeared. On Windows (2026-10-15, Direct3D 11, the same route, three runs with each
+    DLL alternated): the dispatch thread from 5.9-9.1 % of a core to 0.0-1.0 %, the process
+    1.7-4.2 % less CPU depending on the part, the frame rate and frame times within the runs'
+    spread (`docs/rexglue-upstream.md`, section 8). In the series since 2026-10-14, as its last
+    line. Upstream draft D32.
 
 The observation and diagnostic patches there were before remain in the git history.
