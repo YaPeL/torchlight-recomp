@@ -1330,10 +1330,12 @@ or Nintendo (`src/mods/pad_prompts.h`).
   icons, while the 360's are glossy, so they look different in style.
 - **Choice.** `settings.toml` `pad_prompts` (`auto`, `xbox`, `playstation`, `nintendo`) and the
   video column's "Button Prompts" row. Automatic follows the first connected pad's SDL type
-  (`platform::ConnectedGamepadKind`) at start. A change takes effect at the next start, because the
-  game loads its imagesets once. Automatic is a snapshot taken at start. A pad connected later, or
-  one still enumerating then (Bluetooth, some HIDAPI pads), gets the Xbox prompts until the next
-  start.
+  (`platform::ConnectedGamepadKind`) at start, then the pad last used while playing
+  (`platform::WatchGamepadKind`: a pad connected or disconnected, or a button pressed on another
+  pad). Every style is written at start, and a change of pad switches the host's texture lookup to
+  that style's folder. The live content then gets the new textures (`live::RefreshNamedTextures`),
+  and the A/B swap follows. The guest's own copy stays the start style's; only the Xenos mode
+  draws that copy. Changing the setting itself still takes effect at the next start.
 - **Nintendo pads.** By default buttons work by position, as on the 360: the bottom button
   confirms. Each prompt shows the letter of its physical button, so the 360's A shows B. With
   `swap_confirm_cancel` (the "Swap A/B" checkbox, Nintendo style or automatic) the right button

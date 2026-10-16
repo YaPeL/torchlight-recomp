@@ -1,10 +1,14 @@
 #include "game_menu/mods_install.h"
 
+#include <atomic>
 #include <chrono>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <memory>
+#include <set>
+#include <mutex>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -23,6 +27,7 @@
 #include "guest_abi/mods.h"
 #include "guest_abi/xinput.h"
 #include "hooks/guest_path.h"
+#include "live/named_texture_refresh.h"
 #include "live/ui_gamepad.h"
 #include "platform/platform.h"
 #include "mods/class_list.h"
@@ -66,7 +71,7 @@ ModScriptGroups g_mod_groups;
 // The pad prompts' textures (mods/pad_prompts.h), mounted as hooks::kPromptsDeviceLink by
 // InstallPadPrompts; and whether the guest's pad reads swap confirm and cancel.
 bool g_prompts = false;
-bool g_swap_confirm_cancel = false;
+std::atomic<bool> g_swap_confirm_cancel{false};  // set on SDL's event thread, read on the game's
 // The merged icon atlases (mods/icon_atlas.h), written and mounted by InstallMods: the imagesets'
 // keys, as the game's data loader asks for them ("MEDIA/UI/ITEMICONS/ITEMICONS16.IMAGESET"), set
 // before the guest runs and read on the game's thread afterwards.
@@ -274,52 +279,114 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
   InstallAtlases(runtime);
 }
 
+namespace {
+
+mods::PadKind ToPadKind(platform::GamepadKind kind) {
+  switch (kind) {
+    case platform::GamepadKind::kXbox:
+      return mods::PadKind::kXbox;
+    case platform::GamepadKind::kPlayStation:
+      return mods::PadKind::kPlayStation;
+    case platform::GamepadKind::kNintendo:
+      return mods::PadKind::kNintendo;
+    case platform::GamepadKind::kOther:
+      return mods::PadKind::kOther;
+    default:
+      return mods::PadKind::kNone;
+  }
+}
+
+// The pad prompts' styles written at start (each in its own folder below the cache's prompts/), the
+// one in effect, and the texture names they redraw. Changed on SDL's event thread when the pad
+// changes (automatic style), read by the texture lookup through SetTextureLocations.
+struct PromptStyles {
+  std::mutex mutex;
+  bool swap_setting = false;
+  std::map<mods::PadStyle, std::filesystem::path> folders;
+  std::vector<std::string> textures;
+  mods::PadStyle style = mods::PadStyle::kXbox;
+};
+PromptStyles g_prompt_styles;
+
+// Puts `style` in effect for the host's texture lookup and the A/B swap. Called with the mutex held.
+void ApplyPromptStyle(mods::PadStyle style) {
+  g_prompt_styles.style = style;
+  g_swap_confirm_cancel = mods::SwapsConfirmCancel(style, g_prompt_styles.swap_setting);
+  live::SetConfirmCancelSwapped(g_swap_confirm_cancel);  // the host's dialogs too
+  const auto folder = g_prompt_styles.folders.find(style);
+  g_texture_locations.prompts = folder == g_prompt_styles.folders.end() ? std::filesystem::path() : folder->second;
+  mods::SetTextureLocations(g_texture_locations);
+}
+
+}  // namespace
+
 void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_pak,
                        std::optional<mods::PadStyle> chosen, bool swap) {
-  const auto kind = [] {
-    switch (platform::ConnectedGamepadKind()) {
-      case platform::GamepadKind::kXbox:
-        return mods::PadKind::kXbox;
-      case platform::GamepadKind::kPlayStation:
-        return mods::PadKind::kPlayStation;
-      case platform::GamepadKind::kNintendo:
-        return mods::PadKind::kNintendo;
-      case platform::GamepadKind::kOther:
-        return mods::PadKind::kOther;
-      default:
-        return mods::PadKind::kNone;
-    }
-  }();
-  const mods::PadStyle style = mods::EffectivePadStyle(chosen, kind);
-  g_swap_confirm_cancel = mods::SwapsConfirmCancel(style, swap);
-  live::SetConfirmCancelSwapped(g_swap_confirm_cancel);  // the host's dialogs too
-  REXLOG_INFO("pad prompts: {} ({}){}", mods::PadStyleName(style), chosen ? "chosen" : "the connected pad's",
-              g_swap_confirm_cancel ? ", confirm and cancel swapped" : "");
+  const mods::PadStyle start = mods::EffectivePadStyle(chosen, ToPadKind(platform::ConnectedGamepadKind()));
   const std::string cache = platform::CacheDir("prompts");
   const std::string resources = platform::ResourceDir();
+  std::lock_guard lock(g_prompt_styles.mutex);
+  g_prompt_styles.swap_setting = swap;
   if (cache.empty() || resources.empty()) {
-    if (style != mods::PadStyle::kXbox) REXLOG_ERROR("pad prompts: no cache or data folder; the game's prompts");
+    REXLOG_ERROR("pad prompts: no cache or data folder; the game's prompts");
+    ApplyPromptStyle(mods::PadStyle::kXbox);
     return;
   }
-  std::vector<std::string> log;
-  const auto written = mods::WritePromptTextures(game_pak, std::filesystem::path(resources) / "data" / "ui" / "prompts",
-                                                 style, swap, cache, log);
-  for (const std::string& line : log) REXLOG_WARN("pad prompts: {}", line);
-  if (written.empty()) return;
-  const std::string mount(hooks::kPromptsDeviceMount);
-  auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, cache, /*read_only=*/true);
-  if (!runtime || !runtime->file_system() || !device->Initialize() ||
-      !runtime->file_system()->RegisterDevice(std::move(device)) ||
-      !runtime->file_system()->RegisterSymbolicLink(std::string(hooks::kPromptsDeviceLink), mount)) {
-    REXLOG_ERROR("pad prompts: cannot mount {}; the game's prompts", cache);
-    return;
+  std::error_code ec;
+  std::filesystem::remove_all(cache, ec);
+  // A chosen style is the only one; automatic writes every style, for a pad changed while playing.
+  std::vector<mods::PadStyle> styles;
+  if (chosen) {
+    if (*chosen != mods::PadStyle::kXbox) styles.push_back(*chosen);
+  } else {
+    styles = {mods::PadStyle::kPlayStation, mods::PadStyle::kNintendo};
   }
-  for (const auto& texture : written) {
-    REXLOG_INFO("pad prompts: {} with {} prompts redrawn", texture.texture, texture.replaced);
+  std::set<std::string> textures;
+  for (const mods::PadStyle style : styles) {
+    std::vector<std::string> log;
+    const std::filesystem::path folder = std::filesystem::path(cache) / std::string(mods::PadStyleName(style));
+    const auto written = mods::WritePromptTextures(
+        game_pak, std::filesystem::path(resources) / "data" / "ui" / "prompts", style, swap, folder, log);
+    for (const std::string& line : log) REXLOG_WARN("pad prompts: {}", line);
+    if (written.empty()) continue;
+    g_prompt_styles.folders[style] = folder;
+    for (const auto& texture : written) {
+      textures.insert(texture.texture);
+      REXLOG_INFO("pad prompts: {} {} with {} prompts redrawn", mods::PadStyleName(style), texture.texture,
+                  texture.replaced);
+    }
   }
-  g_prompts = true;
-  g_texture_locations.prompts = cache;
-  mods::SetTextureLocations(g_texture_locations);
+  g_prompt_styles.textures.assign(textures.begin(), textures.end());
+  // The guest reads the style it starts with (its own copy, which the Xenos mode draws); the host
+  // draws from its lookup, which follows the pad.
+  if (const auto folder = g_prompt_styles.folders.find(start); folder != g_prompt_styles.folders.end()) {
+    const std::string mount(hooks::kPromptsDeviceMount);
+    auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, folder->second, /*read_only=*/true);
+    if (runtime && runtime->file_system() && device->Initialize() &&
+        runtime->file_system()->RegisterDevice(std::move(device)) &&
+        runtime->file_system()->RegisterSymbolicLink(std::string(hooks::kPromptsDeviceLink), mount)) {
+      g_prompts = true;
+    } else {
+      REXLOG_ERROR("pad prompts: cannot mount {}; the guest keeps the game's prompts", folder->second.string());
+    }
+  }
+  ApplyPromptStyle(start);
+  REXLOG_INFO("pad prompts: {} ({}){}", mods::PadStyleName(start), chosen ? "chosen" : "the connected pad's",
+              g_swap_confirm_cancel ? ", confirm and cancel swapped" : "");
+  if (chosen) return;
+  platform::WatchGamepadKind([](platform::GamepadKind kind) {
+    std::vector<std::string> changed;
+    {
+      std::lock_guard lock(g_prompt_styles.mutex);
+      const mods::PadStyle style = mods::EffectivePadStyle(std::nullopt, ToPadKind(kind));
+      if (style == g_prompt_styles.style) return;
+      ApplyPromptStyle(style);
+      REXLOG_INFO("pad prompts: the pad changed; {}{}", mods::PadStyleName(style),
+                  g_swap_confirm_cancel ? ", confirm and cancel swapped" : "");
+      changed = g_prompt_styles.textures;
+    }
+    live::RefreshNamedTextures(changed);
+  });
 }
 
 const mods::ModPlan* MountedModPlan() {
@@ -389,7 +456,10 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
       continue;
     }
     g_mod_groups.Add(group);
-    g_texture_locations.mods.push_back({group, g_mods_folder / g_plan.mods[i].folder, hooks::ModDeviceLink(i)});
+    {
+      std::lock_guard lock(g_prompt_styles.mutex);  // the pad prompts change them on SDL's thread
+      g_texture_locations.mods.push_back({group, g_mods_folder / g_plan.mods[i].folder, hooks::ModDeviceLink(i)});
+    }
     if (InitialiseResourceGroup(call, group)) {
       REXLOG_INFO("mods: {} in resource group \"{}\", initialised", location, group);
     } else {
@@ -407,6 +477,7 @@ void RegisterMods(PPCContext& ctx, uint8_t* base, uint32_t data_manager) {
       g_atlas_keys.clear();
     }
   }
+  std::lock_guard lock(g_prompt_styles.mutex);
   mods::SetTextureLocations(g_texture_locations);  // before any texture is loaded
 }
 
@@ -423,6 +494,7 @@ const std::set<std::string>& GameImagesetNames() {
 }
 
 std::optional<std::string> ModResourceGroup(std::string_view folder) {
+  std::lock_guard lock(g_prompt_styles.mutex);
   for (const auto& mod : g_texture_locations.mods) {
     if (mod.folder.filename() == std::filesystem::path(folder)) return mod.group;
   }

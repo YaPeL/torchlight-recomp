@@ -132,14 +132,9 @@ GamepadState ReadGamepad() {
   return s;
 }
 
-GamepadKind ConnectedGamepadKind() {
-  if (!SDL_WasInit(SDL_INIT_GAMEPAD) && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) return GamepadKind::kNone;
-  int count = 0;
-  SDL_JoystickID* ids = SDL_GetGamepads(&count);
-  const SDL_GamepadType type = ids && count > 0 ? SDL_GetGamepadTypeForID(ids[0]) : SDL_GAMEPAD_TYPE_UNKNOWN;
-  const bool any = ids && count > 0;
-  SDL_free(ids);
-  if (!any) return GamepadKind::kNone;
+namespace {
+
+GamepadKind KindOf(SDL_GamepadType type) {
   switch (type) {
     case SDL_GAMEPAD_TYPE_XBOX360:
     case SDL_GAMEPAD_TYPE_XBOXONE:
@@ -156,6 +151,88 @@ GamepadKind ConnectedGamepadKind() {
     default:
       return GamepadKind::kOther;
   }
+}
+
+// The first connected pad's kind (none: kNone).
+GamepadKind FirstConnectedKind() {
+  int count = 0;
+  SDL_JoystickID* ids = SDL_GetGamepads(&count);
+  const GamepadKind kind = ids && count > 0 ? KindOf(SDL_GetGamepadTypeForID(ids[0])) : GamepadKind::kNone;
+  SDL_free(ids);
+  return kind;
+}
+
+struct KindWatch {
+  std::mutex mutex;
+  std::function<void(GamepadKind)> changed;
+  SDL_JoystickID last_used = 0;  // 0: none used yet
+  GamepadKind kind = GamepadKind::kNone;
+};
+
+bool OnGamepadEvent(void* data, SDL_Event* event) {
+  auto* watch = static_cast<KindWatch*>(data);
+  SDL_JoystickID which = 0;
+  switch (event->type) {
+    case SDL_EVENT_GAMEPAD_ADDED:
+    case SDL_EVENT_GAMEPAD_REMOVED:
+      which = event->gdevice.which;
+      break;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+      which = event->gbutton.which;
+      break;
+    default:
+      return true;
+  }
+  std::function<void(GamepadKind)> call;
+  GamepadKind kind;
+  {
+    std::lock_guard lock(watch->mutex);
+    if (event->type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+      if (which == watch->last_used) return true;
+      watch->last_used = which;
+    } else if (event->type == SDL_EVENT_GAMEPAD_REMOVED && which == watch->last_used) {
+      watch->last_used = 0;
+    }
+    kind = watch->last_used ? KindOf(SDL_GetGamepadTypeForID(watch->last_used)) : FirstConnectedKind();
+    // A pad removed is still listed while its event is handled.
+    if (event->type == SDL_EVENT_GAMEPAD_REMOVED && !watch->last_used) {
+      int count = 0;
+      SDL_JoystickID* ids = SDL_GetGamepads(&count);
+      kind = GamepadKind::kNone;
+      for (int i = 0; ids && i < count; ++i) {
+        if (ids[i] != which) {
+          kind = KindOf(SDL_GetGamepadTypeForID(ids[i]));
+          break;
+        }
+      }
+      SDL_free(ids);
+    }
+    if (kind == watch->kind) return true;
+    watch->kind = kind;
+    call = watch->changed;
+  }
+  if (call) call(kind);
+  return true;
+}
+
+}  // namespace
+
+GamepadKind ConnectedGamepadKind() {
+  if (!SDL_WasInit(SDL_INIT_GAMEPAD) && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) return GamepadKind::kNone;
+  return FirstConnectedKind();
+}
+
+void WatchGamepadKind(std::function<void(GamepadKind)> changed) {
+  if (!SDL_WasInit(SDL_INIT_GAMEPAD) && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) return;
+  static KindWatch watch;  // for the process: SDL keeps the pointer
+  {
+    std::lock_guard lock(watch.mutex);
+    const bool first = !watch.changed;
+    watch.changed = std::move(changed);
+    watch.kind = FirstConnectedKind();
+    if (!first) return;
+  }
+  SDL_AddEventWatch(OnGamepadEvent, &watch);
 }
 
 // ---- first start ------------------------------------------------------------------------------
