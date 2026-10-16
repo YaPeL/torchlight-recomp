@@ -21,11 +21,13 @@
 #include "game_setup/game_files.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/mods.h"
+#include "guest_abi/xinput.h"
 #include "hooks/guest_path.h"
 #include "platform/platform.h"
 #include "mods/class_list.h"
 #include "mods/icon_atlas.h"
 #include "mods/mod_list.h"
+#include "mods/pad_prompts.h"
 #include "save_import/pak.h"
 #include "mods/save_safety.h"
 #include "mods/texture_files.h"
@@ -60,6 +62,10 @@ std::filesystem::path g_game_pak;
 uint32_t g_data_manager = 0;
 // The active mods' resource groups (RegisterMods), to tell a mod's material script.
 ModScriptGroups g_mod_groups;
+// The pad prompts' textures (mods/pad_prompts.h), mounted as hooks::kPromptsDeviceLink by
+// InstallPadPrompts; and whether the guest's pad reads swap confirm and cancel.
+bool g_prompts = false;
+bool g_swap_confirm_cancel = false;
 // The merged icon atlases (mods/icon_atlas.h), written and mounted by InstallMods: the imagesets'
 // keys, as the game's data loader asks for them ("MEDIA/UI/ITEMICONS/ITEMICONS16.IMAGESET"), set
 // before the guest runs and read on the game's thread afterwards.
@@ -267,6 +273,53 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
   InstallAtlases(runtime);
 }
 
+void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_pak,
+                       std::optional<mods::PadStyle> chosen, bool swap) {
+  const auto kind = [] {
+    switch (platform::ConnectedGamepadKind()) {
+      case platform::GamepadKind::kXbox:
+        return mods::PadKind::kXbox;
+      case platform::GamepadKind::kPlayStation:
+        return mods::PadKind::kPlayStation;
+      case platform::GamepadKind::kNintendo:
+        return mods::PadKind::kNintendo;
+      case platform::GamepadKind::kOther:
+        return mods::PadKind::kOther;
+      default:
+        return mods::PadKind::kNone;
+    }
+  }();
+  const mods::PadStyle style = mods::EffectivePadStyle(chosen, kind);
+  g_swap_confirm_cancel = mods::SwapsConfirmCancel(style, swap);
+  REXLOG_INFO("pad prompts: {} ({}){}", mods::PadStyleName(style), chosen ? "chosen" : "the connected pad's",
+              g_swap_confirm_cancel ? ", confirm and cancel swapped" : "");
+  const std::string cache = platform::CacheDir("prompts");
+  const std::string resources = platform::ResourceDir();
+  if (cache.empty() || resources.empty()) {
+    if (style != mods::PadStyle::kXbox) REXLOG_ERROR("pad prompts: no cache or data folder; the game's prompts");
+    return;
+  }
+  std::vector<std::string> log;
+  const auto written = mods::WritePromptTextures(game_pak, std::filesystem::path(resources) / "data" / "ui" / "prompts",
+                                                 style, swap, cache, log);
+  for (const std::string& line : log) REXLOG_WARN("pad prompts: {}", line);
+  if (written.empty()) return;
+  const std::string mount(hooks::kPromptsDeviceMount);
+  auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, cache, /*read_only=*/true);
+  if (!runtime || !runtime->file_system() || !device->Initialize() ||
+      !runtime->file_system()->RegisterDevice(std::move(device)) ||
+      !runtime->file_system()->RegisterSymbolicLink(std::string(hooks::kPromptsDeviceLink), mount)) {
+    REXLOG_ERROR("pad prompts: cannot mount {}; the game's prompts", cache);
+    return;
+  }
+  for (const auto& texture : written) {
+    REXLOG_INFO("pad prompts: {} with {} prompts redrawn", texture.texture, texture.replaced);
+  }
+  g_prompts = true;
+  g_texture_locations.prompts = cache;
+  mods::SetTextureLocations(g_texture_locations);
+}
+
 const mods::ModPlan* MountedModPlan() {
   return g_mounted && mods::ModManagerNeeded(g_plan) ? &g_plan : nullptr;
 }
@@ -377,22 +430,32 @@ std::optional<std::string> ModResourceGroup(std::string_view folder) {
 namespace {
 
 // initialiseAllResourceGroups (guest_abi game_ui.h kInitialiseAllResourceGroups), the first time:
-// before the original parses the groups, the replacements folder goes into each of the data
-// manager's groups (the pak's), after the pak. In each group its files then come before the pak's
+// before the original parses the groups, the pad prompts' folder and then the replacements folder
+// go into each of the data manager's groups (the pak's), after the pak. In each group its files then come before the pak's
 // (the location added last wins the group's index) and its scripts are parsed after the pak's, so
 // its definitions are the ones kept, as if its files were inside the pak.
 void HookInitialiseAll(PPCContext& ctx, uint8_t* base, void (*original)(PPCContext&, uint8_t*)) {
   static bool done = false;
-  if (!done && g_replacements && g_data_manager) {
+  if (!done && (g_replacements || g_prompts) && g_data_manager) {
     done = true;
     GuestCall call(ctx, base);
     const uint32_t data = call.ReadU32(g_data_manager + ui::data_manager::kGroupsData.offset);
     const uint32_t count = call.ReadU32(g_data_manager + ui::data_manager::kGroupsCount.offset);
-    const std::string location = std::string(hooks::kReplacementsDeviceLink) + "\\";
+    // The prompts first, so the player's replacements, added after them, win.
+    const std::string prompts = std::string(hooks::kPromptsDeviceLink) + "\\";
+    const std::string replacements = std::string(hooks::kReplacementsDeviceLink) + "\\";
     for (uint32_t i = 0; i < count && i < 64; ++i) {
       const std::string group = abi::ogre::ReadString(base, data + i * ui::data_manager::kGroupStride, 256);
       if (group.empty()) continue;
-      if (AddFileSystemLocation(call, location, true, group)) {
+      if (g_prompts) {
+        if (AddFileSystemLocation(call, prompts, true, group)) {
+          REXLOG_INFO("pad prompts: in resource group \"{}\"", group);
+        } else {
+          REXLOG_ERROR("pad prompts: cannot add to resource group \"{}\"", group);
+        }
+      }
+      if (!g_replacements) continue;
+      if (AddFileSystemLocation(call, replacements, true, group)) {
         REXLOG_INFO("replacements: in resource group \"{}\"", group);
       } else {
         REXLOG_ERROR("replacements: cannot add to resource group \"{}\"", group);
@@ -468,6 +531,8 @@ void HookScriptListener(PPCContext& ctx, uint8_t* base, void (*original)(PPCCont
 }  // namespace torchlight::game_menu
 
 REX_EXTERN(__imp__sub_823AA988);
+REX_EXTERN(__imp__sub_821FEA58);
+REX_EXTERN(__imp__sub_821FEA68);
 REX_EXTERN(__imp__sub_8239B490);
 REX_EXTERN(__imp__sub_82429D78);
 REX_EXTERN(__imp__sub_822A68F0);
@@ -539,6 +604,27 @@ void HookUnitSave(PPCContext& ctx, uint8_t* base) {
 }
 
 
+namespace xi = torchlight::guest_abi::xinput;
+
+// The game's pad state read (guest_abi/xinput.h kGetState): with confirm and cancel swapped
+// (InstallPadPrompts), the A and B buttons trade places in what the game gets.
+void HookGetState(PPCContext& ctx, uint8_t* base) {
+  const uint32_t state = ctx.r4.u32;
+  __imp__sub_821FEA58(ctx, base);
+  if (!g_swap_confirm_cancel || !state || ctx.r3.u32 != xi::kSuccess) return;
+  const uint32_t at = state + xi::kStateButtons;
+  abi::WriteU16(base, at, mods::SwapButtonBits(abi::ReadU16(base, at), xi::kButtonA, xi::kButtonB));
+}
+
+// The game's keystroke read (kGetKeystroke): the same swap for the A and B keys.
+void HookGetKeystroke(PPCContext& ctx, uint8_t* base) {
+  const uint32_t keystroke = ctx.r5.u32;
+  __imp__sub_821FEA68(ctx, base);
+  if (!g_swap_confirm_cancel || !keystroke || ctx.r3.u32 != xi::kSuccess) return;
+  const uint32_t at = keystroke + xi::kKeystrokeVirtualKey;
+  abi::WriteU16(base, at, mods::SwapVirtualKey(abi::ReadU16(base, at), xi::kVkPadA, xi::kVkPadB));
+}
+
 }  // namespace
 
 }  // namespace torchlight::game_menu
@@ -558,6 +644,12 @@ REX_FUNC(sub_8239B490) { torchlight::game_menu::HookScriptListener(ctx, base, __
 static_assert(torchlight::guest_abi::game_ui::kInitialiseAllResourceGroups.address == 0x82429D78u,
               "game_ui mismatch");
 REX_FUNC(sub_82429D78) { torchlight::game_menu::HookInitialiseAll(ctx, base, __imp__sub_82429D78); }
+
+static_assert(torchlight::guest_abi::xinput::kGetState.address == 0x821FEA58u, "xinput mismatch");
+REX_FUNC(sub_821FEA58) { torchlight::game_menu::HookGetState(ctx, base); }
+
+static_assert(torchlight::guest_abi::xinput::kGetKeystroke.address == 0x821FEA68u, "xinput mismatch");
+REX_FUNC(sub_821FEA68) { torchlight::game_menu::HookGetKeystroke(ctx, base); }
 
 
 }  // extern "C"

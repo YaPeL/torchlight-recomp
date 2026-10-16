@@ -74,6 +74,16 @@ int main() {
               !m::SwapsConfirmCancel(S::kPlayStation, true) && !m::SwapsConfirmCancel(S::kXbox, true),
           "the swap only with Nintendo's style");
   }
+  // Confirm and cancel swapped in what the guest reads.
+  {
+    Check(m::SwapButtonBits(0x1000, 0x1000, 0x2000) == 0x2000 && m::SwapButtonBits(0x2000, 0x1000, 0x2000) == 0x1000,
+          "A becomes B and B becomes A");
+    Check(m::SwapButtonBits(0x3010, 0x1000, 0x2000) == 0x3010 && m::SwapButtonBits(0x4001, 0x1000, 0x2000) == 0x4001,
+          "both or neither: unchanged, other buttons kept");
+    Check(m::SwapVirtualKey(0x5800, 0x5800, 0x5801) == 0x5801 && m::SwapVirtualKey(0x5801, 0x5800, 0x5801) == 0x5800 &&
+              m::SwapVirtualKey(0x5802, 0x5800, 0x5801) == 0x5802,
+          "keystrokes: A <-> B only");
+  }
   // The icons of each style.
   {
     Check(m::PromptIcons(m::PadStyle::kXbox, true).empty(), "Xbox: the game's images");

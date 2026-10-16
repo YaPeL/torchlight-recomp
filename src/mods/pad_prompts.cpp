@@ -63,6 +63,16 @@ std::string_view PadStyleName(PadStyle style) {
   }
 }
 
+uint16_t SwapButtonBits(uint16_t buttons, uint16_t a_bit, uint16_t b_bit) {
+  const bool a = buttons & a_bit, b = buttons & b_bit;
+  buttons = uint16_t(buttons & ~(a_bit | b_bit));
+  return uint16_t(buttons | (a ? b_bit : 0) | (b ? a_bit : 0));
+}
+
+uint16_t SwapVirtualKey(uint16_t key, uint16_t key_a, uint16_t key_b) {
+  return key == key_a ? key_b : key == key_b ? key_a : key;
+}
+
 std::vector<PromptIcon> PromptIcons(PadStyle style, bool swap_confirm_cancel) {
   switch (style) {
     case PadStyle::kPlayStation:

@@ -17,6 +17,7 @@
 #include <rex/ppc/context.h>
 
 #include "mods/mod_list.h"
+#include "mods/pad_prompts.h"
 
 namespace rex {
 class Runtime;
@@ -31,6 +32,13 @@ namespace torchlight::game_menu {
 // of its own CEGUI imagesets, GameImagesetNames).
 void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
                  const std::filesystem::path& user_data_root, const std::filesystem::path& game_pak);
+
+// Before the guest runs, after InstallMods, any mode: the pad prompts' style (mods/pad_prompts.h)
+// from the setting (`chosen`, none for automatic) or the connected pad, its textures written to the
+// cache and mounted like the replacements folder (before it), and confirm/cancel swapped in the
+// guest's pad reads when `swap` applies to the style. Nothing is written for the Xbox style.
+void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_pak,
+                       std::optional<mods::PadStyle> chosen, bool swap);
 
 // The data manager was just built (its constructor's hook, on the game's thread, before the
 // global data loader checks the MODS achievements and loads the data): builds the mod manager,

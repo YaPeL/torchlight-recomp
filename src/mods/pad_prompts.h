@@ -41,6 +41,11 @@ bool SwapsConfirmCancel(PadStyle style, bool swap_setting);
 // "xbox" / "playstation" / "nintendo": also the icons' folder below data/ui/prompts/.
 std::string_view PadStyleName(PadStyle style);
 
+// Confirm and cancel swapped in what the guest reads: the A and B bits of a pad state's buttons
+// (`a_bit`, `b_bit`), or a keystroke's virtual key A <-> B; other values unchanged.
+uint16_t SwapButtonBits(uint16_t buttons, uint16_t a_bit, uint16_t b_bit);
+uint16_t SwapVirtualKey(uint16_t key, uint16_t key_a, uint16_t key_b);
+
 struct PromptIcon {
   std::string image;  // the game's image name ("a_button")
   std::string file;   // our icon, below the style's folder, without ".dds" ("cross")
