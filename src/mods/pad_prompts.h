@@ -65,7 +65,8 @@ std::vector<PromptIcon> PromptIcons(PadStyle style, bool swap_confirm_cancel);
 // centred, transparent around it.
 RgbaImage FitIcon(const RgbaImage& icon, uint32_t width, uint32_t height);
 
-// Transparent texels kept around an icon inside its region, like the 360's own button art.
+// Transparent texels kept around an icon inside its region, like the 360's own button art. Bump
+// kPromptRulesVersion when it changes.
 inline constexpr long kPromptMargin = 1;
 
 // The imageset's texture with every image of `icons` (by image name) redrawn in its region, inside
@@ -92,7 +93,9 @@ struct WrittenPrompts {
 // The prepared textures are kept between runs (game_menu/mods_install.cpp): under a folder named
 // by this key, made of the pak's identity (unit_cache.h PakIdentity), every icon file's path and
 // bytes, and kPromptRulesVersion; a change to any of them makes a new key, so the textures are
-// written again. Hex.
+// written again. Hex. The code's own rules are not in it: bump kPromptRulesVersion whenever the
+// textures would come out differently (PromptIcons' table, kPromptMargin, the controller's scale,
+// FitIcon, PatchPromptTexture), or players keep the old ones.
 inline constexpr uint32_t kPromptRulesVersion = 1;
 std::string PromptCacheKey(uint64_t pak_identity, const std::filesystem::path& icons_dir);
 // What WritePromptTextures wrote into a style's folder, recorded beside the textures (one line per

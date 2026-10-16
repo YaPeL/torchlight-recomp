@@ -165,7 +165,8 @@ uint16_t SwapVirtualKey(uint16_t key, uint16_t key_a, uint16_t key_b) {
 }
 
 // The help screen's controller picture, drawn smaller than its region: a flat silhouette at the
-// 360 drawing's size looks heavier than it.
+// 360 drawing's size looks heavier than it. This, the table below and FitIcon make the cached
+// textures: bump kPromptRulesVersion (pad_prompts.h) when any of them changes.
 constexpr double kControllerScale = 0.8;
 
 std::vector<PromptIcon> PromptIcons(PadStyle style, bool swap_confirm_cancel) {
