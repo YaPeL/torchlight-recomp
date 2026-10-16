@@ -1325,11 +1325,12 @@ or Nintendo (`src/mods/pad_prompts.h`).
   controller silhouette, at 80% of its place (a flat silhouette at the 360 drawing's size looks
   heavier); with Xbox it stays the 360's drawing. The silhouettes are rasterized from the pack's
   SVGs, since the picture is drawn about 350 px wide.
-- **PlayStation models.** SDL tells a PS3, PS4 and PS5 pad apart, and the controller picture is
-  the pad's model. The buttons are the same on the three: start and back are drawn as the PS3's
-  shapes (a triangle and a bar), since the PS4's and PS5's are tall pills that shrink to a stick at
-  the prompts' 29x22. `pad_prompts = "playstation"` takes the connected PlayStation's model, a PS5
-  without one.
+- **PlayStation models.** SDL tells a PS3, PS4 and PS5 pad apart. The controller picture, and
+  start and back, are the pad's model's: the PS3's triangle and bar, the PS4's and PS5's tall pills
+  (the PS4's without the word above them), which shrink to a thin stick at the prompts' 29x22 as
+  the buttons look on those pads (the owner's choice, 2026-10-16). The other buttons are the same on
+  the three. `pad_prompts = "playstation"` takes the connected PlayStation's model, a PS5 without
+  one.
 - **How.** The textures are rewritten at start, not the imagesets. Each image's region is cleared
   and the icon is scaled into it with its aspect kept, so every window that names an image keeps
   its size and place. A transparent border of one texel is kept around it, like the 360's own art:

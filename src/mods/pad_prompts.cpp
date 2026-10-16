@@ -117,14 +117,16 @@ std::vector<PromptIcon> PromptIcons(PadStyle style, bool swap_confirm_cancel) {
     case PadStyle::kPlayStation3:
     case PadStyle::kPlayStation4:
     case PadStyle::kPlayStation5: {
+      const std::string model = style == PadStyle::kPlayStation3   ? "ps3"
+                                : style == PadStyle::kPlayStation4 ? "ps4"
+                                                                   : "ps5";
       icons = {{"a_button", "cross"},    {"b_button", "circle"}, {"button_x", "square"},
                {"y_button", "triangle"}, {"left_bumper", "l1"},  {"right_bumper", "r1"},
-               {"left_trigger", "l2"},   {"right_trigger", "r2"}, {"start_button", "options"},
-               {"back_button", "create"}};
-      const char* controller = style == PadStyle::kPlayStation3   ? "controller_ps3"
-                               : style == PadStyle::kPlayStation4 ? "controller_ps4"
-                                                                  : "controller_ps5";
-      icons.push_back({"controller", controller, kControllerScale});
+               {"left_trigger", "l2"},   {"right_trigger", "r2"}};
+      // Start and back as the pad's model draws them, and its controller.
+      icons.push_back({"start_button", "start_" + model});
+      icons.push_back({"back_button", "back_" + model});
+      icons.push_back({"controller", "controller_" + model, kControllerScale});
       break;
     }
     case PadStyle::kNintendo: {

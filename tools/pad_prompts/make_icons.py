@@ -31,10 +31,14 @@ ICONS = {
         "r1": "PlayStation Series/Default/playstation_trigger_r1.png",
         "l2": "PlayStation Series/Default/playstation_trigger_l2.png",
         "r2": "PlayStation Series/Default/playstation_trigger_r2.png",
-        # The PS3 shapes (a triangle, a bar): wide like the 360's start and back, so they read in
-        # the game's small images; the PS5 options and create buttons are tall pills that do not.
-        "options": "PlayStation Series/Default/playstation3_button_start.png",
-        "create": "PlayStation Series/Default/playstation3_button_select.png",
+        # Start and back as each model draws them: the PS3's triangle and bar, the PS4's and PS5's
+        # tall pills (the PS4's word above them left out).
+        "start_ps3": "PlayStation Series/Default/playstation3_button_start.png",
+        "back_ps3": "PlayStation Series/Default/playstation3_button_select.png",
+        "start_ps4": "PlayStation Series/Default/playstation4_button_options.png",
+        "back_ps4": "PlayStation Series/Default/playstation4_button_share.png",
+        "start_ps5": "PlayStation Series/Default/playstation5_button_options.png",
+        "back_ps5": "PlayStation Series/Default/playstation5_button_create.png",
         "controller_ps3": "PlayStation Series/Vector/controller_playstation3.svg",
         "controller_ps4": "PlayStation Series/Vector/controller_playstation4.svg",
         "controller_ps5": "PlayStation Series/Vector/controller_playstation5.svg",
@@ -65,7 +69,7 @@ for style, folder, prefix in (("playstation", "PlayStation Series", "playstation
         ICONS[style][name] = f"{folder}/Double/{prefix}_{name}.png"
 
 # Icons whose word above the shape is left out: only the lowest band of visible rows is kept.
-SHAPE_ONLY = {("playstation", "options"), ("playstation", "create")}
+SHAPE_ONLY = {("playstation", name) for name in ("start_ps3", "back_ps3", "start_ps4", "back_ps4")}
 
 
 # The help screen draws its controller picture about 350 px wide; the pack's PNGs are 128 px at

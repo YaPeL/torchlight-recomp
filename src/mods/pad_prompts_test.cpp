@@ -103,7 +103,9 @@ int main() {
     Check(ps.size() == 24 && Text(Find(ps, "controller")) == "controller_ps5" && Find(ps, "controller")->scale < 1 &&
               Text(Find(m::PromptIcons(m::PadStyle::kPlayStation3, false), "controller")) == "controller_ps3" &&
               Text(Find(m::PromptIcons(m::PadStyle::kPlayStation4, false), "controller")) == "controller_ps4" &&
-              Text(Find(m::PromptIcons(m::PadStyle::kPlayStation3, false), "start_button")) == "options" && Text(Find(ps, "a_button")) == "cross" && Text(Find(ps, "b_button")) == "circle" &&
+              Text(Find(m::PromptIcons(m::PadStyle::kPlayStation3, false), "start_button")) == "start_ps3" &&
+              Text(Find(m::PromptIcons(m::PadStyle::kPlayStation4, false), "back_button")) == "back_ps4" &&
+              Text(Find(ps, "start_button")) == "start_ps5" && Text(Find(ps, "a_button")) == "cross" && Text(Find(ps, "b_button")) == "circle" &&
               Text(Find(ps, "button_x")) == "square" && Text(Find(ps, "y_button")) == "triangle",
           "PlayStation: the face buttons by position, the swap ignored");
     const auto by_position = m::PromptIcons(m::PadStyle::kNintendo, false);

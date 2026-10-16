@@ -4,8 +4,8 @@
 // touched: their textures are rewritten with each replaced image's region cleared and the icon
 // scaled into it (aspect kept, centred), so every window that names an image keeps its size and
 // place. The help screen's controller picture ("controller") becomes the style's controller
-// silhouette: PlayStation's follows the pad's model (PS3, PS4, PS5); its buttons are the same on
-// the three (start and back drawn as the PS3's shapes, which read at the prompts' size).
+// silhouette. PlayStation's follows the pad's model (PS3, PS4, PS5): its controller, and start and
+// back as that model draws them; the other buttons are the same on the three.
 //
 // The app writes the textures before the guest runs and serves them like the replacements folder
 // (game_menu/mods_install.cpp): the game loads its imagesets once, so a change of style takes
