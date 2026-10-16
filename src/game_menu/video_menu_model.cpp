@@ -104,11 +104,6 @@ bool VideoMenuModel::Step(Row row, int direction) {
       current_.achievements = shown;
       return true;
     }
-    case Row::kPadPrompts:
-      return StepIn(std::vector<settings::PadPrompts>{settings::PadPrompts::kAuto, settings::PadPrompts::kXbox,
-                                                      settings::PadPrompts::kPlayStation,
-                                                      settings::PadPrompts::kNintendo},
-                    current_.pad_prompts, direction);
     case Row::kLanguage: {
       // Empty is the language the game started with by default; choosing it again stores empty.
       std::string shown = Language(current_.language);
@@ -140,23 +135,15 @@ bool VideoMenuModel::Step(Row row, int direction) {
       return true;
     }
     case Row::kVsync:
-    case Row::kSwapConfirmCancel:
       return false;
   }
   return false;
 }
 
 bool VideoMenuModel::Toggle(Row row) {
-  if (!Enabled(row)) return false;
-  if (row == Row::kVsync) {
-    current_.vsync = !current_.vsync;
-    return true;
-  }
-  if (row == Row::kSwapConfirmCancel) {
-    current_.swap_confirm_cancel = !current_.swap_confirm_cancel;
-    return true;
-  }
-  return false;
+  if (row != Row::kVsync) return false;
+  current_.vsync = !current_.vsync;
+  return true;
 }
 
 bool VideoMenuModel::Reset() {
@@ -180,22 +167,14 @@ std::string VideoMenuModel::Text(Row row) const {
                  ? "Auto"
                  : std::string(settings::AspectName(current_.aspect));
     case Row::kFpsCap:
+      if (current_.fps_cap == settings::kFpsCapAuto) {
+        return "Auto (" + std::to_string(settings::EffectiveFpsCap(current_, caps_)) + ")";
+      }
       return current_.fps_cap ? std::to_string(current_.fps_cap) : "Unlimited";
     case Row::kAchievements:
       return settings::EffectiveAchievements(current_) == settings::AchievementSet::kPc
                  ? "PC"
                  : "Xbox 360";
-    case Row::kPadPrompts:
-      switch (current_.pad_prompts) {
-        case settings::PadPrompts::kXbox:
-          return "Xbox 360";
-        case settings::PadPrompts::kPlayStation:
-          return "PlayStation";
-        case settings::PadPrompts::kNintendo:
-          return "Nintendo";
-        default:
-          return "Auto";
-      }
     case Row::kLanguage:
       return LanguageName(Language(current_.language));
     case Row::kRenderer:
@@ -219,8 +198,6 @@ std::string VideoMenuModel::Text(Row row) const {
     }
     case Row::kVsync:
       return current_.vsync ? "On" : "Off";
-    case Row::kSwapConfirmCancel:
-      return current_.swap_confirm_cancel ? "On" : "Off";
   }
   return "";
 }
@@ -238,12 +215,7 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kGpu:
       return settings::GpuChoices(caps_).enabled &&
              settings::GpuChoiceApplies(caps_, current_.render_system);
-    case Row::kPadPrompts: return true;
     case Row::kVsync: return true;
-    // Nintendo pads only (mods/pad_prompts.h SwapsConfirmCancel): with their style or automatic.
-    case Row::kSwapConfirmCancel:
-      return current_.pad_prompts == settings::PadPrompts::kAuto ||
-             current_.pad_prompts == settings::PadPrompts::kNintendo;
   }
   return false;
 }
@@ -261,17 +233,13 @@ bool VideoMenuModel::RendererUnavailable() const {
                    current_.render_system) != caps_.unavailable_render_systems.end();
 }
 
-bool VideoMenuModel::Checked(Row row) const {
-  return (row == Row::kVsync && current_.vsync) || (row == Row::kSwapConfirmCancel && current_.swap_confirm_cancel);
-}
+bool VideoMenuModel::Checked(Row row) const { return row == Row::kVsync && current_.vsync; }
 
 bool VideoMenuModel::RestartNeeded() const {
   return Language(current_.language) != Language(startup_.language) ||
          current_.render_system != startup_.render_system || current_.gpu != startup_.gpu ||
          current_.aspect != startup_.aspect ||
-         settings::EffectiveAchievements(current_) != settings::EffectiveAchievements(startup_) ||
-         current_.pad_prompts != startup_.pad_prompts ||
-         current_.swap_confirm_cancel != startup_.swap_confirm_cancel;
+         settings::EffectiveAchievements(current_) != settings::EffectiveAchievements(startup_);
 }
 
 }  // namespace torchlight::game_menu

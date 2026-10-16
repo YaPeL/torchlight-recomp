@@ -11,12 +11,9 @@
 namespace torchlight::game_menu {
 
 enum class Row {
-  kResolution, kAspect, kFpsCap, kLanguage, kAchievements, kPadPrompts, kVsync, kSwapConfirmCancel,
-  kRenderer, kGpu
+  kResolution, kAspect, kFpsCap, kLanguage, kAchievements, kVsync, kRenderer, kGpu
 };
-inline constexpr int kRowCount = 10;
-// The rows shown as a checkbox (A toggles them) instead of a value moved with left and right.
-inline bool IsCheckbox(Row row) { return row == Row::kVsync || row == Row::kSwapConfirmCancel; }
+inline constexpr int kRowCount = 8;
 
 class VideoMenuModel {
  public:
@@ -28,7 +25,7 @@ class VideoMenuModel {
   // Previous (direction < 0) or next choice of a value row, stopping at the ends like the menu's
   // sliders; true when the value changed. Disabled rows and the checkbox do not move.
   bool Step(Row row, int direction);
-  // A checkbox row; true when it changed.
+  // The vsync checkbox; true when it changed.
   bool Toggle(Row row);
   // Back to the default settings (the game menu's "Reset Defaults"); true when something changed.
   bool Reset();

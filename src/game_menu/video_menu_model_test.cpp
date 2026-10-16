@@ -45,8 +45,9 @@ void TestResolution() {
 
 void TestFpsAndVsync() {
   VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
-  Check(m.Text(Row::kFpsCap) == "60", "default cap");
-  Check(m.Step(Row::kFpsCap, -1) && m.Text(Row::kFpsCap) == "30", "left: 30");
+  Check(m.Text(Row::kFpsCap) == "Auto (144)", "default cap: automatic, the display's rate");
+  Check(!m.Step(Row::kFpsCap, -1), "automatic is first");
+  Check(m.Step(Row::kFpsCap, +1) && m.Text(Row::kFpsCap) == "30", "right: 30");
   for (int i = 0; i < 20; ++i) m.Step(Row::kFpsCap, +1);
   Check(m.Text(Row::kFpsCap) == "Unlimited" && m.settings().fps_cap == 0, "last: unlimited");
   Check(m.Checked(Row::kVsync), "vsync on by default");
@@ -140,29 +141,6 @@ void TestAchievements() {
   Check(started_pc.Reset() && started_pc.Text(Row::kAchievements) == "Xbox 360" &&
             started_pc.RestartNeeded(),
         "Reset Defaults: Xbox 360, restart");
-}
-
-void TestPadPrompts() {
-  VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
-  Check(m.Text(Row::kPadPrompts) == "Auto" && !m.Step(Row::kPadPrompts, -1), "automatic first");
-  Check(m.Step(Row::kPadPrompts, +1) && m.Text(Row::kPadPrompts) == "Xbox 360", "then Xbox 360");
-  Check(!m.Enabled(Row::kSwapConfirmCancel) && !m.Toggle(Row::kSwapConfirmCancel),
-        "the swap is off with the Xbox style");
-  m.Step(Row::kPadPrompts, +1);
-  Check(m.Text(Row::kPadPrompts) == "PlayStation", "PlayStation");
-  m.Step(Row::kPadPrompts, +1);
-  Check(m.Text(Row::kPadPrompts) == "Nintendo" && m.settings().pad_prompts == PadPrompts::kNintendo &&
-            !m.Step(Row::kPadPrompts, +1),
-        "Nintendo last");
-  Check(m.RestartNeeded(), "a style change needs a restart");
-  Check(IsCheckbox(Row::kSwapConfirmCancel) && !IsCheckbox(Row::kPadPrompts), "the swap is a checkbox");
-  Check(m.Enabled(Row::kSwapConfirmCancel) && m.Toggle(Row::kSwapConfirmCancel) &&
-            m.Checked(Row::kSwapConfirmCancel) && m.settings().swap_confirm_cancel,
-        "the swap toggles with Nintendo's style");
-  VideoMenuModel automatic(Desktop(), HostSettings{}, HostSettings{});
-  Check(automatic.Enabled(Row::kSwapConfirmCancel) && automatic.Toggle(Row::kSwapConfirmCancel) &&
-            automatic.RestartNeeded(),
-        "automatic: the swap can be set (a Nintendo pad may be connected), restart");
 }
 
 void TestReset() {
@@ -272,7 +250,6 @@ int main() {
   TestGpu();
   TestAspect();
   TestAchievements();
-  TestPadPrompts();
   std::printf("video_menu_model_test: ok\n");
   return 0;
 }

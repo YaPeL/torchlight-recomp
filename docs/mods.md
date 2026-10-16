@@ -1328,17 +1328,18 @@ or Nintendo (`src/mods/pad_prompts.h`).
 - **The icons.** Kenney's "Input Prompts" 1.5 (CC0, `THIRD_PARTY_NOTICES.md`), converted by
   `tools/pad_prompts/make_icons.py` into `data/ui/prompts/`. They are flat white or coloured
   icons, while the 360's are glossy, so they look different in style.
-- **Choice.** `settings.toml` `pad_prompts` (`auto`, `xbox`, `playstation`, `nintendo`) and the
-  video column's "Button Prompts" row. Automatic follows the first connected pad's SDL type
+- **Choice.** Automatic by default; `settings.toml` `pad_prompts` (`auto`, `xbox`, `playstation`,
+  `nintendo`) fixes one. There is no row in the Options menu: the video column has no room left
+  (the owner's choice, 2026-10-16). Automatic follows the first connected pad's SDL type
   (`platform::ConnectedGamepadKind`) at start, then the pad last used while playing
   (`platform::WatchGamepadKind`: a pad connected or disconnected, or a button pressed on another
   pad). Every style is written at start, and a change of pad switches the host's texture lookup to
   that style's folder. The live content then gets the new textures (`live::RefreshNamedTextures`),
   and the A/B swap follows. The guest's own copy stays the start style's; only the Xenos mode
-  draws that copy. Changing the setting itself still takes effect at the next start.
+  draws that copy. Changing the file's setting takes effect at the next start.
 - **Nintendo pads.** By default buttons work by position, as on the 360: the bottom button
   confirms. Each prompt shows the letter of its physical button, so the 360's A shows B. With
-  `swap_confirm_cancel` (the "Swap A/B" checkbox, Nintendo style or automatic) the right button
+  `settings.toml` `swap_confirm_cancel = true` (Nintendo style, chosen or automatic) the right button
   (A) confirms and the bottom one (B) cancels. The game's two XInput wrappers
   (`guest_abi/xinput.h`) hand A and B swapped, and the icons follow. The runtime's own dialogs
   (`live/ui_gamepad.h`) swap them too. The SDK's keyboard emulation goes through the same XInput

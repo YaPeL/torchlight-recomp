@@ -20,8 +20,6 @@ Window = Fenster
 Default = Standard
 Auto = Automatisch
 OpenGL 3+ (unavailable) = OpenGL 3+ (nicht verfügbar)
-Button Prompts = Tastensymbole
-Swap A/B = A/B tauschen
 
 [fr]
 Video = Vidéo
@@ -40,8 +38,6 @@ Window = Fenêtre
 Default = Par défaut
 Auto = Auto
 OpenGL 3+ (unavailable) = OpenGL 3+ (indisponible)
-Button Prompts = Icônes des boutons
-Swap A/B = Inverser A/B
 
 [es]
 Video = Video
@@ -60,5 +56,3 @@ Window = Ventana
 Default = Predeterminada
 Auto = Automática
 OpenGL 3+ (unavailable) = OpenGL 3+ (no disponible)
-Button Prompts = Iconos de botones
-Swap A/B = Cambiar A/B

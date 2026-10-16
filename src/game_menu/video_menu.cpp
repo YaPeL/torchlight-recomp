@@ -75,8 +75,8 @@ struct Column {
 Column g_column;
 
 // Row names in the layout (tl_video_settings.uilayout), in Row order.
-constexpr const char* kRowNames[kRowCount] = {"resolution", "aspect",      "fps_cap", "language",
-                                              "achievements", "pad_prompts", "vsync",   "swap_confirm_cancel",
+constexpr const char* kRowNames[kRowCount] = {"resolution", "aspect",   "fps_cap",
+                                              "language",   "achievements", "vsync",
                                               "renderer",   "gpu"};
 
 // Loads one of our layouts (CEGUI WindowManager::loadWindowLayout, as the game's menus do);
@@ -122,7 +122,7 @@ void Refresh(GuestCall& call) {
     const bool enabled = model.Enabled(row);
     SetProperty(call, g_column.focus[i], "Disabled", enabled ? "False" : "True");
     SetProperty(call, g_column.focus[i], "Alpha", enabled ? "1" : "0.5");
-    if (IsCheckbox(row)) {
+    if (row == Row::kVsync) {
       SetProperty(call, g_column.focus[i], "Selected", model.Checked(row) ? "True" : "False");
     } else {
       SetProperty(call, g_column.value[i], "Text", "< " + Tr(model.Text(row)) + " >");
@@ -368,9 +368,7 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
       {"tl_video/fps_cap/label", "Frame Rate Limit"},
       {"tl_video/language/label", "Language"},
       {"tl_video/achievements/label", "Achievements"},
-      {"tl_video/pad_prompts/label", "Button Prompts"},
       {"tl_video/vsync/label", "Vertical Sync"},
-      {"tl_video/swap_confirm_cancel/label", "Swap A/B"},
       {"tl_video/renderer/label", "Renderer"},
       {"tl_video/gpu/label", "GPU"},
       {"tl_video/restart_note", "Some changes need a restart"},
