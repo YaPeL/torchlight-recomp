@@ -8,7 +8,7 @@
 <GUILayout >
     <Window Type="DefaultWindow" Name="tl_video" >
         <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
-        <Property Name="UnifiedAreaRect" Value="{{0,430},{0,10},{0,725},{0,575}}" />
+        <Property Name="UnifiedAreaRect" Value="{{0,430},{0,10},{0,725},{0,675}}" />
         <Property Name="MousePassThroughEnabled" Value="True" />
         <Property Name="WantsMultiClickEvents" Value="False" />
         <Window Type="ceguiWidget/StaticText" Name="tl_video/header" >
@@ -215,11 +215,11 @@
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Window Type="ceguiWidget/StaticText" Name="tl_video/vsync/label" >
                 <Property Name="Font" Value="Serif14" />
-                <Property Name="Text" Value="VSync" />
+                <Property Name="Text" Value="Vertical Sync" />
                 <Property Name="TextColour" Value="FFFCD615" />
                 <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
                 <Property Name="ClippedByParent" Value="False" />
-                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,120},{0,32.0788}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,274},{0,32.0788}}" />
                 <Property Name="WantsMultiClickEvents" Value="False" />
                 <Property Name="MousePassThroughEnabled" Value="True" />
             </Window>
@@ -228,7 +228,7 @@
             <Property Name="tabOrder" Value="19" />
             <Property Name="Selected" Value="False" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
-            <Property Name="UnifiedAreaRect" Value="{{0,140},{0,371},{0,190},{0,411}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,415},{0,66},{0,455}}" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Window Type="ceguiWidget/StaticText" Name="tl_video/swap_confirm_cancel/label" >
                 <Property Name="Font" Value="Serif14" />
@@ -236,7 +236,7 @@
                 <Property Name="TextColour" Value="FFFCD615" />
                 <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
                 <Property Name="ClippedByParent" Value="False" />
-                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,155},{0,32.0788}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,274},{0,32.0788}}" />
                 <Property Name="WantsMultiClickEvents" Value="False" />
                 <Property Name="MousePassThroughEnabled" Value="True" />
             </Window>
@@ -246,7 +246,7 @@
             <Property Name="Text" Value="Renderer" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
             <Property Name="ClippedByParent" Value="False" />
-            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,415},{0,276},{0,437}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,459},{0,276},{0,481}}" />
             <Property Name="HorzTextFormatting" Value="CentreAligned" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="MousePassThroughEnabled" Value="True" />
@@ -258,7 +258,7 @@
             <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
             <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
-            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,432},{0,279},{0,470}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,476},{0,279},{0,514}}" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="Disabled" Value="True" />
             <Property Name="Alpha" Value="0.5" />
@@ -279,7 +279,7 @@
             <Property Name="Text" Value="GPU" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
             <Property Name="ClippedByParent" Value="False" />
-            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,471},{0,276},{0,493}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,515},{0,276},{0,537}}" />
             <Property Name="HorzTextFormatting" Value="CentreAligned" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="MousePassThroughEnabled" Value="True" />
@@ -291,7 +291,7 @@
             <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
             <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
-            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,488},{0,279},{0,526}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,532},{0,279},{0,570}}" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="Disabled" Value="True" />
             <Property Name="Alpha" Value="0.5" />
@@ -313,7 +313,7 @@
             <Property Name="TextColour" Value="FFFCD615" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
             <Property Name="ClippedByParent" Value="False" />
-            <Property Name="UnifiedAreaRect" Value="{{0,0},{0,531},{0,295},{0,575}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,0},{0,579},{0,295},{0,657}}" />
             <Property Name="HorzTextFormatting" Value="WordWrapCentreAligned" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="MousePassThroughEnabled" Value="True" />
