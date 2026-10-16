@@ -39,6 +39,10 @@ REXCVAR_DEFINE_STRING(native_live, "only", "Torchlight",
 REXCVAR_DEFINE_STRING(live_record, "", "Torchlight",
                       "Live mode: record every frame the native backend consumes to this file "
                       "(session recording, replay --session); empty does not record");
+REXCVAR_DEFINE_INT32(native_present_pacing, 0, "Torchlight",
+                     "Experiment (frame pacing at the fps cap): 0 (the default) presents each frame "
+                     "when ready; 1 holds it until one cap period after the previous present; 2 "
+                     "also waits for the GPU to finish the frame first (Direct3D 11 only)");
 REXCVAR_DEFINE_INT32(native_frame_queue, 0, "Torchlight",
                      "Live mode: how many guest frames wait for the backend before the oldest is "
                      "dropped; 0 (the default): one with vsync, for less latency, two without "
@@ -531,6 +535,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.producer_timing = REXCVAR_GET(native_producer_timing);
   options.on_backend_failed = dialogs.renderer_failed;
   options.frame_queue = size_t(std::max(0, REXCVAR_GET(native_frame_queue)));
+  options.present_pacing = std::clamp(REXCVAR_GET(native_present_pacing), 0, 2);
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);

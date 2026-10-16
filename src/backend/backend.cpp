@@ -261,6 +261,8 @@ struct tl_backend {
   uint32_t width = 0, height = 0;  // the guest's frame size (main target, output)
   RenderScale scale;
   std::string renderer;
+  void (*before_swap)(void* user) = nullptr;  // tl_backend_set_before_swap
+  void* before_swap_user = nullptr;
 
   struct Target {
     Ogre::TexturePtr texture;
@@ -2147,6 +2149,7 @@ int tl_backend_present(tl_backend* b) {
     EndFullScreenPass(b);
     DrawUiPass(b, b->window_viewport);
     rs->_endFrame();
+    if (b->before_swap) b->before_swap(b->before_swap_user);
     b->window->swapBuffers();
   } catch (Ogre::Exception&) {
     return 0;
@@ -2196,6 +2199,23 @@ uint32_t tl_backend_take_keys(tl_backend* b) {
   uint32_t keys = b->keys;
   b->keys = 0;
   return keys;
+}
+
+void tl_backend_set_before_swap(tl_backend* b, void (*before_swap)(void* user), void* user) {
+  b->before_swap = before_swap;
+  b->before_swap_user = user;
+}
+
+int tl_backend_wait_gpu(tl_backend* b) {
+  if (!b->window) return 1;
+  // Direct3D 11's window answers with its device; GL3+'s has none by that name.
+  void* device = nullptr;
+  try {
+    b->window->getCustomAttribute("D3DDEVICE", &device);
+  } catch (const Ogre::Exception&) {
+    return 1;
+  }
+  return torchlight::platform::WaitDirect3D11Idle(device) ? 0 : 1;
 }
 
 void tl_backend_set_vsync(tl_backend* b, int vsync) {

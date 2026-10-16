@@ -46,6 +46,9 @@ struct LiveOptions {
   // period apart (frame_pacer.h). 0: unlimited, or a cap this mode does not know (--vsync given on
   // the command line).
   uint32_t fps_cap = 0;
+  // --native_present_pacing (experiment): 0 none, 1 presents one cap period apart, 2 also waiting
+  // for the GPU to finish the frame before the slot.
+  int present_pacing = 0;
   // The OGRE render system the backend draws with (host settings, only mode).
   tl_render_system render_system = TL_RENDER_SYSTEM_GL3PLUS;
   // Platform GPU id the render system draws on, where it takes one (tl_backend_create); empty:

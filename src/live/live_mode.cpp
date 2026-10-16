@@ -302,9 +302,53 @@ void LiveMode::Run() {
   SlowFrameDetector slow_frames;
   FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
-  FramePacer pacer;
-  pacer.SetPeriod(PacerPeriod(options_.fps_cap));
-  if (options_.fps_cap) REXLOG_INFO("live: presents paced at the fps cap ({} Hz)", options_.fps_cap);
+  // Frame pacing (--native_present_pacing): right before the window's swap, after the frame's
+  // drawing was submitted, optionally wait for the GPU to finish it, then for the frame's slot.
+  struct Pacing {
+    FramePacer pacer;
+    tl_backend* backend = nullptr;
+    int mode = 0;
+    bool gpu_wait_available = true;
+    Series gpu_wait_ms, slot_wait_ms;
+  } pacing;
+  pacing.backend = backend;
+  pacing.mode = options_.present_pacing;
+  pacing.pacer.SetPeriod(pacing.mode ? PacerPeriod(options_.fps_cap) : Clock::duration::zero());
+  if (pacing.mode && options_.fps_cap) {
+    REXLOG_INFO("live: presents paced at the fps cap ({} Hz){}", options_.fps_cap,
+                pacing.mode == 2 ? ", after the GPU finishes each frame" : "");
+  }
+  tl_backend_set_before_swap(
+      backend,
+      [](void* user) {
+        auto& p = *static_cast<Pacing*>(user);
+        if (p.pacer.period() == Clock::duration::zero()) return;
+        const auto start = Clock::now();
+        if (p.mode == 2 && p.gpu_wait_available) {
+          p.gpu_wait_available = tl_backend_wait_gpu(p.backend) == 0;
+        }
+        const auto ready = Clock::now();
+        const auto slot = p.pacer.Slot(ready);
+        if (slot > ready) {
+          rex::thread::Sleep(std::chrono::duration_cast<std::chrono::microseconds>(slot - ready));
+        }
+        p.gpu_wait_ms.Add(Ms(ready - start));
+        p.slot_wait_ms.Add(Ms(Clock::now() - ready));
+        if (p.slot_wait_ms.values.size() >= 600) {
+          auto mean = [](const std::vector<double>& v) {
+            double sum = 0;
+            for (double x : v) sum += x;
+            return v.empty() ? 0.0 : sum / double(v.size());
+          };
+          REXLOG_INFO("live: pacing over {} frames: GPU wait mean {:.2f} ms, slot wait mean {:.2f} "
+                      "ms",
+                      p.slot_wait_ms.values.size(), mean(p.gpu_wait_ms.values),
+                      mean(p.slot_wait_ms.values));
+          p.gpu_wait_ms.values.clear();
+          p.slot_wait_ms.values.clear();
+        }
+      },
+      &pacing);
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
 
   while (running_) {
@@ -361,7 +405,8 @@ void LiveMode::Run() {
         }
         if (video->fps_cap != options_.fps_cap) {
           options_.fps_cap = video->fps_cap;
-          pacer.SetPeriod(PacerPeriod(options_.fps_cap));
+          pacing.pacer.SetPeriod(pacing.mode ? PacerPeriod(options_.fps_cap)
+                                             : Clock::duration::zero());
         }
         if (video->render_resolution != options_.render_resolution) {
           options_.render_resolution = video->render_resolution;
@@ -371,14 +416,6 @@ void LiveMode::Run() {
       if (window_open) {
         if (options_.ui) ApplyUi(backend, *options_.ui);
         if (presentation) presentation->BeforePresent(frame->swap);
-        // Each frame in its slot, one cap period after the previous present (frame_pacer.h).
-        if (pacer.period() != Clock::duration::zero()) {
-          const auto now = Clock::now();
-          const auto slot = pacer.Slot(now);
-          if (slot > now) {
-            rex::thread::Sleep(std::chrono::duration_cast<std::chrono::microseconds>(slot - now));
-          }
-        }
         auto present_start = Clock::now();
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();
@@ -530,6 +567,7 @@ void LiveMode::Run() {
                 recorder.frames(), recorder.bytes_written() / 1048576.0);
   }
   recorder.Close();
+  tl_backend_set_before_swap(backend, nullptr, nullptr);
   tl_backend_destroy(backend);
 }
 

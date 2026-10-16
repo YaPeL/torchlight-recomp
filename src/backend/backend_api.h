@@ -105,6 +105,12 @@ enum tl_key { TL_KEY_F9 = 1 };
 uint32_t tl_backend_take_keys(tl_backend* b);
 /* Vertical sync of a visible window, while running (the window the backend presents in). */
 void tl_backend_set_vsync(tl_backend* b, int vsync);
+/* Called by tl_backend_present after the frame is drawn and before the window's swap (null: none);
+ * the frame pacing waits there. */
+void tl_backend_set_before_swap(tl_backend* b, void (*before_swap)(void* user), void* user);
+/* Waits until the GPU has finished everything submitted so far. Returns 0 when it waited, nonzero
+ * where the render system offers no such wait here (GL3+). */
+int tl_backend_wait_gpu(tl_backend* b);
 /* A window inside another application's (tl_backend_create_child): follows its new size. No-op
  * for other windows. */
 void tl_backend_resize_window(tl_backend* b, uint32_t width, uint32_t height);

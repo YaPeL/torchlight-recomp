@@ -29,6 +29,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <d3d11.h>
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
@@ -241,6 +242,26 @@ void SetCurrentThreadName(const char* name) {
   std::wstring wide(size_t(n), L'\0');
   MultiByteToWideChar(CP_UTF8, 0, name, -1, wide.data(), n);
   SetThreadDescription(GetCurrentThread(), wide.c_str());
+}
+
+bool WaitDirect3D11Idle(void* device) {
+  if (!device) return false;
+  auto* d3d = static_cast<ID3D11Device*>(device);
+  // One event query per device, made on first use (the backend's thread only).
+  static ID3D11Device* query_device = nullptr;
+  static Microsoft::WRL::ComPtr<ID3D11Query> query;
+  if (query_device != d3d) {
+    query.Reset();
+    D3D11_QUERY_DESC desc = {D3D11_QUERY_EVENT, 0};
+    if (FAILED(d3d->CreateQuery(&desc, &query))) return false;
+    query_device = d3d;
+  }
+  Microsoft::WRL::ComPtr<ID3D11DeviceContext> context;
+  d3d->GetImmediateContext(&context);
+  context->End(query.Get());
+  BOOL done = FALSE;
+  while (context->GetData(query.Get(), &done, sizeof(done), 0) == S_FALSE) SwitchToThread();
+  return true;
 }
 
 bool HasDirect3D11(const std::string& plugin_dir) {
