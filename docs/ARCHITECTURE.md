@@ -199,8 +199,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     section button shows its rows, left/right change a value, A a checkbox; the rest follows the
     game. "Reset Defaults" also resets the column;
   - changes apply immediately (scale and vsync through a request to the backend thread, the cap
-    through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button prompts and the A/B swap show the
-    restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
+    through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button
+    prompts and the A/B swap show the restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
   - the labels and the word values are translated with `data/ui/tl_video_strings.txt` (de, fr, es;
     written by us: the game does not have those texts) into the language the runtime reports;
   - the GPU (Linux only for now) is chosen before GL is loaded: the driver variables
