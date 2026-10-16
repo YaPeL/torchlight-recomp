@@ -1,6 +1,6 @@
 // A notice over the game while its thread is held by long work of ours (the mods' unit index built
 // at the first start with a large pack, mods/unit_index_install.cpp), so the still screen does not
-// look like a hang: one line in the bottom centre ("Preparing mods... 42%"), drawn with the
+// look like a hang: one line in the bottom right corner ("Preparing mods... 42%"), drawn with the
 // runtime's dialogs in every mode. It never takes input and is left out of "a dialog is open"
 // (install.cpp). In the native mode no guest frame comes meanwhile, so the consumer presents the
 // last frame again with the notice over it while it is shown, or a black one before the game's

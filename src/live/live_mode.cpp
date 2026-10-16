@@ -297,6 +297,16 @@ void LiveMode::Run() {
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
   bool blank_output = false;  // the output cleared for the busy notice before the first frame
+  // The window's new size, when it changed (before presenting).
+  auto apply_window_size = [&] {
+    if (uint64_t size = pending_window_size_.exchange(0)) {
+      tl_backend_resize_window(backend, uint32_t(size >> 32), uint32_t(size));
+      if (parent.system != platform::NativeWindow::kNone) {
+        window_size = {uint32_t(size >> 32), uint32_t(size)};
+        apply_render_scale();
+      }
+    }
+  };
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
@@ -306,6 +316,7 @@ void LiveMode::Run() {
       // Before the game's first frame (the mods' unit index is built then) there is no frame to
       // show yet: a black one, made as a frame's clear is.
       if (window_open && BusyNoticeShown()) {
+        apply_window_size();
         if (last_present.time_since_epoch().count() == 0 && !blank_output) {
           const float black[4] = {0, 0, 0, 1};
           tl_backend_begin(backend);
@@ -349,13 +360,7 @@ void LiveMode::Run() {
       }
     }
     FrameStep step = RunFrameStep(*frame, content, frontend, [&] {
-      if (uint64_t size = pending_window_size_.exchange(0)) {
-        tl_backend_resize_window(backend, uint32_t(size >> 32), uint32_t(size));
-        if (parent.system != platform::NativeWindow::kNone) {
-          window_size = {uint32_t(size >> 32), uint32_t(size)};
-          apply_render_scale();
-        }
-      }
+      apply_window_size();
       std::optional<PendingVideo> video;
       {
         std::lock_guard lock(pending_video_mutex_);

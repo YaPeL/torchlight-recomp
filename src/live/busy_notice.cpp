@@ -38,8 +38,10 @@ class NoticeDialog : public rex::ui::ImGuiDialog {
       text = g_text;
     }
     const std::string line = BusyNoticeLine(text, g_done.load(), g_total.load());
-    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x * 0.5f, io.DisplaySize.y * 0.85f), ImGuiCond_Always,
-                            ImVec2(0.5f, 0.5f));
+    // The bottom right corner, a small margin in.
+    const float margin = io.DisplaySize.y * 0.03f;
+    ImGui::SetNextWindowPos(ImVec2(io.DisplaySize.x - margin, io.DisplaySize.y - margin), ImGuiCond_Always,
+                            ImVec2(1.0f, 1.0f));
     ImGui::SetNextWindowBgAlpha(0.7f);
     ImGui::Begin("##busy_notice", nullptr,
                  ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoNav |
