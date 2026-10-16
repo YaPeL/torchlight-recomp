@@ -1352,6 +1352,17 @@ or Nintendo (`src/mods/pad_prompts.h`).
   of pad switches the host's texture lookup to that style's folder. The live content then gets the new textures (`live::RefreshNamedTextures`),
   and the A/B swap follows. The guest's own copy stays the start style's; only the Xenos mode
   draws that copy. Changing the file's setting takes effect at the next start.
+- **Testing the live switch without a second pad (validated 2026-10-16).** A virtual pad made with
+  uinput and a real pad's USB IDs is typed by SDL like that pad. `tools/pad_prompts/virtual_pad.py`
+  (Linux, write access to `/dev/uinput`) follows the game's log and, after the first capture of
+  `tools/input_scripts/pad-live-switch.txt`, creates a DualSense (`--kind ps5`; also `ps4`,
+  `switch`) and presses R3 on it; after the second it removes it, and it removes it on any exit.
+  Run it with the game log folder (`~/.local/state/TorchlightRecomp/logs`) and start the game with
+  `pad_prompts = "auto"` and `--dev_input_script tools/input_scripts/pad-live-switch.txt`. The log
+  then shows "pad prompts: the pad changed; playstation5" and "...; xbox", and the three captures
+  show the main menu's prompts as Xbox, PS5, Xbox. Validated with an 8BitDo pad in Xbox mode as
+  the first pad. The switch shows on the next frame, with no texture missing. Steam's Steam Input
+  can take a virtual pad if Steam is open.
 - **Nintendo pads.** By default buttons work by position, as on the 360: the bottom button
   confirms. Each prompt shows the letter of its physical button, so the 360's A shows B. With
   `settings.toml` `swap_confirm_cancel = true` (Nintendo style, chosen or automatic) the right button

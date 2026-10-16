@@ -1,0 +1,12 @@
+# The pad prompts' live switch (docs/mods.md 9b), with tools/pad_prompts/virtual_pad.py running:
+# main menu, capture (the connected pad's prompts); the virtual pad is connected and presses R3
+# (its prompts); capture; it is removed (back to the first pad's); capture.
+press A every 3s until menu MainMenu timeout 120s
+idle 3s
+capture
+idle 8s
+capture
+idle 6s
+capture
+idle 2s
+quit
