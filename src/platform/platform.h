@@ -65,6 +65,10 @@ struct GamepadState {
   float left_x = 0, left_y = 0;  // -1 to 1, y positive down
 };
 GamepadState ReadGamepad();
+// The kind of the first connected gamepad, by its type as SDL reports it (the pad prompts' style,
+// mods/pad_prompts.h). Starts SDL's gamepad support when nothing has yet.
+enum class GamepadKind { kNone, kXbox, kPlayStation, kNintendo, kOther };
+GamepadKind ConnectedGamepadKind();
 
 // Whether there is a display to open windows on (tests that need a GL context skip without one).
 // Linux: $DISPLAY or $WAYLAND_DISPLAY set. Windows: always.

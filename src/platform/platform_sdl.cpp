@@ -20,6 +20,7 @@
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
 #include <SDL3/SDL_hints.h>
+#include <SDL3/SDL_init.h>
 #include <SDL3/SDL_locale.h>
 #include <SDL3/SDL_messagebox.h>
 #include <SDL3/SDL_properties.h>
@@ -129,6 +130,32 @@ GamepadState ReadGamepad() {
   s.left_x = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTX) / 32767.0f;
   s.left_y = SDL_GetGamepadAxis(gamepad, SDL_GAMEPAD_AXIS_LEFTY) / 32767.0f;
   return s;
+}
+
+GamepadKind ConnectedGamepadKind() {
+  if (!SDL_WasInit(SDL_INIT_GAMEPAD) && !SDL_InitSubSystem(SDL_INIT_GAMEPAD)) return GamepadKind::kNone;
+  int count = 0;
+  SDL_JoystickID* ids = SDL_GetGamepads(&count);
+  const SDL_GamepadType type = ids && count > 0 ? SDL_GetGamepadTypeForID(ids[0]) : SDL_GAMEPAD_TYPE_UNKNOWN;
+  const bool any = ids && count > 0;
+  SDL_free(ids);
+  if (!any) return GamepadKind::kNone;
+  switch (type) {
+    case SDL_GAMEPAD_TYPE_XBOX360:
+    case SDL_GAMEPAD_TYPE_XBOXONE:
+      return GamepadKind::kXbox;
+    case SDL_GAMEPAD_TYPE_PS3:
+    case SDL_GAMEPAD_TYPE_PS4:
+    case SDL_GAMEPAD_TYPE_PS5:
+      return GamepadKind::kPlayStation;
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+      return GamepadKind::kNintendo;
+    default:
+      return GamepadKind::kOther;
+  }
 }
 
 // ---- first start ------------------------------------------------------------------------------
