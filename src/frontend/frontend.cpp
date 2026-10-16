@@ -700,7 +700,8 @@ void Frontend::Draw(const commands::Draw& p) {
       }
     }
   }
-  // State and textures.
+  // State and textures, for every draw: a target bind may reset the render system's device
+  // state (Direct3D 11, backend_api.h tl_backend_set_target), so no early out here.
   state_.invert_winding = p.invert_winding;
   tl_backend_set_state(backend_, &state_);
   if (blend_op_ != uint8_t(BlendOp::kAdd)) stats_.degraded.Add("blend operation is not add");

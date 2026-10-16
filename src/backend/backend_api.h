@@ -125,6 +125,10 @@ int tl_backend_set_guest_size(tl_backend* b, uint32_t width, uint32_t height);
  * 16:9 view. No effect when the frame is not wider than 16:9. */
 void tl_backend_set_scene_clip(tl_backend* b, int enabled);
 /* Target 0 is the main colour target. */
+/* Binding a target (or reading one back) may reset the render system's device state: Direct3D
+ * 11's target bind clears every binding (ClearState) while OGRE keeps its blend, depth and texture
+ * bindings as set. Set the state (tl_backend_set_state) and the textures (tl_backend_set_texture)
+ * for every draw, as the frontend does; the backend binds the program's constants again itself. */
 int tl_backend_set_target(tl_backend* b, uint64_t target_id);
 void tl_backend_set_viewport(tl_backend* b, int32_t left, int32_t top, int32_t width,
                              int32_t height);
