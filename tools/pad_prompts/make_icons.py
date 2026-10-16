@@ -30,8 +30,10 @@ ICONS = {
         "r1": "PlayStation Series/Default/playstation_trigger_r1.png",
         "l2": "PlayStation Series/Default/playstation_trigger_l2.png",
         "r2": "PlayStation Series/Default/playstation_trigger_r2.png",
-        "options": "PlayStation Series/Default/playstation5_button_options.png",
-        "create": "PlayStation Series/Default/playstation5_button_create.png",
+        # The PS3 shapes (a triangle, a bar): wide like the 360's start and back, so they read in
+        # the game's small images; the PS5 options and create buttons are tall pills that do not.
+        "options": "PlayStation Series/Default/playstation3_button_start.png",
+        "create": "PlayStation Series/Default/playstation3_button_select.png",
     },
     "nintendo": {
         "a": "Nintendo Switch/Default/switch_button_a.png",
@@ -46,6 +48,18 @@ ICONS = {
         "minus": "Nintendo Switch/Default/switch_button_minus.png",
     },
 }
+
+# Icons whose word above the shape is left out: only the lowest band of visible rows is kept.
+SHAPE_ONLY = {("playstation", "options"), ("playstation", "create")}
+
+
+def lowest_band(image: Image.Image) -> Image.Image:
+    alpha = image.getchannel("A")
+    rows = [y for y in range(image.height) if alpha.crop((0, y, image.width, y + 1)).getbbox()]
+    top = rows[-1]
+    while top - 1 in rows:
+        top -= 1
+    return image.crop((0, top, image.width, rows[-1] + 1))
 
 
 def dds_argb(image: Image.Image) -> bytes:
@@ -70,6 +84,8 @@ def main() -> int:
         (out / style).mkdir(parents=True, exist_ok=True)
         for name, source in icons.items():
             image = Image.open(root / source).convert("RGBA")
+            if (style, name) in SHAPE_ONLY:
+                image = lowest_band(image)
             image = image.crop(image.getchannel("A").getbbox())
             (out / style / f"{name}.dds").write_bytes(dds_argb(image))
             print(f"{style}/{name}.dds {image.size[0]}x{image.size[1]}")
