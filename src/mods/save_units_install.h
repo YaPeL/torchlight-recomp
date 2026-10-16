@@ -16,17 +16,20 @@
 #include <filesystem>
 #include <optional>
 #include <unordered_set>
+#include <vector>
 
 #include "mods/mod_list.h"
 #include "mods/save_units.h"
+#include "mods/unit_cache.h"
 
 namespace torchlight::mods {
 
-// `plan` is the mounted plan (none without mods); `pak` the game's pak.zip; `data_dir` holds mods/
-// and `cache_dir` the unit index cache's unitdata/ (settings/user_folders_in_use.h data, cache).
-void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesystem::path& cache_dir,
-                      const std::filesystem::path& pak, const std::filesystem::path& user_data_root,
-                      const ModPlan* plan);
+// `plan` is the mounted plan (none without mods) and `files` its unit definitions (unit_cache.h
+// ScanModUnitFiles); `pak` the game's pak.zip; `data_dir` holds mods/ and `cache_dir` the unit
+// index cache's unitdata/ (settings/user_folders_in_use.h data, cache).
+void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
+                      const std::filesystem::path& user_data_root, const ModPlan* plan);
 
 // After the game loaded its unit index with the mods' units (mods/unit_index_install.cpp): the
 // GUIDs it holds, or none when that is not known (it loaded part of a file); then every mods' unit

@@ -153,16 +153,22 @@ class TorchlightApp : public rex::ReXApp {
                                                chosen, host.swap_confirm_cancel);
     }
     // Their units in the game's unit index (cached in the user's folder when mods bring any).
+    // The mods' unit definitions, listed once for both steps below (their sizes and times, the
+    // files not opened).
+    std::vector<torchlight::mods::ModUnitFile> unit_files;
+    if (const torchlight::mods::ModPlan* plan = torchlight::game_menu::MountedModPlan()) {
+      const StartupStep step("mods' unit files");
+      unit_files = torchlight::mods::ScanModUnitFiles(torchlight::game_menu::ModsFolder(), *plan);
+    }
     {
       const StartupStep step("unit index");
-      torchlight::mods::InstallUnitIndex(runtime(), folders.data, folders.cache, game_data_root() / "pak.zip",
-                                         torchlight::game_menu::MountedModPlan());
+      torchlight::mods::InstallUnitIndex(runtime(), unit_files, folders.cache, game_data_root() / "pak.zip");
     }
     // Items and creatures the game would not know (a removed mod's) out of the saves, backed up
     // first, so a save never stops the game.
     {
       const StartupStep step("saves' units");
-      torchlight::mods::InstallSaveUnits(folders.data, folders.cache, game_data_root() / "pak.zip",
+      torchlight::mods::InstallSaveUnits(folders.data, unit_files, folders.cache, game_data_root() / "pak.zip",
                                          user_data_root(), torchlight::game_menu::MountedModPlan());
     }
     // Development builds: a controller script (before live::Install sets the input's active

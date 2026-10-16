@@ -130,9 +130,9 @@ void RepairModLists(const std::filesystem::path& user_data_root, const std::vect
 
 }  // namespace
 
-void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesystem::path& cache_dir,
-                      const std::filesystem::path& pak, const std::filesystem::path& user_data_root,
-                      const ModPlan* plan) {
+void InstallSaveUnits(const std::filesystem::path& data_dir, const std::vector<ModUnitFile>& files,
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
+                      const std::filesystem::path& user_data_root, const ModPlan* plan) {
   g_changes.reset();
   g_assumed = {};
   g_saving_blocked = false;
@@ -146,8 +146,6 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   std::string error;
   const auto base = ReadPakUnitIndex(pak, &error);
   if (!base) REXLOG_WARN("units: the game's unit index not read ({})", error);
-  const auto t1 = Clock::now();
-  const auto files = plan ? ScanModUnitFiles(data_dir / "mods", *plan) : std::vector<ModUnitFile>{};
   const auto t2 = Clock::now();
   KnownUnits known;
   if (files.empty()) {
@@ -180,8 +178,8 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   RepairModLists(user_data_root, names, skip);
   Run(user_data_root, known, skip, active, next);
   if (!next.Store(g_settled_file)) REXLOG_WARN("units: cannot write {}", g_settled_file.string());
-  REXLOG_INFO("units: game's index {} ms, unit files {} ms, expected units {} ms, saves {} ms", ms(t0, t1),
-              ms(t1, t2), ms(t2, t3), ms(t3, Clock::now()));
+  REXLOG_INFO("units: game's index {} ms, expected units {} ms, saves {} ms", ms(t0, t2), ms(t2, t3),
+              ms(t3, Clock::now()));
 }
 
 void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& loaded) {

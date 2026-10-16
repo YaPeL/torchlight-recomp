@@ -12,7 +12,9 @@
 
 #include <filesystem>
 
-#include "mods/mod_list.h"
+#include <vector>
+
+#include "mods/unit_cache.h"
 
 namespace rex {
 class Runtime;
@@ -22,10 +24,10 @@ namespace torchlight::mods {
 
 // Before the guest runs, after the mods are mounted (game_menu/mods_install.h): finds the mods'
 // unit definitions, the cache key and a usable cached index, and mounts the cache folder for the
-// game. `plan` is the mounted plan (none: no mods), `pak` the game's pak.zip; `data_dir` holds
-// mods/ and the index is cached in `cache_dir`/unitdata/ (settings/user_folders_in_use.h).
-void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_dir,
-                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
-                      const ModPlan* plan);
+// game. `files` are the mounted mods' unit definitions (unit_cache.h ScanModUnitFiles; none: no
+// mods' units), `pak` the game's pak.zip; the index is cached in `cache_dir`/unitdata/
+// (settings/user_folders_in_use.h).
+void InstallUnitIndex(rex::Runtime* runtime, const std::vector<ModUnitFile>& files,
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak);
 
 }  // namespace torchlight::mods
