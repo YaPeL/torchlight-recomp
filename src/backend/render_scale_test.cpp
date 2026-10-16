@@ -99,6 +99,30 @@ int main(int argc, char** argv) {
   std::vector<uint8_t> output(kWidth * kHeight * 4);
   Check(tl_backend_read_rgba(b, output.data(), kWidth * 4) == 0, "output read at the guest size");
 
+  // The output at the size it is drawn (scale 1.5: 1920x1080), read unfiltered.
+  {
+    tl_backend_begin(b);
+    tl_backend_set_target(b, 0);
+    tl_backend_set_viewport(b, 0, 0, kWidth, kHeight);
+    tl_backend_clear(b, 1, kRed, 1, 0);
+    tl_backend_set_viewport(b, kWidth / 2, 0, kWidth / 2, kHeight);
+    tl_backend_clear(b, 1, kBlue, 1, 0);
+    tl_backend_end(b);
+    uint32_t w = 0, h = 0;
+    tl_backend_output_size(b, &w, &h);
+    Check(w == kWidth * 3 / 2 && h == kHeight * 3 / 2, "output drawn at 1920x1080 at scale 1.5");
+    std::vector<uint8_t> host(size_t(w) * h * 4, 0);
+    Check(tl_backend_read_output_rgba(b, host.data(), w * 4) == 0, "output read at the host size");
+    // Red up to host column 959, blue from 960: the guest's half at the host's resolution.
+    auto at = [&](uint32_t x, uint32_t y) { return &host[(size_t(y) * w + x) * 4]; };
+    bool ok = w == 1920;
+    for (uint32_t y = 0; ok && y < h; y += 53) {
+      ok = at(0, y)[0] > 247 && at(959, y)[0] > 247 && at(959, y)[2] < 8 && at(960, y)[2] > 247 &&
+           at(960, y)[0] < 8 && at(w - 1, y)[2] > 247;
+    }
+    Check(ok, "the host-size output keeps the edge between the halves at full resolution");
+  }
+
   // The guest switches to its 4:3 mode (960x720) at scale 1.5: the main target and the output
   // follow, reads return the new size and the render targets are untouched.
   constexpr uint32_t kNarrow = 960;
