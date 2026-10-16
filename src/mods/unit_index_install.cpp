@@ -19,10 +19,13 @@
 
 
 #include "game_menu/guest_call.h"
+#include "game_menu/save_import_menu.h"
 #include "game_menu/video_menu.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/mods.h"
 #include "guest_abi/unit_index.h"
+#include "live/busy_notice.h"
+#include "live/busy_notice_text.h"
 #include "mods/save_units_install.h"
 #include "mods/unit_cache.h"
 #include "mods/unit_index.h"
@@ -176,7 +179,15 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
   return entry;
 }
 
+// The notice over the still screen while the index is built (live/busy_notice.h): with a large
+// pack it takes many seconds (1984 units, about 17 s), and the game's thread draws nothing meanwhile.
+struct BuildNotice {
+  BuildNotice() { live::ShowBusyNotice(game_menu::NoticeText(live::kPreparingModsText)); }
+  ~BuildNotice() { live::HideBusyNotice(); }
+};
+
 void BuildIndex(GuestCall& call) {
+  const BuildNotice notice;
   std::string error;
   const auto start = std::chrono::steady_clock::now();
   const auto base_index = ReadPakUnitIndex(g.pak, &error);
@@ -186,7 +197,14 @@ void BuildIndex(GuestCall& call) {
   }
   std::vector<UnitEntry> units;
   size_t left_out = 0;
-  for (const std::u16string& path : g.unit_paths) {
+  int logged_percent = 0;
+  for (size_t i = 0; i < g.unit_paths.size(); ++i) {
+    live::SetBusyNoticeProgress(i, g.unit_paths.size());
+    if (const int percent = live::BusyPercent(i, g.unit_paths.size()); percent > logged_percent) {
+      logged_percent = percent;
+      REXLOG_INFO("mods: building the unit index, {}% ({} of {} units)", percent, i, g.unit_paths.size());
+    }
+    const std::u16string& path = g.unit_paths[i];
     std::string why;
     if (auto e = ReadUnit(call, path, &why)) {
       units.push_back(std::move(*e));

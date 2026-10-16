@@ -6,6 +6,7 @@
 #pragma once
 
 #include <filesystem>
+#include <string>
 
 namespace rex {
 class Runtime;
@@ -21,5 +22,10 @@ namespace torchlight::game_menu {
 // backup_retention.h).
 void InstallSaveImport(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
                        const std::filesystem::path& user_data_root);
+
+// `english` in the game's language from the notices' translations (data/ui/tl_import_strings.txt,
+// loaded by InstallSaveImport), as the import's boxes and the saves' notice are; English when there
+// is no line for it. Any thread, after InstallSaveImport.
+std::string NoticeText(const std::string& english);
 
 }  // namespace torchlight::game_menu

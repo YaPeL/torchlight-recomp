@@ -16,6 +16,7 @@
 #include "capture/session.h"
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
+#include "live/busy_notice.h"
 #include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
 #include "live/frame_timing.h"
@@ -298,7 +299,16 @@ void LiveMode::Run() {
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
-    if (!frame) continue;
+    if (!frame) {
+      // No guest frame while the game's thread is held by work of ours (busy_notice.h): the last
+      // frame shown again with the UI over it, so the notice appears and its progress moves.
+      if (window_open && last_present.time_since_epoch().count() != 0 && BusyNoticeShown()) {
+        if (options_.ui) ApplyUi(backend, *options_.ui);
+        window_open = tl_backend_present(backend) != 0;
+        if (options_.request_ui_frame) options_.request_ui_frame();
+      }
+      continue;
+    }
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
     dropped_since_present += frame->dropped_before;

@@ -1,4 +1,5 @@
-# Translations of the save import message boxes (save_import/import_message.cpp) for the languages
+# Translations of the save import message boxes (save_import/import_message.cpp), the saves'
+# notice (mods/save_units_notice.h) and the busy notice (live/busy_notice_text.h) for the languages
 # the game ships, written for this project. A section per language code ([de], [fr], [es]); each
 # line is "English text = translation", and {words} in braces are filled in by the game. Texts
 # without a line stay in English.
@@ -48,6 +49,7 @@ OK = OK
 Mods changed = Mods geändert
 These characters were last saved with other mods: = Diese Charaktere wurden zuletzt mit anderen Mods gespeichert:
 Playing them is at your own risk. = Mit ihnen weiterzuspielen geschieht auf eigene Gefahr.
+Preparing mods... {percent}% = Mods werden vorbereitet... {percent} %
 
 [fr]
 Import from the PC version = Importer depuis la version PC
@@ -94,6 +96,7 @@ OK = OK
 Mods changed = Mods modifiés
 These characters were last saved with other mods: = Ces personnages ont été sauvegardés pour la dernière fois avec d'autres mods :
 Playing them is at your own risk. = Jouer avec eux est à vos risques et périls.
+Preparing mods... {percent}% = Préparation des mods... {percent} %
 
 [es]
 Import from the PC version = Importar de la versión de PC
@@ -140,3 +143,4 @@ OK = Aceptar
 Mods changed = Cambiaron los mods
 These characters were last saved with other mods: = Estos personajes se guardaron por última vez con otros mods:
 Playing them is at your own risk. = Jugarlos es bajo tu propio riesgo.
+Preparing mods... {percent}% = Preparando mods... {percent} %
