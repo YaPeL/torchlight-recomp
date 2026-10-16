@@ -20,6 +20,11 @@ Everything integrated into `develop` since v0.7.6-beta, for players.
   warns about them.
 - The notices about mods' items are shorter, and also in German, French and Spanish.
 - Starting the game with mods is faster when nothing changed since the last start.
+- The first start with a large mod pack shows "Preparing mods..." with its progress in the bottom
+  right corner while the game sets the mods up, instead of a still black screen that looked like a
+  hang.
+- For testers: with `--user_data_root`, the mods folder, the files made for the mods and the PC
+  achievement progress are taken from that folder too, so a test profile never touches your own.
 
 ### Controllers
 
