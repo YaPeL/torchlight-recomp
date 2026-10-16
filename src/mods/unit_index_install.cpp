@@ -240,12 +240,19 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
   g = {};
   g.pak = pak;
   g.folder = cache_dir / "unitdata";
+  using Clock = std::chrono::steady_clock;
+  const auto ms = [](Clock::time_point from, Clock::time_point to) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+  };
+  const auto t0 = Clock::now();
   std::vector<ModUnitFile> files;
   if (plan) files = ScanModUnitFiles(data_dir / "mods", *plan);
+  const auto t1 = Clock::now();
   if (files.empty()) return;  // the Xbox index as it is
   g.active = true;
 
   const auto identity = PakIdentity(pak);
+  const auto t2 = Clock::now();
   if (!identity || !runtime || !runtime->file_system()) {
     REXLOG_ERROR("mods: cannot identify {}; mods' units left out", pak.string());
     g.active = false;
@@ -255,11 +262,15 @@ void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_d
   g.key = UnitCacheKey(files, *identity);
   std::string log;
   g.name = g.key;
+  const auto t3 = Clock::now();
   g.ready = FindCachedUnitIndex(g.folder, g.key, &log).has_value();
+  const auto t4 = Clock::now();
   if (!log.empty()) REXLOG_WARN("mods: {}", log);
   g.runtime = runtime;
-  REXLOG_INFO("mods: {} unit definitions from mods; cached index {}", g.unit_paths.size(),
-              g.ready ? "found" : "to build");
+  REXLOG_INFO("mods: {} unit definitions from mods; cached index {} (unit files {} ms: {} files, pak identity {} ms, "
+              "key {} ms, cache lookup {} ms)",
+              g.unit_paths.size(), g.ready ? "found" : "to build", ms(t0, t1), files.size(), ms(t1, t2), ms(t2, t3),
+              ms(t3, t4));
 }
 
 namespace {

@@ -138,10 +138,17 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   g_saving_blocked = false;
   g_settled_file.clear();
   if (user_data_root.empty()) return;
+  using Clock = std::chrono::steady_clock;
+  const auto ms = [](Clock::time_point from, Clock::time_point to) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+  };
+  const auto t0 = Clock::now();
   std::string error;
   const auto base = ReadPakUnitIndex(pak, &error);
   if (!base) REXLOG_WARN("units: the game's unit index not read ({})", error);
+  const auto t1 = Clock::now();
   const auto files = plan ? ScanModUnitFiles(data_dir / "mods", *plan) : std::vector<ModUnitFile>{};
+  const auto t2 = Clock::now();
   KnownUnits known;
   if (files.empty()) {
     known = MakeKnownUnits(base, {}, true);
@@ -154,6 +161,7 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
                 g_assumed.known.guids.size());
     known = g_assumed.known;
   }
+  const auto t3 = Clock::now();
   // Saves settled at the last start under the same context and unchanged since are not read again;
   // those still settled, and those found settled now, are remembered for the next start.
   const std::vector<std::u16string> names = RepairNames(data_dir);
@@ -172,6 +180,8 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   RepairModLists(user_data_root, names, skip);
   Run(user_data_root, known, skip, active, next);
   if (!next.Store(g_settled_file)) REXLOG_WARN("units: cannot write {}", g_settled_file.string());
+  REXLOG_INFO("units: game's index {} ms, unit files {} ms, expected units {} ms, saves {} ms", ms(t0, t1),
+              ms(t1, t2), ms(t2, t3), ms(t3, Clock::now()));
 }
 
 void CompareWithLoadedUnits(const std::optional<std::unordered_set<int64_t>>& loaded) {
