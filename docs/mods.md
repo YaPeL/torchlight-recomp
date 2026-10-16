@@ -1223,6 +1223,14 @@ devices; and the texture check (`--mods_texture_check`, 7j), since no run used i
   stays in the bottom right corner meanwhile, and the log records every percent. Measured on
   2026-10-16: 85 % of that time is the game's own load of each definition and its BASEFILE chain
   (`kLoadUnitDefinition`), the property reads about 2 %; making it faster is after the release.
+- **Before anything is drawn:** the mods' steps before the guest runs log their times
+  (`startup: <step> in N ms`). They used to open every mod's unit definition twice per start, and
+  a third time at the first start for the saves' check: on a Windows pass, where each open is
+  scanned, about 14 s of black window at every start. Since 2026-10-16 the files are listed once
+  and told apart by size and modification time (`unit_cache.h FileDigest`), and a start that
+  builds the index checks the saves right after the build, under the notice
+  (`save_units_install.h CheckDeferredSaves`). Measured on Linux with the files out of the page
+  cache, black before the backend: first start 2.7 s to 1.1 s, second start 1.2 s to 0.7 s.
 - **Priority:** PC keeps it in `mods/mods.dat` (`DIRECTORY`, `PRIORITY` per mod; a negative priority
   disables a mod). The same file, in the same format, decides ours: if the player copies PC's
   `mods.dat` with the mods, their order is kept; a mod with no entry is added after the others, in
