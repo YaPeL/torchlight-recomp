@@ -8,7 +8,7 @@
   "project": "Torchlight Recomp",
   "approach": "Static recompilation of the XBLA version with ReXGlue, with a native OGRE 14 renderer",
   "notes": "Beta. Needs your own copy of the game. Supports Torchlight PC mods (items, monsters, classes, textures) and texture packs. Android is planned.",
-  "help": ["Testing achievements", "Testing PC mods", "Testing on Android consoles once the port lands"],
+  "help": ["Testing achievements", "Testing PC mods", "Testing on Android consoles once the port lands", "Artists: PlayStation and Nintendo button icons in the game's own style (today they are Kenney's CC0 set)"],
   "maintainers": [{ "name": "YaPeL", "link": "https://github.com/YaPeL" }],
   "links": [{ "label": "Releases", "url": "https://github.com/YaPeL/torchlight-recomp/releases" }]
 }
