@@ -1231,6 +1231,28 @@ devices; and the texture check (`--mods_texture_check`, 7j), since no run used i
   builds the index checks the saves right after the build, under the notice
   (`save_units_install.h CheckDeferredSaves`). Measured on Linux with the files out of the page
   cache, black before the backend: first start 2.7 s to 1.1 s, second start 1.2 s to 0.7 s.
+- **Planned for the next version (with the Android iteration, which changes the start too): the
+  backend before the installs.** What is left black is the time before the backend exists. Today
+  every step before the guest (mods, pad prompts, unit index, saves' check) runs in `OnPostSetup`
+  on the UI thread, and the SDK launches the guest only once it returns; until then there is no
+  backend, and even with one the notice (an ImGui dialog) needs the UI thread free to be drawn. On
+  macOS the backend also asks the main thread to create its window (`platform::RunOnWindowThread`),
+  so moving `live::Install` up alone would hang there while that thread is busy. The plan, with no
+  SDK change:
+  1. `live::Install` at the start of `OnPostSetup`, the controller script's install still before
+     it (its comment says why); the backend comes up at once.
+  2. The busy notice shown then, and the slow installs run on a worker thread, so the UI thread is
+     free to draw the notice and to serve the backend's window on macOS.
+  3. A gate at the guest's entry: a hook on the XEX entry function (address found and documented
+     with its evidence in `guest_abi/`, as every other) waits for the worker, so the game touches no
+     file or mod before they are mounted.
+  4. Checked: nothing those steps install needs the UI thread (the pad prompts' pad change
+     callback, the VFS registrations, the hooks' globals).
+  Cost: several hours and a careful render review; medium risk (start order and a new thread on
+  every platform: a fault breaks the start, not only the notice); runs on Linux and confirmation
+  on Windows and macOS. Gain: no black window without the notice beyond creating the backend
+  (about 0.2 s), with or without mods. Decided on 2026-10-16: v0.12.3-beta's rc1 goes without it if
+  the Windows pass shows 1-2 s of black at most with the changes above; otherwise it is done now.
 - **Priority:** PC keeps it in `mods/mods.dat` (`DIRECTORY`, `PRIORITY` per mod; a negative priority
   disables a mod). The same file, in the same format, decides ours: if the player copies PC's
   `mods.dat` with the mods, their order is kept; a mod with no entry is added after the others, in
