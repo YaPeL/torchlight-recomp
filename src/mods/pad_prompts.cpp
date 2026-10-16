@@ -79,7 +79,7 @@ std::vector<PromptIcon> PromptIcons(PadStyle style, bool swap_confirm_cancel) {
       return {{"a_button", "cross"},       {"b_button", "circle"},     {"button_x", "square"},
               {"y_button", "triangle"},    {"left_bumper", "l1"},      {"right_bumper", "r1"},
               {"left_trigger", "l2"},      {"right_trigger", "r2"},    {"start_button", "options"},
-              {"back_button", "create"}};
+              {"back_button", "create"},       {"controller", "controller"}};
     case PadStyle::kNintendo: {
       // By position the 360's A is the bottom button, B on a Nintendo pad; swapped, the game's A
       // is the right one, A.
@@ -87,7 +87,7 @@ std::vector<PromptIcon> PromptIcons(PadStyle style, bool swap_confirm_cancel) {
       return {{"a_button", swap ? "a" : "b"}, {"b_button", swap ? "b" : "a"}, {"button_x", "y"},
               {"y_button", "x"},              {"left_bumper", "l"},           {"right_bumper", "r"},
               {"left_trigger", "zl"},         {"right_trigger", "zr"},        {"start_button", "plus"},
-              {"back_button", "minus"}};
+              {"back_button", "minus"},       {"controller", "controller"}};
     }
     default:
       return {};
@@ -158,10 +158,17 @@ std::optional<std::vector<uint8_t>> PatchPromptTexture(std::string_view imageset
         *y + *h > long(image->height)) {
       return fail("image " + name + " lies outside its texture");
     }
-    const RgbaImage fitted = FitIcon(icon->icon, uint32_t(*w), uint32_t(*h));
+    // The region cleared, the icon fitted inside a transparent border (kPromptMargin): the game's
+    // windows draw these images a little smaller than their regions and clip the bottom (the 360
+    // art leaves the same border), so an icon reaching the edge would lose its last row.
+    const long margin = *w > 2 * kPromptMargin && *h > 2 * kPromptMargin ? kPromptMargin : 0;
+    const RgbaImage fitted = FitIcon(icon->icon, uint32_t(*w - 2 * margin), uint32_t(*h - 2 * margin));
     for (long row = 0; row < *h; ++row) {
+      std::fill_n(&image->rgba[(size_t(*y + row) * image->width + size_t(*x)) * 4], size_t(*w) * 4, uint8_t(0));
+    }
+    for (uint32_t row = 0; row < fitted.height; ++row) {
       std::copy_n(&fitted.rgba[size_t(row) * fitted.width * 4], fitted.width * 4,
-                  &image->rgba[(size_t(*y + row) * image->width + size_t(*x)) * 4]);
+                  &image->rgba[(size_t(*y + margin + row) * image->width + size_t(*x + margin)) * 4]);
     }
     ++count;
   }

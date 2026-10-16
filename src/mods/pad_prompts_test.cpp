@@ -88,7 +88,7 @@ int main() {
   {
     Check(m::PromptIcons(m::PadStyle::kXbox, true).empty(), "Xbox: the game's images");
     const auto ps = m::PromptIcons(m::PadStyle::kPlayStation, true);
-    Check(ps.size() == 10 && Text(Find(ps, "a_button")) == "cross" && Text(Find(ps, "b_button")) == "circle" &&
+    Check(ps.size() == 11 && Text(Find(ps, "controller")) == "controller" && Text(Find(ps, "a_button")) == "cross" && Text(Find(ps, "b_button")) == "circle" &&
               Text(Find(ps, "button_x")) == "square" && Text(Find(ps, "y_button")) == "triangle",
           "PlayStation: the face buttons by position, the swap ignored");
     const auto by_position = m::PromptIcons(m::PadStyle::kNintendo, false);
@@ -97,7 +97,7 @@ int main() {
           "Nintendo by position: each prompt shows its button's own letter");
     const auto swapped = m::PromptIcons(m::PadStyle::kNintendo, true);
     Check(Text(Find(swapped, "a_button")) == "a" && Text(Find(swapped, "b_button")) == "b" &&
-              Text(Find(swapped, "button_x")) == "y",
+              Text(Find(swapped, "button_x")) == "y" && Text(Find(swapped, "controller")) == "controller",
           "Nintendo swapped: confirm is A, cancel B");
     Check(!Find(ps, "dpad_up") && !Find(ps, "analog_button_left_lr"), "the d-pad and sticks stay the game's");
   }
@@ -124,6 +124,8 @@ int main() {
     Check(image && Pixel(*image, 8, 1)[3] == 0 && Pixel(*image, 15, 1)[3] == 0,
           "the region cleared beside a square icon in a wide place");
     Check(image && Pixel(*image, 12, 2)[1] == 255 && Pixel(*image, 12, 2)[3] == 255, "the icon in the region's centre");
+    Check(image && Pixel(*image, 12, 0)[3] == 0 && Pixel(*image, 12, 3)[3] == 0,
+          "a transparent border above and below the icon");
     Check(image && Pixel(*image, 12, 6)[0] == 255, "below the region untouched");
     std::string why;
     const std::string outside = "<Imageset Name=\"w\" Imagefile=\"t.dds\"><Image Name=\"a_button\" XPos=\"14\" "

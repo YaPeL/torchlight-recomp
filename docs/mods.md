@@ -1318,10 +1318,16 @@ or Nintendo (`src/mods/pad_prompts.h`).
   imagesets (`a_button`, `b_button`, `button_x`, `y_button`, `left_bumper`, `right_bumper`,
   `left_trigger`, `right_trigger`, `start_button`, `back_button`). The d-pad and stick images
   (`dpad_*`, `analog_button_*`) are drawn the same on every pad and stay the game's. In the
-  user's pak these are in `widgets.dds` (one) and `widgets1.dds` (nine).
+  user's pak these are in `widgets.dds` (one) and `widgets1.dds` (nine). With PlayStation or
+  Nintendo the help screen's controller picture (`controller`, in `ratings.dds`) becomes that
+  style's controller silhouette (rasterized from the pack's SVGs, since the picture is drawn about
+  350 px wide); with Xbox it stays the 360's drawing.
 - **How.** The textures are rewritten at start, not the imagesets. Each image's region is cleared
   and the icon is scaled into it with its aspect kept, so every window that names an image keeps
-  its size and place. The textures go to the cache (`prompts/`), are mounted as `tlprompt:` and are
+  its size and place. A transparent border of one texel is kept around it, like the 360's own art:
+  the game's windows draw these images slightly smaller than their regions and clip the bottom
+  (the Options legend draws the 21-texel face buttons 19 px tall), so an icon reaching the edge
+  lost its last row. The textures go to the cache (`prompts/`), are mounted as `tlprompt:` and are
   added to the game's resource groups before the replacements folder (7k), so a player's own
   replacement of a widget texture still wins. The host reads them through the texture lookup like
   the replacements' files, and captures keep their bytes. Nothing is written for Xbox.

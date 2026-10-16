@@ -3,7 +3,8 @@
 // Nintendo icons instead (data/ui/prompts/, Kenney's "Input Prompts", CC0). The imagesets are not
 // touched: their textures are rewritten with each replaced image's region cleared and the icon
 // scaled into it (aspect kept, centred), so every window that names an image keeps its size and
-// place. The sticks and the d-pad are drawn the same on every pad and stay the game's.
+// place. The help screen's controller picture ("controller") becomes the style's controller
+// silhouette. The sticks and the d-pad are drawn the same on every pad and stay the game's.
 //
 // The app writes the textures before the guest runs and serves them like the replacements folder
 // (game_menu/mods_install.cpp): the game loads its imagesets once, so a change of style takes
@@ -57,8 +58,11 @@ std::vector<PromptIcon> PromptIcons(PadStyle style, bool swap_confirm_cancel);
 // centred, transparent around it.
 RgbaImage FitIcon(const RgbaImage& icon, uint32_t width, uint32_t height);
 
-// The imageset's texture with every image of `icons` (by image name) redrawn in its region; the
-// other pixels as they were. An uncompressed A8R8G8B8 DDS. None, with `why`, when the texture does
+// Transparent texels kept around an icon inside its region, like the 360's own button art.
+inline constexpr long kPromptMargin = 1;
+
+// The imageset's texture with every image of `icons` (by image name) redrawn in its region, inside
+// a kPromptMargin border; the other pixels as they were. An uncompressed A8R8G8B8 DDS. None, with `why`, when the texture does
 // not decode or an image lies outside it.
 struct NamedIcon {
   std::string image;

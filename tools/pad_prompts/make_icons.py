@@ -8,7 +8,8 @@ written as an uncompressed A8R8G8B8 DDS, the format the game's own code reads ba
     python3 tools/pad_prompts/make_icons.py KENNEY_FOLDER [--out data/ui/prompts]
 
 KENNEY_FOLDER is the extracted pack (the folder holding "PlayStation Series" and
-"Nintendo Switch"). Needs Pillow.
+"Nintendo Switch"). Needs Pillow, and PyGObject's GdkPixbuf (with its SVG loader) for the
+controller pictures.
 """
 
 import argparse
@@ -34,6 +35,7 @@ ICONS = {
         # the game's small images; the PS5 options and create buttons are tall pills that do not.
         "options": "PlayStation Series/Default/playstation3_button_start.png",
         "create": "PlayStation Series/Default/playstation3_button_select.png",
+        "controller": "PlayStation Series/Vector/controller_playstation5.svg",
     },
     "nintendo": {
         "a": "Nintendo Switch/Default/switch_button_a.png",
@@ -46,11 +48,31 @@ ICONS = {
         "zr": "Nintendo Switch/Default/switch_button_zr.png",
         "plus": "Nintendo Switch/Default/switch_button_plus.png",
         "minus": "Nintendo Switch/Default/switch_button_minus.png",
+        "controller": "Nintendo Switch/Vector/controller_switch_pro.svg",
     },
 }
 
 # Icons whose word above the shape is left out: only the lowest band of visible rows is kept.
 SHAPE_ONLY = {("playstation", "options"), ("playstation", "create")}
+
+
+# The help screen draws its controller picture about 350 px wide; the pack's PNGs are 128 px at
+# most, so the controllers come from its SVGs, rasterized this large (the app only scales down).
+SVG_SIZE = 512
+
+
+def open_icon(path: Path) -> Image.Image:
+    if path.suffix != ".svg":
+        return Image.open(path).convert("RGBA")
+    import gi
+
+    gi.require_version("GdkPixbuf", "2.0")
+    from gi.repository import GdkPixbuf
+
+    pixbuf = GdkPixbuf.Pixbuf.new_from_file_at_scale(str(path), SVG_SIZE, SVG_SIZE, True)
+    mode = "RGBA" if pixbuf.get_has_alpha() else "RGB"
+    size = (pixbuf.get_width(), pixbuf.get_height())
+    return Image.frombytes(mode, size, pixbuf.get_pixels(), "raw", mode, pixbuf.get_rowstride()).convert("RGBA")
 
 
 def lowest_band(image: Image.Image) -> Image.Image:
@@ -83,7 +105,7 @@ def main() -> int:
     for style, icons in ICONS.items():
         (out / style).mkdir(parents=True, exist_ok=True)
         for name, source in icons.items():
-            image = Image.open(root / source).convert("RGBA")
+            image = open_icon(root / source)
             if (style, name) in SHAPE_ONLY:
                 image = lowest_band(image)
             image = image.crop(image.getchannel("A").getbbox())
