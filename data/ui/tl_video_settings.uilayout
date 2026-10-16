@@ -176,11 +176,42 @@
                 <Property Name="MousePassThroughEnabled" Value="True" />
             </Window>
         </Window>
-        <Window Type="ceguiWidget/Checkbox" Name="tl_video/vsync" >
+        <Window Type="ceguiWidget/StaticText" Name="tl_video/pad_prompts/label" >
+            <Property Name="Font" Value="Serif14" />
+            <Property Name="Text" Value="Button Prompts" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="ClippedByParent" Value="False" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,313},{0,276},{0,335}}" />
+            <Property Name="HorzTextFormatting" Value="CentreAligned" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Property Name="MousePassThroughEnabled" Value="True" />
+        </Window>
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/pad_prompts" >
             <Property Name="tabOrder" Value="17" />
+            <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,330},{0,279},{0,368}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/pad_prompts/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="&lt; Auto &gt;" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-3},{1,0},{1,-3}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/Checkbox" Name="tl_video/vsync" >
+            <Property Name="tabOrder" Value="18" />
             <Property Name="Selected" Value="True" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
-            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,315},{0,66},{0,355}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,371},{0,66},{0,411}}" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Window Type="ceguiWidget/StaticText" Name="tl_video/vsync/label" >
                 <Property Name="Font" Value="Serif14" />
@@ -188,7 +219,24 @@
                 <Property Name="TextColour" Value="FFFCD615" />
                 <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
                 <Property Name="ClippedByParent" Value="False" />
-                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,274},{0,32.0788}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,134},{0,32.0788}}" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
+        <Window Type="ceguiWidget/Checkbox" Name="tl_video/swap_confirm_cancel" >
+            <Property Name="tabOrder" Value="19" />
+            <Property Name="Selected" Value="False" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,150},{0,371},{0,200},{0,411}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/swap_confirm_cancel/label" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="Swap A/B" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="ClippedByParent" Value="False" />
+                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,145},{0,32.0788}}" />
                 <Property Name="WantsMultiClickEvents" Value="False" />
                 <Property Name="MousePassThroughEnabled" Value="True" />
             </Window>
@@ -198,19 +246,19 @@
             <Property Name="Text" Value="Renderer" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
             <Property Name="ClippedByParent" Value="False" />
-            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,359},{0,276},{0,381}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,415},{0,276},{0,437}}" />
             <Property Name="HorzTextFormatting" Value="CentreAligned" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="MousePassThroughEnabled" Value="True" />
         </Window>
         <Window Type="ceguiWidget/ImageButton" Name="tl_video/renderer" >
-            <Property Name="tabOrder" Value="18" />
+            <Property Name="tabOrder" Value="20" />
             <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
             <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
             <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
             <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
-            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,376},{0,279},{0,414}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,432},{0,279},{0,470}}" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="Disabled" Value="True" />
             <Property Name="Alpha" Value="0.5" />
@@ -231,19 +279,19 @@
             <Property Name="Text" Value="GPU" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
             <Property Name="ClippedByParent" Value="False" />
-            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,415},{0,276},{0,437}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,13},{0,471},{0,276},{0,493}}" />
             <Property Name="HorzTextFormatting" Value="CentreAligned" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="MousePassThroughEnabled" Value="True" />
         </Window>
         <Window Type="ceguiWidget/ImageButton" Name="tl_video/gpu" >
-            <Property Name="tabOrder" Value="19" />
+            <Property Name="tabOrder" Value="21" />
             <Property Name="HoverImage" Value="set:widgets2 image:slider_bar_rollover" />
             <Property Name="NormalImage" Value="set:widgets2 image:slider_bar" />
             <Property Name="PushedImage" Value="set:widgets2 image:slider_bar_rollover" />
             <Property Name="DisabledImage" Value="set:widgets2 image:slider_bar" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
-            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,432},{0,279},{0,470}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,488},{0,279},{0,526}}" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="Disabled" Value="True" />
             <Property Name="Alpha" Value="0.5" />
@@ -265,7 +313,7 @@
             <Property Name="TextColour" Value="FFFCD615" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
             <Property Name="ClippedByParent" Value="False" />
-            <Property Name="UnifiedAreaRect" Value="{{0,0},{0,479},{0,295},{0,557}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,0},{0,531},{0,295},{0,575}}" />
             <Property Name="HorzTextFormatting" Value="WordWrapCentreAligned" />
             <Property Name="WantsMultiClickEvents" Value="False" />
             <Property Name="MousePassThroughEnabled" Value="True" />
