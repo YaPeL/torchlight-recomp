@@ -438,7 +438,7 @@ jobs:
           - **Button icons for your controller**: PlayStation (PS3, PS4, PS5) and Nintendo icons, chosen from the controller you use. Options, Controls lets you pick them and swap A/B on Nintendo controllers.
           - **Frame rate limit "Auto"**: follows your display's refresh rate (up to 144; 60 on battery and on the Steam Deck). Existing settings keep their limit.
           - **About one frame less latency** with vsync, and slightly higher frame rates in fights and in the town.
-          - Options in three sections (Video, Controls, Extras); starting with mods is faster when nothing changed.
+          - Options in three sections (Video, Controls, Extras); starting with mods is faster when nothing changed, and the first start with a large mod pack shows its progress ("Preparing mods...") instead of a black screen.
 
           **Fixed**
           - With mod packs that redraw item icons (Enhanced Edition, JCC - Main), the game's own items and skills showed empty frames.
