@@ -3,7 +3,8 @@
 // look like a hang: one line in the bottom centre ("Preparing mods... 42%"), drawn with the
 // runtime's dialogs in every mode. It never takes input and is left out of "a dialog is open"
 // (install.cpp). In the native mode no guest frame comes meanwhile, so the consumer presents the
-// last frame again with the notice over it while it is shown (live_mode.cpp).
+// last frame again with the notice over it while it is shown, or a black one before the game's
+// first frame (live_mode.cpp).
 //
 // Threads: Show, Progress and Hide from any thread (the game's, usually); the dialog is created,
 // drawn and destroyed on the UI thread.

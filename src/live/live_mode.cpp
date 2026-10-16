@@ -296,13 +296,23 @@ void LiveMode::Run() {
   FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
+  bool blank_output = false;  // the output cleared for the busy notice before the first frame
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
     if (!frame) {
       // No guest frame while the game's thread is held by work of ours (busy_notice.h): the last
       // frame shown again with the UI over it, so the notice appears and its progress moves.
-      if (window_open && last_present.time_since_epoch().count() != 0 && BusyNoticeShown()) {
+      // Before the game's first frame (the mods' unit index is built then) there is no frame to
+      // show yet: a black one, made as a frame's clear is.
+      if (window_open && BusyNoticeShown()) {
+        if (last_present.time_since_epoch().count() == 0 && !blank_output) {
+          const float black[4] = {0, 0, 0, 1};
+          tl_backend_begin(backend);
+          tl_backend_clear(backend, 1, black, 1.0f, 0);
+          tl_backend_end(backend);
+          blank_output = true;
+        }
         if (options_.ui) ApplyUi(backend, *options_.ui);
         window_open = tl_backend_present(backend) != 0;
         if (options_.request_ui_frame) options_.request_ui_frame();
