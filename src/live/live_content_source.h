@@ -46,6 +46,10 @@ class LiveContentSource : public frontend::ContentSource {
   // With the player's mods or replacements, the file the guest's OGRE takes (mods/texture_files.h).
   std::optional<std::vector<uint8_t>> NamedTexture(const commands::TextureDesc& t) const override;
 
+  // The textures the guest loaded by name (not manual, not render targets) whose name's
+  // RefreshKey (named_texture_refresh.h) is one of `keys`.
+  std::vector<commands::TextureDesc> NamedTextures(const std::vector<std::string>& keys) const;
+
   size_t content_bytes() const;
 
  private:
