@@ -60,19 +60,37 @@ int main() {
   Check(even >= frames * 9 / 10, "nine presents in ten one period after the previous one");
   Check(waited / frames < 3ms, "the added latency stays under the frames' spread");
 
+  // One frame 12 ms late (a hitch): the slots move later with it, and within two seconds the wait
+  // is back under the frames' spread.
+  {
+    const auto base = last + period;
+    Clock::duration after_hitch{};
+    int counted = 0;
+    for (int i = 0; i < 240; ++i) {
+      auto ready = base + i * period + 1ms + std::chrono::microseconds(Next() % 4000);
+      if (i == 0) ready += 12ms;
+      const auto slot = pacer.Slot(ready);
+      if (i >= 120) {
+        after_hitch += slot - ready;
+        ++counted;
+      }
+      last = slot;
+    }
+    std::printf("mean wait 2-4 s after a hitch %.2f ms\n",
+                std::chrono::duration<double, std::milli>(after_hitch).count() / counted);
+    Check(after_hitch / counted < 3ms, "the wait comes back after a hitch");
+  }
+
   // A stall (a level load): the next frame is presented when ready and the slots follow it.
   const auto after = last + 2s;
   Check(pacer.Slot(after) == after, "after a stall: presented when ready");
-  // (A frame ready long before its slot moves the slots earlier by one step.)
-  Check(pacer.Slot(after + 2ms) == after + period - FramePacer::kEarlierStep,
-        "then one period later");
+  Check(pacer.Slot(after + 2ms) == after + period, "then one period later");
 
   // A new cap restarts the slots.
   pacer.SetPeriod(period / 2);
   const auto t = after + 10s;
   Check(pacer.Slot(t) == t, "new period: presented when ready");
-  Check(pacer.Slot(t + 1ms) == t + period / 2 - FramePacer::kEarlierStep,
-        "then half the old period later");
+  Check(pacer.Slot(t + 1ms) == t + period / 2, "then half the old period later");
 
   if (g_failures) return 1;
   std::printf("frame_pacer_test: ok\n");
