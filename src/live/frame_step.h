@@ -26,7 +26,8 @@ struct FrameStep {
   std::array<uint32_t, commands::kOpcodeCount> commands_by_opcode{};  // index: opcode - 1
 };
 
-// Applies the frame's resources (textures are created here, between frames, never inside a draw),
+// Applies the frame's resources (textures are created here, between frames, never inside a draw;
+// so are the named textures a refresh asked for, named_texture_refresh.h),
 // runs its commands through the frontend, calls `after_commands` (presentation) and then frees
 // superseded and destroyed content on the host.
 FrameStep RunFrameStep(LiveFrame& frame, LiveContentSource& content, frontend::Frontend& frontend,

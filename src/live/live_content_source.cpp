@@ -1,11 +1,13 @@
 #include "live/live_content_source.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <string_view>
 
 #include <rex/logging.h>
 
+#include "live/named_texture_refresh.h"
 #include "mods/texture_files.h"
 
 namespace torchlight::live {
@@ -144,6 +146,17 @@ std::optional<std::vector<uint8_t>> LiveContentSource::NamedTexture(const comman
       break;
   }
   return std::nullopt;
+}
+
+std::vector<commands::TextureDesc> LiveContentSource::NamedTextures(
+    const std::vector<std::string>& keys) const {
+  std::vector<commands::TextureDesc> found;
+  if (keys.empty()) return found;
+  for (const auto& [identity, t] : textures_) {
+    if (t.name.empty() || t.manual || t.render_target) continue;
+    if (std::find(keys.begin(), keys.end(), RefreshKey(t.name)) != keys.end()) found.push_back(t);
+  }
+  return found;
 }
 
 size_t LiveContentSource::content_bytes() const {
