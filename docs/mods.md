@@ -1218,7 +1218,7 @@ devices; and the texture check (`--mods_texture_check`, 7j), since no run used i
   (`unitdata/`, `atlases/`, `prompts/`) go below the runtime's cache root
   (`settings/user_folders_in_use.h`), so a test run never reads or writes the player's.
 - **First start with a large pack:** the unit index (7e) is built before the game draws its first
-  frame (Elysium Edition: 1984 units, about 4 s on the Linux desktop, about 17 s on a Windows pass);
+  frame (Enhanced Edition: 1984 units, about 4 s on the Linux desktop, about 17 s on a Windows pass);
   a "Preparing mods... N%" notice (`live/busy_notice.h`, translated in `tl_import_strings.txt`)
   stays in the bottom right corner meanwhile, and the log records every percent. Measured on
   2026-10-16: 85 % of that time is the game's own load of each definition and its BASEFILE chain

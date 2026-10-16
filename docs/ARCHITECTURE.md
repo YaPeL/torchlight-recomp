@@ -70,8 +70,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   OGRE's is `<log>_ogre.log`), saves to the runtime's data folder (`DataDir`, the runtime's default
   `user_data_root`). The mods, their caches (unit index, merged atlases, pad prompts) and the PC
   achievement progress follow `--user_data_root` / `--cache_root` when they come
-  (`settings/user_folders_in_use.h`, resolved by `live::UserFoldersInUse`). The first line of each log names the executable and the build's commit
-  (`cmake/build_info.cmake`).
+  (`settings/user_folders_in_use.h`, resolved by `live::UserFoldersInUse`). The first line of each
+  log names the executable and the build's commit (`cmake/build_info.cmake`).
 - First start (REL.4, `src/game_setup/`): without `--game_data_root`, the game's files live in
   `platform::GameDataDir()` (`~/.local/share/TorchlightRecomp/game/`; its `import/` is where saves
   to import go). At every start its `default.xex` is checked (size and SHA-256); when it does not
