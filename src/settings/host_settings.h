@@ -30,6 +30,9 @@ enum class Aspect { kAuto, k4x3, k16x10, k16x9, k21x9, k32x9 };
 // Which achievement set the game uses: the Xbox 360 one (the game's own 12) or the PC one
 // (the PC version's 66, achievements/). Read once at startup.
 enum class AchievementSet { kXbox, kPc };
+// The pad prompts' style (mods/pad_prompts.h): automatic (the connected pad's) or a fixed one. Read
+// once at startup.
+enum class PadPrompts { kAuto, kXbox, kPlayStation, kNintendo };
 
 // Stored values. Empty strings and zero sizes mean "automatic".
 struct HostSettings {
@@ -52,6 +55,11 @@ struct HostSettings {
   // Achievement set; empty when the file has no valid "achievements" key (EffectiveAchievements:
   // Xbox). Not written back while empty.
   std::optional<AchievementSet> achievements;
+  // Pad prompts' style.
+  PadPrompts pad_prompts = PadPrompts::kAuto;
+  // With Nintendo's style: the right button (A) confirms and the bottom one (B) cancels, as on a
+  // Switch, instead of by position as on the 360.
+  bool swap_confirm_cancel = false;
   bool operator==(const HostSettings&) const = default;
 };
 
@@ -87,7 +95,8 @@ struct Capabilities {
 
 // Settings the menu shows. Changing one of these takes effect after restarting the game.
 enum class Setting {
-  kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements
+  kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements, kPadPrompts,
+  kSwapConfirmCancel
 };
 bool RequiresRestart(Setting setting);
 // The achievement set in effect: the setting, or Xbox when it is missing or invalid.
@@ -96,6 +105,8 @@ inline AchievementSet EffectiveAchievements(const HostSettings& settings) {
 }
 // "xbox" / "pc".
 std::string_view AchievementSetName(AchievementSet set);
+// "auto" / "xbox" / "playstation" / "nintendo".
+std::string_view PadPromptsName(PadPrompts prompts);
 
 // The GPU setting for the log: "automatic" without a choice, else "NAME (ID)", the name looked up
 // in `gpus` by id, else the stored gpu_name (files written before gpu_name existed lack it), else
