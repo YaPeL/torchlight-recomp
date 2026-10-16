@@ -1309,7 +1309,7 @@ Edition, the 29-mod pack), compared with PC's own, window by window. **[read: th
   layout has nothing to apply to: they come with the PC interface above.
 - **Not seen:** a mod with a `.uilayout` of its own (the Xbox format); none exists for PC.
 
-## 9b. Pad prompt styles (2026-10-16, branch feature/pad-prompts)
+## 9b. Pad prompt styles (2026-10-16, branch feature/pad-prompt-styles)
 
 The game's button prompts drawn for the player's pad: Xbox (the game's own images), PlayStation
 or Nintendo (`src/mods/pad_prompts.h`).
