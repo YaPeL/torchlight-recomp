@@ -9,7 +9,8 @@ endif()
 
 add_library(torchlight_mods STATIC dat_text.cpp mod_list.cpp save_safety.cpp saved_mod_list.cpp
     unit_index.cpp unit_cache.cpp save_units.cpp settled_saves.cpp
-    save_units_notice.cpp text_encoding.cpp wardrobe_guard.cpp class_list.cpp icon_atlas.cpp pad_prompts.cpp)
+    save_units_notice.cpp text_encoding.cpp wardrobe_guard.cpp class_list.cpp icon_atlas.cpp pad_prompts.cpp
+    replacements_guest_view.cpp)
 target_include_directories(torchlight_mods PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_mods PUBLIC cxx_std_23)
 target_link_libraries(torchlight_mods PUBLIC torchlight_save_import)
@@ -25,6 +26,10 @@ add_executable(mods_icon_atlas_test icon_atlas_test.cpp)
 target_link_libraries(mods_icon_atlas_test PRIVATE torchlight_mods torchlight_miniz)
 target_compile_options(mods_icon_atlas_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mods_icon_atlas_test COMMAND mods_icon_atlas_test)
+add_executable(mods_replacements_guest_view_test replacements_guest_view_test.cpp)
+target_link_libraries(mods_replacements_guest_view_test PRIVATE torchlight_mods)
+target_compile_options(mods_replacements_guest_view_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME mods_replacements_guest_view_test COMMAND mods_replacements_guest_view_test)
 add_executable(mods_pad_prompts_test pad_prompts_test.cpp)
 target_link_libraries(mods_pad_prompts_test PRIVATE torchlight_mods torchlight_miniz)
 target_compile_options(mods_pad_prompts_test PRIVATE -Wall -Wextra -Werror)
