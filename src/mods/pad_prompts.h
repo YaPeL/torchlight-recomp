@@ -89,6 +89,18 @@ struct WrittenPrompts {
 // patched (PatchPromptTexture) and written into `out` at the texture's path, as a file of the pak
 // would be in the replacements folder. The icons are read from `icons_dir`/<style name>/. `out`
 // is emptied first; nothing is written for Xbox. Problems go to `log` (one line each).
+// The prepared textures are kept between runs (game_menu/mods_install.cpp): under a folder named
+// by this key, made of the pak's identity (unit_cache.h PakIdentity), every icon file's path and
+// bytes, and kPromptRulesVersion; a change to any of them makes a new key, so the textures are
+// written again. Hex.
+inline constexpr uint32_t kPromptRulesVersion = 1;
+std::string PromptCacheKey(uint64_t pak_identity, const std::filesystem::path& icons_dir);
+// What WritePromptTextures wrote into a style's folder, recorded beside the textures (one line per
+// texture: path, a tab, the images redrawn), so a later run can reuse the folder. ReadPromptList
+// returns none when the list is missing, unreadable or names a texture that is not there.
+bool WritePromptList(const std::filesystem::path& folder, const std::vector<WrittenPrompts>& written);
+std::optional<std::vector<WrittenPrompts>> ReadPromptList(const std::filesystem::path& folder);
+
 std::vector<WrittenPrompts> WritePromptTextures(const std::filesystem::path& pak, const std::filesystem::path& icons_dir,
                                                 PadStyle style, bool swap_confirm_cancel,
                                                 const std::filesystem::path& out, std::vector<std::string>& log);

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <iterator>
 #include <map>
@@ -36,7 +37,63 @@ std::vector<uint8_t> ReadFile(const std::filesystem::path& path) {
   return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
+constexpr uint64_t kFnvBasis = 0xCBF29CE484222325ull;
+uint64_t Fnv(uint64_t h, const void* data, size_t size) {
+  const auto* p = static_cast<const uint8_t*>(data);
+  for (size_t i = 0; i < size; ++i) h = (h ^ p[i]) * 0x100000001B3ull;
+  return h;
+}
+
+// The list's file name inside a style's folder: not a path of the pak, so the texture lookup never
+// asks for it.
+constexpr const char* kPromptListFile = "prompts.list";
+
 }  // namespace
+
+std::string PromptCacheKey(uint64_t pak_identity, const std::filesystem::path& icons_dir) {
+  uint64_t h = Fnv(kFnvBasis, &pak_identity, sizeof pak_identity);
+  h = Fnv(h, &kPromptRulesVersion, sizeof kPromptRulesVersion);
+  std::vector<std::filesystem::path> files;
+  std::error_code ec;
+  for (auto it = std::filesystem::recursive_directory_iterator(icons_dir, ec);
+       !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+    if (it->is_regular_file(ec)) files.push_back(it->path());
+  }
+  std::sort(files.begin(), files.end());
+  for (const auto& file : files) {
+    const std::string name = std::filesystem::relative(file, icons_dir, ec).generic_string();
+    h = Fnv(h, name.data(), name.size() + 1);
+    const std::vector<uint8_t> bytes = ReadFile(file);
+    h = Fnv(h, bytes.data(), bytes.size());
+  }
+  char hex[17];
+  std::snprintf(hex, sizeof hex, "%016llx", static_cast<unsigned long long>(h));
+  return hex;
+}
+
+bool WritePromptList(const std::filesystem::path& folder, const std::vector<WrittenPrompts>& written) {
+  std::ofstream out(folder / kPromptListFile, std::ios::binary | std::ios::trunc);
+  for (const auto& w : written) out << w.texture << '\t' << w.replaced << '\n';
+  return bool(out);
+}
+
+std::optional<std::vector<WrittenPrompts>> ReadPromptList(const std::filesystem::path& folder) {
+  std::ifstream in(folder / kPromptListFile, std::ios::binary);
+  if (!in) return std::nullopt;
+  std::vector<WrittenPrompts> written;
+  std::string line;
+  std::error_code ec;
+  while (std::getline(in, line)) {
+    const size_t tab = line.find('\t');
+    const auto replaced = tab == std::string::npos ? std::nullopt : Number(line.substr(tab + 1));
+    if (!replaced || *replaced < 0) return std::nullopt;
+    WrittenPrompts w{line.substr(0, tab), size_t(*replaced)};
+    if (!std::filesystem::is_regular_file(folder / w.texture, ec)) return std::nullopt;
+    written.push_back(std::move(w));
+  }
+  if (written.empty()) return std::nullopt;
+  return written;
+}
 
 PadStyle EffectivePadStyle(std::optional<PadFamily> chosen, PadKind connected) {
   PadStyle by_pad = PadStyle::kXbox;

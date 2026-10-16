@@ -1336,9 +1336,11 @@ or Nintendo (`src/mods/pad_prompts.h`).
   its size and place. A transparent border of one texel is kept around it, like the 360's own art:
   the game's windows draw these images slightly smaller than their regions and clip the bottom
   (the Options legend draws the 21-texel face buttons 19 px tall), so an icon reaching the edge
-  lost its last row. The textures go to the cache (`prompts/`), are mounted as `tlprompt:` and are
-  added to the game's resource groups before the replacements folder (7k), so a player's own
-  replacement of a widget texture still wins. The host reads them through the texture lookup like
+  lost its last row. The textures go to the cache (`prompts/<key>/<style>/`), kept between runs:
+  the key is a digest of the pak's identity, the icon files and `kPromptRulesVersion`, so they are
+  written again only when one of them changes (Nintendo with the swap has a folder of its own).
+  They are mounted as `tlprompt:` and added to the game's resource groups before the replacements
+  folder (7k), so a player's own replacement of a widget texture still wins. The host reads them through the texture lookup like
   the replacements' files, and captures keep their bytes. Nothing is written for Xbox.
 - **The icons.** Kenney's "Input Prompts" 1.5 (CC0, `THIRD_PARTY_NOTICES.md`), converted by
   `tools/pad_prompts/make_icons.py` into `data/ui/prompts/`. They are flat white or coloured
