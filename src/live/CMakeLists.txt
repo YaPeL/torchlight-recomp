@@ -63,7 +63,7 @@ add_test(NAME deferred_check_test COMMAND deferred_check_test)
 # The consumer side (backend thread): links the frontend and the OGRE backend, so it is a library
 # of its own; the queue and the store above stay testable without OGRE.
 add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp frame_timing.cpp frame_counter.cpp
-    frame_step.cpp install.cpp ui_overlay.cpp ui_gamepad.cpp)
+    frame_step.cpp install.cpp ui_overlay.cpp ui_gamepad.cpp named_texture_refresh_stub.cpp)
 target_link_libraries(torchlight_live_mode PUBLIC torchlight_live torchlight_frontend torchlight_texture_files rex::runtime
     torchlight_platform torchlight_settings)
 target_include_directories(torchlight_live_mode PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
