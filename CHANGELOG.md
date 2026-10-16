@@ -5,7 +5,7 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
-## v0.12.3-beta (not released yet)
+## v0.12.4-beta (not released yet)
 
 Everything integrated into `develop` since v0.7.6-beta, for players.
 
@@ -19,7 +19,8 @@ Everything integrated into `develop` since v0.7.6-beta, for players.
 - At the start, the game lists the characters last saved with a different set of mods, the way PC
   warns about them.
 - The notices about mods' items are shorter, and also in German, French and Spanish.
-- Starting the game with mods is faster when nothing changed since the last start.
+- Starting the game with mods is faster, the first time with a new set of mods and above all
+  when nothing changed since the last start.
 - The first start with a large mod pack shows "Preparing mods..." with its progress in the bottom
   right corner while the game sets the mods up, instead of a still black screen that looked like a
   hang.
@@ -52,6 +53,8 @@ Everything integrated into `develop` since v0.7.6-beta, for players.
   backup.
 - When the renderer could not start (no OpenGL 3.3), the window stayed black. Now a message says
   why and the game closes.
+- A texture pack in `replacements` (TNNR) could crash the game when changing level. The game no
+  longer keeps a second, full-size copy of the pack's textures in the console's memory.
 
 ### Known limitations
 

@@ -1253,6 +1253,11 @@ devices; and the texture check (`--mods_texture_check`, 7j), since no run used i
   on Windows and macOS. Gain: no black window without the notice beyond creating the backend
   (about 0.2 s), with or without mods. Decided on 2026-10-16: v0.12.3-beta's rc1 goes without it if
   the Windows pass shows 1-2 s of black at most with the changes above; otherwise it is done now.
+  With it, for the same version: the replacements' files hidden from the guest
+  (`mods/replacements_guest_view.h`, computed at every start from the folder, the pak's index and
+  every imageset) go to a cache keyed by the folder's listing and the pak's identity, as the unit
+  index does. Measured with TNNR (9724 files): 260 ms on Linux, 1066 ms on Windows, before
+  anything is drawn.
 - **Priority:** PC keeps it in `mods/mods.dat` (`DIRECTORY`, `PRIORITY` per mod; a negative priority
   disables a mod). The same file, in the same format, decides ours: if the player copies PC's
   `mods.dat` with the mods, their order is kept; a mod with no entry is added after the others, in

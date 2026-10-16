@@ -438,12 +438,13 @@ jobs:
           - **Button icons for your controller**: PlayStation (PS3, PS4, PS5) and Nintendo icons, chosen from the controller you use. Options, Controls lets you pick them and swap A/B on Nintendo controllers.
           - **Frame rate limit "Auto"**: follows your display's refresh rate (up to 144; 60 on battery and on the Steam Deck). Existing settings keep their limit.
           - **About one frame less latency** with vsync, and slightly higher frame rates in fights and in the town.
-          - Options in three sections (Video, Controls, Extras); starting with mods is faster when nothing changed, and the first start with a large mod pack shows its progress ("Preparing mods...") instead of a black screen.
+          - Options in three sections (Video, Controls, Extras); starting with mods is faster, and the first start with a large mod pack shows its progress ("Preparing mods...") instead of a black screen.
 
           **Fixed**
           - With mod packs that redraw item icons (Enhanced Edition, JCC - Main), the game's own items and skills showed empty frames.
           - Saves that the mod list could leave unreadable are repaired at the start, after a backup.
           - When the renderer could not start, the window stayed black; now a message says why.
+          - A texture pack in `replacements` (TNNR) could crash the game when changing level.
 
           **Known limitations**
           - Mods' new affixes and level pieces are not added yet, mods must be unpacked folders, and mods are chosen by editing `mods.dat`.
