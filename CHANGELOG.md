@@ -7,6 +7,9 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ### Changed
 
+- The frame rate limit now follows your display by default ("Auto" in Options, Video: its
+  refresh rate, up to 144; 60 on battery, on the Steam Deck and on 60 Hz displays). Existing
+  settings keep the limit they have: choose Auto in Options to follow the display.
 - With vsync on (the default), what you do reaches the screen about one frame sooner: from about
   70 ms to about 52 ms on the development laptop. The frame counter (F3) shows the latency.
 

@@ -4,6 +4,7 @@
 
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
+#include "platform/power_supply_linux.h"
 #include "platform/user_folders.h"
 
 #include <algorithm>
@@ -329,6 +330,19 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 }
 
 bool HasDirect3D11(const std::string&) { return false; }
+
+bool OnBattery() { return OnBatteryFromPowerSupplies("/sys/class/power_supply"); }
+
+bool IsSteamDeck() {
+  auto read = [](const char* name) {
+    std::ifstream in(std::string("/sys/devices/virtual/dmi/id/") + name);
+    std::string value;
+    std::getline(in, value);
+    return value;
+  };
+  const std::string product = read("product_name");
+  return read("sys_vendor") == "Valve" && (product == "Jupiter" || product == "Galileo");
+}
 
 // Not probed: GL3+ is the only render system, so there is nothing to fall back to.
 bool CanCreateGl33Context() { return true; }
