@@ -34,6 +34,7 @@
 #include "mods/icon_atlas.h"
 #include "mods/mod_list.h"
 #include "mods/pad_prompts.h"
+#include "mods/unit_cache.h"
 #include "save_import/pak.h"
 #include "mods/save_safety.h"
 #include "mods/texture_files.h"
@@ -336,8 +337,22 @@ void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_
     ApplyPromptStyle(mods::PadStyle::kXbox);
     return;
   }
+  // The textures are kept between runs under a folder named by the pak's and the icons' key
+  // (mods::PromptCacheKey); other keys' folders are old and go. Without the pak's identity they
+  // are written afresh every run.
+  const std::filesystem::path icons = std::filesystem::path(resources) / "data" / "ui" / "prompts";
+  const std::optional<uint64_t> pak_identity = mods::PakIdentity(game_pak);
+  std::filesystem::path root(cache);
   std::error_code ec;
-  std::filesystem::remove_all(cache, ec);
+  if (pak_identity) {
+    const std::string key = mods::PromptCacheKey(*pak_identity, icons);
+    for (const auto& entry : std::filesystem::directory_iterator(cache, ec)) {
+      if (entry.path().filename() != key) std::filesystem::remove_all(entry.path(), ec);
+    }
+    root /= key;
+  } else {
+    std::filesystem::remove_all(cache, ec);
+  }
   // A chosen style is the only one; automatic writes every style, for a pad changed while playing.
   std::vector<mods::PadStyle> styles;
   if (chosen) {
@@ -348,18 +363,28 @@ void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_
   }
   std::set<std::string> textures;
   for (const mods::PadStyle style : styles) {
-    std::vector<std::string> log;
-    const std::filesystem::path folder = std::filesystem::path(cache) / std::string(mods::PadStyleName(style));
-    const auto written = mods::WritePromptTextures(
-        game_pak, std::filesystem::path(resources) / "data" / "ui" / "prompts", style, swap, folder, log);
-    for (const std::string& line : log) REXLOG_WARN("pad prompts: {}", line);
+    // Nintendo's icons follow the swap: a folder per setting.
+    const std::string name =
+        std::string(mods::PadStyleName(style)) + (mods::SwapsConfirmCancel(style, swap) ? "-swapped" : "");
+    const std::filesystem::path folder = root / name;
+    std::vector<mods::WrittenPrompts> written;
+    if (auto kept = pak_identity ? mods::ReadPromptList(folder) : std::nullopt) {
+      written = std::move(*kept);
+      REXLOG_INFO("pad prompts: {} from the cache ({} textures)", name, written.size());
+    } else {
+      std::vector<std::string> log;
+      written = mods::WritePromptTextures(game_pak, icons, style, swap, folder, log);
+      for (const std::string& line : log) REXLOG_WARN("pad prompts: {}", line);
+      if (!written.empty() && pak_identity && !mods::WritePromptList(folder, written)) {
+        REXLOG_WARN("pad prompts: cannot record {}'s textures; they are written again next time", name);
+      }
+      for (const auto& texture : written) {
+        REXLOG_INFO("pad prompts: {} {} with {} prompts redrawn", name, texture.texture, texture.replaced);
+      }
+    }
     if (written.empty()) continue;
     g_prompt_styles.folders[style] = folder;
-    for (const auto& texture : written) {
-      textures.insert(texture.texture);
-      REXLOG_INFO("pad prompts: {} {} with {} prompts redrawn", mods::PadStyleName(style), texture.texture,
-                  texture.replaced);
-    }
+    for (const auto& texture : written) textures.insert(texture.texture);
   }
   g_prompt_styles.textures.assign(textures.begin(), textures.end());
   // The guest reads the style it starts with (its own copy, which the Xenos mode draws); the host

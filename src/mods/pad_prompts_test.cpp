@@ -202,6 +202,34 @@ int main() {
           "Xbox: nothing written, the folder emptied");
     fs::remove_all(root, ec);
   }
+  // The cache: a key over the pak and the icons, and the list of what a folder holds.
+  {
+    const fs::path root = fs::temp_directory_path() / "pad_prompts_cache_test";
+    std::error_code ec;
+    fs::remove_all(root, ec);
+    WriteFile(root / "icons" / "playstation" / "cross.dds", {1, 2, 3});
+    WriteFile(root / "icons" / "nintendo" / "a.dds", {4, 5});
+    const std::string key = m::PromptCacheKey(42, root / "icons");
+    Check(key.size() == 16 && key == m::PromptCacheKey(42, root / "icons"), "the key: hex, the same for the same input");
+    Check(key != m::PromptCacheKey(43, root / "icons"), "another pak, another key");
+    WriteFile(root / "icons" / "nintendo" / "a.dds", {4, 6});
+    const std::string changed = m::PromptCacheKey(42, root / "icons");
+    Check(changed != key, "an icon's bytes changed, another key");
+    WriteFile(root / "icons" / "nintendo" / "b.dds", {});
+    Check(m::PromptCacheKey(42, root / "icons") != changed, "an icon added, another key");
+
+    const fs::path folder = root / "style";
+    Check(!m::ReadPromptList(folder), "no list: nothing to reuse");
+    WriteFile(folder / "media/ui/icons2/widgets1.dds", {7});
+    Check(m::WritePromptList(folder, {{"media/ui/icons2/widgets1.dds", 12}}), "the list written");
+    const auto list = m::ReadPromptList(folder);
+    Check(list && list->size() == 1 && (*list)[0].texture == "media/ui/icons2/widgets1.dds" && (*list)[0].replaced == 12,
+          "the list read back");
+    fs::remove(folder / "media/ui/icons2/widgets1.dds", ec);
+    Check(!m::ReadPromptList(folder), "a texture missing: the folder is not reused");
+    Check(m::WritePromptList(folder, {}) && !m::ReadPromptList(folder), "an empty list is not reused");
+    fs::remove_all(root, ec);
+  }
 
   if (failures) {
     std::fprintf(stderr, "%d failure(s)\n", failures);
