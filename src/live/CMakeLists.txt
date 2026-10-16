@@ -13,7 +13,7 @@ target_compile_options(measured_mutex_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME measured_mutex_test COMMAND measured_mutex_test)
 
 add_library(torchlight_live STATIC snapshot_store.cpp frame_queue.cpp session_file.cpp
-    slow_frames.cpp guest_events.cpp log_budget.cpp frame_reclaimer.cpp)
+    slow_frames.cpp guest_events.cpp log_budget.cpp frame_reclaimer.cpp busy_notice_text.cpp)
 target_include_directories(torchlight_live PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_live PUBLIC cxx_std_23)
 target_link_libraries(torchlight_live PUBLIC torchlight_commands torchlight_measure torchlight_texture_files
@@ -55,6 +55,14 @@ target_link_libraries(log_budget_test PRIVATE torchlight_live)
 target_compile_options(log_budget_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME log_budget_test COMMAND log_budget_test)
 
+add_executable(busy_notice_text_test busy_notice_text_test.cpp
+  "${CMAKE_CURRENT_SOURCE_DIR}/../game_menu/menu_strings.cpp")
+target_link_libraries(busy_notice_text_test PRIVATE torchlight_live)
+target_compile_options(busy_notice_text_test PRIVATE -Wall -Wextra -Werror)
+target_compile_definitions(busy_notice_text_test PRIVATE
+  TL_IMPORT_STRINGS_FILE="${CMAKE_CURRENT_SOURCE_DIR}/../../data/ui/tl_import_strings.txt")
+add_test(NAME busy_notice_text_test COMMAND busy_notice_text_test)
+
 add_executable(deferred_check_test deferred_check_test.cpp)
 target_link_libraries(deferred_check_test PRIVATE torchlight_live)
 target_compile_options(deferred_check_test PRIVATE -Wall -Wextra -Werror)
@@ -63,7 +71,7 @@ add_test(NAME deferred_check_test COMMAND deferred_check_test)
 # The consumer side (backend thread): links the frontend and the OGRE backend, so it is a library
 # of its own; the queue and the store above stay testable without OGRE.
 add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp frame_timing.cpp frame_counter.cpp
-    frame_step.cpp install.cpp ui_overlay.cpp ui_gamepad.cpp named_texture_refresh.cpp)
+    busy_notice.cpp frame_step.cpp install.cpp ui_overlay.cpp ui_gamepad.cpp named_texture_refresh.cpp)
 target_link_libraries(torchlight_live_mode PUBLIC torchlight_live torchlight_frontend torchlight_texture_files rex::runtime
     torchlight_platform torchlight_settings)
 target_include_directories(torchlight_live_mode PRIVATE "${TORCHLIGHT_REX_INCLUDE}")

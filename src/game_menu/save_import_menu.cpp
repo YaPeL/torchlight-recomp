@@ -372,6 +372,13 @@ void Step(PPCContext& ctx, uint8_t* base, uint32_t menu_object) {
 
 }  // namespace
 
+std::string NoticeText(const std::string& english) {
+  const std::string pack = live::LanguagePack();
+  const std::string language =
+      pack.empty() ? settings::LanguageCode(rex::cvar::Query<uint32_t>("user_language")) : pack;
+  return g.strings.Translate(language, english);
+}
+
 void InstallSaveImport(rex::Runtime* runtime, const fs::path& game_data_root,
                        const fs::path& user_data_root) {
   // The SDK backs up a save container before deleting it; keep the newest ten and the last 30 days.

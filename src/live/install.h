@@ -7,6 +7,7 @@
 #include <string>
 
 #include "settings/host_settings.h"
+#include "settings/user_folders_in_use.h"
 
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
@@ -28,6 +29,11 @@ bool OnlyMode();
 // in platform::GameDataDir unless --game_data_root came; and license_mask 1 (the full game, not
 // the demo) unless --license_mask came. OnConfigurePaths.
 void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths);
+
+// The folders the player's mods, their caches and the achievement progress are kept in this run
+// (settings/user_folders_in_use.h): the platform's, or below --user_data_root / --cache_root when
+// they came (command line or config), from the runtime's roots. After setup.
+settings::FoldersInUse UserFoldersInUse(const rex::Runtime& runtime);
 // In the app creator, before the window exists (SDL video is already up by then).
 void PreCreate();
 // Before the runtime sets up graphics and input (OnPreSetup).

@@ -22,8 +22,10 @@ namespace torchlight::mods {
 
 // Before the guest runs, after the mods are mounted (game_menu/mods_install.h): finds the mods'
 // unit definitions, the cache key and a usable cached index, and mounts the cache folder for the
-// game. `plan` is the mounted plan (none: no mods), `pak` the game's pak.zip.
+// game. `plan` is the mounted plan (none: no mods), `pak` the game's pak.zip; `data_dir` holds
+// mods/ and the index is cached in `cache_dir`/unitdata/ (settings/user_folders_in_use.h).
 void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_dir,
-                      const std::filesystem::path& pak, const ModPlan* plan);
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
+                      const ModPlan* plan);
 
 }  // namespace torchlight::mods

@@ -94,10 +94,11 @@ class TorchlightApp : public rex::ReXApp {
         torchlight::achievements::OpenAchievementList(runtime(), icons);
       });
     });
+    // The player's folders in use: the platform's, or below --user_data_root / --cache_root, so a
+    // run with its own roots never touches the player's mods, caches or progress.
+    const torchlight::settings::FoldersInUse folders = torchlight::live::UserFoldersInUse(*runtime());
     // The player's achievement progress, in the user data folder (none: native mode stays off).
-    const std::string data_dir = torchlight::platform::DataDir();
-    torchlight::achievements::Install(
-        data_dir.empty() ? std::filesystem::path() : std::filesystem::path(data_dir) / "achievements");
+    torchlight::achievements::Install(folders.achievements);
     // Before the guest runs: the video mode for the aspect setting, then the frame for an aspect
     // ratio the game has no mode for.
     torchlight::live::ApplyAspect();
@@ -115,7 +116,7 @@ class TorchlightApp : public rex::ReXApp {
     // before the guest runs; old save backups are pruned too.
     torchlight::game_menu::InstallSaveImport(runtime(), game_data_root(), user_data_root());
     // The player's PC mods (any mode): mounted and their saves protected before the guest runs.
-    torchlight::game_menu::InstallMods(runtime(), torchlight::platform::DataDir(), user_data_root(),
+    torchlight::game_menu::InstallMods(runtime(), folders.data, folders.generated, user_data_root(),
                                        game_data_root() / "pak.zip");
     // The pad prompts in the style of the player's pad (settings.toml "pad_prompts",
     // "swap_confirm_cancel"), before the guest loads its imagesets.
@@ -125,16 +126,15 @@ class TorchlightApp : public rex::ReXApp {
       if (host.pad_prompts == PadPrompts::kXbox) chosen = torchlight::mods::PadFamily::kXbox;
       if (host.pad_prompts == PadPrompts::kPlayStation) chosen = torchlight::mods::PadFamily::kPlayStation;
       if (host.pad_prompts == PadPrompts::kNintendo) chosen = torchlight::mods::PadFamily::kNintendo;
-      torchlight::game_menu::InstallPadPrompts(runtime(), game_data_root() / "pak.zip", chosen,
-                                               host.swap_confirm_cancel);
+      torchlight::game_menu::InstallPadPrompts(runtime(), folders.generated, game_data_root() / "pak.zip",
+                                               chosen, host.swap_confirm_cancel);
     }
     // Their units in the game's unit index (cached in the user's folder when mods bring any).
-    torchlight::mods::InstallUnitIndex(runtime(), torchlight::platform::DataDir(),
-                                       game_data_root() / "pak.zip",
+    torchlight::mods::InstallUnitIndex(runtime(), folders.data, folders.cache, game_data_root() / "pak.zip",
                                        torchlight::game_menu::MountedModPlan());
     // Items and creatures the game would not know (a removed mod's) out of the saves, backed up
     // first, so a save never stops the game.
-    torchlight::mods::InstallSaveUnits(torchlight::platform::DataDir(), game_data_root() / "pak.zip",
+    torchlight::mods::InstallSaveUnits(folders.data, folders.cache, game_data_root() / "pak.zip",
                                        user_data_root(), torchlight::game_menu::MountedModPlan());
     // Development builds: a controller script (before live::Install sets the input's active
     // callback, which the script's controller follows too).

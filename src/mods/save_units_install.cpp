@@ -73,11 +73,11 @@ void Run(const std::filesystem::path& user_data_root, const KnownUnits& known, c
 // it exists (exactly what the game will load), otherwise the base merged with the mods' units as
 // the builder merges them (a unit the game then cannot load shows in the comparison after the
 // load).
-KnownUnits ExpectedUnits(const std::filesystem::path& data_dir, const std::filesystem::path& pak,
+KnownUnits ExpectedUnits(const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
                          const std::vector<ModUnitFile>& files, const std::optional<UnitIndex>& base) {
   if (const auto identity = PakIdentity(pak)) {
     std::string log, error;
-    if (const auto path = FindCachedUnitIndex(data_dir / "cache" / "unitdata", UnitCacheKey(files, *identity), &log)) {
+    if (const auto path = FindCachedUnitIndex(cache_dir / "unitdata", UnitCacheKey(files, *identity), &log)) {
       std::ifstream in(*path, std::ios::binary);
       const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), {});
       if (const auto cached = ParseUnitIndex(bytes, &error)) return KnownUnitsOfIndex(*cached);
@@ -130,8 +130,9 @@ void RepairModLists(const std::filesystem::path& user_data_root, const std::vect
 
 }  // namespace
 
-void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesystem::path& pak,
-                      const std::filesystem::path& user_data_root, const ModPlan* plan) {
+void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesystem::path& cache_dir,
+                      const std::filesystem::path& pak, const std::filesystem::path& user_data_root,
+                      const ModPlan* plan) {
   g_changes.reset();
   g_assumed = {};
   g_saving_blocked = false;
@@ -147,7 +148,7 @@ void InstallSaveUnits(const std::filesystem::path& data_dir, const std::filesyst
   } else {
     g_assumed.pending = true;
     g_assumed.user_data_root = user_data_root;
-    g_assumed.known = ExpectedUnits(data_dir, pak, files, base);
+    g_assumed.known = ExpectedUnits(cache_dir, pak, files, base);
     if (base) g_assumed.base_guids = KnownUnitsOfIndex(*base).guids;
     REXLOG_INFO("units: mods bring units; saves checked against the {} units the game is expected to load",
                 g_assumed.known.guids.size());

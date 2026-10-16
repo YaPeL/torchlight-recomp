@@ -221,6 +221,14 @@ The user's folders are named `TorchlightRecomp` (so they do not collide with the
 `torchlight` is renamed to `TorchlightRecomp` when the new one does not exist yet and the old one
 holds this project's files; with both, nothing is touched. The log says what moved.
 
+With `--user_data_root` (or `--cache_root`), everything the player's mods and their progress
+use moves below it (`settings/user_folders_in_use.h`): `mods/`, `mod_set.txt`, `replacements/`, the
+PC achievement progress (`achievements/`) and the generated caches (`unitdata/`, `atlases/`,
+`prompts/`, below the runtime's cache root, `<user_data_root>/cache/` unless `--cache_root` came).
+Without them nothing moves. The settings (`settings.toml`, the config folder), the shader cache and
+the widened layouts do not follow these flags: a test run that must not touch them also needs its
+own `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` (Linux).
+
 The logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
 runtime's as `torchlight_NNN.log` and OGRE's next to it as `torchlight_NNN_ogre.log`. The game
 prints the log's path at startup, and the first line of each log has the executable's path and the

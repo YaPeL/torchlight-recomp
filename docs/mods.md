@@ -1214,6 +1214,15 @@ devices; and the texture check (`--mods_texture_check`, 7j), since no run used i
   `~/.local/share/TorchlightRecomp/mods/` on Linux, `%USERPROFILE%\Saved Games\TorchlightRecomp\mods\`
   on Windows), with PC's layout: one folder per mod with its `mod.dat` and its files under `media/`.
   A PC mod is copied in as it is.
+  With `--user_data_root` the folder is `<user_data_root>/mods/`, and the caches made for the mods
+  (`unitdata/`, `atlases/`, `prompts/`) go below the runtime's cache root
+  (`settings/user_folders_in_use.h`), so a test run never reads or writes the player's.
+- **First start with a large pack:** the unit index (7e) is built before the game draws its first
+  frame (Elysium Edition: 1984 units, about 4 s on the Linux desktop, about 17 s on a Windows pass);
+  a "Preparing mods... N%" notice (`live/busy_notice.h`, translated in `tl_import_strings.txt`)
+  stays in the bottom right corner meanwhile, and the log records every percent. Measured on
+  2026-10-16: 85 % of that time is the game's own load of each definition and its BASEFILE chain
+  (`kLoadUnitDefinition`), the property reads about 2 %; making it faster is after the release.
 - **Priority:** PC keeps it in `mods/mods.dat` (`DIRECTORY`, `PRIORITY` per mod; a negative priority
   disables a mod). The same file, in the same format, decides ours: if the player copies PC's
   `mods.dat` with the mods, their order is kept; a mod with no entry is added after the others, in

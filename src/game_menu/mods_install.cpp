@@ -177,9 +177,11 @@ void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_
 // The mods' imagesets that hide images of the game's own file, merged with it (mods/icon_atlas.h)
 // into the cache folder, regenerated at every start, and mounted for the guest (HookModFileLookup)
 // and the host's texture lookup.
-void InstallAtlases(rex::Runtime* runtime) {
-  const std::string cache = platform::CacheDir("atlases");
-  if (cache.empty()) {
+void InstallAtlases(rex::Runtime* runtime, const std::filesystem::path& generated) {
+  const std::filesystem::path cache = generated.empty() ? generated : generated / "atlases";
+  std::error_code ec;
+  if (!cache.empty()) std::filesystem::create_directories(cache, ec);
+  if (cache.empty() || ec) {
     REXLOG_ERROR("icon atlases: no cache folder; the mods' imagesets are used as they are");
     return;
   }
@@ -192,7 +194,7 @@ void InstallAtlases(rex::Runtime* runtime) {
   auto device = std::make_unique<rex::filesystem::HostPathDevice>(mount, cache, /*read_only=*/true);
   if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
       !runtime->file_system()->RegisterSymbolicLink(std::string(hooks::kAtlasDeviceLink), mount)) {
-    REXLOG_ERROR("icon atlases: cannot mount {}; the mods' imagesets are used as they are", cache);
+    REXLOG_ERROR("icon atlases: cannot mount {}; the mods' imagesets are used as they are", cache.string());
     return;
   }
   for (const auto& atlas : written) {
@@ -208,7 +210,7 @@ void InstallAtlases(rex::Runtime* runtime) {
 
 }  // namespace
 
-void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
+void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir, const std::filesystem::path& generated,
                  const std::filesystem::path& user_data_root, const std::filesystem::path& game_pak) {
   g_game_pak = game_pak;
   if (data_dir.empty()) return;
@@ -277,7 +279,7 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
                 mod.priority < 0 ? ", disabled" : "");
   }
   g_mounted = true;
-  InstallAtlases(runtime);
+  InstallAtlases(runtime, generated);
 }
 
 namespace {
@@ -325,10 +327,13 @@ void ApplyPromptStyle(mods::PadStyle style) {
 
 }  // namespace
 
-void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_pak,
+void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& generated, const std::filesystem::path& game_pak,
                        std::optional<mods::PadFamily> chosen, bool swap) {
   const mods::PadStyle start = mods::EffectivePadStyle(chosen, ToPadKind(platform::ConnectedGamepadKind()));
-  const std::string cache = platform::CacheDir("prompts");
+  std::filesystem::path cache = generated.empty() ? generated : generated / "prompts";
+  std::error_code made;
+  if (!cache.empty()) std::filesystem::create_directories(cache, made);
+  if (made) cache.clear();
   const std::string resources = platform::ResourceDir();
   std::lock_guard lock(g_prompt_styles.mutex);
   g_prompt_styles.swap_setting = swap;
@@ -418,6 +423,8 @@ void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_
     live::RefreshNamedTextures(changed);
   });
 }
+
+const std::filesystem::path& ModsFolder() { return g_mods_folder; }
 
 const mods::ModPlan* MountedModPlan() {
   return g_mounted && mods::ModManagerNeeded(g_plan) ? &g_plan : nullptr;

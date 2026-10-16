@@ -16,6 +16,7 @@
 #include "capture/session.h"
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
+#include "live/busy_notice.h"
 #include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
 #include "live/frame_timing.h"
@@ -295,10 +296,42 @@ void LiveMode::Run() {
   FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
+  bool blank_output = false;  // the output cleared for the busy notice before the first frame
+  // The window's new size, when it changed (before presenting); whether it did. A new render
+  // scale remakes the targets, whose content is then lost.
+  auto apply_window_size = [&] {
+    const uint64_t size = pending_window_size_.exchange(0);
+    if (!size) return false;
+    tl_backend_resize_window(backend, uint32_t(size >> 32), uint32_t(size));
+    if (parent.system != platform::NativeWindow::kNone) {
+      window_size = {uint32_t(size >> 32), uint32_t(size)};
+      apply_render_scale();
+    }
+    return true;
+  };
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
-    if (!frame) continue;
+    if (!frame) {
+      // No guest frame while the game's thread is held by work of ours (busy_notice.h): the last
+      // frame shown again with the UI over it, so the notice appears and its progress moves.
+      // Before the game's first frame (the mods' unit index is built then) there is no frame to
+      // show yet, and after a resize the last one is lost: a black one, made as a frame's clear is.
+      if (window_open && BusyNoticeShown()) {
+        const bool resized = apply_window_size();
+        if (resized || (last_present.time_since_epoch().count() == 0 && !blank_output)) {
+          const float black[4] = {0, 0, 0, 1};
+          tl_backend_begin(backend);
+          tl_backend_clear(backend, 1, black, 1.0f, 0);
+          tl_backend_end(backend);
+          blank_output = true;
+        }
+        if (options_.ui) ApplyUi(backend, *options_.ui);
+        window_open = tl_backend_present(backend) != 0;
+        if (options_.request_ui_frame) options_.request_ui_frame();
+      }
+      continue;
+    }
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
     dropped_since_present += frame->dropped_before;
@@ -329,13 +362,7 @@ void LiveMode::Run() {
       }
     }
     FrameStep step = RunFrameStep(*frame, content, frontend, [&] {
-      if (uint64_t size = pending_window_size_.exchange(0)) {
-        tl_backend_resize_window(backend, uint32_t(size >> 32), uint32_t(size));
-        if (parent.system != platform::NativeWindow::kNone) {
-          window_size = {uint32_t(size >> 32), uint32_t(size)};
-          apply_render_scale();
-        }
-      }
+      apply_window_size();
       std::optional<PendingVideo> video;
       {
         std::lock_guard lock(pending_video_mutex_);
