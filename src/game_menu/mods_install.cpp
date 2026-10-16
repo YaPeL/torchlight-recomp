@@ -10,6 +10,7 @@
 #include <mutex>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 #include <rex/filesystem/devices/host_path_device.h>
@@ -26,7 +27,9 @@
 #include "guest_abi/game_ui.h"
 #include "guest_abi/mods.h"
 #include "guest_abi/xinput.h"
+#include "hooks/find_file_filter.h"
 #include "hooks/guest_path.h"
+#include "live/install.h"
 #include "live/named_texture_refresh.h"
 #include "live/ui_gamepad.h"
 #include "platform/platform.h"
@@ -34,6 +37,7 @@
 #include "mods/icon_atlas.h"
 #include "mods/mod_list.h"
 #include "mods/pad_prompts.h"
+#include "mods/replacements_guest_view.h"
 #include "mods/unit_cache.h"
 #include "save_import/pak.h"
 #include "mods/save_safety.h"
@@ -145,7 +149,63 @@ uint32_t GuestWString(GuestCall& call, uint8_t* base, const std::string& ascii) 
 
 // The replacements folder, when it holds any file: mounted read-only, its files are added to the
 // pak's groups before they are initialised (HookInitialiseAll).
-void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_dir) {
+// The native mode: the replacements' images the pak also has, hidden from the guest's listing of
+// tlrepl: (mods/replacements_guest_view.h), so the guest loads the pak's and the host draws the
+// replacement. Imagesets' textures stay visible: the pak's, the replacements' and the mods' imagesets
+// are read for the names their Imagefile gives.
+void HideReplacedImagesFromGuest(const std::filesystem::path& folder, const std::filesystem::path& pak_path,
+                                 const std::filesystem::path& mods_folder) {
+  if (!live::OnlyMode()) return;
+  const auto start = std::chrono::steady_clock::now();
+  std::unordered_set<std::string> imageset_textures;
+  const auto add_imageset = [&](const std::vector<uint8_t>& bytes) {
+    if (const auto atlas = mods::ParseAtlas(mods::LayoutText(bytes))) {
+      imageset_textures.insert(mods::GuestViewKey(atlas->Attribute(atlas->imageset, "Imagefile")));
+    }
+  };
+  const auto is_imageset = [](const std::string& name) { return mods::GuestViewKey(name).ends_with(".IMAGESET"); };
+  std::vector<std::string> files;
+  std::error_code ec;
+  for (auto it = std::filesystem::recursive_directory_iterator(folder, ec);
+       !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+    if (!it->is_regular_file(ec)) continue;
+    const std::string relative = std::filesystem::relative(it->path(), folder, ec).generic_string();
+    if (is_imageset(relative)) {
+      if (const auto bytes = ReadFile(it->path())) add_imageset(*bytes);
+    }
+    files.push_back(relative);
+  }
+  for (auto it = std::filesystem::recursive_directory_iterator(mods_folder, ec);
+       !ec && it != std::filesystem::recursive_directory_iterator(); it.increment(ec)) {
+    if (it->is_regular_file(ec) && is_imageset(it->path().filename().string())) {
+      if (const auto bytes = ReadFile(it->path())) add_imageset(*bytes);
+    }
+  }
+  std::string error;
+  const auto pak = save_import::Pak::Open(pak_path, error);
+  if (!pak) {
+    REXLOG_WARN("replacements: the pak does not open ({}); nothing hidden from the guest", error);
+    return;
+  }
+  std::unordered_set<std::string> pak_keys;
+  pak->ForEach([&](uint32_t index, const std::string& name) {
+    pak_keys.insert(mods::GuestViewKey(name));
+    if (is_imageset(name)) {
+      std::vector<uint8_t> bytes;
+      if (pak->Read(index, bytes, error)) add_imageset(bytes);
+    }
+    return true;
+  });
+  auto hidden = mods::GuestHiddenReplacements(
+      files, [&](const std::string& key) { return pak_keys.contains(key); }, imageset_textures);
+  REXLOG_INFO("replacements: {} of {} files hidden from the guest (the pak's images; the host draws them), {} ms",
+              hidden.size(), files.size(),
+              std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
+  hooks::SetHiddenReplacements(std::move(hidden));
+}
+
+void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_dir,
+                       const std::filesystem::path& game_pak) {
   const std::filesystem::path folder = data_dir / kReplacementsFolder;
   std::error_code ec;
   bool any = false;
@@ -172,6 +232,7 @@ void MountReplacements(rex::Runtime* runtime, const std::filesystem::path& data_
   g_texture_locations.replacements = folder;
   mods::SetTextureLocations(g_texture_locations);
   REXLOG_INFO("replacements: {} as {}", folder.string(), hooks::kReplacementsDeviceLink);
+  HideReplacedImagesFromGuest(folder, game_pak, data_dir / "mods");
 }
 
 // The mods' imagesets that hide images of the game's own file, merged with it (mods/icon_atlas.h)
@@ -214,7 +275,7 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir, c
                  const std::filesystem::path& user_data_root, const std::filesystem::path& game_pak) {
   g_game_pak = game_pak;
   if (data_dir.empty()) return;
-  MountReplacements(runtime, data_dir);
+  MountReplacements(runtime, data_dir, game_pak);
   const std::filesystem::path folder = data_dir / "mods";
   g_mods_folder = folder;
   mods::ScanResult scan = mods::ScanModsFolder(folder);
