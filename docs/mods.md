@@ -1385,6 +1385,12 @@ or Nintendo (`src/mods/pad_prompts.h`).
   Each is in the game's translations (de, fr, es) too. A later fix could hook the translator's
   lookup and put the style's button name into those texts. A rule would find the texts from the
   user's files at load time, so none is copied into the repository.
+- **Minor, noted (Windows pass, 2026-10-16): extra lookups during loads.** With a non-Xbox style,
+  `tlprompt:` is one more location in each of the game's resource groups, so OGRE checks it too
+  for every file it looks for: about 20 % more missing-file checks during loads (442 -> 535 and
+  252 -> 315 in a long frame), for the same load time (40 against 42 ms). Not worth a change now.
+  If it ever shows, the prompts' textures could be served by the host's texture lookup alone,
+  since the guest only needs them for its own copy (Xenos), instead of a guest location.
 
 ## 10. Validation mods (candidates, not downloaded)
 
