@@ -4,6 +4,7 @@
 
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
+#include "platform/power_supply_linux.h"
 #include "platform/user_folders.h"
 
 #include <algorithm>
@@ -329,6 +330,8 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 }
 
 bool HasDirect3D11(const std::string&) { return false; }
+
+bool OnBattery() { return OnBatteryFromPowerSupplies("/sys/class/power_supply"); }
 
 bool IsSteamDeck() {
   auto read = [](const char* name) {

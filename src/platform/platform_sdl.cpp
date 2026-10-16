@@ -22,7 +22,6 @@
 #include <SDL3/SDL_hints.h>
 #include <SDL3/SDL_locale.h>
 #include <SDL3/SDL_messagebox.h>
-#include <SDL3/SDL_power.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_render.h>
 #include <SDL3/SDL_stdinc.h>
@@ -95,11 +94,6 @@ DisplayInfo GameDisplay() {
     SDL_free(modes);
   }
   return info;
-}
-
-bool OnBattery() {
-  // Charging and charged mean plugged in; no battery, unknown and error count as plugged in.
-  return SDL_GetPowerInfo(nullptr, nullptr) == SDL_POWERSTATE_ON_BATTERY;
 }
 
 void AllowBackgroundGamepad() { SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1"); }

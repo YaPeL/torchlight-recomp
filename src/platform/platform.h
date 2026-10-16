@@ -52,7 +52,10 @@ struct DisplayInfo {
   std::vector<std::pair<uint32_t, uint32_t>> modes;
 };
 DisplayInfo GameDisplay();
-// Whether the machine runs on battery now (unplugged); false when plugged in or without one.
+// Whether the machine runs on battery now (unplugged); false when plugged in, without a battery
+// or when it cannot tell. Each platform asks its own system (SDL's SDL_GetPowerInfo is not built
+// in the SDK's SDL, SDL_POWER OFF): Linux the kernel's power supplies (power_supply_linux.h),
+// Windows GetSystemPowerStatus, macOS IOKit's power sources.
 bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.

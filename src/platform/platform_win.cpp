@@ -243,6 +243,12 @@ void SetCurrentThreadName(const char* name) {
   SetThreadDescription(GetCurrentThread(), wide.c_str());
 }
 
+bool OnBattery() {
+  // ACLineStatus: 0 offline, 1 online, 255 unknown (counted as plugged in).
+  SYSTEM_POWER_STATUS status = {};
+  return GetSystemPowerStatus(&status) && status.ACLineStatus == 0;
+}
+
 bool IsSteamDeck() {
   // The firmware's system information (SMBIOS), as Windows keeps it.
   auto read = [](const wchar_t* name) {
