@@ -63,7 +63,7 @@ add_test(NAME deferred_check_test COMMAND deferred_check_test)
 # The consumer side (backend thread): links the frontend and the OGRE backend, so it is a library
 # of its own; the queue and the store above stay testable without OGRE.
 add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp frame_timing.cpp frame_counter.cpp
-    frame_step.cpp install.cpp ui_overlay.cpp ui_gamepad.cpp named_texture_refresh_stub.cpp)
+    frame_step.cpp install.cpp ui_overlay.cpp ui_gamepad.cpp named_texture_refresh.cpp)
 target_link_libraries(torchlight_live_mode PUBLIC torchlight_live torchlight_frontend torchlight_texture_files rex::runtime
     torchlight_platform torchlight_settings)
 target_include_directories(torchlight_live_mode PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
@@ -76,6 +76,12 @@ add_executable(live_content_source_test live_content_source_test.cpp)
 target_link_libraries(live_content_source_test PRIVATE torchlight_live_mode)
 target_compile_options(live_content_source_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME live_content_source_test COMMAND live_content_source_test)
+
+# The texture refresh queue and the named textures it matches.
+add_executable(named_texture_refresh_test named_texture_refresh_test.cpp)
+target_link_libraries(named_texture_refresh_test PRIVATE torchlight_live_mode)
+target_compile_options(named_texture_refresh_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME named_texture_refresh_test COMMAND named_texture_refresh_test)
 
 add_executable(ui_overlay_test ui_overlay_test.cpp)
 target_link_libraries(ui_overlay_test PRIVATE torchlight_live_mode)

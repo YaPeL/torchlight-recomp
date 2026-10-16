@@ -1176,11 +1176,14 @@ Fixes #NNN. Two changes:
   `blocking_wait_strategy`.
 
 The queue serves the POSIX guest timers (`KeSetTimer` and the waitable timers in
-`threading_posix.cpp`) and the timestamp tick, so a blocking wait changes their precision a
-little. A check of the fixed strategy on Linux, 2000 deadlines 1 ms apart: late by 58 us median,
-149 us p99, 194 us max. On Windows the wait ends up in `SleepConditionVariableSRW`, in whole
-milliseconds, with whatever timer resolution the process has. With no timer queued the deadline
-is `steady_clock::time_point::max()`; that has to hold with MSVC's `wait_until` too.
+`threading_posix.cpp`) and, on every platform, the timestamp tick (`HighResolutionTimer`); on
+Windows the guest timers are native ones, so there the tick is all it serves. A blocking wait
+changes their precision a little. A check of the fixed strategy on Linux, 2000 deadlines 1 ms
+apart: late by 58 us median, 149 us p99, 194 us max. On Windows the wait ends up in
+`SleepConditionVariableSRW`, in whole milliseconds, with whatever timer resolution the process
+has; the 1 ms recurring test ticks there as it should, but its lateness was not measured. With no
+timer queued the deadline is `steady_clock::time_point::max()`, which MSVC's `wait_until` takes
+as well (the empty-queue test, 0 ms of CPU on Windows).
 
 Tests (`tests/unit/core/timer_queue_test.cpp`, disruptorplus linked into `unit_tests`): the timed
 waits time out, and return when another thread publishes; a one-shot timer fires and not early; a
@@ -1193,7 +1196,13 @@ run three times with each runtime on the same scripted route: the dispatch threa
 a core to 1.2 %, the process 9-10 % less CPU in every step, the frame rate and frame times
 unchanged.
 
-Our patch 33 (`patches/README.md`). Before sending: the Windows measurement (section 8).
+On Windows (Direct3D 11, the same route, three runs with each runtime alternated, the loaded
+DLL checked by hash in every run): the dispatch thread from 5.9-9.1 % of a core to 0.0-1.0 %,
+the process 3.6-9.6 points of a core less depending on the part (1.7-4.2 %), and the frame rate,
+p95 and p99 within the runs' spread. The SDK's `unit_tests` pass there as before, the
+`[timer_queue]` cases included.
+
+Our patch 33 (`patches/README.md`). Measured on Linux and Windows; ready to send.
 
 ---
 
@@ -1556,6 +1565,29 @@ these agents lives here and in `patches/README.md`.
        Anything worse than without the patch is a finding: the patch would then need a Windows
        path before D32 goes upstream. Keep the new prefix if all is well. It is the SDK the
        series asks for from now on.
+    7. **Results received (2026-10-15).** Steps 1-3 passed: `unit_tests` 267 of 274 (6
+       skipped, only `output_stamp_test.cpp:227-228` failing, as before), `[timer_queue]` 4 of
+       4 with 0 ms of CPU over the empty 2 s, `ctest` 92 of 92, the scripted run to the town
+       ends normally. Step 5, Direct3D 11, no frame cap, vsync off, 1280x720, audio muted, three
+       runs of each runtime alternated (each DLL checked by its SHA-256). Means of the three
+       runs without and with patch 33:
+
+       | Part | TimerQueue % | Process % of one core | Guest FPS | p99 ms |
+       |---|---|---|---|---|
+       | Menu | 6.9 -> 0.8 | 215.0 -> 211.4 | 468.4 -> 474.7 | 3.0 -> 2.9 |
+       | Standing still | 7.3 -> 0.7 | 224.6 -> 217.7 | 342.4 -> 337.3 | 4.0 -> 4.4 |
+       | Fight | 7.7 -> 0.6 | 229.5 -> 219.9 | 317.8 -> 313.2 | 4.4 -> 4.8 |
+       | Town square | 8.1 -> 0.8 | 211.9 -> 204.9 | 254.9 -> 261.9 | 5.5 -> 5.2 |
+
+       The frame figures move both ways and their ranges overlap. The higher p99 standing still
+       and fighting comes from the first run with the patch (4.73 and 5.44 ms); its third run was
+       below every run without it. The frames over 33 and 50 ms are in the menu part, which
+       includes the load (about 840 ms, the same with both DLLs). Presented frames over 33 ms
+       in the game parts are single frames, not tied to either DLL (one run with the patch has 10
+       in the fight, the other two none). The log's audio, vblank and timer lines are the same
+       in all six runs. Nobody listened to the audio. In Torchlight the queue only carries the
+       timestamp tick, which the game does not read, and its audio and vblank do not use the
+       queue. The new prefix is the live SDK there; the old one is the rollback (section 6).
 
 Cost: the series is done; what remains is builds (SDK in all configurations, three game builds
 for the fence measurement), the measurement runs and the game validation. About a day, most of it

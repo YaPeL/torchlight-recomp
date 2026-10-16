@@ -11,6 +11,7 @@
 #include <bit>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -116,7 +117,90 @@ struct DrawState {
   std::optional<SetScissor> scissor;
   bool stencil_check = false;
   std::optional<SetStencil> stencil;
+  std::optional<bool> depth_check, depth_write;
+  std::optional<SetDepthBias> depth_bias;
 };
+
+// --dump_draw: the draw's vertex declaration, its stream 0 vertices (guest big-endian floats), its
+// indices, the vertex program's automatic constants and each vertex's clip position with
+// worldviewproj (row-major times column, as uploaded, and the transpose).
+void DumpDraw(const Draw& p, const DrawState& st, const std::map<Hash, const Blob*>& blobs,
+              const Capture& c) {
+  auto be32 = [](const uint8_t* q) {
+    return std::bit_cast<float>(uint32_t(q[0]) << 24 | uint32_t(q[1]) << 16 | uint32_t(q[2]) << 8 |
+                                uint32_t(q[3]));
+  };
+  std::printf("== dump of the draw: primitive raw %u, v[%u+%u], indexed %d i[%u+%u]x%u\n",
+              p.primitive.raw, p.vertex_start, p.vertex_count, int(p.indexed), p.index_start,
+              p.index_count, p.index_size);
+  uint32_t stride = 0;
+  if (st.declaration && st.declaration->declaration) {
+    for (const auto& d : c.vertex_declarations) {
+      if (!(d.id == *st.declaration->declaration)) continue;
+      for (const auto& e : d.elements) {
+        static constexpr uint32_t kSize[] = {4, 8, 12, 16, 4, 2, 4, 6, 8, 4, 4, 4};
+        uint32_t size = e.type.known() && e.type.value < 12 ? kSize[e.type.value] : 0;
+        if (e.source == 0) stride = std::max(stride, e.offset + size);
+        std::printf("   element s%u+%u type %u (raw %u) semantic %u index %u\n", e.source,
+                    e.offset, unsigned(e.type.value), e.type.raw, unsigned(e.semantic.value),
+                    e.index);
+      }
+    }
+  }
+  std::vector<std::array<float, 4>> positions;
+  if (!p.vertex_buffers.empty()) {
+    const auto& vb = p.vertex_buffers[0];
+    auto it = blobs.find(vb.blob);
+    if (it != blobs.end()) {
+      const Blob& b = *it->second;
+      std::printf("   stream 0: %zu bytes, endian %u raw %u, guest %#x size %u; declared stride %u "
+                  "(bytes / vertex count: %.2f)\n",
+                  b.bytes.size(), unsigned(b.endian), unsigned(b.endian_raw), vb.guest_virtual,
+                  vb.size, stride,
+                  p.vertex_count ? double(b.bytes.size()) / p.vertex_count : 0.0);
+      for (uint32_t v = 0; stride && v < p.vertex_start + p.vertex_count; ++v) {
+        size_t o = size_t(v) * stride;
+        if (o + stride > b.bytes.size()) break;
+        std::printf("   v%u:", v);
+        for (uint32_t k = 0; k < stride / 4; ++k) std::printf(" %g", be32(&b.bytes[o + 4 * k]));
+        std::printf("\n");
+        positions.push_back({be32(&b.bytes[o]), be32(&b.bytes[o + 4]), be32(&b.bytes[o + 8]), 1});
+      }
+    }
+  }
+  if (p.index_buffer) {
+    auto it = blobs.find(p.index_buffer->blob);
+    if (it != blobs.end()) {
+      const Blob& b = *it->second;
+      std::printf("   indices (%zu bytes, endian %u raw %u):", b.bytes.size(),
+                  unsigned(b.endian), unsigned(b.endian_raw));
+      for (uint32_t i = 0; i < p.index_start + p.index_count && (i + 1) * 2 <= b.bytes.size(); ++i)
+        std::printf(" %u", (uint32_t(b.bytes[2 * i]) << 8) | b.bytes[2 * i + 1]);
+      std::printf("\n");
+    }
+  }
+  auto vs = st.constants.find(uint8_t(ProgramStage::kVertex));
+  if (vs == st.constants.end()) return;
+  for (const auto& a : vs->second.autos) {
+    std::vector<float> m = AutoData(vs->second, a);
+    std::printf("   auto %s (physical %u):", std::string(a.name).c_str(), a.physical_index);
+    for (float f : m) std::printf(" %g", f);
+    std::printf("\n");
+    if (std::string(a.name) != "ACT_WORLDVIEWPROJ_MATRIX" || m.size() < 16) continue;
+    for (size_t v = 0; v < positions.size(); ++v) {
+      float r[4], t[4];
+      for (int i = 0; i < 4; ++i) {
+        r[i] = t[i] = 0;
+        for (int j = 0; j < 4; ++j) {
+          r[i] += m[4 * i + j] * positions[v][j];
+          t[i] += m[4 * j + i] * positions[v][j];
+        }
+      }
+      std::printf("   clip v%zu: rows (%g %g %g %g) ndc z %g | transposed (%g %g %g %g)\n", v,
+                  r[0], r[1], r[2], r[3], r[3] != 0 ? r[2] / r[3] : 0.f, t[0], t[1], t[2], t[3]);
+    }
+  }
+}
 
 const char* kTolerance = "1e-3";
 constexpr float kToleranceValue = 1e-3f;
@@ -125,16 +209,20 @@ constexpr float kToleranceValue = 1e-3f;
 
 int main(int argc, char** argv) {
   if (argc < 2) {
-    std::fprintf(stderr, "usage: %s CAPTURE.tlcap [--draws] [--program_sources DIR]\n",
+    std::fprintf(stderr,
+                 "usage: %s CAPTURE.tlcap [--draws] [--program_sources DIR] [--dump_draw N]\n",
                  argv[0]);
     return 2;
   }
   bool draws_detail = false;
+  long dump_draw = -1;  // --dump_draw N
   std::string sources_dir;
   for (int i = 2; i < argc; ++i) {
     std::string a = argv[i];
     if (a == "--draws") {
       draws_detail = true;
+    } else if (a == "--dump_draw" && i + 1 < argc) {
+      dump_draw = std::atol(argv[++i]);
     } else if (a == "--program_sources" && i + 1 < argc) {
       sources_dir = argv[++i];
     } else {
@@ -224,6 +312,20 @@ int main(int argc, char** argv) {
               st.depth_func = p;
             } else if constexpr (std::is_same_v<T, SetCull>) {
               st.cull = p;
+            } else if constexpr (std::is_same_v<T, SetDepthCheck>) {
+              st.depth_check = p.enabled;
+            } else if constexpr (std::is_same_v<T, SetDepthWrite>) {
+              st.depth_write = p.enabled;
+            } else if constexpr (std::is_same_v<T, SetDepthBias>) {
+              st.depth_bias = p;
+            } else if constexpr (std::is_same_v<T, Clear>) {
+              if (draws_detail) {
+                std::printf("  f%u clear before d%zu: buffers %#x colour %.3f,%.3f,%.3f,%.3f depth %.4f "
+                            "stencil %u rt='%s'\n",
+                            frame.index, draws, p.buffers, p.colour[0], p.colour[1], p.colour[2],
+                            p.colour[3], p.depth, p.stencil,
+                            st.target ? st.target->name.c_str() : "?");
+              }
             } else if constexpr (std::is_same_v<T, SetVertexDeclaration>) {
               st.declaration = p;
             } else if constexpr (std::is_same_v<T, SetRenderTarget>) {
@@ -267,6 +369,7 @@ int main(int argc, char** argv) {
                                  Compare(AutoData(vs->second, a), *expected, *flipped)});
                 }
               }
+              if (long(draws - 1) == dump_draw) DumpDraw(p, st, blobs, c);
               if (draws_detail) {
                 std::printf("  f%u d%zu: %s %s v[%u+%u]", frame.index, draws - 1,
                             EnumText(p.primitive, kPrimitive, 6).c_str(),
@@ -293,6 +396,10 @@ int main(int argc, char** argv) {
                   std::printf(" zfunc=%s->%s", EnumText(st.depth_func->requested, kCompare, 8).c_str(),
                               EnumText(st.depth_func->effective, kCompare, 8).c_str());
                 if (st.cull) std::printf(" cull=%s", EnumText(st.cull->mode, kCull, 3).c_str());
+                if (st.depth_check) std::printf(" zcheck=%d", int(*st.depth_check));
+                if (st.depth_write) std::printf(" zwrite=%d", int(*st.depth_write));
+                if (st.depth_bias && (st.depth_bias->constant != 0 || st.depth_bias->slope_scale != 0))
+                  std::printf(" zbias=%g/%g", st.depth_bias->constant, st.depth_bias->slope_scale);
                 if (st.target) std::printf(" rt='%s'", st.target->name.c_str());
                 if (st.viewport)
                   std::printf(" vp=%d,%d,%dx%d@%08x", st.viewport->left, st.viewport->top,
@@ -311,6 +418,28 @@ int main(int argc, char** argv) {
                 if (p.index_buffer)
                   std::printf(" ib=%#x(%s)", p.index_buffer->buffer.guest_address,
                               p.index_buffer->blob ? "ok" : "NONE");
+                if (st.declaration && st.declaration->declaration) {
+                  // The declaration's elements: stream+offset type/semantic index (types.h enums,
+                  // guest raw value in parentheses).
+                  static constexpr const char* kType[] = {"f1", "f2", "f3", "f4", "colour", "s1",
+                                                          "s2", "s3", "s4", "ub4", "argb", "abgr"};
+                  static constexpr const char* kSem[] = {"pos", "bw", "bi", "nrm", "dif",
+                                                         "spec", "tex", "bin", "tan"};
+                  for (const auto& d : c.vertex_declarations) {
+                    if (!(d.id == *st.declaration->declaration)) continue;
+                    std::printf(" decl[");
+                    for (const auto& e : d.elements) {
+                      std::printf(" s%u+%u:%s(%u)/%s%u", e.source, e.offset,
+                                  e.type.known() && e.type.value < 12 ? kType[e.type.value] : "?",
+                                  e.type.raw,
+                                  e.semantic.known() && e.semantic.value < 9 ? kSem[e.semantic.value]
+                                                                              : "?",
+                                  e.index);
+                    }
+                    std::printf(" ]");
+                    break;
+                  }
+                }
                 if (p.unresolved_mask) {
                   std::printf(" UNRESOLVED:");
                   for (uint32_t r = 0; r < 32; ++r)

@@ -35,6 +35,11 @@ enum class AchievementSet { kXbox, kPc };
 enum class PadPrompts { kAuto, kXbox, kPlayStation, kNintendo };
 
 // Stored values. Empty strings and zero sizes mean "automatic".
+// HostSettings::fps_cap's automatic value, "auto" in the file.
+inline constexpr uint32_t kFpsCapAuto = 0xFFFFFFFFu;
+// The automatic cap's ceiling (a 240 Hz display gets 144).
+inline constexpr uint32_t kAutoFpsCapCeiling = 144;
+
 struct HostSettings {
   // OGRE render system name; empty = the first one available.
   std::string render_system;
@@ -44,8 +49,9 @@ struct HostSettings {
   std::string gpu_name;
   // Internal render resolution; 0x0 = the window's size.
   Resolution render_resolution;
-  // Frame rate cap = the guest's vblank frequency in Hz; 0 = unlimited.
-  uint32_t fps_cap = 60;
+  // Frame rate cap = the guest's vblank frequency in Hz; 0 = unlimited; kFpsCapAuto (the
+  // default) follows the display (EffectiveFpsCap).
+  uint32_t fps_cap = kFpsCapAuto;
   // Vertical sync of the backend's window.
   bool vsync = true;
   // Game language code ("en", "de", "fr", "es"...); empty = the runtime's default.
@@ -86,6 +92,10 @@ struct Capabilities {
   std::vector<Resolution> display_modes;
   // Refresh rate of that display in Hz (0 if unknown).
   uint32_t display_hz = 0;
+  // Running on battery (unplugged) when the game started: the automatic frame rate cap is 60.
+  bool on_battery = false;
+  // A Steam Deck (by the machine's model): the automatic frame rate cap is always 60.
+  bool steam_deck = false;
   // Whether the guest's vblank can run at any rate (needs the runtime's support); without it only
   // 60 Hz and unlimited exist.
   bool any_vblank_rate = false;
@@ -138,8 +148,12 @@ bool GpuChoiceApplies(const Capabilities& caps, const std::string& render_system
 Choices<std::string> GpuChoices(const Capabilities& caps);  // ids
 // Display modes with the display's aspect ratio, largest first; the first is the display's size.
 Choices<Resolution> ResolutionChoices(const Capabilities& caps);
-// Ascending, with 0 (unlimited) last.
+// Automatic (kFpsCapAuto) first, then ascending, with 0 (unlimited) last.
 Choices<uint32_t> FpsCapChoices(const Capabilities& caps);
+// The cap in effect: a chosen number as it is; automatic is the display's refresh rate up to
+// kAutoFpsCapCeiling, and 60 on a Steam Deck, on battery, on a display of 60 Hz or less or of
+// unknown rate, or when the guest's vblank cannot run at other rates.
+uint32_t EffectiveFpsCap(const HostSettings& settings, const Capabilities& caps);
 Choices<std::string> LanguageChoices(const Capabilities& caps);
 // Automatic first, then the fixed aspects no wider than the display, narrowest first (all of them
 // when the display's size is unknown).

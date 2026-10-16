@@ -14,6 +14,8 @@
 #include <system_error>
 #include <vector>
 
+#include <IOKit/ps/IOPSKeys.h>
+#include <IOKit/ps/IOPowerSources.h>
 #include <mach-o/dyld.h>
 #include <pthread.h>
 #include <sys/sysctl.h>
@@ -279,6 +281,18 @@ std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string
 void SetCurrentThreadName(const char* name) { pthread_setname_np(name); }
 
 bool HasDirect3D11(const std::string&) { return false; }
+bool IsSteamDeck() { return false; }
+
+bool OnBattery() {
+  // The source providing power now: "Battery Power" when unplugged ("AC Power" otherwise).
+  CFTypeRef info = IOPSCopyPowerSourcesInfo();
+  if (!info) return false;
+  CFStringRef source = IOPSGetProvidingPowerSourceType(info);
+  const bool battery =
+      source && CFStringCompare(source, CFSTR(kIOPSBatteryPowerValue), 0) == kCFCompareEqualTo;
+  CFRelease(info);
+  return battery;
+}
 
 // Not probed: GL3+ is the only render system, so there is nothing to fall back to.
 bool CanCreateGl33Context() { return true; }

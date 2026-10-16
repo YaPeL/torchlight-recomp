@@ -209,18 +209,28 @@ Choices<Resolution> ResolutionChoices(const Capabilities& caps) {
 
 Choices<uint32_t> FpsCapChoices(const Capabilities& caps) {
   Choices<uint32_t> choices;
+  choices.values.push_back(kFpsCapAuto);
   if (caps.any_vblank_rate) {
-    choices.values.assign(std::begin(kStandardFpsCaps), std::end(kStandardFpsCaps));
+    choices.values.insert(choices.values.end(), std::begin(kStandardFpsCaps),
+                          std::end(kStandardFpsCaps));
     if (caps.display_hz && !Contains(choices.values, caps.display_hz)) {
       choices.values.push_back(caps.display_hz);
-      std::sort(choices.values.begin(), choices.values.end());
+      std::sort(choices.values.begin() + 1, choices.values.end());
     }
   } else {
-    choices.values = {60};
+    choices.values.push_back(60);
   }
   choices.values.push_back(0);
   choices.enabled = true;
   return choices;
+}
+
+uint32_t EffectiveFpsCap(const HostSettings& settings, const Capabilities& caps) {
+  if (settings.fps_cap != kFpsCapAuto) return settings.fps_cap;
+  if (!caps.any_vblank_rate || caps.steam_deck || caps.on_battery || caps.display_hz <= 60) {
+    return 60;
+  }
+  return std::min(caps.display_hz, kAutoFpsCapCeiling);
 }
 
 Choices<std::string> LanguageChoices(const Capabilities& caps) {
@@ -387,7 +397,9 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
     const std::string_view key = Trim(line.substr(0, eq));
     const std::string_view value = Trim(line.substr(eq + 1));
     bool ok = true;
-    if (key == "render_system") {
+    if (key == "fps_cap" && (value == "auto" || value == "\"auto\"")) {
+      settings.fps_cap = kFpsCapAuto;
+    } else if (key == "render_system") {
       ok = ParseString(value, settings.render_system);
     } else if (key == "gpu") {
       ok = ParseString(value, settings.gpu);
@@ -445,8 +457,12 @@ std::string Serialize(const HostSettings& settings) {
       << "gpu_name = " << Quote(settings.gpu_name) << "\n"
       << "# Internal render resolution, \"WIDTHxHEIGHT\" or \"window\".\n"
       << "render_resolution = " << Quote(FormatResolution(settings.render_resolution)) << "\n"
-      << "# Frame rate cap in Hz; 0 = unlimited.\n"
-      << "fps_cap = " << settings.fps_cap << "\n"
+      << "# Frame rate cap in Hz; 0 = unlimited; \"auto\" = the display's refresh rate (up to "
+      << kAutoFpsCapCeiling << ", 60 on battery or a Steam Deck).\n"
+      << "fps_cap = "
+      << (settings.fps_cap == kFpsCapAuto ? std::string("\"auto\"")
+                                          : std::to_string(settings.fps_cap))
+      << "\n"
       << "vsync = " << (settings.vsync ? "true" : "false") << "\n"
       << "# Game language (\"en\", \"de\", \"fr\", \"es\"...); takes effect after a restart.\n"
       << "language = " << Quote(settings.language) << "\n"

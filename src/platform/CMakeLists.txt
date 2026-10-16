@@ -5,7 +5,8 @@
 include(durable_file.cmake)
 if(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
-    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp text_wrap.cpp)
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp power_supply_linux.cpp
+                text_wrap.cpp)
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE X11)
     # When each present reached the screen (presentation_time.h): a development measurement, on
@@ -42,9 +43,10 @@ elseif(WIN32)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_win.cpp gpu_adapters.cpp
                 gl_probe_win.cpp text_wrap.cpp
                 presentation_time_none.cpp)
-    # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats).
+    # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats);
+    # advapi32: the firmware's system information (IsSteamDeck).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
-                          PRIVATE dxgi opengl32 gdi32)
+                          PRIVATE dxgi opengl32 gdi32 advapi32)
 elseif(APPLE)
     enable_language(OBJCXX)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_mac.cpp)
@@ -52,7 +54,8 @@ elseif(APPLE)
                 presentation_time_none.cpp)
     # AppKit: the game window's view, OGRE's window keys; CoreGraphics: the window server session.
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
-                          PRIVATE "-framework AppKit" "-framework CoreGraphics")
+                          PRIVATE "-framework AppKit" "-framework CoreGraphics" "-framework IOKit"
+                          "-framework CoreFoundation")
 else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
@@ -107,3 +110,12 @@ add_executable(user_folders_test user_folders_test.cpp)
 target_link_libraries(user_folders_test PRIVATE torchlight_user_folders)
 target_compile_options(user_folders_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME user_folders_test COMMAND user_folders_test)
+
+# On battery or not, from made-up /sys/class/power_supply trees (Linux's reader, pure C++).
+if(UNIX AND NOT APPLE)
+    add_executable(power_supply_linux_test power_supply_linux_test.cpp power_supply_linux.cpp)
+    target_include_directories(power_supply_linux_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    target_compile_features(power_supply_linux_test PRIVATE cxx_std_23)
+    target_compile_options(power_supply_linux_test PRIVATE -Wall -Wextra -Werror)
+    add_test(NAME power_supply_linux_test COMMAND power_supply_linux_test)
+endif()
