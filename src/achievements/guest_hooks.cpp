@@ -8,6 +8,7 @@
 #include "achievements/runtime.h"
 #include "dev/guest_command.h"
 #include "live/frame_timing.h"
+#include "live/guest_heap_use.h"
 #include "guest_abi/achievements.h"
 namespace pc = torchlight::achievements;
 namespace abi = torchlight::guest_abi::achievements;
@@ -324,6 +325,9 @@ REX_FUNC(sub_82217DA8) {
   __imp__sub_82217DA8(ctx,base);
   torchlight::live::LogLevelLoad(std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - load_start));
+  // The guest's physical memory after each load (live/guest_heap_use.h): whether it grows from
+  // level to level, or fragments.
+  torchlight::live::LogGuestHeapAtLevelLoad(abi::LevelDepth(base, game));
   if (abi::GameLevelLoad(from)) torchlight::dev::OnGameLevelLoaded();
   if (!pc::NativeEnabled() || !abi::GameLevelLoad(from)) return;
   const auto depth = abi::LevelDepth(base,game);

@@ -1,6 +1,7 @@
 // Exercises the actual app-owned overrides against deterministic guest-call doubles.
 // This test reserves address space only; no game, Steam client, or original binary is run.
 #include <chrono>
+#include <optional>
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 #include "achievements/runtime.h"
@@ -36,6 +37,7 @@ bool Unlocked(std::string_view id) { return enabled && service.state().unlocked.
 }
 namespace torchlight::dev { void OnGameLevelLoaded() {} }  // dev/guest_command.h, not linked here
 namespace torchlight::live { void LogLevelLoad(std::chrono::milliseconds) {} }  // live/frame_timing.h, not linked here
+namespace torchlight::live { void LogGuestHeapAtLevelLoad(std::optional<int32_t>) {} }  // live/guest_heap_use.h
 extern "C" {
 #define DOUBLE(address) REX_FUNC(__imp__sub_##address) { (void)base; ++calls; ctx.r3.u64=result; }
 DOUBLE(821EF318) DOUBLE(823D9930) DOUBLE(82375500) DOUBLE(822D7298) DOUBLE(8287D8C0)
