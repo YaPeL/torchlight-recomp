@@ -100,7 +100,7 @@ void List() {
   std::vector<std::vector<std::string>> class_buttons, pet_buttons;
   std::set<std::string> players, monsters;
   if (plan) {
-    const std::filesystem::path folder = std::filesystem::path(platform::DataDir()) / "mods";
+    const std::filesystem::path& folder = ModsFolder();
     class_buttons = mods::ModClassButtons(folder, *plan);
     players = mods::ModPlayerUnits(folder, *plan);
     pet_buttons = mods::ModPetButtons(folder, *plan);

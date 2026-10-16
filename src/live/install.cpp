@@ -397,6 +397,17 @@ std::filesystem::path NextLogPath(const std::filesystem::path& dir, const std::s
 }
 }  // namespace
 
+settings::FoldersInUse UserFoldersInUse(const rex::Runtime& runtime) {
+  settings::UserRoots roots;
+  roots.platform_data = platform::DataDir();
+  roots.platform_cache = platform::CacheDir("");
+  roots.user_data_root = runtime.user_data_root();
+  roots.cache_root = runtime.cache_root();
+  roots.user_data_root_given = !rex::cvar::Query<std::string>("user_data_root").empty();
+  roots.cache_root_given = !rex::cvar::Query<std::string>("cache_root").empty();
+  return settings::ResolveFoldersInUse(roots);
+}
+
 void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths) {
   if (const std::string dir = platform::ConfigDir(); !dir.empty()) {
     paths.config_path = std::filesystem::path(dir) / (app_name + ".toml");

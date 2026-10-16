@@ -217,10 +217,11 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base);
 }  // namespace
 
 void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_dir,
-                      const std::filesystem::path& pak, const ModPlan* plan) {
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak,
+                      const ModPlan* plan) {
   g = {};
   g.pak = pak;
-  g.folder = data_dir / "cache" / "unitdata";
+  g.folder = cache_dir / "unitdata";
   std::vector<ModUnitFile> files;
   if (plan) files = ScanModUnitFiles(data_dir / "mods", *plan);
   if (files.empty()) return;  // the Xbox index as it is

@@ -11,7 +11,7 @@ class AchievementManager;
 
 namespace torchlight::achievements {
 // Reads the mode cvars; the profile state lives in `state_dir` (the app passes the user data
-// folder's achievements/, platform::DataDir()).
+// folder's achievements/: the platform's, or below --user_data_root; settings/user_folders_in_use.h).
 void Install(const std::filesystem::path& state_dir);
 void Shutdown();
 void PrepareForClose(); // flush before SDK window-close hard exit; no Steam calls
