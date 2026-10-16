@@ -502,6 +502,13 @@ hook is timed with `--native_producer_timing` (off by default); the live mode's 
 - Languages out of scope: Arabic. It is written right to left with letters that change shape
   depending on their neighbors; the game's CEGUI 0.6 does neither, and the texts the game composes at
   runtime (items with affixes, numbers) would stay in left-to-right order.
+- More detail at a distance: puddles and shadows on the ground are not drawn in some views (the
+  town, around the merchant's cart, the red roofs, the mine's entrance). It is the game's own
+  behaviour: in parallel mode Xenos shows the same, and its images match the backend's at 34-37 dB
+  in the same frames (Windows, 2026-10-16). The likely cause is a level of detail or fade distance
+  in the game, not confirmed: what decides it (a distance, a count limit on decals, or the camera)
+  is not read yet. The GPU is mostly idle here (an RTX 5080 at 16-21 % use, 31-39 W at the cap), so
+  raising that limit could be a host option, once the guest code that sets it is found.
 - PC's video settings: the frame rate is already the host's (the Video column's cap, uncapped
   allowed). The save also keeps the PC settings (resolution, shadows, AA); restoring PC's menu for
   them is not done.

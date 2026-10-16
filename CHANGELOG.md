@@ -5,13 +5,55 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
-### Changed
+## v0.12.3-beta (not released yet)
 
-- The frame rate limit now follows your display by default ("Auto" in Options, Video: its
-  refresh rate, up to 144; 60 on battery, on the Steam Deck and on 60 Hz displays). Existing
-  settings keep the limit they have: choose Auto in Options to follow the display.
+Everything integrated into `develop` since v0.7.6-beta, for players.
+
+### Mods
+
+- Classes added by mods can be chosen when you create a character. With more than three classes,
+  move left on the first class button or right on the last one to see the others. Each class shows
+  its mod's own icon. A mod that redraws the game's own classes shows its portraits, as on PC.
+  Skill trees with a third column of skills show and work.
+- Pets added by mods can be chosen too, with their names and pictures.
+- At the start, the game lists the characters last saved with a different set of mods, the way PC
+  warns about them.
+- The notices about mods' items are shorter, and also in German, French and Spanish.
+- Starting the game with mods is faster when nothing changed since the last start.
+
+### Controllers
+
+- The button icons match your controller. PlayStation (PS3, PS4 and PS5 styles) and Nintendo
+  controllers get their own icons instead of the Xbox ones. They are chosen from the controller
+  you are using, and change when you pick up another one.
+- Options, Controls: choose the icons yourself, and on Nintendo controllers "Swap A/B" makes the
+  right button confirm, as in Nintendo's own games. Both take effect after a restart.
+- The settings column in Options is split into three sections: Video, Controls and Extras.
+
+### Display
+
+- The frame rate limit follows your display by default ("Auto" in Options, Video: its refresh
+  rate, up to 144; 60 on battery, on the Steam Deck and on 60 Hz displays). Existing settings keep
+  the limit they have: choose Auto in Options to follow the display.
 - With vsync on (the default), what you do reaches the screen about one frame sooner: from about
   70 ms to about 52 ms on the development laptop. The frame counter (F3) shows the latency.
+- Slightly higher frame rates in fights and in the town.
+
+### Fixed
+
+- With mod packs that redraw the item icons (Enhanced Edition, JCC - Main), the game's own items
+  and skills showed empty frames. They keep their icons now.
+- Saves that the mod list could leave unreadable are repaired when the game starts, after a
+  backup.
+- When the renderer could not start (no OpenGL 3.3), the window stayed black. Now a message says
+  why and the game closes.
+
+### Known limitations
+
+- Mods' new affixes and level pieces are not added yet, mods must be unpacked folders, and mods
+  are chosen by editing `mods.dat`.
+- Most PC achievements have not been earned in actual play yet.
+- Untested on the Steam Deck.
 
 ## v0.7.6-beta (2026-10-12)
 
