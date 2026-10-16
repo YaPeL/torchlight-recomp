@@ -38,7 +38,7 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir,
 // cache and mounted like the replacements folder (before it), and confirm/cancel swapped in the
 // guest's pad reads when `swap` applies to the style. Nothing is written for the Xbox style.
 void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_pak,
-                       std::optional<mods::PadStyle> chosen, bool swap);
+                       std::optional<mods::PadFamily> chosen, bool swap);
 
 // The data manager was just built (its constructor's hook, on the game's thread, before the
 // global data loader checks the MODS achievements and loads the data): builds the mod manager,

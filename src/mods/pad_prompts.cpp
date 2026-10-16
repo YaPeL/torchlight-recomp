@@ -38,12 +38,29 @@ std::vector<uint8_t> ReadFile(const std::filesystem::path& path) {
 
 }  // namespace
 
-PadStyle EffectivePadStyle(std::optional<PadStyle> chosen, PadKind connected) {
-  if (chosen) return *chosen;
+PadStyle EffectivePadStyle(std::optional<PadFamily> chosen, PadKind connected) {
+  PadStyle by_pad = PadStyle::kXbox;
   switch (connected) {
-    case PadKind::kPlayStation:
-      return PadStyle::kPlayStation;
+    case PadKind::kPlayStation3:
+      by_pad = PadStyle::kPlayStation3;
+      break;
+    case PadKind::kPlayStation4:
+      by_pad = PadStyle::kPlayStation4;
+      break;
+    case PadKind::kPlayStation5:
+      by_pad = PadStyle::kPlayStation5;
+      break;
     case PadKind::kNintendo:
+      by_pad = PadStyle::kNintendo;
+      break;
+    default:
+      break;
+  }
+  if (!chosen) return by_pad;
+  switch (*chosen) {
+    case PadFamily::kPlayStation:
+      return PadIconFolder(by_pad) == "playstation" ? by_pad : PadStyle::kPlayStation5;
+    case PadFamily::kNintendo:
       return PadStyle::kNintendo;
     default:
       return PadStyle::kXbox;
@@ -54,7 +71,24 @@ bool SwapsConfirmCancel(PadStyle style, bool swap_setting) { return swap_setting
 
 std::string_view PadStyleName(PadStyle style) {
   switch (style) {
-    case PadStyle::kPlayStation:
+    case PadStyle::kPlayStation3:
+      return "playstation3";
+    case PadStyle::kPlayStation4:
+      return "playstation4";
+    case PadStyle::kPlayStation5:
+      return "playstation5";
+    case PadStyle::kNintendo:
+      return "nintendo";
+    default:
+      return "xbox";
+  }
+}
+
+std::string_view PadIconFolder(PadStyle style) {
+  switch (style) {
+    case PadStyle::kPlayStation3:
+    case PadStyle::kPlayStation4:
+    case PadStyle::kPlayStation5:
       return "playstation";
     case PadStyle::kNintendo:
       return "nintendo";
@@ -73,25 +107,52 @@ uint16_t SwapVirtualKey(uint16_t key, uint16_t key_a, uint16_t key_b) {
   return key == key_a ? key_b : key == key_b ? key_a : key;
 }
 
+// The help screen's controller picture, drawn smaller than its region: a flat silhouette at the
+// 360 drawing's size looks heavier than it.
+constexpr double kControllerScale = 0.8;
+
 std::vector<PromptIcon> PromptIcons(PadStyle style, bool swap_confirm_cancel) {
+  std::vector<PromptIcon> icons;
   switch (style) {
-    case PadStyle::kPlayStation:
-      return {{"a_button", "cross"},       {"b_button", "circle"},     {"button_x", "square"},
-              {"y_button", "triangle"},    {"left_bumper", "l1"},      {"right_bumper", "r1"},
-              {"left_trigger", "l2"},      {"right_trigger", "r2"},    {"start_button", "options"},
-              {"back_button", "create"},       {"controller", "controller"}};
+    case PadStyle::kPlayStation3:
+    case PadStyle::kPlayStation4:
+    case PadStyle::kPlayStation5: {
+      icons = {{"a_button", "cross"},    {"b_button", "circle"}, {"button_x", "square"},
+               {"y_button", "triangle"}, {"left_bumper", "l1"},  {"right_bumper", "r1"},
+               {"left_trigger", "l2"},   {"right_trigger", "r2"}, {"start_button", "options"},
+               {"back_button", "create"}};
+      const char* controller = style == PadStyle::kPlayStation3   ? "controller_ps3"
+                               : style == PadStyle::kPlayStation4 ? "controller_ps4"
+                                                                  : "controller_ps5";
+      icons.push_back({"controller", controller, kControllerScale});
+      break;
+    }
     case PadStyle::kNintendo: {
       // By position the 360's A is the bottom button, B on a Nintendo pad; swapped, the game's A
       // is the right one, A.
       const bool swap = SwapsConfirmCancel(style, swap_confirm_cancel);
-      return {{"a_button", swap ? "a" : "b"}, {"b_button", swap ? "b" : "a"}, {"button_x", "y"},
-              {"y_button", "x"},              {"left_bumper", "l"},           {"right_bumper", "r"},
-              {"left_trigger", "zl"},         {"right_trigger", "zr"},        {"start_button", "plus"},
-              {"back_button", "minus"},       {"controller", "controller"}};
+      icons = {{"a_button", swap ? "a" : "b"}, {"b_button", swap ? "b" : "a"}, {"button_x", "y"},
+               {"y_button", "x"},              {"left_bumper", "l"},           {"right_bumper", "r"},
+               {"left_trigger", "zl"},         {"right_trigger", "zr"},        {"start_button", "plus"},
+               {"back_button", "minus"},       {"controller", "controller", kControllerScale}};
+      break;
     }
     default:
       return {};
   }
+  // The sticks and the d-pad, the same names in both folders. The 360's sticks pushed in any
+  // direction ("lrud") become the plain stick; analog_button_left_down's drawing is the right stick
+  // pressed.
+  const std::vector<PromptIcon> sticks = {
+      {"analog_button_left_lrud", "stick_l"},           {"analog_button_right_lrud", "stick_r"},
+      {"analog_button_left_lr", "stick_l_horizontal"},  {"analog_button_right_lr", "stick_r_horizontal"},
+      {"analog_button_left_ud", "stick_l_vertical"},    {"analog_button_right_ud", "stick_r_vertical"},
+      {"analog_button_left_down", "stick_r_press"},     {"dpad_updown", "dpad_vertical"},
+      {"dpad_leftright", "dpad_horizontal"},            {"dpad_up", "dpad_up"},
+      {"dpad_down", "dpad_down"},                       {"dpad_left", "dpad_left"},
+      {"dpad_right", "dpad_right"}};
+  icons.insert(icons.end(), sticks.begin(), sticks.end());
+  return icons;
 }
 
 RgbaImage FitIcon(const RgbaImage& icon, uint32_t width, uint32_t height) {
@@ -162,13 +223,17 @@ std::optional<std::vector<uint8_t>> PatchPromptTexture(std::string_view imageset
     // windows draw these images a little smaller than their regions and clip the bottom (the 360
     // art leaves the same border), so an icon reaching the edge would lose its last row.
     const long margin = *w > 2 * kPromptMargin && *h > 2 * kPromptMargin ? kPromptMargin : 0;
-    const RgbaImage fitted = FitIcon(icon->icon, uint32_t(*w - 2 * margin), uint32_t(*h - 2 * margin));
+    const auto room = [&](long side) {
+      return std::max<uint32_t>(1, uint32_t(std::lround(double(side - 2 * margin) * icon->scale)));
+    };
+    const RgbaImage fitted = FitIcon(icon->icon, room(*w), room(*h));
+    const long left = *x + (*w - long(fitted.width)) / 2, top = *y + (*h - long(fitted.height)) / 2;
     for (long row = 0; row < *h; ++row) {
       std::fill_n(&image->rgba[(size_t(*y + row) * image->width + size_t(*x)) * 4], size_t(*w) * 4, uint8_t(0));
     }
     for (uint32_t row = 0; row < fitted.height; ++row) {
       std::copy_n(&fitted.rgba[size_t(row) * fitted.width * 4], fitted.width * 4,
-                  &image->rgba[(size_t(*y + margin + row) * image->width + size_t(*x + margin)) * 4]);
+                  &image->rgba[(size_t(top + row) * image->width + size_t(left)) * 4]);
     }
     ++count;
   }
@@ -187,13 +252,13 @@ std::vector<WrittenPrompts> WritePromptTextures(const std::filesystem::path& pak
   if (wanted.empty()) return written;
   std::vector<NamedIcon> icons;
   for (const PromptIcon& p : wanted) {
-    const auto file = icons_dir / std::string(PadStyleName(style)) / (p.file + ".dds");
+    const auto file = icons_dir / std::string(PadIconFolder(style)) / (p.file + ".dds");
     auto icon = DecodeDds(ReadFile(file));
     if (!icon) {
       log.push_back("icon " + file.string() + " missing or unreadable; " + p.image + " stays the game's");
       continue;
     }
-    icons.push_back({p.image, std::move(*icon)});
+    icons.push_back({p.image, std::move(*icon), p.scale});
   }
   if (icons.empty()) return written;
   std::string error;

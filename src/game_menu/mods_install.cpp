@@ -285,8 +285,12 @@ mods::PadKind ToPadKind(platform::GamepadKind kind) {
   switch (kind) {
     case platform::GamepadKind::kXbox:
       return mods::PadKind::kXbox;
-    case platform::GamepadKind::kPlayStation:
-      return mods::PadKind::kPlayStation;
+    case platform::GamepadKind::kPlayStation3:
+      return mods::PadKind::kPlayStation3;
+    case platform::GamepadKind::kPlayStation4:
+      return mods::PadKind::kPlayStation4;
+    case platform::GamepadKind::kPlayStation5:
+      return mods::PadKind::kPlayStation5;
     case platform::GamepadKind::kNintendo:
       return mods::PadKind::kNintendo;
     case platform::GamepadKind::kOther:
@@ -321,7 +325,7 @@ void ApplyPromptStyle(mods::PadStyle style) {
 }  // namespace
 
 void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_pak,
-                       std::optional<mods::PadStyle> chosen, bool swap) {
+                       std::optional<mods::PadFamily> chosen, bool swap) {
   const mods::PadStyle start = mods::EffectivePadStyle(chosen, ToPadKind(platform::ConnectedGamepadKind()));
   const std::string cache = platform::CacheDir("prompts");
   const std::string resources = platform::ResourceDir();
@@ -337,9 +341,10 @@ void InstallPadPrompts(rex::Runtime* runtime, const std::filesystem::path& game_
   // A chosen style is the only one; automatic writes every style, for a pad changed while playing.
   std::vector<mods::PadStyle> styles;
   if (chosen) {
-    if (*chosen != mods::PadStyle::kXbox) styles.push_back(*chosen);
+    if (start != mods::PadStyle::kXbox) styles.push_back(start);
   } else {
-    styles = {mods::PadStyle::kPlayStation, mods::PadStyle::kNintendo};
+    styles = {mods::PadStyle::kPlayStation3, mods::PadStyle::kPlayStation4, mods::PadStyle::kPlayStation5,
+              mods::PadStyle::kNintendo};
   }
   std::set<std::string> textures;
   for (const mods::PadStyle style : styles) {

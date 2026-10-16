@@ -140,9 +140,11 @@ GamepadKind KindOf(SDL_GamepadType type) {
     case SDL_GAMEPAD_TYPE_XBOXONE:
       return GamepadKind::kXbox;
     case SDL_GAMEPAD_TYPE_PS3:
+      return GamepadKind::kPlayStation3;
     case SDL_GAMEPAD_TYPE_PS4:
+      return GamepadKind::kPlayStation4;
     case SDL_GAMEPAD_TYPE_PS5:
-      return GamepadKind::kPlayStation;
+      return GamepadKind::kPlayStation5;
     case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO:
     case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
     case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT:

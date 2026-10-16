@@ -1316,12 +1316,20 @@ or Nintendo (`src/mods/pad_prompts.h`).
 
 - **What is replaced.** The ten face, shoulder, trigger and start/back images of the game's widget
   imagesets (`a_button`, `b_button`, `button_x`, `y_button`, `left_bumper`, `right_bumper`,
-  `left_trigger`, `right_trigger`, `start_button`, `back_button`). The d-pad and stick images
-  (`dpad_*`, `analog_button_*`) are drawn the same on every pad and stay the game's. In the
-  user's pak these are in `widgets.dds` (one) and `widgets1.dds` (nine). With PlayStation or
-  Nintendo the help screen's controller picture (`controller`, in `ratings.dds`) becomes that
-  style's controller silhouette (rasterized from the pack's SVGs, since the picture is drawn about
-  350 px wide); with Xbox it stays the 360's drawing.
+  `left_trigger`, `right_trigger`, `start_button`, `back_button`), and its thirteen stick and
+  d-pad images (`analog_button_*`, `dpad_*`): a stick pushed in any direction (`_lrud`) becomes
+  the plain stick, since the pack has no stick with four arrows, and `analog_button_left_down`,
+  whose drawing is the right stick pressed, the right stick pressed. In the user's pak they are in
+  `widgets.dds`, `widgets1.dds`, `widgets2.dds` and `ratings.dds`. With PlayStation or Nintendo
+  the help screen's controller picture (`controller`, in `ratings.dds`) becomes that style's
+  controller silhouette, at 80% of its place (a flat silhouette at the 360 drawing's size looks
+  heavier); with Xbox it stays the 360's drawing. The silhouettes are rasterized from the pack's
+  SVGs, since the picture is drawn about 350 px wide.
+- **PlayStation models.** SDL tells a PS3, PS4 and PS5 pad apart, and the controller picture is
+  the pad's model. The buttons are the same on the three: start and back are drawn as the PS3's
+  shapes (a triangle and a bar), since the PS4's and PS5's are tall pills that shrink to a stick at
+  the prompts' 29x22. `pad_prompts = "playstation"` takes the connected PlayStation's model, a PS5
+  without one.
 - **How.** The textures are rewritten at start, not the imagesets. Each image's region is cleared
   and the icon is scaled into it with its aspect kept, so every window that names an image keeps
   its size and place. A transparent border of one texel is kept around it, like the 360's own art:
@@ -1339,8 +1347,8 @@ or Nintendo (`src/mods/pad_prompts.h`).
   (the owner's choice, 2026-10-16). Automatic follows the first connected pad's SDL type
   (`platform::ConnectedGamepadKind`) at start, then the pad last used while playing
   (`platform::WatchGamepadKind`: a pad connected or disconnected, or a button pressed on another
-  pad). Every style is written at start, and a change of pad switches the host's texture lookup to
-  that style's folder. The live content then gets the new textures (`live::RefreshNamedTextures`),
+  pad). Every style (the three PlayStation models and Nintendo) is written at start, and a change
+  of pad switches the host's texture lookup to that style's folder. The live content then gets the new textures (`live::RefreshNamedTextures`),
   and the A/B swap follows. The guest's own copy stays the start style's; only the Xenos mode
   draws that copy. Changing the file's setting takes effect at the next start.
 - **Nintendo pads.** By default buttons work by position, as on the 360: the bottom button

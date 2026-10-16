@@ -121,10 +121,10 @@ class TorchlightApp : public rex::ReXApp {
     // "swap_confirm_cancel"), before the guest loads its imagesets.
     {
       using torchlight::settings::PadPrompts;
-      std::optional<torchlight::mods::PadStyle> chosen;
-      if (host.pad_prompts == PadPrompts::kXbox) chosen = torchlight::mods::PadStyle::kXbox;
-      if (host.pad_prompts == PadPrompts::kPlayStation) chosen = torchlight::mods::PadStyle::kPlayStation;
-      if (host.pad_prompts == PadPrompts::kNintendo) chosen = torchlight::mods::PadStyle::kNintendo;
+      std::optional<torchlight::mods::PadFamily> chosen;
+      if (host.pad_prompts == PadPrompts::kXbox) chosen = torchlight::mods::PadFamily::kXbox;
+      if (host.pad_prompts == PadPrompts::kPlayStation) chosen = torchlight::mods::PadFamily::kPlayStation;
+      if (host.pad_prompts == PadPrompts::kNintendo) chosen = torchlight::mods::PadFamily::kNintendo;
       torchlight::game_menu::InstallPadPrompts(runtime(), game_data_root() / "pak.zip", chosen,
                                                host.swap_confirm_cancel);
     }

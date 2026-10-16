@@ -65,13 +65,25 @@ int main() {
   {
     using S = m::PadStyle;
     using K = m::PadKind;
-    Check(m::EffectivePadStyle(std::nullopt, K::kPlayStation) == S::kPlayStation, "auto: a PlayStation pad");
+    using F = m::PadFamily;
+    Check(m::EffectivePadStyle(std::nullopt, K::kPlayStation3) == S::kPlayStation3 &&
+              m::EffectivePadStyle(std::nullopt, K::kPlayStation4) == S::kPlayStation4 &&
+              m::EffectivePadStyle(std::nullopt, K::kPlayStation5) == S::kPlayStation5,
+          "auto: a PlayStation pad, its model");
     Check(m::EffectivePadStyle(std::nullopt, K::kNintendo) == S::kNintendo, "auto: a Nintendo pad");
     Check(m::EffectivePadStyle(std::nullopt, K::kOther) == S::kXbox, "auto: another pad, Xbox");
     Check(m::EffectivePadStyle(std::nullopt, K::kNone) == S::kXbox, "auto: no pad, Xbox");
-    Check(m::EffectivePadStyle(S::kNintendo, K::kPlayStation) == S::kNintendo, "a chosen style wins");
+    Check(m::EffectivePadStyle(F::kNintendo, K::kPlayStation4) == S::kNintendo, "a chosen style wins");
+    Check(m::EffectivePadStyle(F::kPlayStation, K::kPlayStation3) == S::kPlayStation3 &&
+              m::EffectivePadStyle(F::kPlayStation, K::kXbox) == S::kPlayStation5 &&
+              m::EffectivePadStyle(F::kPlayStation, K::kNone) == S::kPlayStation5,
+          "PlayStation chosen: the connected one's model, else a PS5");
+    Check(m::EffectivePadStyle(F::kXbox, K::kPlayStation5) == S::kXbox, "Xbox chosen");
+    Check(m::PadIconFolder(S::kPlayStation3) == "playstation" && m::PadIconFolder(S::kPlayStation5) == "playstation" &&
+              m::PadStyleName(S::kPlayStation4) == "playstation4",
+          "one icon folder for the three models, a cache name each");
     Check(m::SwapsConfirmCancel(S::kNintendo, true) && !m::SwapsConfirmCancel(S::kNintendo, false) &&
-              !m::SwapsConfirmCancel(S::kPlayStation, true) && !m::SwapsConfirmCancel(S::kXbox, true),
+              !m::SwapsConfirmCancel(S::kPlayStation5, true) && !m::SwapsConfirmCancel(S::kXbox, true),
           "the swap only with Nintendo's style");
   }
   // Confirm and cancel swapped in what the guest reads.
@@ -87,8 +99,11 @@ int main() {
   // The icons of each style.
   {
     Check(m::PromptIcons(m::PadStyle::kXbox, true).empty(), "Xbox: the game's images");
-    const auto ps = m::PromptIcons(m::PadStyle::kPlayStation, true);
-    Check(ps.size() == 11 && Text(Find(ps, "controller")) == "controller" && Text(Find(ps, "a_button")) == "cross" && Text(Find(ps, "b_button")) == "circle" &&
+    const auto ps = m::PromptIcons(m::PadStyle::kPlayStation5, true);
+    Check(ps.size() == 24 && Text(Find(ps, "controller")) == "controller_ps5" && Find(ps, "controller")->scale < 1 &&
+              Text(Find(m::PromptIcons(m::PadStyle::kPlayStation3, false), "controller")) == "controller_ps3" &&
+              Text(Find(m::PromptIcons(m::PadStyle::kPlayStation4, false), "controller")) == "controller_ps4" &&
+              Text(Find(m::PromptIcons(m::PadStyle::kPlayStation3, false), "start_button")) == "options" && Text(Find(ps, "a_button")) == "cross" && Text(Find(ps, "b_button")) == "circle" &&
               Text(Find(ps, "button_x")) == "square" && Text(Find(ps, "y_button")) == "triangle",
           "PlayStation: the face buttons by position, the swap ignored");
     const auto by_position = m::PromptIcons(m::PadStyle::kNintendo, false);
@@ -99,7 +114,11 @@ int main() {
     Check(Text(Find(swapped, "a_button")) == "a" && Text(Find(swapped, "b_button")) == "b" &&
               Text(Find(swapped, "button_x")) == "y" && Text(Find(swapped, "controller")) == "controller",
           "Nintendo swapped: confirm is A, cancel B");
-    Check(!Find(ps, "dpad_up") && !Find(ps, "analog_button_left_lr"), "the d-pad and sticks stay the game's");
+    Check(Text(Find(ps, "dpad_up")) == "dpad_up" && Text(Find(ps, "dpad_updown")) == "dpad_vertical" &&
+              Text(Find(ps, "analog_button_left_lr")) == "stick_l_horizontal" &&
+              Text(Find(ps, "analog_button_right_lrud")) == "stick_r" &&
+              Text(Find(swapped, "analog_button_left_down")) == "stick_r_press",
+          "the sticks and the d-pad, for both families");
   }
   // Fitting: aspect kept, centred, transparent around; colour kept on edges.
   {
@@ -127,6 +146,15 @@ int main() {
     Check(image && Pixel(*image, 12, 0)[3] == 0 && Pixel(*image, 12, 3)[3] == 0,
           "a transparent border above and below the icon");
     Check(image && Pixel(*image, 12, 6)[0] == 255, "below the region untouched");
+    const auto small = m::PatchPromptTexture(Imageset("t.dds"), texture, {{"a_button", Solid(4, 4, 0, 255, 0), 0.5}},
+                                             nullptr, nullptr);
+    const auto half = small ? m::DecodeDds(*small) : std::nullopt;
+    int drawn = 0;
+    for (uint32_t y = 0; half && y < 4; ++y) {
+      for (uint32_t x = 8; x < 16; ++x) drawn += Pixel(*half, x, y)[3] != 0;
+    }
+    // Half the 6x2 room inside the border: 3x1, where the square icon is 1x1, in the middle.
+    Check(half && drawn == 1 && Pixel(*half, 11, 1)[1] == 255, "a scaled icon: smaller, centred");
     std::string why;
     const std::string outside = "<Imageset Name=\"w\" Imagefile=\"t.dds\"><Image Name=\"a_button\" XPos=\"14\" "
                                 "YPos=\"0\" Width=\"8\" Height=\"4\" /></Imageset>";
@@ -158,7 +186,7 @@ int main() {
     WriteFile(root / "out" / "stale.dds", {1});
     std::vector<std::string> log;
     const auto written =
-        m::WritePromptTextures(root / "pak.zip", root / "icons", m::PadStyle::kPlayStation, false, root / "out", log);
+        m::WritePromptTextures(root / "pak.zip", root / "icons", m::PadStyle::kPlayStation4, false, root / "out", log);
     Check(written.size() == 1 && written[0].texture == "media/ui/icons/w.dds" && written[0].replaced == 1,
           "the texture holding a prompt, written at its path");
     Check(!fs::exists(root / "out" / "stale.dds"), "the folder emptied first");

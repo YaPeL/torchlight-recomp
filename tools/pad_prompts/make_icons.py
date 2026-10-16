@@ -35,7 +35,9 @@ ICONS = {
         # the game's small images; the PS5 options and create buttons are tall pills that do not.
         "options": "PlayStation Series/Default/playstation3_button_start.png",
         "create": "PlayStation Series/Default/playstation3_button_select.png",
-        "controller": "PlayStation Series/Vector/controller_playstation5.svg",
+        "controller_ps3": "PlayStation Series/Vector/controller_playstation3.svg",
+        "controller_ps4": "PlayStation Series/Vector/controller_playstation4.svg",
+        "controller_ps5": "PlayStation Series/Vector/controller_playstation5.svg",
     },
     "nintendo": {
         "a": "Nintendo Switch/Default/switch_button_a.png",
@@ -51,6 +53,16 @@ ICONS = {
         "controller": "Nintendo Switch/Vector/controller_switch_pro.svg",
     },
 }
+
+# The sticks and the d-pad, the same names in both styles' folders. Their places in the game are up
+# to 67 px wide, so they come from the pack's Double (128 px) PNGs.
+STICKS = ["stick_l", "stick_r", "stick_l_horizontal", "stick_r_horizontal", "stick_l_vertical",
+          "stick_r_vertical", "stick_r_press", "dpad_vertical", "dpad_horizontal", "dpad_up", "dpad_down",
+          "dpad_left", "dpad_right"]
+for style, folder, prefix in (("playstation", "PlayStation Series", "playstation"),
+                              ("nintendo", "Nintendo Switch", "switch")):
+    for name in STICKS:
+        ICONS[style][name] = f"{folder}/Double/{prefix}_{name}.png"
 
 # Icons whose word above the shape is left out: only the lowest band of visible rows is kept.
 SHAPE_ONLY = {("playstation", "options"), ("playstation", "create")}
