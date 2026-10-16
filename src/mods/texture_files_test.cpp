@@ -129,7 +129,7 @@ int main() {
     const TextureResolver prompts(with);
     TextureFile p = prompts.Find("MEDIA/LEVELSETS/TOWN1/BRICKS.DDS", "General", pak);
     Check(p.source == TextureSource::kGenerated && p.path.parent_path().filename() == "town1" &&
-              p.path.string().find("/p/") != std::string::npos,
+              p.path.generic_string().find("/p/") != std::string::npos,
           "a prompt texture before the pak's");
     p = prompts.Find("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "General", pak);
     Check(p.source == TextureSource::kReplacements, "the player's replacements before the prompts");
