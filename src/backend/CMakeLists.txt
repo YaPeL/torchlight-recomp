@@ -128,7 +128,7 @@ target_include_directories(conventions_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 target_compile_options(conventions_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME conventions_test COMMAND conventions_test)
 
-# The two tests below draw with the render system of their command line (test_render_system.h)
+# The tests below draw with the render system of their command line (test_render_system.h)
 # and skip (code 77) without a display. Each runs with GL3+ everywhere and, on Windows, also with
 # Direct3D 11 (`<name>_d3d11`). GL3+ needs OpenGL 3.3: Windows CI and release runners have no GPU,
 # only Windows' own OpenGL 1.1, on which OGRE crashes before the test can tell (no display to probe
@@ -136,8 +136,9 @@ add_test(NAME conventions_test COMMAND conventions_test)
 # reports it and the test fails), so the GL3+ runs carry the label `opengl33` and the runners'
 # ctest leaves it out (`-LE opengl33`, .github/workflows/ci.yml and release.yml); they run on
 # machines with a GPU. The Direct3D 11 runs need no GPU (Windows' software adapter, WARP) and run there too.
-# The host UI pass on an offscreen backend; the internal render scale and the guest's frame size.
-foreach(_test ui_pass_test render_scale_test)
+# The host UI pass on an offscreen backend; the internal render scale and the guest's frame size;
+# a stage's constants across render target binds.
+foreach(_test ui_pass_test render_scale_test draw_constants_test)
     add_executable(${_test} ${_test}.cpp)
     target_link_libraries(${_test} PRIVATE torchlight_backend)
     target_compile_options(${_test} PRIVATE -Wall -Wextra -Werror)

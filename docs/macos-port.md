@@ -619,6 +619,21 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   (66 of 66); seen in the game at MAC.7. Measurements read the presented frames.
 - Optional, for later: the automatic internal resolution (the window's size) capped at 4K;
   today a scaled 4K display gives a 5120 x 2880 window and renders at that size.
+- Open, for the next run on this Mac: the impression that the lamps' light goes out sooner than
+  it should (at 4K). It is not Direct3D 11's missing constants after a target bind (0338b58):
+  GL3+ keeps uniforms per program, and its replays were unchanged by that fix. Nothing scale
+  dependent is expected either, because the light map (render target 208) keeps the guest's
+  512 x 512 at any internal resolution. It cannot be told apart from reading the code. The
+  next run:
+  - stand still where a lamp's light fades and take an F9 there, at the default internal
+    resolution (5120 x 2880) and again at 1280 x 720;
+  - replay both captures on Linux (GL3+) at `--render_scale 1` and `4` (`--host_size` for the
+    full-size image).
+  - Interpreting the result:
+    - the light is the same in all of them: likely the game's own fade (check the same spot with
+      Xenos, `--native_live=off`);
+    - it depends on the scale: a backend issue to look at in the light map's projection;
+    - the replays match each other but differ from what the Mac showed: Apple's GL.
 - Windows (2026-10-09, the Windows agent): MAC.2 validated with the real 0x1000 offset, MAC.4b
   built and tested with `FlushFileBuffers`, and patch 21 has the Metal fix (`5a98b6f`).
   `feature/launcher-imgui-macos` was deleted: its patch 21 and README matched
