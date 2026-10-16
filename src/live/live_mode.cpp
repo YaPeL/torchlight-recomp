@@ -297,15 +297,17 @@ void LiveMode::Run() {
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
   bool blank_output = false;  // the output cleared for the busy notice before the first frame
-  // The window's new size, when it changed (before presenting).
+  // The window's new size, when it changed (before presenting); whether it did. A new render
+  // scale remakes the targets, whose content is then lost.
   auto apply_window_size = [&] {
-    if (uint64_t size = pending_window_size_.exchange(0)) {
-      tl_backend_resize_window(backend, uint32_t(size >> 32), uint32_t(size));
-      if (parent.system != platform::NativeWindow::kNone) {
-        window_size = {uint32_t(size >> 32), uint32_t(size)};
-        apply_render_scale();
-      }
+    const uint64_t size = pending_window_size_.exchange(0);
+    if (!size) return false;
+    tl_backend_resize_window(backend, uint32_t(size >> 32), uint32_t(size));
+    if (parent.system != platform::NativeWindow::kNone) {
+      window_size = {uint32_t(size >> 32), uint32_t(size)};
+      apply_render_scale();
     }
+    return true;
   };
 
   while (running_) {
@@ -314,10 +316,10 @@ void LiveMode::Run() {
       // No guest frame while the game's thread is held by work of ours (busy_notice.h): the last
       // frame shown again with the UI over it, so the notice appears and its progress moves.
       // Before the game's first frame (the mods' unit index is built then) there is no frame to
-      // show yet: a black one, made as a frame's clear is.
+      // show yet, and after a resize the last one is lost: a black one, made as a frame's clear is.
       if (window_open && BusyNoticeShown()) {
-        apply_window_size();
-        if (last_present.time_since_epoch().count() == 0 && !blank_output) {
+        const bool resized = apply_window_size();
+        if (resized || (last_present.time_since_epoch().count() == 0 && !blank_output)) {
           const float black[4] = {0, 0, 0, 1};
           tl_backend_begin(backend);
           tl_backend_clear(backend, 1, black, 1.0f, 0);
