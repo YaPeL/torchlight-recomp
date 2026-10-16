@@ -84,8 +84,10 @@ struct Capabilities {
   std::vector<Resolution> display_modes;
   // Refresh rate of that display in Hz (0 if unknown).
   uint32_t display_hz = 0;
-  // A battery is present (laptops, the Steam Deck): the automatic frame rate cap stays at 60.
-  bool has_battery = false;
+  // Running on battery (unplugged) when the game started: the automatic frame rate cap is 60.
+  bool on_battery = false;
+  // A Steam Deck (by the machine's model): the automatic frame rate cap is always 60.
+  bool steam_deck = false;
   // Whether the guest's vblank can run at any rate (needs the runtime's support); without it only
   // 60 Hz and unlimited exist.
   bool any_vblank_rate = false;
@@ -138,8 +140,8 @@ Choices<Resolution> ResolutionChoices(const Capabilities& caps);
 // Automatic (kFpsCapAuto) first, then ascending, with 0 (unlimited) last.
 Choices<uint32_t> FpsCapChoices(const Capabilities& caps);
 // The cap in effect: a chosen number as it is; automatic is the display's refresh rate up to
-// kAutoFpsCapCeiling, and 60 with a battery, on a display of 60 Hz or less or of unknown rate, or
-// when the guest's vblank cannot run at other rates.
+// kAutoFpsCapCeiling, and 60 on a Steam Deck, on battery, on a display of 60 Hz or less or of
+// unknown rate, or when the guest's vblank cannot run at other rates.
 uint32_t EffectiveFpsCap(const HostSettings& settings, const Capabilities& caps);
 Choices<std::string> LanguageChoices(const Capabilities& caps);
 // Automatic first, then the fixed aspects no wider than the display, narrowest first (all of them

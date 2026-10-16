@@ -225,7 +225,9 @@ Choices<uint32_t> FpsCapChoices(const Capabilities& caps) {
 
 uint32_t EffectiveFpsCap(const HostSettings& settings, const Capabilities& caps) {
   if (settings.fps_cap != kFpsCapAuto) return settings.fps_cap;
-  if (!caps.any_vblank_rate || caps.has_battery || caps.display_hz <= 60) return 60;
+  if (!caps.any_vblank_rate || caps.steam_deck || caps.on_battery || caps.display_hz <= 60) {
+    return 60;
+  }
   return std::min(caps.display_hz, kAutoFpsCapCeiling);
 }
 
@@ -427,7 +429,7 @@ std::string Serialize(const HostSettings& settings) {
       << "# Internal render resolution, \"WIDTHxHEIGHT\" or \"window\".\n"
       << "render_resolution = " << Quote(FormatResolution(settings.render_resolution)) << "\n"
       << "# Frame rate cap in Hz; 0 = unlimited; \"auto\" = the display's refresh rate (up to "
-      << kAutoFpsCapCeiling << ", 60 on a battery).\n"
+      << kAutoFpsCapCeiling << ", 60 on battery or a Steam Deck).\n"
       << "fps_cap = "
       << (settings.fps_cap == kFpsCapAuto ? std::string("\"auto\"")
                                           : std::to_string(settings.fps_cap))

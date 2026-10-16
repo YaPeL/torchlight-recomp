@@ -243,6 +243,22 @@ void SetCurrentThreadName(const char* name) {
   SetThreadDescription(GetCurrentThread(), wide.c_str());
 }
 
+bool IsSteamDeck() {
+  // The firmware's system information (SMBIOS), as Windows keeps it.
+  auto read = [](const wchar_t* name) {
+    wchar_t value[128] = {};
+    DWORD size = sizeof(value);
+    if (RegGetValueW(HKEY_LOCAL_MACHINE, L"HARDWARE\\DESCRIPTION\\System\\BIOS", name,
+                     RRF_RT_REG_SZ, nullptr, value, &size) != ERROR_SUCCESS) {
+      return std::wstring();
+    }
+    return std::wstring(value);
+  };
+  const std::wstring product = read(L"SystemProductName");
+  return read(L"SystemManufacturer") == L"Valve" &&
+         (product == L"Jupiter" || product == L"Galileo");
+}
+
 bool HasDirect3D11(const std::string& plugin_dir) {
   // OGRE appends _d to the plugin's name in its Debug build.
   std::error_code ec;

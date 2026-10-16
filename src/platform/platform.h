@@ -52,8 +52,11 @@ struct DisplayInfo {
   std::vector<std::pair<uint32_t, uint32_t>> modes;
 };
 DisplayInfo GameDisplay();
-// Whether the machine has a battery (laptops, the Steam Deck), plugged in or not.
-bool HasBattery();
+// Whether the machine runs on battery now (unplugged); false when plugged in or without one.
+bool OnBattery();
+// Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
+// firmware's system information.
+bool IsSteamDeck();
 // Gamepad input keeps reaching the game while another window (the backend's) has the focus.
 void AllowBackgroundGamepad();
 

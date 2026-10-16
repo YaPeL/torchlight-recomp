@@ -279,6 +279,7 @@ std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string
 void SetCurrentThreadName(const char* name) { pthread_setname_np(name); }
 
 bool HasDirect3D11(const std::string&) { return false; }
+bool IsSteamDeck() { return false; }
 
 // Not probed: GL3+ is the only render system, so there is nothing to fall back to.
 bool CanCreateGl33Context() { return true; }

@@ -139,20 +139,26 @@ void TestEffectiveFpsCap() {
   caps.display_hz = 0;
   Check(EffectiveFpsCap(automatic, caps) == 60, "unknown rate: 60");
   caps.display_hz = 165;
-  caps.has_battery = true;
-  Check(EffectiveFpsCap(automatic, caps) == 60, "a battery: 60");
-  caps.has_battery = false;
+  caps.on_battery = true;
+  Check(EffectiveFpsCap(automatic, caps) == 60, "on battery: 60");
+  caps.on_battery = false;
+  Check(EffectiveFpsCap(automatic, caps) == 144, "a laptop plugged in: the display, up to 144");
+  caps.steam_deck = true;
+  caps.display_hz = 90;
+  Check(EffectiveFpsCap(automatic, caps) == 60, "a Steam Deck (OLED, 90 Hz), plugged in: 60");
+  caps.steam_deck = false;
+  caps.display_hz = 165;
   caps.any_vblank_rate = false;
   Check(EffectiveFpsCap(automatic, caps) == 60, "no other vblank rate: 60");
   caps.any_vblank_rate = true;
-  caps.has_battery = true;
+  caps.on_battery = true;
   HostSettings chosen;
   chosen.fps_cap = 90;
   Check(EffectiveFpsCap(chosen, caps) == 90, "a chosen cap is kept, battery or not");
   chosen.fps_cap = 0;
   Check(EffectiveFpsCap(chosen, caps) == 0, "unlimited is kept");
   chosen.fps_cap = 60;
-  caps.has_battery = false;
+  caps.on_battery = false;
   Check(EffectiveFpsCap(chosen, caps) == 60, "a chosen 60 on a 165 Hz display stays 60");
 }
 

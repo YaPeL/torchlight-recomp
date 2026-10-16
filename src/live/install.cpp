@@ -322,7 +322,8 @@ void InitRunningSettings(const std::filesystem::path& game_data_root, rex::Runti
   caps.display = {display.width, display.height};
   for (const auto& [w, h] : display.modes) caps.display_modes.push_back({w, h});
   caps.display_hz = display.refresh_hz;
-  caps.has_battery = platform::HasBattery();
+  caps.on_battery = platform::OnBattery();
+  caps.steam_deck = platform::IsSteamDeck();
   // The first one offered is the automatic choice: Direct3D 11 where it is installed (Windows; less
   // CPU than OpenGL there, docs/windows-port.md), else GL3+.
   caps.render_systems = {kGl3PlusRenderSystemName};
@@ -555,10 +556,12 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
     {
       std::lock_guard lock(g_running.mutex);
       const uint32_t fps_cap = settings::EffectiveFpsCap(g_running.startup, g_running.caps);
-      REXLOG_INFO("settings: fps cap {} ({}; display {} Hz{})",
+      REXLOG_INFO("settings: fps cap {} ({}; display {} Hz, {}{})",
                   fps_cap ? std::to_string(fps_cap) : std::string("unlimited"),
                   g_running.startup.fps_cap == settings::kFpsCapAuto ? "automatic" : "chosen",
-                  g_running.caps.display_hz, g_running.caps.has_battery ? ", battery" : "");
+                  g_running.caps.display_hz,
+                  g_running.caps.on_battery ? "on battery" : "plugged in",
+                  g_running.caps.steam_deck ? ", Steam Deck" : "");
       ApplyFpsCap(fps_cap, dialogs.runtime);
     }
     // The game's display: vertical sync and internal resolution from the host settings.

@@ -42,9 +42,10 @@ elseif(WIN32)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_win.cpp gpu_adapters.cpp
                 gl_probe_win.cpp text_wrap.cpp
                 presentation_time_none.cpp)
-    # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats).
+    # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats);
+    # advapi32: the firmware's system information (IsSteamDeck).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
-                          PRIVATE dxgi opengl32 gdi32)
+                          PRIVATE dxgi opengl32 gdi32 advapi32)
 elseif(APPLE)
     enable_language(OBJCXX)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_mac.cpp)
