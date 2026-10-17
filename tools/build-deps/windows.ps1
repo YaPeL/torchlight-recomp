@@ -192,7 +192,9 @@ function Test-Sdk {
     if ($code -ne 0) {
         throw "SDK tests failed (ctest $code): see above"
     }
-    if (Select-String -Path $log -Pattern 'Not Run' -Quiet) {
+    # ctest marks a test it could not start with ***Not Run (its summary's "did not run" lists the
+    # skips too, so the match is exact and case-sensitive).
+    if (Select-String -Path $log -Pattern '\*\*\*Not Run' -CaseSensitive -Quiet) {
         throw 'an SDK test did not run: see above'
     }
     # Skips only as tools/deps/sdk_test_skips.txt lists them for Windows, and all of those.

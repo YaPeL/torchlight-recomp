@@ -115,7 +115,9 @@ if [ "$tests" = true ]; then
   [ "$status" -eq 0 ] || { echo "SDK tests failed (ctest $status): see above" >&2; exit 1; }
   # Skips only as tools/deps/sdk_test_skips.txt lists them for this platform, and all of those.
   case "$(uname -s)" in Darwin) platform=macos ;; *) platform=linux ;; esac
-  if grep -q 'Not Run' "$log"; then
+  # ctest marks a test it could not start with ***Not Run (its summary's "did not run" lists the
+  # skips too).
+  if grep -q '\*\*\*Not Run' "$log"; then
     echo "an SDK test did not run: see above" >&2
     exit 1
   fi
