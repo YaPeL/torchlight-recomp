@@ -16,8 +16,9 @@ How a review is done in this repository, for people and agents. The project's ru
 - A changed default or anything a player sees, without the owner's OK.
 - A slower start: work added before the backend draws (`startup: <step> in N ms` in the log).
 - Broken isolation under `--user_data_root`: a file of the player's read or written by a test run.
-- A difference closed as "the game's own behaviour" without evidence: the same frame against Xenos
-  (parallel mode or an F9 reference), or the guest code that does it, read and cited.
+- A difference classed as ours or as "the game's own behaviour" without evidence: the same frame
+  against Xenos (`--native_live=off`, parallel mode or an F9 reference), or the guest code that does
+  it, read and cited.
 
 ## The reviewer's rules
 

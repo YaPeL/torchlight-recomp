@@ -74,10 +74,24 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   macOS. Pre-release checklist: vsync on with a cap above the display's refresh on each platform
   (presented rate = refresh).
 
-## A difference closed as the game's own behaviour without evidence
+## The lamps' light closed as the game's own behaviour, and it was ours (fixed in 0338b58)
 
-- **What happened:** a report about the lamps' light was closed as "the game's own behaviour"
-  with no evidence for it: no comparison against Xenos at the same frame, no guest code read.
-- **Should have been caught by:** review: such a closure needs its evidence.
-- **Covered now:** `REVIEW.md` lists it as a failure: "the game's own behaviour" needs the same
-  frame against Xenos (parallel mode or an F9 reference) or the guest code that does it, cited.
+- **What happened:** the lamps' light missing on Direct3D 11 was first closed as "the game's own
+  behaviour", with no comparison against Xenos. It was the backend's constants lost after a target
+  bind (the first entry above; pull request #6). In the same case, other differences the owner had
+  taken for bugs (puddles and shadows not drawn at a distance) were the game's own, and confirmed
+  against Xenos at the same frames (`docs/ARCHITECTURE.md`, Future improvements). The closure
+  happened in the Windows agent's session and was not recorded in the repository; this entry is
+  anchored to the fix.
+- **Should have been caught by:** review: a difference is classed as ours or the game's only with
+  evidence.
+- **Covered now:** `REVIEW.md` lists it as a failure: a difference is the game's own only with the
+  same frame against Xenos (`--native_live=off`, parallel mode or an F9 reference) or the guest code
+  that does it, read and cited.
+
+## Pending: `draw_constants_test`'s GL3+ run is not in CI
+
+`draw_constants_test` runs on Direct3D 11 (WARP) in CI; its GL3+ run carries the `opengl33` label,
+which CI's runners leave out (no GPU), so a constants regression on GL3+ would pass CI. After
+v0.12.5-beta: evaluate running the GL3+ backend tests on the Linux runner with Mesa's llvmpipe
+(OpenGL 4.5 in software), to cover both render systems.
