@@ -28,7 +28,8 @@ the process's, and the other [memory] cases keep theirs for the whole run): a pa
 middle of the first free candidate range keeps its contents and the arena goes elsewhere, and the
 pages before and after the views have no access. Without the change the arena maps at that
 candidate and the page reads 0. In one process with the other [memory] cases it had failed on the
-tablet, and on Linux in the same order, on the second Memory's MMIO handler. Linux SDK ctest 1773 of 1773.
+tablet, and on Linux in the same order, on the second Memory's MMIO handler. Linux SDK ctest:
+1773 of 1773.
 Desktop game runs (2026-10-17, Release, an isolated profile: menu, town, two floors down):
 with the arena at 2^32, and with a page mapped at 0x150000000 so that it went to 0x200000000;
 both to the end, the taken range logged.
