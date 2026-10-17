@@ -1,0 +1,90 @@
+# The ReXGlue SDK's own tests (unit_tests, ppc_tests) with this project's patches, on Linux, Windows
+# and macOS. CI's other jobs build the SDK without them, and five of its cases failed for weeks
+# without anyone seeing it (docs/regressions.md). Every test has to run and pass, one at a time: a
+# failed or not-run one fails the job, and so does a skip that tools/deps/sdk_test_skips.txt does
+# not list for that platform, with its reason, or a listed one that ran (tools/deps/build_sdk.sh
+# --tests, tools/build-deps/windows.ps1 -SdkTests). Only when what builds the SDK changes (the
+# patches, the scripts, this file), and by hand. Builds the SDK from scratch, publishes nothing,
+# no secrets.
+name: SDK tests
+
+on:
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'patches/**'
+      - 'tools/deps/**'
+      - 'tools/build-deps/**'
+      - '.github/workflows/sdk-tests.yml'
+  push:
+    branches: [develop, main]
+    paths:
+      - 'patches/**'
+      - 'tools/deps/**'
+      - 'tools/build-deps/**'
+      - '.github/workflows/sdk-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sdk-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux:
+    name: SDK tests (Linux)
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    timeout-minutes: 90
+    steps:
+      - name: Bootstrap
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git
+          git config --global --add safe.directory '*'
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: sh tools/deps/ubuntu_toolchain.sh
+      - name: Build and test
+        run: tools/deps/build_sdk.sh --tests /tmp/sdk /tmp/sdk-work
+      # The PPC tests' binaries for macOS, which has no PowerPC binutils (patches/README.md, 22).
+      - name: PPC test data
+        run: tools/deps/build_ppc_test_data.sh /tmp/sdk-work/rexglue-sdk ppc-test-data
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ppc-test-data
+          path: ppc-test-data
+          retention-days: 1
+
+  windows:
+    name: SDK tests (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build and test
+        shell: pwsh
+        run: |
+          tools/build-deps/windows_toolchain.ps1 -Destination C:\llvm
+          tools/build-deps/windows.ps1 -SdkPrefix C:\sdk-tests\sdk -WorkDir C:\sdk-tests `
+            -SdkConfigs Release -LlvmBin C:\llvm\bin -SdkTests
+
+  macos:
+    name: SDK tests (macOS)
+    needs: linux
+    runs-on: macos-26
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: ppc-test-data
+          path: ${{ runner.temp }}/ppc-test-data
+      - name: Tools
+        run: command -v ninja > /dev/null || brew install ninja
+      - name: Build and test
+        run: >-
+          tools/deps/build_sdk.sh --tests --ppc-test-data "$RUNNER_TEMP/ppc-test-data"
+          "$RUNNER_TEMP/sdk" "$RUNNER_TEMP/sdk-work"

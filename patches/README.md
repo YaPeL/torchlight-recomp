@@ -16,9 +16,11 @@ The SDK's own tests (`unit_tests`, `ppc_tests`) with this series: all pass on Li
 on, and patches 39 and 40 fix them: one test with a wrong literal (every platform) and four
 `chrono_test` cases (libstdc++, so Linux); four more were skipped, and patch 41 fixes what they
 test. Windows and macOS have not run them since 39 and 40; before, Windows
-failed only the depfile case, and macOS passed the chrono ones. CI does not build or run these
-tests (`docs/regressions.md`), so they are run by hand when the series changes: `ctest` in the
-SDK's build tree with `REXGLUE_BUILD_TESTS=ON`, and `tools/android/run_sdk_tests.sh` on Android.
+failed only the depfile case, and macOS passed the chrono ones. The `SDK tests` workflow
+(`.github/workflows/sdk-tests.yml`) builds and runs them on Linux, Windows and macOS whenever
+`patches/` or the dependency scripts change; the only skips it accepts are the platform ones in
+`tools/deps/sdk_test_skips.txt`, each with its reason. On Android they are run by hand
+(`tools/android/run_sdk_tests.sh`).
 
 ## Numbers
 
@@ -55,7 +57,10 @@ in number order; a branch adds its own line at its number's place.
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | In the branch (after 38) |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` | `sdk/known-test-failures` | In the branch (after 39) |
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | In the branch (after 40) |
-| 42 | | | Next free number |
+| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41) |
+| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In that branch (after 42) |
+| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
+| 45 | | | Next free number |
 
 ## The patches
 
@@ -651,5 +656,17 @@ in number order; a branch adds its own line at its number's place.
     `stream_test` cases had been disabled with `SKIP` for it. It swaps as `Peek` does now, and
     the cases run again (the 16-bit one also checks the bytes in memory). Nothing in the runtime
     calls it (the XMA decoder only reads). Without the change 6 assertions fail.
+
+44. `rexglue-alloc-commit-mprotect-first.patch` (POSIX only): a commit over a reserved range
+    tried `mmap(MAP_FIXED_NOREPLACE)` first, failed with `EEXIST`, and then parsed the whole of
+    `/proc/self/maps` before the `mprotect`: about 30 us per commit with a loaded game's mappings
+    (31.8 us on Linux x86-64 with 2000 mappings), and since patch 38 on kernels before 4.17 too
+    (66 us per guest allocation in the tablet's loads). On Linux a commit with an address calls
+    `mprotect` first, and maps only when it fails with `ENOMEM`: 1.0 us per commit (the tablet:
+    125 us to 0.9 us). Desktop
+    Linux behaviour changes in speed only (the same result for every commit the heaps make; a
+    commit over a range only partly mapped, which no caller makes, may change the mapped part
+    before it fails). Tests in `alloc_fixed_test.cpp` pin the results: in place, mapped where
+    nothing was, a hole and zero bytes fail.
 
 The observation and diagnostic patches there were before remain in the git history.
