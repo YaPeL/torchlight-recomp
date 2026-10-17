@@ -104,11 +104,13 @@ echo "SDK installed in $prefix"
 
 if [ "$tests" = true ]; then
   # Every test has to run and pass: a skipped or not-run one fails too (docs/regressions.md).
+  # One at a time: the SDK's tests are not written for parallel processes (fixed temporary
+  # folder names, a guest memory named by the clock's tick), and in parallel they collided on
+  # macOS.
   log="$work/sdk-tests.log"
   status=0
   ctest --test-dir "out/build/$preset" -C Release --output-on-failure --no-tests=error \
-    --parallel "$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)" > "$log" 2>&1 \
-    || status=$?
+    > "$log" 2>&1 || status=$?
   cat "$log"
   if grep -E '\*\*\*Skipped|Not Run' "$log"; then
     echo "an SDK test did not run (skipped or not run): see above" >&2

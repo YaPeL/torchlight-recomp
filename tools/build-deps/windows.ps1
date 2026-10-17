@@ -181,13 +181,13 @@ function Build-Sdk {
 }
 
 # Runs the SDK's tests (from its checkout): every one has to run and pass, a skipped or not-run one
-# fails too (docs/regressions.md).
+# fails too (docs/regressions.md). One at a time, as build_sdk.sh does: they are not written for
+# parallel processes.
 function Test-Sdk {
     $log = Join-Path $WorkDir 'sdk-tests.log'
     $ErrorActionPreference = 'Continue'
     & ctest --test-dir out/build/win-amd64 -C $SdkConfigs[0] --output-on-failure --no-tests=error `
-        --parallel $env:NUMBER_OF_PROCESSORS 2>&1 | ForEach-Object { "$_" } |
-        Tee-Object -FilePath $log
+        2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
     $code = $LASTEXITCODE
     if (Select-String -Path $log -Pattern '\*\*\*Skipped|Not Run' -Quiet) {
         throw 'an SDK test did not run (skipped or not run): see above'
