@@ -1,0 +1,37 @@
+Patch 36. In the series since 2026-10-17, after patch 35.
+
+Every install registered its prefix in the CMake user package registry
+(~/.cmake/packages/rexglue, HKCU on Windows), so a desktop configure could find an Android install
+there and take the target's libraries. The option REXGLUE_REGISTER_PACKAGE now decides it: ON by
+default in native builds, as before, and OFF in cross builds.
+
+Test: an Android install leaves ~/.cmake/packages/rexglue as it was; a native install with the
+option off too.
+
+diff --git a/cmake/rexglue_install.cmake b/cmake/rexglue_install.cmake
+index d7ae77d..08240d4 100644
+--- a/cmake/rexglue_install.cmake
++++ b/cmake/rexglue_install.cmake
+@@ -153,6 +153,17 @@ install(EXPORT rexglueTargets
+ #
+ # Windows: HKCU\Software\Kitware\CMake\Packages\rexglue  (REG_SZ, value name = MD5 hash)
+ # Unix:    ~/.cmake/packages/rexglue/<hash>               (file containing prefix path)
++#
++# A cross build (Android) is not registered by default: a native configure of a consumer would
++# otherwise find it there and take the target's libraries.
++if(CMAKE_CROSSCOMPILING)
++    set(_rexglue_register_default OFF)
++else()
++    set(_rexglue_register_default ON)
++endif()
++option(REXGLUE_REGISTER_PACKAGE
++    "Register the install in the CMake user package registry" ${_rexglue_register_default})
++if(REXGLUE_REGISTER_PACKAGE)
+ install(CODE [[
+     # Normalize path casing on Windows before hashing to avoid duplicate entries
+     if(CMAKE_HOST_WIN32)
+@@ -177,3 +188,4 @@ install(CODE [[
+     message(STATUS "Registered rexglue in CMake user package registry")
+     message(STATUS "  -> ${CMAKE_INSTALL_PREFIX}")
+ ]])
++endif()

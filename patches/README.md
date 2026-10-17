@@ -43,7 +43,11 @@ in number order; a branch adds its own line at its number's place.
 | 31 | `rexglue-guest-fatal-hook.patch` | `develop` | In the series |
 | 32 | `rexglue-codegen-non-argument-in-context.patch` | `sdk/argument-locals` | Not integrated: no gain in hand runs (upstream D26) |
 | 33 | `rexglue-timer-queue-blocking-wait.patch` | `develop` | In the series (after 31) |
-| 34 | | | Next free number |
+| 34 | `rexglue-android-build.patch` | `sdk/android` | In the branch (after 33) |
+| 35 | `rexglue-cross-host-tool.patch` | `sdk/android` | In the branch (after 34) |
+| 36 | `rexglue-cross-no-package-registry.patch` | `sdk/android` | In the branch (after 35) |
+| 37 | `rexglue-android-physical-host-offset.patch` | `sdk/android` | In the branch (after 36) |
+| 38 | | | Next free number |
 
 ## The patches
 
@@ -558,5 +562,51 @@ in number order; a branch adds its own line at its number's place.
     1.7-4.2 % less CPU depending on the part, the frame rate and frame times within the runs'
     spread (`docs/rexglue-upstream.md`, section 8). In the series since 2026-10-14, as its last
     line. Upstream draft D32.
+
+34. `rexglue-android-build.patch`: the SDK builds for Android (arm64-v8a, NDK r30, API 30).
+    Adapted from patch 0001 of XDanfr/RaymanOriginsRecomp (commit c1bf7b9, BSD-3-Clause, the
+    SDK's terms; `THIRD_PARTY_NOTICES.md`): OBJC only without `ANDROID_ABI` (before `project()`
+    `APPLE` is still the macOS host's), an `android-arm64` platform, the `clock_cast` and
+    `from_chars` shims of macOS, fibers switched in AArch64 assembly (Bionic has no ucontext), no
+    robust mutexes, the executable path from `dladdr`, `content://` stubbed, an ANativeWindow
+    surface from SDL3, one app per library through `SDL_main`. Changed from theirs: the Android
+    `main` calls the `AndroidInitialize` hooks first (their 0002; without them guest memory falls
+    back to `/dev/ashmem`, closed to apps since API 29) and sets `HOME`, without their
+    `--game_data_root` and `--log_file` defaults (the app passes those). Added: a Catch2
+    listener that calls the same hooks in the test binaries on Android. Their 0003, 0004 and
+    0006 conflict with patches 8 and 3 and are not needed. Desktop builds compile nothing new.
+    Verified: the SDK, `unit_tests` and `ppc_tests` build with the NDK r30 on Linux; on devices,
+    `tools/android/run_sdk_tests.sh` (the Mac agent).
+
+35. `rexglue-cross-host-tool.patch`: a cross build cannot run the `rexglue` it builds. The cache
+    variable `REXGLUE_HOST_TOOL` names `rexglue` built for the build host and installed with its
+    SDK (`<prefix>/bin/rexglue`); in a cross build `rexglueConfig.cmake` points `rex::rexglue`
+    at it (the game's `generated/rexglue.cmake` is unchanged), and the PPC tests run it. The tool
+    must generate what the SDK expects, and one version can be two codegens (patches over one
+    commit), so the check is a hash of the SDK's own sources (`src`, `include`, the templates,
+    the PPC disassembler), installed as `share/rexglue/codegen_id`: the host SDK must come from
+    the same commit and patches, and another hash, or none, fails configure. The config also adds its prefix to `CMAKE_FIND_ROOT_PATH`, so the NDK's toolchain
+    finds the dependencies installed with the SDK. Verified with a minimal consumer of an
+    Android install: the matching host SDK configures; the series' previous SDK (same version)
+    fails on the hash; no tool, a warning; without the find root, `fmt` is not found.
+
+36. `rexglue-cross-no-package-registry.patch`: an install registered itself in the CMake user
+    package registry, where a desktop configure could take an Android install. The option
+    `REXGLUE_REGISTER_PACKAGE` is ON in native builds (as before) and OFF in cross builds.
+    Verified: an Android install leaves `~/.cmake/packages/rexglue` as it was.
+
+37. `rexglue-android-physical-host-offset.patch`: the 0xE0000000 heap's 0x1000 host offset is a
+    compile-time constant in recompiled code and was chosen at run time by the heap. Android
+    arm64 has 4 KB or 16 KB pages, known only at run time, and got 0, wrong on 16 KB. Android
+    arm64 now always takes it, as macOS arm64 does: `PhysicalHostOffset` and the templates'
+    `REX_PHYS_HOST_OFFSET` include it, the heap sets `host_address_offset` when
+    `PhysicalHostOffset` asks for it, and `MapViews` starts the 0xE0000000 view 0x1000 lower in
+    the file at any granularity. The generated pch asserts that its macro equals
+    `PhysicalHostOffset`. Desktop offsets are the same as before, and the game's recompiled code
+    is byte for byte the same (only the pch changes). Test in `heap_allocation_test.cpp`, every
+    platform: a word written at `GuestPtr(addr)` is read at its physical address, and back. On
+    Linux with the offset forced (Android's rule on 4 KB) every memory test passes; forced
+    without the heap and view changes, the case fails. The game's
+    `cmake/guest_host_offset.cmake` takes the same rule.
 
 The observation and diagnostic patches there were before remain in the git history.

@@ -1,0 +1,214 @@
+Patch 35. In the series since 2026-10-17, after patch 34.
+
+A cross build (Android) cannot run the rexglue it builds, and the codegen steps run it: a
+consumer's (generated/rexglue.cmake, $<TARGET_FILE:rex::rexglue>) and the PPC tests'. The cache
+variable REXGLUE_HOST_TOOL names rexglue built for the build host and installed with its SDK
+(<host prefix>/bin/rexglue).
+
+- rexglueConfig.cmake, when CMAKE_CROSSCOMPILING: rex::rexglue's location becomes that tool, so
+  generated/rexglue.cmake needs no change. Without it, a warning (a build without the game's code
+  needs no codegen). It also adds the SDK's prefix to CMAKE_FIND_ROOT_PATH: the NDK's toolchain
+  searches packages only under its roots, and fmt, spdlog, SDL3 and the rest installed with the
+  SDK were not found unless the consumer listed it.
+- The host tool must generate what this SDK expects. One version can be two codegens (patches
+  applied over one commit give the same version), so the check is a hash of the SDK's own sources
+  (src, include, resources/templates, thirdparty/disasm: rexglue's output depends on the codegen,
+  the CLI, the export tables in src/kernel and the XEX loader in src/system), made at build time
+  by cmake/rexglue_codegen_id.cmake and installed as share/rexglue/codegen_id. The host SDK must
+  come from the same commit and patches. A host tool whose
+  prefix has another hash, or none, fails configure, with both values in the message.
+- tests/ppc: a cross build runs the host tool for recompile-tests, after comparing the same hash;
+  a reinstalled host SDK runs both again.
+
+Desktop builds are not cross builds: nothing changes but one more installed file. Test, NDK r30
+on Linux, a minimal consumer of an Android install: with the matching host SDK it configures and
+rex::rexglue is the host tool; with the series' previous SDK (same version) it fails on the hash;
+with no tool, a warning; without the find-root line, fmt is not found. The Android ppc_tests
+build with the host tool.
+
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 320b5ba..61354ed 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -21,6 +21,11 @@ project(ReXGlue
+ # Build Options
+ #==========================================================
+ option(REXGLUE_BUILD_TESTS       "Build PPC instruction and unit tests" OFF)
++# A cross build (Android) cannot run the rexglue it builds. The codegen steps that run at build
++# time (the PPC tests here; a consumer's codegen through rexglueConfig.cmake) run this one instead:
++# rexglue built for the build host from the same SDK version.
++set(REXGLUE_HOST_TOOL "" CACHE FILEPATH
++    "rexglue built for the build host, for the codegen steps of a cross build")
+ option(REXGLUE_ENABLE_SANITIZERS "Enable UndefinedBehaviorSanitizer" OFF)
+ option(REXGLUE_ENABLE_FIDELITYFX "Enable optional AMD FidelityFX integration (experimental)" OFF)
+ option(REXGLUE_ENABLE_TRACY                "Enable Tracy profiler integration" ON)
+@@ -278,6 +283,25 @@ add_subdirectory(src/kernel)
+ add_subdirectory(src/codegen)
+ add_subdirectory(src/rexglue)
+ 
++# What a cross build compares with the host's rexglue (REXGLUE_HOST_TOOL): a hash of the SDK's own
++# sources, installed next to the SDK as share/rexglue/codegen_id (cmake/rexglue_codegen_id.cmake).
++file(GLOB_RECURSE REXGLUE_CODEGEN_ID_INPUTS CONFIGURE_DEPENDS LIST_DIRECTORIES false
++    "${CMAKE_CURRENT_SOURCE_DIR}/src/*"
++    "${CMAKE_CURRENT_SOURCE_DIR}/include/*"
++    "${CMAKE_CURRENT_SOURCE_DIR}/resources/templates/*"
++    "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/disasm/*")
++set(REXGLUE_CODEGEN_ID_FILE "${CMAKE_CURRENT_BINARY_DIR}/codegen_id")
++add_custom_command(
++    OUTPUT "${REXGLUE_CODEGEN_ID_FILE}"
++    COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
++            -DOUTPUT=${REXGLUE_CODEGEN_ID_FILE}
++            -P ${CMAKE_CURRENT_SOURCE_DIR}/cmake/rexglue_codegen_id.cmake
++    DEPENDS ${REXGLUE_CODEGEN_ID_INPUTS} ${CMAKE_CURRENT_SOURCE_DIR}/cmake/rexglue_codegen_id.cmake
++    COMMENT "Hashing what decides rexglue's output"
++    VERBATIM)
++add_custom_target(rexglue_codegen_id ALL DEPENDS "${REXGLUE_CODEGEN_ID_FILE}")
++add_dependencies(rexglue rexglue_codegen_id)
++
+ # Add tests subdirectory if tests are enabled
+ if(REXGLUE_BUILD_TESTS)
+     enable_testing()
+diff --git a/cmake/rexglueConfig.cmake.in b/cmake/rexglueConfig.cmake.in
+index ff7f132..620ca29 100644
+--- a/cmake/rexglueConfig.cmake.in
++++ b/cmake/rexglueConfig.cmake.in
+@@ -11,6 +11,11 @@ include(CMakeFindDependencyMacro)
+ include("${CMAKE_CURRENT_LIST_DIR}/rexglue_helpers.cmake")
+ 
+ list(PREPEND CMAKE_PREFIX_PATH "${PACKAGE_PREFIX_DIR}")
++# A cross toolchain (the NDK's) searches packages only under its find roots: this prefix becomes
++# one, so the dependencies installed with the SDK are found without the consumer listing it.
++if(CMAKE_CROSSCOMPILING AND NOT "${PACKAGE_PREFIX_DIR}" IN_LIST CMAKE_FIND_ROOT_PATH)
++    list(APPEND CMAKE_FIND_ROOT_PATH "${PACKAGE_PREFIX_DIR}")
++endif()
+ 
+ find_dependency(fmt CONFIG)
+ find_dependency(spdlog CONFIG)
+@@ -46,6 +51,36 @@ if(TARGET rex::rexglue)
+         MAP_IMPORTED_CONFIG_MINSIZEREL Release)
+ endif()
+ 
++# A cross build (Android) cannot run the rexglue installed with this SDK. REXGLUE_HOST_TOOL names
++# rexglue built for the build host and installed with its SDK (<prefix>/bin/rexglue), and
++# rex::rexglue (the codegen step) runs that one instead. Its codegen_id must be this SDK's: the
++# same version can still generate different code (patches applied over one commit).
++if(TARGET rex::rexglue AND CMAKE_CROSSCOMPILING)
++    set(REXGLUE_HOST_TOOL "" CACHE FILEPATH
++        "rexglue built for the build host, for the codegen step of a cross build")
++    if(REXGLUE_HOST_TOOL)
++        get_filename_component(_rexglue_host_prefix "${REXGLUE_HOST_TOOL}" DIRECTORY)
++        get_filename_component(_rexglue_host_prefix "${_rexglue_host_prefix}" DIRECTORY)
++        set(_rexglue_host_id_file
++            "${_rexglue_host_prefix}/@CMAKE_INSTALL_DATADIR@/rexglue/codegen_id")
++        set(_rexglue_host_id "")
++        if(EXISTS "${_rexglue_host_id_file}")
++            file(STRINGS "${_rexglue_host_id_file}" _rexglue_host_id LIMIT_COUNT 1)
++        endif()
++        file(STRINGS "${REXGLUE_SHARE_DIR}/codegen_id" _rexglue_id LIMIT_COUNT 1)
++        if(NOT _rexglue_host_id STREQUAL _rexglue_id)
++            message(FATAL_ERROR "REXGLUE_HOST_TOOL (${REXGLUE_HOST_TOOL}) does not generate what "
++                "this SDK expects: codegen_id '${_rexglue_host_id}' (${_rexglue_host_id_file}), "
++                "this SDK's '${_rexglue_id}'. Build the host SDK from the same commit and patches.")
++        endif()
++        set_target_properties(rex::rexglue PROPERTIES
++            IMPORTED_LOCATION_RELEASE "${REXGLUE_HOST_TOOL}")
++    else()
++        message(WARNING "Cross build without REXGLUE_HOST_TOOL: the codegen step cannot run "
++            "(rex::rexglue is built for the target)")
++    endif()
++endif()
++
+ if(TARGET rex::runtime AND NOT TARGET rex::system)
+     add_library(rex::system ALIAS rex::runtime)
+ endif()
+diff --git a/cmake/rexglue_codegen_id.cmake b/cmake/rexglue_codegen_id.cmake
+new file mode 100644
+index 0000000..bd0f07f
+--- /dev/null
++++ b/cmake/rexglue_codegen_id.cmake
+@@ -0,0 +1,24 @@
++# cmake/rexglue_codegen_id.cmake
++# Script mode (cmake -DSOURCE_DIR=... -DOUTPUT=... -P): writes one hash of the SDK's own sources
++# (src, include, the templates rexglue embeds, the PPC disassembler). rexglue's output depends on
++# the codegen, the CLI, the export tables in src/kernel and the XEX loader in src/system, and two
++# builds with the same version can differ there (patches applied over one commit), so a cross build
++# runs the host's rexglue only when its hash equals this SDK's (rexglueConfig.cmake, tests/ppc):
++# the host SDK must come from the same commit and patches.
++
++file(GLOB_RECURSE _inputs LIST_DIRECTORIES false
++    "${SOURCE_DIR}/src/*"
++    "${SOURCE_DIR}/include/*"
++    "${SOURCE_DIR}/resources/templates/*"
++    "${SOURCE_DIR}/thirdparty/disasm/*")
++list(SORT _inputs)
++set(_lines "")
++foreach(_file IN LISTS _inputs)
++    file(MD5 "${_file}" _hash)
++    file(RELATIVE_PATH _relative "${SOURCE_DIR}" "${_file}")
++    string(APPEND _lines "${_relative} ${_hash}\n")
++endforeach()
++string(MD5 _id "${_lines}")
++file(WRITE "${OUTPUT}.tmp" "${_id}\n")
++file(COPY_FILE "${OUTPUT}.tmp" "${OUTPUT}" ONLY_IF_DIFFERENT)
++file(REMOVE "${OUTPUT}.tmp")
+diff --git a/cmake/rexglue_install.cmake b/cmake/rexglue_install.cmake
+index a003313..d7ae77d 100644
+--- a/cmake/rexglue_install.cmake
++++ b/cmake/rexglue_install.cmake
+@@ -137,6 +137,9 @@ install(FILES
+     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/rexglue
+ )
+ 
++# The hash of what decides rexglue's output, for cross builds that run another prefix's rexglue
++install(FILES ${REXGLUE_CODEGEN_ID_FILE} DESTINATION ${CMAKE_INSTALL_DATADIR}/rexglue)
++
+ # Export targets with rex:: namespace
+ install(EXPORT rexglueTargets
+     FILE rexglueTargets.cmake
+diff --git a/tests/ppc/CMakeLists.txt b/tests/ppc/CMakeLists.txt
+index db545aa..e7ba305 100644
+--- a/tests/ppc/CMakeLists.txt
++++ b/tests/ppc/CMakeLists.txt
+@@ -68,16 +68,39 @@ else()
+     get_property(TEST_MAPS GLOBAL PROPERTY PPC_TEST_MAPS)
+ endif()
+ 
+-# Generate Catch2 test code from recompiled binaries
++# Generate Catch2 test code from recompiled binaries. A cross build runs the host's rexglue, from
++# a host SDK install whose codegen_id is this tree's (cmake/rexglue_codegen_id.cmake).
++if(CMAKE_CROSSCOMPILING)
++    if(NOT REXGLUE_HOST_TOOL)
++        message(FATAL_ERROR "A cross build of the PPC tests needs REXGLUE_HOST_TOOL: "
++            "rexglue built for the build host")
++    endif()
++    get_filename_component(_rexglue_host_prefix "${REXGLUE_HOST_TOOL}" DIRECTORY)
++    get_filename_component(_rexglue_host_prefix "${_rexglue_host_prefix}" DIRECTORY)
++    set(PPC_CODEGEN_CHECK
++        COMMAND ${CMAKE_COMMAND} -E compare_files
++                "${_rexglue_host_prefix}/${CMAKE_INSTALL_DATADIR}/rexglue/codegen_id"
++                "${REXGLUE_CODEGEN_ID_FILE}")
++    set(PPC_CODEGEN_TOOL "${REXGLUE_HOST_TOOL}")
++    # A reinstalled host SDK generates and compares again.
++    set(PPC_CODEGEN_TOOL_DEPENDS "${REXGLUE_HOST_TOOL}"
++        "${_rexglue_host_prefix}/${CMAKE_INSTALL_DATADIR}/rexglue/codegen_id")
++else()
++    set(PPC_CODEGEN_TOOL_DEPENDS "")
++    set(PPC_CODEGEN_CHECK "")
++    set(PPC_CODEGEN_TOOL "$<TARGET_FILE:rexglue>")
++endif()
+ add_custom_command(
+     OUTPUT ${PPC_GEN_DIR}/ppc_test_functions.cpp
+            ${PPC_GEN_DIR}/ppc_test_cases.cpp
+            ${PPC_GEN_DIR}/ppc_test_decls.h
+-    COMMAND $<TARGET_FILE:rexglue> recompile-tests
++    ${PPC_CODEGEN_CHECK}
++    COMMAND ${PPC_CODEGEN_TOOL} recompile-tests
+             --output=${PPC_GEN_DIR}
+             --bin-dir=${PPC_BIN_DIR}
+             --asm-dir=${CMAKE_CURRENT_SOURCE_DIR}/asm
+-    DEPENDS ${TEST_BINS} ${TEST_MAPS} ${ASM_FILES} rexglue
++    DEPENDS ${TEST_BINS} ${TEST_MAPS} ${ASM_FILES} rexglue rexglue_codegen_id
++            ${REXGLUE_CODEGEN_ID_FILE} ${PPC_CODEGEN_TOOL_DEPENDS}
+     COMMENT "Generating Catch2 test code with rexglue"
+     VERBATIM
+ )

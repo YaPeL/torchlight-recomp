@@ -31,3 +31,7 @@ rexglue-posix-chain-unclaimed-faults.patch
 rexglue-vfs-wildcard-dos-semantics.patch
 rexglue-guest-fatal-hook.patch
 rexglue-timer-queue-blocking-wait.patch
+rexglue-android-build.patch
+rexglue-cross-host-tool.patch
+rexglue-cross-no-package-registry.patch
+rexglue-android-physical-host-offset.patch
