@@ -647,6 +647,14 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
     }
     const uint32_t sheet = Sheet(base, game_ui);
     if (InGuestHeap(sheet)) CollectShown(base, sheet, 0, shown);
+    // Every change of focus in the log, for writing and reading scripts.
+    static std::vector<std::string> last_focused;
+    if (focused != last_focused) {
+      std::string list;
+      for (const auto& f : focused) list += (list.empty() ? "" : " | ") + f;
+      REXLOG_INFO("dev input script: focus: {}", list.empty() ? std::string("none") : list);
+      last_focused = focused;
+    }
     g_runner->OnUiState(std::move(focused), std::move(shown));
   }
   while (auto name = g_runner->TakeDump()) WriteDump(ctx, base, game_ui, *name);
