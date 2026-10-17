@@ -2,15 +2,19 @@
 # (backend_api.h). Callers only see the C API.
 if(WIN32)
     set(TORCHLIGHT_OGRE_DEFAULT "$ENV{USERPROFILE}/ogre14-install")
+elseif(ANDROID)
+    # tools/deps/build_ogre.sh PREFIX WORK Release android-arm64 (static, GLES2)
+    set(TORCHLIGHT_OGRE_DEFAULT "$ENV{HOME}/android-work/ogre-install")
 else()
     set(TORCHLIGHT_OGRE_DEFAULT "$ENV{HOME}/ogre14-install")
 endif()
 set(TORCHLIGHT_OGRE_INSTALL "${TORCHLIGHT_OGRE_DEFAULT}"
     CACHE PATH "Host OGRE 14 install prefix (headers, libraries, plugins, media)")
 # OGRE's own package config: its targets carry the library names and include directories of each
-# platform; OGRE_PLUGIN_DIR and OGRE_MEDIA_DIR come with it.
+# platform; OGRE_PLUGIN_DIR and OGRE_MEDIA_DIR come with it. CMAKE_FIND_ROOT_PATH_BOTH: a cross
+# toolchain (Android's NDK) searches packages only under its own roots, and the install is outside.
 find_package(OGRE 14.6 REQUIRED CONFIG COMPONENTS RTShaderSystem
-    PATHS "${TORCHLIGHT_OGRE_INSTALL}" NO_DEFAULT_PATH)
+    PATHS "${TORCHLIGHT_OGRE_INSTALL}" NO_DEFAULT_PATH CMAKE_FIND_ROOT_PATH_BOTH)
 if(WIN32)
     # Windows has no system zlib: tools/build-deps/windows.ps1 installs a static one into the OGRE
     # prefix, as zs.lib (zsd.lib in Debug), names FindZLIB does not look for. The frontend and the
@@ -20,11 +24,38 @@ if(WIN32)
     set(ZLIB_LIBRARY_DEBUG "${TORCHLIGHT_OGRE_INSTALL}/lib/zsd.lib" CACHE FILEPATH "zlib, Debug")
 endif()
 
-add_library(torchlight_backend OBJECT backend.cpp xbox_to_gl_conventions.cpp)
+# The render system and the image codec (ogre_plugins.h): plugin files loaded from disk, or, where
+# OGRE is built static (Android, where OGRE builds only static libraries), linked in and registered
+# in code. Static: the GLES2 render system and STBI, the plugins tools/deps/build_ogre.sh builds.
+if(OGRE_STATIC)
+    foreach(_plugin RenderSystem_GLES2 Codec_STBI)
+        if(NOT TARGET ${_plugin})
+            message(FATAL_ERROR "The static OGRE in ${TORCHLIGHT_OGRE_INSTALL} has no ${_plugin}")
+        endif()
+    endforeach()
+    find_package(ZLIB REQUIRED)  # Codec_STBI's link interface names ZLIB::ZLIB
+    set(_ogre_plugins_source ogre_plugins_static.cpp)
+    set(_ogre_plugin_libraries RenderSystem_GLES2 Codec_STBI)
+else()
+    set(_ogre_plugins_source ogre_plugins_dynamic.cpp)
+    set(_ogre_plugin_libraries "")
+endif()
+if(ANDROID)
+    # OGRE's Android build links the NDK's cpufeatures (android_getCpuFeatures) only in its own build
+    # tree ($<BUILD_INTERFACE:cpufeatures>), so the installed OgreMain lacks it: built here from the
+    # NDK's source and added to OgreMain's link interface, for whatever links OGRE.
+    add_library(torchlight_ndk_cpufeatures STATIC
+        "${ANDROID_NDK}/sources/android/cpufeatures/cpu-features.c")
+    target_link_libraries(torchlight_ndk_cpufeatures PRIVATE dl)
+    set_property(TARGET OgreMain APPEND PROPERTY INTERFACE_LINK_LIBRARIES torchlight_ndk_cpufeatures)
+endif()
+
+add_library(torchlight_backend OBJECT backend.cpp ${_ogre_plugins_source} xbox_to_gl_conventions.cpp)
 target_include_directories(torchlight_backend PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_backend PRIVATE cxx_std_23)
 target_compile_options(torchlight_backend PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
-target_link_libraries(torchlight_backend PUBLIC OgreMain OgreRTShaderSystem torchlight_platform)
+target_link_libraries(torchlight_backend PUBLIC OgreMain OgreRTShaderSystem ${_ogre_plugin_libraries}
+                      torchlight_platform)
 
 # OGRE's plugins and the media the backend uses, as the backend finds them at run time: next to the
 # executable, in ogre/plugins/ (the Wayland GL build in its wayland/ subdirectory) and ogre/media/
@@ -40,6 +71,9 @@ else()
 endif()
 set(_plugins "")
 set(_plugin_names RenderSystem_GL3Plus Codec_STBI)
+if(OGRE_STATIC)
+    set(_plugin_names "")  # linked in (above): no plugin files
+endif()
 if(WIN32 AND EXISTS "${OGRE_PLUGIN_DIR}/RenderSystem_Direct3D11.dll")
     # The Direct3D 11 render system (tools/build-deps/windows.ps1), chosen per run.
     list(APPEND _plugin_names RenderSystem_Direct3D11)
@@ -67,7 +101,9 @@ set(TORCHLIGHT_OGRE_MEDIA "${OGRE_MEDIA_DIR}/Main" "${OGRE_MEDIA_DIR}/RTShaderLi
 
 # OGRE's libraries in the install's lib/ (macOS: the bundle's Frameworks/; the rest of the install
 # rules: the top CMakeLists.txt; OGRE's targets are only visible here).
-if(UNIX AND NOT APPLE)
+if(OGRE_STATIC)
+    # Linked into the game: nothing to install.
+elseif(UNIX AND NOT APPLE)
     install(FILES "$<TARGET_FILE:OgreMain>" "$<TARGET_FILE:OgreRTShaderSystem>" DESTINATION lib)
 elseif(APPLE)
     install(FILES "$<TARGET_FILE:OgreMain>" "$<TARGET_FILE:OgreRTShaderSystem>"
