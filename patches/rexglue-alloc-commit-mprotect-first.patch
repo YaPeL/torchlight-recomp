@@ -15,16 +15,21 @@ a failure: for a range only partly mapped, which the heaps never commit, Linux's
 change the mapped part before it fails, where the old path changed nothing; the call fails
 either way. macOS already took mprotect directly; Windows is not involved.
 
-Test: the SDK's suite (1768 of 1768 on Linux; the heap cases commit over reserved, decommitted
-and released pages). The bench, 4096 one-page commits with 2000 other mappings, runs alternated
+Test: tests/unit/memory/alloc_fixed_test.cpp, on Linux and Android, around the host mappings
+themselves: a commit over a reserved range is made in place and is writable; over a range with
+nothing mapped it maps it; over a range with a hole it fails; of zero bytes it fails (mprotect
+accepts a zero length, so a zero-length commit is left to the mmap, which refuses it, as
+before; without that, this case fails). The same results as before the patch, which these cases
+pin. The SDK's suite: 1772 of 1772 on Linux (the heap cases commit over reserved, decommitted and
+released pages). The bench, 4096 one-page commits with 2000 other mappings, runs alternated
 (old, new, old, new): 31.8 us to 1.0 us per commit on Linux x86-64, 125 us to 0.9 us on the
 Galaxy Tab S5e (Android 11, kernel 4.9).
 
 diff --git a/src/core/memory_posix.cpp b/src/core/memory_posix.cpp
-index 86190c9..3aa73f7 100644
+index 86190c9..862a84d 100644
 --- a/src/core/memory_posix.cpp
 +++ b/src/core/memory_posix.cpp
-@@ -275,6 +275,22 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
+@@ -275,6 +275,23 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
    }
  #endif
  
@@ -34,7 +39,8 @@ index 86190c9..3aa73f7 100644
 +  // and only then is it mapped below. Trying the mmap first cost a failed mmap and a walk of
 +  // /proc/self/maps per commit (about 30 us with a loaded game's mappings), and on kernels before
 +  // 4.17 a mapping made elsewhere and removed again (patch 38).
-+  if (base_address != nullptr && allocation_type == AllocationType::kCommit) {
++  // (mprotect accepts a zero length, which the mmap below refuses, so that stays the mmap's.)
++  if (base_address != nullptr && length != 0 && allocation_type == AllocationType::kCommit) {
 +    if (mprotect(base_address, length, static_cast<int>(prot_requested)) == 0) {
 +      return base_address;
 +    }
@@ -47,3 +53,92 @@ index 86190c9..3aa73f7 100644
    int flags = MAP_PRIVATE | MAP_ANONYMOUS;
  #if REX_PLATFORM_MAC
    if (access == PageAccess::kExecuteReadWrite || access == PageAccess::kExecuteReadOnly) {
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index f749e6f..340d61f 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -3,6 +3,7 @@
+ add_executable(unit_tests
+     test_memory.cpp
+     memory/heap_allocation_test.cpp
++    memory/alloc_fixed_test.cpp
+     kernel/object_table_test.cpp
+     core/cvar_test.cpp
+     core/fiber_test.cpp
+diff --git a/tests/unit/memory/alloc_fixed_test.cpp b/tests/unit/memory/alloc_fixed_test.cpp
+new file mode 100644
+index 0000000..6fbeeb7
+--- /dev/null
++++ b/tests/unit/memory/alloc_fixed_test.cpp
+@@ -0,0 +1,71 @@
++/**
++ * @file        memory/alloc_fixed_test.cpp
++ * @brief       rex::memory::AllocFixed's commit on the host, around the heaps' mapped views
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <rex/memory/utils.h>
++
++#if defined(__linux__)
++#include <sys/mman.h>
++#include <unistd.h>
++
++namespace {
++
++using rex::memory::AllocationType;
++using rex::memory::AllocFixed;
++using rex::memory::PageAccess;
++
++/// Three pages reserved without access, as a heap reserves its range; unmapped when done.
++struct Reserved {
++  size_t page = size_t(sysconf(_SC_PAGESIZE));
++  uint8_t* base = static_cast<uint8_t*>(
++      mmap(nullptr, 3 * page, PROT_NONE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0));
++  ~Reserved() { munmap(base, 3 * page); }
++};
++
++}  // namespace
++
++// The heaps commit over ranges they reserved or mapped as views: that is one mprotect.
++TEST_CASE("AllocFixed commits a reserved range in place", "[memory][alloc_fixed]") {
++  Reserved r;
++  REQUIRE(r.base != MAP_FAILED);
++  REQUIRE(AllocFixed(r.base + r.page, r.page, AllocationType::kCommit, PageAccess::kReadWrite) ==
++          r.base + r.page);
++  volatile uint8_t* page = r.base + r.page;
++  page[0] = 0x5A;
++  CHECK(page[0] == 0x5A);
++}
++
++// A range with nothing mapped there is mapped by the commit, as before mprotect was tried first.
++TEST_CASE("AllocFixed maps a commit where nothing is mapped", "[memory][alloc_fixed]") {
++  Reserved r;
++  REQUIRE(r.base != MAP_FAILED);
++  REQUIRE(munmap(r.base + r.page, r.page) == 0);
++  REQUIRE(AllocFixed(r.base + r.page, r.page, AllocationType::kCommit, PageAccess::kReadWrite) ==
++          r.base + r.page);
++  volatile uint8_t* page = r.base + r.page;
++  page[0] = 0x5A;
++  CHECK(page[0] == 0x5A);
++}
++
++// Part mapped and part not: the commit fails, as it did (a fixed mapping cannot replace the part
++// that is there).
++TEST_CASE("AllocFixed fails a commit over a range with a hole", "[memory][alloc_fixed]") {
++  Reserved r;
++  REQUIRE(r.base != MAP_FAILED);
++  REQUIRE(munmap(r.base + r.page, r.page) == 0);
++  CHECK(AllocFixed(r.base, 3 * r.page, AllocationType::kCommit, PageAccess::kReadWrite) ==
++        nullptr);
++}
++
++TEST_CASE("AllocFixed fails a commit of no bytes", "[memory][alloc_fixed]") {
++  Reserved r;
++  REQUIRE(r.base != MAP_FAILED);
++  CHECK(AllocFixed(r.base, 0, AllocationType::kCommit, PageAccess::kReadWrite) == nullptr);
++}
++#endif

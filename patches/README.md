@@ -662,6 +662,9 @@ in number order; a branch adds its own line at its number's place.
     (66 us per guest allocation in the tablet's loads). On Linux a commit with an address calls
     `mprotect` first, and maps only when it fails with `ENOMEM`: 1.0 us per commit (the tablet:
     125 us to 0.9 us). Desktop
-    Linux behaviour changes in speed only (the same result for every commit the heaps make).
+    Linux behaviour changes in speed only (the same result for every commit the heaps make; a
+    commit over a range only partly mapped, which no caller makes, may change the mapped part
+    before it fails). Tests in `alloc_fixed_test.cpp` pin the results: in place, mapped where
+    nothing was, a hole and zero bytes fail.
 
 The observation and diagnostic patches there were before remain in the git history.
