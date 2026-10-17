@@ -22,7 +22,7 @@ Following docs/rexglue-upstream.md, section 8, "Android: the SDK's tests on a de
 | Emulator `sdk_gphone16k_arm64` (`system-images;android-36;google_apis_ps16k;arm64-v8a`, on the M2) | **16384** | 36 | **1492 of 1492** cases (5815 assertions) | 266 passed, 4 failed, 4 skipped, of 274 (1484 of 1490 assertions) |
 | POCO X7 5G (24095PCADG) | **4096** | 36 | **1492 of 1492** cases (5815 assertions) | 266 passed, 4 failed, 4 skipped, of 274 (1484 of 1490 assertions) |
 
-The same cases fail on both. These pass on both pages sizes:
+The same cases fail on both. These pass on both page sizes:
 
 - every `[memory]` case: `ASharedMemory`, and patch 37's offset at 4 and at 16 KB;
 - the fibers and Bionic's threads;
