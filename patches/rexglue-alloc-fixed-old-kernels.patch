@@ -1,0 +1,75 @@
+Patch 38. In the series since 2026-10-17, after patch 37.
+
+AllocFixed (src/core/memory_posix.cpp) maps a fixed range with MAP_FIXED_NOREPLACE, and commits
+an already reserved range on its EEXIST (mprotect). Kernels before Linux 4.17 do not know the flag
+and take the address as a hint: an occupied range is mapped somewhere else and that address is
+returned. The heap then believes the page at its own address committed while it is still
+PROT_NONE, and the first write there faults. Android devices still ship 4.9 and 4.14 kernels
+(the Galaxy Tab S5e, Android 11: 4.9.227). Now, when the result is not the address asked for, it
+is unmapped and the call goes on as EEXIST. On kernels from 4.17 on the new branch is never
+taken: they never return another address with that flag.
+
+Test: heap_allocation_test.cpp, "A page allocated again after a read-only release is writable":
+a page is committed, made read-only, released and allocated again at the same address, and a
+write through TranslateVirtual must not fault. A release leaves the host page as its last
+protection, so the new commit is the one that restores access. On the Tab S5e (4.9) it ends with
+SIGSEGV without this patch, alone or in the suite, and passes with it; a reservation then
+MAP_FIXED_NOREPLACE at the same address returned another address there (Linux 7.0: EEXIST).
+With the patch the tablet passes the whole suite. On Linux, ctest as before.
+
+diff --git a/src/core/memory_posix.cpp b/src/core/memory_posix.cpp
+index ba533ec..86190c9 100644
+--- a/src/core/memory_posix.cpp
++++ b/src/core/memory_posix.cpp
+@@ -294,6 +294,16 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
+ #endif
+ 
+   void* result = mmap(base_address, length, prot_initial, flags, -1, 0);
++#if defined(MAP_FIXED_NOREPLACE) && REX_PLATFORM_LINUX
++  // Kernels before Linux 4.17 (Android devices still ship 4.9 and 4.14) do not know
++  // MAP_FIXED_NOREPLACE and take the address as a hint: an occupied range is mapped
++  // somewhere else instead of failing with EEXIST.
++  if (result != MAP_FAILED && base_address && result != base_address) {
++    munmap(result, length);
++    result = MAP_FAILED;
++    errno = EEXIST;
++  }
++#endif
+   if (result != MAP_FAILED) {
+     return result;
+   }
+diff --git a/tests/unit/memory/heap_allocation_test.cpp b/tests/unit/memory/heap_allocation_test.cpp
+index 904290d..308887d 100644
+--- a/tests/unit/memory/heap_allocation_test.cpp
++++ b/tests/unit/memory/heap_allocation_test.cpp
+@@ -257,6 +257,30 @@ TEST_CASE("AllocFixed commit on reserved region succeeds", "[memory][heap]") {
+   heap->Release(target, nullptr);
+ }
+ 
++TEST_CASE("A page allocated again after a read-only release is writable", "[memory][heap]") {
++  // A release leaves the host page as its last protection (read-only here), so the next commit
++  // of that page has to restore access on a mapping that is already there. Kernels before Linux
++  // 4.17 took MAP_FIXED_NOREPLACE as a hint and mapped that commit elsewhere instead: the write
++  // below faulted (patch 38).
++  auto& memory = GetTestMemory();
++  auto* heap = MutableHeap(memory.LookupHeap(0x10000000));
++  REQUIRE(heap != nullptr);
++
++  const uint32_t target = 0x21200000;
++  const uint32_t reserve_commit =
++      rex::memory::kMemoryAllocationReserve | rex::memory::kMemoryAllocationCommit;
++  const uint32_t read_write = rex::memory::kMemoryProtectRead | rex::memory::kMemoryProtectWrite;
++  REQUIRE(heap->AllocFixed(target, 4096, 4096, reserve_commit, read_write));
++  REQUIRE(heap->Protect(target, 4096, rex::memory::kMemoryProtectRead, nullptr));
++  REQUIRE(heap->Release(target, nullptr));
++  REQUIRE(heap->AllocFixed(target, 4096, 4096, reserve_commit, read_write));
++  auto* host = memory.TranslateVirtual<volatile uint8_t*>(target);
++  host[0] = 0x5A;
++  CHECK(host[0] == 0x5A);
++
++  heap->Release(target, nullptr);
++}
++
+ // =============================================================================
+ // Protection Tests
+ // =============================================================================

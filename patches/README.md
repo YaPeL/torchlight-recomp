@@ -6,8 +6,8 @@ this order from the SDK checkout with `git apply <patch>`, and then the SDK is r
 
 On Windows the SDK is checked out with LF line endings (`git clone -c core.autocrlf=false
 --recurse-submodules`; the patches are LF and do not apply to a CRLF checkout), installed to
-`out/install/win-amd64` with the `win-amd64` preset, and patches 3 and 15 are left out: they only
-touch POSIX files (`threading_posix.cpp`, `memory_posix.cpp`). `series` marks them `posix` and
+`out/install/win-amd64` with the `win-amd64` preset, and patches 3, 15 and 38 are left out: they
+only touch POSIX files (`threading_posix.cpp`, `memory_posix.cpp`). `series` marks them `posix` and
 patches 17 and 18 `windows`; the build scripts apply what their platform takes. Patches 17 and 18 only change Windows
 files or Windows branches, so on Linux they build nothing new. The SDK's `unit_tests` pass on Windows except
 `codegen/output_stamp_test.cpp` (lines 227-228, the escaping of paths with a space or `#`), which
@@ -47,7 +47,8 @@ in number order; a branch adds its own line at its number's place.
 | 35 | `rexglue-cross-host-tool.patch` | `sdk/android` | In the branch (after 34) |
 | 36 | `rexglue-cross-no-package-registry.patch` | `sdk/android` | In the branch (after 35) |
 | 37 | `rexglue-android-physical-host-offset.patch` | `sdk/android` | In the branch (after 36) |
-| 38 | | | Next free number |
+| 38 | `rexglue-alloc-fixed-old-kernels.patch` | `sdk/android-device` | In the branch (after 37) |
+| 39 | | | Next free number |
 
 ## The patches
 
@@ -569,7 +570,11 @@ in number order; a branch adds its own line at its number's place.
     `APPLE` is still the macOS host's), an `android-arm64` platform, the `clock_cast` and
     `from_chars` shims of macOS, fibers switched in AArch64 assembly (Bionic has no ucontext), no
     robust mutexes, the executable path from `dladdr`, `content://` stubbed, an ANativeWindow
-    surface from SDL3, one app per library through `SDL_main`. Changed from theirs: the Android
+    surface from SDL3, one app per library through `SDL_main`. The executable path is
+    `/proc/self/exe`, and `dladdr` only in an app (`app_process`); 0001 took `dladdr` always,
+    and the tests that run a case in a child process started the runtime library instead
+    (amended 2026-10-17, found on the tablet). A binary started through the linker
+    (`linker64 ./unit_tests`, for a `noexec` folder) still gets the linker's path, as before. Changed from theirs: the Android
     `main` calls the `AndroidInitialize` hooks first (their 0002; without them guest memory falls
     back to `/dev/ashmem`, closed to apps since API 29) and sets `HOME`, without their
     `--game_data_root` and `--log_file` defaults (the app passes those). Added: a Catch2
@@ -608,5 +613,15 @@ in number order; a branch adds its own line at its number's place.
     Linux with the offset forced (Android's rule on 4 KB) every memory test passes; forced
     without the heap and view changes, the case fails. The game's
     `cmake/guest_host_offset.cmake` takes the same rule.
+
+38. `rexglue-alloc-fixed-old-kernels.patch` (POSIX only): `AllocFixed` maps with
+    `MAP_FIXED_NOREPLACE`, which kernels before Linux 4.17 do not know: they take the address as
+    a hint and map an occupied range somewhere else, so a commit over a reserved or decommitted
+    page left it `PROT_NONE` and the first write faulted. Android devices still ship 4.9 and
+    4.14 kernels (the Galaxy Tab S5e: 4.9). Another address is now unmapped and handled as
+    `EEXIST` (the `mprotect` commit). Kernels from 4.17 on never take that path. Test in
+    `heap_allocation_test.cpp`: a page made read-only, released and allocated again must be
+    writable (a release leaves the last protection, the new commit restores it); on the tablet
+    it ends with SIGSEGV without the patch, alone or in the suite, and passes with it.
 
 The observation and diagnostic patches there were before remain in the git history.
