@@ -168,9 +168,23 @@ void NoteMenu(uint32_t menu, bool open) {
   if (!open && at != g_menus.end()) g_menus.erase(at);
 }
 
+void FocusTexts(const uint8_t* base, uint32_t focus, UiMenu& m) {
+  m.focus = WindowName(base, focus);
+  for (uint32_t w : Children(base, focus)) {
+    if (std::string text = ReadCeguiString(base, w + ui_abi::kWindowText.offset); !text.empty()) {
+      m.focus_texts.push_back(std::move(text));
+    }
+  }
+  if (std::string text = ReadCeguiString(base, focus + ui_abi::kWindowText.offset); !text.empty()) {
+    m.focus_texts.push_back(std::move(text));
+  }
+}
+
 // The open menus, each with its layout's root and the window its pad focus is on
-// (the deepest active window, DeepestActive), latest opened last.
-std::vector<UiMenu> OpenMenus(const uint8_t* base) {
+// (the deepest active window, DeepestActive), latest opened last; then, as menus with no class,
+// the GUI sheet's other shown roots that hold a focus (a menu whose own SetOpen does not reach the
+// base one, the settings menu's among them).
+std::vector<UiMenu> OpenMenus(const uint8_t* base, uint32_t sheet) {
   namespace dm = ui_abi::dropdown_menu;
   std::vector<uint32_t> menus;
   {
@@ -188,19 +202,21 @@ std::vector<UiMenu> OpenMenus(const uint8_t* base) {
     // The pad focus: the deepest active window under the menu's root (game_ui.h kWindowActive).
     if (InGuestHeap(root)) {
       const uint32_t focus = DeepestActive(base, root, 0);
-      if (focus && focus != root) {
-        m.focus = WindowName(base, focus);
-        for (uint32_t w : Children(base, focus)) {
-          if (std::string text = ReadCeguiString(base, w + ui_abi::kWindowText.offset); !text.empty()) {
-            m.focus_texts.push_back(std::move(text));
-          }
-        }
-        if (std::string text = ReadCeguiString(base, focus + ui_abi::kWindowText.offset); !text.empty()) {
-          m.focus_texts.push_back(std::move(text));
-        }
-      }
+      if (focus && focus != root) FocusTexts(base, focus, m);
     }
     out.push_back(std::move(m));
+  }
+  if (InGuestHeap(sheet)) {
+    for (uint32_t root : Children(base, sheet)) {
+      const std::string name = WindowName(base, root);
+      if (std::any_of(out.begin(), out.end(), [&](const UiMenu& m) { return m.root == name; })) continue;
+      const uint32_t focus = DeepestActive(base, root, 0);
+      if (!focus || focus == root) continue;
+      UiMenu m;
+      m.root = name;
+      FocusTexts(base, focus, m);
+      out.push_back(std::move(m));
+    }
   }
   return out;
 }
@@ -610,7 +626,7 @@ void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::stri
   UiDump dump;
   dump.name = name;
   dump.frame = g_runner->frame();
-  dump.menus = OpenMenus(base);
+  dump.menus = OpenMenus(base, sheet);
   size_t count = 0;
   {
     WindowReader reader(ctx, base);
@@ -649,7 +665,7 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
   }
   if (g_runner->ReadsUi()) {
     std::vector<std::string> focused, shown;
-    for (const UiMenu& m : OpenMenus(base)) {
+    for (const UiMenu& m : OpenMenus(base, Sheet(base, game_ui))) {
       if (m.focus.empty()) continue;
       focused.push_back(m.focus);
       // A button's label is often a child of it with no name of its own: its text counts too.
