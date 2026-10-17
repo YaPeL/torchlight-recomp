@@ -573,7 +573,8 @@ in number order; a branch adds its own line at its number's place.
     surface from SDL3, one app per library through `SDL_main`. The executable path is
     `/proc/self/exe`, and `dladdr` only in an app (`app_process`); 0001 took `dladdr` always,
     and the tests that run a case in a child process started the runtime library instead
-    (amended 2026-10-17, found on the tablet). Changed from theirs: the Android
+    (amended 2026-10-17, found on the tablet). A binary started through the linker
+    (`linker64 ./unit_tests`, for a `noexec` folder) still gets the linker's path, as before. Changed from theirs: the Android
     `main` calls the `AndroidInitialize` hooks first (their 0002; without them guest memory falls
     back to `/dev/ashmem`, closed to apps since API 29) and sets `HOME`, without their
     `--game_data_root` and `--log_file` defaults (the app passes those). Added: a Catch2
@@ -618,9 +619,9 @@ in number order; a branch adds its own line at its number's place.
     a hint and map an occupied range somewhere else, so a commit over a reserved or decommitted
     page left it `PROT_NONE` and the first write faulted. Android devices still ship 4.9 and
     4.14 kernels (the Galaxy Tab S5e: 4.9). Another address is now unmapped and handled as
-    `EEXIST` (the `mprotect` commit). Desktop kernels never take that path. Verified on the
-    tablet: `unit_tests` ended with SIGSEGV in "TranslateVirtual returns valid host pointer"
-    when a decommit ran before it; with the patch two full runs pass (the known
-    `output_stamp_test` case aside).
+    `EEXIST` (the `mprotect` commit). Kernels from 4.17 on never take that path. Test in
+    `heap_allocation_test.cpp`: a page made read-only, released and allocated again must be
+    writable (a release leaves the last protection, the new commit restores it); on the tablet
+    it ends with SIGSEGV without the patch, alone or in the suite, and passes with it.
 
 The observation and diagnostic patches there were before remain in the git history.
