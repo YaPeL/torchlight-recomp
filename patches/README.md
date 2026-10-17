@@ -45,7 +45,8 @@ in number order; a branch adds its own line at its number's place.
 | 33 | `rexglue-timer-queue-blocking-wait.patch` | `develop` | In the series (after 31) |
 | 34 | `rexglue-android-build.patch` | `sdk/android` | In the branch (after 33) |
 | 35 | `rexglue-cross-host-tool.patch` | `sdk/android` | In the branch (after 34) |
-| 36 | | | Next free number |
+| 36 | `rexglue-cross-no-package-registry.patch` | `sdk/android` | In the branch (after 35) |
+| 37 | | | Next free number |
 
 ## The patches
 
@@ -588,6 +589,10 @@ in number order; a branch adds its own line at its number's place.
     Android install: the matching host SDK configures; the series' previous SDK (same version)
     fails on the hash; no tool, a warning; without the find root, `fmt` is not found.
 
+36. `rexglue-cross-no-package-registry.patch`: an install registered itself in the CMake user
+    package registry, where a desktop configure could take an Android install. The option
+    `REXGLUE_REGISTER_PACKAGE` is ON in native builds (as before) and OFF in cross builds.
+    Verified: an Android install leaves `~/.cmake/packages/rexglue` as it was.
 
 
 The observation and diagnostic patches there were before remain in the git history.

@@ -33,3 +33,4 @@ rexglue-guest-fatal-hook.patch
 rexglue-timer-queue-blocking-wait.patch
 rexglue-android-build.patch
 rexglue-cross-host-tool.patch
+rexglue-cross-no-package-registry.patch
