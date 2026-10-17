@@ -95,13 +95,20 @@ between runs).
 ### UI dumps
 
 `dump_ui NAME`, and every capture in development builds (F9 too, with or without a script, as
-`ui-capture-N.json`), write the CEGUI window tree as shown in that frame: for each window its name
+`ui-capture-<run start, UTC>-swap<K>.json`, K as in the capture's own file name, of the first frame
+the capture records), write the CEGUI window tree as shown in that frame: for each window its name
 and the name without the layout prefix, type, C++ class, visible / shown / active, its screen
 rectangle unclipped and clipped (guest pixels, and scaled to 1080 lines), alpha, font, text, images
 (imageset and image of `Image`, `NormalImage`...) and the other properties it has (area,
 alignments, text colour, `tabOrder`...); and the open menus with their focus. The format is
 `torchlight-ui-dump 1` (`src/dev/ui_tree.h`). Hidden windows are in the tree too
 (`"shown": false`).
+
+A `dump_ui` that cannot be written (no `--capture_dir`, no game UI yet) fails the script.
+
+The script's controller drops a keystroke the game has not read within 200 ms: a screen that does
+not read keystrokes (the title) would otherwise leave its presses to the next screen. A press
+during a long stall (a level load) may therefore reach the game as a held button only.
 
 The dumps run on the game's thread at the frame's swap (CGameUI::Update does not run on every
 screen). Host dialogs (the achievement list, the runtime's message boxes) are ImGui, not CEGUI:

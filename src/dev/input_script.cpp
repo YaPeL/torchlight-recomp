@@ -289,7 +289,7 @@ bool InputScript::EventSeen(const Command& c, const ScriptEvents& e) const {
 }
 
 void InputScript::Begin(const ScriptEvents& e) {
-  start_ = {e.frame, e.seconds, e.level_loads, e.menus_opened.size(), e.ui_reads, e.dumps_written};
+  start_ = {e.frame, e.seconds, e.level_loads, e.menus_opened.size(), e.ui_reads, e.dumps_written, e.dumps_failed};
   press_ = start_;
   started_ = true;
 }
@@ -320,7 +320,7 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
           advance();
           continue;
         }
-        if (e.seconds - start_.seconds >= 10) {
+        if (e.dumps_failed > start_.dumps_failed || e.seconds - start_.seconds >= 10) {
           actions.push_back({ScriptAction::Kind::kFailed,
                              "line " + std::to_string(c.line) + ": dump_ui " + c.text + " was not written"});
           next_ = commands_.size();
@@ -355,7 +355,7 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
           advance();
           continue;
         }
-        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0, 0};
+        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0, 0, 0};
         return e.frame - press_.frame < c.press_frames ? c.pad : PadState{};
       case Op::kWait:
       case Op::kPressUntil:
@@ -372,7 +372,7 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         }
         if (c.op == Op::kWait) return {};
         // A press now and then: down for press_frames, up as long, again when `every` elapsed.
-        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0, 0};
+        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0, 0, 0};
         return e.frame - press_.frame < c.press_frames ? c.pad : PadState{};
     }
   }
