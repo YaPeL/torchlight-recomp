@@ -11,7 +11,10 @@ text, at the first texture upload. Now the whole range is reserved without acces
 patch 38), the views replace that reservation alone, and a taken range is logged with the
 mapping that holds it ("Guest memory arena: 0x... is taken by ...") before the next base is
 tried. The reservation keeps one page without access before and one after the views, so a host
-write running off either end of guest memory faults at the writer.
+write running off either end of guest memory faults at the writer. When no base is free, the
+start fails with a message (before, the loop could end with no base and go on). When the views
+fail part way at one base, the ones made stay in place until one call replaces them and the rest
+of the reservation, which is then freed, so no hole opens for another thread to map into.
 
 Desktop Linux: the same base as before whenever 2^32 is free (it was in all 101 desktop game logs
 on this machine, 2026-10-17); otherwise the next free base, instead of mapping over what is there.
@@ -36,7 +39,7 @@ index 97a3eaa..7b7c76b 100644
      struct {
        uint8_t* v00000000;
 diff --git a/src/system/xmemory.cpp b/src/system/xmemory.cpp
-index f109149..93b2410 100644
+index f109149..6cb3258 100644
 --- a/src/system/xmemory.cpp
 +++ b/src/system/xmemory.cpp
 @@ -13,7 +13,12 @@
@@ -108,7 +111,7 @@ index f109149..93b2410 100644
  bool Memory::Initialize() {
    file_name_ = fmt::format("xenia_memory_{}", chrono::Clock::QueryHostTickCount());
  
-@@ -157,6 +203,28 @@ bool Memory::Initialize() {
+@@ -157,6 +203,37 @@ bool Memory::Initialize() {
      return false;
    }
    mapping_base_ = views_.all_views[0];
@@ -132,11 +135,36 @@ index f109149..93b2410 100644
 +      guard_size_ = guard;
 +      break;
 +    }
++    // MapViews left the views it had made in place: replace them and the rest of the reservation,
++    // all ours, with one reservation in one call (no hole opens), then free it.
++    mmap(mapping_base - guard, arena_size + 2 * guard, PROT_NONE,
++         MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE | MAP_FIXED, -1, 0);
 +    munmap(mapping_base - guard, arena_size + 2 * guard);
++  }
++  if (!mapping_base_) {
++    REXSYS_ERROR("Unable to find a free block for the guest memory in the 64bit address space.");
++    assert_always();
++    return false;
 +  }
  #else
    // Attempt to create our views. This may fail at the first address
    // we pick, so try a few times.
+@@ -383,7 +460,15 @@ int Memory::MapViews(uint8_t* mapping_base) {
+         rex::memory::PageAccess::kReadWrite, ViewFileOffset(map_info[n], granularity_mask)));
+     if (!views_.all_views[n]) {
+       // Failed, so bail and try again.
++#if REX_PLATFORM_LINUX
++      // The views made so far stay in place: Initialize replaces them and the rest of its
++      // reservation in one call, so no hole opens in between for another thread to map into.
++      for (auto& view : views_.all_views) {
++        view = nullptr;
++      }
++#else
+       UnmapViews();
++#endif
+       return 1;
+     }
+   }
 diff --git a/tests/unit/memory/alloc_fixed_test.cpp b/tests/unit/memory/alloc_fixed_test.cpp
 index 6fbeeb7..6ea5ec7 100644
 --- a/tests/unit/memory/alloc_fixed_test.cpp
