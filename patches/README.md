@@ -660,7 +660,8 @@ in number order; a branch adds its own line at its number's place.
     `/proc/self/maps` before the `mprotect`: about 30 us per commit with a loaded game's mappings
     (31.8 us on Linux x86-64 with 2000 mappings), and since patch 38 on kernels before 4.17 too
     (66 us per guest allocation in the tablet's loads). On Linux a commit with an address calls
-    `mprotect` first, and maps only when it fails with `ENOMEM`: 1.0 us per commit. Desktop
+    `mprotect` first, and maps only when it fails with `ENOMEM`: 1.0 us per commit (the tablet:
+    125 us to 0.9 us). Desktop
     Linux behaviour changes in speed only (the same result for every commit the heaps make).
 
 The observation and diagnostic patches there were before remain in the git history.

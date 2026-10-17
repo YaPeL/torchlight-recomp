@@ -16,7 +16,9 @@ change the mapped part before it fails, where the old path changed nothing; the 
 either way. macOS already took mprotect directly; Windows is not involved.
 
 Test: the SDK's suite (1768 of 1768 on Linux; the heap cases commit over reserved, decommitted
-and released pages). The bench: 31.8 us to 1.0 us per commit on Linux x86-64. TABLET
+and released pages). The bench, 4096 one-page commits with 2000 other mappings, runs alternated
+(old, new, old, new): 31.8 us to 1.0 us per commit on Linux x86-64, 125 us to 0.9 us on the
+Galaxy Tab S5e (Android 11, kernel 4.9).
 
 diff --git a/src/core/memory_posix.cpp b/src/core/memory_posix.cpp
 index 86190c9..3aa73f7 100644
