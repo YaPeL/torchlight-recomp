@@ -191,6 +191,12 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
+`patches/rexglue-android-build.patch` (patch 34, part of `patches/series`) is adapted from patch
+0001 of Rayman Origins Recomp (https://github.com/XDanfr/RaymanOriginsRecomp, commit `c1bf7b9`,
+`android/rexglue-patches/`), whose patches are distributed under the ReXGlue SDK's terms above
+(BSD-3-Clause), per that repository's `THIRD_PARTY_NOTICES.md`. Its code is compiled only into
+Android builds of the SDK runtime; the desktop packages carry none of it.
+
 ### FFmpeg
 
 ```

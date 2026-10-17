@@ -43,7 +43,8 @@ in number order; a branch adds its own line at its number's place.
 | 31 | `rexglue-guest-fatal-hook.patch` | `develop` | In the series |
 | 32 | `rexglue-codegen-non-argument-in-context.patch` | `sdk/argument-locals` | Not integrated: no gain in hand runs (upstream D26) |
 | 33 | `rexglue-timer-queue-blocking-wait.patch` | `develop` | In the series (after 31) |
-| 34 | | | Next free number |
+| 34 | `rexglue-android-build.patch` | `sdk/android` | In the branch (after 33) |
+| 35 | | | Next free number |
 
 ## The patches
 
@@ -558,5 +559,23 @@ in number order; a branch adds its own line at its number's place.
     1.7-4.2 % less CPU depending on the part, the frame rate and frame times within the runs'
     spread (`docs/rexglue-upstream.md`, section 8). In the series since 2026-10-14, as its last
     line. Upstream draft D32.
+
+34. `rexglue-android-build.patch`: the SDK builds for Android (arm64-v8a, NDK r30, API 30).
+    Adapted from patch 0001 of XDanfr/RaymanOriginsRecomp (commit c1bf7b9, BSD-3-Clause, the
+    SDK's terms; `THIRD_PARTY_NOTICES.md`): OBJC only without `ANDROID_ABI` (before `project()`
+    `APPLE` is still the macOS host's), an `android-arm64` platform, the `clock_cast` and
+    `from_chars` shims of macOS, fibers switched in AArch64 assembly (Bionic has no ucontext), no
+    robust mutexes, the executable path from `dladdr`, `content://` stubbed, an ANativeWindow
+    surface from SDL3, one app per library through `SDL_main`. Changed from theirs: the Android
+    `main` calls the `AndroidInitialize` hooks first (their 0002; without them guest memory falls
+    back to `/dev/ashmem`, closed to apps since API 29) and sets `HOME`, without their
+    `--game_data_root` and `--log_file` defaults (the app passes those). Added: a Catch2
+    listener that calls the same hooks in the test binaries on Android. Their 0003, 0004 and
+    0006 conflict with patches 8 and 3 and are not needed. Desktop builds compile nothing new.
+    Verified: the SDK, `unit_tests` and `ppc_tests` build with the NDK r30 on Linux; on devices,
+    `tools/android/run_sdk_tests.sh` (the Mac agent).
+
+
+
 
 The observation and diagnostic patches there were before remain in the git history.
