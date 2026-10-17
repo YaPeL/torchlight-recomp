@@ -130,7 +130,8 @@ Settings, *Video* column) and saved in `~/.config/TorchlightRecomp/settings.toml
   --game_data_root $HOME/360tools/extracted/extracted --capture_dir $PWD/out/captures
 ```
 
-F9 captures (`--capture_frames` frames) to `--capture_dir`.
+F9 captures (`--capture_frames` frames) to `--capture_dir` (on a Mac's keyboard, fn+F9; the frame
+counter is fn+F3).
 
 ReXGlue's emulated GPU (Xenos plugin, Vulkan): `--native_live=off`. An explicit `--gpu_plugin xenos`
 without `--native_live` also selects Xenos. `VK_ICD_FILENAMES` picks Xenos' GPU:
