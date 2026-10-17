@@ -36,6 +36,7 @@ SDK and the CMake tools (CMake and Ninja); LLVM 21; Git. The MSVC environment is
 tools\build-deps\windows.ps1
 tools\build-deps\windows.ps1 -Prefix D:\ogre14-install -WorkDir D:\ogre-build -Configs RelWithDebInfo
 tools\build-deps\windows.ps1 -Prefix D:\deps\ogre -SdkPrefix D:\deps\sdk -Configs RelWithDebInfo -SdkConfigs Release
+tools\build-deps\windows.ps1 -SdkPrefix D:\sdk-tests\sdk -WorkDir D:\sdk-tests -SdkConfigs Release -SdkTests
 #>
 param(
     # Install prefix; %USERPROFILE%\ogre14-install is the default of TORCHLIGHT_OGRE_INSTALL.
@@ -48,7 +49,10 @@ param(
     # The SDK's install prefix (what -DCMAKE_PREFIX_PATH finds); empty: the SDK is not built.
     [string]$SdkPrefix = '',
     [ValidateSet('Debug', 'Release', 'RelWithDebInfo')]
-    [string[]]$SdkConfigs = @('Debug', 'Release', 'RelWithDebInfo')
+    [string[]]$SdkConfigs = @('Debug', 'Release', 'RelWithDebInfo'),
+    # Only the SDK (needs -SdkPrefix), with its own tests built and run in its first -SdkConfigs;
+    # fails if one fails, is skipped or does not run. No zlib or OGRE. The sdk-tests workflow.
+    [switch]$SdkTests
 )
 
 $ErrorActionPreference = 'Stop'
@@ -123,12 +127,91 @@ function Test-Runtime {
     Write-Host "runtime ok: $File"
 }
 
+# The ReXGlue SDK into -SdkPrefix (with -SdkTests, its tests built and run too).
+function Build-Sdk {
+    # The repository and commit of tools/deps/build_sdk.sh, so both platforms build the same SDK.
+    $buildSdk = Get-Content -Raw (Join-Path $Root 'tools\deps\build_sdk.sh')
+    $SdkRepository = [regex]::Match($buildSdk, '(?m)^SDK_REPOSITORY=(\S+)').Groups[1].Value
+    $SdkCommit = [regex]::Match($buildSdk, '(?m)^SDK_COMMIT=(\S+)').Groups[1].Value
+    if (-not $SdkRepository -or -not $SdkCommit) {
+        throw 'SDK_REPOSITORY or SDK_COMMIT not found in tools/deps/build_sdk.sh'
+    }
+    New-Item -ItemType Directory -Force $SdkPrefix | Out-Null
+    $SdkPrefix = (Resolve-Path $SdkPrefix).Path
+    $sdkSrc = Join-Path $WorkDir 'rexglue-sdk'
+    if (-not (Test-Path (Join-Path $sdkSrc '.git'))) {
+        Invoke-Native 'git' @('clone', '--quiet', '-c', 'core.autocrlf=false', $SdkRepository,
+            $sdkSrc)
+    }
+    Invoke-Native 'git' @('-C', $sdkSrc, 'config', 'core.autocrlf', 'false')
+    Invoke-Native 'git' @('-C', $sdkSrc, '-c', 'advice.detachedHead=false', 'checkout', '--quiet',
+        '--force', $SdkCommit)
+    Invoke-Native 'git' @('-C', $sdkSrc, 'clean', '-fdxq', '-e', 'out')
+    Invoke-Native 'git' @('-C', $sdkSrc, 'submodule', 'update', '--init', '--recursive', '--quiet')
+
+    # The patches, in order; the POSIX-only ones are skipped.
+    foreach ($line in Get-Content (Join-Path $Root 'patches\series')) {
+        if ($line -match '^\s*(#|$)') { continue }
+        $patch, $kind = -split $line
+        if ($kind -eq 'posix') { continue }
+        Write-Host "patch: $patch"
+        Invoke-Native 'git' @('-C', $sdkSrc, 'apply', (Join-Path $Root "patches\$patch"))
+    }
+
+    $sdkConfigList = $SdkConfigs -join ';'
+    Push-Location $sdkSrc
+    try {
+        Invoke-Native 'cmake' (@('--preset', 'win-amd64',
+            "-DCMAKE_CONFIGURATION_TYPES=$sdkConfigList",
+            "-DCMAKE_DEFAULT_BUILD_TYPE=$($SdkConfigs[0])", "-DCMAKE_CROSS_CONFIGS=$sdkConfigList",
+            "-DCMAKE_DEFAULT_CONFIGS=$sdkConfigList", "-DCMAKE_INSTALL_PREFIX=$SdkPrefix") +
+            $(if ($SdkTests) { @('-DREXGLUE_BUILD_TESTS=ON') } else { @() }))
+        Invoke-Native 'cmake' @('--build', 'out/build/win-amd64', '--target', 'install',
+            '--parallel')
+        if ($SdkTests) {
+            Test-Sdk
+        }
+    } finally {
+        Pop-Location
+    }
+    if ($SdkConfigs -contains 'Release') {
+        Test-Runtime (Join-Path $SdkPrefix 'bin\rexruntime.dll') $false
+    }
+    Write-Host "Installed the ReXGlue SDK $SdkCommit ($($SdkConfigs -join ', ')) into $SdkPrefix"
+}
+
+# Runs the SDK's tests (from its checkout): every one has to run and pass, and the only skips are
+# Windows' in tools/deps/sdk_test_skips.txt, checked from ctest's JUnit file by
+# tools/deps/check_sdk_tests.py as build_sdk.sh does. One at a time: they are not written for
+# parallel processes.
+function Test-Sdk {
+    $python = (Get-Command python -ErrorAction Stop).Source
+    $junit = Join-Path $WorkDir 'sdk-tests.xml'
+    # A reused -WorkDir's from an earlier run cannot pass the check.
+    Remove-Item -Force -ErrorAction SilentlyContinue $junit
+    $ErrorActionPreference = 'Continue'
+    & ctest --test-dir out/build/win-amd64 -C $SdkConfigs[0] --output-on-failure --no-tests=error `
+        --output-junit $junit 2>&1 | ForEach-Object { "$_" }
+    & $python (Join-Path $Root 'tools\deps\check_sdk_tests.py') $junit windows
+    if ($LASTEXITCODE -ne 0) {
+        throw 'the SDK tests are not as expected: see above'
+    }
+}
+
 Import-MsvcEnvironment
 $env:PATH = "$LlvmBin;$env:PATH"
 Invoke-Native 'clang++' @('--version')
 New-Item -ItemType Directory -Force $WorkDir, $Prefix | Out-Null
 $Prefix = (Resolve-Path $Prefix).Path
 $WorkDir = (Resolve-Path $WorkDir).Path
+
+if ($SdkTests) {
+    if (-not $SdkPrefix) {
+        throw '-SdkTests needs -SdkPrefix'
+    }
+    Build-Sdk
+    return
+}
 
 # zlib: the release tarball, checked against its SHA-256.
 $zlibTar = Join-Path $WorkDir "zlib-$ZlibVersion.tar.gz"
@@ -214,50 +297,6 @@ foreach ($config in $Configs) {
 
 Write-Host "Installed zlib $ZlibVersion and OGRE $OgreTag ($($Configs -join ', ')) into $Prefix"
 
-if (-not $SdkPrefix) {
-    return
+if ($SdkPrefix) {
+    Build-Sdk
 }
-
-# The ReXGlue SDK: the repository and commit of tools/deps/build_sdk.sh, so both platforms build the
-# same SDK.
-$buildSdk = Get-Content -Raw (Join-Path $Root 'tools\deps\build_sdk.sh')
-$SdkRepository = [regex]::Match($buildSdk, '(?m)^SDK_REPOSITORY=(\S+)').Groups[1].Value
-$SdkCommit = [regex]::Match($buildSdk, '(?m)^SDK_COMMIT=(\S+)').Groups[1].Value
-if (-not $SdkRepository -or -not $SdkCommit) {
-    throw 'SDK_REPOSITORY or SDK_COMMIT not found in tools/deps/build_sdk.sh'
-}
-New-Item -ItemType Directory -Force $SdkPrefix | Out-Null
-$SdkPrefix = (Resolve-Path $SdkPrefix).Path
-$sdkSrc = Join-Path $WorkDir 'rexglue-sdk'
-if (-not (Test-Path (Join-Path $sdkSrc '.git'))) {
-    Invoke-Native 'git' @('clone', '--quiet', '-c', 'core.autocrlf=false', $SdkRepository, $sdkSrc)
-}
-Invoke-Native 'git' @('-C', $sdkSrc, 'config', 'core.autocrlf', 'false')
-Invoke-Native 'git' @('-C', $sdkSrc, '-c', 'advice.detachedHead=false', 'checkout', '--quiet', '--force',
-    $SdkCommit)
-Invoke-Native 'git' @('-C', $sdkSrc, 'clean', '-fdxq', '-e', 'out')
-Invoke-Native 'git' @('-C', $sdkSrc, 'submodule', 'update', '--init', '--recursive', '--quiet')
-
-# The patches, in order; the POSIX-only ones are skipped.
-foreach ($line in Get-Content (Join-Path $Root 'patches\series')) {
-    if ($line -match '^\s*(#|$)') { continue }
-    $patch, $kind = -split $line
-    if ($kind -eq 'posix') { continue }
-    Write-Host "patch: $patch"
-    Invoke-Native 'git' @('-C', $sdkSrc, 'apply', (Join-Path $Root "patches\$patch"))
-}
-
-$sdkConfigList = $SdkConfigs -join ';'
-Push-Location $sdkSrc
-try {
-    Invoke-Native 'cmake' @('--preset', 'win-amd64', "-DCMAKE_CONFIGURATION_TYPES=$sdkConfigList",
-        "-DCMAKE_DEFAULT_BUILD_TYPE=$($SdkConfigs[0])", "-DCMAKE_CROSS_CONFIGS=$sdkConfigList",
-        "-DCMAKE_DEFAULT_CONFIGS=$sdkConfigList", "-DCMAKE_INSTALL_PREFIX=$SdkPrefix")
-    Invoke-Native 'cmake' @('--build', 'out/build/win-amd64', '--target', 'install', '--parallel')
-} finally {
-    Pop-Location
-}
-if ($SdkConfigs -contains 'Release') {
-    Test-Runtime (Join-Path $SdkPrefix 'bin\rexruntime.dll') $false
-}
-Write-Host "Installed the ReXGlue SDK $SdkCommit ($($SdkConfigs -join ', ')) into $SdkPrefix"
