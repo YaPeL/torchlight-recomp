@@ -219,9 +219,21 @@ replays measure it.
     at first install, a mod, a replacement pack), from the launcher, with its progress shown, and
     never in the game.
 
-  Open for the next iteration: how converted data reaches the backend without the guest seeing a
-  format it does not know (the guest's OGRE 1.7 expects DXT), agreed before any code; and which
-  target format per texture kind, decided by the conversion measurements below.
+  **Adjusted (owner, 2026-10-16), after the render agent's proposal.** The render agent found DXT
+  textures the game creates at run time, which cannot be prepared ahead of time. So:
+
+  - textures that come from files (the `pak`, mods, `replacements`) are converted to ETC2 at
+    install or on the first start, into a disk cache indexed by the hash of the original file;
+    all of it in the backend, by what the render system supports (not by platform);
+  - textures born at run time are decoded to RGBA8 on the fly, with no ETC2 encoding during play;
+  - the render agent's "convert on first use and show RGBA meanwhile" does not apply: with the
+    owner's rule nothing from files is converted during play, so the cache is filled before the
+    game starts (install, first start), never lazily;
+  - how many run-time DXT textures there are and how much memory RGBA8 adds is measured by the
+    render agent (the rest of the owner's note was cut off; to complete).
+
+  The desktop tool above stays an option for packs prepared ahead of time; the backend's cache is
+  what makes the phone not depend on it.
 - **Formats and limits.** Every pixel format the backend creates must exist in GLES 3 (some
   16-bit and float formats have no render-target support there), and the vertex element types
   too. An audit of the `tl_*` formats against the GLES render system's tables, then replays.
