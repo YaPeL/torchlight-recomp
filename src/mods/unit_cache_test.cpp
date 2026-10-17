@@ -81,6 +81,26 @@ int main() {
           "a definition without UNIT_GUID: not all known, and why");
   }
 
+  // The digest: size and modification time, read from the listing.
+  {
+    const fs::path dig = root / "digest";
+    const fs::path file = dig / "a" / "media" / "units" / "items" / "axe.dat";
+    Write(file, "axe one");
+    const auto when = fs::file_time_type(std::chrono::seconds(1700000000));
+    fs::last_write_time(file, when);
+    const auto scan = [&] { return ScanModUnitFiles(dig, Plan({{"a", 1}})).at(0).digest; };
+    const uint64_t first = scan();
+    Write(file, "axe two");  // same size
+    fs::last_write_time(file, when);
+    Check(scan() == first, "same size and time: the same digest (the contents are not read)");
+    fs::last_write_time(file, when + std::chrono::seconds(2));
+    Check(scan() != first, "another time: another digest");
+    Write(file, "axe three");
+    fs::last_write_time(file, when);
+    Check(scan() != first, "another size: another digest");
+    Check(FileDigest(7, 1) != FileDigest(1, 7), "size and time not interchangeable");
+  }
+
   // The key: the mods' files, the base and the version; nothing else.
   const std::string key = UnitCacheKey(files, 1);
   Check(key.size() == 16 && UnitCacheKey(files, 1) == key, "a stable 64-bit hex key");
@@ -93,6 +113,7 @@ int main() {
   Check(UnitCacheKey(changed, 1) != key, "another mod: another key");
   Check(UnitCacheKey(ScanModUnitFiles(mods, Plan({{"b", 1}, {"a", 2}, {"c", -1}})), 1) != key,
         "another priority order: another key");
+  Check(UnitCacheKey(std::vector<ModUnitFile>(files.begin(), files.end() - 1), 1) != key, "a file less: another key");
 
   // The pak's identity: its central directory.
   Write(root / "p1.zip", Zip("directory one"));

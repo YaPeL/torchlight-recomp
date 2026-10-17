@@ -5,6 +5,8 @@
 #include <cstdio>
 #include <vector>
 
+#include "live/named_texture_refresh.h"
+
 namespace torchlight::live {
 
 FrameStep RunFrameStep(LiveFrame& frame, LiveContentSource& content, frontend::Frontend& frontend,
@@ -21,6 +23,14 @@ FrameStep RunFrameStep(LiveFrame& frame, LiveContentSource& content, frontend::F
   auto changes = content.Apply(frame);
   for (const auto& id : changes.destroyed_textures) frontend.ReleaseTexture(id);
   for (const auto& id : changes.destroyed_buffers) frontend.ReleaseBufferOwner(id);
+  // Named textures whose file changed (named_texture_refresh.h): freed and created again with
+  // the others, from the file the texture resolver gives now.
+  if (const auto keys = TakeTextureRefreshes(); !keys.empty()) {
+    for (auto& t : content.NamedTextures(keys)) {
+      frontend.ReleaseTexture(t.id);
+      changes.textures.push_back(std::move(t));
+    }
+  }
   auto textures_start = std::chrono::steady_clock::now();
   for (const auto& t : changes.textures) frontend.PrepareTexture(t);
   step.textures_created = changes.textures.size();

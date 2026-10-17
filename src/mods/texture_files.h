@@ -8,7 +8,8 @@
 //   the order they were made: the game's (the replacements folder, then the pak), then the mods in
 //   activation order.
 // - In any other group (the game's): the replacements folder (added last to the pak's groups, it
-//   wins their index), then the pak, then the mods in activation order.
+//   wins their index), then the pad prompts' folder, then the pak, then the mods in activation
+//   order.
 // Names are the guest's ("MEDIA/LEVELSETS/..."); files in the folders match ignoring case, with
 // '/' and '\' alike. A name that starts with a device ("TLMOD002:/MEDIA/...", "TLREPL:/...") is
 // absolute: the guest's data loader gives a mod's file by its full path (a mod's TEXTURE_OVERRIDE,
@@ -39,9 +40,24 @@ struct TextureLocations {
     std::string device;              // the guest's name for it ("tlmod003:"), for the check
   };
   std::vector<Mod> mods;
+  // Files the app generates for the guest (the merged icon atlases, mods/icon_atlas.h): a folder
+  // mounted as `generated_device` ("tlatlas:"), whose names reach the host with that device first.
+  std::filesystem::path generated;  // empty: none
+  std::string generated_device;
+  // The pad prompts' textures (mods/pad_prompts.h): in the game's groups after the replacements
+  // folder and before the pak, as files of the pak.
+  std::filesystem::path prompts;  // empty: none (the Xbox style)
 };
 
-enum class TextureSource { kNone, kReplacements, kMod, kPak };
+enum class TextureSource { kNone, kReplacements, kMod, kPak, kGenerated };
+
+// Whether the file is one of the host's folders (a mod's, the replacements', a generated one), not
+// the pak's: the live frontend reads it, and captures and session recordings keep its bytes, since
+// replay has none of those folders.
+inline bool FromHostFile(TextureSource source) {
+  return source == TextureSource::kMod || source == TextureSource::kReplacements ||
+         source == TextureSource::kGenerated;
+}
 
 struct TextureFile {
   TextureSource source = TextureSource::kNone;
@@ -61,7 +77,7 @@ class TextureResolver {
   TextureFile Find(std::string_view name, std::string_view group,
                    const std::function<bool(std::string_view)>& pak_has) const;
 
-  bool empty() const { return !replacements_ && mods_.empty(); }
+  bool empty() const { return !replacements_ && mods_.empty() && !generated_ && !prompts_; }
 
  private:
   struct Folder {
@@ -70,31 +86,17 @@ class TextureResolver {
   };
   static Folder List(const std::filesystem::path& root);
   std::optional<Folder> replacements_;
+  std::optional<Folder> generated_;
+  std::optional<Folder> prompts_;
+  std::string generated_device_;  // TextureNameKey'd ("TLATLAS:")
   std::vector<std::pair<std::string, Folder>> mods_;
   std::vector<std::string> devices_;  // mods_'s devices, TextureNameKey'd ("TLMOD002:")
 };
 
 // The session's resolver: set once before the guest loads textures (the mods' registration), read
-// from any thread. Null without mods or replacements.
+// from any thread. Null without mods, replacements or pad prompts.
 void SetTextureLocations(const TextureLocations& locations);
 std::shared_ptr<const TextureResolver> CurrentTextureResolver();
-
-// Validation (TORCHLIGHT_MODS_DIAGNOSTICS, --mods_texture_check): the guest reports the file it
-// opened for each named texture, and the host compares its own choice with it.
-// `container` is the archive as the guest names it ("tlmod003:\\", "tlrepl:\\", or the pak's zip),
-// `path` the file inside it.
-void SetTextureCheck(bool on);
-bool TextureCheckOn();
-void NoteGuestTextureOpen(std::string_view name, std::string_view container, std::string_view path);
-// Compares the host's choice for `name` with what the guest opened. Empty when they agree or the
-// guest reported nothing for it; otherwise a line for the log. Counts both (TextureCheckCounts).
-std::optional<std::string> CheckTextureChoice(std::string_view name, const TextureFile& chosen);
-struct TextureCheckCounts {
-  uint64_t compared = 0, differing = 0, unreported = 0;
-};
-TextureCheckCounts TextureCheckTotals();
-// Which source a guest container stands for: a mod's (its folder), the replacements, or the pak.
-TextureFile SourceOfGuestContainer(std::string_view container, const TextureLocations& locations);
 
 // The pak's entry names (TextureNameKey), published by whoever opens the pak (the live mode), for
 // a resolver used where the pak is not open (the capture). Empty until set: a pak that did not

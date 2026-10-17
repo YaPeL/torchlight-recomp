@@ -125,6 +125,10 @@ int tl_backend_set_guest_size(tl_backend* b, uint32_t width, uint32_t height);
  * 16:9 view. No effect when the frame is not wider than 16:9. */
 void tl_backend_set_scene_clip(tl_backend* b, int enabled);
 /* Target 0 is the main colour target. */
+/* Binding a target (or reading one back) may reset the render system's device state: Direct3D
+ * 11's target bind clears every binding (ClearState) while OGRE keeps its blend, depth and texture
+ * bindings as set. Set the state (tl_backend_set_state) and the textures (tl_backend_set_texture)
+ * for every draw, as the frontend does; the backend binds the program's constants again itself. */
 int tl_backend_set_target(tl_backend* b, uint64_t target_id);
 void tl_backend_set_viewport(tl_backend* b, int32_t left, int32_t top, int32_t width,
                              int32_t height);
@@ -325,6 +329,11 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
 /* Reads the frame's output (main colour target after the display gamma) as RGBA8, top row first;
  * call after tl_backend_end. */
 int tl_backend_read_rgba(tl_backend* b, void* rgba, uint32_t stride);
+/* The frame's output at the size it is drawn (the guest's size times the render scale), and the
+ * output read at that size, unfiltered (reference images at the host's resolution; call after
+ * tl_backend_end). */
+void tl_backend_output_size(tl_backend* b, uint32_t* width, uint32_t* height);
+int tl_backend_read_output_rgba(tl_backend* b, void* rgba, uint32_t stride);
 /* Reads a render target (tl_backend_render_target id) as RGBA8, top row first (diagnostics; call
  * after tl_backend_end). */
 int tl_backend_read_target_rgba(tl_backend* b, uint64_t target_id, uint32_t width,

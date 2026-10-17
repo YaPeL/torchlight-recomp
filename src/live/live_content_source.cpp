@@ -1,11 +1,13 @@
 #include "live/live_content_source.h"
 
+#include <algorithm>
 #include <fstream>
 #include <iterator>
 #include <string_view>
 
 #include <rex/logging.h>
 
+#include "live/named_texture_refresh.h"
 #include "mods/texture_files.h"
 
 namespace torchlight::live {
@@ -130,17 +132,12 @@ std::optional<std::vector<uint8_t>> LiveContentSource::NamedTexture(const comman
   if (!resolver) return GameFile(t.name);
   const mods::TextureFile found =
       resolver->Find(t.name, t.group, [this](std::string_view key) { return pak_.Contains(std::string(key)); });
-  if (mods::TextureCheckOn()) {
-    if (auto difference = mods::CheckTextureChoice(t.name, found)) {
-      static int logged = 0;
-      if (logged++ < 50) REXLOG_WARN("mods: texture check: {}", *difference);
-    }
-  }
   switch (found.source) {
     case mods::TextureSource::kPak:
       return GameFile(t.name);
     case mods::TextureSource::kMod:
-    case mods::TextureSource::kReplacements: {
+    case mods::TextureSource::kReplacements:
+    case mods::TextureSource::kGenerated: {
       std::ifstream in(found.path, std::ios::binary);
       if (!in) return std::nullopt;
       return std::vector<uint8_t>((std::istreambuf_iterator<char>(in)), {});
@@ -149,6 +146,17 @@ std::optional<std::vector<uint8_t>> LiveContentSource::NamedTexture(const comman
       break;
   }
   return std::nullopt;
+}
+
+std::vector<commands::TextureDesc> LiveContentSource::NamedTextures(
+    const std::vector<std::string>& keys) const {
+  std::vector<commands::TextureDesc> found;
+  if (keys.empty()) return found;
+  for (const auto& [identity, t] : textures_) {
+    if (t.name.empty() || t.manual || t.render_target) continue;
+    if (std::find(keys.begin(), keys.end(), RefreshKey(t.name)) != keys.end()) found.push_back(t);
+  }
+  return found;
 }
 
 size_t LiveContentSource::content_bytes() const {

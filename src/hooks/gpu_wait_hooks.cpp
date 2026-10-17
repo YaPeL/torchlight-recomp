@@ -11,10 +11,13 @@
 // (Sleeping only while the progress word had not moved, the first version, never slept on Linux:
 // there the word changes between consecutive steps while the target is still ahead.)
 
+#include <atomic>
 #include <chrono>
+#include <cstdint>
 
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
+#include <rex/logging.h>
 #include <rex/thread.h>
 
 #include "guest_abi/guest_functions.h"
@@ -30,6 +33,33 @@ namespace fn = torchlight::guest_abi::functions;
 // (rex::thread::Sleep waits on a high resolution timer on Windows, patch 17; nanosleep on POSIX).
 constexpr std::chrono::microseconds kWaitStepSleep{200};
 
+// How long the guest waits for the GPU here, logged every kWaitLogPeriod while it waits at all
+// ("guest GPU waits:"), for the measurements of where the guest's thread goes
+// (docs/performance-profile.md).
+constexpr std::chrono::seconds kWaitLogPeriod{10};
+std::atomic<uint64_t> g_wait_steps{0}, g_wait_ns{0};
+std::atomic<int64_t> g_wait_log_ns{0};
+
+void CountWait(std::chrono::steady_clock::time_point start, std::chrono::steady_clock::time_point end) {
+  g_wait_steps.fetch_add(1, std::memory_order_relaxed);
+  g_wait_ns.fetch_add(uint64_t(std::chrono::nanoseconds(end - start).count()),
+                      std::memory_order_relaxed);
+  const int64_t now = std::chrono::nanoseconds(end.time_since_epoch()).count();
+  int64_t last = g_wait_log_ns.load(std::memory_order_relaxed);
+  if (last == 0) {
+    g_wait_log_ns.compare_exchange_strong(last, now);
+    return;
+  }
+  if (now - last < std::chrono::nanoseconds(kWaitLogPeriod).count() ||
+      !g_wait_log_ns.compare_exchange_strong(last, now)) {
+    return;
+  }
+  const double seconds = double(now - last) / 1e9;
+  const uint64_t steps = g_wait_steps.exchange(0), ns = g_wait_ns.exchange(0);
+  REXLOG_INFO("guest GPU waits: {} steps, {:.1f} ms waiting per second over the last {:.1f} s",
+              steps, double(ns) / 1e6 / seconds, seconds);
+}
+
 }  // namespace
 
 extern "C" {
@@ -37,8 +67,10 @@ extern "C" {
 FUNCTION_ADDRESS_CHECK(kGpuProgressWaitStep, 82774170);
 REX_EXTERN(__imp__sub_82774170);
 REX_FUNC(sub_82774170) {
+  const auto start = std::chrono::steady_clock::now();
   rex::thread::Sleep(kWaitStepSleep);
   __imp__sub_82774170(ctx, base);
+  CountWait(start, std::chrono::steady_clock::now());
 }
 
 }  // extern "C"

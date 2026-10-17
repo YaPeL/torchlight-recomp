@@ -24,4 +24,8 @@ bool EnsureGameData(const std::filesystem::path& game_dir,
 // are read for the rest of the startup.
 void EnsureAchievementChoice(std::vector<platform::StartupMessage>& log);
 
+// The renderer could not start (`error`, the render system's reason): a message box in the setup's
+// language says so, instead of a black window. Main thread; the caller then closes the game.
+void ShowRendererError(const std::string& error);
+
 }  // namespace torchlight::game_setup

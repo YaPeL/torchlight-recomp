@@ -1,7 +1,8 @@
 # The video settings column's model (video_menu_model.h): no guest, no OGRE; the hooks and guest
 # calls (video_menu.cpp, guest_call.cpp) are part of the executable.
 add_library(torchlight_game_menu_model STATIC video_menu_model.cpp menu_strings.cpp
-    text_conversion.cpp wide_layout.cpp mod_scripts.cpp texture_open.cpp)
+    text_conversion.cpp wide_layout.cpp mod_scripts.cpp
+    skill_tree_model.cpp class_selector_model.cpp)
 target_include_directories(torchlight_game_menu_model PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_link_libraries(torchlight_game_menu_model PUBLIC torchlight_settings)
 target_compile_features(torchlight_game_menu_model PUBLIC cxx_std_23)
@@ -29,15 +30,20 @@ target_link_libraries(wide_layout_test PRIVATE torchlight_game_menu_model)
 target_compile_options(wide_layout_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME wide_layout_test COMMAND wide_layout_test)
 
+add_executable(skill_tree_model_test skill_tree_model_test.cpp)
+target_link_libraries(skill_tree_model_test PRIVATE torchlight_game_menu_model)
+target_compile_options(skill_tree_model_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME skill_tree_model_test COMMAND skill_tree_model_test)
+
+add_executable(class_selector_model_test class_selector_model_test.cpp)
+target_link_libraries(class_selector_model_test PRIVATE torchlight_game_menu_model)
+target_compile_options(class_selector_model_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME class_selector_model_test COMMAND class_selector_model_test)
+
 add_executable(mod_scripts_test mod_scripts_test.cpp)
 target_link_libraries(mod_scripts_test PRIVATE torchlight_game_menu_model)
 target_compile_options(mod_scripts_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mod_scripts_test COMMAND mod_scripts_test)
-
-add_executable(texture_open_test texture_open_test.cpp)
-target_link_libraries(texture_open_test PRIVATE torchlight_game_menu_model)
-target_compile_options(texture_open_test PRIVATE -Wall -Wextra -Werror)
-add_test(NAME texture_open_test COMMAND texture_open_test)
 
 # The unit save writer's mod-list repair around the original (save_mod_list.h): guest memory
 # through guest_abi, no rex; the hook itself is in the executable (mods_install.cpp).

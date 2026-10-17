@@ -17,6 +17,15 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   mode only and on by default: bucket culling (`bucket_cull.h`, `--native_bucket_cull`: each
   StaticGeometry bucket tested with its own boxes against the main camera) and the guest's memory
   copies run as host `memcpy` where that is the same copy (`guest_copy.h`, `--native_guest_copy`).
+  Two pieces of the guest's render submission also run as host code there
+  (`docs/game-thread-parallelism.md`, section 11): `_setTextureBlendMode`'s member writes
+  (`native_render_system.h`, `--native_render_system_members`) and the RTSS per-object listener's
+  SGPass lookup, which then calls the guest's sub render states as the guest did
+  (`rtss_listener_hooks.cpp`, `--native_rtss_listener`). The culling's `Frustum::isVisible(box)`
+  runs as host code in every mode (`frustum_test.h`, `--native_frustum_test`: the same SIMDe
+  operations as the recompiled function, the guest's result bit for bit; section 12 of the same
+  document). `TORCHLIGHT_FRAME_POINTERS` (off; profiling
+  builds only) keeps frame pointers in every target for `perf --call-graph fp`.
   The game is built with the default code model on Linux x86-64 and the generated code keeps the
   non-volatile registers in locals, so no hook touches r12, r14-r31, f14-f31 or v14 and up through
   the context (`CMakeLists.txt`, a test checks it).
@@ -59,8 +68,10 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   `torchlight.toml` to `ConfigDir`, the shader cache and the widened layouts to `CacheDir`, the logs
   to `LogDir` (the runtime's log file is chosen in `OnConfigurePaths`, `live::ConfigurePaths`;
   OGRE's is `<log>_ogre.log`), saves to the runtime's data folder (`DataDir`, the runtime's default
-  `user_data_root`). The first line of each log names the executable and the build's commit
-  (`cmake/build_info.cmake`).
+  `user_data_root`). The mods, their caches (unit index, merged atlases, pad prompts) and the PC
+  achievement progress follow `--user_data_root` / `--cache_root` when they come
+  (`settings/user_folders_in_use.h`, resolved by `live::UserFoldersInUse`). The first line of each
+  log names the executable and the build's commit (`cmake/build_info.cmake`).
 - First start (REL.4, `src/game_setup/`): without `--game_data_root`, the game's files live in
   `platform::GameDataDir()` (`~/.local/share/TorchlightRecomp/game/`; its `import/` is where saves
   to import go). At every start its `default.xex` is checked (size and SHA-256); when it does not
@@ -107,7 +118,9 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
 - `src/live/`: live mode: frame queue, content snapshots by version, the frame counter (F3) and
   frame timing, session recording (`--live_record`). The threads (`live_mode.h`):
   - the guest's render thread runs the producer: the hooks record each frame into a `LiveFrame`
-    (`capture/session.h`) and push it to a bounded queue at the swap, never waiting on the backend;
+    (`capture/session.h`) and push it to a bounded queue at the swap, never waiting on the backend
+    (one frame with vsync, two without: `frame_queue.h` `FrameQueueDepth`; the frame the backend
+    has not taken is replaced by the newer one);
   - one backend thread owns OGRE and its context: it applies each frame's resources, runs it
     through the `Frontend` and presents it; when it falls behind, guest frames are dropped (counted
     as dropped, next to the presented rate);
@@ -141,9 +154,9 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   group first. The `replacements` folder (`tlrepl:`) is added last to the pak's groups, so its
   files win over the pak's at the same path. Saves are checked against the loaded unit index at
   every start (`save_safety`, `save_units`): units the game no longer knows are taken out after a
-  backup, or nothing is saved in that session when mods' units failed to load. Diagnostics
-  (`TORCHLIGHT_MODS_DIAGNOSTICS`) add the mods' file maps and the texture check
-  (`--mods_texture_check`).
+  backup, or nothing is saved in that session when mods' units failed to load. Saves those checks
+  had nothing to do with are remembered (`settled_saves`) and not read again while neither they
+  nor the units and mod names the checks depend on change.
 - Achievements (`src/achievements/`; `docs/achievements.md`, `docs/achievement-coverage.md`): the
   player chooses the Xbox 360 set (the guest's own, through the SDK) or the PC set (66, from the
   guest's retained completions, character events and stats, with PC's flush points), each with its
@@ -171,21 +184,25 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     frame fits in the chosen resolution (by default, the window's).
 - `src/guest_abi/game_ui.h`: the game's UI (Runic on CEGUI 0.6): the menus (`CDropdownMenu`), their
   `.uilayout` layouts (CEGUI XML), the `onClick` commands and pad navigation.
-- `src/game_menu/`: the host's settings inside the game's settings menu (only mode), as a "Video"
-  column to the right of its rows, in its style. It is all the game's own UI:
+- `src/game_menu/`: the host's settings inside the game's settings menu (only mode), as a column to
+  the right of its rows, in its style, in three sections picked by red buttons on top (Video:
+  resolution, aspect, frame rate cap, vsync, renderer, GPU; Controls: button prompts and the A/B
+  swap; Extras: language and achievements). It is all the game's own UI:
   - the layout is ours (`data/ui/tl_video_settings.uilayout`, copied next to the executable) and only
     references widget types, fonts and imagesets from the pak; the guest sees it through a VFS device
     (`tlhost:`) added as an OGRE `FileSystem` location after `resources.cfg`;
   - after the settings menu's init it is loaded, scaled the way the game scales its layouts and
     attached to its container; the pad order is built on the first opening, so the rows are
-    navigable. Every window has its own name (`tl_video/...`): the guest's unique name generator
-    produces names that clash;
-  - a hook on the menu's navigation handler (by identity of the menu and of our rows): left/right
-    change the value, A the vsync; the rest follows the game. "Reset Defaults" also resets the
-    column;
+    navigable. All sections' rows are in it; the ones not shown are hidden, and the menu's focus
+    moves pass over hidden and disabled windows (they test `isVisible`), so a section change needs
+    no new pad order. Every window has its own name (`tl_video/...`): the guest's unique name
+    generator produces names that clash;
+  - a hook on the menu's navigation handler (by identity of the menu and of our rows): A on a
+    section button shows its rows, left/right change a value, A a checkbox; the rest follows the
+    game. "Reset Defaults" also resets the column;
   - changes apply immediately (scale and vsync through a request to the backend thread, the cap
-    through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer and GPU show the
-    restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
+    through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button
+    prompts and the A/B swap show the restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
   - the labels and the word values are translated with `data/ui/tl_video_strings.txt` (de, fr, es;
     written by us: the game does not have those texts) into the language the runtime reports;
   - the GPU (Linux only for now) is chosen before GL is loaded: the driver variables
@@ -204,6 +221,36 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   for about a second. The PC version has no such wait (its only `Sleep` call is the C runtime's
   startup). That `Sleep` is skipped; the indicator opens and closes as before. The full autosave
   notice, shown once per session, keeps its 5 s minimum: the player has to read it.
+- Difference with the Xbox 360, a third column in the skill tree (`game_menu/skill_tree.cpp`, model
+  `skill_tree_model.h` with tests; `guest_abi/game_ui.h` `CCharSkillsMenuXenon`). The Xbox tree
+  has 3 panes x 6 rows x 2 columns of cells; PC's trees, and those of PC mods' classes, have 3
+  columns. A third-column skill had no cell, and the game's table of the tree's skills
+  (12 * pane + 2 * row + column) gave it the slot of the next row's first cell, so that cell could
+  describe and learn the wrong skill. The layout cache adds the third column's cells to the
+  skill tree layout (hidden copies of the second column's). After every build of the tree the
+  table is put right. For a class with a third-column skill, the three columns are placed in the
+  pane's width (cells at 78 %), left and right move through them, and the focused-skill getter
+  finds the third column's skills. For a class without one (the game's three), the cells keep
+  their size and places, and the game's own left and right handlers run. The focus also moves off
+  a hidden cell to the first cell shown: the game starts at the first cell, which a mod's class
+  may leave empty (its description then showed the layout's placeholder text).
+- Difference with the Xbox 360, mods' classes at character creation (`game_menu/class_selector.cpp`,
+  model `class_selector_model.h` and `mods/class_list.h`, with tests; `guest_abi/game_ui.h`
+  `CNewGameMenu`). The Xbox screen offers its three classes on three buttons, each named after its
+  class, on the first row of a fixed pad grid. The class list is the game's three, then the class
+  buttons (onClick guiSelect1) of the enabled mods' `charactercreate.layout` files, in the mods'
+  search order, kept when a player unit of that name exists. With more than three, the three
+  buttons show a window onto the list: left on the first or right on the last scrolls it by one,
+  wrapping, and A picks the class the button shows (the screen sends the button's window name; the
+  selection maps it to that class). A class without an Xbox button image shows its mod's own PC
+  icon (the imageset its PC layout names, loaded into CEGUI when the game has not), or else the
+  empty skill frame with its name, on a label the layout cache adds to each class button (hidden
+  otherwise).
+  The class's name and description come from its unit data, as for the game's classes. The pets
+  work the same way on the grid's pet row: the game's three (Dog, Cat, Chakawary), then the mods'
+  pet buttons (onClick guiPet1 on PC) whose name is a monster unit's; A picks the pet the button
+  shows, and a mod pet's label is its unit's DISPLAYNAME, in a smaller font that fits the 48 px
+  button. With the game's three classes or pets only, that row's hooks run the game's code unchanged.
 - Screens other than 16:9 and 4:3 (ultrawide 21:9 and 32:9, and 16:10; TLR-006), only mode. With
   Xenos the game keeps its 16:9. Validated with captures at 21:9 (1680x720), 32:9 (2560x720) and
   16:10 (1280x800):
@@ -235,11 +282,11 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     screen's edges. At 1280 they overlap into one band; wider, they leave gaps. The end pieces are
     re-anchored to the edges of a centred 16:9 area (`{0.5, ±offset}`), keeping their overlap. The
     rule is structural, with nothing matched by name. The pak's layouts that have bands are written,
-    widened, to the platform's cache folder (`platform::CacheDir("layouts")`; Linux:
-    `~/.cache/TorchlightRecomp/layouts/`). That folder is mounted as `tlwide:` and added as a
+    widened, with the skill tree's and the creation screen's, to the platform's cache folder (`platform::CacheDir("layouts")`;
+    Linux: `~/.cache/TorchlightRecomp/layouts/`). That folder is mounted as `tllayouts:` and added as a
     resource location in the default group, after `resources.cfg`, so the game finds those layouts
-    there first (as the language pack's fonts). They are regenerated on every start with a wider
-    frame.
+    there first (as the language pack's fonts). They are regenerated on every start; the bands are
+    widened only with a wider frame.
   - Front end scene clip (`SceneClip16x9` in `backend.cpp`): in the main menu and character creation
     the game's 3D scene is built for 16:9, so a wider frame shows its edges. The hook on
     `CreateViewports` (`sub_8220A470`, read only) keeps the scene viewport. While the frame is wider
@@ -303,9 +350,15 @@ hook is timed with `--native_producer_timing` (off by default); the live mode's 
   shared memory right after creating it. The cleanup loop in docs/BUILDING.md is still useful for files left
   by runs with an SDK without the patch. Pending: the upstream report.
 - Full-screen images on screens wider than 16:9 (TLR-006.5, after the beta): loading and story
-  screens show their image pillarboxed with continuous bands, which looks right. To review: on the
-  story screen at 32:9 (in level, so without the scene clip) a few rows of the level's scene show at
-  the top right, past the end of the top band (x ~1880-2075 of 2560).
+  screens show their image pillarboxed with continuous bands, which looks right. On the story
+  screen at 32:9 (`cinematic.uilayout`, in a level) a dark blue strip shows at the top right: x
+  1920-2080 of 2560, the top three rows (RGB 12,12,25 over the black 12,12,12). Checked 2026-10-13
+  on captures of a new character's story screen at 2560x720 (automatic run, three frames 7 s
+  apart): it is not the level's scene, which the layout's full-screen black covers everywhere
+  else (the strip is the same in the three frames while the scene moves); it is a static UI
+  element that starts exactly at the right edge of the centred 16:9 area, so at 16:9 it lies past
+  the screen's edge and never shows. Next: dump the UI draws' vertices (`capture_dump` has no such
+  option yet) to find which element and layout it is, then widen or clip it like the bands.
 - Mesa against NVIDIA on the 2D screens (loading screens, menus): the same replay gives 59.3 dB
   against Xenos with Mesa (Intel UHD 630) and 69.8-69.9 dB with NVIDIA (GTX 1050 Ti on Linux, RTX
   5080 on Windows): at most 5 levels per channel from Xenos with Mesa, 2 with NVIDIA (capture v18).
@@ -449,6 +502,13 @@ hook is timed with `--native_producer_timing` (off by default); the live mode's 
 - Languages out of scope: Arabic. It is written right to left with letters that change shape
   depending on their neighbors; the game's CEGUI 0.6 does neither, and the texts the game composes at
   runtime (items with affixes, numbers) would stay in left-to-right order.
+- More detail at a distance: puddles and shadows on the ground are not drawn in some views (the
+  town, around the merchant's cart, the red roofs, the mine's entrance). It is the game's own
+  behaviour: in parallel mode Xenos shows the same, and its images match the backend's at 34-37 dB
+  in the same frames (Windows, 2026-10-16). The likely cause is a level of detail or fade distance
+  in the game, not confirmed: what decides it (a distance, a count limit on decals, or the camera)
+  is not read yet. The GPU is mostly idle here (an RTX 5080 at 16-21 % use, 31-39 W at the cap), so
+  raising that limit could be a host option, once the guest code that sets it is found.
 - PC's video settings: the frame rate is already the host's (the Video column's cap, uncapped
   allowed). The save also keeps the PC settings (resolution, shadows, AA); restoring PC's menu for
   them is not done.

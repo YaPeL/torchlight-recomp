@@ -82,6 +82,12 @@ as on Linux; and what Windows 10 and later provide: the Universal C Runtime (`uc
 `api-ms-win-crt-*` API sets), `d3dcompiler_47.dll`, `opengl32.dll`, `d3d11.dll`, `dxgi.dll` and
 the system DLLs `check_zip.ps1` lists.
 
+### Art in both packages
+
+| Component | Version | License | In the package | Linking |
+|---|---|---|---|---|
+| Kenney "Input Prompts" (the PlayStation and Nintendo Switch button icons the pad prompt styles use, converted by `tools/pad_prompts/make_icons.py`) | 1.5 (`kenney_input-prompts_1.5.zip`, SHA-256 `ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1`, from https://kenney.nl/assets/input-prompts) | CC0-1.0 | `data/ui/prompts/` (next to the executable; `Resources/data/ui/prompts/` on macOS) | data files |
+
 ## FFmpeg, libmspack and libfuse (LGPL)
 
 - **Configuration** (`thirdparty/FFmpeg/config_linux_x86_64.h` and `config_windows_x86_64.h` in
@@ -3434,3 +3440,16 @@ requirements of the license of GCC.
    limitations under the License.
 ```
 
+### Kenney "Input Prompts"
+
+```
+Input Prompts (1.5A)
+Created/distributed by Kenney (www.kenney.nl)
+
+License: (Creative Commons Zero, CC0)
+http://creativecommons.org/publicdomain/zero/1.0/
+
+You can use this content for personal, educational, and commercial purposes.
+
+Support by crediting 'Kenney' or 'www.kenney.nl' (this is not a requirement)
+```

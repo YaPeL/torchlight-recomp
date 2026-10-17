@@ -207,7 +207,7 @@ of reading 1), which is the mechanism the project already uses.
 **Mounting the folder.** The guest reads files through the runtime's virtual file system. The SDK
 already offers what is needed, with no patch: `rex::filesystem::HostPathDevice` on a host folder,
 `RegisterDevice` and `RegisterSymbolicLink`; the video menu mounts `data/ui/` as `tlhost:` and the
-wide layouts as `tlwide:` this way (`src/game_menu/video_menu.cpp`). The mods folder would be a
+wide layouts as `tllayouts:` this way (`src/game_menu/video_menu.cpp`). The mods folder would be a
 device of its own on `DataDir()/mods/` (for example `tlmods:`), **writable** (`read_only` false)
 because of the compiled files below, and only that folder: never the game's data. **[read]**
 
@@ -230,12 +230,30 @@ the mod's own folder, next to its source. **[read]** So the device must be writa
 writes stay in the user's mods folder; the game's data is never written (its device stays
 read-only). The exact compiled name (`X.DAT.adm`, as in `pak.zip`) is **[to verify]** in a run.
 
-**Saves that reference a removed mod.** **[to verify]** for PC and the guest: what loading a
-character does with an item whose unit no longer exists (dropped, kept as unknown, or a failure).
-Characters reference their class data; the guest has "Missing datagroup for character " in its
-unit spawner (`sub_82287868`, logs and continues) but the save loading path for a missing item was
-not read. To check in a run on copies: a synthetic mod that adds an item, a character that holds
-it, the mod removed, the character loaded.
+**Saves that reference a removed mod (read 2026-10-15).**
+- **The guest (Xbox): verified by a run.** Loading a character whose item's unit is no longer in
+  the index drops the item, and the next save writes the character without it (guided run of
+  2026-10-08, 7e). Read so far: the character reader `sub_822A7D78` reads the saved items as
+  384-byte records into a list at the unit's `+476` (`@0x822A8B64`..`@0x822A8BA4`: allocate,
+  construct with `sub_822C96E8`, append with `sub_822FB020`, read with `sub_822CA9A0`); the units
+  are made from those records later, by GUID. Where the record of an unknown GUID is skipped was
+  not traced (the list is read in some sixty places). **[read: the reader; observed: the drop]**
+- **PC: the same code, inferred.** PC's executable has the same unit spawner message ("Missing
+  datagroup for character", @0x49cee0, which logs and continues) and no message of any kind for an
+  item whose unit is unknown. **[read]** That it drops such an item silently, like the guest, is
+  **[inferred]**: the guest is a port of the same code, and the Xbox build's run shows the drop.
+  The item reader was not found in PC's executable by reading (a search by the record's size did
+  not find it: the layouts differ).
+- **PC does warn, before loading.** When the character's saved mod list (7d) differs from the
+  mods enabled, PC shows a line under the character on the main menu and on the character load
+  screen (`CharacterModsWarning` in `mainmenuframe.layout` and `characterload.layout`), telling the
+  player the mods do not match the character's last save and that going on is at their own risk.
+  **[read: the layouts; the visibility call as in 7d for the guest]** It does not say which items
+  are affected, back the saves up, or stop the load.
+- **Against ours:** the outcome for the item is the same (it is gone after the next save), but
+  ours takes it out before the game runs, after a backup, and tells the player which characters
+  lost how many items (7e, 7h). PC warns that the mods differ, even when every item is
+  still known; ours says nothing in that case (see the empty warning in 7d). Not changed.
 
 **Safety net.** Today the runtime backs a save container up only before deleting it (SDK patch 12,
 `<user_data_root>/save-backups/<UTC>-<package>/`, kept by `save_import/backup_retention.h`).
@@ -316,6 +334,32 @@ Nothing showed it before because without a mod manager the list is always empty.
   (`main_xenon.layout`, bottom right of the main menu) and no code gives it one (`CMainMenu`
   only finds it and hides it, `@0x8238C0A8`..`@0x8238C0C4`), so the warning shows nothing.
   Making it visible would be new UI work (a translated text); not done.
+- **What PC shows there (read 2026-10-15).** PC's `CharacterModsWarning` is a wrapped, centred
+  line in the small serif font under the character, on the main menu frame and on the character
+  load screen, saying that the game's mods do not match those enabled when the character was last
+  saved and that going on is at the player's own risk. The Xbox pak still carries those two PC
+  layouts (unused), with the English text; no translation of it exists in the Xbox data
+  (`translations/`), and the Xbox layouts' own widget (`mainmenu.uilayout`,
+  `charactercreate.uilayout`, `main_xenon.layout`) has no text, a large font and a right-aligned
+  box of 255 x 33 px at the bottom right. **[read]**
+- **Done instead (2026-10-15, the user's choice): a box at the start.** Putting PC's text in the
+  Xbox window did not work (the layout path turned accented letters into mojibake, and the small red
+  text ran behind the copyright line), so the warning is told by the start's notice box, the one of
+  the save checks (`mods/save_units_notice.h`), in its readable font and translated (de, fr, es):
+  "These characters were last saved with other mods:", the characters, and "Playing them is at your
+  own risk." The check compares each character's list (player/names) with the names the game records
+  for the active mods (`mods/mod_list.h` `ActiveModNames`: every registered mod in order, disabled ones
+  too, as `sub_8239E718` lists every CMod with `+192` set), in count and by name at each place, as
+  the main menu does (`@0x8238C818..@0x8238C930`: the counts, then each pair). Such a character is not
+  settled (`settled_saves.h`, rules 2; the active names are part of the context), so it is read and
+  told at every start until it is saved with these mods, as PC warns whenever it shows the
+  character. The game's empty window stays as it is.
+- **Proposal (superseded by the box above).** Give the Xbox widget a short text of our own, not
+  PC's (no game text in the repository), translated like the import messages (de, fr, es), for
+  example "Mods changed since this character was last saved", set through the layout cache as the
+  class labels are, with a smaller font and wrapping so it fits the box. The warning then shows
+  when PC would show it. Or leave it empty: the start's checks already protect the saves and the
+  notice tells what was removed, and the warning would mostly say that a mod was added.
 - **Checked on the run's save** (outside the repository): with only the ten lengths written, the
   save parses completely with `tools/save_convert`'s schema; the saves made without mods have an
   empty list.
@@ -347,11 +391,39 @@ host wraps `sub_822A68F0`.
   only read. Tested with a stand-in writer in `src/game_menu/save_mod_list_test.cpp` (repair,
   moved buffer, fallback, no names).
 
-**Not done: repair at load.** Saves already written with the bug cannot load. Only test saves
-exist today. **Condition for any release that ships mods without this repair** (or for builds of
-this branch from before it that reached players): add a check at startup, before the guest runs,
-that finds this pattern in the character saves with the schema, repairs the lengths in place
-after a backup, and logs it.
+**Repair at load (2026-10-14).** Saves already written with the bug cannot load, so before the
+guest runs (`InstallSaveUnits`, `mods/save_units.h` `RepairModListSaves`), every character file
+whose digest is right but whose body does not parse is tried. Without the lengths, the units alone
+do not say where a name ends, so the names are matched against those mods have had: each mod
+folder's name and its `mod.dat` NAME, and every folder `mods.dat` still lists (a mod since
+removed). Every way of splitting the list with those names is tried, and a repair counts when the
+whole save then parses; exactly one must (`saved_mod_list.h` `RepairModListAtLoad`). The saves are
+backed up first (`save-backups/<UTC>-modlist`), the file is written whole with its digest, and the
+log says so. A save holding a name no mod folder or `mods.dat` knows is left alone (logged): it
+cannot be split safely. Tested on a damaged copy of the synthetic fixture
+(`save_units_test`) and on stand-in bytes (`saved_mod_list_test`). Checked in the game on
+2026-10-15: a copy of a real character with its list damaged this way was repaired at start (the
+file then equal, byte for byte, to the save as it should have been written, and the backup made)
+and loaded with all its items.
+
+**Saves not read again when nothing changed (2026-10-15).** Every start parsed every character save
+twice (`RepairModListSaves`, then `ProtectSaves`), and a save that does not parse was logged again
+at each start. Now the saves those checks had nothing to do with are remembered as settled
+(`mods/settled_saves.h`, in `<user data>/cache/settled-saves.txt`): a save with no unknown unit of
+the player's, and one that does not parse and cannot be repaired. At the next start both passes
+skip a settled save whose size and modification time are unchanged, and the log says how many
+("N save(s) unchanged since they were last checked, not read again"). A save written since (by the
+game, a repair, a removal, or put back from a backup) is read again. Everything is read again when
+the context changes: the units the game is expected to know (game data and mods), the names a
+broken mod list may hold (the mods' folders and names, and those `mods.dat` lists), or the checks'
+rules (`SettledSaves::kRulesVersion`). A save left alone with an unknown unit is never settled, so
+it is checked, and listed in the player's notice, at every start. When the comparison after the
+game's load finds units the check counted on missing, the memory is deleted and the next start
+reads everything. The weak spot is a file system with coarse times (FAT and exFAT keep 2 s): a save
+rewritten with the same size within those 2 s of being settled would not be read again; the game
+only writes a save minutes after the start settles it, and a missed unknown item is dropped by the
+game itself when it loads the character (7e). Tested in `save_units_test` (settled, skipped, read again when written,
+unreadable told once, another context, left alone not settled, the repair skipping too).
 
 ## 7e. New-item mods in validation: what kept the unit out (2026-10-08)
 
@@ -409,7 +481,8 @@ gaps.
    "Destroyer", in a `CResourceManager` (`sub_823DE8F0`, returning to 0x822131C4), and when that
    fails, again with a fallback name (returning to 0x82213210), whose result it does not check
    (`lwz r11,428(r3)` with r3 = 0). With our index built from the base alone
-   (`--mods_unit_index_base_only`, diagnostics), the file we write is byte for byte the Xbox
+   (`--mods_unit_index_base_only`, a diagnostics switch since removed), the file we write is byte
+   for byte the Xbox
    `media/UNITDATA.RAW`, and the loop still came. The loader's reader then held 0 bytes and the
    index's GUID map 0 entries: the game looked for `<key>.RAW` in the mod (both misses are in the
    log) and nowhere else, so the loader skipped the whole file with no error (guest_abi
@@ -433,7 +506,7 @@ default, so the same mistake would not show there). A file we create for the gam
 a resource location is named exactly as the game asks for it: in upper case when the game reaches
 it through the data loader (the unit index), with the game's own spelling when it asks by its own
 name through CEGUI or OGRE (our video layout on `tlhost:`, which we load by our own name; the
-widened layouts on `tlwide:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
+widened layouts on `tllayouts:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
 and the rule. **[to verify]** with a mod whose files are named in lower case, as PC mods often
 are (Windows ignores case): the mods' file maps, which the game fills from the folder listing and
 looks up in upper case, and the mods' assets that OGRE finds through the mod folders' locations.
@@ -451,7 +524,7 @@ That is what kept our unit index out: written by the host after `tlunits:` was m
 never listed (case did not matter: with the file there at the mount, its lower-case name was read
 too). `tlunits:` is now mounted in the index loader's hook, once the file exists
 (`MountIndexFolder`). The other mounts: `tlhost:` holds files shipped with the executable,
-`tlwide:` is written before it is mounted, and the language pack is on the game's own device, so
+`tllayouts:` is written before it is mounted, and the language pack is on the game's own device, so
 none of them is affected. On `tlmods:` the game itself writes the `.ADM` files it compiles, through
 the device, so the device lists them; but a `.ADM` compiled during a session is in neither the
 mod's file map nor OGRE's index until the next start. In that session the game reads and compiles
@@ -622,11 +695,11 @@ released key was not traced. It also explains why halving the mod's files gave n
 breaks depends on which definitions the build reads and which names end up released.
 
 The fix: the builder keeps the nodes. Nothing it reads is released, so every name it made stays.
-The memory they hold stays with the game for the session; a diagnostics build
-(`TORCHLIGHT_MODS_DIAGNOSTICS`) logs it after each build (`mods: build memory: ...`: the used
-physical pages and virtual heaps, the name table's size, and the nodes, properties and subgroups
-kept). The wardrobe guard of 7f stays as a net; the player notice planned for a class without a
-model is dropped if the fix holds.
+The memory they hold stays with the game for the session; a diagnostics build logged it after each
+build (`mods: build memory: ...`: the used physical pages and virtual heaps, the name table's
+size, and the nodes, properties and subgroups kept), until that log was removed with the other
+unit diagnostics (2026-10-14). The wardrobe guard of 7f stays as a net; the player notice planned
+for a class without a model is dropped if the fix holds.
 
 Validated on 2026-10-09, building the index in the session: `JCC - Main` twice and the
 Ultimate Torchlight Mod-Pack (29 mods) twice, no wardrobe guard warning and no fault in any; then a
@@ -725,9 +798,11 @@ appeared in hers (slot 77). The save written in that same session, with no level
 sales, kept both. So a sold item stays with the merchant, in the stock and in the save, until the
 next load of that level rebuilds the stock.
 
-**[open, low priority]** In the run with `JCC - Map` turned off, a weapon sold to the remade Tarn
-did not appear. His first range was full (42 goods, slots 19-60). The ranges that Tarn has were not
-read.
+**[closed without further work, 2026-10-13]** In the run with `JCC - Map` turned off, a weapon
+sold to the remade Tarn did not appear. His first range was full (42 goods, slots 19-60). The likely
+cause is that this Tarn has no range for weapons, so the sold weapon had nowhere to go and was lost,
+as an item whose range is full is (above). **[inferred]** The ranges that Tarn has were not read,
+and the user decided not to look further.
 
 ## 7i. Mods that ship PC-compiled `.ADM` files crashed at startup (2026-10-10, fixed)
 
@@ -868,11 +943,11 @@ way: the file's bytes once, as the texture's content, and the group and file in 
 each frame's commands, which recordings made before do not have. Without mods or replacements the
 images do not change; a capture only adds each named texture's group to its TXFL chunk.
 
-**Checking the host's choice** (`TORCHLIGHT_MODS_DIAGNOSTICS`, `--mods_texture_check`): the guest
-reports the archive and path it opened for each named texture (`mods::NoteGuestTextureOpen`), and the
-live frontend compares its own choice with it: each difference is logged as
-`mods: texture check: NAME: the game opened ..., the host chose ...`, and the live summary counts
-the textures compared, differing and not reported. Validation runs expect no difference.
+**Checking the host's choice** (a diagnostics build, `--mods_texture_check`; removed 2026-10-14):
+the guest reported the archive and path it opened for each named texture, and the live frontend
+compared its own choice with it, logging each difference and counting the textures compared,
+differing and not reported. Its last result, in every validation run below: 0 differences. The
+resolver's rules stay covered by its unit tests (`texture_files_test`).
 
 ## 7k. The replacements folder: files as if inside the pak (2026-10-12)
 
@@ -896,12 +971,12 @@ folder next to `mods` in the user data folder (`platform::DataDir()`), with the 
   host side"): this folder first for the pak's groups. Captures and session recordings keep the
   folder's bytes, since replay has no replacements folder.
 
-**The texture check (diagnostics).** With `TORCHLIGHT_MODS_DIAGNOSTICS` and `--mods_texture_check`,
-the guest reports which archive its OGRE opened each named texture from. `mods_install.cpp` follows
-`ResourceGroupManager::openResource` and the archives' `open` (guest_abi `game_ui.h`
-`kOpenResource`; `game_menu/texture_open.h`, tested). The live frontend compares that with its own
-choice. It logs each difference and, every 10 s, how many textures were compared, how many differ
-and how many the game did not report.
+**The texture check (diagnostics, removed 2026-10-14 after the validations below, last result 0
+differences).** The guest reported which archive its OGRE opened each named texture from, following
+`ResourceGroupManager::openResource` (0x8242B070) and the archives' `open` (`FileSystemArchive`
+0x824B3D48, `ZipArchive` 0x824BD3D0, the archive's name at `+4`). The live frontend compared that
+with its own choice, logged each difference and, every 10 s, how many textures were compared, how
+many differed and how many the game did not report.
 
 **What the check found: names with a device.** The guest's data loader gives a mod's file by its
 full path, device included (`TLMOD002:/MEDIA/...`, the mod's file-map value). OGRE opens that name
@@ -1009,12 +1084,180 @@ data, or the PC screen would have to be brought back. This is deferred to the wo
 interface and controls (section 9). A mod's class can still be loaded where it already exists, for
 example a character imported from PC with that class. That case was not tested.
 
+**Played with a character made outside that screen (2026-10-13).** An Enchantress (JCC -
+Enchantress) made from a copy of a Destroyer save loads, levels up, learns and uses a skill, and
+saves and loads again; the 3D character behind the main menu shows her. Her skill tree did not
+show a third of her skills: the Xbox tree has two columns per pane, PC's have three, and every
+class of the 29-mod pack uses the third (2 to 15 skills each). Worse, the game's table of the
+tree's skills gave a third-column skill the slot of the cell below it, so that cell could describe
+and learn the wrong skill. **[read; seen in a capture]** The tree now gets a third column for a
+class that uses one (ARCHITECTURE.md, "a third column in the skill tree"); the game's classes keep
+their tree as it was.
+
+**Offered at creation (2026-10-13).** The creation screen now lists the mods' classes as well
+(ARCHITECTURE.md, "mods' classes at character creation"): the game's three, then each enabled
+mod's `charactercreate.layout` class buttons with a player unit behind them. With the 29-mod pack
+that is 28 classes (JCC - Main's layout); a mod's class that no layout lists is not offered, as on
+PC. Icons: the game's classes keep theirs; a mod's class shows its own PC icon when it has one, and
+otherwise an empty frame with the class name.
+
+**Mods' own class icons (2026-10-15, "option B").** PC's creation layout gives each class button the
+three images of a CEGUI imageset (`UnselectedImage`, `HoverImage`, `SelectedImage`, as
+"set:<imageset> image:<image>"), and the imageset is a file of the mod (XML: its `Name`, its
+`Imagefile`, a path in the mod, and its images). The selector reads them on the host
+(`mods/class_list.h` `ModClassIcons`, `ModImagesets`) and puts them on the Xbox button as its
+`NormalImage`, `HoverImage` and `PushedImage`. The imageset must be in CEGUI first: the game itself
+loads the mods' item icon imagesets (Enhanced Edition's `enchantlogo`, JCC's `MyIcons` were already
+there); one it has not loaded (JCC - Main's `Logo`, in `media/UI/logo.imageset`) is created from the
+mod's file in the mod's resource group (game_ui.h `kImagesetManagerCreate`). CEGUI throws on an image
+or an imageset it does not have, so an icon is used only when every image it names is in the file,
+the file's image file exists in the mod, the name is not one of the game's own imagesets (read from
+the pak, `PakImagesetNames`), no other mod file defines the same name (which of them the game
+loaded would not be known), and the image file starts as a format the game's codec reads (DDS, PNG,
+BMP by their signatures, TGA by its extension), since creating an imageset whose image does not
+decode throws inside the guest, which a call started from the host may not unwind cleanly. The
+guest's FreeImage has no JPEG plugin (its MIME types and extension lists in the executable name PNG,
+BMP, DDS and TGA, but no `image/jpeg` and no "jpg"), so a JPEG is left out. **[read]** Anything else
+falls back to the frame with the name. Checked in automatic runs with captures: Enhanced Edition's
+five classes, all 28 classes of the 29-mod pack (JCC's `Logo` created by the selector), drawn with the
+mods' textures, and the fallback with two of the pack's imagesets taken out (the frame with the whole
+name; the label is as wide as the button but for its border, so "Enchantress" fits).
+
+**The game's own classes (2026-10-15).** A mod that redraws the Destroyer, Alchemist or Vanquisher
+(its creation layout gives their buttons images of its own imageset) now shows its portraits instead
+of the Xbox ones, as PC does: the mod wins, as with its materials and textures. Without mods, or
+with mods that leave those buttons alone, the Xbox portraits stay. This holds with the game's three
+classes only too (the row's buttons are then set without the carousel). Both mods that ship a
+creation layout redraw them: JCC - Main with PC's own portraits (from its `Logo`, close to the Xbox
+art; its focused image is blue, not gold) and Enhanced Edition with portraits of its own. Checked in
+automatic runs with captures: the pack (JCC's three), Enhanced Edition (its own three) and no mods
+(the Xbox three). So with Enhanced Edition its own portraits show, not the Xbox ones: the rule is
+PC's (the mod wins), not "Xbox unless JCC".
+
+**Pet icons from a mod (2026-10-15).** PC's own pet buttons are text buttons with no images, and no
+mod of the pack or of Enhanced Edition gives its pets any, so today every mod pet shows the frame with
+its name. A mod may give a pet an icon the same way as a class (`mods/class_list.h` `ModPetIcons`):
+in its `media/UI/charactercreate.layout`, on the pet's button (the window with onClick `guiPet1`,
+named after the pet's monster unit), add
+
+    <Property Name="NormalImage" Value="set:<imageset> image:<image>"/>
+    <Property Name="HoverImage" Value="set:<imageset> image:<image when focused>"/>
+    <Property Name="PushedImage" Value="set:<imageset> image:<image when chosen>"/>
+
+(`UnselectedImage`/`SelectedImage`, a radio button's names, are read too; `HoverImage` and
+`PushedImage` are optional and default to the normal image, but without a `HoverImage` the focused
+button looks like the others, so give one; all three from one imageset), and ship
+the imageset in the mod under `media/UI/` (any sub-folder, a `.imageset` file whose `Imagefile` is a
+path in the mod) with its image. The rules of the class icons apply: every named image in the
+imageset, an image file that exists and reads, a name that is neither the game's nor defined twice.
+The Xbox pet buttons are 48 px square, so a square image reads best. What PC draws for these
+properties on its text buttons (`GuiLook/StandardButton`) was not checked: a mod that wants both
+should look at its pets on PC too. Checked with a copy of
+Enhanced Edition given images on two pets (the panther and the bat showed them, the others their
+frame with the name), and the pack's pet row is the same as before, pixel for pixel.
+
+**Pets too (2026-10-14).** PC's layout lists the pets as buttons with onClick `guiPet1`, each named
+after a monster unit (Enhanced Edition: `Pet_BigCat` in `media/units/monsters/PET_BIGCAT.DAT`). The
+Xbox screen's pet row (Dog, Cat, Chakawary, onClick GUISELECT2) becomes a window onto the game's
+three and the mods' pets the same way as the classes; the pet selection (`sub_82214188`) copies the
+name in and makes the pet by it, as the class selection does. Enhanced Edition offers 11 pets, the
+29-mod pack 56. A mod pet's button shows the name the game shows for it, its unit's DISPLAYNAME
+(the unit's NAME without one), in the smaller SerifSmall font, wrapped and centred over the 48 px
+button and its frame. Checked in a hand test on 2026-10-15 (Enhanced Edition's bat chosen, in
+town, and again after loading the character).
+
+**A pet's missing particle effect is the mod's (2026-10-15).** Enhanced Edition's bulldog
+(`media/models/PETS/BULLDOG/PET_BULLDOG.ANIMATION`) spawns `media\particles\monsters\
+droolsmall.layout` on its jaw, and the log shows the lookup failing. No such file exists in PC's
+`Pak.zip` (where particle layouts are `.LAYOUT.cmp`; none is named DROOLSMALL), in the Xbox pak,
+or in any of the mod's files. **[read: the three]** PC cannot find it either, so the bulldog
+should show without that effect there too. **[inferred; PC not run]**
+
+**What the mods' creation layouts change (2026-10-14).** Compared with PC's own
+`charactercreate.layout`, the two mods that ship one (JCC - Main and Enhanced Edition) only add
+buttons, all with the game's own handlers: classes with `guiSelect1` (28 in JCC - Main, 8 in
+Enhanced Edition), pets with `guiPet1` (55 and 10), and the same `guiBack` and `guiNewGame`. No
+new handler. The 3D scene behind the screen is not in the layout: it is the game's, and the
+selection loads the chosen unit through the game's own code, so it shows as on PC. **[read: the
+three layouts]** That the Xbox build does not load a mod's layout therefore loses only the
+layout's decorative text, for example Enhanced Edition's line explaining that some of its classes
+are alternative versions of others.
+
+**A skill a mod's file loses (2026-10-13).** The Kensai's tree (JCC - Class Skills - Fury, Kensai
+and Nethermage) places 15 skills in its third column, and the game holds 14: RAGEECHO (Rage, the
+level 10 row) is missing. Its definition, `JCC - Abomination/media/skills/Abomination/RageEcho/
+rageecho.dat`, is the one file of that folder written in 8-bit text instead of UTF-16. PC's text
+reader takes every file as UTF-16 (`mods/text_encoding.h`), so the file does not read there either:
+the skill is lost on PC too, a fault of the mod. **[read: the files; the PC reader as in 7e]**
+
+**Checked for every class (`tools/class_skill_check`).** `class_skill_check PAK MODS_FOLDER` reads
+each class the creation screen offers (the game's and the mods') and compares the skills of its
+`.dat` with what the skill tree shows, through the tree's own model. Skills the mod's own data keeps
+out are reported, not failures, since PC does the same: placed nowhere (a missing PANE, ROW or
+COLUMN reads as -1), defined by no file, or replaced in their cell by a later skill of the same
+`.dat`. A failure is a definition the game cannot read, or a defined, placed skill the tree drops;
+known losses are listed in `check.h` (`kKnownLosses`, only the Kensai's RAGEECHO). On 2026-10-13:
+the 29-mod pack, 28 classes, 43 kept out by the mods' data, 1 known, 0 failures; Enhanced Edition,
+8 classes, 2 kept out, 0 failures. Run it on the player's data after a change to the tree, the
+selector or the text reading; the unit tests (`class_skill_check_test`) cover its rules.
+
+**Diagnostics removed (2026-10-14).** Once the validations they served were done, the mods
+diagnostics behind `TORCHLIGHT_MODS_DIAGNOSTICS` were removed: `--mods_unit_index_check` (every base
+unit read through our path and compared with the Xbox index), `--mods_unit_index_base_only`, the
+build memory log, the log of each mod's file map and the log of the guest's searches on the mods'
+devices; and the texture check (`--mods_texture_check`, 7j), since no run used it any more.
+`TORCHLIGHT_MODS_DIAGNOSTICS` itself is gone. The findings of each stay in the sections above.
+
 ## 8. Where mods go on our side
 
 - **Folder:** `mods/` inside the TorchlightRecomp user data folder (`platform::DataDir()`:
   `~/.local/share/TorchlightRecomp/mods/` on Linux, `%USERPROFILE%\Saved Games\TorchlightRecomp\mods\`
   on Windows), with PC's layout: one folder per mod with its `mod.dat` and its files under `media/`.
   A PC mod is copied in as it is.
+  With `--user_data_root` the folder is `<user_data_root>/mods/`, and the caches made for the mods
+  (`unitdata/`, `atlases/`, `prompts/`) go below the runtime's cache root
+  (`settings/user_folders_in_use.h`), so a test run never reads or writes the player's.
+- **First start with a large pack:** the unit index (7e) is built before the game draws its first
+  frame (Enhanced Edition: 1984 units, about 4 s on the Linux desktop, about 17 s on a Windows pass);
+  a "Preparing mods... N%" notice (`live/busy_notice.h`, translated in `tl_import_strings.txt`)
+  stays in the bottom right corner meanwhile, and the log records every percent. Measured on
+  2026-10-16: 85 % of that time is the game's own load of each definition and its BASEFILE chain
+  (`kLoadUnitDefinition`), the property reads about 2 %; making it faster is after the release.
+- **Before anything is drawn:** the mods' steps before the guest runs log their times
+  (`startup: <step> in N ms`). They used to open every mod's unit definition twice per start, and
+  a third time at the first start for the saves' check: on a Windows pass, where each open is
+  scanned, about 14 s of black window at every start. Since 2026-10-16 the files are listed once
+  and told apart by size and modification time (`unit_cache.h FileDigest`), and a start that
+  builds the index checks the saves right after the build, under the notice
+  (`save_units_install.h CheckDeferredSaves`). Measured on Linux with the files out of the page
+  cache, black before the backend: first start 2.7 s to 1.1 s, second start 1.2 s to 0.7 s.
+- **Planned for the next version (with the Android iteration, which changes the start too): the
+  backend before the installs.** What is left black is the time before the backend exists. Today
+  every step before the guest (mods, pad prompts, unit index, saves' check) runs in `OnPostSetup`
+  on the UI thread, and the SDK launches the guest only once it returns; until then there is no
+  backend, and even with one the notice (an ImGui dialog) needs the UI thread free to be drawn. On
+  macOS the backend also asks the main thread to create its window (`platform::RunOnWindowThread`),
+  so moving `live::Install` up alone would hang there while that thread is busy. The plan, with no
+  SDK change:
+  1. `live::Install` at the start of `OnPostSetup`, the controller script's install still before
+     it (its comment says why); the backend comes up at once.
+  2. The busy notice shown then, and the slow installs run on a worker thread, so the UI thread is
+     free to draw the notice and to serve the backend's window on macOS.
+  3. A gate at the guest's entry: a hook on the XEX entry function (address found and documented
+     with its evidence in `guest_abi/`, as every other) waits for the worker, so the game touches no
+     file or mod before they are mounted.
+  4. Checked: nothing those steps install needs the UI thread (the pad prompts' pad change
+     callback, the VFS registrations, the hooks' globals).
+  Cost: several hours and a careful render review; medium risk (start order and a new thread on
+  every platform: a fault breaks the start, not only the notice); runs on Linux and confirmation
+  on Windows and macOS. Gain: no black window without the notice beyond creating the backend
+  (about 0.2 s), with or without mods. Decided on 2026-10-16: v0.12.5-beta's rc1 goes without it if
+  the Windows pass shows 1-2 s of black at most with the changes above; otherwise it is done now.
+  With it, for the same version: the replacements' files hidden from the guest
+  (`mods/replacements_guest_view.h`, computed at every start from the folder, the pak's index and
+  every imageset) go to a cache keyed by the folder's listing and the pak's identity, as the unit
+  index does. Measured with TNNR (9724 files): 260 ms on Linux, 1066 ms on Windows, before
+  anything is drawn.
 - **Priority:** PC keeps it in `mods/mods.dat` (`DIRECTORY`, `PRIORITY` per mod; a negative priority
   disables a mod). The same file, in the same format, decides ours: if the player copies PC's
   `mods.dat` with the mods, their order is kept; a mod with no entry is added after the others, in
@@ -1026,6 +1269,16 @@ example a character imported from PC with that class. That case was not tested.
   copy, never move, and keep PC's `mods.dat` priorities. Not needed to start.
 
 ## 8b. For the launcher's mods page (2026-10-09)
+
+**What PC itself has (read 2026-10-15).** No mod manager in the game: no screen or button in
+its UI layouts (the only mod window is the warning of 7d), no UI text about mods in the
+executable, and nothing in the manual (`TorchlightManual.pdf`). **[read]** Installing a mod is
+copying its folder into `%APPDATA%\Runic Games\Torchlight\mods\`; at the next start the game's
+mod manager (7c) finds new folders (`CHECKFORNEW`), adds them to `mods.dat` and restarts itself to
+load them (6). Turning a mod off or reordering means editing `mods.dat` by hand (a negative
+`PRIORITY`) or with an outside tool; Runic's editor (TorchED) packages mods into that folder, but
+it is not part of the game's files here, so how it lists or orders them is not read. So "8b" is a
+page of our own, for the launcher, not a port of something PC has.
 
 What the launcher needs from `src/mods/` to list, turn on or off and order the player's mods. Every
 piece is host-only (no guest, OGRE or platform types), works on any system, and is tested in
@@ -1080,6 +1333,108 @@ Two ideas, outside the mods task, recorded for later:
   touching the executable) plus a mod with the Xbox `.UILAYOUT` files, whose imagesets and fonts can
   only come from the player's own Xbox copy; PC's menu classes look windows up by other names, so a
   bridge or adapted layouts are needed.
+
+**Mods' UI layouts, surveyed (2026-10-15).** The PC `.layout` files the mods at hand ship (Enhanced
+Edition, the 29-mod pack), compared with PC's own, window by window. **[read: the files]**
+- **On the Xbox screen already, or adapted:** `charactercreate.layout` (Enhanced Edition, JCC -
+  Main). Its additions are the class and pet buttons (offered by the selector, 7l), the classes'
+  icons (option B, 7l) and a few texts. The texts are about PC's arrangement of the screen:
+  Enhanced Edition's line says the classes on the right are alternative versions of those on the
+  left, and JCC's are the headers of its two columns of classes ("Original" and "Custom"). The Xbox
+  screen is a carousel with no sides or columns, so shown there they would mislead; they are not
+  applied. What else these layouts change (sizes and positions, a scroll bar) is PC's screen.
+- **Needing PC's interface:** the in-game HUD (`bottomhud.layout`: Enhanced Edition takes out the
+  eight menu buttons; JCC - Diablo 3 Hud Shell Overlap replaces the health globe and the bars with
+  its own images), `inventorymenu.layout` (both move the paper doll's slots and the money),
+  `enchantmenu.layout` and `pethud.layout` (Enhanced Edition moves their parts and takes out the
+  pet's feed button), and the top bar sizes of `mainmenuframe`, `characterload`, `loading` and
+  `cinematicmenu` (Enhanced Edition, for wide screens). The Xbox build draws its own versions of
+  those screens (`*_xenon` and `.uilayout`, a different set of windows, driven by the pad), so a PC
+  layout has nothing to apply to: they come with the PC interface above.
+- **Not seen:** a mod with a `.uilayout` of its own (the Xbox format); none exists for PC.
+
+## 9b. Pad prompt styles (2026-10-16, branch feature/pad-prompt-styles)
+
+The game's button prompts drawn for the player's pad: Xbox (the game's own images), PlayStation
+or Nintendo (`src/mods/pad_prompts.h`).
+
+- **What is replaced.** The ten face, shoulder, trigger and start/back images of the game's widget
+  imagesets (`a_button`, `b_button`, `button_x`, `y_button`, `left_bumper`, `right_bumper`,
+  `left_trigger`, `right_trigger`, `start_button`, `back_button`), and its thirteen stick and
+  d-pad images (`analog_button_*`, `dpad_*`): a stick pushed in any direction (`_lrud`) becomes
+  the plain stick, since the pack has no stick with four arrows, and `analog_button_left_down`,
+  whose drawing is the right stick pressed, the right stick pressed. In the user's pak they are in
+  `widgets.dds`, `widgets1.dds`, `widgets2.dds` and `ratings.dds`. With PlayStation or Nintendo
+  the help screen's controller picture (`controller`, in `ratings.dds`) becomes that style's
+  controller silhouette, at 80% of its place (a flat silhouette at the 360 drawing's size looks
+  heavier); with Xbox it stays the 360's drawing. The silhouettes are rasterized from the pack's
+  SVGs, since the picture is drawn about 350 px wide.
+- **PlayStation models.** SDL tells a PS3, PS4 and PS5 pad apart. The controller picture, and
+  start and back, are the pad's model's: the PS3's triangle and bar, the PS4's and PS5's tall pills
+  (the PS4's without the word above them), which shrink to a thin stick at the prompts' 29x22 as
+  the buttons look on those pads (the owner's choice, 2026-10-16). The other buttons are the same on
+  the three. `pad_prompts = "playstation"` takes the connected PlayStation's model, a PS5 without
+  one.
+- **How.** The textures are rewritten at start, not the imagesets. Each image's region is cleared
+  and the icon is scaled into it with its aspect kept, so every window that names an image keeps
+  its size and place. A transparent border of one texel is kept around it, like the 360's own art:
+  the game's windows draw these images slightly smaller than their regions and clip the bottom
+  (the Options legend draws the 21-texel face buttons 19 px tall), so an icon reaching the edge
+  lost its last row. The textures go to the cache (`prompts/<key>/<style>/`), kept between runs:
+  the key is a digest of the pak's identity, the icon files and `kPromptRulesVersion`, so they are
+  written again only when one of them changes (Nintendo with the swap has a folder of its own).
+  They are mounted as `tlprompt:` and added to the game's resource groups before the replacements
+  folder (7k), so a player's own replacement of a widget texture still wins. The host reads them through the texture lookup like
+  the replacements' files, and captures keep their bytes. Nothing is written for Xbox.
+- **The icons.** Kenney's "Input Prompts" 1.5 (CC0, `THIRD_PARTY_NOTICES.md`), converted by
+  `tools/pad_prompts/make_icons.py` into `data/ui/prompts/`. They are flat white or coloured
+  icons, while the 360's are glossy, so they look different in style.
+- **Choice.** Automatic by default; `settings.toml` `pad_prompts` (`auto`, `xbox`, `playstation`,
+  `nintendo`) fixes one, as does the Options menu's Controls section (Button Prompts, Swap A/B;
+  both after a restart). Automatic follows the first connected pad's SDL type
+  (`platform::ConnectedGamepadKind`) at start, then the pad last used while playing
+  (`platform::WatchGamepadKind`: a pad connected or disconnected, or a button pressed on another
+  pad). Every style (the three PlayStation models and Nintendo) is written at start, and a change
+  of pad switches the host's texture lookup to that style's folder. The live content then gets the new textures (`live::RefreshNamedTextures`),
+  and the A/B swap follows. The guest's own copy stays the start style's; only the Xenos mode
+  draws that copy. Changing the file's setting takes effect at the next start.
+- **Testing the live switch without a second pad (validated 2026-10-16).** A virtual pad made with
+  uinput and a real pad's USB IDs is typed by SDL like that pad. `tools/pad_prompts/virtual_pad.py`
+  (Linux, write access to `/dev/uinput`) follows the game's log and, after the first capture of
+  `tools/input_scripts/pad-live-switch.txt`, creates a DualSense (`--kind ps5`; also `ps4`,
+  `switch`) and presses R3 on it; after the second it removes it, and it removes it on any exit.
+  Run it with the game log folder (`~/.local/state/TorchlightRecomp/logs`) and start the game with
+  `pad_prompts = "auto"` and `--dev_input_script tools/input_scripts/pad-live-switch.txt`. The log
+  then shows "pad prompts: the pad changed; playstation5" and "...; xbox", and the three captures
+  show the main menu's prompts as Xbox, PS5, Xbox. Validated with an 8BitDo pad in Xbox mode as
+  the first pad. The switch shows on the next frame, with no texture missing. Steam's Steam Input
+  can take a virtual pad if Steam is open.
+- **Nintendo pads.** By default buttons work by position, as on the 360: the bottom button
+  confirms. Each prompt shows the letter of its physical button, so the 360's A shows B. With
+  `settings.toml` `swap_confirm_cancel = true` (Nintendo style, chosen or automatic) the right button
+  (A) confirms and the bottom one (B) cancels. The game's two XInput wrappers
+  (`guest_abi/xinput.h`) hand A and B swapped, and the icons follow. The runtime's own dialogs
+  (`live/ui_gamepad.h`) swap them too. The SDK's keyboard emulation goes through the same XInput
+  read, so its A and B keys are swapped as well.
+- **Texts that name a button: left for later.** The game's texts that name a button by its letter
+  are listed here by what they say, not quoted (no game text in the repository):
+  - the inventory row's hint that A identifies an unidentified item;
+  - the inventory row's hint that A uses an item;
+  - a tip that START in the inventory opens the pet's actions;
+  - a tip that the pet can be sent to town from the pet action menu (START);
+  - the merchant tip that RB and LB switch between the merchant's inventories;
+  - the fishing tip to press A when the circle turns red;
+  - one line in the skills screen's layout that names A.
+
+  Each is in the game's translations (de, fr, es) too. A later fix could hook the translator's
+  lookup and put the style's button name into those texts. A rule would find the texts from the
+  user's files at load time, so none is copied into the repository.
+- **Minor, noted (Windows pass, 2026-10-16): extra lookups during loads.** With a non-Xbox style,
+  `tlprompt:` is one more location in each of the game's resource groups, so OGRE checks it too
+  for every file it looks for: about 20 % more missing-file checks during loads (442 -> 535 and
+  252 -> 315 in a long frame), for the same load time (40 against 42 ms). Not worth a change now.
+  If it ever shows, the prompts' textures could be served by the host's texture lookup alone,
+  since the guest only needs them for its own copy (Xenos), instead of a guest location.
 
 ## 10. Validation mods (candidates, not downloaded)
 

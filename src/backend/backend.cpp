@@ -236,7 +236,8 @@ struct ProgramInputs {
 //  - viewports go to OGRE as fractions of the target's guest size (tl_backend_set_viewport);
 //  - D3D pixel centres move by half a guest pixel (the same image at any scale, DrawImpl);
 //  - the probe rectangle is scaled (tl_backend_draw);
-//  - read-backs return guest sizes, filtered down from the host size (ReadTarget).
+//  - read-backs return guest sizes, filtered down from the host size (ReadTarget), except the
+//    output's at the host size (tl_backend_read_output_rgba, for reference images).
 struct RenderScale {
   float factor = 1;
   uint32_t Host(uint32_t guest) const {
@@ -344,6 +345,10 @@ struct tl_backend {
     std::vector<uint64_t> bound;  // HostVertex serial per stream, 0 = none
   };
   std::unordered_map<uint64_t, VertexLayout> vertex_layouts;
+  // Scratch of the draw's vertex binding, kept to avoid an allocation per draw.
+  std::vector<uint64_t> scratch_bound;
+  std::vector<std::pair<uint32_t, uint32_t>> scratch_colour_elements;
+  std::vector<uint32_t> scratch_colours;
   uint64_t host_buffer_serial = 0;
   std::unordered_map<uint64_t, HostIndex> host_index;
   std::unordered_map<uint64_t, Ogre::TexturePtr> textures;
@@ -368,11 +373,21 @@ struct tl_backend {
   std::unique_ptr<Ogre::RTShader::SubRenderStateFactory> guest_texgen_factory, guest_pixel_fog,
       guest_alpha_test, guest_lighting;
   const Program* bound_program = nullptr;
+  // The constants last bound per stage for bound_program (BindChangedParameters); emptied when
+  // another program is bound and when the render system binds a render target (SetViewport).
+  std::vector<Ogre::uchar> bound_constants[Ogre::GPT_COUNT];
+  // The viewport last given to the render system (SetViewport; null after ForgetActiveViewport).
+  Ogre::Viewport* render_system_viewport = nullptr;
   std::unique_ptr<Ogre::AutoParamDataSource> params_source;
   Ogre::SceneManager* scene = nullptr;  // never rendered
   Ogre::Camera* camera = nullptr;
+  // The projection last given to `camera` (ApplyProgram): setting it again marks the frustum out of
+  // date, and the data source then rebuilds it (and its inverse) for every draw.
+  std::optional<Ogre::Matrix4> camera_projection;
   Ogre::Light* light = nullptr;
   Ogre::SceneNode* light_node = nullptr;
+  float light_towards[3] = {};  // the direction last given to light_node (ApplyProgram)
+  bool light_set = false;
   Ogre::TexturePtr placeholder_2d, placeholder_cube;  // texture types for program generation
   bool unit_cube[TL_MAX_STAGES] = {};  // texture bound per unit is a cube map
   uint32_t unit_coord_set[TL_MAX_STAGES] = {};
@@ -396,7 +411,16 @@ void SetError(char* error, uint32_t size, const std::string& message) {
 }
 
 void SetViewport(tl_backend* b, Ogre::Viewport* viewport) {
+  // A viewport other than the last one, or one marked updated, makes the render system bind its
+  // target again; Direct3D 11's _setRenderTarget then calls ClearState, which unbinds the shader
+  // constant buffers too. The constants BindChangedParameters believes bound are gone: bind them
+  // again on the next draw (otherwise a draw whose constants did not change reads none, e.g. an
+  // alpha test function of 0, CMPF_ALWAYS_FAIL, that drops every pixel).
+  if (viewport != b->render_system_viewport || viewport->_isUpdated()) {
+    for (auto& constants : b->bound_constants) constants.clear();
+  }
   b->rs->_setViewport(viewport);
+  b->render_system_viewport = viewport;
   b->active = viewport->getTarget();
 }
 
@@ -415,7 +439,10 @@ void SetViewportArea(Ogre::Viewport* viewport, Ogre::Real left, Ogre::Real top, 
 // After reading a target back the render system may have another framebuffer bound: the next
 // SetViewport binds the target again whatever viewport it is (SetViewportArea may leave the
 // viewport not updated).
-void ForgetActiveViewport(tl_backend* b) { b->rs->_setViewport(nullptr); }
+void ForgetActiveViewport(tl_backend* b) {
+  b->rs->_setViewport(nullptr);
+  b->render_system_viewport = nullptr;
+}
 
 // SceneClip16x9: the front end's 3D scene on a frame wider than 16:9 (tl_backend_set_scene_clip).
 // The centred 16:9 strip of the main target, in host pixels; nothing when the clip is off, the
@@ -511,6 +538,16 @@ void ReadTargetPixels(const tl_backend::Target& t, void* rgba, uint32_t stride) 
 
 void ReadTarget(tl_backend* b, const tl_backend::Target& t, void* rgba, uint32_t stride) {
   ReadTargetPixels(t, rgba, stride);
+  ForgetActiveViewport(b);
+}
+
+// Reads a target as RGBA8 at the size it is drawn (its host size), top row first.
+void ReadTargetHost(tl_backend* b, const tl_backend::Target& t, void* rgba, uint32_t stride) {
+  const uint32_t host_w = t.rt->getWidth(), host_h = t.rt->getHeight();
+  Ogre::PixelBox out(host_w, host_h, 1, Ogre::PF_BYTE_RGBA, rgba);
+  out.rowPitch = stride / 4;
+  out.slicePitch = out.rowPitch * host_h;
+  t.rt->copyContentsToMemory(Ogre::Box(0, 0, host_w, host_h), out, Ogre::RenderTarget::FB_AUTO);
   ForgetActiveViewport(b);
 }
 
@@ -925,6 +962,10 @@ constexpr const char* kProgramScheme = "tl_rtss";
 // fog, texture matrices).
 constexpr size_t kProgramRegisterReserve = 64;
 
+// A unit's combination as it reaches the RTSS: the operations and sources, and the constant
+// arguments where a source reads them. The blend factor is not in the key: only
+// LBX_BLEND_MANUAL reads it, and no operation of the API maps to it (ToOgre(tl_combine_op)), so it
+// is always the default. An operation that reads it must add it here.
 #pragma pack(push, 1)
 struct UnitKey {
   uint8_t present, cube, texgen, coord_set, has_matrix, guest_texgen;
@@ -1077,6 +1118,32 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
   p.failed = true;
 }
 
+// Hands the render system the classes of constants (GpuParamVariability) whose values changed
+// since this stage's constants were last bound for the same program, and nothing when none did.
+// What was bound stays bound while the stage's program does (the render system's contract: OGRE's
+// own scene manager binds only GPV_PER_OBJECT between objects of one pass). The last values are
+// kept per stage, and forgotten when another program is bound (ApplyProgram): Direct3D 11 keeps one
+// constant buffer per stage, not per program.
+void BindChangedParameters(tl_backend* b, Ogre::GpuProgramType type,
+                           const Ogre::GpuProgramParametersSharedPtr& params) {
+  std::vector<Ogre::uchar>& last = b->bound_constants[type];
+  const Ogre::ConstantList& now = params->getConstantList();
+  uint16_t mask = 0;
+  if (last.size() != now.size()) {
+    mask = Ogre::GPV_ALL;
+  } else {
+    for (const auto& [name, def] : params->getConstantDefinitions().map) {
+      const size_t bytes = size_t(def.elementSize) * def.arraySize * (def.isDouble() ? 8 : 4);
+      if (std::memcmp(&now[def.physicalIndex], &last[def.physicalIndex], bytes) != 0) {
+        mask |= def.variability;
+      }
+    }
+  }
+  if (mask == 0) return;
+  last = now;
+  b->rs->bindGpuProgramParameters(type, params, mask);
+}
+
 // Binds the draw's program and writes its auto constants. Returns false when the RTSS could not
 // generate it.
 bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
@@ -1100,6 +1167,7 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
     rs->bindGpuProgram(p.pass->getVertexProgram()->_getBindingDelegate());
     rs->bindGpuProgram(p.pass->getFragmentProgram()->_getBindingDelegate());
     b->bound_program = &p;
+    for (auto& constants : b->bound_constants) constants.clear();
   }
   // Values the data source reads from the pass and the scene objects.
   p.pass->setDiffuse(f.diffuse);
@@ -1113,14 +1181,24 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   Ogre::LightList lights;
   if (f.lighting && f.light) {
     // Directional, in view space (the host view is the identity).
-    float direction[3];
-    conv::DirectionalLightForHost(f.towards_light, direction);
-    b->light_node->setOrientation(Ogre::Vector3::NEGATIVE_UNIT_Z.getRotationTo(
-        Ogre::Vector3(direction[0], direction[1], direction[2]).normalisedCopy()));
+    // Only when it changes: a new orientation marks the node, and the light's derived direction
+    // is then rebuilt for the draw.
+    if (std::memcmp(b->light_towards, f.towards_light, sizeof b->light_towards) != 0 ||
+        !b->light_set) {
+      float direction[3];
+      conv::DirectionalLightForHost(f.towards_light, direction);
+      b->light_node->setOrientation(Ogre::Vector3::NEGATIVE_UNIT_Z.getRotationTo(
+          Ogre::Vector3(direction[0], direction[1], direction[2]).normalisedCopy()));
+      std::memcpy(b->light_towards, f.towards_light, sizeof b->light_towards);
+      b->light_set = true;
+    }
     b->light->setDiffuseColour(f.light_diffuse);
     lights.push_back(b->light);
   }
-  b->camera->setCustomProjectionMatrix(true, f.projection);
+  if (!b->camera_projection || *b->camera_projection != f.projection) {
+    b->camera->setCustomProjectionMatrix(true, f.projection);
+    b->camera_projection = f.projection;
+  }
   // The host world, then (skinned) the guest's bones (object-space bones: array[0] is the world).
   std::vector<Ogre::Affine3>& world = b->world_matrices;
   world.assign(1, Ogre::Affine3(f.world));
@@ -1156,8 +1234,8 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
     p.vertex_params->_writeRawConstant(index, clip, count);
   }
   p.fragment_params->_updateAutoParams(&source, Ogre::GPV_ALL);
-  rs->bindGpuProgramParameters(Ogre::GPT_VERTEX_PROGRAM, p.vertex_params, Ogre::GPV_ALL);
-  rs->bindGpuProgramParameters(Ogre::GPT_FRAGMENT_PROGRAM, p.fragment_params, Ogre::GPV_ALL);
+  BindChangedParameters(b, Ogre::GPT_VERTEX_PROGRAM, p.vertex_params);
+  BindChangedParameters(b, Ogre::GPT_FRAGMENT_PROGRAM, p.fragment_params);
   return true;
 }
 
@@ -1697,6 +1775,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
   if (parent) parent_window = {parent->system, parent->window, parent->display};
   b->width = width;
   b->height = height;
+  std::string failure;  // an exception's description, handled after the handler
   try {
     // OGRE's log, made before the root so the root does not make its own next to the process.
     if (!Ogre::LogManager::getSingletonPtr()) {
@@ -1798,15 +1877,19 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
                   Ogre::RenderSystemCapabilities::vendorToString(caps->getVendor()) + " | " +
                   caps->getDriverVersion().toString();
   } catch (Ogre::Exception& e) {
-    // In OGRE's log too: a render system that cannot start (OpenGL below 3.3) says why there.
-    if (Ogre::LogManager* log = Ogre::LogManager::getSingletonPtr()) {
-      log->logError("backend creation failed: " + e.getFullDescription());
-    }
-    SetError(error, error_size, e.getFullDescription());
-    tl_backend_destroy(b);
-    return nullptr;
+    failure = e.getFullDescription();
   }
-  return b;
+  if (failure.empty()) return b;
+  // Outside the handler: the exception may come from a render system plugin (GL3+'s OpenGL 3.3
+  // assertion), whose code tl_backend_destroy unloads with the root; ending the handler after that
+  // ran the exception's destructor from the unloaded library (a crash instead of the error).
+  // In OGRE's log too: a render system that cannot start says why there.
+  if (Ogre::LogManager* log = Ogre::LogManager::getSingletonPtr()) {
+    log->logError("backend creation failed: " + failure);
+  }
+  SetError(error, error_size, failure);
+  tl_backend_destroy(b);
+  return nullptr;
 }
 
 }  // namespace
@@ -2356,9 +2439,12 @@ static int Draw(tl_backend* b, const tl_draw* d) {
       ++b->counters.vertex_layouts_created;
     }
     Ogre::VertexData& vertex_data = *layout.data;
-    std::vector<uint64_t> bound(d->stream_count, 0);
+    // Scratch reused from draw to draw (no allocation per draw).
+    std::vector<uint64_t>& bound = b->scratch_bound;
+    bound.assign(d->stream_count, 0);
     // Colour elements (converted per stream below): (stream, offset).
-    std::vector<std::pair<uint32_t, uint32_t>> colour_elements;
+    std::vector<std::pair<uint32_t, uint32_t>>& colour_elements = b->scratch_colour_elements;
+    colour_elements.clear();
     for (uint32_t i = 0; i < d->element_count; ++i) {
       const tl_vertex_element& e = d->elements[i];
       Ogre::VertexElementType type;
@@ -2374,10 +2460,14 @@ static int Draw(tl_backend* b, const tl_draw* d) {
       }
       if (is_colour) colour_elements.push_back({e.stream, e.offset});
     }
-    vertex_data.vertexBufferBinding->unsetAllBindings();
-    std::vector<uint32_t> colours;
+    // The streams this draw binds; the layout's binding is only touched where it differs.
+    Ogre::VertexBufferBinding& binding = *vertex_data.vertexBufferBinding;
+    std::vector<uint32_t>& colours = b->scratch_colours;
     for (uint32_t s = 0; s < d->stream_count; ++s) {
-      if (d->stream_buffers[s] == 0) continue;
+      if (d->stream_buffers[s] == 0) {
+        if (binding.isBufferBound(Ogre::ushort(s))) binding.unsetBinding(Ogre::ushort(s));
+        continue;
+      }
       auto it = b->vertex_buffers.find(d->stream_buffers[s]);
       if (it == b->vertex_buffers.end()) return TL_SKIP_MISSING_BUFFER;
       uint32_t stride = d->stream_strides[s];
@@ -2431,8 +2521,14 @@ static int Draw(tl_backend* b, const tl_draw* d) {
         host.buffer->writeData(0, converted.size(), converted.data(), true);
         host.content = content;
       }
-      vertex_data.vertexBufferBinding->setBinding(Ogre::ushort(s), host.buffer);
+      if (!binding.isBufferBound(Ogre::ushort(s)) || binding.getBuffer(Ogre::ushort(s)) != host.buffer) {
+        binding.setBinding(Ogre::ushort(s), host.buffer);
+      }
       bound[s] = host.serial;
+    }
+    // Streams a previous draw of this layout bound beyond this draw's.
+    while (binding.getBufferCount() > 0 && binding.getLastBoundIndex() > d->stream_count) {
+      binding.unsetBinding(Ogre::ushort(binding.getLastBoundIndex() - 1));
     }
     if (bound != layout.bound) {
       layout.bound = bound;
@@ -2637,6 +2733,20 @@ uint32_t tl_backend_probe_samples(tl_backend* b) { return b->probe_samples; }
 int tl_backend_read_rgba(tl_backend* b, void* rgba, uint32_t stride) {
   try {
     ReadTarget(b, b->output, rgba, stride);
+  } catch (Ogre::Exception&) {
+    return 1;
+  }
+  return 0;
+}
+
+void tl_backend_output_size(tl_backend* b, uint32_t* width, uint32_t* height) {
+  *width = b->output.rt->getWidth();
+  *height = b->output.rt->getHeight();
+}
+
+int tl_backend_read_output_rgba(tl_backend* b, void* rgba, uint32_t stride) {
+  try {
+    ReadTargetHost(b, b->output, rgba, stride);
   } catch (Ogre::Exception&) {
     return 1;
   }

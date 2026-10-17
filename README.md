@@ -91,6 +91,10 @@ To play with the keyboard (see [First start](#first-start)), start it from Termi
 open -a "Torchlight Recomp" --args --mnk_mode=true
 ```
 
+On Apple keyboards the function keys control the Mac by default: press **fn** with them, **fn+F3**
+for the frame counter and **fn+F9** for a capture (or turn on "Use F1, F2, etc. keys as standard
+function keys" in System Settings, Keyboard).
+
 ## First start
 
 1. A dialog asks for your Torchlight XBLA package: the file copied from your console's storage, or
@@ -112,9 +116,24 @@ The game runs on the native renderer: menus, town, dungeons, character creation,
 saves.
 
 On a laptop with a GeForce GTX 1050 Ti (Linux, 720p, no frame cap), the native renderer runs the
-game about twice as fast as the same build with ReXGlue's emulated Xenos GPU (1.9–2.5 times the
-frame rate), loads levels 1.5–2 times faster, and has almost no frames over 33 ms
-([measurements](docs/performance-profile.md#native-renderer-against-xenos-2026-10-07)).
+game about three and a half times as fast as the same build with ReXGlue's emulated Xenos GPU
+(3.4–3.8 times the game's frame rate, 2.8–3.4 times the presented one), loads levels 1.4–2 times
+faster, and has almost no frames over 33 ms. **On the laptop's Intel UHD 630 the difference is 5–7
+times** ([measurements](docs/performance-profile.md#native-renderer-against-xenos-again-2026-10-14)).
+
+As a rough estimate, performance is comparable to the PC version of Torchlight run through Proton
+on the same laptop: in some places the PC version is faster (up to about 20 %, the town square on
+the NVIDIA GPU), in others this port is (up to about 15 %, the mine on the Intel GPU)
+([measurements](docs/performance-profile.md#against-the-pc-version-through-proton-2026-10-14)).
+
+On laptops with a hybrid GPU (a dedicated GPU drawing, the built-in screen on the integrated one),
+copying each frame to the built-in screen caps the presented frame rate at about 180 fps with no
+frame limit. It goes away with the laptop's MUX switch set to discrete/dGPU-only in the BIOS, or
+with an external monitor on a port of the dedicated GPU. Playing on the integrated GPU avoids it
+too, and since the game is limited by the CPU it often presents as many frames or more (in the mine
+on this laptop: 208 fps on the Intel UHD 630 against 181 on the GeForce). With vertical sync on it
+does not matter
+([details](docs/performance-profile.md#the-presented-ceiling-on-hybrid-gpu-laptops-2026-10-14)).
 
 ### Display settings
 
@@ -175,9 +194,8 @@ Other languages can be added as language packs, including translations made for 
 - **Ultrawide**: at 32:9, the story screens shown inside a level can show a few rows of the level at
   the top right.
 - **Mods**: new affixes and new level pieces from mods are not loaded yet, mods must be unpacked
-  folders, and the first start with a new set of mods takes longer (up to about a minute with a
-  large pack). A class added by a mod is not offered at character creation. The details are in
-  [docs/mods-guide.md](docs/mods-guide.md).
+  folders, and the first start with a new set of mods takes longer (a "Preparing mods" notice shows
+  its progress). The details are in [docs/mods-guide.md](docs/mods-guide.md).
 - **Languages**: language packs for scripts written right to left (Arabic) are not supported, and
   Chinese and Japanese not yet.
 - The Windows zip is not code-signed (see SmartScreen, above).

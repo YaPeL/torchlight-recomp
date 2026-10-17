@@ -5,25 +5,58 @@
 include(durable_file.cmake)
 if(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
-    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp text_wrap.cpp)
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp power_supply_linux.cpp
+                text_wrap.cpp display_refresh_none.cpp)
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE X11)
+    # When each present reached the screen (presentation_time.h): a development measurement, on
+    # Wayland's presentation-time protocol; off in releases, which then need no Wayland libraries.
+    option(TORCHLIGHT_PRESENTATION_TIME "Measure when presents reach the screen (Wayland)" OFF)
+    if(TORCHLIGHT_PRESENTATION_TIME)
+        find_package(PkgConfig REQUIRED)
+        pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
+        pkg_get_variable(WAYLAND_PROTOCOLS_DIR wayland-protocols pkgdatadir)
+        find_program(WAYLAND_SCANNER wayland-scanner REQUIRED)
+        set(presentation_xml "${WAYLAND_PROTOCOLS_DIR}/stable/presentation-time/presentation-time.xml")
+        set(presentation_out "${CMAKE_CURRENT_BINARY_DIR}/wayland")
+        file(MAKE_DIRECTORY "${presentation_out}")
+        add_custom_command(
+            OUTPUT "${presentation_out}/presentation-time-client-protocol.h"
+                   "${presentation_out}/presentation-time-protocol.c"
+            COMMAND "${WAYLAND_SCANNER}" client-header "${presentation_xml}"
+                    "${presentation_out}/presentation-time-client-protocol.h"
+            COMMAND "${WAYLAND_SCANNER}" private-code "${presentation_xml}"
+                    "${presentation_out}/presentation-time-protocol.c"
+            DEPENDS "${presentation_xml}")
+        target_sources(torchlight_platform PRIVATE presentation_time_wayland.cpp
+                       "${presentation_out}/presentation-time-client-protocol.h"
+                       "${presentation_out}/presentation-time-protocol.c")
+        target_include_directories(torchlight_platform PRIVATE "${presentation_out}")
+        target_link_libraries(torchlight_platform PRIVATE PkgConfig::WAYLAND_CLIENT)
+    else()
+        target_sources(torchlight_platform PRIVATE presentation_time_none.cpp)
+    endif()
 elseif(WIN32)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_win.cpp)
     # shell32/ole32: the known folders (SHGetKnownFolderPath, CoTaskMemFree).
     target_link_libraries(torchlight_user_folders PRIVATE shell32 ole32)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_win.cpp gpu_adapters.cpp
-                gl_probe_win.cpp text_wrap.cpp)
-    # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats).
+                gl_probe_win.cpp text_wrap.cpp
+                presentation_time_none.cpp display_refresh_none.cpp)
+    # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats);
+    # advapi32: the firmware's system information (IsSteamDeck).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
-                          PRIVATE dxgi opengl32 gdi32)
+                          PRIVATE dxgi opengl32 gdi32 advapi32)
 elseif(APPLE)
     enable_language(OBJCXX)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_mac.cpp)
-    add_library(torchlight_platform STATIC platform_sdl.cpp platform_mac.mm text_wrap.cpp)
-    # AppKit: the game window's view, OGRE's window keys; CoreGraphics: the window server session.
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_mac.mm text_wrap.cpp
+                presentation_time_none.cpp display_refresh_mac.mm)
+    # AppKit: the game window's view, OGRE's window keys; CoreGraphics: the window server session;
+    # CoreVideo: the display's refresh (display_refresh_mac.mm).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
-                          PRIVATE "-framework AppKit" "-framework CoreGraphics")
+                          PRIVATE "-framework AppKit" "-framework CoreGraphics" "-framework IOKit"
+                          "-framework CoreFoundation" "-framework CoreVideo")
 else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
@@ -78,3 +111,12 @@ add_executable(user_folders_test user_folders_test.cpp)
 target_link_libraries(user_folders_test PRIVATE torchlight_user_folders)
 target_compile_options(user_folders_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME user_folders_test COMMAND user_folders_test)
+
+# On battery or not, from made-up /sys/class/power_supply trees (Linux's reader, pure C++).
+if(UNIX AND NOT APPLE)
+    add_executable(power_supply_linux_test power_supply_linux_test.cpp power_supply_linux.cpp)
+    target_include_directories(power_supply_linux_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+    target_compile_features(power_supply_linux_test PRIVATE cxx_std_23)
+    target_compile_options(power_supply_linux_test PRIVATE -Wall -Wextra -Werror)
+    add_test(NAME power_supply_linux_test COMMAND power_supply_linux_test)
+endif()

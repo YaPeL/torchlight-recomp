@@ -619,6 +619,12 @@ next to the reference's `psnr.csv`, (b) the macOS `render.png` against the refer
   (66 of 66); seen in the game at MAC.7. Measurements read the presented frames.
 - Optional, for later: the automatic internal resolution (the window's size) capped at 4K;
   today a scaled 4K display gives a 5120 x 2880 window and renders at that size.
+- Closed (2026-10-16): the impression that the lamps' light went out sooner than it should (at
+  4K). Checked again by the owner on this Mac in the pre-rc1 pass of v0.12.5-beta (develop
+  `2c0048a`, internal resolution 5120 x 2880 and 3840 x 2160): the lamps' light behaves as
+  expected. No backend change; nothing scale dependent was expected, since the light map (render
+  target 208) keeps the guest's 512 x 512 at any internal resolution. The F9 comparison planned
+  for it was not needed.
 - Windows (2026-10-09, the Windows agent): MAC.2 validated with the real 0x1000 offset, MAC.4b
   built and tested with `FlushFileBuffers`, and patch 21 has the Metal fix (`5a98b6f`).
   `feature/launcher-imgui-macos` was deleted: its patch 21 and README matched

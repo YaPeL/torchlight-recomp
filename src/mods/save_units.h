@@ -83,11 +83,16 @@ struct UnitCheck {
   std::vector<RemovedUnit> kept_level;
   std::vector<uint8_t> bytes;
   std::string why;
-  std::string owner;  // the character's name (a character file)
+  std::string owner;     // the character's name (a character file)
+  bool unreadable = false;  // left alone because the file does not parse
+  // A character file's mod list: the names of the mods active when it was last saved (player/names,
+  // docs/mods.md 7d). None for a stash or a file that does not parse.
+  std::optional<std::vector<std::u16string>> mods;
 };
 
 // The checks on a parsed save (character, or a shared stash with `stash_file`), changing its tree
-// when entries are removed:
+// when entries are removed (a change to these rules must bump settled_saves.h kRulesVersion, or
+// saves settled under the old rules are not checked again):
 // - an item, a pet or a creature of the player's (PlayerOwnedUnitRef; an item or unit element of
 //   a list) whose unit GUID is unknown is removed, and so is an unknown GUID in a list of GUIDs;
 // - an unknown unit that is not the player's (a saved level's creatures and what they carry, a
@@ -114,6 +119,10 @@ struct SaveUnitsReport {
   std::vector<File> changed;
   std::filesystem::path backup;            // where the saves were copied before
   std::vector<std::string> left_alone;     // "<file>: why"
+  // Files the check had nothing to do with (no unknown unit of the player's, or unreadable), for
+  // SettledSaves; and how many it skipped as unchanged since they were settled.
+  std::vector<std::filesystem::path> settled;
+  size_t skipped = 0;
   bool failed = false;                     // the backup or a write failed: nothing (more) written
   size_t units_not_loaded = 0;             // known to the check, missing from the index loaded
   // When saves hold units the game did not load: "<owner> (<file>)" ("" for a stash), the copy made
@@ -121,17 +130,31 @@ struct SaveUnitsReport {
   std::vector<std::string> holding_not_loaded;
   std::filesystem::path not_loaded_backup;
   bool saving_blocked = false;
+  // Characters last saved with other mods than the active ones (the game's main menu warning,
+  // docs/mods.md 7d): the file, the character's name and its saved list. Not settled, so they are
+  // read, and told, at every start until the character is saved with these mods.
+  struct OtherMods {
+    std::filesystem::path path;
+    std::string owner;
+    std::vector<std::u16string> saved;
+  };
+  std::vector<OtherMods> other_mods;
 };
 
 // Every save container under <user_data_root>/<profile>/<title_folder>/: character files (*.tsv)
 // and shared stashes (sharedstash*.bin) checked; when any would change, the saves are backed up
 // first (save-backups/<UTC>-units, save_safety.h) and each changed file is written whole and
 // renamed into place. Nothing is written if the backup fails. `log` gets a line per removed entry
-// and per file left alone.
+// and per file left alone. A file `skip` returns true for is not read (settled_saves.h). With
+// `active_mods` (the names the game records for the active mods, in its order: ActiveModNames),
+// a character whose saved list differs from it, in count or in any name at its place (as the game's
+// main menu compares them), is listed in `other_mods`.
 SaveUnitsReport ProtectSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
                              const save_import::Schema& schema, const KnownUnits& known,
                              std::chrono::system_clock::time_point now,
-                             const std::function<void(const std::string&)>& log);
+                             const std::function<void(const std::string&)>& log,
+                             const std::function<bool(const std::filesystem::path&)>& skip = {},
+                             const std::vector<std::u16string>* active_mods = nullptr);
 
 // A save file holding some of the units asked for, with its owner ("" for a stash).
 struct SaveHolding {
@@ -153,5 +176,25 @@ void ProtectFromUnitsNotLoaded(const std::filesystem::path& user_data_root, cons
                                const save_import::Schema& schema, const std::vector<int64_t>& missing,
                                std::chrono::system_clock::time_point now,
                                const std::function<void(const std::string&)>& log, SaveUnitsReport& report);
+
+// Character saves already written with the Xbox writer's mod list bug (docs/mods.md 7d,
+// saved_mod_list.h RepairModListAtLoad), repaired before the game reads them: every character file
+// in the same containers as ProtectSaves whose digest is right but whose body does not parse is
+// tried with `candidates` (the names mods have had). When any is repaired, the saves are backed up
+// first (save-backups/<UTC>-modlist) and each repaired file is written whole and renamed into
+// place, with its digest; nothing is written if the backup fails. A file `skip` returns true for is
+// not read (settled_saves.h).
+struct ModListRepairReport {
+  std::vector<std::filesystem::path> repaired;
+  std::vector<std::string> left_alone;  // "<file>: why" (files that do not parse and were not repaired)
+  std::filesystem::path backup;
+  bool failed = false;
+  size_t skipped = 0;
+};
+ModListRepairReport RepairModListSaves(const std::filesystem::path& user_data_root, const std::string& title_folder,
+                                       const save_import::Schema& schema, const std::vector<std::u16string>& candidates,
+                                       std::chrono::system_clock::time_point now,
+                                       const std::function<void(const std::string&)>& log,
+                                       const std::function<bool(const std::filesystem::path&)>& skip = {});
 
 }  // namespace torchlight::mods

@@ -134,6 +134,8 @@ bool RequiresRestart(Setting setting) {
     case Setting::kLanguage:
     case Setting::kAspect:
     case Setting::kAchievements:
+    case Setting::kPadPrompts:
+    case Setting::kSwapConfirmCancel:
       return true;
     case Setting::kRenderResolution:
     case Setting::kFpsCap:
@@ -207,18 +209,28 @@ Choices<Resolution> ResolutionChoices(const Capabilities& caps) {
 
 Choices<uint32_t> FpsCapChoices(const Capabilities& caps) {
   Choices<uint32_t> choices;
+  choices.values.push_back(kFpsCapAuto);
   if (caps.any_vblank_rate) {
-    choices.values.assign(std::begin(kStandardFpsCaps), std::end(kStandardFpsCaps));
+    choices.values.insert(choices.values.end(), std::begin(kStandardFpsCaps),
+                          std::end(kStandardFpsCaps));
     if (caps.display_hz && !Contains(choices.values, caps.display_hz)) {
       choices.values.push_back(caps.display_hz);
-      std::sort(choices.values.begin(), choices.values.end());
+      std::sort(choices.values.begin() + 1, choices.values.end());
     }
   } else {
-    choices.values = {60};
+    choices.values.push_back(60);
   }
   choices.values.push_back(0);
   choices.enabled = true;
   return choices;
+}
+
+uint32_t EffectiveFpsCap(const HostSettings& settings, const Capabilities& caps) {
+  if (settings.fps_cap != kFpsCapAuto) return settings.fps_cap;
+  if (!caps.any_vblank_rate || caps.steam_deck || caps.on_battery || caps.display_hz <= 60) {
+    return 60;
+  }
+  return std::min(caps.display_hz, kAutoFpsCapCeiling);
 }
 
 Choices<std::string> LanguageChoices(const Capabilities& caps) {
@@ -339,6 +351,19 @@ std::string_view AchievementSetName(AchievementSet set) {
   return set == AchievementSet::kPc ? "pc" : "xbox";
 }
 
+std::string_view PadPromptsName(PadPrompts prompts) {
+  switch (prompts) {
+    case PadPrompts::kXbox:
+      return "xbox";
+    case PadPrompts::kPlayStation:
+      return "playstation";
+    case PadPrompts::kNintendo:
+      return "nintendo";
+    default:
+      return "auto";
+  }
+}
+
 HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
   HostSettings settings;
   auto warn = [&](int line, std::string message) {
@@ -372,7 +397,9 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
     const std::string_view key = Trim(line.substr(0, eq));
     const std::string_view value = Trim(line.substr(eq + 1));
     bool ok = true;
-    if (key == "render_system") {
+    if (key == "fps_cap" && (value == "auto" || value == "\"auto\"")) {
+      settings.fps_cap = kFpsCapAuto;
+    } else if (key == "render_system") {
       ok = ParseString(value, settings.render_system);
     } else if (key == "gpu") {
       ok = ParseString(value, settings.gpu);
@@ -392,6 +419,20 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
       std::string s;
       ok = ParseString(value, s) && (s == "xbox" || s == "pc");
       if (ok) settings.achievements = s == "pc" ? AchievementSet::kPc : AchievementSet::kXbox;
+    } else if (key == "pad_prompts") {
+      std::string v;
+      ok = false;
+      if (ParseString(value, v)) {
+        for (const PadPrompts p : {PadPrompts::kAuto, PadPrompts::kXbox, PadPrompts::kPlayStation, PadPrompts::kNintendo}) {
+          if (v == PadPromptsName(p)) {
+            settings.pad_prompts = p;
+            ok = true;
+          }
+        }
+      }
+    } else if (key == "swap_confirm_cancel") {
+      ok = value == "true" || value == "false";
+      if (ok) settings.swap_confirm_cancel = value == "true";
     } else if (key == "vsync") {
       ok = value == "true" || value == "false";
       if (ok) settings.vsync = value == "true";
@@ -416,8 +457,12 @@ std::string Serialize(const HostSettings& settings) {
       << "gpu_name = " << Quote(settings.gpu_name) << "\n"
       << "# Internal render resolution, \"WIDTHxHEIGHT\" or \"window\".\n"
       << "render_resolution = " << Quote(FormatResolution(settings.render_resolution)) << "\n"
-      << "# Frame rate cap in Hz; 0 = unlimited.\n"
-      << "fps_cap = " << settings.fps_cap << "\n"
+      << "# Frame rate cap in Hz; 0 = unlimited; \"auto\" = the display's refresh rate (up to "
+      << kAutoFpsCapCeiling << ", 60 on battery or a Steam Deck).\n"
+      << "fps_cap = "
+      << (settings.fps_cap == kFpsCapAuto ? std::string("\"auto\"")
+                                          : std::to_string(settings.fps_cap))
+      << "\n"
       << "vsync = " << (settings.vsync ? "true" : "false") << "\n"
       << "# Game language (\"en\", \"de\", \"fr\", \"es\"...); takes effect after a restart.\n"
       << "language = " << Quote(settings.language) << "\n"
@@ -432,6 +477,12 @@ std::string Serialize(const HostSettings& settings) {
   } else {
     out << "# achievements = \"xbox\"\n";
   }
+  out << "# Pad button prompts: \"auto\" (the connected pad's), \"xbox\", \"playstation\" or\n"
+      << "# \"nintendo\"; takes effect after a restart.\n"
+      << "pad_prompts = " << Quote(std::string(PadPromptsName(settings.pad_prompts))) << "\n"
+      << "# With Nintendo prompts: the right button (A) confirms and the bottom one (B) cancels, as\n"
+      << "# on a Switch; takes effect after a restart.\n"
+      << "swap_confirm_cancel = " << (settings.swap_confirm_cancel ? "true" : "false") << "\n";
   return out.str();
 }
 

@@ -40,8 +40,8 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
        (without --game_data_root, the game's files are not read: for captures that load none,
        such as synthetic_capture's)
               [--region X0,Y0,X1,Y1] [--dump_targets] [--window] [--via_live]
-              [--frames_png] [--live_content] [--render_scale S] [--render_system NAME]
-              [--gpu ID]
+              [--frames_png] [--live_content] [--render_scale S] [--host_size]
+              [--render_system NAME] [--gpu ID]
        replay --session RECORDING.tlses --game_data_root DIR [--out DIR] [--session_frame N]
               [--session_frames A-B] [--draws LIST] [--region ...] [--dump_targets]
               [--render_system NAME] [--gpu ID]
@@ -55,6 +55,9 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
   --dump_targets writes every render target's final content as target_<name>.png.
   --render_scale draws at S times the guest's size (tl_backend_set_render_scale); images are
   still written at the guest's size.
+  --host_size also writes the output at the size it is drawn (the guest's size times
+  --render_scale), unfiltered, as render_host.png; with --frames_png the frames are written at
+  that size. The metric and render.png stay at the guest's size.
   --render_system gl3plus (default) or d3d11 (Windows): the OGRE render system drawn with.
   --gpu draws on the GPU with that platform id (Direct3D 11; default automatic); --list_gpus
   lists them, software ones too (WARP: for testing only, the game never offers it).
@@ -87,6 +90,7 @@ int main(int argc, char** argv) {
   std::string capture_path, data_root, out_dir;
   std::vector<std::pair<size_t, size_t>> draw_ranges;  // empty: all draws
   std::optional<std::array<uint32_t, 4>> region;
+  bool host_size = false;
   bool dump_targets = false, window = false, via_live = false, frames_png = false,
        use_live_content = false;
   std::string session_path;
@@ -132,6 +136,8 @@ int main(int argc, char** argv) {
       render_scale = std::stof(argv[++i]);
     } else if (a == "--live_content") {
       use_live_content = true;
+    } else if (a == "--host_size") {
+      host_size = true;
     } else if (a == "--frames_png") {
       frames_png = true;
     } else if (a == "--via_live") {
@@ -184,6 +190,7 @@ int main(int argc, char** argv) {
   if (bench_frames && !bench) return UsageError("--bench_frames needs --bench");
   if (bench && (session_frame || session_frames || !draw_ranges.empty() || region || dump_targets))
     return UsageError("--bench takes no --session_frame(s), --draws, --region or --dump_targets");
+  if (host_size && !session_path.empty()) return UsageError("--host_size is for captures, not --session");
   if (!session_path.empty()) {
     torchlight::replay::SessionOptions o;
     o.path = session_path;
@@ -347,12 +354,18 @@ int main(int argc, char** argv) {
         // The guest's frame size (its window target), once it bound one.
         const uint32_t w = frontend.guest_width() ? frontend.guest_width() : width;
         const uint32_t h = frontend.guest_height() ? frontend.guest_height() : height;
-        std::vector<uint8_t> rgba(size_t(w) * h * 4);
-        tl_backend_read_rgba(backend, rgba.data(), w * 4);
+        uint32_t out_w = w, out_h = h;
+        if (host_size) tl_backend_output_size(backend, &out_w, &out_h);
+        std::vector<uint8_t> rgba(size_t(out_w) * out_h * 4);
+        if (host_size) {
+          tl_backend_read_output_rgba(backend, rgba.data(), out_w * 4);
+        } else {
+          tl_backend_read_rgba(backend, rgba.data(), w * 4);
+        }
         for (size_t i = 3; i < rgba.size(); i += 4) rgba[i] = 255;
         char name[64];
         std::snprintf(name, sizeof(name), "/frame_%03u.png", frame.index);
-        WritePng(out_dir + name, w, h, rgba);
+        WritePng(out_dir + name, out_w, out_h, rgba);
         frontend.BeginFrame();
       }
     }
@@ -422,6 +435,15 @@ int main(int argc, char** argv) {
     std::copy_n(&reference[size_t(y) * width * 4], width * 4, &side[size_t(y) * width * 8 + width * 4]);
   }
   WritePng(out_dir + "/render.png", width, height, render);
+  if (host_size) {
+    uint32_t host_w = 0, host_h = 0;
+    tl_backend_output_size(backend, &host_w, &host_h);
+    std::vector<uint8_t> host(size_t(host_w) * host_h * 4);
+    if (tl_backend_read_output_rgba(backend, host.data(), host_w * 4) == 0) {
+      for (size_t i = 3; i < host.size(); i += 4) host[i] = 255;
+      WritePng(out_dir + "/render_host.png", host_w, host_h, host);
+    }
+  }
   WritePng(out_dir + "/reference.png", width, height, reference);
   WritePng(out_dir + "/side_by_side.png", width * 2, height, side);
 

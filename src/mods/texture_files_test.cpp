@@ -94,6 +94,56 @@ int main() {
   f = resolver.Find("GAME:\\MEDIA\\SHAREDTEXTURES\\RIMLIGHT.DDS", "General", pak);
   Check(f.source == TextureSource::kNone, "a device that is no mod's: nothing");
 
+  // A generated file (a merged icon atlas, mods/icon_atlas.h): by its device only.
+  {
+    Touch(root / "g" / "MEDIA" / "UI" / "ITEMICONS" / "ITEMICONS16.0123.DDS");
+    TextureLocations with = locations;
+    with.generated = root / "g";
+    with.generated_device = "tlatlas:";
+    const TextureResolver gen(with);
+    TextureFile g = gen.Find("TLATLAS:/MEDIA/UI/ITEMICONS/ITEMICONS16.0123.DDS", "Autodetect", pak);
+    Check(g.source == TextureSource::kGenerated && g.path.filename() == "ITEMICONS16.0123.DDS",
+          "a generated atlas by its device");
+    g = gen.Find("tlatlas:\\media\\ui\\itemicons\\itemicons16.0123.dds", "MOD A", pak);
+    Check(g.source == TextureSource::kGenerated, "any case and separator, any group");
+    g = gen.Find("MEDIA/LEVELSETS/TOWN1/BRICKS.DDS", "General", pak);
+    Check(g.source == TextureSource::kPak, "the pak's name still the pak's");
+    g = gen.Find("TLATLAS:/MEDIA/UI/ITEMICONS/OTHER.DDS", "General", pak);
+    Check(g.source == TextureSource::kNone, "not in the generated folder: nothing");
+    Check(FromHostFile(TextureSource::kGenerated) && FromHostFile(TextureSource::kMod) &&
+              !FromHostFile(TextureSource::kPak),
+          "generated files are kept like a mod's");
+    TextureLocations only;
+    only.generated = root / "g";
+    only.generated_device = "tlatlas:";
+    Check(!TextureResolver(only).empty(), "a resolver with generated files only");
+  }
+
+  // The pad prompts' textures (mods/pad_prompts.h): after the replacements, before the pak.
+  {
+    Touch(root / "p" / "media" / "levelsets" / "town1" / "bricks.dds");
+    Touch(root / "p" / "media" / "levelsets" / "town1" / "grass001.dds");
+    Touch(root / "p" / "media" / "ui" / "widgets.dds");
+    TextureLocations with = locations;
+    with.prompts = root / "p";
+    const TextureResolver prompts(with);
+    TextureFile p = prompts.Find("MEDIA/LEVELSETS/TOWN1/BRICKS.DDS", "General", pak);
+    Check(p.source == TextureSource::kGenerated && p.path.parent_path().filename() == "town1" &&
+              p.path.generic_string().find("/p/") != std::string::npos,
+          "a prompt texture before the pak's");
+    p = prompts.Find("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "General", pak);
+    Check(p.source == TextureSource::kReplacements, "the player's replacements before the prompts");
+    p = prompts.Find("tlprompt:/media/levelsets/town1/bricks.dds", "General", pak);
+    Check(p.source == TextureSource::kGenerated, "by its device too");
+    p = prompts.Find("MEDIA/UI/WIDGETS.DDS", "MOD A", pak);
+    Check(p.source == TextureSource::kGenerated, "from a mod's group without the file: the game's groups");
+    p = prompts.Find("MEDIA/LEVELSETS/TOWN1/BRICKS.DDS", "MOD A", pak);
+    Check(p.source == TextureSource::kMod, "a mod's own file still first in its group");
+    TextureLocations only;
+    only.prompts = root / "p";
+    Check(!TextureResolver(only).empty(), "a resolver with prompts only");
+  }
+
   // Nowhere.
   f = resolver.Find("MEDIA/NOWHERE.DDS", "MOD A", pak);
   Check(f.source == TextureSource::kNone, "not found anywhere");
@@ -105,31 +155,6 @@ int main() {
   Check(CurrentTextureResolver() != nullptr, "a resolver with mods");
   SetPakNames({"media/levelsets/town1/bricks.dds"});
   Check(PakHas("MEDIA\\LEVELSETS\\TOWN1\\BRICKS.DDS") && !PakHas("MEDIA/X.DDS"), "the pak's names");
-
-  // The validation check: the guest's container against the host's choice.
-  Check(SourceOfGuestContainer("TLMOD001:\\", locations).source == TextureSource::kMod &&
-            SourceOfGuestContainer("TLMOD001:\\", locations).path == root / "b",
-        "a mod's device stands for its folder");
-  Check(SourceOfGuestContainer("tlrepl:\\", locations).source == TextureSource::kReplacements, "the replacements");
-  Check(SourceOfGuestContainer("game:\\pak.zip", locations).source == TextureSource::kPak, "anything else: the pak");
-  SetTextureCheck(true);
-  NoteGuestTextureOpen("MEDIA/MODELS/SWORD/NEW_SWORD.DDS", "tlmod001:\\", "media\\models\\sword\\NEW_SWORD.DDS");
-  NoteGuestTextureOpen("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "game:\\pak.zip", "media/levelsets/town1/grass001.dds");
-  Check(!CheckTextureChoice("MEDIA/MODELS/SWORD/NEW_SWORD.DDS",
-                            resolver.Find("MEDIA/MODELS/SWORD/NEW_SWORD.DDS", "MOD B", pak)),
-        "the same mod: no difference");
-  Check(CheckTextureChoice("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS",
-                           resolver.Find("MEDIA/LEVELSETS/TOWN1/GRASS001.DDS", "ZIP", pak))
-            .has_value(),
-        "the host took the replacements, the game the pak: a difference");
-  Check(!CheckTextureChoice("MEDIA/OTHER.DDS", {}), "nothing reported: nothing compared");
-  // A mod whose folder name starts like another's is another mod.
-  NoteGuestTextureOpen("MEDIA/X.DDS", "tlmod000:\\", "media\\x.dds");
-  Check(CheckTextureChoice("MEDIA/X.DDS", {TextureSource::kMod, root / "a2" / "media" / "x.dds"})
-            .has_value(),
-        "folder a against a file of folder a2: a difference");
-  const TextureCheckCounts counts = TextureCheckTotals();
-  Check(counts.compared == 3 && counts.differing == 2 && counts.unreported == 1, "the counts");
 
   std::error_code ec;
   fs::remove_all(root, ec);

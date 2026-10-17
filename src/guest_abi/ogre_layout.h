@@ -105,6 +105,10 @@ inline void WriteU32(uint8_t* membase, uint32_t addr, uint32_t value) {
   if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
   std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
 }
+inline void WriteU16(uint8_t* membase, uint32_t addr, uint16_t value) {
+  if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
+  std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
+}
 inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
   std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
 }
@@ -548,6 +552,14 @@ inline constexpr Field kDeriveDepthBias{0x2A0, Confidence::kConfirmed};
 inline constexpr Field kDeriveDepthBiasBase{0x2A4, Confidence::kConfirmed};
 inline constexpr Field kDeriveDepthBiasMultiplier{0x2A8, Confidence::kConfirmed};
 inline constexpr Field kDeriveDepthBiasSlopeScale{0x2AC, Confidence::kConfirmed};
+// [confirmed] mManualBlendColours[unit][2] (ColourValue, 16 bytes each, 32 per unit; OgreD3D9RenderSystem.h):
+// _setTextureBlendMode 0x821C9100 stores colourArg1 at this + 144 + 32 * unit (`rlwinm r11,r4,5,0,26`,
+// `std r9,144(r11)`, `std r8,152(r11)` @0x821C91A8..0x821C91B0) and colourArg2 at +160 + 32 * unit
+// (`stdx r9,r10,r3` with r10 = (unit + 5) << 5, `std r8,8(r11)` @0x821C92BC..0x821C92C4), for the
+// colour blend type only; the alpha type reads them (@0x821C91E4.., @0x821C92D4..) and stores nothing.
+// Runic's build has no device call in that function (docs/native-skip-guest-d3d.md, step a).
+inline constexpr Field kManualBlendColours{0x90, Confidence::kConfirmed};
+inline constexpr uint32_t kManualBlendColoursUnitStride = 32;
 }  // namespace render_system
 
 namespace matrix4 {

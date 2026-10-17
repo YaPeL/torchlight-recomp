@@ -1,4 +1,5 @@
 #include "live/install.h"
+#include "live/busy_notice.h"
 #include "live/frame_counter.h"
 
 #include <algorithm>
@@ -39,6 +40,10 @@ REXCVAR_DEFINE_STRING(native_live, "only", "Torchlight",
 REXCVAR_DEFINE_STRING(live_record, "", "Torchlight",
                       "Live mode: record every frame the native backend consumes to this file "
                       "(session recording, replay --session); empty does not record");
+REXCVAR_DEFINE_INT32(native_frame_queue, 0, "Torchlight",
+                     "Live mode: how many guest frames wait for the backend before the oldest is "
+                     "dropped; 0 (the default): one with vsync, for less latency, two without "
+                     "(docs/performance-profile.md, vsync latency)");
 REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
                     "Live mode: time the recording cost per hook and section and log it (live "
                     "producer, live measurements); off by default, it costs the guest's render "
@@ -119,15 +124,18 @@ void RequestDialogFrame() {
     Dialogs* d = g_dialogs.get();
     if (!d) return;
     d->frame_requested = false;
-    // The frame counter (frame_counter.h) is drawn but is not a dialog that takes the input: it is
-    // left out of "a dialog is open".
+    // The frame counter (frame_counter.h) and the busy notice (busy_notice.h) are drawn but are not
+    // dialogs that take the input: they are left out of "a dialog is open".
     rex::ui::ImGuiDialog* counter = FrameCounterDialog();
+    rex::ui::ImGuiDialog* notice = BusyNoticeDialog();
     if (counter) d->drawer->RemoveDialog(counter);
+    if (notice) d->drawer->RemoveDialog(notice);
     const bool open = d->drawer->HasDialogs();
     if (counter) d->drawer->AddDialog(counter);
+    if (notice) d->drawer->AddDialog(notice);
     const platform::GamepadState pad = platform::ReadGamepad();
     g_guest_input_blocked = BlockGuestInput(open, g_guest_input_blocked.load(), pad);
-    if (open || counter) {
+    if (open || counter || notice) {
       // Gamepad navigation (the drawer itself only takes keyboard, mouse and touch), only for the
       // dialogs.
       ImGuiIO& io = d->drawer->GetIO();
@@ -138,7 +146,7 @@ void RequestDialogFrame() {
       }
       if (open && pad.connected) {
         io.BackendFlags |= ImGuiBackendFlags_HasGamepad;
-        for (const UiGamepadKey& k : GamepadToImGui(pad)) {
+        for (const UiGamepadKey& k : GamepadToImGui(pad, ConfirmCancelSwapped())) {
           io.AddKeyAnalogEvent(k.key, k.down, k.value);
         }
       } else {
@@ -243,7 +251,9 @@ void LogHostSettings() {
     REXLOG_WARN("settings: {}: {}", file.path, warning);
   }
   REXLOG_INFO("settings: {} (fps cap {}, vsync {}, language {})", file.path,
-              file.values.fps_cap ? std::to_string(file.values.fps_cap) : "unlimited",
+              file.values.fps_cap == settings::kFpsCapAuto ? std::string("auto")
+              : file.values.fps_cap ? std::to_string(file.values.fps_cap)
+                                    : std::string("unlimited"),
               file.values.vsync ? "on" : "off",
               file.values.language.empty() ? "default" : file.values.language);
 }
@@ -316,6 +326,8 @@ void InitRunningSettings(const std::filesystem::path& game_data_root, rex::Runti
   caps.display = {display.width, display.height};
   for (const auto& [w, h] : display.modes) caps.display_modes.push_back({w, h});
   caps.display_hz = display.refresh_hz;
+  caps.on_battery = platform::OnBattery();
+  caps.steam_deck = platform::IsSteamDeck();
   // The first one offered is the automatic choice: Direct3D 11 where it is installed (Windows; less
   // CPU than OpenGL there, docs/windows-port.md), else GL3+.
   caps.render_systems = {kGl3PlusRenderSystemName};
@@ -388,6 +400,17 @@ std::filesystem::path NextLogPath(const std::filesystem::path& dir, const std::s
   return dir / file;
 }
 }  // namespace
+
+settings::FoldersInUse UserFoldersInUse(const rex::Runtime& runtime) {
+  settings::UserRoots roots;
+  roots.platform_data = platform::DataDir();
+  roots.platform_cache = platform::CacheDir("");
+  roots.user_data_root = runtime.user_data_root();
+  roots.cache_root = runtime.cache_root();
+  roots.user_data_root_given = !rex::cvar::Query<std::string>("user_data_root").empty();
+  roots.cache_root_given = !rex::cvar::Query<std::string>("cache_root").empty();
+  return settings::ResolveFoldersInUse(roots);
+}
 
 void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths) {
   if (const std::string dir = platform::ConfigDir(); !dir.empty()) {
@@ -507,6 +530,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   // Before the guest runs, in every mode.
   ApplyLanguage(g_host_settings.values.language, game_data_root);
   InstallFrameCounter(dialogs.runtime);
+  InstallBusyNotice(dialogs.runtime, dialogs.app_context);
   if (!Only()) BlockGuestInputUnderXamDialogs(dialogs.runtime);
   std::string mode = Mode();
   if (mode == "off") return;
@@ -522,6 +546,8 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
+  options.on_backend_failed = dialogs.renderer_failed;
+  options.frame_queue = size_t(std::max(0, REXCVAR_GET(native_frame_queue)));
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
   if (const auto log_file = rex::cvar::Query<std::string>("log_file"); !log_file.empty()) {
     std::filesystem::path ogre_log(log_file);
@@ -542,8 +568,18 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
     }
     // The guest's vblank is the frame rate cap (with Xenos, the runtime's own presentation keeps
     // its --vsync).
-    ApplyFpsCap(g_host_settings.values.fps_cap, dialogs.runtime);
     InitRunningSettings(game_data_root, dialogs.runtime);
+    {
+      std::lock_guard lock(g_running.mutex);
+      const uint32_t fps_cap = settings::EffectiveFpsCap(g_running.startup, g_running.caps);
+      REXLOG_INFO("settings: fps cap {} ({}; display {} Hz, {}{})",
+                  fps_cap ? std::to_string(fps_cap) : std::string("unlimited"),
+                  g_running.startup.fps_cap == settings::kFpsCapAuto ? "automatic" : "chosen",
+                  g_running.caps.display_hz,
+                  g_running.caps.on_battery ? "on battery" : "plugged in",
+                  g_running.caps.steam_deck ? ", Steam Deck" : "");
+      ApplyFpsCap(fps_cap, dialogs.runtime);
+    }
     // The game's display: vertical sync and internal resolution from the host settings.
     options.vsync = g_host_settings.values.vsync;
     options.render_resolution = g_host_settings.values.render_resolution;
@@ -609,7 +645,10 @@ void ChangeHostSettings(const settings::HostSettings& changed) {
   if (changed.render_resolution != before.render_resolution || changed.vsync != before.vsync) {
     LiveMode::Get().SetVideo(changed.render_resolution, changed.vsync);
   }
-  if (changed.fps_cap != before.fps_cap) ApplyFpsCap(changed.fps_cap, g_running.runtime);
+  const uint32_t fps_cap = settings::EffectiveFpsCap(changed, g_running.caps);
+  if (fps_cap != settings::EffectiveFpsCap(before, g_running.caps)) {
+    ApplyFpsCap(fps_cap, g_running.runtime);
+  }
   if (g_host_settings.path.empty()) return;
   std::string error;
   if (!settings::Save(g_host_settings.path, changed, error)) {

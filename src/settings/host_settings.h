@@ -30,8 +30,16 @@ enum class Aspect { kAuto, k4x3, k16x10, k16x9, k21x9, k32x9 };
 // Which achievement set the game uses: the Xbox 360 one (the game's own 12) or the PC one
 // (the PC version's 66, achievements/). Read once at startup.
 enum class AchievementSet { kXbox, kPc };
+// The pad prompts' style (mods/pad_prompts.h): automatic (the connected pad's) or a fixed one. Read
+// once at startup.
+enum class PadPrompts { kAuto, kXbox, kPlayStation, kNintendo };
 
 // Stored values. Empty strings and zero sizes mean "automatic".
+// HostSettings::fps_cap's automatic value, "auto" in the file.
+inline constexpr uint32_t kFpsCapAuto = 0xFFFFFFFFu;
+// The automatic cap's ceiling (a 240 Hz display gets 144).
+inline constexpr uint32_t kAutoFpsCapCeiling = 144;
+
 struct HostSettings {
   // OGRE render system name; empty = the first one available.
   std::string render_system;
@@ -41,8 +49,9 @@ struct HostSettings {
   std::string gpu_name;
   // Internal render resolution; 0x0 = the window's size.
   Resolution render_resolution;
-  // Frame rate cap = the guest's vblank frequency in Hz; 0 = unlimited.
-  uint32_t fps_cap = 60;
+  // Frame rate cap = the guest's vblank frequency in Hz; 0 = unlimited; kFpsCapAuto (the
+  // default) follows the display (EffectiveFpsCap).
+  uint32_t fps_cap = kFpsCapAuto;
   // Vertical sync of the backend's window.
   bool vsync = true;
   // Game language code ("en", "de", "fr", "es"...); empty = the runtime's default.
@@ -52,6 +61,11 @@ struct HostSettings {
   // Achievement set; empty when the file has no valid "achievements" key (EffectiveAchievements:
   // Xbox). Not written back while empty.
   std::optional<AchievementSet> achievements;
+  // Pad prompts' style.
+  PadPrompts pad_prompts = PadPrompts::kAuto;
+  // With Nintendo's style: the right button (A) confirms and the bottom one (B) cancels, as on a
+  // Switch, instead of by position as on the 360.
+  bool swap_confirm_cancel = false;
   bool operator==(const HostSettings&) const = default;
 };
 
@@ -78,6 +92,10 @@ struct Capabilities {
   std::vector<Resolution> display_modes;
   // Refresh rate of that display in Hz (0 if unknown).
   uint32_t display_hz = 0;
+  // Running on battery (unplugged) when the game started: the automatic frame rate cap is 60.
+  bool on_battery = false;
+  // A Steam Deck (by the machine's model): the automatic frame rate cap is always 60.
+  bool steam_deck = false;
   // Whether the guest's vblank can run at any rate (needs the runtime's support); without it only
   // 60 Hz and unlimited exist.
   bool any_vblank_rate = false;
@@ -87,7 +105,8 @@ struct Capabilities {
 
 // Settings the menu shows. Changing one of these takes effect after restarting the game.
 enum class Setting {
-  kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements
+  kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements, kPadPrompts,
+  kSwapConfirmCancel
 };
 bool RequiresRestart(Setting setting);
 // The achievement set in effect: the setting, or Xbox when it is missing or invalid.
@@ -96,6 +115,8 @@ inline AchievementSet EffectiveAchievements(const HostSettings& settings) {
 }
 // "xbox" / "pc".
 std::string_view AchievementSetName(AchievementSet set);
+// "auto" / "xbox" / "playstation" / "nintendo".
+std::string_view PadPromptsName(PadPrompts prompts);
 
 // The GPU setting for the log: "automatic" without a choice, else "NAME (ID)", the name looked up
 // in `gpus` by id, else the stored gpu_name (files written before gpu_name existed lack it), else
@@ -127,8 +148,12 @@ bool GpuChoiceApplies(const Capabilities& caps, const std::string& render_system
 Choices<std::string> GpuChoices(const Capabilities& caps);  // ids
 // Display modes with the display's aspect ratio, largest first; the first is the display's size.
 Choices<Resolution> ResolutionChoices(const Capabilities& caps);
-// Ascending, with 0 (unlimited) last.
+// Automatic (kFpsCapAuto) first, then ascending, with 0 (unlimited) last.
 Choices<uint32_t> FpsCapChoices(const Capabilities& caps);
+// The cap in effect: a chosen number as it is; automatic is the display's refresh rate up to
+// kAutoFpsCapCeiling, and 60 on a Steam Deck, on battery, on a display of 60 Hz or less or of
+// unknown rate, or when the guest's vblank cannot run at other rates.
+uint32_t EffectiveFpsCap(const HostSettings& settings, const Capabilities& caps);
 Choices<std::string> LanguageChoices(const Capabilities& caps);
 // Automatic first, then the fixed aspects no wider than the display, narrowest first (all of them
 // when the display's size is unknown).

@@ -1,5 +1,89 @@
 # Gameplay performance profile — 2026-09-12
 
+## Native renderer against Xenos, again (2026-10-14)
+
+The comparison of 2026-10-07 (next section) repeated with everything taken since: the backend's
+cuts, the D3D skip, the game thread's steps 3a and 4, the frustum test as host code, and SDK patch
+33 (which applies to both renderers). Develop `0aec8a7` with the step overlay (local), the same
+executable in both modes, the reference route played by hand (the fixed-floor saved game: the
+mine standing still and fighting, the stairs, the town square; not the 2026-10-07 route of a new
+character), no cap, no vsync, 720p, warm shader caches, the 55 C cool-down before each run; one
+run of each mode. Xenos draws with Vulkan, which chooses its own device: the runs force the NVIDIA
+one (`VK_ICD_FILENAMES`, as the 2026-10-07 script did); without it the loader picked the Intel UHD
+630, which gave the Intel pair below.
+
+GeForce GTX 1050 Ti, the game's frame rate (presented, native only), mean over the step:
+
+| Step | Native | Xenos | Native over Xenos |
+|---|---|---|---|
+| Mine, standing still | 239.3 (180.5) | 63.7 | 3.76x (2.83x presented) |
+| Mine, fighting | 187.5 (175.4) | 51.6 | 3.63x (3.40x) |
+| Town square | 149.6 (142.9) | 43.8 | 3.42x (3.26x) |
+| Frames over 33 ms (per step) | 0, 1, 0 | 0, 8, 42 | |
+| Level loads (Continue; the stairs) | 3951, 4225 ms | 5426, 9076 ms | 1.4x, 2.1x |
+
+Intel UHD 630 (the native backend on GL, Xenos on Vulkan), the game's frame rate:
+
+| Step | Native | Xenos | Native over Xenos |
+|---|---|---|---|
+| Mine, standing still | 208.1 | 28.0 | 7.4x |
+| Mine, fighting | 165.1 | 26.2 | 6.3x |
+| Town square | 138.8 | 26.3 | 5.3x |
+
+On the NVIDIA GPU the native renderer went from 1.9-2.5 times Xenos's frame rate (2026-10-07) to
+3.4-3.8 times; the route differs, and each mode ran once, but the change is far beyond the runs'
+spread (3-10 %). On the Intel GPU the native renderer loses little (CPU-bound: 208 against 239 fps
+standing still) while Xenos falls to 26-28 fps. The package sat at 82 C in every step of every run
+(3080-3740 MHz).
+
+## The presented ceiling on hybrid-GPU laptops (2026-10-14)
+
+On this laptop, with the NVIDIA GPU drawing and the panel on the Intel one, the native renderer
+presents fewer frames than the game makes once it runs above about 180 fps: in the mine standing
+still, 239 fps for the game against 181 presented; on the Intel GPU the two are equal (208 and
+208). Measured cause: the backend thread's present takes 2.6-3.3 ms per frame on the NVIDIA GPU
+against 0.4-0.5 ms on the Intel one (the live mode's `live consumer` lines over the hand runs of
+2026-10-14), while the rest of its frame (content, frontend, draws) costs the same on both. The
+profile of the mine standing still shows no hot spot inside the swap (the NVIDIA library's
+samples are the scattered GL calls): the time is off the CPU, `eglSwapBuffers` blocking until the
+driver's PRIME copy of the frame to the Intel GPU completes. It is not the driver's frame queue
+(replay benches with `__GL_MaxFramesAllowed=2`, as a local test only, kept the present at 1.8-2.9
+ms as without it) and not our work. With content, frontend and draws at about 2.6 ms plus that
+present, the backend's frame is about 5.5 ms: a ceiling near 180 fps presented. The PC version
+through DXVK does not show it (Vulkan presents with IMMEDIATE and three images and returns).
+
+It matters only above about 180 fps presented, on laptops with a hybrid GPU, with no frame limit:
+with vsync at 60 or 144 Hz nothing changes. Not pursued (2026-10-14). The known solution, should
+it ever be needed, is the two-stage backend pipeline (below, "Paused: a two-stage backend
+pipeline"): with the translation on its own thread, the next frame's commands are translated
+while the render thread waits in the present, for an estimated 4.2-4.4 ms per frame (about
+230-240 fps in the mine standing still).
+
+## Against the PC version through Proton (2026-10-14)
+
+A rough reference, not a like-for-like comparison: Torchlight for PC (OGRE 1.6, Direct3D 9, the PC
+data) run through Proton with DXVK, in an isolated prefix, against this port's native renderer. The
+same reference route by hand from the same saved game (the fixed-floor save converted to PC), 720p
+fullscreen, no cap, no vsync, the 55 C cool-down; the PC's frame rates come from one MangoHud log
+of the whole run, cut at the two level loads, 0.5 s trimmed at each end. They are presented frame
+rates, so they go against this port's presented column (the previous section's runs, develop
+`0aec8a7`). One run of each.
+
+| Step | PC, NVIDIA | Port, NVIDIA (presented) | PC, Intel | Port, Intel (presented) |
+|---|---|---|---|---|
+| Mine, standing still | 184 | 180.5 | 186 | 208.1 |
+| Mine, fighting | 177 | 175.4 | 145 | 164.6 |
+| Town square | 172 | 142.9 | 145 | 138.5 |
+
+Comparable overall: the PC version is ahead in the town square on the NVIDIA GPU (+20 %) and
+slightly on the Intel one (+4 %); this port is ahead in the mine on the Intel GPU (+12-14 %) and
+even in the mine on the NVIDIA one. Frames over 33 ms in the fight and the town square: PC 14 and
+9 (NVIDIA), 13 and 8 (Intel); this port 1 and 0 on both. The level loads are not compared (the
+port's are the guest's own load, the PC's the gap in the frame log). On the NVIDIA GPU this port's
+presented rate is below its own game rate (239 against 181 standing still): its backend thread
+spends 2.6-3.3 ms per frame in the present, against 0.4-0.5 ms on the Intel GPU, which drives the
+panel; the PC version through DXVK presents at the same rate on both GPUs.
+
 ## Native renderer against Xenos (2026-10-07)
 
 The same build of the game run twice with each renderer: the native backend (`--native_live=only`,
@@ -544,6 +628,9 @@ clears as load actions), not a swap of plugins.
 
 ### Paused: a two-stage backend pipeline
 
+(2026-10-14: the known solution for the presented ceiling on hybrid-GPU laptops, above
+"The presented ceiling on hybrid-GPU laptops"; not started, by decision.)
+
 With the cuts, the backend presents 99 % of the guest's frames in the town square on this laptop
 (5364 of 5426 in one run): the limit there is the guest's render thread, not the backend. The
 design below stays here, not started, until a machine shows the backend falling behind (the
@@ -667,7 +754,7 @@ What is left for later, each documented where it was evaluated:
   limited by the guest's thread, not the backend; it waits for a machine where the backend falls
   behind on the real route.
 - **The buffer bindings** (`setVertexBufferBinding`, slot 85; docs/native-skip-guest-d3d.md, class
-  B): not read yet; after steps c and d brought nothing measurable here, it goes with a machine
+  B): weighed 2026-10-13 (below, 0.2 %); after steps c and d brought nothing measurable here, it goes with a machine
   that can show small gains.
 - **Backpressure with vsync and no frame cap** (above): the one case where the guest makes frames
   that are dropped (about two thirds at 60 Hz); it could save CPU and battery (the Steam Deck).
@@ -699,6 +786,274 @@ resolution, `--native_skip_guest_d3d=true`), develop at dfc354a or later:
    in a window of its own, so its present is comparable between machines, not with the game's.
 3. What to send back: the machine (CPU, GPU, driver, monitor refresh), the numbers above, and
    whether the game runs in a window or full screen.
+
+### Vsync latency (2026-10-13)
+
+With the player's defaults (frame rate cap 60, vsync on) the time from the guest's swap to the
+screen was about 70 ms. Measured in parts since this stage:
+
+- **Swap to presented**, in three parts per presented frame (`live/frame_timing.h`
+  `PresentLatency`): in the frame queue until the backend takes it, the backend's work up to the
+  present, and the present itself (with vsync, its wait for the display). In the live summary
+  (`swap-to-presented latency`, `of it waiting in the frame queue`), the measurement scripts'
+  `perf step '...' latency:` lines and a line of the frame counter (F3).
+- **Swap to screen**: the window system's presentation time of each frame. Wayland's
+  presentation-time protocol, in development builds with `TORCHLIGHT_PRESENTATION_TIME`
+  (`platform/presentation_time.h`): the `swap-to-screen latency` line, `perf step '...' on
+  screen:` (with the gaps over 25 ms between shown frames, a refresh shown twice) and "to the
+  screen" in F3. Elsewhere only the first.
+
+Where the 70 ms went (automatic runs, `measure-fight-town` with vsync at 60 Hz, this laptop on
+Wayland): 35-40 ms in the frame queue, about 2 ms of the backend's work, about 14 ms in the
+present's wait, and about 15 ms from the present's return to the screen (the compositor shows a
+commit at its next refresh). The queue was full: the guest is paced by the SDK's vblank, a 60 Hz
+clock of its own (patch 10), and the display by its own; the two never line up, so the two frames
+of the queue fill and each frame waits almost two refreshes. **Synthetic numbers** (two runs each,
+the steps' means), swap to screen:
+
+| Lever | Presented fps | Swap to screen | Gaps over 25 ms per step |
+|---|---|---|---|
+| None (two frames queued) | 59.8-60.0 | 64-77 ms | 1-2 |
+| A queue of one frame (`--native_frame_queue=1`) | 59.7-60.0 | 44-57 ms | 0-4 |
+| Backpressure at the guest's swap (`feature/backpressure`) | 59.7-59.9 | no change (swap to presented 48-50 ms) | — |
+| The guest's vblank aligned with each present's return | 36.6-38.9 | — | — |
+| Late latch, a fixed lead of 5 or 8 ms | 31-37 | — | hundreds |
+| Late latch, 11 ms | 59.7-60.0 | 40-53 ms | 2-3 |
+| Late latch on the display's clock (presentation times), lead adjusted | 59.2-59.9 | 35-42 ms | 3-24 |
+
+- **The alignment and the fixed latches** take the present's return as the display's vblank. It
+  is one only while the present blocks: once the backend is early, the present returns at once,
+  the phase moves later each frame and a refresh of every two is lost.
+- **The auto latch** on Wayland's presentation times got 7-10 ms more than the queue of one, but
+  its lead did not settle: first it kept probing down into missed refreshes (21-24 gaps a step),
+  then, kept above the leads that had missed, it rose to the top (15.7 ms of 16.7) because refreshes
+  are missed now and then whatever the lead (the compositor, a late guest frame). Not taken.
+- **Without vsync** (no cap), the queue of one gave 4-5 ms less to the screen in the fight and the
+  town square at the same presented rate, but fewer presented frames standing still in the dungeon
+  in both runs (176-193 against 198-203 fps, more drops). So it applies with vsync only.
+
+**The hand runs decide** (four blind runs, the reference route with the step overlay, the player's
+defaults; 1 and 4 two frames, 2 and 3 one): swap to screen 63-76 ms against 49-55 ms, the same
+presented rate (59.4-60.0) and drops; the fan and the package the same (3050-3280 rpm, 75-76 C).
+The player could not tell them apart by feel. **Taken**: since `develop` (this stage), the frame
+queue holds one frame with vsync and two without (`--native_frame_queue`, 0 = that rule;
+`live/frame_queue.h` `FrameQueueDepth`).
+
+**The display's own clock, last try (closed for this iteration).** With Wayland's presentation
+times as the vblank clock (development builds), on top of the queue of one: the guest's vblank in
+phase with the display's, its phase moved by the queue's wait (later while frames waited, earlier
+at once when the backend waited for one), so each guest frame would be cut just before the backend
+takes it (an SDK patch, `AlignGuestVblank`, on `feature/vsync-latency` only). Two runs against the
+queue of one: 49-50 ms to the screen against 43-54 ms, the queue's wait unchanged (about 17.5 ms),
+the phase never settled (11-14 ms after the display's vblank, about 85 frames a period late): the
+guest's frame time moves too much from frame to frame for one phase to be both just before the
+backend and not late. The criterion (10 ms less than the queue of one, the same presented rate, no
+more gaps) was not met, so the display's clock is not pursued on other platforms in this iteration;
+the branch keeps the code (presentation-time measurement aside, which is in `develop`).
+
+Pending: Windows (Direct3D 11 queues up to three frames in DXGI by default; one is a candidate,
+`--native_frame_latency` on `feature/d3d11-frame-latency`, draft pull request 1, measured by the
+Windows agent) and macOS.
+
+### The buffer bindings and OGRE 14's interface: evaluated (2026-10-13)
+
+From the town square's DWARF profile of the stage's last runs (`cdq-off2`: develop with the D3D skip
+on, no cap, no vsync, 10 s from the town square mark; percentages of all the process's samples):
+
+- **The buffer bindings (slot 85, `setVertexBufferBinding` `0x821C3E78`)**: 0.20 % (0.16 % in its
+  body, 0.04 % in its thunk), its device call (`SetStreamSource`) already skipped since 2026-10-07.
+  The rest is its loop over the bindings and the members it keeps (`mLastVertexSourceCount`, the
+  buffers' tracking), which a host implementation would have to write as the guest does. The same
+  order as the device `SetTexture` and step d (0.10-0.15 %), which brought nothing measurable on
+  this laptop: **not done**; it waits for a machine that can show gains that small.
+- **OGRE 14's interface**: the backend's thread is 29.4 % of the samples: our translation and
+  frontend 9.8, the NVIDIA GL driver 9.5 (`libnvidia-eglcore` 8.6, EGL and the dispatch 1.0), OGRE
+  5.4 (`OgreMain` 3.2, the GL3+ render system 2.2), the C library 2.5. OGRE's share has no hot
+  spot: the shader constants' path (`GLSLSeparableProgram::updateUniforms`,
+  `GpuProgramParameters::_updateAutoParams`, `bindGpuProgramParameters`) 0.9, the vertex bindings
+  (`bindVertexElementToGpu`, `GLVertexArrayObject::bindToGpu`, `VertexBufferBinding::setBinding`
+  and its map) 0.5, the camera and frustum per draw (`Frustum::updateFrustumImpl`,
+  `isViewOutOfDate`, `setCustomProjectionMatrix`, `Matrix4::inverse`) 0.4, `_render` 0.1. What
+  OGRE 14 offers instead (shared parameters in uniform buffers, fewer automatic parameters, one
+  camera update per pass instead of per draw) would take a part of those 1.8 points of a thread
+  that is not the limit: on the reference route the guest's thread is (stage 2). **Not done**; if
+  a machine shows the backend behind (the two-stage pipeline's condition, above), these three are
+  the first places to cut, before the pipeline, and the driver's 9.5 points (the number of GL calls)
+  come with them.
+- **The two-stage pipeline** stays paused for the same reason: no machine measured so far shows the
+  backend behind on the reference route.
+
+### The guest's thread is the limit; codegen with r0, r2, r11, f0 in locals: not taken (2026-10-13)
+
+**Where the limit is.** Per thread, without vsync or a cap, on the reference route (automatic runs,
+`/proc` sampled every 0.5 s): the guest's main thread (`Main XThread`, the recompiled PPC code) at
+99.8-100 % of one core in every step; the backend (`tl backend`) 62-68 %, the SDK's `GPU Commands`
+39-49 %, the UI thread 28-32 %, the rest under 2 % each. It hardly waits: 0.3 ms a second for the
+GPU's progress (`guest GPU waits:` in the log), about nothing on our locks (0.005 ms a frame on the
+frame queue). One thread computing is the limit, which is why a much faster desktop is only as much
+faster as its single core. Of that thread (town square DWARF profile): the recompiled guest code
+79 % (flat: the octree walk `0x821C7158` and `Frustum::isVisible` `0x821C74A0` at 1.8 % each are
+the top), our producer 8.4 %, the C library's allocator and `mem*` 4.6 %, `fma` through libm 1.6 %,
+the SDK's runtime 1.5 %, our hooks 1.1 %, the register save and restore helpers 0.2 % (4.6 % before
+the non-volatile registers went into locals). The floating point mode switches (`ldmxcsr`) are
+about 0.02 %.
+
+**SDK patch 32** (`sdk/argument-locals`, the ReXGlue agent's; not in `patches/series`):
+`non_argument_in_context` lets `non_argument_as_local` keep r12 in the context (the SEH funclets
+and the stack probe read it outside the ABI) and put r0, r2, r11, f0 and v32-v63 in locals, 23 % of
+the generated code's register references to the context. A live-in survey of the 43,927 functions
+found those registers live at entry only in two dead tails. A checking mode
+(`verify_non_argument_locals`) compares, at each read after a call, the local with what the context
+would hold, and logs the first difference per site:
+- three automatic routes with it (the fixed-floor game: a fight, `FAME`, two `LEVELUP`, `ASCEND`
+  and its save; that save loaded, `DESCEND`, a fight; the town by the vendors, an NPC, the
+  inventory): one line, `subfe r10,r11,r11` at `0x824BFEAC`, whose result does not depend on r11
+  (`~x + x + CA`): the compiler's way to turn a carry into a mask. The check now skips repeated
+  operands of `subfe`, `subf`, `subfc`, `xor`, `eqv` and `andc`.
+- **synthetic** (three runs each, alternated): game fps +3.6 % main menu, +3.2 % dungeon still,
+  +2.7 % fight, +1.1 % town square, the runs' ranges overlapping; the executable 3.5 % smaller.
+- **by hand** (four blind runs, two each, the reference route, no vsync or cap): dungeon still
+  227.9 -> 226.9 fps, fight 170.2 -> 177.3 (one run with it lacked the lightning effect; without it,
+  between the two without), town square 141.7 -> 140.8. No visible gain.
+
+**Not taken**: only what the hand runs back goes in. The patch, its checking mode and the filter
+stay on `sdk/argument-locals`; `~/rexglue-sdk` was not swapped. This laptop measures at its thermal
+limit (82 C, throttling throughout), where a 1-3 % gain is below what it can show: to measure again
+on a machine without that limit (the Windows desktop, the Steam Deck). The interprocedural
+liveness analysis that would also take the argument registers (r3-r10, about 60 % of the context
+references; at best about +3-8 %, weeks of codegen work upstream) is left for after the producer,
+if the guest's thread is still the limit.
+
+### Producer: the state early out and the constant ranges' allocations (2026-10-13)
+
+The two cuts left from phase A, on `perf/producer-small-cuts` (not in `develop`):
+- **The early out's cache misses.** `Session::Unchanged` read each shadow entry's presence and
+  version through a pointer to the entry, a command payload of about 1.5 KB: in the town square's
+  annotated profile 47 % of its samples were that load and 21 % the memo's pointer. Each entry now
+  keeps its version (0 while erased) in one dense array and the memo keeps its slot there.
+- **The constant ranges' vector** was grown by doubling; it is reserved at its first kept range from
+  the last count of the same kind (a command whose ranges are all left out still allocates nothing).
+
+Profiles of the town square (one run each): `Unchanged` 0.67 -> 0.46 % of the process's samples,
+`_int_malloc` 0.75 -> 0.62 %, `ReadConstants` 0.47 -> 0.57 %; about 0.25 points, 0.5 % of the
+guest's thread. Synthetic runs (three each, no vsync, no cap), game fps: dungeon still 221.8 ->
+220.2, fight 205.0 -> 198.5, town square 181.5 -> 182.4, within the runs' spread (3-10 % between
+runs of one binary). **Not taken**: they do what they aim at, but 0.5 % is below what this laptop
+can show, by hand or scripted. Phase B (the producer off the guest's thread, estimated 1.5-2 %)
+is left for the same reason; both wait for a machine without a thermal limit.
+
+An alternative take on the same two costs, from phase A, is on `perf/producer-a-full` (not in
+`develop`, **not measured**): `fee774a` packs the state memos behind a small index table (only the
+slot and sub pairs in use get a memo, instead of a 1.7 MB table with one per pair), and `66b6b43`
+gives each `SetConstants` one array of values that its ranges point into, instead of a vector per
+range (the capture format is unchanged). Its other commits are in `develop`.
+
+`66b6b43` measured (2026-10-14, branch `perf/constants-array`, on develop after the game thread's
+steps 3a and 4): in the fight's frame-pointer profile `capture::ReadConstants` was 3.8 % of the
+game's thread inclusive, about 2 points of it the per-range vectors (`_M_assign_aux`, `malloc` and
+its family, `memset`). Same images (the 20 parity captures byte for byte, 12 frames of the town
+walk's session) and the unit tests green. Game-thread CPU per guest frame, three scripted runs of
+each, interleaved, the package at 82 C throughout: standing still 4.43 -> 4.47 ms, the fight 4.71
+-> 4.79, the town square 5.26 -> 5.26, the menu 4.00 -> 4.01, all within the base's own spread
+between runs (4.30-4.50 still, 4.51-4.82 fight). **Not taken**: what it removes (at most about
+0.1 ms per frame) is below what this laptop shows; to measure again on a machine without the
+thermal limit.
+
+Also written down, not measured: the `std::visit` dispatch of the session's state and live append
+(`__gen_vtable_impl` thunks under `Session::State` and `LiveAppend`), about 1 % of the game's
+thread in the same profile. The same order as the above, so left for the same machine.
+
+## The backend behind in the mine: three per-draw cuts (2026-10-14)
+
+With the game thread's steps 3a and 4 in (docs/game-thread-parallelism.md), the mine standing still
+became the backend's limit: the game at 215-249 fps, 190-205 presented, 7-18 % of the guest's frames
+dropped. A hand profile of that step and the fight (the step overlay's marks, DWARF, the whole
+process) put the backend thread at about 29 % of the samples: our translation and frontend 10, the
+NVIDIA driver 7-8, OGRE 5, the C library 3.5. Three cuts, each its own commit (`perf/backend-mine`):
+
+- **The camera and the light set only when they change.** The custom projection was set for every
+  draw, which marked the frustum out of date, and the data source rebuilt it and its inverse
+  (`Frustum::updateFrustumImpl`, `Matrix4::inverse`); likewise the light's node orientation.
+- **A stage's constants bound only for the classes that changed** (`BindChangedParameters`):
+  compared with what the stage last received for the same program, the render system gets only the
+  variability classes that changed, and no call when none did (`bindGpuProgramParameters`,
+  `getActiveProgram`, the uniform walk). GL3+ already skips unchanged uniforms in its own cache, so
+  the gain is the calls and walks. The last values are kept per stage and forgotten when another
+  program is bound: Direct3D 11 has one constant buffer per stage.
+- **A draw's vertex bindings touched only where they change**, without the three allocations per
+  draw.
+
+Validation: the unit tests, the 20 parity captures replayed byte for byte, 34 frames of the town
+walk's session identical. Replay bench of that session (presenting, no vsync; three of each,
+interleaved, the 55 C cool-down before each): the frontend and backend commands 3.03 -> 2.90 ms per
+frame (-4.2 %), the backend's draws 1.37 -> 1.30 ms (-5.1 %), lower in each of the three pairs; the
+present's wait, outside the cuts, moves by more than that between runs.
+
+The blind hand batch (fixed-floor save, no cap, no vsync, A B B A, the package at 82 C throughout):
+
+| | Cuts (runs 1, 4) | Base (runs 2, 3) |
+|---|---|---|
+| Mine still, presented fps (dropped) | 179.6 (211), 173.7 (144) | 170.7 (94), 179.9 (197) |
+| Fight, presented fps (dropped) | 168.5 (183), 168.1 (245) | 156.0 (229), 169.8 (494) |
+| Town square, presented fps (dropped) | 142.4 (74), 140.4 (136) | 141.6 (310), 136.1 (284) |
+
+The town square drops fewer frames in both runs with the cuts than in both without, the fight leans
+their way, the mine standing still (a 5 s step, its game rate 189-222 fps between runs) shows no
+difference; by feel the two were not told apart, everything above 120 fps. Taken: same images, the
+work measured lower, nothing worse.
+
+The buffer bindings of the guest (slot 85, `setVertexBufferBinding`) stay out: besides the stream
+bindings it finds or creates each buffer's device copy and uploads the system-memory shadow into
+it, which is what our producer reads; a host version would have to do the same, for 0.2 % of the
+game's thread.
+
+## The ~45 ms presented hitch on this laptop: the platform's (2026-10-14)
+
+The blind hand runs of the game thread study showed, in every step, a presented maximum of 46-61 ms
+while the game's own maximum stayed at 7-28 ms. The live mode's slow frame lines place it in the
+present: `backend` 35-60 ms with `present` 35-59 ms, against 2-3 ms in the frame before, with no
+texture, program, buffer or layout created in that frame (`textures=0`, `programs=0`) and the
+content and draws at their usual cost. It is not ours:
+- It comes every 10-30 s, always at the same fraction of the wall-clock second (xx.71 s) in every
+  run, spaced by whole seconds, while the game's own periodic summaries fall at another phase.
+- It is the same with the NVIDIA GPU (3-6 per scripted run, `present` 41-61 ms) and with the Intel
+  one (Mesa UHD 630, no PRIME; 5-6 per run, 35-54 ms).
+- It is the same with and without `thermal.py`'s `nvidia-smi` polling.
+- The step overlay's changes and the scripted steps do not line up with it.
+
+What both GPUs share here is the compositor and the display: GNOME's Mutter on Wayland, with our
+window through XWayland, and the panel on the Intel GPU. An X11 session would separate the two, but
+this Ubuntu ships no GNOME session on Xorg; not pursued. Do not read a presented maximum of about
+45 ms on this laptop as the game's or the backend's; the per-step means, the drops and the p99 are
+unaffected by a handful of such frames.
+
+## Where the optimisation work closes (2026-10-14)
+
+Taken into `develop` in this round: the game thread's steps 3a (`_setTextureBlendMode`'s member
+writes as host code) and 4 (the RTSS listener's SGPass lookup as host code) with the 3b fix of the
+`SetTextureBlend` records; the backend's three per-draw cuts (camera and light, constants by
+changed class, vertex bindings); SDK patch 33 (the timer queue's blocking wait); and the culling's
+`Frustum::isVisible` as host code (`perf/game-thread-native-2`, fa0edc5, after the user's hand
+check). Game thread CPU per frame, base to steps 3+4: fight -4.3 %, town square -5.6 %; the
+frustum test another -2.7 % in the town square; the blind hand test of the first batch +3 to +11 %
+presented fps (docs/game-thread-parallelism.md, sections 11 and 12).
+
+Tried and measured without a demonstrated gain, all kept in the history: SDK patch 32 (argument
+locals), step 5 (`_updateAutoParams` replayed as host code), `66b6b43` (one values array per
+`SetConstants`), `Matrix4::concatenate` as host code, the pathfinder's neighbour opening as host
+code, and before them the controller walk as host code. Noted, not measured: the `std::visit`
+thunks of the session (about 1 %). The pattern: what gained was host code replacing dispatch and
+context traffic over data already in cache; what did not was loads over scattered or already
+cheap data, which the host reads as the guest did.
+
+Left for a machine without the thermal limit (this laptop's run-to-run spread, 2-9 %, hides
+anything under about 2 %): the rest of the RTSS listener (the texturing, lighting and fog
+updates as host code, 3.5-4 % of the thread), the layout props' forced bone evaluation (the
+study's 11.2, up to 3 % in dungeons, risk M-H), the producer's phase B and `66b6b43`, and the
+large one, emitting the render submission from another thread, only viable as native emission
+over a snapshot of the render queue (the study's 9.3 and F2, the legacy's road, XL). The game's
+thread remains the limit in the fight and the town square; the backend in the mine standing
+still.
 
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 

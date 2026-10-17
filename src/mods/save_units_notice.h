@@ -1,7 +1,9 @@
 // The player's notice for what ProtectSaves did (save_units.h): which saved characters lost how
 // many items, where the copy from before is, which saves were left unchanged although they hold
 // unknown items, and, when the game could not load some mods' units after the saves were checked,
-// how many, which saves carry them and that nothing is saved in the session. Texts translated by the import messages' strings
+// how many, which saves carry them and that nothing is saved in the session; and the characters
+// last saved with other mods than the active ones (the game's main menu warning, empty on Xbox). Short texts, the
+// backups shown from the user data folder on, translated by the import messages' strings
 // (data/ui/tl_import_strings.txt). No guest, OGRE or platform types.
 
 #pragma once
@@ -14,7 +16,8 @@
 namespace torchlight::mods {
 
 // The box to show, or none when there is nothing to tell (no file changed, none left alone with
-// unknown units, no failure, every unit the check counted on loaded, saving not blocked).
+// unknown units, no failure, every unit the check counted on loaded, saving not blocked, no
+// character last saved with other mods).
 std::optional<save_import::ImportMessage> SaveUnitsNotice(const SaveUnitsReport& report,
                                                           const save_import::Translate& tr);
 

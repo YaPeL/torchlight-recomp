@@ -71,6 +71,7 @@ Other topics:
 | `mtfsf` applies its field mask reversed (D24, all architectures) | Still there | Issue and PR |
 | An unclaimed host fault hangs instead of crashing on POSIX (D25) | Still there | Issue and PR; our patch 30 |
 | The guest's fatal errors return into the guest on POSIX (D31) | `Break()` returns once; every export calls it | Issue and PR; our patch 31 |
+| The timer queue's dispatch thread spins (D32) | `spin_wait_strategy`; the strategy that blocks has timed waits that do not compile | Issue and PR; our patch 33 |
 | Wiki/code mismatches (D19) | The wiki documents the TOML key `enable_exception_handlers` (the code reads `generate_exception_handlers`) and describes `reserved_as_local` and `non_argument_as_local` wrongly | Small docs issue (found during this analysis) |
 
 ## Per patch
@@ -728,7 +729,7 @@ entry. MSVC's Xbox 360 code breaks that assumption in two places:
   r14-r31 from localization, and the copy through `ctx` around the call (`ctx.r{i} = r{i}` before,
   back after) covers only those registers.
 - **The stack probe (`__chkstk`-like) takes the allocation size in r12**:
-  `neg r11,r12` at entry. Some other functions also read r11 set by their caller.
+  `neg r11,r12` at entry.
 
 Seen in Torchlight: 88 functions start with `r31 = r12 - N`. With `reserved`, `xer`, `ctr`, `cr`,
 `non_volatile` and `non_argument_as_local` on, the game deadlocks about 3 s after start:
@@ -746,6 +747,33 @@ Seen in Torchlight: 88 functions start with `r31 = r12 - N`. With `reserved`, `x
 
 The non-volatile save and restore helpers are already elided under `non_volatile_as_local`, so they
 are not affected.
+
+**Which registers, measured (2026-10-13).** A backward liveness pass over Torchlight's 43,927
+generated functions (per PPC instruction, following direct calls to a fixpoint): r12 is read
+before it is written in 306 functions (the funclets, the stack probe with 28 callers, and the
+`__savevmx`/`__restvmx`/`__restfpr` helpers); r11 only in two tails of a function the codegen
+never emitted (0x826231F0, referenced by no code or data); r0, r2, f0 and v32-v63 in none. So r12
+alone is the problem here, and a title can need a different set.
+
+**A PR if it is ever wanted: `[Codegen]: non_argument_in_context, and a checking build for
+non_argument_as_local`** (patch 32, on `sdk/argument-locals`). A manifest list,
+`non_argument_in_context = ["r12"]`, names the registers the option leaves in `PPCContext`.
+`verify_non_argument_locals = true` makes a checking build: every write to such a local is
+written through to the context, and each instruction that reads the old value first compares the
+local with the context (`REX_VERIFY_LOCAL`, in the PCH). They can differ only where a function
+reads a value another left in the register; the first difference per site is logged and the
+local value is used. Instructions whose result ignores a register named twice (`subfe rD,rA,rA`,
+the compiler's mask of the carry, and `subf`, `subfc`, `xor`, `eqv`, `andc`) are not checked.
+
+**Result, and where it stays (2026-10-13).** Torchlight with r12 kept behaves as before: the
+checking build logged no difference over three routes (load, fight, level-ups, a floor change
+with its autosave, town, reload, trade and inventory) except one `subfe r10,r11,r11` at
+`0x824BFEAC`, whose result does not depend on r11 (that run is why the filter exists). The
+synthetic benchmark gave +1-3 % game fps and a 3.5 % smaller executable; hand runs on the same
+laptop, at its thermal limit, showed no gain (`docs/performance-profile.md`). Not integrated: we
+take only what the hand runs back up. Patch 32 stays on `sdk/argument-locals`, outside the
+series and out of the installed SDK, to measure again on a machine without a thermal limit
+(Windows desktop, Steam Deck). It is not proposed upstream until a gain shows.
 
 We keep `non_argument_as_local` off.
 
@@ -1124,6 +1152,60 @@ longer matters to these paths. Our patch 31 (`patches/README.md`).
 
 ---
 
+### D32. Runtime: the timer queue's dispatch thread spins
+
+From the performance work on the native renderer (`docs/performance-profile.md`). Checked on
+`bd833a2`, still the head of `development` on 2026-10-14; no open issue or PR on the timer queue.
+
+**Issue: `[Runtime]: the timer queue's dispatch thread keeps a core busy`**
+
+`TimerQueue` (`src/core/timer_queue.cpp`) waits for its next due time, and for new timers, with
+disruptorplus' `spin_wait_strategy`. The kernel's 1 ms `KeTimeStampBundle` timer
+(`xboxkrnl_module.cpp`) is always queued, so the dispatch thread polls the whole time a title
+runs. Measured in Torchlight on Linux x86-64: about 24 % of a core; on Windows, 5-10 %. The
+strategy that would block, `blocking_wait_strategy`, cannot simply be swapped in: its timed
+`wait_until_published` overloads pass the predicate to `std::condition_variable::wait_for` and
+`wait_until` before the timeout, so they do not compile once instantiated (nothing in the SDK
+instantiates them today). The file is vendored in `thirdparty/disruptorplus`.
+
+**PR: `perf(core): the timer queue waits on a condition variable instead of spinning`**
+
+Fixes #NNN. Two changes:
+- `blocking_wait_strategy.hpp`: the timeout goes before the predicate in both timed waits.
+- `timer_queue.cpp`: the ring buffer, its claim strategy and its barrier use
+  `blocking_wait_strategy`.
+
+The queue serves the POSIX guest timers (`KeSetTimer` and the waitable timers in
+`threading_posix.cpp`) and, on every platform, the timestamp tick (`HighResolutionTimer`); on
+Windows the guest timers are native ones, so there the tick is all it serves. A blocking wait
+changes their precision a little. A check of the fixed strategy on Linux, 2000 deadlines 1 ms
+apart: late by 58 us median, 149 us p99, 194 us max. On Windows the wait ends up in
+`SleepConditionVariableSRW`, in whole milliseconds, with whatever timer resolution the process
+has; the 1 ms recurring test ticks there as it should, but its lateness was not measured. With no
+timer queued the deadline is `steady_clock::time_point::max()`, which MSVC's `wait_until` takes
+as well (the empty-queue test, 0 ms of CPU on Windows).
+
+Tests (`tests/unit/core/timer_queue_test.cpp`, disruptorplus linked into `unit_tests`): the timed
+waits time out, and return when another thread publishes; a one-shot timer fires and not early; a
+1 ms recurring timer ticks and stops when disarmed; a timer disarmed before its time never fires; on
+Linux, the dispatch thread's CPU time over 1 s with a 1 ms timer queued stays under 100 ms (0-10 ms
+with the change, 190-230 ms spinning); with the queue empty for 2 s (the `time_point::max()`
+deadline) the thread stays under 50 ms of CPU (0 ms; a wait that returns at once, simulated with
+`now()` as that deadline, takes 130 ms) and the next timer fires on time. In Torchlight, one build
+run three times with each runtime on the same scripted route: the dispatch thread from about 24 % of
+a core to 1.2 %, the process 9-10 % less CPU in every step, the frame rate and frame times
+unchanged.
+
+On Windows (Direct3D 11, the same route, three runs with each runtime alternated, the loaded
+DLL checked by hash in every run): the dispatch thread from 5.9-9.1 % of a core to 0.0-1.0 %,
+the process 3.6-9.6 points of a core less depending on the part (1.7-4.2 %), and the frame rate,
+p95 and p99 within the runs' spread. The SDK's `unit_tests` pass there as before, the
+`[timer_queue]` cases included.
+
+Our patch 33 (`patches/README.md`). Measured on Linux and Windows; ready to send.
+
+---
+
 Not drafted, from the same port (`docs/macos-port.md`, section 1, items 5-7, and section 2):
 - No `SO_NOSIGPIPE` / `MSG_NOSIGNAL` in `xsocket.cpp`.
 - Scalar audio fallbacks, one of which truncates where x86 rounds.
@@ -1274,16 +1356,44 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   pointing the builds at the new prefix) happens then, agreed with the agents that share it.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
-- The shared SDK copies on the Linux machine (2026-10-10). The live SDK is `bd833a2` with
-  develop's series: 1-30 (21 included), then 20 and 31. Two older copies stay next to it, with no
-  build tree pointing at either:
-  - `rexglue-sdk-bd833a2-30`, the series through 30 without 20 and 31: to roll back the last swap
-    (two `mv`). It goes at the next swap, when the copy it replaces becomes the rollback.
-  - `rexglue-sdk-0c7b01a`, the old base: `v0.1.0-beta` on `main` is built on it, to reproduce
-    or fix something of that beta. It can go after the next release.
+- The shared SDK copies on the Linux machine (2026-10-14). The live SDK is `bd833a2` with
+  develop's series: 1-30 (21 included), then 20, 31 and 33. One older copy stays next to it:
+  `rexglue-sdk-bd833a2-31`, the same series without 33, to roll back the last swap (two `mv`;
+  its install is inside it). It goes at the next swap, when the copy it replaces becomes the
+  rollback. The old base `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as
+  planned.
+- The SDK copies on the Windows machine (2026-10-15). The live SDK is `D:\rexglue-sdk-33\install`:
+  `bd833a2` with develop's series up to 33, built by `tools\build-deps\windows.ps1 -SdkPrefix`
+  (its checkout in the script's work folder, `D:\ogre-build\rexglue-sdk`), every configuration.
+  It is the only entry of CMake's user package registry
+  (`HKCU\Software\Kitware\CMake\Packages\rexglue`), and the build trees were deleted and
+  configured again against it, not edited in their cache.
+  The rollback copy is `D:\rexglue-sdk` (`bd833a2`, the series of 2026-10-12, without 33; its
+  install in `out\install\win-amd64`), kept until the next swap. The old base `0c7b01a` was
+  deleted on 2026-10-12. The private archive (`D:\torchlight-recomp`, branch `windows-port`)
+  expects `0c7b01a` (its `build_sdk.sh` pins it) and no longer builds against either copy:
+  `src/achievements/runtime_test.cpp:14` calls `InitLogging` with the old signature, which
+  `bd833a2` changed (log options moved into `LogConfig`, upstream `b971840`). It is left without
+  build trees on purpose; it is reference code, not built.
 
-  The copies of 1-26 to 1-29, an old install prefix and a scratch checkout of patch 20
-  were deleted (its changes are patch 20 on `feature/pc-mods`).
+- The swap, step by step. The new SDK is built apart with
+  `tools/deps/build_sdk.sh ~/rexglue-sdk-swapNN-install ~/rexglue-sdk-swapNN all`, from a worktree
+  of `develop` so the series cannot change during the build; the registry entry the install adds
+  for that prefix is deleted. After a go from every agent that uses `~/rexglue-sdk`, and with no
+  game running (binaries load `librexruntimerd.so` from it):
+  1. Delete the build trees (`out/build` and `out/linux-amd64`) of the new checkout and of the
+     live one. A build tree keeps the absolute paths it was configured in (`CMakeCache.txt`), its
+     install prefix among them: moved, a rebuild in it would install into the old prefix and
+     leave the live SDK unchanged, with no error. The installs do not need them: their libraries
+     find each other with `$ORIGIN`, and their CMake files hold no build path.
+  2. Move the live `~/rexglue-sdk` to `~/rexglue-sdk-bd833a2-NN` (the series it carries), the
+     new checkout to `~/rexglue-sdk`, and the new install to
+     `~/rexglue-sdk/out/install/linux-amd64`; delete the previous rollback copy.
+  3. Check that the CMake registry holds only the entry for `~/rexglue-sdk/out/install/linux-amd64`.
+  4. Verify on `develop`: `rexglue codegen`, a clean RelWithDebInfo build and `ctest`; then tell
+     the agents to rebuild.
+
+  A later SDK build inside `~/rexglue-sdk` configures a new tree there, with the right paths.
 
 ### 7. For the integrator: patch numbers (2026-10-08)
 
@@ -1305,7 +1415,9 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 29 | `rexglue-case-variants.patch` (D30) | `sdk/case-variants` | `bd833a2` |
 | 30 | `rexglue-posix-chain-unclaimed-faults.patch` (D25) | `sdk/fault-chain` | `bd833a2` |
 | 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2`, after 30 |
-| 32 | next free | | |
+| 32 | `rexglue-codegen-non-argument-in-context.patch` (D26) | `sdk/argument-locals` | `bd833a2`, after 31; not in the series |
+| 33 | `rexglue-timer-queue-blocking-wait.patch` (D32) | `sdk/timer-queue` | `bd833a2`, after 31 |
+| 34 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
@@ -1381,6 +1493,101 @@ these agents lives here and in `patches/README.md`.
   22. Your version of 21 with Metal on Apple (`5a98b6f`) is now the last line of the `bd833a2`
   series (2026-10-09); it applies after the two Windows patches. When you next touch the series,
   ask for a number here first.
+  - **The SDK update and patch 33 (one pass; revised 2026-10-15).** Since your last SDK the
+    series gained patches up to 33 (`patches/series`, 20 and 30-31 among them), and on Linux the
+    shared SDK carries all of them since 2026-10-14. Patch 33 makes the SDK's timer queue wait
+    on a condition variable instead of spinning: on Linux its thread went from about 24 % of a
+    core to 1.2 %, the process 9-10 % less CPU, the same frame rate (`patches/README.md`, entry
+    33; D32). Windows waits differently: a condition variable's timed wait goes through
+    `SleepConditionVariableSRW` in whole milliseconds, with the 1 ms timer resolution of patch 17.
+    D32 is not sent upstream until this pass is back. Take `develop`, then:
+    1. **The SDK, into a new prefix** (keep the current one to roll back):
+       `tools\build-deps\windows.ps1 -SdkPrefix <new prefix>` (every configuration by default).
+       Its `patch:` lines should be `patches/series` without the `posix` ones, ending with
+       `rexglue-timer-queue-blocking-wait.patch`.
+    2. **The SDK's unit tests**, in the checkout the script used (`<WorkDir>\rexglue-sdk`):
+       `cmake -B out/build/win-amd64 -DREXGLUE_BUILD_TESTS=ON`, then
+       `cmake --build out/build/win-amd64 --config Release --target unit_tests`. Run all of
+       `unit_tests.exe` (expected: only `output_stamp_test.cpp:227-228` fail, as before), then
+       `unit_tests.exe "[timer_queue]" -s`. Four cases run on Windows; the 1 ms CPU case is
+       Linux only. What each one catches:
+       - The recurring case wants at least 50 ticks of a 1 ms timer in 300 ms. A failure there
+         means the waits last about 15.6 ms, so patch 17's resolution is not in effect.
+       - "The dispatch thread waits for a timer when the queue is empty" covers the empty
+         queue. With no timer queued, the dispatch thread waits with
+         `steady_clock::time_point::max()` as its deadline (`timer_queue.cpp`,
+         `TimerThreadMain`), and MSVC's `condition_variable::wait_until` has to take it without
+         overflowing or returning at once. The game cannot show this: its 1 ms timestamp timer
+         keeps the queue busy from boot on. The case leaves the queue empty for 2 s; the
+         thread's CPU over that time (`GetThreadTimes`) must stay under 50 ms, then a one-shot
+         timer must fire on time. A wait that returns at once measures about 130 ms on Linux.
+       Send the line `dispatch thread CPU over 2 s of an empty queue: N ms` whether it passes or
+       not.
+    3. **The game against the new SDK**: a fresh `win-amd64-relwithdebinfo` build with
+       `-DCMAKE_PREFIX_PATH=<new prefix>`, plus `-DTORCHLIGHT_DEV_INPUT=ON
+       -DTORCHLIGHT_DEV_COMMANDS=ON` for the scripted route below; `ctest` (expected: as
+       before). Then one short run to the town and back to the menu, quitting from it: nothing
+       new in the log at error level.
+    4. **A runtime without patch 33**, for the comparison. In the same SDK checkout:
+       `git apply -R <repo>\patches\rexglue-timer-queue-blocking-wait.patch`, then
+       `cmake --build out/build/win-amd64 --config RelWithDebInfo --target rexruntime` (no
+       install: the new prefix stays as it is). Copy the `rexruntimerd.dll` it built (under
+       `out\`) somewhere apart, then `git apply` the patch again so the checkout matches the
+       prefix.
+    5. **The measurement: one game build, two runtimes**, as on Linux. "With" is the build of
+       step 3 as it is. "Without" is the same build with step 4's `rexruntimerd.dll` copied
+       next to `torchlight.exe` (the executable's folder is searched first; keep whatever was
+       there, to put it back). In each run, check which file was loaded, with
+       `(Get-Process torchlight).Modules | Where-Object ModuleName -like 'rexruntime*' |
+       Select-Object FileName`, and `Get-FileHash` of that file. Three runs of each, alternated
+       (with, without, with, ...), the same settings and an idle machine; if it is a laptop, on
+       the charger and cooled between runs. In each run:
+       - **The main menu**, 60 s after it appears: `thread_cpu torchlight.exe 30`
+         (`tools/thread_profile`). It gives the `rex::thread::TimerQueue` thread's %, and the
+         total of all threads (the process CPU). The timer thread was 5-10 % here before.
+       - **The game**: with a save on the mine's first floor, by the stairs,
+         `--dev_input_script tools/input_scripts/measure-fight-town.txt`, run through
+         `tools/run_capped/run_capped.py` (`docs/dev-input-script.md`); without one, by hand:
+         60 s standing in the town square and 60 s fighting. Run `thread_cpu torchlight.exe 30`
+         during each part. From the log's 10 s summaries: `frame time (guest swap to swap)` and
+         `frame time (presented, present to present)`: mean FPS, p95, p99, frames over 33 and
+         over 50 ms.
+       - Any audio crackle or uneven pacing heard or seen, and any log line about audio, vblank
+         or timers that the other runtime does not show.
+       If the TimerQueue figure is the same with both runtimes, the swap of the DLL did not take
+       effect: stop there and send what you have.
+    6. **Send back**:
+       - steps 1-3: pass or fail, with the failing output;
+       - step 2: the `[timer_queue]` result and its CPU line;
+       - per run of step 5: the runtime (file and hash), the TimerQueue %, the process CPU, and
+         the frame figures per part;
+       - anything heard or seen.
+       Anything worse than without the patch is a finding: the patch would then need a Windows
+       path before D32 goes upstream. Keep the new prefix if all is well. It is the SDK the
+       series asks for from now on.
+    7. **Results received (2026-10-15).** Steps 1-3 passed: `unit_tests` 267 of 274 (6
+       skipped, only `output_stamp_test.cpp:227-228` failing, as before), `[timer_queue]` 4 of
+       4 with 0 ms of CPU over the empty 2 s, `ctest` 92 of 92, the scripted run to the town
+       ends normally. Step 5, Direct3D 11, no frame cap, vsync off, 1280x720, audio muted, three
+       runs of each runtime alternated (each DLL checked by its SHA-256). Means of the three
+       runs without and with patch 33:
+
+       | Part | TimerQueue % | Process % of one core | Guest FPS | p99 ms |
+       |---|---|---|---|---|
+       | Menu | 6.9 -> 0.8 | 215.0 -> 211.4 | 468.4 -> 474.7 | 3.0 -> 2.9 |
+       | Standing still | 7.3 -> 0.7 | 224.6 -> 217.7 | 342.4 -> 337.3 | 4.0 -> 4.4 |
+       | Fight | 7.7 -> 0.6 | 229.5 -> 219.9 | 317.8 -> 313.2 | 4.4 -> 4.8 |
+       | Town square | 8.1 -> 0.8 | 211.9 -> 204.9 | 254.9 -> 261.9 | 5.5 -> 5.2 |
+
+       The frame figures move both ways and their ranges overlap. The higher p99 standing still
+       and fighting comes from the first run with the patch (4.73 and 5.44 ms); its third run was
+       below every run without it. The frames over 33 and 50 ms are in the menu part, which
+       includes the load (about 840 ms, the same with both DLLs). Presented frames over 33 ms
+       in the game parts are single frames, not tied to either DLL (one run with the patch has 10
+       in the fight, the other two none). The log's audio, vblank and timer lines are the same
+       in all six runs. Nobody listened to the audio. In Torchlight the queue only carries the
+       timestamp tick, which the game does not read, and its audio and vblank do not use the
+       queue. The new prefix is the live SDK there; the old one is the rollback (section 6).
 
 Cost: the series is done; what remains is builds (SDK in all configurations, three game builds
 for the fence measurement), the measurement runs and the game validation. About a day, most of it

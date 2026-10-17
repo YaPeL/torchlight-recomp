@@ -6,6 +6,7 @@
 // them (copied, saving off for the session) and their notice.
 #include <algorithm>
 #include <chrono>
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -14,14 +15,24 @@
 #include <set>
 #include <string>
 
+#include "game_menu/menu_strings.h"
 #include "mods/save_units.h"
+#include "mods/saved_mod_list.h"
+#include "save_import/digest.h"
 #include "mods/save_units_notice.h"
+#include "mods/settled_saves.h"
 #include "save_import/schema.h"
 
 using namespace torchlight::mods;
 namespace si = torchlight::save_import;
 
 namespace {
+
+std::set<std::string> g_notice_texts;  // every English text the notices asked for
+std::string English(const std::string& text) {
+  g_notice_texts.insert(text);
+  return text;
+}
 int failures = 0;
 void Check(bool ok, const std::string& what) {
   if (!ok) {
@@ -197,7 +208,7 @@ int main() {
 
   // The player's notice: nothing to tell, the removed items with the backup, risky saves.
   {
-    const auto english = [](const std::string& s) { return s; };
+    const auto english = English;
     Check(!SaveUnitsNotice(SaveUnitsReport{}, english), "nothing changed: no notice");
     SaveUnitsReport report;
     report.backup = "/saves/save-backups/20261008-120000-units";
@@ -208,10 +219,11 @@ int main() {
     const auto notice = SaveUnitsNotice(report, english);
     Check(notice && notice->buttons.size() == 1, "a notice with one button");
     if (notice) {
-      Check(notice->text.find("3 items from mods") != std::string::npos, "the total");
-      Check(notice->text.find("Ronan: 2 items") != std::string::npos, "per character");
-      Check(notice->text.find("Shared stash: 1 items") != std::string::npos, "the stash");
-      Check(notice->text.find("20261008-120000-units") != std::string::npos, "where the copy is");
+      Check(notice->text.find("Removed 3 items from mods") != std::string::npos, "the total");
+      Check(notice->text.find("  Ronan: 2\n") != std::string::npos, "per character");
+      Check(notice->text.find("  Shared stash: 1\n") != std::string::npos, "the stash");
+      Check(notice->text.find("Backup: save-backups/20261008-120000-units\n") != std::string::npos,
+            "where the copy is, from the user data folder on");
       Check(notice->text.find("7.TSV") != std::string::npos && notice->text.find("9.TSV") == std::string::npos,
             "a save left alone with unknown units listed; an unreadable one not");
     }
@@ -233,20 +245,20 @@ int main() {
     Check(none.size() == assumed.guids.size() && std::is_sorted(none.begin(), none.end()),
           "nothing loaded: every unit missing, sorted");
 
-    const auto english = [](const std::string& s) { return s; };
+    const auto english = English;
     SaveUnitsReport only;
     only.units_not_loaded = 3;
     const auto notice = SaveUnitsNotice(only, english);
-    Check(notice && notice->title == "Items from mods not loaded" &&
-              notice->text.find("3 kinds of items or creatures from mods could not be loaded") != std::string::npos,
+    Check(notice && notice->title == "Mod items not loaded" &&
+              notice->text.find("3 kinds of mod items did not load this time") != std::string::npos,
           "units not loaded alone: their own title and text");
     SaveUnitsReport both;
     both.changed.push_back({"/saves/a/4.TSV", "Ronan", {{"player/items/item", "", 1}}});
     both.units_not_loaded = 2;
     const auto with_removed = SaveUnitsNotice(both, english);
-    Check(with_removed && with_removed->title == "Items removed from saved characters" &&
+    Check(with_removed && with_removed->title == "Mod items removed" &&
               with_removed->text.find("2 kinds") != std::string::npos &&
-              with_removed->text.find("Ronan: 1 items") != std::string::npos,
+              with_removed->text.find("Ronan: 1\n") != std::string::npos,
           "with items removed: the removal's title, both texts");
   }
 
@@ -307,12 +319,13 @@ int main() {
             "the stash holding the unit listed, with no owner");
     }
 
-    const auto english = [](const std::string& s) { return s; };
+    const auto english = English;
     report.units_not_loaded = 1;
     report.holding_not_loaded.push_back("");
     const auto notice = SaveUnitsNotice(report, english);
-    Check(notice && notice->title == "Nothing will be saved in this session" &&
-              notice->text.find("NOTHING WILL BE SAVED IN THIS SESSION") != std::string::npos &&
+    Check(notice && notice->title == "Saving is off this session" &&
+              notice->text.find("NOTHING WILL BE SAVED THIS SESSION") != std::string::npos &&
+              notice->text.find("Quit the game and see the log.") != std::string::npos &&
               notice->text.find("(4.TSV)") != std::string::npos &&
               notice->text.find("Shared stash") != std::string::npos &&
               notice->text.find("-units-not-loaded") != std::string::npos,
@@ -323,8 +336,8 @@ int main() {
     SaveUnitsReport not_held;
     not_held.units_not_loaded = 2;
     const auto plain = SaveUnitsNotice(not_held, english);
-    Check(plain && plain->title == "Items from mods not loaded" &&
-              plain->text.find("no save carries them") != std::string::npos &&
+    Check(plain && plain->title == "Mod items not loaded" &&
+              plain->text.find("No save has them.") != std::string::npos &&
               plain->text.find("NOTHING WILL BE SAVED") == std::string::npos,
           "units not loaded that no save carries: told, saving not off");
     std::error_code ec;
@@ -419,6 +432,281 @@ int main() {
           "a mod's unit at a base path replaces the base GUID; a new path adds one");
     const KnownUnits unread = MakeExpectedUnits(base, std::nullopt, "a mod unreadable");
     Check(!unread.complete && unread.incomplete_why == "a mod unreadable", "mods' units not all read: incomplete");
+  }
+
+  // Repair at load (docs/mods.md 7d): a character saved by the Xbox writer's bug (every mod name's
+  // length written as 0) is found, repaired with the mods' names and written back with its digest,
+  // after a backup.
+  {
+    namespace fs = std::filesystem;
+    const std::vector<std::u16string> names = {u"JCC - Map", u"Another Mod"};
+    auto good_parsed = si::ReadPc(*schema, Fixture("pc_save.svt"), save_error);
+    si::Node* list = good_parsed->tree.Find("player")->Find("names");
+    Check(list != nullptr, "the player has a mod list");
+    list->items.clear();
+    for (const auto& n : names) {
+      si::Node name;
+      name.kind = si::Node::Kind::kText;
+      name.text = n;
+      list->items.push_back(name);
+    }
+    const si::Bytes good = si::Write360(*schema, *good_parsed);
+    // The list in the body: the count, then each name's length and units (EncodeSavedModList less
+    // its leading u32); damage it as the bug does.
+    std::vector<uint8_t> correct = EncodeSavedModList(0, names, false);
+    correct.erase(correct.begin(), correct.begin() + 4);
+    std::vector<uint8_t> broken = EncodeSavedModList(0, names, true);
+    broken.erase(broken.begin(), broken.begin() + 4);
+    std::vector<uint8_t> damaged(good.begin(), good.end() - 32);
+    const auto at = std::search(damaged.begin(), damaged.end(), correct.begin(), correct.end());
+    Check(at != damaged.end(), "the list is in the body");
+    if (at != damaged.end()) std::copy(broken.begin(), broken.end(), at);
+    const si::Sha256Digest digest = si::Sha256(damaged);
+    damaged.insert(damaged.end(), digest.begin(), digest.end());
+    {
+      std::span<const uint8_t> body;
+      si::SaveError e;
+      Check(si::Split360(damaged, body, e) && !si::ParseBody(*schema, *schema->root(), body, si::Endian::kBig, e),
+            "the damaged save does not read");
+    }
+    const fs::path root = fs::temp_directory_path() / "save_units_test_modlist";
+    std::error_code cleanup;
+    fs::remove_all(root, cleanup);
+    const fs::path file = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav" / "1.TSV";
+    fs::create_directories(file.parent_path());
+    std::ofstream(file, std::ios::binary).write(reinterpret_cast<const char*>(damaged.data()),
+                                                 static_cast<std::streamsize>(damaged.size()));
+    std::vector<std::string> lines;
+    const auto now = std::chrono::system_clock::now();
+    // Without the names, nothing can be repaired: left alone, nothing written.
+    auto none = RepairModListSaves(root, "58410A7E", *schema, {u"Unrelated"}, now,
+                                   [&](const std::string& l) { lines.push_back(l); });
+    Check(none.repaired.empty() && none.left_alone.size() == 1 && none.backup.empty(),
+          "unknown names: left alone, no backup");
+    auto report = RepairModListSaves(root, "58410A7E", *schema, {u"Unrelated", u"JCC - Map", u"Another Mod", u"JCC"},
+                                     now, [&](const std::string& l) { lines.push_back(l); });
+    Check(report.repaired.size() == 1 && !report.failed && fs::exists(report.backup), "repaired after a backup");
+    {
+      // Closed before the folder is removed: Windows does not delete a file that is open.
+      std::ifstream in(file, std::ios::binary);
+      const si::Bytes after((std::istreambuf_iterator<char>(in)), {});
+      Check(after == good, "the repaired file is the save as it should have been written");
+    }
+    // A good save is not touched.
+    auto again = RepairModListSaves(root, "58410A7E", *schema, {u"JCC - Map", u"Another Mod"}, now, nullptr);
+    Check(again.repaired.empty() && again.left_alone.empty(), "a save that reads is left as it is");
+    std::error_code ec;
+    fs::remove_all(root, ec);
+  }
+
+  // Saves settled at a start are not read again at the next while neither they nor the context
+  // changed (settled_saves.h); a save that changes is read again, and an unreadable one is logged
+  // once, not at every start.
+  {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "save_units_test_settled";
+    std::error_code cleanup;
+    fs::remove_all(root, cleanup);
+    const fs::path saves = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav";
+    fs::create_directories(saves);
+    auto write = [](const fs::path& p, const si::Bytes& b) {
+      std::ofstream(p, std::ios::binary).write(reinterpret_cast<const char*>(b.data()), std::streamsize(b.size()));
+    };
+    const KnownUnits known = MakeKnownUnits(IndexWith(base), {}, true);
+    si::Bytes clean_bytes;
+    {
+      auto clean = Parse(*schema, x360);
+      RemoveUnknownUnits(*clean, known);
+      clean_bytes = si::Write360(*schema, *clean);
+    }
+    write(saves / "1.tsv", clean_bytes);                          // clean
+    write(saves / "2.tsv", si::Bytes{'n', 'o', 't', ' ', 'a', ' ', 's', 'a', 'v', 'e'});  // unreadable
+    write(saves / "4.TSV", x360);                                 // holds kMod: changed at the first start
+    const fs::path memory = root / "cache" / "settled-saves.txt";
+    const std::string context = SettledSaves::Context(known, {u"Some Mod"}, {});
+    const auto now = std::chrono::system_clock::now();
+    struct Start {
+      SaveUnitsReport report;
+      std::vector<std::string> lines;
+    };
+    // One start: what was settled before is skipped, and what is settled now is remembered.
+    auto start = [&](const KnownUnits& units, const std::string& ctx) {
+      Start out;
+      const SettledSaves last = SettledSaves::Load(memory, root, ctx);
+      SettledSaves next(root, ctx);
+      out.report = ProtectSaves(root, "58410A7E", *schema, units, now,
+                                [&](const std::string& l) { out.lines.push_back(l); },
+                                [&](const fs::path& p) {
+                                  if (!last.Unchanged(p)) return false;
+                                  next.Settle(p);
+                                  return true;
+                                });
+      for (const auto& p : out.report.settled) next.Settle(p);
+      Check(next.Store(memory), "the settled saves are written");
+      return out;
+    };
+    auto mentions = [](const Start& s, const std::string& part) {
+      return std::any_of(s.lines.begin(), s.lines.end(), [&](const std::string& l) { return l.find(part) != std::string::npos; });
+    };
+    auto settled = [](const Start& s, const char* name) {
+      return std::any_of(s.report.settled.begin(), s.report.settled.end(),
+                         [&](const fs::path& p) { return p.filename() == name; });
+    };
+
+    const Start first = start(known, context);
+    Check(first.report.skipped == 0 && first.report.changed.size() == 1 && settled(first, "1.tsv") &&
+              settled(first, "2.tsv") && !settled(first, "4.TSV") && mentions(first, "unreadable"),
+          "first start: everything read, the clean and the unreadable settled, the changed one not");
+    const Start second = start(known, context);
+    Check(second.report.skipped == 2 && settled(second, "4.TSV") && second.report.changed.empty() &&
+              !mentions(second, "unreadable"),
+          "second start: the settled two not read (the unreadable one not logged again); the save written "
+          "at the first is read, now settled");
+    const Start third = start(known, context);
+    Check(third.report.skipped == 3 && third.lines.empty(), "third start: nothing read, nothing logged");
+
+    // The mod list repair skips them too: the unreadable save it cannot repair is not tried, nor
+    // logged, again.
+    {
+      const SettledSaves last = SettledSaves::Load(memory, root, context);
+      std::vector<std::string> lines;
+      const auto repair = RepairModListSaves(root, "58410A7E", *schema, {u"Some Mod"}, now,
+                                             [&](const std::string& l) { lines.push_back(l); },
+                                             [&](const fs::path& p) { return last.Unchanged(p); });
+      Check(repair.skipped == 3 && repair.left_alone.empty() && lines.empty(), "the repair skips the settled saves");
+      const auto unskipped = RepairModListSaves(root, "58410A7E", *schema, {u"Some Mod"}, now, nullptr);
+      Check(unskipped.skipped == 0, "without the memory it reads them all");
+    }
+    // A save that changes is read again.
+    fs::last_write_time(saves / "1.tsv", fs::last_write_time(saves / "1.tsv") + std::chrono::seconds(2));
+    const Start touched = start(known, context);
+    Check(touched.report.skipped == 2 && settled(touched, "1.tsv"), "a save written since is read again");
+    write(saves / "2.tsv", si::Bytes{'n', 'o', 't', ' ', 'a', ' ', 's', 'a', 'v', 'e', '!'});
+    const Start grown = start(known, context);
+    Check(grown.report.skipped == 2 && mentions(grown, "unreadable"), "an unreadable save that changed is told again");
+
+    // Another context (other units, other names a broken list may hold) forgets every save.
+    Check(SettledSaves::Context(known, {u"Some Mod"}, {}) == SettledSaves::Context(known, {u"Some Mod", u"Some Mod"}, {}) &&
+              SettledSaves::Context(known, {u"Other Mod"}, {}) != context &&
+              SettledSaves::Context(MakeKnownUnits(IndexWith(all), {}, true), {u"Some Mod"}, {}) != context,
+          "the context follows the units and the names");
+    const Start other = start(MakeKnownUnits(IndexWith(all), {}, true),
+                             SettledSaves::Context(MakeKnownUnits(IndexWith(all), {}, true), {u"Some Mod"}, {}));
+    Check(other.report.skipped == 0 && mentions(other, "unreadable"), "another context: every save read");
+
+    // A save left alone with an unknown unit (here because the known units are incomplete) is not
+    // settled: it is checked, and told, at every start.
+    write(saves / "5.TSV", x360);  // holds kMod
+    KnownUnits incomplete = known;
+    incomplete.complete = false;
+    incomplete.incomplete_why = "test";
+    const std::string incomplete_context = SettledSaves::Context(incomplete, {u"Some Mod"}, {});
+    Check(incomplete_context != context, "an incomplete set is another context");
+    const Start left = start(incomplete, incomplete_context);
+    Check(!settled(left, "5.TSV") && settled(left, "1.tsv") && settled(left, "2.tsv") &&
+              left.report.changed.empty() && mentions(left, "5.TSV"),
+          "a save left alone with an unknown unit: not settled; the others are");
+    const Start again = start(incomplete, incomplete_context);
+    Check(again.report.skipped == 3 && mentions(again, "5.TSV"), "so it is read, and told, again");
+
+    // A memory file that does not read, or of another format, is no memory.
+    std::ofstream(memory, std::ios::binary) << "garbage\n";
+    Check(SettledSaves::Load(memory, root, context).size() == 0, "an unreadable memory: nothing settled");
+    fs::remove_all(root, cleanup);
+  }
+
+  // Characters last saved with other mods than the active ones (the game's main menu warning): told
+  // and not settled; the lists compared in count and by name at each place, as the game does.
+  {
+    namespace fs = std::filesystem;
+    const fs::path root = fs::temp_directory_path() / "save_units_test_other_mods";
+    std::error_code cleanup;
+    fs::remove_all(root, cleanup);
+    const fs::path saves = root / "B13EBABEBABEBABE" / "58410A7E" / "00000001" / "torchlight.sav";
+    fs::create_directories(saves);
+    const KnownUnits known = MakeKnownUnits(IndexWith(base), {}, true);
+    auto parsed = Parse(*schema, x360);
+    RemoveUnknownUnits(*parsed, known);
+    si::Node* names = parsed->tree.Find("player")->Find("names");
+    Check(names && names->kind == si::Node::Kind::kList, "player/names is a list");
+    names->items.clear();
+    for (const char16_t* name : {u"Mod A", u"Mod B"}) {
+      si::Node text;
+      text.kind = si::Node::Kind::kText;
+      text.text = name;
+      names->items.push_back(text);
+    }
+    const si::Bytes bytes = si::Write360(*schema, *parsed);
+    std::ofstream(saves / "3.TSV", std::ios::binary)
+        .write(reinterpret_cast<const char*>(bytes.data()), std::streamsize(bytes.size()));
+    const auto check = CheckCharacterFile(*schema, bytes, known);
+    Check(check.mods && *check.mods == std::vector<std::u16string>{u"Mod A", u"Mod B"}, "the saved list read");
+    const auto now = std::chrono::system_clock::now();
+    auto pass = [&](const std::vector<std::u16string>* active) {
+      return ProtectSaves(root, "58410A7E", *schema, known, now, {}, {}, active);
+    };
+    const std::vector<std::u16string> same = {u"Mod A", u"Mod B"}, reordered = {u"Mod B", u"Mod A"},
+                                      fewer = {u"Mod A"}, none;
+    const auto equal = pass(&same);
+    Check(equal.other_mods.empty() && equal.settled.size() == 1, "the same list: nothing told, settled");
+    Check(pass(nullptr).other_mods.empty(), "no active list given: not compared");
+    for (const auto* active : {&reordered, &fewer, &none}) {
+      const auto other = pass(active);
+      Check(other.other_mods.size() == 1 && other.other_mods[0].saved == same && other.settled.empty() &&
+                !other.other_mods[0].owner.empty(),
+            "another order, fewer mods or none: told, with the character's name, and not settled");
+    }
+    fs::remove_all(root, cleanup);
+
+    // The context changes with the active list, its order too.
+    Check(SettledSaves::Context(known, {}, same) != SettledSaves::Context(known, {}, reordered) &&
+              SettledSaves::Context(known, {}, same) != SettledSaves::Context(known, {}, {}),
+          "the active mods are part of the context, in order");
+
+    SaveUnitsReport report;
+    report.other_mods.push_back({"/saves/a/3.TSV", "Ronan", same});
+    report.other_mods.push_back({"/saves/a/5.TSV", "", {}});
+    const auto notice = SaveUnitsNotice(report, English);
+    Check(notice && notice->title == "Mods changed" &&
+              notice->text.find("These characters were last saved with other mods:\n  Ronan\n  5.TSV\n") !=
+                  std::string::npos &&
+              notice->text.find("at your own risk") != std::string::npos,
+          "the notice: the characters (a file name without one) and the risk");
+    report.failed = true;
+    const auto both = SaveUnitsNotice(report, English);
+    Check(both && both->title == "Mod items removed" && both->text.find("Ronan") != std::string::npos,
+          "with another notice: added to it");
+  }
+
+  // A failure, and every notice text in each language of the translations, its {words} kept (a text
+  // of {words} only, like "{name}: {count}", may stay as it is).
+  {
+    SaveUnitsReport report;
+    report.failed = true;
+    const auto notice = SaveUnitsNotice(report, English);
+    Check(notice && notice->text.find("Some saves could not be backed up or changed") != std::string::npos,
+          "a failure told");
+    torchlight::game_menu::MenuStrings strings;
+    std::vector<std::string> warnings;
+    std::string error;
+    Check(strings.Load(TL_IMPORT_STRINGS_FILE, warnings, error) && warnings.empty(), "the translations load");
+    for (const char* language : {"de", "fr", "es"}) {
+      for (const std::string& english : g_notice_texts) {
+        const std::string translated = strings.Translate(language, english);
+        bool words_only = true;
+        for (size_t i = 0, depth = 0; i < english.size(); ++i) {
+          if (english[i] == '{') ++depth;
+          if (depth == 0 && std::isalpha(static_cast<unsigned char>(english[i])) && english != "OK") words_only = false;
+          if (english[i] == '}') --depth;
+        }
+        Check(translated != english || words_only || english == "OK",
+              std::string("missing ") + language + " translation: " + english);
+        for (size_t at = english.find('{'); at != std::string::npos; at = english.find('{', at + 1)) {
+          const std::string word = english.substr(at, english.find('}', at) - at + 1);
+          Check(translated.find(word) != std::string::npos, std::string(language) + " drops " + word);
+        }
+      }
+    }
   }
 
   if (failures) return EXIT_FAILURE;

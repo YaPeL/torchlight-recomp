@@ -1,4 +1,4 @@
-# Translations of the video settings column (tl_video_settings.uilayout) for the languages the game
+# Translations of the host settings column (tl_video_settings.uilayout) for the languages the game
 # ships, written for this project: the game's own translation files have none of these texts.
 # A section per language code ([de], [fr], [es]); each line is "English text = translation".
 # Texts without a line stay in English.
@@ -20,6 +20,10 @@ Window = Fenster
 Default = Standard
 Auto = Automatisch
 OpenGL 3+ (unavailable) = OpenGL 3+ (nicht verfügbar)
+Button Prompts = Tastensymbole
+Swap A/B = A/B tauschen
+Controls = Steuerung
+Extras = Extras
 
 [fr]
 Video = Vidéo
@@ -38,6 +42,10 @@ Window = Fenêtre
 Default = Par défaut
 Auto = Auto
 OpenGL 3+ (unavailable) = OpenGL 3+ (indisponible)
+Button Prompts = Icônes des boutons
+Swap A/B = Inverser A/B
+Controls = Commandes
+Extras = Extras
 
 [es]
 Video = Video
@@ -56,3 +64,7 @@ Window = Ventana
 Default = Predeterminada
 Auto = Automática
 OpenGL 3+ (unavailable) = OpenGL 3+ (no disponible)
+Button Prompts = Iconos de botones
+Swap A/B = Cambiar A/B
+Controls = Controles
+Extras = Extras

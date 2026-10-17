@@ -115,7 +115,6 @@ inline constexpr GuestFunction kModFileLookup{0x823AA988, Confidence::kConfirmed
 namespace mod {
 // [confirmed] A CMod (vtable 0x820D30AC, RTTI .?AVCMod@@), as sub_823A9EA0 builds it.
 inline constexpr Size kSize{200, Confidence::kConfirmed};
-inline constexpr Field kFiles{36, Confidence::kConfirmed};     // file map, filled by sub_823AA340
 // [confirmed] The mod's name, a std::wstring: "MOD" at first (0x820D3080 @0x823A9F18); after
 // mod.dat is read, the last part of the folder's path (sub_823A5F80 split at '/', assigned with
 // kWStringAssign @0x823AA118), and mod.dat's NAME when it has one (@0x823AA168..@0x823AA194). The

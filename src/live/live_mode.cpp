@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <deque>
 #include <map>
 #include <optional>
 #include <string>
@@ -15,6 +16,8 @@
 #include "capture/session.h"
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
+#include "live/busy_notice.h"
+#include "platform/display_refresh.h"
 #include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
 #include "live/frame_timing.h"
@@ -22,6 +25,7 @@
 #include "live/measured_mutex.h"
 #include "live/slow_frames.h"
 #include "mods/texture_files.h"
+#include "platform/presentation_time.h"
 
 namespace torchlight::live {
 
@@ -107,11 +111,13 @@ LiveMode& LiveMode::Get() {
 
 void LiveMode::Start(const LiveOptions& options) {
   options_ = options;
+  queue_.SetCapacity(FrameQueueDepth(options.frame_queue, options.vsync));
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
   capture::Session::Get().EnableLive(&queue_, &store_);
   finished_ = false;
   thread_ = std::thread([this] {
+    platform::SetCurrentThreadName("tl backend");
     Run();
     finished_ = true;
   });
@@ -229,9 +235,24 @@ void LiveMode::Run() {
                               "Torchlight - native OGRE backend (live)", err, sizeof(err));
   if (!backend) {
     REXLOG_ERROR("live: backend creation failed: {}", err);
+    if (options_.on_backend_failed) options_.on_backend_failed(err);
     return;
   }
   REXLOG_INFO("live: renderer {}", tl_backend_renderer(backend));
+  // When the presents reach the screen, where the window system says (presentation_time.h): the
+  // swap-to-screen latency, next to the swap-to-presented one.
+  std::unique_ptr<platform::PresentationClock> presentation =
+      parent.system != platform::NativeWindow::kNone ? platform::CreatePresentationClock(parent)
+                                                     : nullptr;
+  if (presentation) REXLOG_INFO("live: presentation times from the window system");
+  // Where the swap interval does not pace the presents (macOS, display_refresh.h): the display's
+  // refresh does, waited for before each present while vsync is on, with the swap interval left off
+  // so the two never wait together.
+  std::unique_ptr<platform::RefreshClock> refresh =
+      parent.system != platform::NativeWindow::kNone ? platform::CreateRefreshClock(parent) : nullptr;
+  if (refresh) tl_backend_set_vsync(backend, 0);
+  std::deque<std::pair<uint64_t, Clock::time_point>> cuts;  // presented frames awaiting the screen
+  Clock::time_point last_shown{};  // the screen's previous frame
   // Internal render scale for the current window size (LiveOptions::render_resolution).
   settings::Resolution window_size{options_.window_width, options_.window_height};
   auto apply_render_scale = [&] {
@@ -269,7 +290,7 @@ void LiveMode::Run() {
   }
   uint64_t recorded_bytes_before = recorder.bytes_written();
 
-  Series backend_ms, latency_ms, texture_ms, present_ms, record_ms;
+  Series backend_ms, latency_ms, queue_ms, screen_ms, texture_ms, present_ms, record_ms;
   // Consumer breakdown per frame (FrameStep), means over the period.
   double content_ms = 0, commands_ms = 0, draws_ms = 0, end_ms = 0, after_ms = 0, release_ms = 0;
   size_t frames = 0, frames_dropped = 0, textures_created = 0, slow_texture_frames = 0;
@@ -282,10 +303,42 @@ void LiveMode::Run() {
   FrameReclaimer reclaimer;  // consumed frames are freed on its thread, not this one
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
+  bool blank_output = false;  // the output cleared for the busy notice before the first frame
+  // The window's new size, when it changed (before presenting); whether it did. A new render
+  // scale remakes the targets, whose content is then lost.
+  auto apply_window_size = [&] {
+    const uint64_t size = pending_window_size_.exchange(0);
+    if (!size) return false;
+    tl_backend_resize_window(backend, uint32_t(size >> 32), uint32_t(size));
+    if (parent.system != platform::NativeWindow::kNone) {
+      window_size = {uint32_t(size >> 32), uint32_t(size)};
+      apply_render_scale();
+    }
+    return true;
+  };
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
-    if (!frame) continue;
+    if (!frame) {
+      // No guest frame while the game's thread is held by work of ours (busy_notice.h): the last
+      // frame shown again with the UI over it, so the notice appears and its progress moves.
+      // Before the game's first frame (the mods' unit index is built then) there is no frame to
+      // show yet, and after a resize the last one is lost: a black one, made as a frame's clear is.
+      if (window_open && BusyNoticeShown()) {
+        const bool resized = apply_window_size();
+        if (resized || (last_present.time_since_epoch().count() == 0 && !blank_output)) {
+          const float black[4] = {0, 0, 0, 1};
+          tl_backend_begin(backend);
+          tl_backend_clear(backend, 1, black, 1.0f, 0);
+          tl_backend_end(backend);
+          blank_output = true;
+        }
+        if (options_.ui) ApplyUi(backend, *options_.ui);
+        window_open = tl_backend_present(backend) != 0;
+        if (options_.request_ui_frame) options_.request_ui_frame();
+      }
+      continue;
+    }
     auto start = Clock::now();
     frames_dropped += frame->dropped_before;
     dropped_since_present += frame->dropped_before;
@@ -316,13 +369,7 @@ void LiveMode::Run() {
       }
     }
     FrameStep step = RunFrameStep(*frame, content, frontend, [&] {
-      if (uint64_t size = pending_window_size_.exchange(0)) {
-        tl_backend_resize_window(backend, uint32_t(size >> 32), uint32_t(size));
-        if (parent.system != platform::NativeWindow::kNone) {
-          window_size = {uint32_t(size >> 32), uint32_t(size)};
-          apply_render_scale();
-        }
-      }
+      apply_window_size();
       std::optional<PendingVideo> video;
       {
         std::lock_guard lock(pending_video_mutex_);
@@ -331,7 +378,8 @@ void LiveMode::Run() {
       if (video) {
         if (video->vsync != options_.vsync) {
           options_.vsync = video->vsync;
-          tl_backend_set_vsync(backend, video->vsync);
+          if (!refresh) tl_backend_set_vsync(backend, video->vsync);
+          queue_.SetCapacity(FrameQueueDepth(options_.frame_queue, video->vsync));
           REXLOG_INFO("live: vsync {}", video->vsync ? "on" : "off");
         }
         if (video->render_resolution != options_.render_resolution) {
@@ -341,12 +389,34 @@ void LiveMode::Run() {
       }
       if (window_open) {
         if (options_.ui) ApplyUi(backend, *options_.ui);
+        if (presentation) presentation->BeforePresent(frame->swap);
         auto present_start = Clock::now();
+        if (refresh && options_.vsync) refresh->WaitNextRefresh(std::chrono::milliseconds(100));
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();
         if (window_open) {
-          FrameTiming::Get().OnPresent(dropped_since_present);
+          PresentLatency latency;
+          latency.queue_ms = Ms(start - frame->cut);
+          latency.render_ms = Ms(present_start - start);
+          latency.present_ms = Ms(present_end - present_start);
+          FrameTiming::Get().OnPresent(dropped_since_present, latency);
           dropped_since_present = 0;
+          latency_ms.Add(latency.total_ms());
+          queue_ms.Add(latency.queue_ms);
+        }
+        if (presentation) {
+          cuts.emplace_back(frame->swap, frame->cut);
+          for (const auto& shown : presentation->TakeShown()) {
+            while (!cuts.empty() && cuts.front().first < shown.id) cuts.pop_front();
+            if (cuts.empty() || cuts.front().first != shown.id) continue;
+            const double ms = Ms(shown.time - cuts.front().second);
+            screen_ms.Add(ms);
+            const double gap =
+                last_shown.time_since_epoch().count() ? Ms(shown.time - last_shown) : 0.0;
+            last_shown = shown.time;
+            FrameTiming::Get().OnScreen(ms, gap);
+          }
+          while (cuts.size() > 64) cuts.pop_front();
         }
         record.present_ms = Ms(present_end - present_start);
         present_ms.Add(record.present_ms);
@@ -381,7 +451,6 @@ void LiveMode::Run() {
     }
     auto end = Clock::now();
     backend_ms.Add(Ms(end - start));
-    latency_ms.Add(Ms(end - frame->cut));
     reclaimer.Free(std::move(*frame));
     ++frames;
     record.backend_ms = Ms(end - start);
@@ -407,23 +476,20 @@ void LiveMode::Run() {
           "live: {} frames rendered, {} dropped (backend behind), {} draws ({} drawn), "
           "{} draws with a texture not ready, {} textures created ({} preparation(s) over 16.7 ms)"
           "\n  backend frame: {}\n  present (vsync wait included): {}"
-          "\n  swap-to-presented latency: {}\n  texture preparation per "
+          "\n  swap-to-presented latency: {}\n    of it waiting in the frame queue: {}"
+          "\n  swap-to-screen latency (window system's presentation times): {}"
+          "\n  texture preparation per "
           "frame: {}\n  live content held: {:.1f} MiB (store {:.1f} MiB)"
           "\n  skipped:{}\n  degraded:{}\n  texture problems:{}",
           frames, frames_dropped, s.draws_total - draws_before, s.draws_drawn - drawn_before,
           s.textures_not_ready - not_ready_before, textures_created, slow_texture_frames,
-          backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(),
+          backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(), queue_ms.Summary(),
+          screen_ms.Summary(),
           texture_ms.Summary(),
           content.content_bytes() / 1048576.0, store_.bytes() / 1048576.0,
           Delta(s.skipped, skipped_before), Delta(s.degraded, degraded_before),
           Delta(s.texture_problems, problems_before));
       const double per = double(std::max<size_t>(frames, 1));
-      if (mods::TextureCheckOn()) {
-        const mods::TextureCheckCounts c = mods::TextureCheckTotals();
-        REXLOG_INFO("mods: texture check: {} named textures compared with what the game opened, {} differ, "
-                    "{} not reported by the game",
-                    c.compared, c.differing, c.unreported);
-      }
       REXLOG_INFO("live consumer (backend thread, ms per frame): content and textures {:.2f}, "
                   "commands {:.2f} (frontend {:.2f}, backend draws {:.2f}), frame end {:.2f}, "
                   "present {:.2f}, content release {:.2f}",

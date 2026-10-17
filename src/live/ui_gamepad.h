@@ -5,6 +5,7 @@
 
 #include <vector>
 
+
 #include <imgui.h>
 
 #include "platform/platform.h"
@@ -24,7 +25,14 @@ struct UiGamepadKey {
 // - B cancels (ImGui's own cancel: leaves a field, closes a popup).
 // - The d-pad and the left stick move the focus: ImGui moves it with the d-pad only (the stick
 //   scrolls), so the stick is sent as d-pad presses past a threshold.
-std::vector<UiGamepadKey> GamepadToImGui(const platform::GamepadState& pad);
+// With `swap_confirm_cancel` (Nintendo pads, mods/pad_prompts.h) A and B trade places first, as in
+// the game's own reads, so the dialogs confirm and cancel with the same buttons as the game.
+std::vector<UiGamepadKey> GamepadToImGui(const platform::GamepadState& pad, bool swap_confirm_cancel = false);
+
+// Whether confirm and cancel are swapped this session (set once before the guest runs by
+// game_menu::InstallPadPrompts; read on the UI thread).
+void SetConfirmCancelSwapped(bool swapped);
+bool ConfirmCancelSwapped();
 
 // Whether any button or direction is held (stick past the dead zone).
 bool GamepadHeld(const platform::GamepadState& pad);

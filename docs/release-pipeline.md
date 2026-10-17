@@ -493,6 +493,17 @@ announces it.
   `symbols.tar.zst` and stops before the push when it is over 95 MB: `v0.7.6-beta.rc1`'s macOS
   job failed on GitHub's 100 MB limit (the dSYM's DWARF is 105.85 MB). Unpacking:
   `docs/crash-handling.md`, section 3.
+- **The symbols as release assets, if the symbols repository grows too much.** Each release adds
+  its three archives to `torchlight-symbols` as git blobs (v0.7.6-beta: 19.5, 36.6 and 20.1 MB),
+  and git keeps every one forever: the history grows by about 76 MB a release, and a clone takes
+  all of it (deleting a release's folder does not shrink it; rc1's uncompressed 293 MB stay in the
+  history). Once that weighs (GitHub warns about repositories over a few GB), the same archives
+  can go as assets of a release of `torchlight-symbols` named after the tag instead of commits:
+  `gh release create TAG --repo SYMBOLS_REPOSITORY` and `gh release upload` from each game job
+  (a token with write access to that repository instead of the deploy key, which only pushes),
+  `--clobber` keeping the step idempotent, the 95 MB check kept (assets take up to 2 GB, but the
+  check also catches a symbol file that suddenly grew). Resolving a crash then downloads one
+  release's assets instead of cloning (docs/crash-handling.md, section 3). Not needed yet.
 - **Guest memory reads on Windows and macOS arm64, before the macOS port.** The generated code
   translates a guest address as `base + address`, plus 0x1000 from 0xE0000000 up on Windows and
   macOS arm64 (`REX_PHYS_HOST_OFFSET`, `rex::memory::GuestPtr`). The content snapshots of buffers

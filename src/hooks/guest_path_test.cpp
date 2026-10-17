@@ -53,6 +53,7 @@ int main() {
   Check("tlmod:/x/*", std::nullopt, ModsSearchPath);
   Check("tlmods:/x/*", std::nullopt, ModsSearchPath);
   Check("tlrepl:/media/x//*.*", "tlrepl:\\media\\x\\*.*", ModsSearchPath);
+  Check("TLPROMPT:/media/ui//*.*", "TLPROMPT:\\media\\ui\\*.*", ModsSearchPath);
 
   // Texture names the game's script listener builds from a script's full path (WithoutOurDevice).
   Check("TLMOD000:/MEDIA/LEVELSETS/MINE/MINE_FLOOR01.DDS", "MEDIA/LEVELSETS/MINE/MINE_FLOOR01.DDS",

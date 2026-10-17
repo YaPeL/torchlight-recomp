@@ -3,8 +3,11 @@
 #pragma once
 
 #include <filesystem>
+#include <functional>
+#include <string>
 
 #include "settings/host_settings.h"
+#include "settings/user_folders_in_use.h"
 
 #include <rex/rex_app.h>
 #include <rex/runtime.h>
@@ -26,6 +29,11 @@ bool OnlyMode();
 // in platform::GameDataDir unless --game_data_root came; and license_mask 1 (the full game, not
 // the demo) unless --license_mask came. OnConfigurePaths.
 void ConfigurePaths(const std::string& app_name, rex::PathConfig& paths);
+
+// The folders the player's mods, their caches and the achievement progress are kept in this run
+// (settings/user_folders_in_use.h): the platform's, or below --user_data_root / --cache_root when
+// they came (command line or config), from the runtime's roots. After setup.
+settings::FoldersInUse UserFoldersInUse(const rex::Runtime& runtime);
 // In the app creator, before the window exists (SDL video is already up by then).
 void PreCreate();
 // Before the runtime sets up graphics and input (OnPreSetup).
@@ -39,6 +47,9 @@ struct DialogHost {
   rex::Runtime* runtime = nullptr;
   rex::ui::ImGuiDrawer::FontSetupCallback fonts;
   rex::ui::ImGuiDrawer::StyleSetupCallback style;
+  // The native backend could not start (any thread; `reason` is the render system's): the app tells
+  // the player and closes, instead of leaving the window black.
+  std::function<void(const std::string& reason)> renderer_failed;
 };
 
 // Only mode, at the start of OnPostSetup (the window exists, the guest has not run): the video

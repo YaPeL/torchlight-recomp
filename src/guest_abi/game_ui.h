@@ -283,20 +283,6 @@ inline constexpr GuestFunction kMaterialPtrRelease{0x8220D490, Confidence::kConf
 // mods/unit_cache.h UnitIndexFileName), with the game's own spelling when the game asks by its own
 // name through CEGUI or OGRE (our layout, the widened layouts, which keep the pak's names).
 
-// [confirmed] Where a resource's file is opened, for the mods' texture check (docs/mods.md 7j,
-// mods_install.cpp behind TORCHLIGHT_MODS_DIAGNOSTICS):
-// - ResourceGroupManager::openResource (OgreResourceGroupManager.cpp 1.7): r3 the returned
-//   DataStreamPtr, r4 this, r5 the resource name (std::string), r6 the group, r7
-//   searchGroupsIfNotFound, r8 resourceBeingLoaded (prologue @0x8242B070-@0x8242B08C; "Cannot locate
-//   resource " @0x820DB61C). Not found in its group, it calls itself for the group that has the file.
-// - FileSystemArchive::open ("FileSystemArchive::open" @0x820E5E10) and ZipArchive::open (" - Unable
-//   to open file " @0x820E8710): r3 the returned DataStreamPtr, r4 this, r5 the file name
-//   (std::string). The archive's name (Archive::mName, a std::string) is at this+4: concatenate_path
-//   (mName, filename) @0x824B3D5C; mName + " - Unable to open file " @0x824BD460.
-inline constexpr GuestFunction kOpenResource{0x8242B070, Confidence::kConfirmed};
-inline constexpr GuestFunction kFileSystemArchiveOpen{0x824B3D48, Confidence::kConfirmed};
-inline constexpr GuestFunction kZipArchiveOpen{0x824BD3D0, Confidence::kConfirmed};
-inline constexpr Field kArchiveName{4, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // Calling into the guest from a hook (on the game's thread: CEGUI is not thread-safe).
@@ -404,11 +390,160 @@ inline constexpr uint32_t kActionCloseAll = 8;
 }  // namespace navigation
 
 // ---------------------------------------------------------------------------------------------
+// CEGUI window lookup and visibility, as the skill tree uses them.
+// [confirmed] Window::getChildRecursive(name): r3 = window, r4 = String*; searches the children
+// (vector at +0x2C..+0x30) by name (+0x348) and recurses into each (@0x825AE360..); null when
+// absent (the skill tree's cell lookup checks it, @0x8235E994).
+inline constexpr GuestFunction kFindDescendant{0x825AE360, Confidence::kConfirmed};
+// [confirmed] Window::setVisible(bool): r3 = window, r4 = state; stores the flag at +0x161
+// (@0x821A56E0) and fires the shown or hidden event. Window::isVisible(local_only) reads the same
+// byte (@0x821AFE64) and, unless local_only, the parents' too.
+inline constexpr GuestFunction kWindowSetVisible{0x821A56C0, Confidence::kConfirmed};
+inline constexpr Field kWindowVisible{0x161, Confidence::kConfirmed};
+
+// ---------------------------------------------------------------------------------------------
+// CNewGameMenu: the character creation screen (vtable 0x820D2658; its layout
+// media/ui/charactercreate.uilayout, loaded @0x8238D6F0). Its three class buttons are ImageButtons
+// named after their class ("Destroyer", "Alchemist", "Vanquisher") with onClick GUISELECT1; the pad
+// moves over a fixed 5 x 3 grid of window names (table 0x82421E28, CEGUI Strings of 0x98 bytes,
+// filled by sub_82EB3258): the class buttons are its first row, in that order.
+inline constexpr uint32_t kNewGameMenuVtable = 0x820D2658;
+// [confirmed] The layout's file name (L"media/ui/charactercreate.uilayout" @0x820D24B8, loaded by the
+// menu's init sub_8238D6F0). Other menus' layouts use GUISELECT1 too (optionsmenu,
+// characterload, difficulty), for other things.
+inline constexpr const char* kNewGameMenuLayout = "charactercreate.uilayout";
+inline constexpr uint32_t kNewGameClassRow = 0;
+// [confirmed] The pets' buttons ("Dog", "Cat", "Chakawary", onClick GUISELECT2) are the grid's third
+// row (the table's entries 6-8, sub_82EB3258).
+inline constexpr uint32_t kNewGamePetRow = 2;
+inline constexpr uint32_t kNewGameClassColumns = 3;
+// [confirmed] Slot 8 (0x820D2674), on show: puts the pad focus on the grid's first cell
+// (@0x8238DDB0) and selects the class "Destroyer" (@0x8238DDC0..@0x8238DDD4).
+inline constexpr GuestFunction kNewGameMenuOnShow{0x8238DCA8, Confidence::kConfirmed};
+// [confirmed] Slot 9 (0x820D267C), OnCommand: r3 = menu, r4 = command, r5 = the window's name.
+// Command 14 (GUISELECT1, @0x8238E834) selects the class of that name (@0x8238EA08 into
+// kSelectClass); 15 selects the pet.
+inline constexpr GuestFunction kNewGameMenuOnCommand{0x8238E7F0, Confidence::kConfirmed};
+inline constexpr uint32_t kCommandSelectClass = 14;
+inline constexpr uint32_t kCommandSelectPet = 15;
+// [confirmed] Slot 12 (0x820D2688), the pad: A sends the focused grid cell's command and name to
+// OnCommand (@0x8238F408); left/right/up/down move the focus by (r4, r5) = (-1/+1, 0) or
+// (0, -1/+1) (@0x8238F48C into kNewGameMenuMoveFocus).
+// [confirmed] Move the focus: r3 = menu, r4 = columns, r5 = rows; both wrap (columns 0-2, rows
+// 0-4, @0x8238F510..@0x8238F570), a hidden cell is passed over, then the cell is focused
+// (@0x8238F5B8).
+inline constexpr GuestFunction kNewGameMenuMoveFocus{0x8238F4F8, Confidence::kConfirmed};
+namespace new_game_menu {
+// [confirmed] The focused grid cell (s32 each; @0x8238F568, @0x8238F570).
+inline constexpr Field kFocusColumn{0x20C, Confidence::kConfirmed};
+inline constexpr Field kFocusRow{0x210, Confidence::kConfirmed};
+}  // namespace new_game_menu
+// [confirmed] Select a class: r3 = the player choice (game_ui + 0x1790, @0x8238E9F8), r4 = the
+// class name (std::wstring*, @0x8221400C..@0x82214014). Unless it is the class already chosen
+// (@0x8221403C), the name is copied in (+0x174) and the player unit made by that name
+// (kMakeUnit @0x822140C8, wardrobe.h).
+inline constexpr GuestFunction kSelectClass{0x82214000, Confidence::kConfirmed};
+// [confirmed] Select a pet, as kSelectClass: r3 = the player choice, r4 = the pet's name
+// (std::wstring*, @0x82214194); unless it is the pet already chosen (@0x822141C4), the name is
+// copied in (+0x190, @0x822141A4) and the pet made by that name (sub_823DEB40), kept only when made.
+// OnCommand(15) calls it with the button's name (@0x8238EA70); the screen's show with "Dog"
+// (@0x8238DDF8).
+inline constexpr GuestFunction kSelectPet{0x82214188, Confidence::kConfirmed};
+
+// ---------------------------------------------------------------------------------------------
+// CCharSkillsMenuXenon: the skill tree page of the character screen (RTTI
+// .?AVCCharSkillsMenuXenon@@, complete object locator 0x8211CC68 before its vtable 0x820D0164).
+// Its layout, skillsmenu_xenon.uilayout, has the tree's cells "skillbg<pane>_<row>_<column>"
+// (3 panes, 6 rows, 2 columns) with the children "skillicon..." and "skilllvl...", and the four
+// spell cells "spellbg<n>".
+inline constexpr uint32_t kCharSkillsMenuVtable = 0x820D0164;
+// [confirmed] Slot 6 (0x820D017C): r3 = menu, r4 = character; stores the character (@0x8235BD50)
+// and hides every tree cell, panes 0-2, rows 0-5, columns 0-1 (@0x8235BE58..@0x8235BE78).
+inline constexpr GuestFunction kSkillsMenuSetCharacter{0x8235BD40, Confidence::kConfirmed};
+// [confirmed] Slot 8 (0x820D0184): builds the tree from the character's skills. For each skill it
+// writes the skill's id into table slot min(12 * pane + 2 * row + column, 35) (@0x8235C210,
+// @0x8235C244) before looking its cell up by name; a found cell is shown, gets its icon and level,
+// and its +0x134 pointed at the slot (@0x8235C350), and the focused cell's skill is described
+// (sub_8235D558). A skill in a third column therefore takes the next row's first slot. The
+// navigation handlers call it after every move (vtable +0x20, @0x8235E464, @0x8235E550).
+inline constexpr GuestFunction kSkillsMenuBuildTree{0x8235BE88, Confidence::kConfirmed};
+inline constexpr VtableSlot kSkillsMenuBuildTreeSlot{8, Confidence::kConfirmed};
+// [confirmed] Focus one cell right / left (r3 = menu): the column +1 / -1 within 0-1, wrapping into
+// the next / previous pane of 0-2 (@0x8235E3F4..@0x8235E410, @0x8235E4DC..@0x8235E504); on the
+// spell row the spell index wraps within 0-3. A cell that exists but is hidden is passed by calling
+// itself again (@0x8235E444); then the tree is rebuilt.
+inline constexpr GuestFunction kSkillsMenuFocusRight{0x8235E3A0, Confidence::kConfirmed};
+inline constexpr GuestFunction kSkillsMenuFocusLeft{0x8235E488, Confidence::kConfirmed};
+// [confirmed] The focused skill (r3 = menu; returns the skill or null): looks the table slot of the
+// focused cell (or spell 36-39) up in the character's skills (@0x8235E8C8..@0x8235E8DC). The
+// description, learn and assign code reach the focused skill only through it (sub_82381D18,
+// sub_82382720, sub_823827F8).
+inline constexpr GuestFunction kSkillsMenuFocusedSkill{0x8235E830, Confidence::kConfirmed};
+// [confirmed] Skill lookup by id: r3 = the character's skill list, r4 = id (64-bit); returns the
+// skill or null (@0x8235E8DC).
+inline constexpr GuestFunction kSkillListFind{0x821F58F8, Confidence::kConfirmed};
+// [confirmed] Slot 13 (vtable +0x34): the root window the cells are looked up in (@0x8235E958,
+// @0x8235E990 into kFindDescendant).
+inline constexpr VtableSlot kSkillsMenuRootSlot{13, Confidence::kConfirmed};
+namespace skills_menu {
+// [confirmed] The character (kSkillsMenuSetCharacter @0x8235BD50; its skill list at +0x184,
+// @0x8235C124, @0x8235E8D4).
+inline constexpr Field kCharacter{0xB0, Confidence::kConfirmed};
+inline constexpr Field kCharacterSkills{0x184, Confidence::kConfirmed};
+// [confirmed] u8: the focus is on the spell row (the left/right handlers branch on it, @0x8235E3A0).
+inline constexpr Field kSpellRow{0xB5, Confidence::kConfirmed};
+// [confirmed] The skill ids of the tree's 36 cells then the 4 spells, 8 bytes each (the builder
+// stores at (slot + 38) * 8, @0x8235C244; the getter reads the same, @0x8235E8D8).
+inline constexpr Field kTable{0x130, Confidence::kConfirmed};
+inline constexpr uint32_t kTableSlots = 40;
+// [confirmed] The focused cell, s16 each: pane, row, column (sub_8235E8F0 builds the cell's name
+// from them, @0x8235E914..@0x8235E920; the menu's reset zeroes them, @0x8235ADE4).
+inline constexpr Field kFocusPane{0x650, Confidence::kConfirmed};
+inline constexpr Field kFocusRow{0x652, Confidence::kConfirmed};
+inline constexpr Field kFocusColumn{0x654, Confidence::kConfirmed};
+}  // namespace skills_menu
+namespace skill_list {
+// [confirmed] The builder walks entries 0..count-1 (@0x8235C130); an entry is read from
+// data + 4 * index while the index is below the bound, else from data (@0x8235C1BC..@0x8235C1D0).
+inline constexpr Field kData{0x2C, Confidence::kConfirmed};
+inline constexpr Field kCount{0x30, Confidence::kConfirmed};
+inline constexpr Field kBound{0x34, Confidence::kConfirmed};
+}  // namespace skill_list
+namespace skill {
+// [confirmed] The skill's place in the tree, 32-bit fields used as s16 (extsh, @0x8235C1DC..
+// @0x8235C1E8), and its id (64-bit, @0x8235C230).
+inline constexpr Field kColumn{0xD4, Confidence::kConfirmed};
+inline constexpr Field kRow{0xD8, Confidence::kConfirmed};
+inline constexpr Field kPane{0xDC, Confidence::kConfirmed};
+inline constexpr Field kId{0x180, Confidence::kConfirmed};
+}  // namespace skill
+
+// ---------------------------------------------------------------------------------------------
 // [confirmed] Ogre::ResourceGroupManager singleton pointer (r3 of every addResourceLocation call
 // in kResourcesCfgLoader, @0x8239C56C). OGRE 1.7's openResource searches every group when the
 // file is not in the one asked for (OgreResourceGroupManager.h:746, default true), so a location
 // in any group is found.
 inline constexpr uint32_t kResourceGroupManagerGlobal = 0x83582A4C;
+
+// ---------------------------------------------------------------------------------------------
+// CEGUI imagesets (a mod class's own icon at character creation, docs/mods.md 7l).
+// [confirmed] CEGUI::ImagesetManager singleton pointer: sub_823392E8 (the call returning to
+// 0x8233A5DC) and sub_825E7A08 load it from here (lis -31912, lwz +10984) as r3 of
+// kImagesetManagerCreate and kImagesetManagerFind.
+inline constexpr uint32_t kImagesetManagerGlobal = 0x83582AE8;
+// [confirmed] ImagesetManager::createImageset(filename, resourceGroup): r3 = manager, r4 and r5 =
+// String*; logs "Attempting to create an Imageset from the information specified in file '"
+// (0x82101940, the log call returning to 0x825BA368), constructs the Imageset from the file
+// (sub_825B8A70, which parses the XML and loads its image file through the resource group), looks
+// its name up in the map (sub_825C9F10) and, when absent, inserts it (sub_825C9E20, @0x825BA428);
+// returns the Imageset*. A name already present deletes the new one (sub_825BA448) and goes to
+// sub_8287D560 (@0x825BA41C), CEGUI 0.6's AlreadyExistsException; a file or an image file that
+// cannot be read throws inside the constructor. Callers make sure of all three first.
+inline constexpr GuestFunction kImagesetManagerCreate{0x825BA338, Confidence::kConfirmed};
+// [confirmed] The imageset of a name, or null (a Runic addition; CEGUI 0.6's getImageset throws):
+// r3 = manager, r4 = String*; map find (sub_825C9F10, the call returning to 0x825BA73C), the value
+// at +164 when found, 0 otherwise (loc_825BA754).
+inline constexpr GuestFunction kImagesetManagerFind{0x825BA718, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // Translations.

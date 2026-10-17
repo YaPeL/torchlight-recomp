@@ -60,6 +60,11 @@ bool IsUnitDefinition(const std::u16string& game_path) {
 
 }  // namespace
 
+uint64_t FileDigest(uintmax_t size, int64_t modified) {
+  const uint64_t values[2] = {static_cast<uint64_t>(size), static_cast<uint64_t>(modified)};
+  return Fnv(kFnvBasis, values, sizeof(values));
+}
+
 std::vector<ModUnitFile> ScanModUnitFiles(const fs::path& mods_folder, const ModPlan& plan) {
   std::vector<ModUnitFile> files;
   for (const PlannedMod& mod : plan.mods) {
@@ -73,9 +78,12 @@ std::vector<ModUnitFile> ScanModUnitFiles(const fs::path& mods_folder, const Mod
       if (!it->is_regular_file(type_ec)) continue;
       const std::u16string game_path = GamePath(fs::relative(it->path(), root, type_ec));
       if (type_ec || !IsUnitDefinition(game_path)) continue;
-      const auto bytes = ReadAll(it->path());
-      if (!bytes) continue;
-      found.push_back({mod.folder, game_path, Fnv(kFnvBasis, bytes->data(), bytes->size()), it->path()});
+      // Size and modification time from the listing, the file not opened (FileDigest).
+      const uintmax_t size = it->file_size(type_ec);
+      if (type_ec) continue;
+      const auto time = it->last_write_time(type_ec);
+      if (type_ec) continue;
+      found.push_back({mod.folder, game_path, FileDigest(size, time.time_since_epoch().count()), it->path()});
     }
     std::sort(found.begin(), found.end(),
               [](const ModUnitFile& a, const ModUnitFile& b) { return a.game_path < b.game_path; });
@@ -171,6 +179,8 @@ std::string UnitCacheKey(const std::vector<ModUnitFile>& files, uint64_t base_id
   const uint32_t version = kUnitIndexVersion;
   h = Fnv(h, &version, sizeof(version));
   h = Fnv(h, &base_identity, sizeof(base_identity));
+  const uint64_t count = files.size();
+  h = Fnv(h, &count, sizeof(count));
   for (const ModUnitFile& f : files) {
     h = Fnv(h, f.mod_folder.data(), f.mod_folder.size());
     h = Fnv(h, "\n", 1);

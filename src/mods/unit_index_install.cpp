@@ -17,19 +17,15 @@
 #include <rex/ppc/func.h>
 #include <rex/runtime.h>
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-#include <initializer_list>
-
-#include <rex/cvar.h>
-#include <rex/system/kernel_state.h>
-#include <rex/system/xmemory.h>
-#endif
 
 #include "game_menu/guest_call.h"
+#include "game_menu/save_import_menu.h"
 #include "game_menu/video_menu.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/mods.h"
 #include "guest_abi/unit_index.h"
+#include "live/busy_notice.h"
+#include "live/busy_notice_text.h"
 #include "mods/save_units_install.h"
 #include "mods/unit_cache.h"
 #include "mods/unit_index.h"
@@ -37,14 +33,6 @@
 
 REX_EXTERN(__imp__sub_823296D0);
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-REXCVAR_DEFINE_BOOL(mods_unit_index_check, false, "Torchlight",
-                    "Diagnostics: read every base unit through the mods' path and compare with the "
-                    "Xbox unit index (log only)");
-REXCVAR_DEFINE_BOOL(mods_unit_index_base_only, false, "Torchlight",
-                    "Diagnostics: build the index the game loads from the base alone (no mods' units), "
-                    "written by us, under its own name in the cache");
-#endif
 
 namespace torchlight::mods {
 
@@ -61,8 +49,6 @@ constexpr const char* kDeviceLink = "tlunits:";
 
 struct State {
   bool active = false;      // the hook does something
-  bool check = false;       // diagnostics: compare the base read through our path
-  bool base_only = false;   // diagnostics: our index without the mods' units
   bool ready = false;       // the cached index exists for `key`
   bool mounted = false;     // tlunits: mounted (once the file exists)
   bool located = false;     // tlunits: added as a resource location
@@ -116,71 +102,6 @@ std::optional<int64_t> ParseGuid(const std::u16string& text) {
   return ParseUnitGuid(ascii);
 }
 
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-// What the kept definitions hold (diagnostics): nodes, their properties and their subgroups.
-struct Retained {
-  uint64_t lists = 0, nodes = 0, properties = 0, subgroups = 0;
-};
-Retained g_retained;
-
-void CountGroup(const uint8_t* base, uint32_t group, int depth) {
-  if (!group || depth > 8) return;
-  const uint32_t properties = abi::ReadU32(base, group + units_abi::group::kPropertyCount.offset);
-  const uint32_t subgroups = abi::ReadU32(base, group + units_abi::group::kSubgroupCount.offset);
-  g_retained.properties += properties;
-  g_retained.subgroups += subgroups;
-  const uint32_t data = abi::ReadU32(base, group + units_abi::group::kSubgroupData.offset);
-  for (uint32_t i = 0; data && i < subgroups && i < 4096; ++i) CountGroup(base, abi::ReadU32(base, data + 4 * i), depth + 1);
-}
-
-void CountRetained(const uint8_t* base, uint32_t list) {
-  const uint32_t data = abi::ReadU32(base, list + units_abi::node_list::kData.offset);
-  const uint32_t count = abi::ReadU32(base, list + units_abi::node_list::kCount.offset);
-  ++g_retained.lists;
-  g_retained.nodes += count;
-  for (uint32_t i = 0; data && i < count && i < 64; ++i) CountGroup(base, abi::ReadU32(base, data + 4 * i), 0);
-}
-
-// The address space the game holds in each guest heap, in MB (pages reserved; the SDK's page
-// counts are in 4 KB units whatever the heap's page size), against the heap's size; and the global
-// name table's size.
-struct HeapNow {
-  const char* name;
-  double used_mb, size_mb;
-};
-struct MemoryNow {
-  std::vector<HeapNow> heaps;
-  uint32_t names = 0;
-};
-
-MemoryNow MeasureMemory(const uint8_t* base) {
-  MemoryNow m;
-  auto* memory = REX_KERNEL_MEMORY();
-  auto add = [&](const char* name, uint32_t address) {
-    rex::memory::BaseHeap* heap = memory->LookupHeap(address);
-    if (!heap) return;
-    const rex::memory::BaseHeap* heaps[] = {heap};
-    uint32_t unreserved = 0, reserved = 0, used_pages = 0, reserved_bytes = 0;
-    memory->GetHeapsPageStatsSummary(heaps, 1, unreserved, reserved, used_pages, reserved_bytes);
-    m.heaps.push_back({name, used_pages * 4096.0 / (1024 * 1024), heap->heap_size() / (1024.0 * 1024.0)});
-  };
-  add("v00000000", 0x00001000);
-  add("v40000000", 0x40000000);
-  add("physical", 0xA0000000);
-  const uint32_t head = abi::ReadU32(base, units_abi::names::kTable + units_abi::names::kTableHead.offset);
-  m.names = head ? abi::ReadU32(base, units_abi::names::kTable + units_abi::names::kTableSize.offset) : 0;
-  return m;
-}
-
-std::string MemoryChange(const MemoryNow& before, const MemoryNow& after) {
-  std::string out;
-  for (size_t i = 0; i < before.heaps.size() && i < after.heaps.size(); ++i) {
-    out += fmt::format("{}{} {:.1f} -> {:.1f} of {:.0f} MB", out.empty() ? "" : ", ", before.heaps[i].name,
-                       before.heaps[i].used_mb, after.heaps[i].used_mb, after.heaps[i].size_mb);
-  }
-  return out;
-}
-#endif
 
 // One unit definition read the way the game's index builder reads it (guest_abi/unit_index.h):
 // the definition and its BASEFILE chain loaded by the game, each value through the game's
@@ -249,9 +170,6 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
       entry = e;
     }
   }
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-  CountRetained(base, list);
-#endif
   // The nodes are kept, not emptied with kClearNodeList as the game's own builder does: emptying
   // them released the names of their properties, and later definitions went on using names the
   // global table no longer had (guest_abi unit_index.h, names; docs/mods.md 7g). The memory they
@@ -261,6 +179,14 @@ std::optional<UnitEntry> ReadUnit(GuestCall& call, const std::u16string& game_pa
   return entry;
 }
 
+// The notice over the still screen while the index is built and the saves checked against it
+// (live/busy_notice.h): with a large pack it takes seconds (1984 units: about 4 s on Linux, 17 s on
+// a Windows pass), and nothing else is drawn meanwhile.
+struct BuildNotice {
+  BuildNotice() { live::ShowBusyNotice(game_menu::NoticeText(live::kPreparingModsText)); }
+  ~BuildNotice() { live::HideBusyNotice(); }
+};
+
 void BuildIndex(GuestCall& call) {
   std::string error;
   const auto start = std::chrono::steady_clock::now();
@@ -269,14 +195,16 @@ void BuildIndex(GuestCall& call) {
     REXLOG_ERROR("mods: cannot read the game's unit index ({}); mods' units left out", error);
     return;
   }
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-  g_retained = {};
-  const MemoryNow before = MeasureMemory(call.base());
-#endif
   std::vector<UnitEntry> units;
   size_t left_out = 0;
-  for (const std::u16string& path : g.unit_paths) {
-    if (g.base_only) break;
+  int logged_percent = 0;
+  for (size_t i = 0; i < g.unit_paths.size(); ++i) {
+    live::SetBusyNoticeProgress(i, g.unit_paths.size());
+    if (const int percent = live::BusyPercent(i, g.unit_paths.size()); percent > logged_percent) {
+      logged_percent = percent;
+      REXLOG_INFO("mods: building the unit index, {}% ({} of {} units)", percent, i, g.unit_paths.size());
+    }
+    const std::u16string& path = g.unit_paths[i];
     std::string why;
     if (auto e = ReadUnit(call, path, &why)) {
       units.push_back(std::move(*e));
@@ -290,91 +218,57 @@ void BuildIndex(GuestCall& call) {
   for (const auto& path : skipped) REXLOG_WARN("mods: unit {} is outside MEDIA/UNITS/<group>/", save_import::Utf8(path));
   // Units left out may be read next time (a fault of ours or of the moment, not of the mod's files,
   // which the key covers): such an index serves this start only.
-  g.name = g.base_only ? g.key + "-base-only" : left_out ? IncompleteUnitIndexName(g.key) : g.key;
+  g.name = left_out ? IncompleteUnitIndexName(g.key) : g.key;
   if (left_out) REXLOG_WARN("mods: {} mods' units left out; the index is built again at the next start", left_out);
   if (!StoreCachedUnitIndex(g.folder, g.name, merged, &error)) {
     REXLOG_ERROR("mods: cannot store the unit index ({}); mods' units left out", error);
     return;
   }
   const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
-  REXLOG_INFO("mods: unit index built in {} ms: {} mods' units, {} entries ({}){}", ms.count(), units.size(),
-              merged.size(), g.key, g.base_only ? ", diagnostics: base only" : "");
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-  const MemoryNow after = MeasureMemory(call.base());
-  REXLOG_INFO("mods: build memory: {}; names {} -> {}; {} {} definitions: {} nodes, {} properties, {} subgroups",
-              MemoryChange(before, after), before.names, after.names, "kept",
-              g_retained.lists, g_retained.nodes, g_retained.properties, g_retained.subgroups);
-#endif
+  REXLOG_INFO("mods: unit index built in {} ms: {} mods' units, {} entries ({})", ms.count(), units.size(),
+              merged.size(), g.key);
   g.ready = true;
 }
-
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-// Every base unit read through the mods' path, compared with the Xbox index (log only).
-void CheckBase(GuestCall& call) {
-  std::string error;
-  const auto base_index = ReadPakUnitIndex(g.pak, &error);
-  if (!base_index) {
-    REXLOG_ERROR("mods: unit index check: {}", error);
-    return;
-  }
-  REXLOG_INFO("mods: unit index check: start, {} entries", base_index->size());
-  const auto start = std::chrono::steady_clock::now();
-  UnitIndex read;
-  size_t failed = 0;
-  for (size_t gi = 0; gi < kUnitGroupCount; ++gi) {
-    for (const UnitEntry& expected : base_index->groups[gi]) {
-      std::string why;
-      if (auto e = ReadUnit(call, NormalizeUnitFile(expected.file), &why)) {
-        e->file = expected.file;
-        read.groups[gi].push_back(std::move(*e));
-      } else if (failed++ < 20) {
-        REXLOG_WARN("mods: unit index check: {}: {}", save_import::Utf8(expected.file), why);
-      }
-    }
-  }
-  const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start);
-  const auto diff = CompareUnitIndexes(*base_index, read, 200);
-  REXLOG_INFO("mods: unit index check: end, {} ms, {} read, {} not loaded, {} differences", ms.count(),
-              read.size(), failed, diff.size());
-  for (const auto& line : diff) REXLOG_INFO("mods: unit index check: {}", line);
-}
-#endif
 
 void HookLoadIndex(PPCContext& ctx, uint8_t* base);
 
 }  // namespace
 
-void InstallUnitIndex(rex::Runtime* runtime, const std::filesystem::path& data_dir,
-                      const std::filesystem::path& pak, const ModPlan* plan) {
+void InstallUnitIndex(rex::Runtime* runtime, const std::vector<ModUnitFile>& files,
+                      const std::filesystem::path& cache_dir, const std::filesystem::path& pak) {
   g = {};
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-  g.check = REXCVAR_GET(mods_unit_index_check);
-  g.base_only = REXCVAR_GET(mods_unit_index_base_only);
-#endif
   g.pak = pak;
-  g.folder = data_dir / "cache" / "unitdata";
-  std::vector<ModUnitFile> files;
-  if (plan) files = ScanModUnitFiles(data_dir / "mods", *plan);
-  if (files.empty() && !g.check) return;  // the Xbox index as it is
+  g.folder = cache_dir / "unitdata";
+  if (files.empty()) return;  // the Xbox index as it is
+  using Clock = std::chrono::steady_clock;
+  const auto ms = [](Clock::time_point from, Clock::time_point to) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+  };
+  const auto t1 = Clock::now();
   g.active = true;
-  if (files.empty()) return;  // the check only
 
   const auto identity = PakIdentity(pak);
+  const auto t2 = Clock::now();
   if (!identity || !runtime || !runtime->file_system()) {
     REXLOG_ERROR("mods: cannot identify {}; mods' units left out", pak.string());
-    g.active = g.check;
+    g.active = false;
     return;
   }
   g.unit_paths = UnitPathsByPriority(files);
   g.key = UnitCacheKey(files, *identity);
   std::string log;
   g.name = g.key;
-  g.ready = !g.base_only && FindCachedUnitIndex(g.folder, g.key, &log).has_value();
+  const auto t3 = Clock::now();
+  g.ready = FindCachedUnitIndex(g.folder, g.key, &log).has_value();
+  const auto t4 = Clock::now();
   if (!log.empty()) REXLOG_WARN("mods: {}", log);
   g.runtime = runtime;
-  REXLOG_INFO("mods: {} unit definitions from mods; cached index {}", g.unit_paths.size(),
-              g.ready ? "found" : "to build");
+  REXLOG_INFO("mods: {} unit definitions from mods; cached index {} (pak identity {} ms, key {} ms, cache lookup "
+              "{} ms)",
+              g.unit_paths.size(), g.ready ? "found" : "to build", ms(t1, t2), ms(t2, t3), ms(t3, t4));
 }
+
+bool UnitIndexBuiltInGame() { return g.active && !g.ready; }
 
 namespace {
 
@@ -473,8 +367,9 @@ bool MountIndexFolder() {
 // The game's unit index loader (guest_abi/unit_index.h kLoadIndex): with mods' units, our index
 // is built if needed and loaded in place of the Xbox file, by a name under tlunits: (mounted and
 // added as a resource location once the file exists, since both list the folder then), and what the
-// game kept is checked (VerifyLoadedIndex). The saves were checked before the guest ran
-// (save_units_install.h); this only compares.
+// game kept is checked (VerifyLoadedIndex). The saves were checked before the guest ran, or, at a
+// start that builds the index, are checked here right after the build (save_units_install.h
+// CheckDeferredSaves); then the load only compares.
 void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
   if (!g.active) {
     __imp__sub_823296D0(ctx, base);
@@ -485,10 +380,14 @@ void HookLoadIndex(PPCContext& ctx, uint8_t* base) {
   uint32_t our_path = 0, our_text = 0;
   {
     GuestCall call(ctx, base, 0x4000);
-#ifdef TORCHLIGHT_MODS_DIAGNOSTICS
-    if (g.check) CheckBase(call);
-#endif
-    if (!g.unit_paths.empty() && !g.ready) BuildIndex(call);
+    if (!g.unit_paths.empty() && !g.ready) {
+      const BuildNotice notice;
+      BuildIndex(call);
+      live::SetBusyNoticeProgress(1, 1);
+      CheckDeferredSaves();
+    }
+    // Whatever happened above: a check left for this point always runs before the load.
+    CheckDeferredSaves();
     if (g.ready && !g.mounted) g.mounted = MountIndexFolder();
     if (g.ready && g.mounted && !g.located) {
       g.located = game_menu::AddFileSystemLocation(call, std::string(kDeviceLink) + "\\", false);

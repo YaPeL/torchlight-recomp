@@ -52,6 +52,14 @@ struct DisplayInfo {
   std::vector<std::pair<uint32_t, uint32_t>> modes;
 };
 DisplayInfo GameDisplay();
+// Whether the machine runs on battery now (unplugged); false when plugged in, without a battery
+// or when it cannot tell. Each platform asks its own system (SDL's SDL_GetPowerInfo is not built
+// in the SDK's SDL, SDL_POWER OFF): Linux the kernel's power supplies (power_supply_linux.h),
+// Windows GetSystemPowerStatus, macOS IOKit's power sources.
+bool OnBattery();
+// Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
+// firmware's system information.
+bool IsSteamDeck();
 // Gamepad input keeps reaching the game while another window (the backend's) has the focus.
 void AllowBackgroundGamepad();
 
@@ -65,10 +73,21 @@ struct GamepadState {
   float left_x = 0, left_y = 0;  // -1 to 1, y positive down
 };
 GamepadState ReadGamepad();
+// The kind of the first connected gamepad, by its type as SDL reports it (the pad prompts' style,
+// mods/pad_prompts.h). Starts SDL's gamepad support when nothing has yet.
+enum class GamepadKind { kNone, kXbox, kPlayStation3, kPlayStation4, kPlayStation5, kNintendo, kOther };
+GamepadKind ConnectedGamepadKind();
+// Calls `changed` with the kind of the pad last used whenever it changes: a pad connected or
+// disconnected, or a button pressed on another pad than the last one used (with none used yet, the
+// first connected). Called on the thread that pumps SDL's events; it must return quickly.
+void WatchGamepadKind(std::function<void(GamepadKind)> changed);
 
 // Whether there is a display to open windows on (tests that need a GL context skip without one).
 // Linux: $DISPLAY or $WAYLAND_DISPLAY set. Windows: always.
 bool HasDisplay();
+// Names the calling thread for profilers and debuggers (Linux keeps 15 characters): our threads
+// next to the SDK's, which it names itself ("Main XThread", "GPU Commands").
+void SetCurrentThreadName(const char* name);
 
 // ---- first start ------------------------------------------------------------------------------
 // The game's files are installed before the runtime's window exists (game_setup/first_run.h): plain
