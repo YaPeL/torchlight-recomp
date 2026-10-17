@@ -6,7 +6,7 @@ include(durable_file.cmake)
 if(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp power_supply_linux.cpp
-                text_wrap.cpp)
+                text_wrap.cpp display_refresh_none.cpp)
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE X11)
     # When each present reached the screen (presentation_time.h): a development measurement, on
@@ -42,7 +42,7 @@ elseif(WIN32)
     target_link_libraries(torchlight_user_folders PRIVATE shell32 ole32)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_win.cpp gpu_adapters.cpp
                 gl_probe_win.cpp text_wrap.cpp
-                presentation_time_none.cpp)
+                presentation_time_none.cpp display_refresh_none.cpp)
     # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats);
     # advapi32: the firmware's system information (IsSteamDeck).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
@@ -51,11 +51,12 @@ elseif(APPLE)
     enable_language(OBJCXX)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_mac.cpp)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_mac.mm text_wrap.cpp
-                presentation_time_none.cpp)
-    # AppKit: the game window's view, OGRE's window keys; CoreGraphics: the window server session.
+                presentation_time_none.cpp display_refresh_mac.mm)
+    # AppKit: the game window's view, OGRE's window keys; CoreGraphics: the window server session;
+    # CoreVideo: the display's refresh (display_refresh_mac.mm).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE "-framework AppKit" "-framework CoreGraphics" "-framework IOKit"
-                          "-framework CoreFoundation")
+                          "-framework CoreFoundation" "-framework CoreVideo")
 else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
