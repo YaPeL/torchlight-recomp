@@ -1,0 +1,38 @@
+Patch 38. In the series since 2026-10-17, after patch 37.
+
+AllocFixed (src/core/memory_posix.cpp) maps a fixed range with MAP_FIXED_NOREPLACE, and commits
+an already reserved range on its EEXIST (mprotect). Kernels before Linux 4.17 do not know the flag
+and take the address as a hint: an occupied range is mapped somewhere else and that address is
+returned. The heap then believes the page at its own address committed while it is still
+PROT_NONE, and the first write there faults. Android devices still ship 4.9 and 4.14 kernels
+(the Galaxy Tab S5e, Android 11: 4.9.227). Now, when the result is not the address asked for, it
+is unmapped and the call goes on as EEXIST. Kernels from 4.17 on (every desktop Linux we build
+for) never return another address with that flag, so nothing changes there.
+
+Test: on the Tab S5e, a reservation then MAP_FIXED_NOREPLACE at the same address returned another
+address (Linux 7.0: EEXIST). unit_tests, which commit pages that earlier cases decommitted, ended
+with SIGSEGV in "TranslateVirtual returns valid host pointer" when the random order put a
+decommit first; with the patch two full runs pass there (the known output_stamp case aside). On
+Linux, ctest as before.
+
+diff --git a/src/core/memory_posix.cpp b/src/core/memory_posix.cpp
+index ba533ec..86190c9 100644
+--- a/src/core/memory_posix.cpp
++++ b/src/core/memory_posix.cpp
+@@ -294,6 +294,16 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
+ #endif
+ 
+   void* result = mmap(base_address, length, prot_initial, flags, -1, 0);
++#if defined(MAP_FIXED_NOREPLACE) && REX_PLATFORM_LINUX
++  // Kernels before Linux 4.17 (Android devices still ship 4.9 and 4.14) do not know
++  // MAP_FIXED_NOREPLACE and take the address as a hint: an occupied range is mapped
++  // somewhere else instead of failing with EEXIST.
++  if (result != MAP_FAILED && base_address && result != base_address) {
++    munmap(result, length);
++    result = MAP_FAILED;
++    errno = EEXIST;
++  }
++#endif
+   if (result != MAP_FAILED) {
+     return result;
+   }

@@ -14,6 +14,11 @@ log; a context switch for fibers in AArch64 assembly (Bionic has no ucontext); n
 stubbed; rex/main_android.h, which memory_posix.cpp names; an ANativeWindow surface from SDL3 and
 its window_sdl branch; one app per library, started by SDLActivity through SDL_main.
 
+The executable path (filesystem_posix.cpp) is /proc/self/exe as on Linux, and comes from dladdr
+(the library holding the runtime) only when the process is app_process, an app. 0001 took dladdr
+always, and the tests that run a case of unit_tests in a child (child_process.h) started
+librexruntime.so instead (seen on a Galaxy Tab S5e; amended 2026-10-17).
+
 Changed: the Android main (windowed_app_main_sdl.cpp) calls the memory, thread and filesystem
 AndroidInitialize hooks first, as their patch 0002 does (without them guest memory falls back to
 /dev/ashmem, closed to apps since API 29), and sets HOME to the app's internal storage. It adds no
@@ -356,7 +361,7 @@ index 4fe1ca6..cf74f07 100644
    // Thread fibers are destroyed from the owning thread itself.
    if (is_thread_fiber_) {
 diff --git a/src/core/filesystem_posix.cpp b/src/core/filesystem_posix.cpp
-index b42f476..164b2d5 100644
+index b42f476..259faac 100644
 --- a/src/core/filesystem_posix.cpp
 +++ b/src/core/filesystem_posix.cpp
 @@ -31,6 +31,9 @@
@@ -369,14 +374,23 @@ index b42f476..164b2d5 100644
  #include <ftw.h>
  #include <libgen.h>
  #include <pwd.h>
-@@ -91,6 +94,15 @@ std::filesystem::path GetExecutablePath() {
+@@ -91,6 +94,24 @@ std::filesystem::path GetExecutablePath() {
    std::error_code ec;
    std::filesystem::path canonical_path = std::filesystem::weakly_canonical(executable_path, ec);
    return ec ? std::filesystem::path(executable_path) : canonical_path;
 +#elif REX_PLATFORM_ANDROID
-+  // The process executable is the zygote's app_process. The app's native
-+  // libraries (runtime, GPU plugins, game) are extracted side by side, so the
-+  // library containing this function stands in for the executable.
++  // A native executable (the SDK's tests through adb) is /proc/self/exe. An app's
++  // process is the zygote's app_process; its native libraries (runtime, GPU
++  // plugins, game) are extracted side by side, so the library containing this
++  // function stands in for the executable.
++  char buff[FILENAME_MAX] = "";
++  const ssize_t length = readlink("/proc/self/exe", buff, sizeof(buff) - 1);
++  if (length > 0) {
++    const std::filesystem::path exe(std::string(buff, size_t(length)));
++    if (!exe.filename().string().starts_with("app_process")) {
++      return exe;
++    }
++  }
 +  Dl_info info{};
 +  if (dladdr(reinterpret_cast<void*>(&GetExecutablePath), &info) && info.dli_fname) {
 +    return std::filesystem::path(info.dli_fname);
@@ -385,7 +399,7 @@ index b42f476..164b2d5 100644
  #else
    char buff[FILENAME_MAX] = "";
    readlink("/proc/self/exe", buff, FILENAME_MAX);
-@@ -325,5 +337,22 @@ std::vector<FileInfo> ListFiles(const std::filesystem::path& path) {
+@@ -325,5 +346,22 @@ std::vector<FileInfo> ListFiles(const std::filesystem::path& path) {
    return result;
  }
  

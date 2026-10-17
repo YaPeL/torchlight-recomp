@@ -1428,7 +1428,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 35 | `rexglue-cross-host-tool.patch` | `sdk/android` | `bd833a2`, after 34 |
 | 36 | `rexglue-cross-no-package-registry.patch` | `sdk/android` | `bd833a2`, after 35 |
 | 37 | `rexglue-android-physical-host-offset.patch` | `sdk/android` | `bd833a2`, after 36 |
-| 38 | next free | | |
+| 38 | `rexglue-alloc-fixed-old-kernels.patch` | `sdk/android-device` | `bd833a2`, after 37 |
+| 39 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
