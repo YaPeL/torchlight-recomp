@@ -89,9 +89,11 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   same frame against Xenos (`--native_live=off`, parallel mode or an F9 reference) or the guest code
   that does it, read and cited.
 
-## Pending: `draw_constants_test`'s GL3+ run is not in CI
+## `draw_constants_test`'s GL3+ run passing CI without running
 
-`draw_constants_test` runs on Direct3D 11 (WARP) in CI; its GL3+ run carries the `opengl33` label,
-which CI's runners leave out (no GPU), so a constants regression on GL3+ would pass CI. After
-v0.12.5-beta: evaluate running the GL3+ backend tests on the Linux runner with Mesa's llvmpipe
-(OpenGL 4.5 in software), to cover both render systems.
+- **What happened:** the backend tests' GL3+ runs (label `opengl33`) need a display, which CI's
+  Linux runner did not have: they exited 77 and ctest marked them skipped, so CI was green without
+  running them; on Windows and macOS they are left out by label.
+- **Should have been caught by:** a CI step that fails when a test it relies on is skipped.
+- **Covered now:** the Linux job runs them under `xvfb-run` on Mesa's llvmpipe in a step of their
+  own (`Test, GL3+`), which fails if any is skipped or not run.
