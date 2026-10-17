@@ -3,7 +3,14 @@
 # The user's folders and their migration (user_folders.h): no SDL or runtime, tested on their own.
 # Writes that survive a power cut (durable_file.h), the same.
 include(durable_file.cmake)
-if(UNIX AND NOT APPLE)
+if(ANDROID)
+    # Android (arm64-v8a, SDLActivity): its own platform, no X11 or Wayland; the window, folders,
+    # lifecycle and input are stage A1 of docs/android-port.md (platform_android.cpp).
+    add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_android.cpp)
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_android.cpp text_wrap.cpp
+                presentation_time_none.cpp display_refresh_none.cpp)
+    target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders)
+elseif(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp power_supply_linux.cpp
                 text_wrap.cpp display_refresh_none.cpp)
@@ -70,7 +77,7 @@ target_compile_options(torchlight_platform PRIVATE -Wall -Wextra)
 
 # The GPU choice rules are each platform's: Linux's (PRIME, DRI_PRIME) on machines described by
 # hand; Windows' on this machine (gpu_adapters_test has the made-up ones), with the paths and the
-# key reader. macOS has one GPU and no rules.
+# key reader. macOS and Android have one GPU and no rules.
 if(WIN32)
     add_executable(platform_win_test platform_win_test.cpp)
     target_link_libraries(platform_win_test PRIVATE torchlight_platform shell32 ole32 opengl32)
@@ -81,7 +88,7 @@ if(WIN32)
     target_link_libraries(utf8_paths_test PRIVATE shell32)  # CommandLineToArgvW
     target_compile_options(utf8_paths_test PRIVATE -Wall -Wextra -Werror)
     add_test(NAME utf8_paths_test COMMAND utf8_paths_test)
-elseif(NOT APPLE)
+elseif(NOT APPLE AND NOT ANDROID)
     add_executable(gpu_choice_test gpu_choice_test.cpp)
     target_link_libraries(gpu_choice_test PRIVATE torchlight_platform)
     target_compile_options(gpu_choice_test PRIVATE -Wall -Wextra -Werror)
@@ -113,7 +120,7 @@ target_compile_options(user_folders_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME user_folders_test COMMAND user_folders_test)
 
 # On battery or not, from made-up /sys/class/power_supply trees (Linux's reader, pure C++).
-if(UNIX AND NOT APPLE)
+if(UNIX AND NOT APPLE AND NOT ANDROID)
     add_executable(power_supply_linux_test power_supply_linux_test.cpp power_supply_linux.cpp)
     target_include_directories(power_supply_linux_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
     target_compile_features(power_supply_linux_test PRIVATE cxx_std_23)
