@@ -1,0 +1,47 @@
+Patch 44. In the series since 2026-10-17, after patch 41 (43 on sdk/android-apk-libs).
+
+AllocFixed (src/core/memory_posix.cpp) committed a range by trying mmap(MAP_FIXED_NOREPLACE)
+first; over a range a heap already reserved, which is almost every commit, that fails with
+EEXIST, and then IsRangeFullyMapped read and parsed the whole of /proc/self/maps before the
+mprotect. With a loaded game's mappings that is about 30 us per commit: 31.8 us on Linux x86-64
+with 2000 other mappings in the process (a bench of 4096 one-page commits). On kernels before
+4.17 the path was not taken at all until patch 38, so there it newly cost every commit; on the
+Galaxy Tab S5e (4.9) the game's loads showed 66 us per guest allocation. On Linux (and Android) a
+commit with an address now calls mprotect first, one system call; mprotect fails with ENOMEM
+where part of the range is not mapped, and only then does the call go on to map it as before.
+
+Desktop Linux changes: the same result for every commit, from mprotect alone. One difference in
+a failure: for a range only partly mapped, which the heaps never commit, Linux's mprotect may
+change the mapped part before it fails, where the old path changed nothing; the call fails
+either way. macOS already took mprotect directly; Windows is not involved.
+
+Test: the SDK's suite (1768 of 1768 on Linux; the heap cases commit over reserved, decommitted
+and released pages). The bench: 31.8 us to 1.0 us per commit on Linux x86-64. TABLET
+
+diff --git a/src/core/memory_posix.cpp b/src/core/memory_posix.cpp
+index 86190c9..3aa73f7 100644
+--- a/src/core/memory_posix.cpp
++++ b/src/core/memory_posix.cpp
+@@ -275,6 +275,22 @@ void* AllocFixed(void* base_address, size_t length, AllocationType allocation_ty
+   }
+ #endif
+ 
++#if REX_PLATFORM_LINUX
++  // A commit is almost always over a range a heap already reserved (or a mapped view): change its
++  // protection, one system call. mprotect fails with ENOMEM where part of the range is not mapped,
++  // and only then is it mapped below. Trying the mmap first cost a failed mmap and a walk of
++  // /proc/self/maps per commit (about 30 us with a loaded game's mappings), and on kernels before
++  // 4.17 a mapping made elsewhere and removed again (patch 38).
++  if (base_address != nullptr && allocation_type == AllocationType::kCommit) {
++    if (mprotect(base_address, length, static_cast<int>(prot_requested)) == 0) {
++      return base_address;
++    }
++    if (errno != ENOMEM) {
++      return nullptr;
++    }
++  }
++#endif
++
+   int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+ #if REX_PLATFORM_MAC
+   if (access == PageAccess::kExecuteReadWrite || access == PageAccess::kExecuteReadOnly) {
