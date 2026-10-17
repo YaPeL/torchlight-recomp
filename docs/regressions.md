@@ -1,9 +1,10 @@
 # Regressions
 
-Every bug that reached a hand pass or a release: what happened, which layer should have caught it,
-and what catches it now (a test, a log line, or a checklist item of the pre-release passes). A new
-entry is added when a bug is found that late; the lesson goes into a test, `AGENTS.md`,
-`REVIEW.md` or a lint, not only here.
+Every bug that reached a hand pass or a release, and every one caught only after the change was
+taken as done (by a pull request's review or a run before the merge, where the tests had passed):
+what happened, which layer should have caught it, and what catches it now (a test, a log line, or a
+checklist item of the pre-release passes). A new entry is added when a bug is found that late; the
+lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
 ## The town lamps' light missing on Direct3D 11 (fixed in 0338b58)
 
@@ -15,7 +16,8 @@ entry is added when a bug is found that late; the lesson goes into a test, `AGEN
 - **Should have been caught by:** a render test on the Windows runner's Direct3D 11. The cut was
   measured and replayed on Linux (GL3+) only.
 - **Caught by:** the Windows hand pass, then the Windows agent's captures against Xenos.
-- **Covered now:** `draw_constants_test` (GL3+ and Direct3D 11 on WARP in CI): two draws with the
+- **Covered now:** `draw_constants_test` (Direct3D 11 on WARP in CI; GL3+ on machines with a GPU,
+  as its `opengl33` label keeps it off CI's runners): two draws with the
   same constants and a target switch between them, checked to fail without the fix. The per-draw
   state contract is written at `tl_backend_set_target` (`backend_api.h`).
 
