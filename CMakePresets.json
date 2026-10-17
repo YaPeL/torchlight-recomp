@@ -256,11 +256,13 @@
         {
             "name": "android-arm64-release",
             "displayName": "Android arm64-v8a Release (NDK r30, API 30; first build attempt)",
+            "description": "Also needs -DREXGLUE_HOST_TOOL=<host SDK install>/bin/rexglue: the codegen runs on the host, the same SDK version as the Android install.",
             "generator": "Ninja",
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "toolchainFile": "${sourceDir}/cmake/android-arm64.toolchain.cmake",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Release"
+                "CMAKE_BUILD_TYPE": "Release",
+                "rexglue_DIR": "$env{HOME}/android-work/sdk-install/lib/cmake/rexglue"
             }
         }
     ],
