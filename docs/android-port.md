@@ -670,6 +670,12 @@ MAC.10) after the first Android release.
 - The signing key generated and kept by the owner; CI uses it as `release` environment secrets
   (A6).
 - GitHub Releases only, no Play.
+- **The package name (2026-10-17, permanent): `io.github.yapel.tlrecomp`**; development builds
+  `io.github.yapel.tlrecomp.dev`, which installs next to it and can be thrown away. The name shown
+  under the icon stays "Torchlight Recomp". Why: the package name can never change (another name
+  is another app: users would uninstall and lose their saves, and Android's developer verification
+  registers it with the signing key, A6), and a neutral one does not put the whole brand in an
+  identifier that cannot be changed.
 - Run-time DXT (2026-10-17): decoded to RGBA with a log line, as a safety net; none appears today
   (section 3).
 - A5's targets (2026-10-17): 30 fps held on the Tab S5e with no drops in fights; 60 fps on the

@@ -97,7 +97,11 @@ set(TORCHLIGHT_SOURCES
     src/game_menu/video_menu.cpp
 )
 
-if(WIN32)
+if(ANDROID)
+    # SDLActivity loads the game as a shared library and calls its SDL_main (the SDK's main, renamed
+    # by SDL_main.h).
+    add_library(torchlight SHARED ${TORCHLIGHT_SOURCES})
+elseif(WIN32)
     add_executable(torchlight WIN32 ${TORCHLIGHT_SOURCES})
 else()
     add_executable(torchlight ${TORCHLIGHT_SOURCES})
