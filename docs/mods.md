@@ -1251,7 +1251,7 @@ devices; and the texture check (`--mods_texture_check`, 7j), since no run used i
   Cost: several hours and a careful render review; medium risk (start order and a new thread on
   every platform: a fault breaks the start, not only the notice); runs on Linux and confirmation
   on Windows and macOS. Gain: no black window without the notice beyond creating the backend
-  (about 0.2 s), with or without mods. Decided on 2026-10-16: v0.12.3-beta's rc1 goes without it if
+  (about 0.2 s), with or without mods. Decided on 2026-10-16: v0.12.5-beta's rc1 goes without it if
   the Windows pass shows 1-2 s of black at most with the changes above; otherwise it is done now.
   With it, for the same version: the replacements' files hidden from the guest
   (`mods/replacements_guest_view.h`, computed at every start from the folder, the pak's index and
