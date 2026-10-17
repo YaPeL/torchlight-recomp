@@ -328,6 +328,14 @@ draws through the render system per object, or that patches OGRE's flow, can los
 - OGRE's microcode cache can keep a rejected binary forever (2).
 - Direct3D 11: whole-target clears and the x10 depth bias (5).
 - Vulkan and Metal are not drop-in (5).
+- Open ticket (OGRE 14.6.0, upstream): `FFPTransform` (RTSS) declares `mSetPointSize` without an
+  initializer, and `FFPTransform::copyFrom` copies it before `preAddToRenderState` has set it. UBSan
+  reports the load (`OgreShaderFFPTransform.cpp:131`, "not a valid value for type 'bool'") on every
+  replay. It looks harmless: the copy's own `preAddToRenderState` sets the member again before
+  `createCpuSubPrograms` reads it. Still, it is an undefined read. The fix is
+  `bool mSetPointSize = false;` in `OgreShaderFFPTransform.h`. It belongs upstream: `build_ogre.sh`
+  builds a pristine tag and has no patch step, so a local fix would mean adding one. Found by the ASan/UBSan
+  replay on GLES2 while chasing the Android startup crash, and not related to that crash.
 
 ## What this does not cover
 
