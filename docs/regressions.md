@@ -105,7 +105,9 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   - four `chrono_test` cases on Linux: libstdc++'s `system_clock` cannot hold 1601. This was not
     only a test problem: the guest's `RtlTimeToTimeFields`/`RtlTimeFieldsToTime` go through the
     same conversion, so on Linux they returned wrong dates for zero, pre-1677 and post-2262
-    FILETIMEs.
+    FILETIMEs. Not seen by a player: a run with a probe runtime (boot, menu, a save loaded;
+    2026-10-17) made 189 `RtlTimeToTimeFields` calls, all with 2026 file times, and no
+    `RtlTimeFieldsToTime` call.
   - `output_stamp_test`'s depfile case on every platform: the test's own literals were wrong.
   Not machine-specific (no time zone, clock or path involved). CI stayed green because it builds
   the SDK without its tests (`build_sdk.sh`, `windows.ps1`) and runs only this repository's ctest.
