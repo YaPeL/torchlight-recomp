@@ -680,6 +680,10 @@ MAC.10) after the first Android release.
   (section 3).
 - A5's targets (2026-10-17): 30 fps held on the Tab S5e with no drops in fights; 60 fps on the
   POCO X7 5G (section 5).
+- A2 starts at a low internal resolution (owner, 2026-10-17): the Tab S5e's screen is 2560x1600
+  and its Adreno 615 is modest, so the backend draws at about 1280x800 and scales to the screen
+  (the existing render scale), and the measurements start there; the native resolution is tried
+  afterwards.
 - The Android tools: command-line tools, NDK, the 16 KB arm64 emulator image only on the Mac
   (section 6). On the Linux machine (2026-10-17): Temurin 21 and the command-line tools unpacked
   under `~/android-sdk` (no installer), the NDK r30 in `~/android-sdk/ndk/30.0.16248370`; no
