@@ -2,8 +2,8 @@
 
 Survey only, no code (2026-10-10), with the measurements made since (2026-10-17, marked as such).
 Two documents merged here: the Mac agent's survey and plan, and the render agent's notes and the
-run-time texture measurement; where they disagreed it is marked **Contradiction** with the
-question for the owner. Base of the survey: `develop` at `924d49d`, after the macOS port (MAC.1–MAC.9,
+run-time texture measurement; where they disagreed, the owner's decision of 2026-10-17 is
+recorded (marked **Decided**). Base of the survey: `develop` at `924d49d`, after the macOS port (MAC.1–MAC.9,
 docs/macos-port.md on `docs/macos-port-plan`), which made the game run on ARM64. Sources are linked
 where a claim comes from outside this repository; what could not be checked against a primary source
 or on a device is marked *unverified*. No Android device, emulator, SDK or NDK is on the development
@@ -276,11 +276,12 @@ replays measure it.
     when the monsters appeared in its runs. **Closed:** the game creates no DXT texture at run time
     in the screens and fights measured.
 
-  **Contradiction (to the owner):** the adjustment of 2026-10-16 starts from "the render agent found
-  DXT textures the game creates at run time". That was not a measurement: it came from the API
-  (`tl_backend_texture_linear` accepts DXT from the guest's memory). The measurement above found
-  none. Does the run-time rule stay as written (decode any to RGBA, which costs nothing if there
-  are none), or is it dropped once the map and the large fight confirm zero?
+  **Decided (owner, 2026-10-17): the run-time rule stays, as a safety net.** If a DXT texture is
+  ever created during play on a device without S3TC, it is decoded to RGBA and a line goes to the
+  log. Today none appears (measured with and without Enhanced Edition, the full map and a large
+  fight included). The adjustment of 2026-10-16 had started from "the render agent found DXT
+  textures the game creates at run time": that came from the API (`tl_backend_texture_linear`
+  accepts DXT from the guest's memory), not from a measurement.
 
   **Superseded:** the render agent's first proposal (convert a file's texture on its first use,
   RGBA meanwhile) is replaced by the owner's rule above: the cache is filled before the game
@@ -347,11 +348,13 @@ are slower per core than either; the main game thread is mostly one core. Withou
 ratio of 2–3 times the laptop's frame time puts the town at roughly 30–45 fps: 30 fps is the
 realistic target, 60 on high-end phones. *Estimate, to be measured* (stage A6).
 
-**Contradiction (estimates, to the owner):** the render agent's estimate for the Tab S5e alone
-(2026-10-16) was higher: its two fast cores (Cortex-A75-class at 2.0 GHz) at a rough 4-5 times the
+**Decided (owner, 2026-10-17): A6's targets.** On the Galaxy Tab S5e (the floor) 30 fps held, with
+no drops in fights; on the POCO X7 5G (the main device) 60 fps.
+
+The two estimates behind it: the render agent's for the Tab S5e alone (2026-10-16) was higher: its two fast cores (Cortex-A75-class at 2.0 GHz) at a rough 4-5 times the
 M2's time per core, about 12-15 ms of game thread per frame, 60 in menus and possibly below it in
 fights. The two estimates start from different desktop baselines (the i7's frame time against the
-M2's); neither is measured. Which target does A6 hold the floor device to, 30 or 60? A Raspberry
+M2's); neither is measured. A Raspberry
 Pi 5 (Linux arm64, Cortex-A76 at 2.4 GHz) could measure the game thread before any Android work,
 with the clock lowered to approach the phones (its GPU lacks OpenGL 3.3, so software GL there). The backend thread
 (4.6 ms per frame on the laptop) runs in parallel. Thermal throttling lowers sustained clocks:
@@ -434,7 +437,7 @@ controls is tested with it connected at start and connected later.
 | A3. Skeleton APK and lifecycle | AND.3 | A2 | An APK (SDLActivity, `libmain.so`) that replays a capture in a loop and survives background/foreground, screen off/on and low memory without losing the picture | Surface loss with an OGRE-owned EGL; a lost context |
 | A4. Game to the main menu | AND.4 | A1–A3; the XBLA package on the phone | First start: package picked with SAF, installed; the main menu with a gamepad; saves on app storage | Memory; file paths and case |
 | A5. Touch controls | AND.5 | A4 | An overlay drawn by the backend's UI pass, a layout editor, the Auto / Always / Never setting (below); a dungeon played by touch | Design for a pad-built ARPG on a phone screen |
-| A6. Play and measure | AND.6 | A4 | Town and dungeon frame times, memory, thermals on the POCO X7 5G, and on the Tab S5e as the floor; 30 fps held | CPU too slow; throttling |
+| A6. Play and measure | AND.6 | A4 | Town and dungeon frame times, memory, thermals: 60 fps on the POCO X7 5G; 30 fps held on the Tab S5e, the floor, with no drops in fights | CPU too slow; throttling |
 | A7. Package and CI | AND.7 | A1–A6; the owner's signing key (below) | A signed, 16 KB-aligned APK (`check_elf_alignment.sh`, `apksigner verify`); CI builds the deps and the tests without the game; the release job builds and signs the APK at a freeze and publishes it on GitHub Releases only | Developer verification (2027) |
 
 **A5, the touch controls setting** (owner's decision, 2026-10-10). A setting with three values,
@@ -515,6 +518,10 @@ release.
 - The signing key generated and kept by the owner; CI uses it as `release` environment secrets
   (A7).
 - GitHub Releases only, no Play.
+- Run-time DXT (2026-10-17): decoded to RGBA with a log line, as a safety net; none appears today
+  (section 3).
+- A6's targets (2026-10-17): 30 fps held on the Tab S5e with no drops in fights; 60 fps on the
+  POCO X7 5G (section 5).
 - The Android tools installed here when work resumes: command-line tools, NDK, the 16 KB arm64
   emulator image only (section 6). `sdkmanager` needs JDK 17 or later and this Mac has only Java 8:
   a JDK (proposed: Temurin 21 unpacked under `~/android-sdk`, no installer) to be approved first.
