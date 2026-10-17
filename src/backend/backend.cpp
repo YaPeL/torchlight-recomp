@@ -252,6 +252,8 @@ struct tl_backend {
   Ogre::Root* root = nullptr;
   std::unique_ptr<torchlight::backend::OgrePlugins> plugins;  // outlives `root` (ogre_plugins.h)
   Ogre::RenderSystem* rs = nullptr;
+  // Textures in BGRA byte order cannot be sampled (SampledTextureFormat).
+  bool bgra_textures_unusable = false;
   Ogre::RenderWindow* window = nullptr;
   // The native window OGRE draws in where it cannot make its own (platform.h; macOS); outlives
   // `window`.
@@ -490,6 +492,18 @@ Ogre::SamplerPtr GetSampler(tl_backend* b, Ogre::FilterOptions min, Ogre::Filter
 
 // A render target of the guest's size w x h; `scaled` ones are created at the render scale's host
 // size.
+// The format a sampled texture is made in, for one whose data comes as `format`. OGRE's GLES render
+// system (Android) makes BGRA textures (PF_A8R8G8B8, PF_X8R8G8B8) with glTexStorage2D, which
+// GLES 3 accepts only with GL_EXT_texture_storage: without it (the Adreno 615's driver) the texture
+// gets no storage and samples as black. There they are made RGBA, and OGRE converts the data on
+// upload. Every other render system takes BGRA as it is.
+Ogre::PixelFormat SampledTextureFormat(const tl_backend* b, Ogre::PixelFormat format) {
+  if (!b->bgra_textures_unusable) return format;
+  if (format == Ogre::PF_A8R8G8B8) return Ogre::PF_A8B8G8R8;
+  if (format == Ogre::PF_X8R8G8B8) return Ogre::PF_X8B8G8R8;
+  return format;
+}
+
 bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, bool scaled,
                 tl_backend::Target& t) {
   t.scaled = scaled;
@@ -1304,11 +1318,15 @@ MAIN_DECLARATION
 Ogre::HighLevelGpuProgramPtr MakeProgram(const char* name, Ogre::GpuProgramType type,
                                           const char* source) {
   auto& programs = Ogre::HighLevelGpuProgramManager::getSingleton();
-  const bool glsl = programs.isLanguageSupported("glsl");
-  auto program =
-      programs.createProgram(name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME,
-                             glsl ? "glsl" : "hlsl", type);
-  if (!glsl) {
+  // The render system's language: GLSL (GL3+), GLSL ES (GLES, Android) or HLSL (Direct3D 11). The
+  // sources are OGRE's unified shader macros, which build as any of them. A language the render
+  // system lacks gives a program that draws nothing, silently.
+  const char* language = programs.isLanguageSupported("glsl")     ? "glsl"
+                         : programs.isLanguageSupported("glsles") ? "glsles"
+                                                                  : "hlsl";
+  auto program = programs.createProgram(
+      name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, language, type);
+  if (std::strcmp(language, "hlsl") == 0) {
     program->setParameter("entry_point", "main");
     program->setParameter("target", type == Ogre::GPT_VERTEX_PROGRAM ? "vs_4_0" : "ps_4_0");
   }
@@ -1340,7 +1358,7 @@ void UploadGammaLut(tl_backend* b, const uint8_t lut[256 * 3]) {
 void CreateDisplayGamma(tl_backend* b) {
   b->gamma_lut = Ogre::TextureManager::getSingleton().createManual(
       "tl_gamma_lut", Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, Ogre::TEX_TYPE_2D,
-      256, 1, 0, Ogre::PF_A8R8G8B8, Ogre::TU_DEFAULT);
+      256, 1, 0, SampledTextureFormat(b, Ogre::PF_A8R8G8B8), Ogre::TU_DEFAULT);
   uint8_t lut[256 * 3];
   for (int v = 0; v < 256; ++v) lut[v * 3] = lut[v * 3 + 1] = lut[v * 3 + 2] = uint8_t(v);
   UploadGammaLut(b, lut);
@@ -1733,9 +1751,9 @@ void CreateProgramGenerator(tl_backend* b) {
   b->light_node->attachObject(b->light);
   auto& textures = Ogre::TextureManager::getSingleton();
   b->placeholder_2d = textures.createManual("tl_rtss_2d", group, Ogre::TEX_TYPE_2D, 1, 1, 0,
-                                            Ogre::PF_A8R8G8B8);
+                                            SampledTextureFormat(b, Ogre::PF_A8R8G8B8));
   b->placeholder_cube = textures.createManual("tl_rtss_cube", group, Ogre::TEX_TYPE_CUBE_MAP, 1, 1,
-                                              0, Ogre::PF_A8R8G8B8);
+                                              0, SampledTextureFormat(b, Ogre::PF_A8R8G8B8));
 }
 
 // The GPU `gpu` (a platform GPU id) for render systems that take one (Direct3D 11's "Rendering
@@ -1798,6 +1816,8 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     }
     b->rs = list.front();
     b->root->setRenderSystem(b->rs);
+    // OGRE's GLES render system (the one with GLSL ES): SampledTextureFormat.
+    b->bgra_textures_unusable = b->rs->getName().find("OpenGL ES") != std::string::npos;
     SelectGpu(b->rs, gpu);
     b->rs->setConfigOption("Full Screen", "No");
     b->root->initialise(false);
@@ -2009,7 +2029,8 @@ int tl_backend_texture_file(tl_backend* b, uint64_t id, const char* name, const 
                             : int(Ogre::MIP_DEFAULT);
     b->textures[id] = Ogre::TextureManager::getSingleton().loadImage(
         std::string(name) + unique, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME,
-        image, type == TL_TEXTURE_CUBE ? Ogre::TEX_TYPE_CUBE_MAP : Ogre::TEX_TYPE_2D, mipmaps);
+        image, type == TL_TEXTURE_CUBE ? Ogre::TEX_TYPE_CUBE_MAP : Ogre::TEX_TYPE_2D, mipmaps,
+        1.0f, false, SampledTextureFormat(b, image.getFormat()));
   } catch (Ogre::Exception& e) {
     SetError(error, error_size, e.getDescription());
     return 1;
@@ -2033,7 +2054,8 @@ int tl_backend_texture_linear(tl_backend* b, uint64_t id, uint32_t width, uint32
     if (existing != b->textures.end() && !b->targets.count(id)) {
       const Ogre::TexturePtr& texture = existing->second;
       if (texture->getTextureType() == Ogre::TEX_TYPE_2D && texture->getWidth() == width &&
-          texture->getHeight() == height && texture->getFormat() == pf &&
+          texture->getHeight() == height &&
+          texture->getFormat() == SampledTextureFormat(b, pf) &&
           texture->getNumMipmaps() == 0) {
         Ogre::PixelBox box(width, height, 1, pf, const_cast<void*>(data));
         texture->getBuffer()->blitFromMemory(box);
@@ -2048,7 +2070,7 @@ int tl_backend_texture_linear(tl_backend* b, uint64_t id, uint32_t width, uint32
     std::snprintf(unique, sizeof(unique), "tl_linear#%u", ++b->texture_serial);
     b->textures[id] = Ogre::TextureManager::getSingleton().loadImage(
         unique, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, image,
-        Ogre::TEX_TYPE_2D, 0);
+        Ogre::TEX_TYPE_2D, 0, 1.0f, false, SampledTextureFormat(b, pf));
   } catch (Ogre::Exception&) {
     return 3;
   }
