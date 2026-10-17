@@ -13,7 +13,7 @@
 # OGRE installs Media/ and CMake/ at the prefix's top there (share/OGRE/ on Linux); consumers take
 # them from OGRE_MEDIA_DIR and OGRE_PLUGIN_DIR.
 #
-# Android (TARGET android-arm64; first build attempt, not used by CI; docs/android-port.md): the
+# Android (TARGET android-arm64; the android workflow builds it; docs/android-port.md): the
 # NDK's arm64-v8a, API 30, through cmake/android-arm64.toolchain.cmake, with the GLES2 render
 # system (GLES 3 where the device has it) in place of GL3+. Which render system Android uses is
 # the render's decision; this only shows whether it builds.

@@ -16,9 +16,11 @@ The SDK's own tests (`unit_tests`, `ppc_tests`) with this series: all pass on Li
 on, and patches 39 and 40 fix them: one test with a wrong literal (every platform) and four
 `chrono_test` cases (libstdc++, so Linux); four more were skipped, and patch 41 fixes what they
 test. Windows and macOS have not run them since 39 and 40; before, Windows
-failed only the depfile case, and macOS passed the chrono ones. CI does not build or run these
-tests (`docs/regressions.md`), so they are run by hand when the series changes: `ctest` in the
-SDK's build tree with `REXGLUE_BUILD_TESTS=ON`, and `tools/android/run_sdk_tests.sh` on Android.
+failed only the depfile case, and macOS passed the chrono ones. The `SDK tests` workflow
+(`.github/workflows/sdk-tests.yml`) builds and runs them on Linux, Windows and macOS whenever
+`patches/` or the dependency scripts change; the only skips it accepts are the platform ones in
+`tools/deps/sdk_test_skips.txt`, each with its reason. On Android they are run by hand
+(`tools/android/run_sdk_tests.sh`).
 
 ## Numbers
 
