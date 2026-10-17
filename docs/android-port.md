@@ -162,6 +162,9 @@ The NDK's `android.toolchain.cmake` drives CMake for the SDK, OGRE and the game 
   (`src/core/memory_posix.cpp`), as Dolphin does for its 14 GiB fastmem arena
   (https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/Common/MemArenaAndroid.cpp). That
   branch was written for Xenia and never run in ReXGlue: the first thing to test.
+  A ReXGlue game does publish Android APKs (`edeegg/origins-recomp`, Rayman Origins; noted in
+  docs/installer-research.md): its Android changes to the SDK are worth reading before A1
+  (*not read yet*).
 
 **16 KB pages on Android.** Apps targeting API 35+ must support 16 KB pages on 64-bit devices; the
 developer guide now gives 2027-02-01 for updates
