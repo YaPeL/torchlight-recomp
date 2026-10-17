@@ -44,7 +44,8 @@ in number order; a branch adds its own line at its number's place.
 | 32 | `rexglue-codegen-non-argument-in-context.patch` | `sdk/argument-locals` | Not integrated: no gain in hand runs (upstream D26) |
 | 33 | `rexglue-timer-queue-blocking-wait.patch` | `develop` | In the series (after 31) |
 | 34 | `rexglue-android-build.patch` | `sdk/android` | In the branch (after 33) |
-| 35 | | | Next free number |
+| 35 | `rexglue-cross-host-tool.patch` | `sdk/android` | In the branch (after 34) |
+| 36 | | | Next free number |
 
 ## The patches
 
@@ -575,6 +576,17 @@ in number order; a branch adds its own line at its number's place.
     Verified: the SDK, `unit_tests` and `ppc_tests` build with the NDK r30 on Linux; on devices,
     `tools/android/run_sdk_tests.sh` (the Mac agent).
 
+35. `rexglue-cross-host-tool.patch`: a cross build cannot run the `rexglue` it builds. The cache
+    variable `REXGLUE_HOST_TOOL` names `rexglue` built for the build host and installed with its
+    SDK (`<prefix>/bin/rexglue`); in a cross build `rexglueConfig.cmake` points `rex::rexglue`
+    at it (the game's `generated/rexglue.cmake` is unchanged), and the PPC tests run it. The tool
+    must generate what the SDK expects, and one version can be two codegens (patches over one
+    commit), so the check is a hash of `src/codegen`, `include/rex/codegen` and
+    `resources/templates`, installed as `share/rexglue/codegen_id`; another hash, or none, fails
+    configure. The config also adds its prefix to `CMAKE_FIND_ROOT_PATH`, so the NDK's toolchain
+    finds the dependencies installed with the SDK. Verified with a minimal consumer of an
+    Android install: the matching host SDK configures; the series' previous SDK (same version)
+    fails on the hash; no tool, a warning; without the find root, `fmt` is not found.
 
 
 

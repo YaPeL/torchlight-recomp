@@ -32,3 +32,4 @@ rexglue-vfs-wildcard-dos-semantics.patch
 rexglue-guest-fatal-hook.patch
 rexglue-timer-queue-blocking-wait.patch
 rexglue-android-build.patch
+rexglue-cross-host-tool.patch
