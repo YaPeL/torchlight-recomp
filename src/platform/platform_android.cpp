@@ -3,9 +3,9 @@
 // today is only what needs no design: thread names, the parts that are the same on every platform
 // without a choice (no GPU choice, no Direct3D 11, OGRE's static plugins), the folders, which are
 // the app's storage (user_folders_android.cpp), and the window: the activity's one surface, an
-// ANativeWindow that SDL holds, which OGRE's Android EGL window draws in. The files the APK
-// carries, the lifecycle and the input are the rest of stage A1 of docs/android-port.md; until then
-// each of them says it is not there (no resource folder), never pretends.
+// ANativeWindow that SDL holds, which OGRE's Android EGL window draws in, and the files the APK
+// carries (OGRE's media, data/ui), copied to internal storage. The lifecycle and the input are the
+// rest of stage A1 of docs/android-port.md.
 
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
@@ -14,11 +14,17 @@
 #include <pthread.h>
 
 #include <SDL3/SDL_init.h>
+#include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_stdinc.h>
+#include <SDL3/SDL_system.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
 #include <cstring>
 #include <filesystem>
+#include <fstream>
+#include <mutex>
+#include <sstream>
 #include <system_error>
 
 namespace torchlight::platform {
@@ -82,16 +88,75 @@ std::string GameDataDir() {
 
 std::string LogDir() { return UserDir(UserFolderKind::kState, "logs"); }
 
-// The app is a library inside the APK, not a file the game's data sits next to (stage A1: the
-// APK's assets and the app's storage).
+// The app is a library inside the APK, not a file the game's data sits next to.
 std::string ExecutableDir() { return ""; }
 
-std::string ResourceDir() { return ""; }
+namespace {
+
+// An asset of the APK, whole (SDL reads the APK's assets by their relative path).
+bool ReadAsset(const std::string& name, std::string& data) {
+  size_t size = 0;
+  void* bytes = SDL_LoadFile(name.c_str(), &size);
+  if (!bytes) return false;
+  data.assign(static_cast<const char*>(bytes), size);
+  SDL_free(bytes);
+  return true;
+}
+
+// The files the APK carries for the host (OGRE's media under ogre/media/, data/ui), which the
+// backend and the menus read as plain files: tools/android/build_apk.sh puts them in the assets
+// under resources/, listed in resources.txt after a stamp of their content. They are copied to
+// <internal storage>/resources/ on the first start of each version (the owner's decision,
+// 2026-10-17): the stamp is written last, so a copy cut short is made again. Empty when there is
+// none (an APK without them, or a copy that failed).
+std::string CopyResources() {
+  const char* internal = SDL_GetAndroidInternalStoragePath();
+  std::string list;
+  if (!internal || !ReadAsset("resources.txt", list)) return "";
+  std::istringstream lines(list);
+  std::string stamp;
+  std::getline(lines, stamp);
+  const std::filesystem::path root = std::filesystem::path(internal) / "resources";
+  const std::filesystem::path stamp_file = root / ".stamp";
+  {
+    std::ifstream in(stamp_file);
+    std::string copied;
+    if (std::getline(in, copied) && copied == stamp && !stamp.empty()) return root.string() + "/";
+  }
+  std::error_code ec;
+  std::filesystem::remove_all(root, ec);
+  for (std::string path; std::getline(lines, path);) {
+    if (path.empty()) continue;
+    std::string data;
+    if (!ReadAsset("resources/" + path, data)) return "";
+    const std::filesystem::path file = root / path;
+    std::filesystem::create_directories(file.parent_path(), ec);
+    std::ofstream out(file, std::ios::binary | std::ios::trunc);
+    out.write(data.data(), std::streamsize(data.size()));
+    if (!out) return "";
+  }
+  std::ofstream(stamp_file, std::ios::trunc) << stamp << "\n";
+  return root.string() + "/";
+}
+
+std::string ResourcesRoot() {
+  static std::once_flag once;
+  static std::string root;
+  std::call_once(once, [] { root = CopyResources(); });
+  return root;
+}
+
+}  // namespace
+
+std::string ResourceDir() { return ResourcesRoot(); }
 
 // OGRE is static on Android: its render system and codec are linked in (backend/ogre_plugins.h).
 std::string OgrePluginDir() { return ""; }
 
-std::string OgreMediaDir() { return ""; }  // stage A1: from the APK's assets
+std::string OgreMediaDir() {
+  const std::string root = ResourcesRoot();
+  return root.empty() ? "" : root + "ogre/media/";
+}
 
 void BringToFront() {}
 
