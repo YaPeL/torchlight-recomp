@@ -1,10 +1,11 @@
 // Android implementation of the platform module (arm64-v8a, SDLActivity). Its own file, apart from
 // Linux's: Android has no X11 or Wayland, no PCI GPUs to choose and no XDG folders. What it does
 // today is only what needs no design: thread names, the parts that are the same on every platform
-// without a choice (no GPU choice, no Direct3D 11, OGRE's static plugins), and the folders, which
-// are the app's storage (user_folders_android.cpp). The game window (ANativeWindow), the files the
-// APK carries, the lifecycle and the input are the rest of stage A1 of docs/android-port.md; until
-// then each of them says it is not there (no game window, no resource folder), never pretends.
+// without a choice (no GPU choice, no Direct3D 11, OGRE's static plugins), the folders, which are
+// the app's storage (user_folders_android.cpp), and the window: the activity's one surface, an
+// ANativeWindow that SDL holds, which OGRE's Android EGL window draws in. The files the APK
+// carries, the lifecycle and the input are the rest of stage A1 of docs/android-port.md; until then
+// each of them says it is not there (no resource folder), never pretends.
 
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
@@ -12,19 +13,37 @@
 
 #include <pthread.h>
 
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_properties.h>
+#include <SDL3/SDL_video.h>
+
 #include <cstring>
 #include <filesystem>
 #include <system_error>
 
 namespace torchlight::platform {
 
-bool NativeGameWindow(SDL_Window*, NativeWindow& window) {
+namespace {
+// The activity's ANativeWindow, which SDL keeps in the window's properties (null while the app has
+// no surface, in the background).
+uint64_t AndroidWindowOf(SDL_Window* window) {
+  return uint64_t(uintptr_t(SDL_GetPointerProperty(SDL_GetWindowProperties(window),
+                                                   SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER, nullptr)));
+}
+}  // namespace
+
+bool NativeGameWindow(SDL_Window* game, NativeWindow& window) {
   window = NativeWindow();
-  return false;  // stage A1: the ANativeWindow
+  window.system = NativeWindow::kAndroid;
+  window.window = AndroidWindowOf(game);
+  return window.window != 0;
 }
 
 std::string EmbeddingVideoError() {
-  return "the backend does not draw in Android windows yet (docs/android-port.md, stage A1)";
+  const char* current = SDL_GetCurrentVideoDriver();
+  if (current && std::strcmp(current, "android") == 0) return "";
+  return std::string("SDL video driver ") + (current ? current : "none") +
+         ": the backend draws only in the android one here";
 }
 
 namespace {
@@ -40,7 +59,7 @@ std::string UserDir(UserFolderKind kind, const std::filesystem::path& sub = {}) 
 }
 }  // namespace
 
-bool HasDisplay() { return false; }  // stage A1
+bool HasDisplay() { return true; }  // the activity's surface
 
 void SetCurrentThreadName(const char* name) {
   char shortened[16] = {};  // the kernel keeps 15 characters, as on Linux
@@ -78,14 +97,48 @@ void BringToFront() {}
 
 void BlackGameWindowBackground() {}
 
-std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWindow&) {
-  return {};  // stage A1: OGRE's Android EGL window on the ANativeWindow
+std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWindow& window) {
+  // OGRE's Android EGL window on the activity's surface. preserveContext: when the surface goes
+  // (the app in the background) OGRE keeps its EGL context, with the textures, buffers and programs
+  // the backend mirrors from the guest, and only makes the surface again (docs/android-port.md,
+  // section 4).
+  return {{"externalWindowHandle", std::to_string(window.window)}, {"preserveContext", "true"}};
 }
 
-// OGRE's Android window draws only in a window the app gives it.
-std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string&, uint32_t,
-                                                               uint32_t, bool) {
-  return nullptr;
+namespace {
+
+// OGRE's Android window draws only in a window the app gives it, and an Android app has one: the
+// activity's surface, which SDL makes its window (full screen whatever the size asked). A backend
+// with its own window (the replay) draws there, hidden or not.
+class SdlTopLevelWindow final : public OgreTopLevelWindow {
+ public:
+  explicit SdlTopLevelWindow(SDL_Window* window) : window_(window) {}
+  ~SdlTopLevelWindow() override { SDL_DestroyWindow(window_); }
+  NativeWindow native() const override {
+    NativeWindow native;
+    native.system = NativeWindow::kAndroid;
+    native.window = AndroidWindowOf(window_);
+    return native;
+  }
+
+ private:
+  SDL_Window* window_;
+};
+
+}  // namespace
+
+std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string& title,
+                                                               uint32_t width, uint32_t height,
+                                                               bool) {
+  if (!SDL_WasInit(SDL_INIT_VIDEO) && !SDL_InitSubSystem(SDL_INIT_VIDEO)) return nullptr;
+  SDL_Window* window =
+      SDL_CreateWindow(title.c_str(), int(width), int(height), SDL_WINDOW_FULLSCREEN);
+  if (!window) return nullptr;
+  if (!AndroidWindowOf(window)) {  // no surface yet (the app not in the foreground)
+    SDL_DestroyWindow(window);
+    return nullptr;
+  }
+  return std::make_unique<SdlTopLevelWindow>(window);
 }
 
 // Stage A1 decides where the surface's work runs (Android's UI thread hands it over); until then
@@ -134,7 +187,7 @@ std::string RenderingDeviceForGpu(const std::string&, const std::vector<std::str
   return "";
 }
 
-// No backend top-level windows on Android (OgreTopLevelWindow), so no keys to read from one.
+// No keyboard on the backend's window here: input comes through SDL (stage A1.4).
 std::unique_ptr<KeyReader> KeyReader::ForOgreWindow(
     const std::function<void(const char* name, void* out)>&) {
   return nullptr;

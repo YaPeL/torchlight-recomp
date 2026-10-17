@@ -21,14 +21,15 @@ namespace torchlight::platform {
 // A native window, as the backend's C API carries it (backend_api.h, tl_native_window; same
 // fields and values). X11: `window` is the window id (OGRE opens its own display connection).
 // Wayland: `window` is the wl_surface and `display` the wl_display, both SDL's. Win32: `window`
-// is the HWND. Cocoa: `window` is the window's content view (NSView).
+// is the HWND. Cocoa: `window` is the window's content view (NSView). Android: `window` is the
+// activity's ANativeWindow, SDL's.
 struct NativeWindow {
-  enum System : uint32_t { kNone = 0, kX11 = 1, kWayland = 2, kWin32 = 3, kCocoa = 4 };
+  enum System : uint32_t { kNone = 0, kX11 = 1, kWayland = 2, kWin32 = 3, kCocoa = 4, kAndroid = 5 };
   uint32_t system = kNone;
   uint64_t window = 0;
   uint64_t display = 0;
 };
-// "x11", "wayland", "win32" or "cocoa", for the log.
+// "x11", "wayland", "win32", "cocoa" or "android", for the log.
 const char* SystemName(const NativeWindow& window);
 
 // ---- the game window (SDL) -------------------------------------------------------------------
