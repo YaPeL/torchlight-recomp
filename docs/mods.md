@@ -1258,6 +1258,11 @@ devices; and the texture check (`--mods_texture_check`, 7j), since no run used i
   every imageset) go to a cache keyed by the folder's listing and the pak's identity, as the unit
   index does. Measured with TNNR (9724 files): 260 ms on Linux, 1066 ms on Windows, before
   anything is drawn.
+  Also for that version, from v0.12.5-beta's Windows check of the released zip (2026-10-17, EE and
+  TNNR): the unit index built in the game took 19.0 s on Windows against 2.3 s on the Mac with the
+  same mods. Measure whether it is Microsoft Defender (a run with the folders excluded from its
+  scan) or Windows' file reads. With the index cached, the start's other steps there: the mods
+  3.4 s, hiding TNNR's files from the guest 1.1 s, the pad prompts' variants 1.1 s.
 - **Priority:** PC keeps it in `mods/mods.dat` (`DIRECTORY`, `PRIORITY` per mod; a negative priority
   disables a mod). The same file, in the same format, decides ours: if the player copies PC's
   `mods.dat` with the mods, their order is kept; a mod with no entry is added after the others, in
