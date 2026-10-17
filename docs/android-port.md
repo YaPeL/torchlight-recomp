@@ -230,7 +230,9 @@ replays measure it.
     owner's rule nothing from files is converted during play, so the cache is filled before the
     game starts (install, first start), never lazily;
   - how many run-time DXT textures there are and how much memory RGBA8 adds is measured by the
-    render agent (the rest of the owner's note was cut off; to complete).
+    render agent on desktop, after the rc1, with a temporary counter, in one game with EE and one
+    without mods. If they turn out to be many or large, encoding them to ETC2 on another thread,
+    with a cache by content hash, is evaluated.
 
   The desktop tool above stays an option for packs prepared ahead of time; the backend's cache is
   what makes the phone not depend on it.
