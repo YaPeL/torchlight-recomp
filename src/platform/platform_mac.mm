@@ -286,6 +286,8 @@ std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string
 
 void SetCurrentThreadName(const char* name) { pthread_setname_np(name); }
 
+bool HasSystemBackButton() { return false; }
+
 bool HasDirect3D11(const std::string&) { return false; }
 bool IsSteamDeck() { return false; }
 

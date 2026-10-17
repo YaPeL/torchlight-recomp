@@ -335,6 +335,8 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   return plugin_dir;
 }
 
+bool HasSystemBackButton() { return false; }
+
 bool HasDirect3D11(const std::string&) { return false; }
 
 bool OnBattery() { return OnBatteryFromPowerSupplies("/sys/class/power_supply"); }

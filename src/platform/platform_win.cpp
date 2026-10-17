@@ -271,6 +271,8 @@ bool IsSteamDeck() {
          (product == L"Jupiter" || product == L"Galileo");
 }
 
+bool HasSystemBackButton() { return false; }
+
 bool HasDirect3D11(const std::string& plugin_dir) {
   // OGRE appends _d to the plugin's name in its Debug build.
   std::error_code ec;

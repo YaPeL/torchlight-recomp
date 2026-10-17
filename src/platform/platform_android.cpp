@@ -283,6 +283,8 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   return plugin_dir;
 }
 
+bool HasSystemBackButton() { return true; }
+
 bool HasDirect3D11(const std::string&) { return false; }
 
 // Stage A1 (the auto fps cap reads it): unknown, so false.

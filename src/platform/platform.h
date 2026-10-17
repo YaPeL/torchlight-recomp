@@ -61,6 +61,9 @@ bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.
 bool IsSteamDeck();
+// Whether the system has a Back button of its own (Android's navigation Back), which the game takes
+// as the pad's Back (live/system_back_button.h).
+bool HasSystemBackButton();
 // Gamepad input keeps reaching the game while another window (the backend's) has the focus.
 void AllowBackgroundGamepad();
 
