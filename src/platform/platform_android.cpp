@@ -1,9 +1,10 @@
 // Android implementation of the platform module (arm64-v8a, SDLActivity). Its own file, apart from
 // Linux's: Android has no X11 or Wayland, no PCI GPUs to choose and no XDG folders. What it does
 // today is only what needs no design: thread names, the parts that are the same on every platform
-// without a choice (no GPU choice, no Direct3D 11, OGRE's static plugins). The game window
-// (ANativeWindow), the folders, the lifecycle and the input are stage A1 of docs/android-port.md;
-// until then each of them says it is not there (empty folders, no game window), never pretends.
+// without a choice (no GPU choice, no Direct3D 11, OGRE's static plugins), and the folders, which
+// are the app's storage (user_folders_android.cpp). The game window (ANativeWindow), the files the
+// APK carries, the lifecycle and the input are the rest of stage A1 of docs/android-port.md; until
+// then each of them says it is not there (no game window, no resource folder), never pretends.
 
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"

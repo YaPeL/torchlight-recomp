@@ -7,6 +7,8 @@ if(ANDROID)
     # Android (arm64-v8a, SDLActivity): its own platform, no X11 or Wayland; the window, folders,
     # lifecycle and input are stage A1 of docs/android-port.md (platform_android.cpp).
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_android.cpp)
+    # The app's storage comes from the activity, through SDL (user_folders_android.cpp).
+    target_link_libraries(torchlight_user_folders PRIVATE SDL3::SDL3)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_android.cpp text_wrap.cpp
                 presentation_time_none.cpp display_refresh_none.cpp)
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders)
