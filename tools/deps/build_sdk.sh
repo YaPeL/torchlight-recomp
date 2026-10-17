@@ -3,10 +3,13 @@
 # default, what CI and the published game use (docs/release-pipeline.md, REL.5); developers build
 # every configuration (docs/BUILDING.md). Nothing of the game is involved.
 #
-# Usage: tools/deps/build_sdk.sh PREFIX [WORK_DIR] [CONFIGS]
+# Usage: tools/deps/build_sdk.sh PREFIX [WORK_DIR] [CONFIGS] [TARGET]
 #   PREFIX    where the SDK is installed (its lib/cmake/rexglue is what -DCMAKE_PREFIX_PATH finds)
 #   WORK_DIR  the checkout and build directory (default, or empty: a temporary one, removed after)
 #   CONFIGS   Release (default) or all (Debug, Release and RelWithDebInfo, for the dev presets)
+#   TARGET    host (default) or android-arm64: the NDK's arm64-v8a, API 30, through
+#             cmake/android-arm64.toolchain.cmake and tools/deps/android/CMakeUserPresets.json
+#             (docs/android-port.md; first build attempt, not used by CI)
 # Needs: git, cmake >= 3.25, ninja, clang/clang++ (CC/CXX pick others), the SDK's system packages.
 # Linux (x86-64) builds the SDK's linux-amd64 preset; macOS on Apple Silicon its mac-arm64 preset,
 # with Apple's clang and the Command Line Tools (docs/macos-port.md, MAC.1).
@@ -23,6 +26,11 @@ case "${3:-Release}" in
   Release) configs=Release ;;
   all) configs="Debug;Release;RelWithDebInfo" ;;
   *) echo "CONFIGS must be Release or all" >&2; exit 2 ;;
+esac
+target=${4:-host}
+case "$target" in
+  host|android-arm64) ;;
+  *) echo "TARGET must be host or android-arm64" >&2; exit 2 ;;
 esac
 if [ -z "$work" ]; then
   work=$(mktemp -d)
@@ -47,17 +55,22 @@ done
 
 # The SDK's preset for this host. macOS: CMake 4 no longer passes the macOS SDK to the compiler by
 # itself (CMAKE_OSX_SYSROOT), and 13.3 is the deployment target the SDK's own CI builds for.
-case "$(uname -s)" in
-  Linux) preset=linux-amd64; platform_options="" ;;
-  Darwin) preset=mac-arm64
+# Android: the SDK has no preset for it; ours is copied into the checkout as its user presets.
+case "$target-$(uname -s)" in
+  android-arm64-*) preset=android-arm64
+    cp "$root/tools/deps/android/CMakeUserPresets.json" "$src/CMakeUserPresets.json"
+    platform_options="-DCMAKE_TOOLCHAIN_FILE=$root/cmake/android-arm64.toolchain.cmake" ;;
+  host-Linux) preset=linux-amd64; platform_options="" ;;
+  host-Darwin) preset=mac-arm64
     platform_options="-DCMAKE_OSX_SYSROOT=macosx -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3" ;;
   *) echo "unsupported host: $(uname -s)" >&2; exit 2 ;;
 esac
 
 cd "$src"
+compilers="-DCMAKE_C_COMPILER=${CC:-clang} -DCMAKE_CXX_COMPILER=${CXX:-clang++}"
+[ "$target" = host ] || compilers=""  # the toolchain file picks the NDK's clang
 # shellcheck disable=SC2086
-cmake --preset "$preset" $platform_options \
-  -DCMAKE_C_COMPILER="${CC:-clang}" -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
+cmake --preset "$preset" $platform_options $compilers \
   -DCMAKE_CONFIGURATION_TYPES="$configs" -DCMAKE_DEFAULT_BUILD_TYPE=Release \
   -DCMAKE_CROSS_CONFIGS="$configs" -DCMAKE_DEFAULT_CONFIGS="$configs" \
   -DCMAKE_INSTALL_PREFIX="$prefix"

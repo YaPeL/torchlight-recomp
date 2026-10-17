@@ -229,6 +229,12 @@ void RunOnWindowThread(const std::function<void()>& work) { work(); }
 
 void WaitServingWindowThread(const std::function<bool()>&) {}
 
+// The window system never takes the backend's surface away here.
+bool ServeSurfaceChanges(const std::function<void()>&,
+                         const std::function<bool(const NativeWindow&)>&) {
+  return true;
+}
+
 bool OgreWindowFollowsGameWindow() { return false; }
 
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
@@ -264,6 +270,17 @@ bool IsSteamDeck() {
   return read(L"SystemManufacturer") == L"Valve" &&
          (product == L"Jupiter" || product == L"Galileo");
 }
+
+bool HasSystemBackButton() { return false; }
+
+// The picker's paths are files the program opens as they are.
+PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
+  return PickResult::kChosen;
+}
+
+bool CanPickFolder() { return true; }
+
+void ForgetPickedFiles() {}
 
 bool HasDirect3D11(const std::string& plugin_dir) {
   // OGRE appends _d to the plugin's name in its Debug build.

@@ -82,6 +82,15 @@ as on Linux; and what Windows 10 and later provide: the Universal C Runtime (`uc
 `api-ms-win-crt-*` API sets), `d3dcompiler_47.dll`, `opengl32.dll`, `d3d11.dll`, `dxgi.dll` and
 the system DLLs `check_zip.ps1` lists.
 
+### Android APK (development builds only; not released yet)
+
+The development APK (`tools/android/build_apk.sh`, docs/android-port.md stage A1) carries, besides
+the libraries above built for Android (the ReXGlue SDK runtime, with SDL, FFmpeg, libmspack and
+the rest statically inside, and OGRE inside the game's library): SDL's Android Java sources
+(`third_party/sdl3-android`, SDL 3.4.14, Zlib: the SDL notice below) compiled into `classes.dex`,
+and the NDK's LLVM C++ runtime `libc++_shared.so` (NDK r30; Apache-2.0 WITH LLVM-exception).
+The full inventory of the released APK is made with stage A6.
+
 ### Art in both packages
 
 | Component | Version | License | In the package | Linking |

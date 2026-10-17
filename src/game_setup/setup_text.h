@@ -50,11 +50,20 @@ inline constexpr std::string_view kTextIntro =
     "1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts "
     "with LIVE) or a folder where it is already extracted. The files are checked and copied "
     "to:\n{where}";
+// Where no folder can be picked (Android: platform::CanPickFolder).
+inline constexpr std::string_view kTextIntroPackageOnly =
+    "Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version "
+    "1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts "
+    "with LIVE). The files are checked and copied to:\n{where}";
 inline constexpr std::string_view kTextChoosePackage = "Choose package...";
 inline constexpr std::string_view kTextChooseFolder = "Choose folder...";
 inline constexpr std::string_view kTextQuit = "Quit";
 inline constexpr std::string_view kTextPackagePicker = "Torchlight package (Xbox Live Arcade)";
 inline constexpr std::string_view kTextFolderPicker = "Folder with the extracted game files";
+// The chosen file could not be copied to where it can be read (Android: PickResult::kUncopied).
+inline constexpr std::string_view kTextPickedCopyFailed =
+    "The chosen file could not be copied ({error}).\n\nThe first start needs free space for the "
+    "package and, after it, for the game's files.";
 inline constexpr std::string_view kTextPickerFailed =
     "The file chooser could not be opened ({error}).\n\nOn the Steam Deck, do this first setup in "
     "Desktop Mode.";

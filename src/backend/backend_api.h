@@ -41,8 +41,8 @@ typedef struct tl_native_window {
   uint64_t display;
 } tl_native_window;
 /* Same, but drawing inside another application's window (`parent`), at window_width x
- * window_height to start with: a child window on X11, the window itself on Wayland (its surface)
- * and on Win32 (OGRE takes the HWND as its own). The application keeps the focus and its events.
+ * window_height to start with: a child window on X11, the window itself on Wayland (its surface),
+ * on Win32 (OGRE takes the HWND as its own) and on Android (the activity's ANativeWindow). The application keeps the focus and its events.
  * The output is shown letterboxed in it. With `vsync`, presenting waits for the display's vertical
  * sync. */
 tl_backend* tl_backend_create_child(tl_render_system render_system, const char* gpu,

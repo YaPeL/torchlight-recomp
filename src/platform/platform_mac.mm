@@ -235,6 +235,12 @@ void WaitServingWindowThread(const std::function<bool()>& done) {
   while (!done()) CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
 }
 
+// The window system never takes the backend's surface away here.
+bool ServeSurfaceChanges(const std::function<void()>&,
+                         const std::function<bool(const NativeWindow&)>&) {
+  return true;
+}
+
 bool OgreWindowFollowsGameWindow() { return true; }
 
 namespace {
@@ -279,6 +285,17 @@ std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string
 }
 
 void SetCurrentThreadName(const char* name) { pthread_setname_np(name); }
+
+bool HasSystemBackButton() { return false; }
+
+// The picker's paths are files the program opens as they are.
+PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
+  return PickResult::kChosen;
+}
+
+bool CanPickFolder() { return true; }
+
+void ForgetPickedFiles() {}
 
 bool HasDirect3D11(const std::string&) { return false; }
 bool IsSteamDeck() { return false; }

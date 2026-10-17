@@ -21,14 +21,15 @@ namespace torchlight::platform {
 // A native window, as the backend's C API carries it (backend_api.h, tl_native_window; same
 // fields and values). X11: `window` is the window id (OGRE opens its own display connection).
 // Wayland: `window` is the wl_surface and `display` the wl_display, both SDL's. Win32: `window`
-// is the HWND. Cocoa: `window` is the window's content view (NSView).
+// is the HWND. Cocoa: `window` is the window's content view (NSView). Android: `window` is the
+// activity's ANativeWindow, SDL's.
 struct NativeWindow {
-  enum System : uint32_t { kNone = 0, kX11 = 1, kWayland = 2, kWin32 = 3, kCocoa = 4 };
+  enum System : uint32_t { kNone = 0, kX11 = 1, kWayland = 2, kWin32 = 3, kCocoa = 4, kAndroid = 5 };
   uint32_t system = kNone;
   uint64_t window = 0;
   uint64_t display = 0;
 };
-// "x11", "wayland", "win32" or "cocoa", for the log.
+// "x11", "wayland", "win32", "cocoa" or "android", for the log.
 const char* SystemName(const NativeWindow& window);
 
 // ---- the game window (SDL) -------------------------------------------------------------------
@@ -60,6 +61,9 @@ bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.
 bool IsSteamDeck();
+// Whether the system has a Back button of its own (Android's navigation Back), which the game takes
+// as the pad's Back (live/system_back_button.h).
+bool HasSystemBackButton();
 // Gamepad input keeps reaching the game while another window (the backend's) has the focus.
 void AllowBackgroundGamepad();
 
@@ -98,11 +102,22 @@ void SetCurrentThreadName(const char* name);
 int AskChoice(const std::string& title, const std::string& message,
               const std::vector<std::string>& buttons);
 void ShowError(const std::string& title, const std::string& message);
-enum class PickResult { kChosen, kCancelled, kFailed };
+enum class PickResult { kChosen, kCancelled, kFailed, kUncopied };
 // The system's picker for one file or one folder (blocks until it closes); kFailed with the
-// reason when no picker could be shown (e.g. no desktop portal in a gamescope session).
+// reason when no picker could be shown (e.g. no desktop portal in a gamescope session), kUncopied
+// with the reason when the chosen file could not be copied to where it can be opened (Android).
+// The file's `path` is one the program can open: on Android the picker gives a document URI, which
+// is copied first (with a progress window) to the app's cache; ForgetPickedFiles removes those
+// copies once they are used.
 PickResult PickFile(const std::string& title, std::string& path, std::string& error);
 PickResult PickFolder(const std::string& title, std::string& path, std::string& error);
+// Whether PickFolder can show a picker here (Android's, through SDL, picks files only).
+bool CanPickFolder();
+// Removes the copies PickFile made (Android); nothing elsewhere.
+void ForgetPickedFiles();
+// The platform's half of PickFile (platform_sdl.cpp): the chosen `path` made one the program can
+// open; kCancelled when the player stopped the copy.
+PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error);
 // The system's preferred languages, most preferred first, as lower-case codes ("de", "pt-br").
 std::vector<std::string> PreferredLanguages();
 // A small window with a progress bar and a line of text (drawn with SDL's ASCII debug font: letters
@@ -236,6 +251,18 @@ void WaitServingWindowThread(const std::function<bool()>& done);
 // has already sized it and OGRE reads the size (RenderWindow::windowMovedOrResized: Cocoa, whose
 // content view SDL sizes; OGRE's resize would size the view again, in points).
 bool OgreWindowFollowsGameWindow();
+
+// The surface the backend draws in, taken away and given back by the window system: on Android,
+// whenever the app goes to the background (the activity's surface is destroyed) and comes back;
+// elsewhere never. The backend calls this before each present, on the thread it draws with. When
+// the surface is going, `lost` runs there (the window system's thread waits for it, a couple of
+// seconds at most, before it lets the surface go); then it blocks while there is none, so the
+// guest, waiting on its next present, pauses in the background; and `restored` runs with the new
+// window when it is back (false: nothing could be made on it, and the wait goes on for the next
+// one). False when the app is ending while it waits (nothing to present any more). Elsewhere:
+// true at once.
+bool ServeSurfaceChanges(const std::function<void()>& lost,
+                         const std::function<bool(const NativeWindow&)>& restored);
 
 // The backend's own top-level window (offscreen backends keep a hidden one for the GL context, the
 // replay shows one) where OGRE's render system cannot create it itself: macOS, whose OGRE 14 Cocoa

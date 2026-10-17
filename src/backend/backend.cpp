@@ -43,6 +43,8 @@
 #include <OgreShaderProgram.h>
 #include <OgreShaderProgramSet.h>
 
+#include "backend/ogre_plugins.h"
+#include "backend/ogre_window_surface.h"
 #include "backend/xbox_to_gl_conventions.h"
 #include "platform/platform.h"
 
@@ -248,6 +250,7 @@ struct RenderScale {
 struct tl_backend {
   Ogre::LogManager* log_manager = nullptr;  // ours when no other backend made one first
   Ogre::Root* root = nullptr;
+  std::unique_ptr<torchlight::backend::OgrePlugins> plugins;  // outlives `root` (ogre_plugins.h)
   Ogre::RenderSystem* rs = nullptr;
   Ogre::RenderWindow* window = nullptr;
   // The native window OGRE draws in where it cannot make its own (platform.h; macOS); outlives
@@ -1784,18 +1787,9 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
                                 log_path == nullptr);
     }
     b->root = new Ogre::Root("", "", "");
-    std::string plugins = torchlight::platform::OgrePluginDir();
-    if (!plugins.empty() && plugins.back() == '/') plugins.pop_back();
-    if (render_system == TL_RENDER_SYSTEM_D3D11) {
-      b->root->loadPlugin(plugins + "/RenderSystem_Direct3D11");
-      b->depth_bias_factor = conv::kD3D11DepthBiasFactor;
-    } else {
-      b->root->loadPlugin(torchlight::platform::OgreRenderSystemDir(
-                              plugins, parent ? &parent_window : nullptr) +
-                          "/RenderSystem_GL3Plus");
-    }
-    // Image files the guest loads are DDS (built into OgreMain); a few are PNG.
-    b->root->loadPlugin(plugins + "/Codec_STBI");
+    b->plugins = torchlight::backend::OgrePlugins::Load(*b->root, render_system,
+                                                        parent ? &parent_window : nullptr);
+    if (render_system == TL_RENDER_SYSTEM_D3D11) b->depth_bias_factor = conv::kD3D11DepthBiasFactor;
     const Ogre::RenderSystemList& list = b->root->getAvailableRenderers();
     if (list.empty()) {
       SetError(error, error_size, "no OGRE render system available");
@@ -1970,6 +1964,7 @@ void tl_backend_destroy(tl_backend* b) {
       if (!b->rs->detachRenderTarget(kWindowName)) b->rs->detachRenderTarget(b->window_title);
     }
     delete b->root;
+    b->plugins.reset();
     b->top_level.reset();  // after OGRE's window, which draws in it
   });
   delete b->log_manager;
@@ -2135,7 +2130,22 @@ void tl_backend_end(tl_backend* b) {
 }
 
 int tl_backend_present(tl_backend* b) {
-  if (!b->visible_window || b->window->isClosed()) return 0;
+  if (!b->visible_window) return 0;
+  // The window system taking the surface away and giving it back (Android: the app in the
+  // background); this blocks while there is none. False: the app is ending.
+  // Called in place, not through RunOnWindowThread: elsewhere it returns at once, and macOS's
+  // window thread hop would cost every frame.
+  const bool app_ending = !torchlight::platform::ServeSurfaceChanges(
+      [b] { torchlight::backend::ReleaseWindowSurface(*b->window); },
+      [b](const torchlight::platform::NativeWindow& window) {
+        try {
+          torchlight::backend::RestoreWindowSurface(*b->window, window.window);
+          return true;
+        } catch (Ogre::Exception&) {
+          return false;  // no EGL surface on that window: wait for the next one
+        }
+      });
+  if (app_ending || b->window->isClosed()) return 0;
   try {
     // The output texture (top row first, see DisplayGammaPass) on a full-window quad (copy
     // program): the window is not a render texture, so no y flip applies.

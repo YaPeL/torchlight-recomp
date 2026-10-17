@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Android app (docs/android-port.md, stage A1). tools/android/build_apk.sh builds it: the
+     package is io.github.yapel.tlrecomp (the owner's permanent decision), renamed to
+     io.github.yapel.tlrecomp.dev for development builds; the versions and SDK levels come from
+     there too. Based on SDL 3.4.14's android-project manifest. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="io.github.yapel.tlrecomp">
+
+    <!-- OpenGL ES 3.0: OGRE's GLES2 render system with GLES 3 (docs/android-port.md, section 3). -->
+    <uses-feature android:glEsVersion="0x00030000" android:required="true" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.hardware.type.pc" android:required="false" />
+    <!-- Pad rumble, as SDL's own manifest. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <!-- hasFragileUserData: Android's uninstall dialog offers to keep the saves (stage A1.2).
+         allowBackup stays off until its rules (saves and settings only, never the installed game)
+         are written. extractNativeLibs on: the runtime finds its GPU plugin as a file next to
+         librexruntime.so, which libraries kept inside the APK are not. -->
+    <application
+        android:label="@string/app_name"
+        android:allowBackup="false"
+        android:hasFragileUserData="true"
+        android:extractNativeLibs="true"
+        android:hardwareAccelerated="true"
+        android:enableOnBackInvokedCallback="false"
+        android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
+
+        <activity
+            android:name="io.github.yapel.tlrecomp.TorchlightActivity"
+            android:label="@string/app_name"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|grammaticalGender|fontScale|fontWeightAdjustment|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation"
+            android:preferMinimalPostProcessing="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
