@@ -116,5 +116,8 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 - **Should have been caught by:** a CI job that builds and runs the SDK's tests with the series;
   and no known failure accepted as upstream without a fix or a written skip.
 - **Covered now:** patches 39 and 40 fix the five cases, and patch 41 the four that were
-  skipped (`BitStream::Write`'s byte order): Linux 1768 of 1768 with none skipped. A CI job for the SDK's tests is proposed to the owner (it changes the workflows). Until
-  then `patches/README.md` says to run them by hand when the series changes.
+  skipped (`BitStream::Write`'s byte order): Linux 1768 of 1768 with none skipped. The
+  `SDK tests` workflow runs them on Linux, Windows and macOS when the patches or the dependency
+  scripts change: one at a time (in parallel they collided on macOS), and a skip fails it unless
+  `tools/deps/sdk_test_skips.txt` lists it for that platform with its reason (two case-variant
+  tests on the case-insensitive hosts).

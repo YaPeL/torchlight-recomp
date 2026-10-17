@@ -112,10 +112,21 @@ if [ "$tests" = true ]; then
   ctest --test-dir "out/build/$preset" -C Release --output-on-failure --no-tests=error \
     > "$log" 2>&1 || status=$?
   cat "$log"
-  if grep -E '\*\*\*Skipped|Not Run' "$log"; then
-    echo "an SDK test did not run (skipped or not run): see above" >&2
+  [ "$status" -eq 0 ] || { echo "SDK tests failed (ctest $status): see above" >&2; exit 1; }
+  # Skips only as tools/deps/sdk_test_skips.txt lists them for this platform, and all of those.
+  case "$(uname -s)" in Darwin) platform=macos ;; *) platform=linux ;; esac
+  if grep -q 'Not Run' "$log"; then
+    echo "an SDK test did not run: see above" >&2
     exit 1
   fi
-  [ "$status" -eq 0 ] || { echo "SDK tests failed (ctest $status): see above" >&2; exit 1; }
+  sed -n 's/^[[:space:]]*[0-9]* - \(.*\) (Skipped)$/\1/p' "$log" | sort > "$work/skipped.txt"
+  grep -vE '^(#|$)' "$root/tools/deps/sdk_test_skips.txt" |
+    awk -F ' [|] ' -v p="$platform" '$1 == p { print $2 }' | sort > "$work/allowed.txt"
+  if ! cmp -s "$work/skipped.txt" "$work/allowed.txt"; then
+    echo "skipped tests differ from tools/deps/sdk_test_skips.txt for $platform" \
+      "(< skipped, not listed; > listed, ran):" >&2
+    diff "$work/skipped.txt" "$work/allowed.txt" >&2 || true
+    exit 1
+  fi
   grep -E 'tests passed' "$log"
 fi

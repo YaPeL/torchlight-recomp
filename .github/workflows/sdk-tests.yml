@@ -1,9 +1,11 @@
 # The ReXGlue SDK's own tests (unit_tests, ppc_tests) with this project's patches, on Linux, Windows
 # and macOS. CI's other jobs build the SDK without them, and five of its cases failed for weeks
-# without anyone seeing it (docs/regressions.md). Every test has to run and pass: a failed, skipped
-# or not-run one fails the job (tools/deps/build_sdk.sh --tests, tools/build-deps/windows.ps1
-# -SdkTests). Only when what builds the SDK changes (the patches, the scripts, this file), and by
-# hand. Builds the SDK from scratch, publishes nothing, no secrets.
+# without anyone seeing it (docs/regressions.md). Every test has to run and pass, one at a time: a
+# failed or not-run one fails the job, and so does a skip that tools/deps/sdk_test_skips.txt does
+# not list for that platform, with its reason, or a listed one that ran (tools/deps/build_sdk.sh
+# --tests, tools/build-deps/windows.ps1 -SdkTests). Only when what builds the SDK changes (the
+# patches, the scripts, this file), and by hand. Builds the SDK from scratch, publishes nothing,
+# no secrets.
 name: SDK tests
 
 on:

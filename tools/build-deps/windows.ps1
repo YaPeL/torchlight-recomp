@@ -189,11 +189,27 @@ function Test-Sdk {
     & ctest --test-dir out/build/win-amd64 -C $SdkConfigs[0] --output-on-failure --no-tests=error `
         2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
     $code = $LASTEXITCODE
-    if (Select-String -Path $log -Pattern '\*\*\*Skipped|Not Run' -Quiet) {
-        throw 'an SDK test did not run (skipped or not run): see above'
-    }
     if ($code -ne 0) {
         throw "SDK tests failed (ctest $code): see above"
+    }
+    if (Select-String -Path $log -Pattern 'Not Run' -Quiet) {
+        throw 'an SDK test did not run: see above'
+    }
+    # Skips only as tools/deps/sdk_test_skips.txt lists them for Windows, and all of those.
+    $skipped = @(Get-Content $log | ForEach-Object {
+        if ($_ -match '^\s*\d+ - (.*) \(Skipped\)\s*$') { $Matches[1] } } | Sort-Object)
+    $allowed = @(Get-Content (Join-Path $Root 'tools\deps\sdk_test_skips.txt') | ForEach-Object {
+        if ($_ -notmatch '^\s*(#|$)') {
+            $fields = $_ -split ' \| '
+            if ($fields[0] -eq 'windows') { $fields[1] }
+        } } | Sort-Object)
+    $difference = Compare-Object $skipped $allowed
+    if ($difference) {
+        $difference | ForEach-Object {
+            $where = if ($_.SideIndicator -eq '<=') { 'skipped, not listed' } else { 'listed, ran' }
+            Write-Host "${where}: $($_.InputObject)"
+        }
+        throw 'skipped tests differ from tools/deps/sdk_test_skips.txt for Windows: see above'
     }
 }
 
