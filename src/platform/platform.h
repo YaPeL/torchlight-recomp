@@ -102,9 +102,10 @@ void SetCurrentThreadName(const char* name);
 int AskChoice(const std::string& title, const std::string& message,
               const std::vector<std::string>& buttons);
 void ShowError(const std::string& title, const std::string& message);
-enum class PickResult { kChosen, kCancelled, kFailed };
+enum class PickResult { kChosen, kCancelled, kFailed, kUncopied };
 // The system's picker for one file or one folder (blocks until it closes); kFailed with the
-// reason when no picker could be shown (e.g. no desktop portal in a gamescope session).
+// reason when no picker could be shown (e.g. no desktop portal in a gamescope session), kUncopied
+// with the reason when the chosen file could not be copied to where it can be opened (Android).
 // The file's `path` is one the program can open: on Android the picker gives a document URI, which
 // is copied first (with a progress window) to the app's cache; ForgetPickedFiles removes those
 // copies once they are used.

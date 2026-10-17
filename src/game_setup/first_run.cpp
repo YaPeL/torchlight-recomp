@@ -129,6 +129,11 @@ bool EnsureGameData(const std::filesystem::path& game_dir,
       platform::ShowError(title, Text(tr, kTextPickerFailed, {{"error", error}}));
       continue;
     }
+    if (picked == platform::PickResult::kUncopied) {
+      platform::ShowError(title, Text(tr, kTextPickedCopyFailed, {{"error", error}}));
+      info("game setup: the chosen file was not copied: " + error);
+      continue;
+    }
     if (source == Source::kPackage) {
       const auto facts = ReadPackageFacts(path);
       const Message problem =

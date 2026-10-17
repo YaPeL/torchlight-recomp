@@ -534,6 +534,10 @@ and `src/platform/platform_android.cpp`, where everything below is still missing
     checked afterwards (`default.xex`); it takes a folder too, through
     `ACTION_OPEN_DOCUMENT_TREE`, which SDL3's dialogs do not offer on Android. We take the package
     file only, as section 1 says.
+    Done on `android/game-build` (2026-10-17): the document is copied to the app's cache with a
+    progress window, checked and installed, and the copy is removed when the first start ends. So
+    the first start needs free space for the package and the game's files at once; a failed copy
+    says so.
   - **Saves and uninstalling.** Internal storage is deleted when the app is uninstalled. Three
     things keep the saves:
     - Export and import (the primary way): the host's options get "Export saves" (a zip of the

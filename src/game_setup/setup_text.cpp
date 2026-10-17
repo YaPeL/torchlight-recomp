@@ -9,6 +9,7 @@ constexpr std::string_view kInterfaceTexts[] = {
     kTextTitle,         kTextIntro,          kTextIntroPackageOnly, kTextChoosePackage,
     kTextChooseFolder,
     kTextQuit,          kTextPackagePicker,  kTextFolderPicker,  kTextPickerFailed,
+    kTextPickedCopyFailed,
     kTextExtracting,    kTextCopying,        kTextChecking,      kTextAchievementsChoice,
     kTextAchievementsXbox, kTextAchievementsPc,
 };

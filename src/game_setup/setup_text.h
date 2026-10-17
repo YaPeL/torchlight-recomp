@@ -60,6 +60,10 @@ inline constexpr std::string_view kTextChooseFolder = "Choose folder...";
 inline constexpr std::string_view kTextQuit = "Quit";
 inline constexpr std::string_view kTextPackagePicker = "Torchlight package (Xbox Live Arcade)";
 inline constexpr std::string_view kTextFolderPicker = "Folder with the extracted game files";
+// The chosen file could not be copied to where it can be read (Android: PickResult::kUncopied).
+inline constexpr std::string_view kTextPickedCopyFailed =
+    "The chosen file could not be copied ({error}).\n\nThe first start needs free space for the "
+    "package and, after it, for the game's files.";
 inline constexpr std::string_view kTextPickerFailed =
     "The file chooser could not be opened ({error}).\n\nOn the Steam Deck, do this first setup in "
     "Desktop Mode.";

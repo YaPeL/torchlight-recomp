@@ -288,6 +288,7 @@ bool ServeSurfaceChanges(const std::function<void()>& lost,
     // Back to no surface, unless Android has already taken this one and given another.
     if (s.state == SurfaceState::kPresent) s.state = SurfaceState::kGone;
     s.released = true;
+    s.changed.notify_all();  // a UI thread waiting in nativeSurfaceDestroying goes on
   }
 }
 
@@ -305,16 +306,21 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
   const std::string dir = CacheDir("picked");
   if (dir.empty()) {
     error = "no cache folder for the chosen file";
-    return PickResult::kFailed;
+    return PickResult::kUncopied;
   }
   SDL_IOStream* in = SDL_IOFromFile(path.c_str(), "rb");
   if (!in) {
     error = std::string("cannot open the chosen file: ") + SDL_GetError();
-    return PickResult::kFailed;
+    return PickResult::kUncopied;
   }
   const Sint64 size = SDL_GetIOSize(in);
   const std::string copy = dir + "picked_file";
   std::ofstream out(copy, std::ios::binary | std::ios::trunc);
+  if (!out.is_open()) {
+    SDL_CloseIO(in);
+    error = "cannot create " + copy;
+    return PickResult::kUncopied;
+  }
   auto progress = ProgressWindow::Open(title);
   std::vector<char> buffer(4 << 20);
   Sint64 done = 0;
@@ -324,14 +330,14 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
     if (got == 0) {
       if (SDL_GetIOStatus(in) != SDL_IO_STATUS_EOF) {
         error = std::string("cannot read the chosen file: ") + SDL_GetError();
-        result = PickResult::kFailed;
+        result = PickResult::kUncopied;
       }
       break;
     }
     out.write(buffer.data(), std::streamsize(got));
     if (!out) {
       error = "cannot write a copy of the chosen file (is the device full?)";
-      result = PickResult::kFailed;
+      result = PickResult::kUncopied;
       break;
     }
     done += Sint64(got);
