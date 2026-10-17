@@ -29,6 +29,7 @@ This is a **beta**. See [Known limitations](#known-limitations).
 - [Building](#building)
 - [Credits](#credits)
 - [License](#license)
+- [Support](#support)
 
 ## Installing
 
@@ -259,3 +260,9 @@ Torchlight was made by Runic Games.
 - The game is not included and is not covered by these licenses, nor is the code generated from it
   (`generated/`).
 - Third-party components: [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Support
+
+If you'd like to support my time on this recomp, you can buy me a coffee on Ko-fi
+(https://ko-fi.com/yapel). Tips support the work only: they don't buy the game, early builds or any
+feature. You still need your own copy of Torchlight for Xbox Live Arcade.
