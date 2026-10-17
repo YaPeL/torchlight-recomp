@@ -44,6 +44,7 @@
 #include <OgreShaderProgramSet.h>
 
 #include "backend/ogre_plugins.h"
+#include "backend/ogre_window_surface.h"
 #include "backend/xbox_to_gl_conventions.h"
 #include "platform/platform.h"
 
@@ -2129,7 +2130,22 @@ void tl_backend_end(tl_backend* b) {
 }
 
 int tl_backend_present(tl_backend* b) {
-  if (!b->visible_window || b->window->isClosed()) return 0;
+  if (!b->visible_window) return 0;
+  // The window system taking the surface away and giving it back (Android: the app in the
+  // background); this blocks while there is none. False: the app is ending.
+  bool app_ending = false;
+  try {
+    torchlight::platform::RunOnWindowThread([&] {
+      app_ending = !torchlight::platform::ServeSurfaceChanges(
+          [b] { torchlight::backend::ReleaseWindowSurface(*b->window); },
+          [b](const torchlight::platform::NativeWindow& window) {
+            torchlight::backend::RestoreWindowSurface(*b->window, window.window);
+          });
+    });
+  } catch (Ogre::Exception&) {
+    return 0;  // no EGL surface on the new window: nothing can be shown
+  }
+  if (app_ending || b->window->isClosed()) return 0;
   try {
     // The output texture (top row first, see DisplayGammaPass) on a full-window quad (copy
     // program): the window is not a render texture, so no y flip applies.

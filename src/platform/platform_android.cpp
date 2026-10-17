@@ -4,22 +4,30 @@
 // without a choice (no GPU choice, no Direct3D 11, OGRE's static plugins), the folders, which are
 // the app's storage (user_folders_android.cpp), and the window: the activity's one surface, an
 // ANativeWindow that SDL holds, which OGRE's Android EGL window draws in, and the files the APK
-// carries (OGRE's media, data/ui), copied to internal storage. The lifecycle and the input are the
-// rest of stage A1 of docs/android-port.md.
+// carries (OGRE's media, data/ui), copied to internal storage, and the surface's lifecycle: the
+// activity's surface goes away in the background and the backend lets go of it first
+// (ServeSurfaceChanges, with TorchlightSurface.java). The input is the rest of stage A1 of
+// docs/android-port.md.
 
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
 #include "platform/user_folders.h"
 
+#include <android/native_window.h>
+#include <android/native_window_jni.h>
+#include <jni.h>
 #include <pthread.h>
 
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_iostream.h>
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_stdinc.h>
 #include <SDL3/SDL_system.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
+#include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -214,6 +222,63 @@ void WaitServingWindowThread(const std::function<bool()>&) {}
 
 bool OgreWindowFollowsGameWindow() { return false; }
 
+namespace {
+
+// The activity's surface, as the Java side reports it (TorchlightSurface.java) and the backend
+// serves it (ServeSurfaceChanges). Present: the backend draws in it. Going: Android is destroying
+// it and its UI thread waits until the backend let go (released). Gone: none; a new one arrives as
+// new_window (an ANativeWindow reference of ours). Ending: the activity is finishing.
+enum class SurfaceState { kPresent, kGoing, kGone, kEnding };
+struct Surface {
+  std::mutex mutex;
+  std::condition_variable changed;
+  SurfaceState state = SurfaceState::kPresent;
+  bool released = false;
+  ANativeWindow* new_window = nullptr;
+};
+Surface& TheSurface() {
+  static Surface surface;
+  return surface;
+}
+
+// How long Android's UI thread waits for the backend to let go before it goes on (a backend that
+// is not presenting, a guest loading). Past it the backend lets go at its next present, of a
+// surface Android has already taken back: EGL keeps its own reference to the window, so that
+// present fails instead of crashing. Android itself reports an unresponsive app after 5 s.
+constexpr auto kSurfaceReleaseWait = std::chrono::seconds(2);
+
+}  // namespace
+
+bool ServeSurfaceChanges(const std::function<void()>& lost,
+                         const std::function<void(const NativeWindow&)>& restored) {
+  Surface& s = TheSurface();
+  std::unique_lock lock(s.mutex);
+  if (s.state == SurfaceState::kPresent) return true;
+  if (s.state == SurfaceState::kEnding) return false;
+  if (!s.released) {
+    lock.unlock();
+    SDL_Log("surface: going; the backend lets go of it");
+    lost();
+    lock.lock();
+    s.released = true;
+    s.changed.notify_all();
+  }
+  s.changed.wait(lock, [&] { return s.new_window || s.state == SurfaceState::kEnding; });
+  if (s.state == SurfaceState::kEnding) return false;
+  ANativeWindow* window = s.new_window;
+  s.new_window = nullptr;
+  s.state = SurfaceState::kPresent;
+  lock.unlock();
+  NativeWindow native;
+  native.system = NativeWindow::kAndroid;
+  native.window = uint64_t(uintptr_t(window));
+  SDL_Log("surface: back (%dx%d); the backend draws in it again", ANativeWindow_getWidth(window),
+          ANativeWindow_getHeight(window));
+  restored(native);
+  ANativeWindow_release(window);  // EGL holds its own reference to the window it draws in
+  return true;
+}
+
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
   return plugin_dir;
 }
@@ -259,3 +324,48 @@ std::unique_ptr<KeyReader> KeyReader::ForOgreWindow(
 }
 
 }  // namespace torchlight::platform
+
+// The Java side of the surface's lifecycle (packaging/android/java/.../TorchlightSurface.java and
+// TorchlightActivity.java), on Android's UI thread.
+extern "C" {
+
+JNIEXPORT void JNICALL Java_io_github_yapel_tlrecomp_TorchlightSurface_nativeSurfaceDestroying(
+    JNIEnv*, jclass) {
+  using namespace torchlight::platform;
+  Surface& s = TheSurface();
+  std::unique_lock lock(s.mutex);
+  if (s.state != SurfaceState::kPresent) return;
+  s.state = SurfaceState::kGoing;
+  s.released = false;
+  s.changed.notify_all();
+  if (!s.changed.wait_for(lock, kSurfaceReleaseWait, [&] { return s.released; })) {
+    SDL_Log("surface: destroyed before the backend let go of it (not presenting)");
+  }
+  if (s.state == SurfaceState::kGoing) s.state = SurfaceState::kGone;
+}
+
+JNIEXPORT void JNICALL Java_io_github_yapel_tlrecomp_TorchlightSurface_nativeSurfaceReady(
+    JNIEnv* env, jclass, jobject java_surface) {
+  using namespace torchlight::platform;
+  Surface& s = TheSurface();
+  std::lock_guard lock(s.mutex);
+  // The first surface, and a surface that only changed size, reach the backend through SDL's
+  // window as before; only one that replaces a surface gone is handed over here.
+  if (s.state != SurfaceState::kGoing && s.state != SurfaceState::kGone) return;
+  ANativeWindow* window = ANativeWindow_fromSurface(env, java_surface);
+  if (!window) return;
+  if (s.new_window) ANativeWindow_release(s.new_window);
+  s.new_window = window;
+  s.changed.notify_all();
+}
+
+JNIEXPORT void JNICALL Java_io_github_yapel_tlrecomp_TorchlightActivity_nativeAppEnding(JNIEnv*,
+                                                                                        jclass) {
+  using namespace torchlight::platform;
+  Surface& s = TheSurface();
+  std::lock_guard lock(s.mutex);
+  s.state = SurfaceState::kEnding;
+  s.changed.notify_all();
+}
+
+}  // extern "C"

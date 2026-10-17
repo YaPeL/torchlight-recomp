@@ -320,6 +320,12 @@ void RunOnWindowThread(const std::function<void()>& work) { work(); }
 
 void WaitServingWindowThread(const std::function<bool()>&) {}
 
+// The window system never takes the backend's surface away here.
+bool ServeSurfaceChanges(const std::function<void()>&,
+                         const std::function<void(const NativeWindow&)>&) {
+  return true;
+}
+
 bool OgreWindowFollowsGameWindow() { return false; }
 
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow* window) {

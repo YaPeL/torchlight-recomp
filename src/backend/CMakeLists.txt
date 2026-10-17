@@ -50,7 +50,15 @@ if(ANDROID)
     set_property(TARGET OgreMain APPEND PROPERTY INTERFACE_LINK_LIBRARIES torchlight_ndk_cpufeatures)
 endif()
 
-add_library(torchlight_backend OBJECT backend.cpp ${_ogre_plugins_source} xbox_to_gl_conventions.cpp)
+# OGRE's window giving up and taking back its surface (ogre_window_surface.h): Android's EGL window.
+if(ANDROID)
+    set(_window_surface_source ogre_window_surface_android.cpp)
+else()
+    set(_window_surface_source ogre_window_surface_none.cpp)
+endif()
+
+add_library(torchlight_backend OBJECT backend.cpp ${_ogre_plugins_source} ${_window_surface_source}
+            xbox_to_gl_conventions.cpp)
 target_include_directories(torchlight_backend PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_backend PRIVATE cxx_std_23)
 target_compile_options(torchlight_backend PRIVATE -Wall -Wextra -Wno-deprecated-declarations)

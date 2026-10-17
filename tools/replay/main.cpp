@@ -39,7 +39,7 @@ namespace {
 constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root DIR] [--out DIR] [--draws LIST]
        (without --game_data_root, the game's files are not read: for captures that load none,
        such as synthetic_capture's)
-              [--region X0,Y0,X1,Y1] [--dump_targets] [--window] [--via_live]
+              [--region X0,Y0,X1,Y1] [--dump_targets] [--window] [--loop] [--via_live]
               [--frames_png] [--live_content] [--render_scale S] [--host_size]
               [--render_system NAME] [--gpu ID]
        replay --session RECORDING.tlses --game_data_root DIR [--out DIR] [--session_frame N]
@@ -61,7 +61,9 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
   --render_system gl3plus (default) or d3d11 (Windows): the OGRE render system drawn with.
   --gpu draws on the GPU with that platform id (Direct3D 11; default automatic); --list_gpus
   lists them, software ones too (WARP: for testing only, the game never offers it).
-  --window also shows the result in a window for 3 seconds (the live mode's presentation).
+  --window also shows the result in a window for 3 seconds (the live mode's presentation);
+  --loop shows it until the window closes (on Android, until the app ends: the surface's
+  lifecycle, the app going to the background and back, is tried with it).
   --frames_png writes each frame's output (at its Present) as frame_<index>.png, for captures
   of several frames.
   --live_content replays with the content the live stream used (captures taken in the live
@@ -91,7 +93,7 @@ int main(int argc, char** argv) {
   std::vector<std::pair<size_t, size_t>> draw_ranges;  // empty: all draws
   std::optional<std::array<uint32_t, 4>> region;
   bool host_size = false;
-  bool dump_targets = false, window = false, via_live = false, frames_png = false,
+  bool dump_targets = false, window = false, loop = false, via_live = false, frames_png = false,
        use_live_content = false;
   std::string session_path;
   std::optional<uint64_t> session_frame;
@@ -144,6 +146,8 @@ int main(int argc, char** argv) {
       via_live = true;
     } else if (a == "--window") {
       window = true;
+    } else if (a == "--loop") {
+      window = loop = true;
     } else if (a == "--render_system" && i + 1 < argc) {
       const std::string name = argv[++i];
       if (name == "gl3plus") {
@@ -375,7 +379,7 @@ int main(int argc, char** argv) {
     for (auto key : live_content.Finish()) frontend.ReleaseContent(key);
   if (window) {
     auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while (std::chrono::steady_clock::now() < until && tl_backend_present(backend))
+    while ((loop || std::chrono::steady_clock::now() < until) && tl_backend_present(backend))
       std::this_thread::sleep_for(std::chrono::milliseconds(16));
   }
   const auto& stats = frontend.stats();

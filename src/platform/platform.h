@@ -238,6 +238,17 @@ void WaitServingWindowThread(const std::function<bool()>& done);
 // content view SDL sizes; OGRE's resize would size the view again, in points).
 bool OgreWindowFollowsGameWindow();
 
+// The surface the backend draws in, taken away and given back by the window system: on Android,
+// whenever the app goes to the background (the activity's surface is destroyed) and comes back;
+// elsewhere never. The backend calls this before each present, on the thread it draws with. When
+// the surface is going, `lost` runs there (the window system's thread waits for it, a couple of
+// seconds at most, before it lets the surface go); then it blocks while there is none, so the
+// guest, waiting on its next present, pauses in the background; and `restored` runs with the new
+// window when it is back. False when the app is ending while it waits (nothing to present any
+// more). Elsewhere: true at once.
+bool ServeSurfaceChanges(const std::function<void()>& lost,
+                         const std::function<void(const NativeWindow&)>& restored);
+
 // The backend's own top-level window (offscreen backends keep a hidden one for the GL context, the
 // replay shows one) where OGRE's render system cannot create it itself: macOS, whose OGRE 14 Cocoa
 // GL window only draws in an external view ("Builtin Window creation broken",

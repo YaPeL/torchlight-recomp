@@ -235,6 +235,12 @@ void WaitServingWindowThread(const std::function<bool()>& done) {
   while (!done()) CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);
 }
 
+// The window system never takes the backend's surface away here.
+bool ServeSurfaceChanges(const std::function<void()>&,
+                         const std::function<void(const NativeWindow&)>&) {
+  return true;
+}
+
 bool OgreWindowFollowsGameWindow() { return true; }
 
 namespace {

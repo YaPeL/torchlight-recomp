@@ -1,5 +1,7 @@
 package io.github.yapel.tlrecomp;
 
+import android.content.Context;
+
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.FileReader;
@@ -8,6 +10,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import org.libsdl.app.SDLActivity;
+import org.libsdl.app.SDLSurface;
 
 /**
  * The app's activity: SDL's, which loads the native libraries below and calls SDL_main in the main
@@ -36,6 +39,21 @@ public class TorchlightActivity extends SDLActivity {
         // The C++ runtime and the SDK's runtime (with SDL inside) before the main library, which SDL
         // takes as the last one (getMainSharedObject).
         return new String[] {"c++_shared", "rexruntime", mainLibrary()};
+    }
+
+    // The surface that tells the backend when it goes and comes back (TorchlightSurface).
+    @Override
+    protected SDLSurface createSDLSurface(Context context) {
+        return new TorchlightSurface(context);
+    }
+
+    static native void nativeAppEnding();
+
+    @Override
+    protected void onDestroy() {
+        // A backend waiting for its surface to come back stops waiting: nothing will be shown.
+        if (!mBrokenLibraries) nativeAppEnding();
+        super.onDestroy();
     }
 
     @Override
