@@ -25,9 +25,11 @@ macos | unit.Case variants | APFS ignores case
 
 
 class CheckSdkTests(unittest.TestCase):
-    def run_check(self, platform, *cases):
+    def run_check(self, platform, *cases, with_binaries=True):
         with tempfile.TemporaryDirectory() as folder:
             junit = pathlib.Path(folder) / "tests.xml"
+            if cases and with_binaries:
+                cases = cases + (PASSED.format("unit.always"), PASSED.format("ppc.always"))
             junit.write_text('<?xml version="1.0"?><testsuite>' + "".join(cases) + "</testsuite>")
             skips = pathlib.Path(folder) / "skips.txt"
             skips.write_text(SKIPS)
@@ -74,6 +76,11 @@ class CheckSdkTests(unittest.TestCase):
     def test_words_in_a_name_do_not_count(self):
         code, _ = self.run_check("linux", PASSED.format("unit.Skipped and Not Run did not run"))
         self.assertEqual(code, 0)
+
+    def test_a_binary_missing_from_the_run(self):
+        code, err = self.run_check("linux", PASSED.format("unit.a"), with_binaries=False)
+        self.assertEqual(code, 1)
+        self.assertIn("no ppc_tests cases (ppc.*) in the run", err)
 
     def test_empty_run(self):
         code, err = self.run_check("linux")

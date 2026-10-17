@@ -1,32 +1,25 @@
 # Android arm64-v8a (NDK r30, API 30), compiled only: the patched SDK, OGRE with GLES2, and this
 # project's libraries, tests and tools without the game (TORCHLIGHT_GAME=OFF, as the desktop jobs:
 # CI has no recompiled code). Nothing runs: the devices are tested by hand
-# (tools/android/run_sdk_tests.sh, docs/android-port.md). Only when what the Android build reads
-# changes (the patches, the dependency scripts, the sources, the CMake files, this file), and by
-# hand. Builds everything from scratch, publishes nothing, no secrets.
+# (tools/android/run_sdk_tests.sh, docs/android-port.md). On every change but documentation, and
+# by hand. Builds everything from scratch, publishes nothing, no secrets.
 name: Android build
 
 on:
   pull_request:
     branches: [develop, main]
-    paths:
-      - 'patches/**'
-      - 'tools/deps/**'
-      - 'src/**'
-      - 'cmake/**'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - '.github/workflows/android.yml'
+    # Everything but what cannot change the build: the Android build compiles src/, tools/,
+    # tests/ and third_party/, and reads cmake/, the presets and tools/deps/.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   push:
     branches: [develop, main]
-    paths:
-      - 'patches/**'
-      - 'tools/deps/**'
-      - 'src/**'
-      - 'cmake/**'
-      - 'CMakeLists.txt'
-      - 'CMakePresets.json'
-      - '.github/workflows/android.yml'
+    # Everything but what cannot change the build: the Android build compiles src/, tools/,
+    # tests/ and third_party/, and reads cmake/, the presets and tools/deps/.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
   workflow_dispatch:
 
 permissions:
@@ -41,6 +34,9 @@ env:
   # $HOME/android-sdk/ndk/<version>.
   NDK_VERSION: 30.0.16248370
   NDK_RELEASE: r30
+  # Of android-ndk-r30-linux.zip; its SHA-1 (5107f898313790e449e87eee2183d9a20602dee9) is the one
+  # developer.android.com/ndk/downloads lists.
+  NDK_SHA256: 753611f410d002cfcd3f3dc2ef49aad532089d3180b436c060a90bf0fcb64df2
 
 jobs:
   build:
@@ -61,12 +57,13 @@ jobs:
         uses: actions/cache@v6
         with:
           path: ~/android-sdk/ndk/${{ env.NDK_VERSION }}
-          key: android-ndk-${{ env.NDK_VERSION }}
+          key: android-ndk-${{ env.NDK_VERSION }}-${{ env.NDK_SHA256 }}
       - name: NDK
         if: steps.ndk-cache.outputs.cache-hit != 'true'
         run: |
           curl -fsSL -o /tmp/ndk.zip \
             "https://dl.google.com/android/repository/android-ndk-$NDK_RELEASE-linux.zip"
+          echo "$NDK_SHA256  /tmp/ndk.zip" | sha256sum -c -
           unzip -q /tmp/ndk.zip -d /tmp/ndk
           mkdir -p "$HOME/android-sdk/ndk"
           mv "/tmp/ndk/android-ndk-$NDK_RELEASE" "$HOME/android-sdk/ndk/$NDK_VERSION"

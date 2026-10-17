@@ -46,6 +46,10 @@ case "$target" in
   host|android-arm64) ;;
   *) echo "TARGET must be host or android-arm64" >&2; exit 2 ;;
 esac
+if [ -n "$ppc_test_data" ] && [ "$tests" != true ]; then
+  echo "--ppc-test-data only goes with --tests" >&2
+  exit 2
+fi
 if [ "$tests" = true ] && [ "$target" != host ]; then
   echo "--tests runs the tests here, so only for the host (tools/android/run_sdk_tests.sh runs" \
     "them on a device)" >&2
@@ -85,17 +89,15 @@ case "$target-$(uname -s)" in
   *) echo "unsupported host: $(uname -s)" >&2; exit 2 ;;
 esac
 
-test_options=""
-if [ "$tests" = true ]; then
-  test_options="-DREXGLUE_BUILD_TESTS=ON"
-  [ -z "$ppc_test_data" ] || test_options="$test_options -DREXGLUE_PPC_TEST_BIN_DIR=$ppc_test_data"
-fi
+tests_on=""
+[ "$tests" = true ] && tests_on="-DREXGLUE_BUILD_TESTS=ON"
 
 cd "$src"
 compilers="-DCMAKE_C_COMPILER=${CC:-clang} -DCMAKE_CXX_COMPILER=${CXX:-clang++}"
 [ "$target" = host ] || compilers=""  # the toolchain file picks the NDK's clang
 # shellcheck disable=SC2086
-cmake --preset "$preset" $platform_options $compilers $test_options \
+cmake --preset "$preset" $platform_options $compilers $tests_on \
+  ${ppc_test_data:+"-DREXGLUE_PPC_TEST_BIN_DIR=$ppc_test_data"} \
   -DCMAKE_CONFIGURATION_TYPES="$configs" -DCMAKE_DEFAULT_BUILD_TYPE=Release \
   -DCMAKE_CROSS_CONFIGS="$configs" -DCMAKE_DEFAULT_CONFIGS="$configs" \
   -DCMAKE_INSTALL_PREFIX="$prefix"
@@ -110,6 +112,7 @@ if [ "$tests" = true ]; then
   # folder names, a guest memory named by the clock's tick), and in parallel they collided on
   # macOS.
   case "$(uname -s)" in Darwin) platform=macos ;; *) platform=linux ;; esac
+  rm -f "$work/sdk-tests.xml"  # a reused WORK_DIR's from an earlier run cannot pass the check
   ctest --test-dir "out/build/$preset" -C Release --output-on-failure --no-tests=error \
     --output-junit "$work/sdk-tests.xml" || true
   python3 "$root/tools/deps/check_sdk_tests.py" "$work/sdk-tests.xml" "$platform"

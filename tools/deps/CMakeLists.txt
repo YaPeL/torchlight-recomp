@@ -4,4 +4,6 @@ find_package(Python3 COMPONENTS Interpreter)
 if(Python3_Interpreter_FOUND)
     add_test(NAME check_sdk_tests_test
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_check_sdk_tests.py)
+else()
+    message(STATUS "No Python 3: check_sdk_tests_test is not registered")
 endif()

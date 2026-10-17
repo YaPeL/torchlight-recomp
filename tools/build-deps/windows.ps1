@@ -185,11 +185,14 @@ function Build-Sdk {
 # tools/deps/check_sdk_tests.py as build_sdk.sh does. One at a time: they are not written for
 # parallel processes.
 function Test-Sdk {
+    $python = (Get-Command python -ErrorAction Stop).Source
     $junit = Join-Path $WorkDir 'sdk-tests.xml'
+    # A reused -WorkDir's from an earlier run cannot pass the check.
+    Remove-Item -Force -ErrorAction SilentlyContinue $junit
     $ErrorActionPreference = 'Continue'
     & ctest --test-dir out/build/win-amd64 -C $SdkConfigs[0] --output-on-failure --no-tests=error `
         --output-junit $junit 2>&1 | ForEach-Object { "$_" }
-    & python (Join-Path $Root 'tools\deps\check_sdk_tests.py') $junit windows
+    & $python (Join-Path $Root 'tools\deps\check_sdk_tests.py') $junit windows
     if ($LASTEXITCODE -ne 0) {
         throw 'the SDK tests are not as expected: see above'
     }

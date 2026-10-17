@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Checks a run of the ReXGlue SDK's tests from ctest's JUnit file (ctest --output-junit).
 
-Every test has to run and pass. The only exception is a test skipped by its skip return code
-(Catch2's SKIP) that tools/deps/sdk_test_skips.txt lists for this platform, with its reason, and
-each listed test must have been skipped so: the list cannot go stale. A test that failed, that
-ctest could not start, or that is missing from the run fails the check. Read from the XML, not
+Every test in the run has to run and pass. The only exception is a test skipped by its skip
+return code (Catch2's SKIP) that tools/deps/sdk_test_skips.txt lists for this platform, with its
+reason, and each listed test must have been skipped so: the list cannot go stale. A test that
+failed or that ctest could not start fails the check, and so does a run without both binaries'
+tests (unit_tests' "unit." and ppc_tests' "ppc." cases). A single case missing from a binary
+is not seen here: ctest lists what the binaries register. Read from the XML, not
 from ctest's text, whose wording and case change between versions and which test names can
 contain too. Used by tools/deps/build_sdk.sh --tests and tools/build-deps/windows.ps1 -SdkTests.
 
@@ -64,6 +66,9 @@ def check(junit_xml, platform, skips_file):
         problems.append(f"listed as skipped on {platform}, but not in the run: {name}")
     if not seen:
         problems.append("no tests in the run")
+    for prefix, binary in (("unit.", "unit_tests"), ("ppc.", "ppc_tests")):
+        if seen and not any(name.startswith(prefix) for name in seen):
+            problems.append(f"no {binary} cases ({prefix}*) in the run")
     print(f"SDK tests: {ran} ran, {skipped} skipped as listed for {platform}, "
           f"{len(problems)} problem(s)")
     return problems

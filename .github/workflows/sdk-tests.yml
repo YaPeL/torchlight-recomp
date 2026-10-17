@@ -13,15 +13,25 @@ on:
     branches: [develop, main]
     paths:
       - 'patches/**'
-      - 'tools/deps/**'
-      - 'tools/build-deps/**'
+      - 'tools/deps/build_sdk.sh'
+      - 'tools/deps/build_ppc_test_data.sh'
+      - 'tools/deps/check_sdk_tests.py'
+      - 'tools/deps/sdk_test_skips.txt'
+      - 'tools/deps/ubuntu_toolchain.sh'
+      - 'tools/build-deps/windows.ps1'
+      - 'tools/build-deps/windows_toolchain.ps1'
       - '.github/workflows/sdk-tests.yml'
   push:
     branches: [develop, main]
     paths:
       - 'patches/**'
-      - 'tools/deps/**'
-      - 'tools/build-deps/**'
+      - 'tools/deps/build_sdk.sh'
+      - 'tools/deps/build_ppc_test_data.sh'
+      - 'tools/deps/check_sdk_tests.py'
+      - 'tools/deps/sdk_test_skips.txt'
+      - 'tools/deps/ubuntu_toolchain.sh'
+      - 'tools/build-deps/windows.ps1'
+      - 'tools/build-deps/windows_toolchain.ps1'
       - '.github/workflows/sdk-tests.yml'
   workflow_dispatch:
 
@@ -50,9 +60,12 @@ jobs:
       - name: Build and test
         run: tools/deps/build_sdk.sh --tests /tmp/sdk /tmp/sdk-work
       # The PPC tests' binaries for macOS, which has no PowerPC binutils (patches/README.md, 22).
+      # Also when the Linux tests failed, so macOS still runs.
       - name: PPC test data
+        if: ${{ !cancelled() }}
         run: tools/deps/build_ppc_test_data.sh /tmp/sdk-work/rexglue-sdk ppc-test-data
-      - uses: actions/upload-artifact@v7
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
         with:
           name: ppc-test-data
           path: ppc-test-data
@@ -74,6 +87,8 @@ jobs:
   macos:
     name: SDK tests (macOS)
     needs: linux
+    # The Linux job's PPC test data, also when its own tests failed.
+    if: ${{ !cancelled() }}
     runs-on: macos-26
     timeout-minutes: 90
     steps:
