@@ -48,9 +48,10 @@ public class TorchlightActivity extends SDLActivity {
         return new TorchlightSurface(context);
     }
 
-    // Landscape only (docs/android-port.md, section 4): SDL otherwise turns the activity to the
-    // shape of each window it makes (the first start's dialogs, a window sized from the display
-    // while the device was held upright), and the game's window came out upright.
+    // Landscape only, either side, following the system's rotation lock (userLandscape, as the
+    // manifest says; the owner's choice, 2026-10-17): SDL otherwise turns the activity to the shape
+    // of each window it makes (the first start's dialogs, a window sized from the display while the
+    // device was held upright), and the game's window came out upright.
     @Override
     public void setOrientationBis(int w, int h, boolean resizable, String hint) {
         super.setOrientationBis(w, h, resizable, "LandscapeLeft LandscapeRight");
