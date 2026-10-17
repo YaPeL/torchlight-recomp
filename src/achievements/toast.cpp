@@ -22,7 +22,6 @@
 #include "achievements/toast_schedule.h"
 #include "achievements/ui_strings.h"
 #include "dev/guest_command.h"
-#include "dev/script_input.h"
 #include "game_menu/guest_call.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/game_ui_sheet.h"
@@ -180,7 +179,6 @@ REX_FUNC(sub_821A40E0) {
   __imp__sub_821A40E0(ctx, base);
   if (game_ui && pc::NotificationsShown()) Update(ctx, base, game_ui);
   if (game_ui) torchlight::dev::OnGameUiUpdate(ctx, base, game_ui, context);
-  if (game_ui) torchlight::dev::OnUiFrame(ctx, base, game_ui);
 }
 
 }  // extern "C"

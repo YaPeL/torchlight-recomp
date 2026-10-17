@@ -10,7 +10,7 @@ REXCVAR_DEFINE_STRING(dev_input_script, "", "Torchlight",
 #ifndef TORCHLIGHT_DEV_INPUT
 
 namespace torchlight::dev {
-void OnUiFrame(PPCContext&, uint8_t*, uint32_t) {}
+void OnUiFrame(PPCContext&, uint8_t*) {}
 void InstallInputScript(rex::Runtime*, std::function<void()>) {
   if (!REXCVAR_GET(dev_input_script).empty()) {
     REXLOG_WARN("dev: --dev_input_script ignored: this build has no input scripts "
@@ -421,12 +421,16 @@ class ScriptInputDriver : public rex::input::InputDriver {
                               rex::input::X_INPUT_KEYSTROKE* out) override {
     if (id != kDevice || !connected_) return X_ERROR_DEVICE_NOT_CONNECTED;
     std::lock_guard lock(mutex_);
+    // A keystroke the game did not read soon after it happened is dropped: a screen that does not
+    // read keystrokes (the title) left its presses to the next one, which acted on them later.
+    const auto now = Clock::now();
+    while (!keys_.empty() && now - keys_.front().when > kKeystrokeLifetime) keys_.pop_front();
     if (keys_.empty() || !is_active()) return X_ERROR_EMPTY;
     if (out) {
       std::memset(out, 0, sizeof(*out));
-      out->virtual_key = keys_.front().virtual_key;
-      out->flags = keys_.front().down ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN
-                                      : rex::input::X_INPUT_KEYSTROKE_KEYUP;
+      out->virtual_key = keys_.front().key.virtual_key;
+      out->flags = keys_.front().key.down ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN
+                                          : rex::input::X_INPUT_KEYSTROKE_KEYUP;
     }
     keys_.pop_front();
     return X_ERROR_SUCCESS;
@@ -437,7 +441,7 @@ class ScriptInputDriver : public rex::input::InputDriver {
     std::lock_guard lock(mutex_);
     if (pad == pad_) return;
     for (const auto& k : PadKeystrokes(pad_, pad)) {
-      if (keys_.size() < 64) keys_.push_back(k);
+      if (keys_.size() < 64) keys_.push_back({k, Clock::now()});
     }
     pad_ = pad;
     ++packet_;
@@ -446,10 +450,15 @@ class ScriptInputDriver : public rex::input::InputDriver {
   void Disconnect() { connected_ = false; }
 
  private:
+  static constexpr auto kKeystrokeLifetime = std::chrono::milliseconds(200);
+  struct TimedKeystroke {
+    PadKeystroke key;
+    Clock::time_point when;
+  };
   std::mutex mutex_;
   PadState pad_;
   uint32_t packet_ = 1;
-  std::deque<PadKeystroke> keys_;
+  std::deque<TimedKeystroke> keys_;
   std::atomic<bool> connected_{true};
 };
 
@@ -624,8 +633,10 @@ void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::stri
 
 }  // namespace
 
-void OnUiFrame(PPCContext& ctx, uint8_t* base, uint32_t game_ui) {
-  if (!g_runner || !game_ui) return;
+void OnUiFrame(PPCContext& ctx, uint8_t* base) {
+  if (!g_runner) return;
+  const uint32_t game_ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
+  if (!InGuestHeap(game_ui)) return;
   if (g_runner->ReadsUi()) {
     std::vector<std::string> focused, shown;
     for (const UiMenu& m : OpenMenus(base)) {
