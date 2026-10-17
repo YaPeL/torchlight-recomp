@@ -316,6 +316,8 @@ float ContentScaleDpi() { return 160.0f; }  // Android's density baseline
 
 bool TouchControlsByDefault() { return true; }
 
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {1280, 800}; }
+
 bool HasSystemBackButton() { return true; }
 
 // Android's picker (SDL's, through the Storage Access Framework) gives a document URI

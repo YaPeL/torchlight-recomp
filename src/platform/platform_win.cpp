@@ -298,6 +298,8 @@ float ContentScaleDpi() { return 96.0f; }  // Windows' nominal
 
 bool TouchControlsByDefault() { return false; }
 
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
+
 bool HasSystemBackButton() { return false; }
 
 // The picker's paths are files the program opens as they are.
