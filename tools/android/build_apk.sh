@@ -2,9 +2,9 @@
 # Builds the Android app (APK) without Gradle, from the native libraries a build made: the
 # Android SDK's build tools compile packaging/android/ (manifest, resources, our activity) and
 # SDL's Java sources (third_party/sdl3-android), and the APK carries the main library (the game's,
-# or the replay's in a development build), the SDK's librexruntime.so and the NDK's
-# libc++_shared.so, uncompressed and 16 KB aligned (Android 15+ devices with 16 KB pages; the
-# libraries are linked for it). docs/android-port.md, stage A1.
+# or the replay's in a development build), the SDK's librexruntime.so and its null GPU plugin, and
+# the NDK's libc++_shared.so, uncompressed and 16 KB aligned (Android 15+ devices with 16 KB pages;
+# the libraries are linked for it). docs/android-port.md, stage A1.
 #
 # Usage: tools/android/build_apk.sh [options] MAIN_LIBRARY SDK_PREFIX OUT.apk
 #   MAIN_LIBRARY  the .so whose SDL_main the activity calls (out/build/.../libtorchlight.so, or
@@ -53,7 +53,7 @@ main=$1 prefix=$2 out=$3
 tools="$sdk/build-tools/$build_tools"
 android_jar="$sdk/platforms/$platform/android.jar"
 java_home="$sdk/jdk"
-for f in "$main" "$prefix/lib/librexruntime.so" "$tools/aapt2" "$tools/d8" "$tools/zipalign" \
+for f in "$main" "$prefix/lib/librexruntime.so" "$prefix/lib/librexgpu-null.so" "$tools/aapt2" "$tools/d8" "$tools/zipalign" \
   "$tools/apksigner" "$android_jar" "$java_home/bin/javac" "$ogre_media/Main" \
   "$ogre_media/RTShaderLib"; do
   [ -e "$f" ] || { echo "build_apk: missing $f" >&2; exit 2; }
@@ -111,7 +111,9 @@ find "$work/classes" -name '*.class' > "$work/classes.txt"
 
 # The libraries, uncompressed (stored), stripped unless asked otherwise.
 mkdir -p "$work/apk/lib/arm64-v8a"
-for lib in "$main" "$prefix/lib/librexruntime.so" "$libcxx"; do
+# The runtime loads its GPU plugin from its own folder: the native mode's null one (no Xenos on
+# Android).
+for lib in "$main" "$prefix/lib/librexruntime.so" "$prefix/lib/librexgpu-null.so" "$libcxx"; do
   dest="$work/apk/lib/arm64-v8a/$(basename "$lib")"
   if [ "$keep_debug" = 1 ]; then cp "$lib" "$dest"; else "$llvm/llvm-strip" --strip-debug -o "$dest" "$lib"; fi
 done

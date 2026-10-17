@@ -18,12 +18,13 @@
 
     <!-- hasFragileUserData: Android's uninstall dialog offers to keep the saves (stage A1.2).
          allowBackup stays off until its rules (saves and settings only, never the installed game)
-         are written. extractNativeLibs off: the libraries stay in the APK, 16 KB aligned. -->
+         are written. extractNativeLibs on: the runtime finds its GPU plugin as a file next to
+         librexruntime.so, which libraries kept inside the APK are not. -->
     <application
         android:label="@string/app_name"
         android:allowBackup="false"
         android:hasFragileUserData="true"
-        android:extractNativeLibs="false"
+        android:extractNativeLibs="true"
         android:hardwareAccelerated="true"
         android:enableOnBackInvokedCallback="false"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
