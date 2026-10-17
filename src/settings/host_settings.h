@@ -90,6 +90,9 @@ struct Capabilities {
   // Native size of the display the game is shown on, and the display modes the platform reports.
   Resolution display;
   std::vector<Resolution> display_modes;
+  // The internal resolution the platform starts at, near which the default ("window") falls
+  // (Android: 1280x800, docs/android-port.md, A2); 0x0: the display's size.
+  Resolution preferred_render;
   // Refresh rate of that display in Hz (0 if unknown).
   uint32_t display_hz = 0;
   // Running on battery (unplugged) when the game started: the automatic frame rate cap is 60.
@@ -147,7 +150,14 @@ bool StartupNeedsRenderSystemCheck(const Capabilities& caps, const std::string& 
 bool GpuChoiceApplies(const Capabilities& caps, const std::string& render_system);
 Choices<std::string> GpuChoices(const Capabilities& caps);  // ids
 // Display modes with the display's aspect ratio, largest first; the first is the display's size.
+// The display's size and its modes of the same aspect, largest first. Where the platform reports no
+// mode but the display's (Android), fractions of it instead (3/4, 2/3, 1/2).
 Choices<Resolution> ResolutionChoices(const Capabilities& caps);
+// What "window" (0x0, the default) stands for: the display's size, or where the platform prefers a
+// smaller start (Capabilities::preferred_render) the choice nearest to it.
+Resolution DefaultRenderResolution(const Capabilities& caps);
+// The internal resolution a setting draws at: the setting, or the default for "window".
+Resolution EffectiveRenderResolution(Resolution setting, const Capabilities& caps);
 // Automatic (kFpsCapAuto) first, then ascending, with 0 (unlimited) last.
 Choices<uint32_t> FpsCapChoices(const Capabilities& caps);
 // The cap in effect: a chosen number as it is; automatic is the display's refresh rate up to

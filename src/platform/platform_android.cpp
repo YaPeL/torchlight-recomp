@@ -296,6 +296,8 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   return plugin_dir;
 }
 
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {1280, 800}; }
+
 bool HasSystemBackButton() { return true; }
 
 // Android's picker (SDL's, through the Storage Access Framework) gives a document URI

@@ -286,6 +286,8 @@ std::unique_ptr<OgreTopLevelWindow> OgreTopLevelWindow::Create(const std::string
 
 void SetCurrentThreadName(const char* name) { pthread_setname_np(name); }
 
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
+
 bool HasSystemBackButton() { return false; }
 
 // The picker's paths are files the program opens as they are.
