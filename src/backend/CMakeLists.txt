@@ -133,9 +133,10 @@ add_test(NAME conventions_test COMMAND conventions_test)
 # Direct3D 11 (`<name>_d3d11`). GL3+ needs OpenGL 3.3: Windows CI and release runners have no GPU,
 # only Windows' own OpenGL 1.1, on which OGRE crashes before the test can tell (no display to probe
 # first, unlike Linux), and the macOS runners' virtual GPU gives no OpenGL 3 context (the backend
-# reports it and the test fails), so the GL3+ runs carry the label `opengl33` and the runners'
-# ctest leaves it out (`-LE opengl33`, .github/workflows/ci.yml and release.yml); they run on
-# machines with a GPU. The Direct3D 11 runs need no GPU (Windows' software adapter, WARP) and run there too.
+# reports it and the test fails), so the GL3+ runs carry the label `opengl33` and the Windows and
+# macOS runners' ctest leaves it out (`-LE opengl33`, .github/workflows/ci.yml and release.yml). CI's
+# Linux runner runs them under xvfb-run on Mesa's llvmpipe, in a step that fails if one is skipped.
+# The Direct3D 11 runs need no GPU (Windows' software adapter, WARP) and run there too.
 # The host UI pass on an offscreen backend; the internal render scale and the guest's frame size;
 # a stage's constants across render target binds.
 foreach(_test ui_pass_test render_scale_test draw_constants_test)

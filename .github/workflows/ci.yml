@@ -104,6 +104,10 @@ jobs:
         run: |
           apt-get update
           apt-get install -y --no-install-recommends ca-certificates curl git zstd gh
+          # An X server in memory and Mesa (its software renderer, llvmpipe) for the backend tests'
+          # GL3+ runs (Test, GL3+ below).
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xvfb xauth libgl1 libegl1 libegl-mesa0 libgl1-mesa-dri
           git config --global --add safe.directory '*'
       - uses: actions/checkout@v7
       - name: Toolchain
@@ -132,7 +136,20 @@ jobs:
       - name: Build
         run: cmake --build --preset linux-amd64-nogame --parallel
       - name: Test
-        run: ctest --test-dir out/build/linux-amd64-nogame --output-on-failure
+        run: ctest --test-dir out/build/linux-amd64-nogame --output-on-failure -LE opengl33
+      # The backend tests' GL3+ runs (label opengl33) need OpenGL 3.3 and a display: xvfb-run gives
+      # them an X server, and with no GPU Mesa draws with llvmpipe. Without a display they exit 77 and
+      # ctest marks them skipped, which passed CI without running them (docs/regressions.md): a
+      # skipped or not-run test fails this step.
+      - name: Test, GL3+ (Mesa llvmpipe)
+        shell: bash
+        run: |
+          xvfb-run -a ctest --test-dir out/build/linux-amd64-nogame --output-on-failure -L opengl33 \
+            --no-tests=error 2>&1 | tee opengl33.log
+          if grep -E '\*\*\*Skipped|Not Run' opengl33.log; then
+            echo "::error::a GL3+ test did not run (skipped or not run): see above"
+            exit 1
+          fi
       - name: Package replay
         run: |
           cmake --install out/build/linux-amd64-nogame --prefix /tmp/install
