@@ -434,9 +434,9 @@ jobs:
           Linux, Windows and macOS (Apple Silicon) beta. Needs your own copy of Torchlight for Xbox Live Arcade (asked for on the first start).
 
           **New**
-          - **Mods' classes and pets** can be chosen when you create a character, with their own icons and portraits; skill trees with a third column work. At the start, the game lists the characters last saved with other mods, as PC warns.
+          - **Mods' classes and pets** can be chosen when you create a character, with their own icons and portraits; skill trees with a third column work. At the start, the game lists the characters last saved with other mods, like the PC version does.
           - **Button icons for your controller**: PlayStation (PS3, PS4, PS5) and Nintendo icons, chosen from the controller you use. Options, Controls lets you pick them and swap A/B on Nintendo controllers.
-          - **Frame rate limit "Auto"**: follows your display's refresh rate (up to 144; 60 on battery and on the Steam Deck). Existing settings keep their limit.
+          - **Frame rate limit "Auto"**: follows your display's refresh rate (up to 144; 60 on battery; the Steam Deck is detected, but untested). Existing settings keep their limit.
           - **About one frame less latency** with vsync, and slightly higher frame rates in fights and in the town.
           - Options in three sections (Video, Controls, Extras); starting with mods is faster, and the first start with a large mod pack shows its progress ("Preparing mods...") instead of a black screen.
 

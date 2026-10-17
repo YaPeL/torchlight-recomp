@@ -16,8 +16,8 @@ Everything integrated into `develop` since v0.7.6-beta, for players.
   its mod's own icon. A mod that redraws the game's own classes shows its portraits, as on PC.
   Skill trees with a third column of skills show and work.
 - Pets added by mods can be chosen too, with their names and pictures.
-- At the start, the game lists the characters last saved with a different set of mods, the way PC
-  warns about them.
+- At the start, the game lists the characters last saved with a different set of mods, like the
+  PC version does.
 - The notices about mods' items are shorter, and also in German, French and Spanish.
 - Starting the game with mods is faster, the first time with a new set of mods and above all
   when nothing changed since the last start.
@@ -39,7 +39,8 @@ Everything integrated into `develop` since v0.7.6-beta, for players.
 ### Display
 
 - The frame rate limit follows your display by default ("Auto" in Options, Video: its refresh
-  rate, up to 144; 60 on battery, on the Steam Deck and on 60 Hz displays). Existing settings keep
+  rate, up to 144; 60 on battery and on 60 Hz displays; the Steam Deck is detected and gets 60, but
+  it is untested). Existing settings keep
   the limit they have: choose Auto in Options to follow the display.
 - With vsync on (the default), what you do reaches the screen about one frame sooner: from about
   70 ms to about 52 ms on the development laptop. The frame counter (F3) shows the latency.
