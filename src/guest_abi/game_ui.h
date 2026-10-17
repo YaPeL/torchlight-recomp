@@ -361,7 +361,8 @@ namespace game_ui_object {
 // them (slot 1 then slot 3, sub_8233E338 @0x8233E3F0, @0x8233E40C); "is a menu open" scans the
 // same list (sub_82191210, open flag @0x82191240).
 inline constexpr Field kMenus{0x17A8, Confidence::kConfirmed};
-// [confirmed] The list's end: "is a menu open" walks begin (+6056) to end (+6060), 4 bytes a menu
+// [confirmed] The list's end (the list leaves out the front end's menus: the main menu showed with
+// no open menu in it, dump of 2026-10-16): "is a menu open" walks begin (+6056) to end (+6060), 4 bytes a menu
 // (sub_82191210 @0x82191210..@0x82191220), testing each one's open flag (dropdown_menu::kOpen).
 inline constexpr Field kMenusEnd{0x17AC, Confidence::kConfirmed};
 }  // namespace game_ui_object

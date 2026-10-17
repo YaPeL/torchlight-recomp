@@ -81,10 +81,18 @@ std::string Rect(const UiRect& r, double scale) {
          Number((r.bottom - r.top) * scale) + "}";
 }
 
+// The name without the layout instance prefix ("43_Help" -> "Help"), which varies between runs.
+std::string_view Unprefixed(std::string_view name) {
+  size_t i = 0;
+  while (i < name.size() && name[i] >= '0' && name[i] <= '9') ++i;
+  return i > 0 && i < name.size() && name[i] == '_' ? name.substr(i + 1) : name;
+}
+
 void Window(std::string& out, const UiWindow& w, double scale, const std::string& pad) {
   const std::string in = pad + "  ";
   out += pad + "{\n";
   out += in + "\"name\": " + Quote(w.name) + ",\n";
+  out += in + "\"base_name\": " + Quote(Unprefixed(w.name)) + ",\n";
   out += in + "\"type\": " + Quote(w.type) + ",\n";
   out += in + "\"class\": " + Quote(w.class_name) + ",\n";
   out += in + "\"visible\": " + (w.visible ? "true" : "false") + ",\n";
@@ -140,8 +148,10 @@ std::string UiDumpJson(const UiDump& d) {
   out += "  \"menus\": [";
   for (size_t i = 0; i < d.menus.size(); ++i) {
     const UiMenu& m = d.menus[i];
+    std::string texts;
+    for (size_t t = 0; t < m.focus_texts.size(); ++t) texts += std::string(t ? ", " : "") + Quote(m.focus_texts[t]);
     out += std::string(i ? ", " : "") + "{\"class\": " + Quote(m.class_name) + ", \"root\": " + Quote(m.root) +
-           ", \"focus\": " + Quote(m.focus) + "}";
+           ", \"focus\": " + Quote(m.focus) + ", \"focus_texts\": [" + texts + "]}";
   }
   out += "],\n";
   out += "  \"windows\": [";

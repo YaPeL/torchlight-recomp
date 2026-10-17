@@ -45,7 +45,7 @@ void TestJson() {
   d.frame = 42;
   d.display_width = 1280;
   d.display_height = 720;
-  d.menus = {{".?AVCMainMenu@@", "MainMenu", "Continue"}};
+  d.menus = {{".?AVCMainMenu@@", "MainMenu", "Continue", {"Continue"}}};
   UiWindow root;
   root.name = "MainMenu";
   root.type = "DefaultWindow";
@@ -53,7 +53,7 @@ void TestJson() {
   root.rect = {0, 0, 1280, 720};
   root.clipped = root.rect;
   UiWindow button;
-  button.name = "Continue";
+  button.name = "43_Continue";
   button.type = "ceguiWidget/ImageButton";
   button.visible = true;
   button.shown = true;
@@ -68,9 +68,10 @@ void TestJson() {
   d.windows.push_back(root);
   const std::string j = UiDumpJson(d);
   Check(Has(j, "\"format\": \"torchlight-ui-dump 1\""), "format");
+  Check(Has(j, "\"name\": \"43_Continue\"") && Has(j, "\"base_name\": \"Continue\""), "base name");
   Check(Has(j, "\"display\": {\"width\": 1280, \"height\": 720}"), "display");
   Check(Has(j, "\"scale_to_1080p\": 1.5"), "scale");
-  Check(Has(j, "{\"class\": \".?AVCMainMenu@@\", \"root\": \"MainMenu\", \"focus\": \"Continue\"}"), "menus");
+  Check(Has(j, "{\"class\": \".?AVCMainMenu@@\", \"root\": \"MainMenu\", \"focus\": \"Continue\", \"focus_texts\": [\"Continue\"]}"), "menus");
   Check(Has(j, "\"rect\": {\"left\": 100, \"top\": 200, \"right\": 300, \"bottom\": 240, \"width\": 200, \"height\": 40}"),
         "rect in guest pixels");
   Check(Has(j, "\"rect_1080p\": {\"left\": 150, \"top\": 300, \"right\": 450, \"bottom\": 360, \"width\": 300, \"height\": 60}"),

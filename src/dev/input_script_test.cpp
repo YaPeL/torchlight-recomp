@@ -169,7 +169,7 @@ void TestFocusPressesUntilFocused() {
   Check(r.pads[0].buttons == pad::kUp, "the first press at once");
   Check(presses >= 2, "pressed again every 10 frames");
   Check(!r.script.done(), "still waiting");
-  r.e.focused = {"back"};  // the name matches ignoring case, but only from a read after the start
+  r.e.focused = {"12_back"};  // matches ignoring case and the layout prefix, from a fresh read only
   r.Frame();
   Check(!r.script.done(), "a stale read does not count");
   ++r.e.ui_reads;
@@ -191,6 +191,11 @@ void TestWaitWindowAndTimeout() {
   bool says = false;
   for (const auto& a : t.actions) says |= a.kind == Kind::kFailed && a.text.find("focus on Nowhere") != std::string::npos;
   Check(says, "the failure names the focus it waited for");
+  Run p("wait window Help\n");
+  p.e.shown_windows = {"43_i_406", "4_Helper", "x_Help"};
+  ++p.e.ui_reads;
+  p.Frames(2);
+  Check(!p.script.done(), "only a numeric prefix is dropped, and the rest must match whole");
 }
 
 void TestDumpAndNamedCapture() {

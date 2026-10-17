@@ -19,10 +19,13 @@
 //                                              menu NAME    a menu whose class name contains NAME
 //                                                           opens
 //                                              focus NAME   the pad focus of an open menu is on the
-//                                                           window named NAME
+//                                                           window named NAME, or whose text (or
+//                                                           a child's: a button's label) is NAME
 //                                              window NAME  a window named NAME is shown (an inner
 //                                                           screen: a layout's root, a page, a tab)
-//                                            Window names match whole, ignoring case.
+//                                            Window names match whole, ignoring case, with or
+//                                            without the layout's instance prefix ("43_Help"
+//                                            matches Help).
 //   focus NAME [by UP|DOWN|LEFT|RIGHT] [every DUR] [timeout DUR]
 //                                            press the direction (DOWN) every DUR (0.4 s) until
 //                                            the focus is on NAME (timeout 30 s)

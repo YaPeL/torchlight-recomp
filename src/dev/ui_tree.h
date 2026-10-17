@@ -37,6 +37,7 @@ struct UiWindow {
 
 struct UiMenu {
   std::string class_name, root, focus;  // the open menu's class, its layout's root window, the focus
+  std::vector<std::string> focus_texts;  // the focus window's text and its children's
 };
 
 struct UiDump {
@@ -51,7 +52,8 @@ struct UiDump {
 std::optional<UiImage> ParseImageProperty(std::string_view value);
 // UTF-32 code points to UTF-8 (invalid ones as U+FFFD).
 std::string Utf32ToUtf8(const std::vector<uint32_t>& code_points);
-// The JSON (UTF-8, indented); rects carry width and height, and every rect is also given scaled to
+// The JSON (UTF-8, indented); every window also carries its name without the layout instance prefix
+// ("base_name"); rects carry width and height, and every rect is also given scaled to
 // 1080 lines ("*_1080p") for comparing with captures replayed at 1920x1080.
 std::string UiDumpJson(const UiDump& dump);
 

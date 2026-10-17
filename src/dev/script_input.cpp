@@ -142,25 +142,49 @@ void CollectShown(const uint8_t* base, uint32_t window, int depth, std::vector<s
   for (uint32_t child : Children(base, window)) CollectShown(base, child, depth + 1, out);
 }
 
-// The open menus of CGameUI's list (game_ui_object::kMenus), each with its layout's root and the
-// window its pad focus is on (tab_navigation::kFocusWindow).
-std::vector<UiMenu> OpenMenus(const uint8_t* base, uint32_t game_ui) {
-  namespace obj = ui_abi::game_ui_object;
+// Every menu SetOpen has opened and not closed since (the hook below): CGameUI's list
+// (game_ui_object::kMenus) leaves out the front end's menus (the main menu is not in it). Game
+// thread.
+std::mutex g_menus_mutex;
+std::vector<uint32_t> g_menus;
+
+void NoteMenu(uint32_t menu, bool open) {
+  std::lock_guard lock(g_menus_mutex);
+  const auto at = std::find(g_menus.begin(), g_menus.end(), menu);
+  if (open && at == g_menus.end()) g_menus.push_back(menu);
+  if (!open && at != g_menus.end()) g_menus.erase(at);
+}
+
+// The open menus, each with its layout's root and the window its pad focus is on
+// (tab_navigation::kFocusWindow), latest opened last.
+std::vector<UiMenu> OpenMenus(const uint8_t* base) {
   namespace dm = ui_abi::dropdown_menu;
+  std::vector<uint32_t> menus;
+  {
+    std::lock_guard lock(g_menus_mutex);
+    menus = g_menus;
+  }
   std::vector<UiMenu> out;
-  const uint32_t begin = abi::ReadU32(base, game_ui + obj::kMenus.offset);
-  const uint32_t end = abi::ReadU32(base, game_ui + obj::kMenusEnd.offset);
-  if (!begin || end < begin || end - begin > 4 * 1024) return out;
-  for (uint32_t at = begin; at < end; at += 4) {
-    const uint32_t menu = abi::ReadU32(base, at);
+  for (uint32_t menu : menus) {
     if (!InGuestHeap(menu) || abi::ReadU8(base, menu + dm::kOpen.offset) == 0) continue;
     UiMenu m;
     m.class_name = ClassName(base, menu);
+    if (m.class_name.empty()) continue;  // destroyed since
     const uint32_t root = abi::ReadU32(base, menu + dm::kRoot.offset);
     if (InGuestHeap(root)) m.root = WindowName(base, root);
     const uint32_t focus =
         abi::ReadU32(base, menu + dm::kNavigation.offset + ui_abi::tab_navigation::kFocusWindow.offset);
-    if (InGuestHeap(focus)) m.focus = WindowName(base, focus);
+    if (InGuestHeap(focus)) {
+      m.focus = WindowName(base, focus);
+      for (uint32_t w : Children(base, focus)) {
+        if (std::string text = ReadCeguiString(base, w + ui_abi::kWindowText.offset); !text.empty()) {
+          m.focus_texts.push_back(std::move(text));
+        }
+      }
+      if (std::string text = ReadCeguiString(base, focus + ui_abi::kWindowText.offset); !text.empty()) {
+        m.focus_texts.push_back(std::move(text));
+      }
+    }
     out.push_back(std::move(m));
   }
   return out;
@@ -557,7 +581,7 @@ void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::stri
   UiDump dump;
   dump.name = name;
   dump.frame = g_runner->frame();
-  dump.menus = OpenMenus(base, game_ui);
+  dump.menus = OpenMenus(base);
   size_t count = 0;
   {
     WindowReader reader(ctx, base);
@@ -588,8 +612,11 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base, uint32_t game_ui) {
   if (!g_runner || !game_ui) return;
   if (g_runner->ReadsUi()) {
     std::vector<std::string> focused, shown;
-    for (const UiMenu& m : OpenMenus(base, game_ui)) {
-      if (!m.focus.empty()) focused.push_back(m.focus);
+    for (const UiMenu& m : OpenMenus(base)) {
+      if (m.focus.empty()) continue;
+      focused.push_back(m.focus);
+      // A button's label is often a child of it with no name of its own: its text counts too.
+      for (const std::string& text : m.focus_texts) focused.push_back(text);
     }
     const uint32_t sheet = Sheet(base, game_ui);
     if (InGuestHeap(sheet)) CollectShown(base, sheet, 0, shown);
@@ -644,7 +671,11 @@ REX_FUNC(sub_82351FF0) {
                        abi::ReadU8(base, menu + abi::game_ui::dropdown_menu::kOpen.offset) == 0;
   std::string name =
       opening && torchlight::dev::g_runner ? torchlight::dev::ClassName(base, menu) : std::string();
+  const bool request = ctx.r4.u32 != 0;
   __imp__sub_82351FF0(ctx, base);
+  if (torchlight::dev::g_runner) {
+    torchlight::dev::NoteMenu(menu, request && abi::ReadU8(base, menu + abi::game_ui::dropdown_menu::kOpen.offset) != 0);
+  }
   if (opening && torchlight::dev::g_runner) torchlight::dev::g_runner->OnMenuOpened(std::move(name));
 }
 

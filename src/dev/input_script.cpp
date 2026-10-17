@@ -70,8 +70,18 @@ bool SameName(std::string_view a, std::string_view b) {
   return true;
 }
 
+// A window name without the layout instance prefix the game gives the windows of a loaded layout
+// ("43_NewCharacter": digits, then '_'), which varies with the order layouts load in.
+std::string_view Unprefixed(std::string_view name) {
+  size_t i = 0;
+  while (i < name.size() && name[i] >= '0' && name[i] <= '9') ++i;
+  return i > 0 && i < name.size() && name[i] == '_' ? name.substr(i + 1) : name;
+}
+
+// `name` matches a window named exactly so, or so after its layout prefix.
 bool HasName(const std::vector<std::string>& names, std::string_view name) {
-  return std::any_of(names.begin(), names.end(), [&](const std::string& n) { return SameName(n, name); });
+  return std::any_of(names.begin(), names.end(),
+                     [&](const std::string& n) { return SameName(n, name) || SameName(Unprefixed(n), name); });
 }
 
 // A file name for dump_ui: letters, digits, '-', '_' and '.', not starting with '.'.
