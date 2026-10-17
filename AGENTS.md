@@ -123,3 +123,12 @@ not count.
 - Agents that share a machine coordinate before using it (game runs, benchmarks, the shared SDK).
 - The Windows agent does not see the other agents. Anything it needs to know goes through the
   owner.
+- **Turns and waits between agents:**
+  - An agent only works during a turn. "I'll go on with X" at the end of a message does not make
+    it go on: when the turn ends, it stays still until someone writes to it. So never close a turn
+    promising to go on: do X in that same turn, or say plainly that you stopped and why.
+  - When you hand work to another agent or wait for something from it, subscribe to hear when it
+    goes idle. When it does, check whether it delivered what you were waiting for. If it went idle
+    without delivering it, write to it and ask what happened; do not just keep waiting.
+  - When you are waiting for the owner, say so in the message's last line ("Waiting for your OK on
+    X"), so who has the ball shows at a glance.
