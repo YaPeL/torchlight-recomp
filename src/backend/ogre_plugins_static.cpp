@@ -14,9 +14,18 @@ namespace {
 class StaticOgrePlugins final : public OgrePlugins {
  public:
   explicit StaticOgrePlugins(Ogre::Root& root) {
-    root.installPlugin(&render_system_);
-    // Image files the guest loads are DDS (built into OgreMain); a few are PNG.
-    Ogre::STBIImageCodec::startup();
+    // The root keeps the plugin before installing it (Root::installPlugin), and installing makes
+    // the render system, which throws without an EGL display: on a failure the root lets go of
+    // the plugin here, since this object (and the plugin in it) goes before the root does.
+    try {
+      root.installPlugin(&render_system_);
+      // Image files the guest loads are DDS (built into OgreMain); a few are PNG.
+      Ogre::STBIImageCodec::startup();
+    } catch (...) {
+      Ogre::STBIImageCodec::shutdown();  // the codecs registered before a failure, if any
+      root.uninstallPlugin(&render_system_);
+      throw;
+    }
   }
   ~StaticOgrePlugins() override { Ogre::STBIImageCodec::shutdown(); }
 
