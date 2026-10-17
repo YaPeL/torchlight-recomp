@@ -445,6 +445,7 @@ jobs:
           - Saves that the mod list could leave unreadable are repaired at the start, after a backup.
           - When the renderer could not start, the window stayed black; now a message says why.
           - A texture pack in `replacements` (TNNR) could crash the game when changing level.
+          - macOS: vsync now follows the display's refresh (no more periodic judder at 60 fps).
 
           **Known limitations**
           - Mods' new affixes and level pieces are not added yet, mods must be unpacked folders, and mods are chosen by editing `mods.dat`.

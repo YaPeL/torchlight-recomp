@@ -55,6 +55,8 @@ Everything integrated into `develop` since v0.7.6-beta, for players.
   why and the game closes.
 - A texture pack in `replacements` (TNNR) could crash the game when changing level. The game no
   longer keeps a second, full-size copy of the pack's textures in the console's memory.
+- macOS: vsync now follows the display's refresh. Before, it did not hold the frame rate to the
+  display, and at 60 fps a frame was shown twice now and then, which looked like periodic judder.
 
 ### Known limitations
 
