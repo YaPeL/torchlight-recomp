@@ -267,8 +267,14 @@ replays measure it.
   - So no run-time texture needs DXT handling: they are already RGBA (about 9 MiB) and the
     "decode run-time DXT to RGBA" rule above has nothing to act on in these routes; the DXT work is
     the files' textures, into the cache before play.
-  - **Not yet covered:** whether the buttons tried opened the full map, and a large fight (the
-    fights were small groups). A run with the same tool covers both before the port starts.
+  - **The full map and a large fight (2026-10-17, the same tool, no mods and Enhanced Edition):**
+    the full map overlay (RS) open for about 16 s while walking, then four champions and six
+    skeletons summoned next to the character (`CHAMPION SKELETON`, `UNIT SKELETON`) and fought for
+    about 40 s, then a floor down with the map again and three more champions. 10 and 9 textures
+    created at run time, **none DXT**, all A8R8G8B8 (3.5 and 3.0 MiB), each uploaded once. No
+    capture was taken in these two runs; the summon commands' return is the one the mods agent saw
+    when the monsters appeared in its runs. **Closed:** the game creates no DXT texture at run time
+    in the screens and fights measured.
 
   **Contradiction (to the owner):** the adjustment of 2026-10-16 starts from "the render agent found
   DXT textures the game creates at run time". That was not a measurement: it came from the API
@@ -523,8 +529,8 @@ pending measurements**, before A0-A1:
    the standard script (`tools/input_scripts/measure-fight-town.txt`, `--dev_input_script`, a build
    with `TORCHLIGHT_DEV_COMMANDS`), 720p internal resolution, on copies (`--user_data_root`).
    Needs the fixed-floor saved game, which is not on this Mac.
-2. **Run-time textures** (done 2026-10-17, section 3): 26 per run, none DXT; the full map and a
-   large fight still to run.
+2. **Run-time textures** (done 2026-10-17, section 3): none DXT, with the full map and a large
+   fight included.
 3. **Conversion numbers**: the texture bytes of the game's `pak` as DXT and once converted to each
    candidate (RGBA8, ETC2, ASTC), the time to convert the whole `pak` on the desktop and on the
    phones, and the quality lost (PSNR against the DXT decode). They decide the target formats and
