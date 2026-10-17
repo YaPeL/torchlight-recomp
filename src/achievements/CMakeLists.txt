@@ -38,7 +38,12 @@ if(TARGET rex::runtime AND UNIX AND NOT APPLE)
   add_executable(achievement_hooks_test guest_hooks.cpp guest_hooks_test.cpp)
   target_link_libraries(achievement_hooks_test PRIVATE torchlight_achievements)
   target_include_directories(achievement_hooks_test PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
-  target_compile_options(achievement_hooks_test PRIVATE -Wall -Wextra -Werror -msse4.1)
+  target_compile_options(achievement_hooks_test PRIVATE -Wall -Wextra -Werror)
+  # x86-64's SIMD for the SDK's guest headers, as torchlight_frustum_test (src/hooks); no such flag
+  # on arm64 (Android, Linux arm64).
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    target_compile_options(achievement_hooks_test PRIVATE -msse4.1)
+  endif()
   add_test(NAME achievement_hooks_test COMMAND achievement_hooks_test)
 endif()
 
