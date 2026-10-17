@@ -625,7 +625,7 @@ void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::stri
   }
   UiDump dump;
   dump.name = name;
-  dump.frame = g_runner->frame();
+  dump.frame = g_runner ? g_runner->frame() : 0;
   dump.menus = OpenMenus(base, sheet);
   size_t count = 0;
   {
@@ -654,6 +654,14 @@ void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::stri
 }  // namespace
 
 void OnUiFrame(PPCContext& ctx, uint8_t* base) {
+  // Every capture (F9 included, with or without a script) gets the UI dump beside it.
+  static uint64_t captures_seen = 0;
+  const uint64_t captures = capture::Session::Get().capture_requests();
+  if (captures != captures_seen) {
+    captures_seen = captures;
+    const uint32_t ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
+    if (InGuestHeap(ui)) WriteDump(ctx, base, ui, "ui-capture-" + std::to_string(captures));
+  }
   if (!g_runner) return;
   const uint32_t game_ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
   if (!InGuestHeap(game_ui)) {
