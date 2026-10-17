@@ -1417,7 +1417,11 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 31 | `rexglue-guest-fatal-hook.patch` (D31) | `sdk/fatal-errors` | `bd833a2`, after 30 |
 | 32 | `rexglue-codegen-non-argument-in-context.patch` (D26) | `sdk/argument-locals` | `bd833a2`, after 31; not in the series |
 | 33 | `rexglue-timer-queue-blocking-wait.patch` (D32) | `sdk/timer-queue` | `bd833a2`, after 31 |
-| 34 | next free | | |
+| 34 | `rexglue-android-build.patch` (Rayman's 0001 adapted) | `sdk/android` | `bd833a2`, after 33 |
+| 35 | `rexglue-cross-host-tool.patch` | `sdk/android` | `bd833a2`, after 34 |
+| 36 | `rexglue-cross-no-package-registry.patch` | `sdk/android` | `bd833a2`, after 35 |
+| 37 | `rexglue-android-physical-host-offset.patch` | `sdk/android` | `bd833a2`, after 36 |
+| 38 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
@@ -1489,6 +1493,44 @@ these agents lives here and in `patches/README.md`.
     `docs/macos-port-plan`, 2078e54). `[flush]` 6 of 6 on APFS, and in the game two saves and
     loads, each with its flush lines (D27). The `F_FULLFSYNC` timing in a game save
     (`fs_usage`) was left out by the owner's decision.
+- **Android: the SDK's tests on a device** (patches 34-37, 2026-10-17; for the Mac agent, which
+  has the tablet, the phone and the arm64 emulator). What it shows: that the SDK runs on Android
+  (`ASharedMemory`, the fibers' assembly, Bionic's threads) and that patch 37's offset holds on
+  4 KB and on 16 KB pages. One run on a 4 KB device (the tablet or the phone) and one on the
+  16 KB emulator image is the minimum; both devices if there is time.
+  1. A host SDK of the same series: its `rexglue` runs the codegen of the Android build
+     (patch 35). Either the desktop SDK after its update to this series, or one apart with
+     `tools/deps/build_sdk.sh <host prefix> <host work dir>` (then delete the registry entry the
+     install adds, `~/.cmake/packages/rexglue/`, as in section 6). An older series fails the
+     configure below with "does not generate what this SDK expects".
+  2. A second checkout with the same series, for Android, with the tests. Run
+     `tools/deps/build_sdk.sh` with a work dir to get the patched checkout, or apply `series`
+     by hand on `bd833a2`. Then, from that checkout:
+
+     ```sh
+     cmake -S . -B out/build/android-arm64 -G "Ninja Multi-Config" \
+       -DCMAKE_TOOLCHAIN_FILE=<NDK>/build/cmake/android.toolchain.cmake \
+       -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 -DANDROID_STL=c++_shared \
+       -DCMAKE_CXX_STANDARD=23 -DCMAKE_CONFIGURATION_TYPES=Release \
+       -DCMAKE_DEFAULT_BUILD_TYPE=Release -DREXGLUE_BUILD_TESTS=ON \
+       -DCMAKE_CATCH_DISCOVER_TESTS_DISCOVERY_MODE=PRE_TEST \
+       -DREXGLUE_HOST_TOOL=<host prefix>/bin/rexglue
+     cmake --build out/build/android-arm64 --config Release
+     ```
+
+     `ANDROID_ABI` and `ANDROID_PLATFORM` go on the command line, not only in a toolchain file:
+     before `project()` the SDK's CMake reads them to tell an Android build from a macOS one.
+     `PRE_TEST` keeps the build from running the Android binaries on the host to list their
+     tests.
+  3. `tools/android/run_sdk_tests.sh -s <serial> <checkout>/out/android-arm64/Release` for each
+     device or emulator (`adb devices` lists the serials; an emulator is `emulator-5554`). It
+     pushes `unit_tests`, `ppc_tests`, the SDK's libraries and the NDK's `libc++_shared.so` to
+     `/data/local/tmp`, runs both, and keeps the logs with the model, the API level and the page
+     size in `android-sdk-tests-<serial>-<page size>/`.
+  4. Results back (through the owner): the summary lines of both logs for each device, with the
+     page size, and the full text of any failing case. Linux fails four `chrono_test` cases and
+     one `output_stamp_test` case with or without the series (`patches/README.md`); the same on
+     Android is not new. A failure in `[memory]`, in the fibers or in `ppc_tests` is.
 - **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
   22. Your version of 21 with Metal on Apple (`5a98b6f`) is now the last line of the `bd833a2`
   series (2026-10-09); it applies after the two Windows patches. When you next touch the series,
