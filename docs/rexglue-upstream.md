@@ -174,6 +174,13 @@ documented and the console's are inferred.
 
 ## Other topics
 
+**Known limitation: Linux on ARM64 with 16 KB pages** (Asahi Linux, for example; found in the
+review of patch 37, not caused by it). `PhysicalHostOffset` gives 0 on Linux, but the heap takes
+the 0x1000 host offset of the 0xE0000000 heap at run time when the page size is above 4 KB, so
+recompiled code would read 4 KB off there. No platform we ship runs on it. Patch 37's way out
+applies if it is ever needed: give that platform the offset at compile time, and the heap and
+the views follow it.
+
 **`RtlUnwind`.** Still `REXKRNL_WARN("[STUB] RtlUnwind called - not implemented")` in
 `development`, with `__C_specific_handler` and `RtlCaptureContext` also stubs; no issue upstream.
 Issue #409 is related but different (host C++ exceptions leaving `XThread`). The codegen's

@@ -8,8 +8,8 @@
 #   BIN_DIR     where the Android build put unit_tests, ppc_tests and the SDK's .so files
 #               (<SDK checkout>/out/android-arm64/Release)
 #   -s SERIAL   the device or emulator, as `adb devices` lists it (default: the only one attached)
-#   -n NDK      the NDK, for libc++_shared.so (default: ~/android-sdk/ndk/30.0.16248370, the one
-#               cmake/android-arm64.toolchain.cmake uses)
+#   -n NDK      the NDK, for libc++_shared.so (default: ~/android-sdk/ndk/30.0.16248370, where
+#               docs/android-port.md puts the NDK r30)
 #   -o OUT_DIR  where the logs go (default: ./android-sdk-tests-<serial>-<page size>)
 #   CATCH_ARGS  passed to both binaries (a test name or tags, e.g. "[memory]")
 # Needs: adb, an arm64-v8a device or image with USB or emulator debugging on, Android 11 (API 30)
@@ -61,6 +61,7 @@ mkdir -p "$out"
 # Everything in one directory the shell user can write: the binaries find their libraries through
 # LD_LIBRARY_PATH, and the tests' temporary files go to TMPDIR (Android has no /tmp).
 dir=/data/local/tmp/rexglue-tests
+trap 'adb_ shell "rm -rf $dir" > /dev/null 2>&1 || true' EXIT
 adb_ shell "rm -rf $dir && mkdir -p $dir/tmp"
 adb_ push "$bin"/unit_tests "$bin"/ppc_tests "$bin"/*.so "$libcxx" "$dir/" > /dev/null
 adb_ shell "chmod 755 $dir/unit_tests $dir/ppc_tests"
@@ -76,6 +77,5 @@ for test in unit_tests ppc_tests; do
   code=$(sed -n 's/^exit: //p' "$out/$test.log" | tail -n 1)
   [ "$code" = 0 ] || status=1
 done
-adb_ shell "rm -rf $dir"
 echo "logs: $out (page size $page)"
 exit $status

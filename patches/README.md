@@ -583,9 +583,9 @@ in number order; a branch adds its own line at its number's place.
     SDK (`<prefix>/bin/rexglue`); in a cross build `rexglueConfig.cmake` points `rex::rexglue`
     at it (the game's `generated/rexglue.cmake` is unchanged), and the PPC tests run it. The tool
     must generate what the SDK expects, and one version can be two codegens (patches over one
-    commit), so the check is a hash of `src/codegen`, `include/rex/codegen`, `src/rexglue`,
-    `thirdparty/disasm` and `resources/templates`, installed as `share/rexglue/codegen_id`;
-    another hash, or none, fails configure. The config also adds its prefix to `CMAKE_FIND_ROOT_PATH`, so the NDK's toolchain
+    commit), so the check is a hash of the SDK's own sources (`src`, `include`, the templates,
+    the PPC disassembler), installed as `share/rexglue/codegen_id`: the host SDK must come from
+    the same commit and patches, and another hash, or none, fails configure. The config also adds its prefix to `CMAKE_FIND_ROOT_PATH`, so the NDK's toolchain
     finds the dependencies installed with the SDK. Verified with a minimal consumer of an
     Android install: the matching host SDK configures; the series' previous SDK (same version)
     fails on the hash; no tool, a warning; without the find root, `fmt` is not found.
