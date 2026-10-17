@@ -97,6 +97,7 @@ void Window(std::string& out, const UiWindow& w, double scale, const std::string
   out += in + "\"class\": " + Quote(w.class_name) + ",\n";
   out += in + "\"visible\": " + (w.visible ? "true" : "false") + ",\n";
   out += in + "\"shown\": " + (w.shown ? "true" : "false") + ",\n";
+  out += in + "\"active\": " + (w.active ? "true" : "false") + ",\n";
   out += in + "\"rect\": " + Rect(w.rect, 1) + ",\n";
   out += in + "\"rect_1080p\": " + Rect(w.rect, scale) + ",\n";
   out += in + "\"clipped\": " + Rect(w.clipped, 1) + ",\n";

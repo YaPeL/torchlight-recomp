@@ -25,6 +25,7 @@ struct UiWindow {
   std::string name, type, class_name;  // CEGUI name and type; the C++ class (RTTI)
   bool visible = false;  // its own flag
   bool shown = false;    // visible with every parent
+  bool active = false;   // its own active flag: the pad focus is the deepest active window
   UiRect rect;           // unclipped, guest pixels
   UiRect clipped;        // clipped by the parents
   std::optional<float> alpha;  // its own

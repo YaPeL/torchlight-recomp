@@ -157,16 +157,22 @@ inline constexpr VtableSlot kNavigationHandler{11, Confidence::kConfirmed};
 }  // namespace dropdown_menu
 inline constexpr GuestFunction kSetTitle{0x82351F78, Confidence::kConfirmed};
 
-// [confirmed] The tab navigation state (dropdown_menu::kNavigation). The window the pad focus is on
-// is at +44: its setter sub_82346D10 (r3 = state, r4 = window) drops the previous window's four
-// event connections (+48..+79) and subscribes the new window's, then stores it (`stw r28,44(r31)`
-// @0x82346F8C); the tab order collector calls it (sub_82347F18). The base handler's event slot
-// (0x82348C38) clicks the event's window only when it is not this one (`lwz r9,44(r11)` on the
-// state at handler +8, @0x82348C44..@0x82348C50).
-namespace tab_navigation {
-inline constexpr Field kFocusWindow{44, Confidence::kConfirmed};
-}  // namespace tab_navigation
-inline constexpr GuestFunction kTabNavigationSetFocus{0x82346D10, Confidence::kConfirmed};
+// [confirmed] Where the pad focus is. The navigation keeps its cells in a grid: sub_82348A48 (r3 =
+// grid, r4 = row, r5 = column) deactivates the window of the current cell (rows at +4, 16 bytes a
+// row, current row +44 and column +48; Window::deactivate sub_825AE9E0 @0x82348A80), activates the
+// new one (Window::activate sub_825AE920 @0x82348AA8), moves the pad's cursor to its centre
+// (sub_82348508, which stores it in CGameUI +4376) and stores the cell (@0x82348AB4..@0x82348AB8).
+// The focus is therefore the deepest active window of the menu (kWindowActive). The tab navigation
+// state's own +44 is not the focus but the window it was collected from, the menu's root (stored by
+// sub_82346D10 from the collector sub_82347F18; the main menu's read back its root, dump of
+// 2026-10-16).
+inline constexpr GuestFunction kNavigationFocusCell{0x82348A48, Confidence::kConfirmed};
+inline constexpr GuestFunction kWindowActivate{0x825AE920, Confidence::kConfirmed};
+inline constexpr GuestFunction kWindowDeactivate{0x825AE9E0, Confidence::kConfirmed};
+// [confirmed] Window active flag (u8): Window::isActive (sub_825ADC88) is this byte and the
+// parent's isActive (@0x825ADCB4..@0x825ADCC0); the ctor sets +352..+355 in a row (enabled,
+// visible kWindowVisible, active, clipped by parent).
+inline constexpr Field kWindowActive{354, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // Gamepad navigation (TabNavigationHandler and subclasses). Slot 6 receives the navigation event:

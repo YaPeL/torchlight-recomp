@@ -142,6 +142,19 @@ void CollectShown(const uint8_t* base, uint32_t window, int depth, std::vector<s
   for (uint32_t child : Children(base, window)) CollectShown(base, child, depth + 1, out);
 }
 
+// The deepest shown, active window at or under `window` (the first active child at each level), or
+// 0 when `window` itself is not.
+uint32_t DeepestActive(const uint8_t* base, uint32_t window, int depth) {
+  if (depth > kMaxDepth || !OwnVisible(base, window) ||
+      abi::ReadU8(base, window + ui_abi::kWindowActive.offset) == 0) {
+    return 0;
+  }
+  for (uint32_t child : Children(base, window)) {
+    if (const uint32_t found = DeepestActive(base, child, depth + 1)) return found;
+  }
+  return window;
+}
+
 // Every menu SetOpen has opened and not closed since (the hook below): CGameUI's list
 // (game_ui_object::kMenus) leaves out the front end's menus (the main menu is not in it). Game
 // thread.
@@ -156,7 +169,7 @@ void NoteMenu(uint32_t menu, bool open) {
 }
 
 // The open menus, each with its layout's root and the window its pad focus is on
-// (tab_navigation::kFocusWindow), latest opened last.
+// (the deepest active window, DeepestActive), latest opened last.
 std::vector<UiMenu> OpenMenus(const uint8_t* base) {
   namespace dm = ui_abi::dropdown_menu;
   std::vector<uint32_t> menus;
@@ -172,17 +185,19 @@ std::vector<UiMenu> OpenMenus(const uint8_t* base) {
     if (m.class_name.empty()) continue;  // destroyed since
     const uint32_t root = abi::ReadU32(base, menu + dm::kRoot.offset);
     if (InGuestHeap(root)) m.root = WindowName(base, root);
-    const uint32_t focus =
-        abi::ReadU32(base, menu + dm::kNavigation.offset + ui_abi::tab_navigation::kFocusWindow.offset);
-    if (InGuestHeap(focus)) {
-      m.focus = WindowName(base, focus);
-      for (uint32_t w : Children(base, focus)) {
-        if (std::string text = ReadCeguiString(base, w + ui_abi::kWindowText.offset); !text.empty()) {
+    // The pad focus: the deepest active window under the menu's root (game_ui.h kWindowActive).
+    if (InGuestHeap(root)) {
+      const uint32_t focus = DeepestActive(base, root, 0);
+      if (focus && focus != root) {
+        m.focus = WindowName(base, focus);
+        for (uint32_t w : Children(base, focus)) {
+          if (std::string text = ReadCeguiString(base, w + ui_abi::kWindowText.offset); !text.empty()) {
+            m.focus_texts.push_back(std::move(text));
+          }
+        }
+        if (std::string text = ReadCeguiString(base, focus + ui_abi::kWindowText.offset); !text.empty()) {
           m.focus_texts.push_back(std::move(text));
         }
-      }
-      if (std::string text = ReadCeguiString(base, focus + ui_abi::kWindowText.offset); !text.empty()) {
-        m.focus_texts.push_back(std::move(text));
       }
     }
     out.push_back(std::move(m));
@@ -269,6 +284,7 @@ UiWindow ReadWindow(WindowReader& reader, const uint8_t* base, uint32_t window, 
   w.class_name = ClassName(base, window);
   w.visible = OwnVisible(base, window);
   w.shown = parent_shown && w.visible;
+  w.active = abi::ReadU8(base, window + ui_abi::kWindowActive.offset) != 0;
   w.rect = reader.Rect(window, false);
   w.clipped = reader.Rect(window, true);
   w.text = ReadCeguiString(base, window + ui_abi::kWindowText.offset);
