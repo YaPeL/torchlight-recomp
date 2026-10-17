@@ -1,0 +1,25 @@
+Patch 39. In the series since 2026-10-17, after patch 38.
+
+tests/unit/codegen/output_stamp_test.cpp, "Depfile escapes characters make treats as syntax",
+looked for "has\ space.toml" and "hash\#.toml" in plain string literals. "\ " and "\#" are
+unknown escape sequences (clang: -Wunknown-escape-sequence), read as the bare character, so the
+check looked for the unescaped names, which a correct depfile does not hold: the case failed on
+every platform (Linux, Windows, Android) while EscapeDepfilePath was right. Raw strings now.
+
+Test: the case passes on Linux and on the Android tablet; without the change it fails on both.
+
+diff --git a/tests/unit/codegen/output_stamp_test.cpp b/tests/unit/codegen/output_stamp_test.cpp
+index d97edb5..1484568 100644
+--- a/tests/unit/codegen/output_stamp_test.cpp
++++ b/tests/unit/codegen/output_stamp_test.cpp
+@@ -224,6 +224,8 @@ TEST_CASE("Depfile escapes characters make treats as syntax", "[output_stamp]")
+   std::ifstream in(depfile, std::ios::binary);
+   std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+ 
+-  CHECK(content.find("has\ space.toml") != std::string::npos);
+-  CHECK(content.find("hash\#.toml") != std::string::npos);
++  // Raw strings: in a plain literal "\ " and "\#" are unknown escapes, which compilers read as
++  // the bare character, so the check looked for the unescaped name.
++  CHECK(content.find(R"(has\ space.toml)") != std::string::npos);
++  CHECK(content.find(R"(hash\#.toml)") != std::string::npos);
+ }

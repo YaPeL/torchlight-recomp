@@ -1,0 +1,118 @@
+Patch 40. In the series since 2026-10-17, after patch 39.
+
+WinSystemClock::to_sys returned a std::chrono::system_clock::time_point. libstdc++ counts
+system_clock in signed 64-bit nanoseconds, which reach only the years 1677 to 2262, so a FILETIME
+outside them overflowed: the NT epoch (FILETIME 0, 1601-01-01) came out as 2185-07-21. MSVC's
+system_clock counts 100 ns and libc++'s microseconds, so only Linux builds were wrong. Besides
+four chrono_test cases that failed on Linux, the guest saw it: RtlTimeToTimeFields and
+RtlTimeFieldsToTime (xboxkrnl_rtl.cpp) go through these conversions, and a zero or very old
+FILETIME, or a date after 2262, gave a wrong date. to_sys now returns a sys_time in the clock's
+own 100 ns units (about 29000 years either way), from_sys takes any sys_time, and
+RtlTimeFieldsToTime builds its time in 100 ns.
+
+Test: chrono_test, with a date after 2262 (2300-03-01 12:34:56.789) besides 1601; its
+decompose and recompose mirror the two RTL functions. Without the change 4 cases and 19
+assertions fail on Linux in Release (the 2300 case among them; the overflow is undefined
+behaviour, so a Debug build may count 5 cases and 21); with it all 101 assertions pass, and on
+the Android tablet. Dates 1677-2262 convert as before.
+
+diff --git a/include/rex/chrono/chrono.h b/include/rex/chrono/chrono.h
+index b15adc5..b916a93 100644
+--- a/include/rex/chrono/chrono.h
++++ b/include/rex/chrono/chrono.h
+@@ -72,19 +72,19 @@ struct NtSystemClock {
+ 
+   // To convert XSystemClock to sys, do clock_cast<WinSystemTime>(tp) first
+   // Only available for Host domain (Guest time must be converted via clock_cast)
+-  static constexpr std::chrono::system_clock::time_point to_sys(const time_point& tp)
++  // In the clock's own 100 ns units, not system_clock's: libstdc++ counts system_clock in
++  // nanoseconds, whose 64 bits only reach the years 1677-2262, and FILETIMEs from 1601 on
++  // overflowed there. A sys_time of 100 ns reaches about 29000 years either way.
++  static constexpr std::chrono::sys_time<duration> to_sys(const time_point& tp)
+     requires(domain_ == Domain::Host)
+   {
+-    using sys_duration = std::chrono::system_clock::duration;
+-    using sys_time = std::chrono::system_clock::time_point;
+-
+     auto dp = tp;
+     dp += unix_epoch_delta();
+-    auto cdp = std::chrono::time_point_cast<sys_duration>(dp);
+-    return sys_time{cdp.time_since_epoch()};
++    return std::chrono::sys_time<duration>{dp.time_since_epoch()};
+   }
+ 
+-  static constexpr time_point from_sys(const std::chrono::system_clock::time_point& tp)
++  template <typename SysDuration>
++  static constexpr time_point from_sys(const std::chrono::sys_time<SysDuration>& tp)
+     requires(domain_ == Domain::Host)
+   {
+     auto ctp = std::chrono::time_point_cast<duration>(tp);
+diff --git a/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp b/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp
+index 8b862fc..5325eb6 100644
+--- a/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp
++++ b/src/kernel/xboxkrnl/xboxkrnl_rtl.cpp
+@@ -494,7 +494,8 @@ u32 RtlTimeFieldsToTime_entry(ppc_ptr_t<X_TIME_FIELDS> time_fields_ptr, mapped_u
+     return 0;
+   }
+   auto dp = static_cast<std::chrono::sys_days>(year_month_day);
+-  std::chrono::system_clock::time_point time = dp;
++  // WinSystemClock's 100 ns, which reach 1601 (system_clock's nanoseconds do not, in libstdc++).
++  std::chrono::sys_time<WinSystemClock::duration> time = dp;
+   time += std::chrono::hours{time_fields_ptr->hour};
+   time += std::chrono::minutes{time_fields_ptr->minute};
+   time += std::chrono::seconds{time_fields_ptr->second};
+diff --git a/tests/unit/core/chrono_test.cpp b/tests/unit/core/chrono_test.cpp
+index dbd4caa..bd8c16d 100644
+--- a/tests/unit/core/chrono_test.cpp
++++ b/tests/unit/core/chrono_test.cpp
+@@ -30,6 +30,8 @@ static constexpr uint64_t kFtY2k = 125911584000000000;        // 2000-01-01
+ static constexpr uint64_t kFtLeapDay = 125962560000000000;    // 2000-02-29
+ static constexpr uint64_t kFtSubDay = 132538032123450000;     // 2020-12-30 12:00:12.345
+ static constexpr uint64_t kFt2021 = 132539328000000000;       // 2021-01-01
++// After 2262, where system_clock's 64-bit nanoseconds (libstdc++) end: 2300-03-01 12:34:56.789
++static constexpr uint64_t kFt2300 = 220634084967890000;
+ 
+ // =============================================================================
+ // Section 1: Epoch Constant Validation
+@@ -217,6 +219,19 @@ TEST_CASE("calendar decomposition: 2021-01-01", "[chrono]") {
+   CHECK(tf.milliseconds == 0);
+ }
+ 
++TEST_CASE("calendar decomposition: 2300-03-01, after system_clock's range in libstdc++",
++          "[chrono]") {
++  auto tf = decompose(kFt2300);
++  CHECK(tf.year == 2300);
++  CHECK(tf.month == 3);
++  CHECK(tf.day == 1);
++  CHECK(tf.weekday == 4);  // Thursday
++  CHECK(tf.hours == 12);
++  CHECK(tf.minutes == 34);
++  CHECK(tf.seconds == 56);
++  CHECK(tf.milliseconds == 789);
++}
++
+ // =============================================================================
+ // Section 5: Calendar Recomposition (mirrors RtlTimeFieldsToTime)
+ // =============================================================================
+@@ -228,7 +243,7 @@ static uint64_t recompose(int y, unsigned m, unsigned d, int hour, int min, int
+   if (!ymd.ok())
+     return 0;
+   auto dp = static_cast<std::chrono::sys_days>(ymd);
+-  std::chrono::system_clock::time_point time = dp;
++  std::chrono::sys_time<WinSystemClock::duration> time = dp;
+   time += std::chrono::hours{hour};
+   time += std::chrono::minutes{min};
+   time += std::chrono::seconds{sec};
+@@ -243,10 +258,11 @@ TEST_CASE("calendar recomposition: known dates produce correct FILETIMEs", "[chr
+   CHECK(recompose(2000, 2, 29, 0, 0, 0, 0) == kFtLeapDay);
+   CHECK(recompose(2020, 12, 30, 12, 0, 12, 345) == kFtSubDay);
+   CHECK(recompose(2021, 1, 1, 0, 0, 0, 0) == kFt2021);
++  CHECK(recompose(2300, 3, 1, 12, 34, 56, 789) == kFt2300);
+ }
+ 
+ TEST_CASE("calendar recomposition: decompose then recompose round-trips", "[chrono]") {
+-  for (uint64_t ft : {kFtNtEpoch, kFtUnixEpoch, kFtY2k, kFtLeapDay, kFtSubDay, kFt2021}) {
++  for (uint64_t ft : {kFtNtEpoch, kFtUnixEpoch, kFtY2k, kFtLeapDay, kFtSubDay, kFt2021, kFt2300}) {
+     auto tf = decompose(ft);
+     auto result =
+         recompose(tf.year, tf.month, tf.day, tf.hours, tf.minutes, tf.seconds, tf.milliseconds);

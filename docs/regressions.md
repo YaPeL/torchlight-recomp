@@ -97,3 +97,22 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 - **Should have been caught by:** a CI step that fails when a test it relies on is skipped.
 - **Covered now:** the Linux job runs them under `xvfb-run` on Mesa's llvmpipe in a step of their
   own (`Test, GL3+`), which fails if any is skipped or not run.
+
+## The SDK's tests failing for weeks, CI green because it never runs them
+
+- **What happened:** five cases of the SDK's `unit_tests` failed from the `0c7b01a` and `bd833a2`
+  bases on, and were written off in `patches/README.md` as upstream issues:
+  - four `chrono_test` cases on Linux: libstdc++'s `system_clock` cannot hold 1601. This was not
+    only a test problem: the guest's `RtlTimeToTimeFields`/`RtlTimeFieldsToTime` go through the
+    same conversion, so on Linux they returned wrong dates for zero, pre-1677 and post-2262
+    FILETIMEs.
+  - `output_stamp_test`'s depfile case on every platform: the test's own literals were wrong.
+  Not machine-specific (no time zone, clock or path involved). CI stayed green because it builds
+  the SDK without its tests (`build_sdk.sh`, `windows.ps1`) and runs only this repository's ctest.
+  Patch 38's bug (kernels before 4.17) was found the same way, only when someone ran the tests
+  by hand on a device.
+- **Should have been caught by:** a CI job that builds and runs the SDK's tests with the series;
+  and no known failure accepted as upstream without a fix or a written skip.
+- **Covered now:** patches 39 and 40 fix the five cases, and patch 41 the four that were
+  skipped (`BitStream::Write`'s byte order): Linux 1768 of 1768 with none skipped. A CI job for the SDK's tests is proposed to the owner (it changes the workflows). Until
+  then `patches/README.md` says to run them by hand when the series changes.

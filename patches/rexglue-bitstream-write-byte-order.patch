@@ -1,0 +1,100 @@
+Patch 41. In the series since 2026-10-17, after patch 40.
+
+BitStream (src/core/bit_stream.cpp) is big-endian: Peek, and Read through it, swap the 8 bytes
+they load. Write did not, so it masked and stored the value in the opposite byte order, and its
+end-of-stream assert was off by one (>= where Peek has >). Four stream_test cases were disabled
+with SKIP("BitStream::Write is broken - doesn't byte-swap on store") and [!mayfail]. Write now
+swaps on load and on store, as Peek does, and asserts as Peek does. Nothing in the runtime calls
+BitStream::Write (the XMA decoder only reads), so no behaviour changes; the cases run again.
+
+Test: the four cases without SKIP, and the 16-bit one also checks the bytes in memory (0x12,
+0x34). Without the change 6 assertions fail; with it all [bitstream] cases pass on Linux. With
+patches 39-41 no SDK test is skipped (Linux ctest: 1768 of 1768, none skipped).
+
+diff --git a/src/core/bit_stream.cpp b/src/core/bit_stream.cpp
+index 9329c6d..e452c55 100644
+--- a/src/core/bit_stream.cpp
++++ b/src/core/bit_stream.cpp
+@@ -71,7 +71,7 @@ uint64_t BitStream::Read(size_t num_bits) {
+ // TODO: This is totally not tested!
+ bool BitStream::Write(uint64_t val, size_t num_bits) {
+   assert_false(num_bits > 57);
+-  assert_false(offset_bits_ + num_bits >= size_bits_);
++  assert_false(offset_bits_ + num_bits > size_bits_);
+ 
+   size_t offset_bytes = offset_bits_ >> 3;
+   size_t rel_offset_bits = offset_bits_ - (offset_bytes << 3);
+@@ -86,7 +86,8 @@ bool BitStream::Write(uint64_t val, size_t num_bits) {
+ 
+   // offset ----->
+   // ....[junk]...| target bits w/ junk |....[junk]......
+-  uint64_t bits = *(uint64_t*)(buffer_ + offset_bytes);
++  // The stream is big-endian, as Peek reads it: swap into the same order before masking.
++  uint64_t bits = rex::byte_swap(*(uint64_t*)(buffer_ + offset_bytes));
+ 
+   // AND with mask
+   // ....[junk]...| target bits (0) |........[junk]......
+@@ -96,8 +97,8 @@ bool BitStream::Write(uint64_t val, size_t num_bits) {
+   // ....[junk]...| target bits (val) |......[junk]......
+   bits |= val;
+ 
+-  // Store into the bitstream.
+-  *(uint64_t*)(buffer_ + offset_bytes) = bits;
++  // Store into the bitstream, back in its byte order.
++  *(uint64_t*)(buffer_ + offset_bytes) = rex::byte_swap(bits);
+ 
+   // Advance the bitstream forward.
+   Advance(num_bits);
+diff --git a/tests/unit/core/stream_test.cpp b/tests/unit/core/stream_test.cpp
+index 9929507..7ee2bdb 100644
+--- a/tests/unit/core/stream_test.cpp
++++ b/tests/unit/core/stream_test.cpp
+@@ -293,9 +293,7 @@ TEST_CASE("BitStream Read crossing byte boundary", "[stream][bitstream]") {
+ // These tests are skipped until Write is fixed.
+ // =============================================================================
+ 
+-TEST_CASE("BitStream Write byte-aligned", "[stream][bitstream][!mayfail]") {
+-  SKIP("BitStream::Write is broken - doesn't byte-swap on store");
+-
++TEST_CASE("BitStream Write byte-aligned", "[stream][bitstream]") {
+   std::array<uint8_t, 16> buffer{};
+   BitStream stream(buffer.data(), buffer.size() * 8);
+ 
+@@ -306,21 +304,20 @@ TEST_CASE("BitStream Write byte-aligned", "[stream][bitstream][!mayfail]") {
+   CHECK(stream.Read(8) == 0xAB);
+ }
+ 
+-TEST_CASE("BitStream Write 16-bit value", "[stream][bitstream][!mayfail]") {
+-  SKIP("BitStream::Write is broken - doesn't byte-swap on store");
+-
++TEST_CASE("BitStream Write 16-bit value", "[stream][bitstream]") {
+   std::array<uint8_t, 16> buffer{};
+   BitStream stream(buffer.data(), buffer.size() * 8);
+ 
+   stream.Write(0x1234, 16);
++  // Big-endian in memory, the order Peek and Read take it in.
++  CHECK(buffer[0] == 0x12);
++  CHECK(buffer[1] == 0x34);
+ 
+   stream.SetOffset(0);
+   CHECK(stream.Read(16) == 0x1234);
+ }
+ 
+-TEST_CASE("BitStream Write non-byte-aligned", "[stream][bitstream][!mayfail]") {
+-  SKIP("BitStream::Write is broken - doesn't byte-swap on store");
+-
++TEST_CASE("BitStream Write non-byte-aligned", "[stream][bitstream]") {
+   std::array<uint8_t, 16> buffer{};
+   BitStream stream(buffer.data(), buffer.size() * 8);
+ 
+@@ -332,9 +329,7 @@ TEST_CASE("BitStream Write non-byte-aligned", "[stream][bitstream][!mayfail]") {
+   CHECK(stream.Read(8) == 0xAB);
+ }
+ 
+-TEST_CASE("BitStream Write preserves surrounding bits", "[stream][bitstream][!mayfail]") {
+-  SKIP("BitStream::Write is broken - doesn't byte-swap on store");
+-
++TEST_CASE("BitStream Write preserves surrounding bits", "[stream][bitstream]") {
+   std::array<uint8_t, 16> buffer = {0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+   BitStream stream(buffer.data(), buffer.size() * 8);
+ 
