@@ -12,8 +12,9 @@ variable REXGLUE_HOST_TOOL names rexglue built for the build host and installed 
   SDK were not found unless the consumer listed it.
 - The host tool must generate what this SDK expects. One version can be two codegens (patches
   applied over one commit give the same version), so the check is a hash: everything that decides
-  rexglue's output (src/codegen, include/rex/codegen, resources/templates) hashed at build time by
-  cmake/rexglue_codegen_id.cmake and installed as share/rexglue/codegen_id. A host tool whose
+  rexglue's output (src/codegen, include/rex/codegen, src/rexglue, thirdparty/disasm,
+  resources/templates) hashed at build time by cmake/rexglue_codegen_id.cmake and installed as
+  share/rexglue/codegen_id. A host tool whose
   prefix has another hash, or none, fails configure, with both values in the message.
 - tests/ppc: a cross build runs the host tool for recompile-tests, after comparing the same hash.
 
@@ -24,7 +25,7 @@ with no tool, a warning; without the find-root line, fmt is not found. The Andro
 build with the host tool.
 
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 320b5ba..346bc6c 100644
+index 320b5ba..f6bb13e 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
 @@ -21,6 +21,11 @@ project(ReXGlue
@@ -39,7 +40,7 @@ index 320b5ba..346bc6c 100644
  option(REXGLUE_ENABLE_SANITIZERS "Enable UndefinedBehaviorSanitizer" OFF)
  option(REXGLUE_ENABLE_FIDELITYFX "Enable optional AMD FidelityFX integration (experimental)" OFF)
  option(REXGLUE_ENABLE_TRACY                "Enable Tracy profiler integration" ON)
-@@ -278,6 +283,24 @@ add_subdirectory(src/kernel)
+@@ -278,6 +283,26 @@ add_subdirectory(src/kernel)
  add_subdirectory(src/codegen)
  add_subdirectory(src/rexglue)
  
@@ -48,6 +49,8 @@ index 320b5ba..346bc6c 100644
 +file(GLOB_RECURSE REXGLUE_CODEGEN_ID_INPUTS CONFIGURE_DEPENDS LIST_DIRECTORIES false
 +    "${CMAKE_CURRENT_SOURCE_DIR}/src/codegen/*"
 +    "${CMAKE_CURRENT_SOURCE_DIR}/include/rex/codegen/*"
++    "${CMAKE_CURRENT_SOURCE_DIR}/src/rexglue/*"
++    "${CMAKE_CURRENT_SOURCE_DIR}/thirdparty/disasm/*"
 +    "${CMAKE_CURRENT_SOURCE_DIR}/resources/templates/*")
 +set(REXGLUE_CODEGEN_ID_FILE "${CMAKE_CURRENT_BINARY_DIR}/codegen_id")
 +add_custom_command(
@@ -119,19 +122,22 @@ index ff7f132..620ca29 100644
  endif()
 diff --git a/cmake/rexglue_codegen_id.cmake b/cmake/rexglue_codegen_id.cmake
 new file mode 100644
-index 0000000..3a98ac2
+index 0000000..20ca6fa
 --- /dev/null
 +++ b/cmake/rexglue_codegen_id.cmake
-@@ -0,0 +1,21 @@
+@@ -0,0 +1,24 @@
 +# cmake/rexglue_codegen_id.cmake
 +# Script mode (cmake -DSOURCE_DIR=... -DOUTPUT=... -P): writes one hash of everything that decides
-+# what rexglue generates (the codegen's sources and the templates it embeds). Two rexglue builds
-+# with the same version can still differ there (patches applied over one commit); a cross build
-+# runs the host's rexglue only when its hash equals this SDK's (rexglueConfig.cmake, tests/ppc).
++# what rexglue generates (the codegen's sources, the CLI, the PPC disassembler and the templates
++# it embeds). Two rexglue builds with the same version can still differ there (patches applied
++# over one commit); a cross build runs the host's rexglue only when its hash equals this SDK's
++# (rexglueConfig.cmake, tests/ppc).
 +
 +file(GLOB_RECURSE _inputs LIST_DIRECTORIES false
 +    "${SOURCE_DIR}/src/codegen/*"
 +    "${SOURCE_DIR}/include/rex/codegen/*"
++    "${SOURCE_DIR}/src/rexglue/*"
++    "${SOURCE_DIR}/thirdparty/disasm/*"
 +    "${SOURCE_DIR}/resources/templates/*")
 +list(SORT _inputs)
 +set(_lines "")
