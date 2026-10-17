@@ -50,6 +50,11 @@ inline constexpr std::string_view kTextIntro =
     "1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts "
     "with LIVE) or a folder where it is already extracted. The files are checked and copied "
     "to:\n{where}";
+// Where no folder can be picked (Android: platform::CanPickFolder).
+inline constexpr std::string_view kTextIntroPackageOnly =
+    "Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version "
+    "1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts "
+    "with LIVE). The files are checked and copied to:\n{where}";
 inline constexpr std::string_view kTextChoosePackage = "Choose package...";
 inline constexpr std::string_view kTextChooseFolder = "Choose folder...";
 inline constexpr std::string_view kTextQuit = "Quit";

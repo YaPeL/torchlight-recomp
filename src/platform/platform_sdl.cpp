@@ -387,7 +387,8 @@ class SdlProgressWindow : public ProgressWindow {
 }  // namespace
 
 PickResult PickFile(const std::string& title, std::string& path, std::string& error) {
-  return Pick(SDL_FILEDIALOG_OPENFILE, title, path, error);
+  const PickResult picked = Pick(SDL_FILEDIALOG_OPENFILE, title, path, error);
+  return picked == PickResult::kChosen ? OpenablePickedFile(title, path, error) : picked;
 }
 
 PickResult PickFolder(const std::string& title, std::string& path, std::string& error) {

@@ -105,8 +105,18 @@ void ShowError(const std::string& title, const std::string& message);
 enum class PickResult { kChosen, kCancelled, kFailed };
 // The system's picker for one file or one folder (blocks until it closes); kFailed with the
 // reason when no picker could be shown (e.g. no desktop portal in a gamescope session).
+// The file's `path` is one the program can open: on Android the picker gives a document URI, which
+// is copied first (with a progress window) to the app's cache; ForgetPickedFiles removes those
+// copies once they are used.
 PickResult PickFile(const std::string& title, std::string& path, std::string& error);
 PickResult PickFolder(const std::string& title, std::string& path, std::string& error);
+// Whether PickFolder can show a picker here (Android's, through SDL, picks files only).
+bool CanPickFolder();
+// Removes the copies PickFile made (Android); nothing elsewhere.
+void ForgetPickedFiles();
+// The platform's half of PickFile (platform_sdl.cpp): the chosen `path` made one the program can
+// open; kCancelled when the player stopped the copy.
+PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error);
 // The system's preferred languages, most preferred first, as lower-case codes ("de", "pt-br").
 std::vector<std::string> PreferredLanguages();
 // A small window with a progress bar and a line of text (drawn with SDL's ASCII debug font: letters

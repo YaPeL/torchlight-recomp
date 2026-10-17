@@ -7,6 +7,7 @@
 [de]
 Torchlight setup = Torchlight einrichten
 Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE) or a folder where it is already extracted. The files are checked and copied to:\n{where} = Torchlight braucht die Spieldateien aus deiner Kopie von Torchlight für Xbox Live Arcade (Version 1.0.140.0).\n\nWähle das Paket des Spiels (die von deiner Konsole kopierte Datei, die mit LIVE beginnt) oder einen Ordner, in den es bereits entpackt wurde. Die Dateien werden geprüft und kopiert nach:\n{where}
+Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE). The files are checked and copied to:\n{where} = Torchlight braucht die Spieldateien aus deiner Kopie von Torchlight für Xbox Live Arcade (Version 1.0.140.0).\n\nWähle das Paket des Spiels (die von deiner Konsole kopierte Datei, die mit LIVE beginnt). Die Dateien werden geprüft und kopiert nach:\n{where}
 Choose package... = Paket wählen …
 Choose folder... = Ordner wählen …
 Quit = Beenden
@@ -40,6 +41,7 @@ Torchlight Recomp = Torchlight Recomp
 [fr]
 Torchlight setup = Configuration de Torchlight
 Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE) or a folder where it is already extracted. The files are checked and copied to:\n{where} = Torchlight a besoin des fichiers du jeu de votre copie de Torchlight pour Xbox Live Arcade (version 1.0.140.0).\n\nChoisissez le paquet du jeu (le fichier copié depuis votre console, qui commence par LIVE) ou un dossier où il est déjà extrait. Les fichiers seront vérifiés puis copiés dans :\n{where}
+Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE). The files are checked and copied to:\n{where} = Torchlight a besoin des fichiers du jeu de votre copie de Torchlight pour Xbox Live Arcade (version 1.0.140.0).\n\nChoisissez le paquet du jeu (le fichier copié depuis votre console, qui commence par LIVE). Les fichiers seront vérifiés puis copiés dans :\n{where}
 Choose package... = Choisir le paquet...
 Choose folder... = Choisir le dossier...
 Quit = Quitter
@@ -73,6 +75,7 @@ Torchlight Recomp = Torchlight Recomp
 [es]
 Torchlight setup = Configuración de Torchlight
 Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE) or a folder where it is already extracted. The files are checked and copied to:\n{where} = Torchlight necesita los archivos del juego de tu copia de Torchlight para Xbox Live Arcade (versión 1.0.140.0).\n\nElige el paquete del juego (el archivo copiado de tu consola, que empieza con LIVE) o una carpeta donde ya esté extraído. Los archivos se comprueban y se copian en:\n{where}
+Torchlight needs the game files from your copy of Torchlight for Xbox Live Arcade (version 1.0.140.0).\n\nChoose the game's package (the file copied from your console, which starts with LIVE). The files are checked and copied to:\n{where} = Torchlight necesita los archivos del juego de tu copia de Torchlight para Xbox Live Arcade (versión 1.0.140.0).\n\nElige el paquete del juego (el archivo copiado de tu consola, que empieza con LIVE). Los archivos se comprueban y se copian en:\n{where}
 Choose package... = Elegir paquete...
 Choose folder... = Elegir carpeta...
 Quit = Salir

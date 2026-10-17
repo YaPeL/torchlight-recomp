@@ -273,6 +273,15 @@ bool IsSteamDeck() {
 
 bool HasSystemBackButton() { return false; }
 
+// The picker's paths are files the program opens as they are.
+PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
+  return PickResult::kChosen;
+}
+
+bool CanPickFolder() { return true; }
+
+void ForgetPickedFiles() {}
+
 bool HasDirect3D11(const std::string& plugin_dir) {
   // OGRE appends _d to the plugin's name in its Debug build.
   std::error_code ec;

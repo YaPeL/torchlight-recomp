@@ -103,11 +103,19 @@ bool EnsureGameData(const std::filesystem::path& game_dir,
   const Translate tr = SetupTranslate(log);
   const std::string title = Text(tr, kTextTitle);
   const std::string where = game_dir.string();
+  // Where no folder can be picked (Android), the package is the only choice.
+  const bool folders = platform::CanPickFolder();
+  struct ForgetCopies {
+    ~ForgetCopies() { platform::ForgetPickedFiles(); }
+  } forget_copies;
   while (true) {
-    const int choice = platform::AskChoice(
-        title, Text(tr, kTextIntro, {{"where", where}}),
-        {Text(tr, kTextChoosePackage), Text(tr, kTextChooseFolder), Text(tr, kTextQuit)});
-    if (choice != 0 && choice != 1) {
+    const int choice =
+        folders ? platform::AskChoice(title, Text(tr, kTextIntro, {{"where", where}}),
+                                      {Text(tr, kTextChoosePackage), Text(tr, kTextChooseFolder),
+                                       Text(tr, kTextQuit)})
+                : platform::AskChoice(title, Text(tr, kTextIntroPackageOnly, {{"where", where}}),
+                                      {Text(tr, kTextChoosePackage), Text(tr, kTextQuit)});
+    if (choice != 0 && !(folders && choice == 1)) {
       info("game setup: no game files; quit by the user");
       return false;
     }

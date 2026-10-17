@@ -34,6 +34,7 @@
 #include <mutex>
 #include <sstream>
 #include <system_error>
+#include <vector>
 
 namespace torchlight::platform {
 
@@ -284,6 +285,74 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 }
 
 bool HasSystemBackButton() { return true; }
+
+// Android's picker (SDL's, through the Storage Access Framework) gives a document URI
+// (content://...), which SDL opens but plain file I/O does not: the document is copied to the
+// app's cache first, with a progress window (docs/android-port.md, A1.2: the player's game).
+PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error) {
+  if (path.rfind("content://", 0) != 0) return PickResult::kChosen;
+  const std::string dir = CacheDir("picked");
+  if (dir.empty()) {
+    error = "no cache folder for the chosen file";
+    return PickResult::kFailed;
+  }
+  SDL_IOStream* in = SDL_IOFromFile(path.c_str(), "rb");
+  if (!in) {
+    error = std::string("cannot open the chosen file: ") + SDL_GetError();
+    return PickResult::kFailed;
+  }
+  const Sint64 size = SDL_GetIOSize(in);
+  const std::string copy = dir + "picked_file";
+  std::ofstream out(copy, std::ios::binary | std::ios::trunc);
+  auto progress = ProgressWindow::Open(title);
+  std::vector<char> buffer(4 << 20);
+  Sint64 done = 0;
+  PickResult result = PickResult::kChosen;
+  while (true) {
+    const size_t got = SDL_ReadIO(in, buffer.data(), buffer.size());
+    if (got == 0) {
+      if (SDL_GetIOStatus(in) != SDL_IO_STATUS_EOF) {
+        error = std::string("cannot read the chosen file: ") + SDL_GetError();
+        result = PickResult::kFailed;
+      }
+      break;
+    }
+    out.write(buffer.data(), std::streamsize(got));
+    if (!out) {
+      error = "cannot write a copy of the chosen file (is the device full?)";
+      result = PickResult::kFailed;
+      break;
+    }
+    done += Sint64(got);
+    if (progress) {
+      const double fraction = size > 0 ? double(done) / double(size) : 0;
+      const std::string text = std::to_string(done >> 20) + " / " +
+                               (size > 0 ? std::to_string(size >> 20) : std::string("?")) + " MB";
+      if (!progress->Show(fraction, text)) {
+        result = PickResult::kCancelled;
+        break;
+      }
+    }
+  }
+  SDL_CloseIO(in);
+  out.close();
+  if (result != PickResult::kChosen) {
+    std::error_code ec;
+    std::filesystem::remove(copy, ec);
+    return result;
+  }
+  path = copy;
+  return PickResult::kChosen;
+}
+
+bool CanPickFolder() { return false; }
+
+void ForgetPickedFiles() {
+  const std::filesystem::path folder = UserFolder(UserFolderKind::kCache);
+  if (folder.empty()) return;
+  std::error_code ec;
+  std::filesystem::remove_all(folder / "picked", ec);
+}
 
 bool HasDirect3D11(const std::string&) { return false; }
 

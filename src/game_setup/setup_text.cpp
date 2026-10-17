@@ -6,7 +6,8 @@ namespace torchlight::game_setup {
 
 namespace {
 constexpr std::string_view kInterfaceTexts[] = {
-    kTextTitle,         kTextIntro,          kTextChoosePackage, kTextChooseFolder,
+    kTextTitle,         kTextIntro,          kTextIntroPackageOnly, kTextChoosePackage,
+    kTextChooseFolder,
     kTextQuit,          kTextPackagePicker,  kTextFolderPicker,  kTextPickerFailed,
     kTextExtracting,    kTextCopying,        kTextChecking,      kTextAchievementsChoice,
     kTextAchievementsXbox, kTextAchievementsPc,

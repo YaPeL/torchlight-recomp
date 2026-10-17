@@ -337,6 +337,15 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 
 bool HasSystemBackButton() { return false; }
 
+// The picker's paths are files the program opens as they are.
+PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
+  return PickResult::kChosen;
+}
+
+bool CanPickFolder() { return true; }
+
+void ForgetPickedFiles() {}
+
 bool HasDirect3D11(const std::string&) { return false; }
 
 bool OnBattery() { return OnBatteryFromPowerSupplies("/sys/class/power_supply"); }
