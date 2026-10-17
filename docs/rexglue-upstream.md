@@ -936,7 +936,15 @@ those commits, so "since then" is a reading.
 
 Fix options for upstream: keep the 1601 cases out of the `system_clock` round trips on
 libstdc++, or convert through a `sys_time` with a coarser duration (seconds or 100 ns) instead of
-`system_clock::duration`. Nothing in the runtime is known to pass FILETIMEs that old to `to_sys`.
+`system_clock::duration`.
+
+Update (2026-10-17): not only a test problem. `RtlTimeToTimeFields` and `RtlTimeFieldsToTime`
+(`xboxkrnl_rtl.cpp`), which the guest calls, go through `to_sys` and `from_sys`, so on Linux a
+zero or pre-1677 FILETIME, or a date after 2262, comes back as a wrong date. Our patch 40 takes
+the second option (a `sys_time` of 100 ns, `from_sys` for any `sys_time`, and the RTL function
+building its time in 100 ns), with a 2300 case added to the test; ready as a PR with D29's
+issue. The test bug next to it, the depfile literals of `output_stamp_test.cpp` (our patch 39:
+`"\ "` and `"\#"` are unknown escapes, so the case fails on every platform), is a one-line PR.
 
 ---
 
@@ -1429,7 +1437,9 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 36 | `rexglue-cross-no-package-registry.patch` | `sdk/android` | `bd833a2`, after 35 |
 | 37 | `rexglue-android-physical-host-offset.patch` | `sdk/android` | `bd833a2`, after 36 |
 | 38 | `rexglue-alloc-fixed-old-kernels.patch` | `sdk/android-device` | `bd833a2`, after 37 |
-| 39 | next free | | |
+| 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | `bd833a2`, after 38 |
+| 40 | `rexglue-chrono-nt-epoch-range.patch` (D29) | `sdk/known-test-failures` | `bd833a2`, after 39 |
+| 41 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

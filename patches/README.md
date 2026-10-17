@@ -9,12 +9,15 @@ On Windows the SDK is checked out with LF line endings (`git clone -c core.autoc
 `out/install/win-amd64` with the `win-amd64` preset, and patches 3, 15 and 38 are left out: they
 only touch POSIX files (`threading_posix.cpp`, `memory_posix.cpp`). `series` marks them `posix` and
 patches 17 and 18 `windows`; the build scripts apply what their platform takes. Patches 17 and 18 only change Windows
-files or Windows branches, so on Linux they build nothing new. The SDK's `unit_tests` pass on Windows except
-`codegen/output_stamp_test.cpp` (lines 227-228, the escaping of paths with a space or `#`), which
-fails the same way on the unpatched base `0c7b01a`: an upstream issue, untouched by these patches.
-On Linux the same two checks fail, and so do four `core/chrono_test.cpp` cases (the conversions
-of the NT epoch, 1601-01-01), with the old base and with `bd833a2` alike; no patch touches either
-file. Every other case passes on `bd833a2` with this series, the patches' own tests included.
+files or Windows branches, so on Linux they build nothing new.
+
+The SDK's own tests (`unit_tests`, `ppc_tests`) with this series: all pass on Linux (1767 of
+1767) and on the Android tablet (4 KB pages). Five cases had failed from the base on, and patches
+39 and 40 fix them: one test with a wrong literal (every platform) and four `chrono_test` cases
+(libstdc++, so Linux). Windows and macOS have not run them since 39 and 40; before, Windows
+failed only the depfile case, and macOS passed the chrono ones. CI does not build or run these
+tests (`docs/regressions.md`), so they are run by hand when the series changes: `ctest` in the
+SDK's build tree with `REXGLUE_BUILD_TESTS=ON`, and `tools/android/run_sdk_tests.sh` on Android.
 
 ## Numbers
 
@@ -48,7 +51,9 @@ in number order; a branch adds its own line at its number's place.
 | 36 | `rexglue-cross-no-package-registry.patch` | `sdk/android` | In the branch (after 35) |
 | 37 | `rexglue-android-physical-host-offset.patch` | `sdk/android` | In the branch (after 36) |
 | 38 | `rexglue-alloc-fixed-old-kernels.patch` | `sdk/android-device` | In the branch (after 37) |
-| 39 | | | Next free number |
+| 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | In the branch (after 38) |
+| 40 | `rexglue-chrono-nt-epoch-range.patch` | `sdk/known-test-failures` | In the branch (after 39) |
+| 41 | | | Next free number |
 
 ## The patches
 
@@ -623,5 +628,18 @@ in number order; a branch adds its own line at its number's place.
     `heap_allocation_test.cpp`: a page made read-only, released and allocated again must be
     writable (a release leaves the last protection, the new commit restores it); on the tablet
     it ends with SIGSEGV without the patch, alone or in the suite, and passes with it.
+
+39. `rexglue-tests-depfile-escape-literals.patch`: `output_stamp_test.cpp` looked for
+    `"has\ space.toml"` and `"hash\#.toml"` in plain literals, where `\ ` and `\#` are unknown
+    escapes read as the bare character, so it looked for the unescaped names and failed on
+    every platform while the depfile was right. Raw strings now. Test-only.
+
+40. `rexglue-chrono-nt-epoch-range.patch`: `WinSystemClock::to_sys` returned a
+    `system_clock::time_point`, which libstdc++ counts in 64-bit nanoseconds (years 1677-2262),
+    so on Linux FILETIME 0 (1601) came out as 2185 and dates after 2262 wrapped too. The guest's
+    `RtlTimeToTimeFields` and `RtlTimeFieldsToTime` go through it. `to_sys` now returns a
+    `sys_time` in 100 ns and `from_sys` takes any `sys_time`. Test: `chrono_test`, with 2300
+    besides 1601; without the change 19 assertions fail on Linux, with it all pass (Android
+    too). Upstream draft D29.
 
 The observation and diagnostic patches there were before remain in the git history.
