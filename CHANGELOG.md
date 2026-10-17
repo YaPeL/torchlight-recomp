@@ -5,7 +5,7 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
-## v0.12.5-beta (not released yet)
+## v0.12.5-beta (2026-10-17)
 
 Everything integrated into `develop` since v0.7.6-beta, for players.
 
