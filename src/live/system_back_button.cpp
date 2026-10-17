@@ -27,7 +27,8 @@ class SystemBackDriver : public rex::input::InputDriver {
  public:
   static constexpr rex::input::DeviceId kDevice = static_cast<rex::input::DeviceId>(0x42414B31);
 
-  SystemBackDriver() : InputDriver(nullptr, 0) {}
+  SystemBackDriver();
+  ~SystemBackDriver() override;
   X_STATUS Setup() override { return X_STATUS_SUCCESS; }
 
   void EnumerateDevices(std::vector<rex::input::DeviceInfo>& out) override {
@@ -80,7 +81,7 @@ class SystemBackDriver : public rex::input::InputDriver {
     return X_ERROR_SUCCESS;
   }
 
-  // SDL's thread that pumps events (an event watch).
+  // An event watch: on Android, the UI thread that delivers the key.
   void Set(bool down) {
     if (pressed_.exchange(down) == down) return;
     ++packet_;
@@ -110,6 +111,12 @@ bool WatchBackKey(void* driver, SDL_Event* event) {
   return true;
 }
 
+// The watch lives as long as the driver (the input system owns it).
+SystemBackDriver::SystemBackDriver() : InputDriver(nullptr, 0) {
+  SDL_AddEventWatch(WatchBackKey, this);
+}
+SystemBackDriver::~SystemBackDriver() { SDL_RemoveEventWatch(WatchBackKey, this); }
+
 }  // namespace
 
 void InstallSystemBackButton(rex::Runtime* runtime) {
@@ -118,9 +125,7 @@ void InstallSystemBackButton(rex::Runtime* runtime) {
   if (!input) return;
   // Android's Back reaches the app as a key instead of finishing the activity.
   SDL_SetHint(SDL_HINT_ANDROID_TRAP_BACK_BUTTON, "1");
-  auto driver = std::make_unique<SystemBackDriver>();
-  SDL_AddEventWatch(WatchBackKey, driver.get());  // the driver lives as long as the input system
-  input->AddDriver(std::move(driver));
+  input->AddDriver(std::make_unique<SystemBackDriver>());
   REXLOG_INFO("input: the system's Back button is the pad's Back");
 }
 

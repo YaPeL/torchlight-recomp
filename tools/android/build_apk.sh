@@ -10,8 +10,6 @@
 #   MAIN_LIBRARY  the .so whose SDL_main the activity calls (out/build/.../libtorchlight.so, or
 #                 libreplay.so from the replay's Android build)
 #   SDK_PREFIX    the ReXGlue SDK's Android install (lib/librexruntime.so, include/SDL3)
-#   --dev         package io.github.yapel.tlrecomp.dev, debuggable (development; installs next to
-#                 the app)
 #   --version-code N, --version-name S   (default 1 and 0.0.0-dev)
 #   --keep-debug  keep the libraries' debug information (default: stripped, as a release)
 #   --android-sdk DIR  (default ~/android-sdk: platforms/android-36, build-tools/36.1.0, jdk/)
@@ -21,19 +19,22 @@
 # The APK's assets also carry OGRE's media and data/ui, under resources/ and listed in
 # resources.txt after a stamp of their content; the app copies them to internal storage when the
 # stamp changes (platform_android.cpp).
-# Signed with the development key (~/.android/debug.keystore, made by keytool if missing), never
-# the release key, which only the release job uses (docs/android-port.md, A6).
+# Development builds only, until stage A6: the package is io.github.yapel.tlrecomp.dev (it installs
+# next to the app and is debuggable), signed with the development key (~/.android/debug.keystore,
+# made by keytool if missing). The app's own package, io.github.yapel.tlrecomp, is only ever signed
+# with the release key, by the release job (docs/android-port.md, A6): an app signed with another
+# key would block the real one on the device until it is uninstalled, with the saves.
+# Linux and macOS (GNU or BSD tools).
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
-dev=0 version_code=1 version_name=0.0.0-dev keep_debug=0
+version_code=1 version_name=0.0.0-dev keep_debug=0
 sdk="$HOME/android-sdk" ndk="$HOME/android-sdk/ndk/30.0.16248370"
 ogre_media="$HOME/android-work/ogre-install/share/OGRE-14.6/Media"
 platform=android-36 build_tools=36.1.0 min_sdk=30 target_sdk=36
-usage() { sed -n '9,21p' "$0" >&2; exit 2; }
+usage() { sed -n '9,19p' "$0" >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --dev) dev=1 ;;
     --version-code) version_code=$2; shift ;;
     --version-name) version_name=$2; shift ;;
     --keep-debug) keep_debug=1 ;;
@@ -86,17 +87,17 @@ printf '%s\n' "$main_name" > "$work/assets/main_library.txt"
 cp -R "$ogre_media/Main" "$ogre_media/RTShaderLib" "$work/assets/resources/ogre/media/"
 cp -R "$root/data/ui" "$work/assets/resources/data/"
 (cd "$work/assets/resources" && find . -type f | sed 's|^\./||' | LC_ALL=C sort > "$work/files.txt"
- stamp=$(xargs -d '\n' sha256sum < "$work/files.txt" | sha256sum | cut -c1-16)
+ sha=$(command -v sha256sum || echo "shasum -a 256")
+ stamp=$(while IFS= read -r f; do $sha "$f"; done < "$work/files.txt" | $sha | cut -c1-16)
  { echo "$stamp"; cat "$work/files.txt"; } > "$work/assets/resources.txt")
 "$tools/aapt2" compile --dir "$root/packaging/android/res" -o "$work/res.zip"
-package_args=()
-# Development builds are debuggable too: `adb shell run-as` reads their internal storage.
-[ "$dev" = 1 ] && package_args=(--rename-manifest-package io.github.yapel.tlrecomp.dev --debug-mode)
+# Debuggable: `adb shell run-as` reads a development build's internal storage.
 "$tools/aapt2" link -o "$work/base.apk" -I "$android_jar" \
   --manifest "$root/packaging/android/AndroidManifest.xml" \
   --min-sdk-version "$min_sdk" --target-sdk-version "$target_sdk" \
   --version-code "$version_code" --version-name "$version_name" \
-  "${package_args[@]}" -A "$work/assets" "$work/res.zip"
+  --rename-manifest-package io.github.yapel.tlrecomp.dev --debug-mode \
+  -A "$work/assets" "$work/res.zip"
 
 # Java: SDL's classes and ours, to dex.
 mkdir -p "$work/classes" "$work/dex"

@@ -102,7 +102,8 @@ std::string ExecutableDir() { return ""; }
 
 namespace {
 
-// An asset of the APK, whole (SDL reads the APK's assets by their relative path).
+// An asset of the APK, whole (SDL reads the APK's assets by their relative path, after looking in
+// internal storage: nothing of the same path may be there, CopyResources).
 bool ReadAsset(const std::string& name, std::string& data) {
   size_t size = 0;
   void* bytes = SDL_LoadFile(name.c_str(), &size);
@@ -132,8 +133,11 @@ std::string CopyResources() {
     std::string copied;
     if (std::getline(in, copied) && copied == stamp && !stamp.empty()) return root.string() + "/";
   }
+  // The old copy goes first: SDL looks for a relative path in internal storage before the APK's
+  // assets, so a file left behind would be read back as the new version.
   std::error_code ec;
   std::filesystem::remove_all(root, ec);
+  if (ec) return "";
   for (std::string path; std::getline(lines, path);) {
     if (path.empty()) continue;
     std::string data;
@@ -251,7 +255,7 @@ constexpr auto kSurfaceReleaseWait = std::chrono::seconds(2);
 }  // namespace
 
 bool ServeSurfaceChanges(const std::function<void()>& lost,
-                         const std::function<void(const NativeWindow&)>& restored) {
+                         const std::function<bool(const NativeWindow&)>& restored) {
   Surface& s = TheSurface();
   std::unique_lock lock(s.mutex);
   if (s.state == SurfaceState::kPresent) return true;
@@ -264,20 +268,27 @@ bool ServeSurfaceChanges(const std::function<void()>& lost,
     s.released = true;
     s.changed.notify_all();
   }
-  s.changed.wait(lock, [&] { return s.new_window || s.state == SurfaceState::kEnding; });
-  if (s.state == SurfaceState::kEnding) return false;
-  ANativeWindow* window = s.new_window;
-  s.new_window = nullptr;
-  s.state = SurfaceState::kPresent;
-  lock.unlock();
-  NativeWindow native;
-  native.system = NativeWindow::kAndroid;
-  native.window = uint64_t(uintptr_t(window));
-  SDL_Log("surface: back (%dx%d); the backend draws in it again", ANativeWindow_getWidth(window),
-          ANativeWindow_getHeight(window));
-  restored(native);
-  ANativeWindow_release(window);  // EGL holds its own reference to the window it draws in
-  return true;
+  while (true) {
+    s.changed.wait(lock, [&] { return s.new_window || s.state == SurfaceState::kEnding; });
+    if (s.state == SurfaceState::kEnding) return false;
+    ANativeWindow* window = s.new_window;
+    s.new_window = nullptr;
+    s.state = SurfaceState::kPresent;
+    lock.unlock();
+    NativeWindow native;
+    native.system = NativeWindow::kAndroid;
+    native.window = uint64_t(uintptr_t(window));
+    SDL_Log("surface: back (%dx%d); the backend draws in it again", ANativeWindow_getWidth(window),
+            ANativeWindow_getHeight(window));
+    const bool made = restored(native);
+    ANativeWindow_release(window);  // EGL holds its own reference to the window it draws in
+    if (made) return true;
+    SDL_Log("surface: nothing could be made on it; waiting for the next one");
+    lock.lock();
+    // Back to no surface, unless Android has already taken this one and given another.
+    if (s.state == SurfaceState::kPresent) s.state = SurfaceState::kGone;
+    s.released = true;
+  }
 }
 
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
@@ -405,6 +416,13 @@ JNIEXPORT void JNICALL Java_io_github_yapel_tlrecomp_TorchlightSurface_nativeSur
   using namespace torchlight::platform;
   Surface& s = TheSurface();
   std::unique_lock lock(s.mutex);
+  if (s.state == SurfaceState::kGoing || s.state == SurfaceState::kGone) {
+    // A surface that came back and goes again before the backend took it: drop it.
+    if (s.new_window) ANativeWindow_release(s.new_window);
+    s.new_window = nullptr;
+    s.state = SurfaceState::kGone;
+    return;
+  }
   if (s.state != SurfaceState::kPresent) return;
   s.state = SurfaceState::kGoing;
   s.released = false;

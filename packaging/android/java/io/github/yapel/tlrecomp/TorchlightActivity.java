@@ -1,6 +1,7 @@
 package io.github.yapel.tlrecomp;
 
 import android.content.Context;
+import android.content.pm.ApplicationInfo;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -19,8 +20,8 @@ import org.libsdl.app.SDLSurface;
  * named in assets/main_library.txt by tools/android/build_apk.sh.
  *
  * Development flags: one per line in args.txt in the app's external files folder (adb push to
- * /sdcard/Android/data/<package>/files/args.txt); lines starting with # are skipped. Release builds
- * are run without one.
+ * /sdcard/Android/data/<package>/files/args.txt); lines starting with # are skipped. Read only by
+ * a debuggable (development) build: a release never takes flags from a file anyone can write.
  */
 public class TorchlightActivity extends SDLActivity {
     private String mainLibrary() {
@@ -59,6 +60,9 @@ public class TorchlightActivity extends SDLActivity {
     @Override
     protected String[] getArguments() {
         List<String> args = new ArrayList<>();
+        if ((getApplicationInfo().flags & ApplicationInfo.FLAG_DEBUGGABLE) == 0) {
+            return new String[0];
+        }
         File file = new File(getExternalFilesDir(null), "args.txt");
         if (file.isFile()) {
             try (BufferedReader reader = new BufferedReader(new FileReader(file))) {
