@@ -1,0 +1,8 @@
+# The SDK's tests that may be skipped, and only where listed (tools/deps/build_sdk.sh --tests and
+# tools/build-deps/windows.ps1 -SdkTests read this). One per line: platform (linux, windows or
+# macos) | the test as ctest names it | why. Any other skipped or not-run test fails the run, and
+# so does a test listed here for a platform that ran there: the list cannot go stale.
+windows | unit.Two case variants at mount are both listed, with a warning | NTFS ignores case: a folder cannot hold 0.tsv and 0.TSV together
+windows | unit.On a case-insensitive host a replace onto a case variant deletes nothing | it simulates a case-insensitive host on a case-sensitive one; here "Rename onto a case variant replaces it" runs that case for real
+macos | unit.Two case variants at mount are both listed, with a warning | APFS (the runner's) ignores case: a folder cannot hold 0.tsv and 0.TSV together
+macos | unit.On a case-insensitive host a replace onto a case variant deletes nothing | it simulates a case-insensitive host on a case-sensitive one; here "Rename onto a case variant replaces it" runs that case for real

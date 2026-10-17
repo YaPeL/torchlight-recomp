@@ -21,6 +21,12 @@ OGRE path: cache variable `TORCHLIGHT_OGRE_INSTALL`. `all` builds the SDK's Debu
 RelWithDebInfo libraries, which the debug and relwithdebinfo presets link; without it, Release only
 (what CI and the published game use).
 
+The SDK's own tests: `tools/deps/build_sdk.sh --tests PREFIX WORK` also builds them and runs them
+one at a time with ctest; it fails if one fails, does not run, or is skipped where
+`tools/deps/sdk_test_skips.txt` does not list it (Windows: `windows.ps1 ... -SdkTests`; the
+`SDK tests` workflow runs both, and macOS with `--ppc-test-data`). Run them when the patches
+change.
+
 On macOS (Apple Silicon, with the Command Line Tools, and CMake and Ninja from Homebrew),
 `build_ogre.sh` builds the same OGRE for arm64 with deployment target 13.3: GL3+ on Cocoa
 (`OpenGL.framework`), plain dylibs that find each other through `@loader_path`, no Wayland build.
