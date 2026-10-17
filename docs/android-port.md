@@ -287,6 +287,68 @@ replays measure it.
   **Superseded:** the render agent's first proposal (convert a file's texture on its first use,
   RGBA meanwhile) is replaced by the owner's rule above: the cache is filled before the game
   starts, never during play.
+
+  **ETC2 or ASTC for the cache (evaluated 2026-10-17, for A2; no code yet).** The POCO X7 5G,
+  measured by the owner through `adb`, has no DXT in GLES or Vulkan (`textureCompressionBC` 0), so
+  the cache of converted textures is required; it has ETC2 and ASTC (LDR and HDR).
+  - **Measured on the game's `pak`:**
+    - 2836 DDS files: 2040 DXT1 (43.6 Mpx at the top level), 779 DXT3 (25.8 Mpx), 16 DXT5
+      (0.4 Mpx). About 93 Mpx with the mips.
+    - A seeded sample of 80 of them (128 px or more, no cube maps, 2.76 Mpx; 41 opaque, 39 with
+      alpha), decoded from DXT and re-encoded. PSNR is measured against the DXT decode, which is
+      what the guest shows today. Times are encode time on one core of the Linux machine
+      (i7-8750H at 2.4 GHz, AVX2), astcenc 46c2caa and etcpak 3d716e1.
+
+    | Format (bits per texel) | Opaque, RGB PSNR (worst 10 %) | With alpha, RGB / A PSNR | Speed, Mpx/s per core |
+    |---|---|---|---|
+    | ETC2 RGB / RGBA (4 / 8), etcpak | 37.0 dB (34.0) | 36.3 / 49.0 dB | 151 |
+    | ASTC 4x4 (8), `-fast` | 58.8 dB (56.8) | 50.4 / 61.0 dB | 3.0 |
+    | ASTC 4x4 (8), `-medium` | 59.2 dB (57.4) | 52.9 / 62.9 dB | 1.6 |
+    | ASTC 5x5 (5.12), `-medium` | 43.7 dB (40.2) | 40.5 / 54.0 dB | about 0.2 |
+    | ASTC 6x6 (3.56), `-fast` | 39.2 dB (35.8) | 36.3 / 46.1 dB | 2.5 |
+    | ASTC 6x6 (3.56), `-medium` | 40.2 dB (36.4) | 37.2 / 44.6 dB | 0.8 |
+
+    (5x5's speed comes from per-file wall times, the others from the encoders' own timers.)
+  - **Quality.** ASTC 4x4 holds a DXT block almost exactly: a DXT1 or DXT3/5 block is two
+    endpoints and 2-bit weights on 4x4 texels, which one ASTC 4x4 partition with 2-bit weights
+    can carry. So it is nearly lossless against what the game shows today (about 59 dB opaque, 51-53
+    dB with alpha), where ETC2 loses visibly in places (37 dB, 34 dB for the worst tenth). Even
+    ASTC 6x6, at fewer bits than ETC2, beats it.
+  - **Memory.** DXT3/5 are 8 bits per texel, as are ETC2 RGBA and ASTC 4x4: no change. DXT1 is 4,
+    as is ETC2 RGB; ASTC 4x4 doubles it. For the whole `pak`, if every level were resident (an upper
+    bound; the game keeps far fewer at once), that is about 29 MB more than ETC2 or DXT: about
+    64 MB for DXT/ETC2 against 93 MB for ASTC 4x4. ASTC 6x6 for DXT1 would be about 26 MB instead
+    of 29, at 40 dB.
+  - **Conversion time.**
+    - etcpak's ETC2 is about 50 times faster than ASTC 4x4 `-fast`: the `pak` takes about 0.6 s
+      on one desktop core, against about 31 s (2 min at `-medium`).
+    - On the phones, per core, *estimate*: about 3-4 times slower than this machine, with NEON
+      instead of AVX2. They have 8 cores, though, and the cache is filled once per install, with
+      the progress shown.
+    - The `pak` at ASTC 4x4 `-fast`: under a minute on the POCO X7 (4 Cortex-A78) and about one
+      minute on the Tab S5e (2 Cortex-A75 and 6 Cortex-A55); at ETC2, seconds on both.
+    - Texture replacement packs are much larger (TNNR's images are up to 8 times per side). At
+      ASTC they would take minutes to tens of minutes on the Tab S5e, so a pack's conversion is the
+      long one.
+  - **Support on the Tab S5e (Adreno 615, GLES 3.2).**
+    - ASTC LDR is core in OpenGL ES 3.2 (`GL_KHR_texture_compression_astc_ldr` promoted), so a
+      GLES 3.2 GPU has it.
+    - OGRE's GLES2 render system sets `RSC_TEXTURE_COMPRESSION_ASTC` when the driver lists that
+      extension (`OgreGLES2RenderSystem.cpp`), and ETC2 on any GLES 3.0 context.
+    - HDR is not needed: the game's textures are LDR. Whether Adreno 615 lists HDR does not matter.
+    - *To confirm on the tablet:* `adb shell dumpsys SurfaceFlinger | grep -o
+      GL_KHR_texture_compression_astc_ldr`.
+  - **Recommendation for A2:**
+    - **ASTC 4x4 `-fast`** for every texture from a file, chosen by capability: ASTC when the
+      render system has `RSC_TEXTURE_COMPRESSION_ASTC`, else ETC2, else RGBA8. Both target devices
+      take ASTC.
+    - It shows what the game shows today, at the same memory for DXT3/5 and twice for DXT1 (a few
+      tens of MB at most). Its conversion time is paid once per install, with the progress window.
+    - ETC2 stays as the fallback, and as the faster choice if a replacement pack's conversion turns
+      out too long on the Tab S5e. That is measured on the device in A2, before choosing per pack.
+    - ASTC 6x6 is not worth it: it saves 3 MB over ETC2 for DXT1, and loses 19 dB to ASTC 4x4.
+    - The encoder (astcenc, Apache-2.0; etcpak, BSD-3-Clause) goes in with A2, through
+      THIRD_PARTY_NOTICES.md.
 - **Formats and limits.** Every pixel format the backend creates must exist in GLES 3 (some
   16-bit and float formats have no render-target support there), and the vertex element types
   too. An audit of the `tl_*` formats against the GLES render system's tables, then replays.
@@ -417,9 +479,10 @@ and the surface/context behaviour may differ from real drivers).
   minimum API if it is to be supported (minSdk 30 or lower), and it is the low end the frame-rate
   levers are tried on. Adreno: no DXT, ETC2 and ASTC present.
 - **POCO X7 5G**, the main device: MediaTek Dimensity 7300 Ultra (4 Cortex-A78 at 2.5 GHz, 4
-  Cortex-A55), Mali-G615 MC2 (GLES 3.2, Vulkan 1.3), 8 or 12 GB, 1220x2712, shipped with Android 14
-  (HyperOS) (*from its specifications; to confirm on the device*). It decides the mid-range
-  measurements (A5). Mali: no DXT, ETC2 and ASTC present.
+  Cortex-A55), Mali-G615 MC2 (GLES 3.2, Vulkan 1.3), 1220x2712. Measured by the owner through `adb`
+  (2026-10-17): Android 16 (API 36), 11.2 GiB of RAM, 4 KB pages, no DXT/S3TC in GLES or Vulkan
+  (`textureCompressionBC` 0), ETC2 and ASTC (LDR and HDR). It decides the mid-range measurements
+  (A5).
 
 The Tab S5e is the floor (owner's decision, 2026-10-12): Android 11 and 4 GB. So **minSdk is 30
 or lower** (API 30, Android 11), and the memory budget, the frame-rate levers and the converted
