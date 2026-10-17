@@ -46,7 +46,8 @@ in number order; a branch adds its own line at its number's place.
 | 34 | `rexglue-android-build.patch` | `sdk/android` | In the branch (after 33) |
 | 35 | `rexglue-cross-host-tool.patch` | `sdk/android` | In the branch (after 34) |
 | 36 | `rexglue-cross-no-package-registry.patch` | `sdk/android` | In the branch (after 35) |
-| 37 | | | Next free number |
+| 37 | `rexglue-android-physical-host-offset.patch` | `sdk/android` | In the branch (after 36) |
+| 38 | | | Next free number |
 
 ## The patches
 
@@ -594,5 +595,18 @@ in number order; a branch adds its own line at its number's place.
     `REXGLUE_REGISTER_PACKAGE` is ON in native builds (as before) and OFF in cross builds.
     Verified: an Android install leaves `~/.cmake/packages/rexglue` as it was.
 
+37. `rexglue-android-physical-host-offset.patch`: the 0xE0000000 heap's 0x1000 host offset is a
+    compile-time constant in recompiled code and was chosen at run time by the heap. Android
+    arm64 has 4 KB or 16 KB pages, known only at run time, and got 0, wrong on 16 KB. Android
+    arm64 now always takes it, as macOS arm64 does: `PhysicalHostOffset` and the templates'
+    `REX_PHYS_HOST_OFFSET` include it, the heap sets `host_address_offset` when
+    `PhysicalHostOffset` asks for it, and `MapViews` starts the 0xE0000000 view 0x1000 lower in
+    the file at any granularity. The generated pch asserts that its macro equals
+    `PhysicalHostOffset`. Desktop offsets are the same as before, and the game's recompiled code
+    is byte for byte the same (only the pch changes). Test in `heap_allocation_test.cpp`, every
+    platform: a word written at `GuestPtr(addr)` is read at its physical address, and back. On
+    Linux with the offset forced (Android's rule on 4 KB) every memory test passes; forced
+    without the heap and view changes, the case fails. The game's
+    `cmake/guest_host_offset.cmake` takes the same rule.
 
 The observation and diagnostic patches there were before remain in the git history.

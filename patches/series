@@ -34,3 +34,4 @@ rexglue-timer-queue-blocking-wait.patch
 rexglue-android-build.patch
 rexglue-cross-host-tool.patch
 rexglue-cross-no-package-registry.patch
+rexglue-android-physical-host-offset.patch
