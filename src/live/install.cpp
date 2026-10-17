@@ -113,6 +113,7 @@ void InstallDialogs(const DialogHost& host) {
     input->SetActiveCallback([] { return !g_guest_input_blocked.load(); });
   }
   REXLOG_INFO("live: only mode, runtime dialogs drawn by the native backend");
+  ShowFrameCounterIfAsked();  // --frame_counter, now that the drawer exists
 }
 
 // Consumer thread, once per presented frame: the UI thread draws the dialogs into the overlay (or
