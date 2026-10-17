@@ -25,6 +25,14 @@ not count.
   - After the merge when it is documentation or a small change with tests.
   - The review reads the whole diff; findings go to the branch's owner, and a blocker stops the
     merge.
+  - How a review is done, what counts as a failure and the sensitive areas that always need a
+    clean-context review and the owner's look at the evidence: `REVIEW.md`.
+- **Your own branches:** before integrating one, have it reviewed by a subagent with a clean
+  context that gets only the diff, the task's description and `REVIEW.md`. An **Important**
+  finding is fixed or justified (in the branch or the merge's message) before the merge.
+- A review finding that comes up a second time goes into this file, a test or a lint, not into
+  another comment. Bugs that reached a hand pass or a release are recorded in
+  `docs/regressions.md`, with what catches them now.
 - Never claim support that is not verified (README, release notes, docs). Experimental features
   are labelled as such.
 - Large tasks or new directions (a new subsystem, an architecture change, work of several days):
