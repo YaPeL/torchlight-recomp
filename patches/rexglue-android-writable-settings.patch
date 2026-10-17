@@ -1,0 +1,59 @@
+Patch 43. In the series since 2026-10-17, after patch 42.
+
+ReXApp (src/ui/rex_app.cpp) puts its config, <app>.toml (which the settings dialog saves), and
+its logs next to the executable. On Android the executable's folder is the app's native library
+folder, read-only or inside the APK, so neither could be written. There they go with the user
+data (user_data_root, by default the user folder, which the Android main points at the app's
+internal storage). An app can still move them (OnConfigurePaths, OnConfigureLogging). Every
+other platform is unchanged.
+
+Test: the SDK builds for Android and desktop; on the device, by the render agent with the game's
+APK (the game sets its own folders; the defaults matter to apps that do not).
+
+diff --git a/src/ui/rex_app.cpp b/src/ui/rex_app.cpp
+index 1284c38..a1b624b 100644
+--- a/src/ui/rex_app.cpp
++++ b/src/ui/rex_app.cpp
+@@ -20,6 +20,7 @@
+ #include <rex/ui/flags.h>
+ #include <rex/kernel/crt/heap.h>
+ #include <rex/filesystem.h>
++#include <rex/platform.h>
+ #include <rex/logging/sink.h>
+ #include <rex/logging.h>
+ #include <rex/ui/overlay/achievement_toast.h>
+@@ -105,8 +106,6 @@ bool ReXApp::OnInitialize() {
+ }
+ 
+ bool ReXApp::SetupEnvironment() {
+-  auto exe_dir = rex::filesystem::GetExecutableFolder();
+-
+   std::filesystem::path game_dir;
+   std::string game_data_cvar = REXCVAR_GET(game_data_root);
+   if (!game_data_cvar.empty()) {
+@@ -144,8 +143,15 @@ bool ReXApp::SetupEnvironment() {
+     metadata_dir = metadata_root_cvar;
+   }
+ 
++#if REX_PLATFORM_ANDROID
++  // The executable's folder is the app's native library folder there, read-only (or inside the
++  // APK): the config the settings dialog saves, and the logs, go with the user data.
++  const std::filesystem::path settings_dir = user_dir;
++#else
++  const std::filesystem::path settings_dir = rex::filesystem::GetExecutableFolder();
++#endif
+   PathConfig path_config{game_dir,  user_dir,     update_dir,
+-                         cache_dir, metadata_dir, exe_dir / (std::string(GetName()) + ".toml")};
++                         cache_dir, metadata_dir, settings_dir / (std::string(GetName()) + ".toml")};
+   OnConfigurePaths(path_config);
+   game_data_root_ = path_config.game_data_root;
+   user_data_root_ = path_config.user_data_root;
+@@ -166,7 +172,7 @@ bool ReXApp::SetupEnvironment() {
+   auto log_config =
+       rex::BuildLogConfig(log_level_str, rex::ParseCategoryLevelsFromConfig(config_path_));
+   log_config.app_name = std::string(GetName());
+-  log_config.log_dir = exe_dir / "logs";
++  log_config.log_dir = settings_dir / "logs";
+   OnConfigureLogging(log_config);
+   rex::ApplyLogCvarOverrides(log_config);
+   rex::InitLogging(log_config);

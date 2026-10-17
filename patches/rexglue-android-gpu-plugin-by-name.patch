@@ -1,0 +1,34 @@
+Patch 42. In the series since 2026-10-17, after patch 41.
+
+LoadGpuPlugin (src/system/gpu_plugin_loader.cpp) looks for librexgpu-<name>.so next to the
+executable and requires the file to exist. On Android that folder is the app's native library
+folder, and an app that keeps its libraries inside the APK (extractNativeLibs=false, which saves
+installing every library twice) has it as base.apk!/lib/<abi>: no file is there. On Android, when
+the file is not there, the plugin is loaded by its name, which the app's linker namespace finds in
+the APK. Every other platform is unchanged (the path keeps its folder and must exist).
+
+Test: the SDK builds for Android and desktop; the load from the APK is checked on a device with
+the game's APK built with extractNativeLibs=false (by the render agent, on the Galaxy Tab S5e).
+
+diff --git a/src/system/gpu_plugin_loader.cpp b/src/system/gpu_plugin_loader.cpp
+index 754fa13..9f47ff6 100644
+--- a/src/system/gpu_plugin_loader.cpp
++++ b/src/system/gpu_plugin_loader.cpp
+@@ -55,8 +55,16 @@ std::vector<platform::DynamicLibrary>& LoadedPlugins() {
+ }  // namespace
+ 
+ std::unique_ptr<IGraphicsSystem> LoadGpuPlugin(std::string_view name, std::string_view backend) {
+-  auto path = rex::filesystem::GetExecutableFolder() / PluginFileName(name);
++  std::filesystem::path path = rex::filesystem::GetExecutableFolder() / PluginFileName(name);
++#if REX_PLATFORM_ANDROID
++  // An app's native libraries can stay inside its APK (extractNativeLibs=false): the folder is
++  // then base.apk!/lib/<abi>, with no file to find there, and the app's linker namespace loads
++  // the plugin by its name.
+   if (!std::filesystem::exists(path)) {
++    path = PluginFileName(name);
++  }
++#endif
++  if (path.has_parent_path() && !std::filesystem::exists(path)) {
+     REXSYS_ERROR(
+         "GPU plugin '{}' not found at {}. Stage it next to the executable "
+         "(GPU_PLUGINS {} in rexglue_configure_target).",

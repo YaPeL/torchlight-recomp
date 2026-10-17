@@ -1440,7 +1440,9 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | `bd833a2`, after 38 |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` (D29) | `sdk/known-test-failures` | `bd833a2`, after 39 |
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | `bd833a2`, after 40 |
-| 42 | next free | | |
+| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | `bd833a2`, after 41 |
+| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | `bd833a2`, after 42 |
+| 44 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

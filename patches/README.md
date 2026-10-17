@@ -55,7 +55,9 @@ in number order; a branch adds its own line at its number's place.
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | In the branch (after 38) |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` | `sdk/known-test-failures` | In the branch (after 39) |
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | In the branch (after 40) |
-| 42 | | | Next free number |
+| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In the branch (after 41) |
+| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In the branch (after 42) |
+| 44 | | | Next free number |
 
 ## The patches
 
@@ -651,5 +653,15 @@ in number order; a branch adds its own line at its number's place.
     `stream_test` cases had been disabled with `SKIP` for it. It swaps as `Peek` does now, and
     the cases run again (the 16-bit one also checks the bytes in memory). Nothing in the runtime
     calls it (the XMA decoder only reads). Without the change 6 assertions fail.
+
+42. `rexglue-android-gpu-plugin-by-name.patch` (Android only): the GPU plugin was looked for as a
+    file next to the executable, which an app that keeps its libraries inside the APK
+    (`extractNativeLibs=false`) does not have; on Android, when the file is not there, it is
+    loaded by its name through the app's linker namespace. Checked on the device by the render
+    agent.
+
+43. `rexglue-android-writable-settings.patch` (Android only): `ReXApp`'s config (which the
+    settings dialog saves) and logs went next to the executable, the read-only native library
+    folder on Android; there they go with the user data. Apps can still move both.
 
 The observation and diagnostic patches there were before remain in the git history.
