@@ -3,8 +3,11 @@
 # Android SDK's build tools compile packaging/android/ (manifest, resources, our activity) and
 # SDL's Java sources (third_party/sdl3-android), and the APK carries the main library (the game's,
 # or the replay's in a development build), the SDK's librexruntime.so and its null GPU plugin, and
-# the NDK's libc++_shared.so, uncompressed and 16 KB aligned (Android 15+ devices with 16 KB pages;
-# the libraries are linked for it). docs/android-port.md, stage A1.
+# the NDK's libc++_shared.so. Android extracts them at install (extractNativeLibs, the manifest:
+# the runtime loads its GPU plugin as a file next to librexruntime.so). They are still stored
+# uncompressed and 16 KB aligned, which the device reads in place once that plugin is loaded by
+# name (the ReXGlue agent's patch 42) and extraction is turned off again; the libraries themselves
+# are linked for 16 KB pages.
 #
 # Usage: tools/android/build_apk.sh [options] MAIN_LIBRARY SDK_PREFIX OUT.apk
 #   MAIN_LIBRARY  the .so whose SDL_main the activity calls (out/build/.../libtorchlight.so, or
@@ -121,7 +124,8 @@ cp "$work/base.apk" "$work/unaligned.apk"
 (cd "$work/dex" && zip -q -X "$work/unaligned.apk" classes.dex)
 (cd "$work/apk" && zip -q -X -0 -r "$work/unaligned.apk" lib)
 
-# 16 KB alignment of the stored libraries (-P 16), then the development signature.
+# 16 KB alignment of the stored libraries (-P 16, for when they are read in place again), then the
+# development signature.
 "$tools/zipalign" -f -P 16 4 "$work/unaligned.apk" "$work/aligned.apk"
 keystore="$HOME/.android/debug.keystore"
 if [ ! -f "$keystore" ]; then

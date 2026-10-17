@@ -368,7 +368,7 @@ sends `SDL_EVENT_LOW_MEMORY`, finishing sends `TERMINATING` and `QUIT`
 app may get no CPU after the event is queued. `SDL_HINT_ANDROID_BLOCK_ON_PAUSE` (default on) blocks
 the event loop while paused. `SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER` gives the `ANativeWindow*`,
 updated when the surface is created again; gamepads hot-plug through `SDLControllerManager`; touch
-comes as finger events; `SDL_HINT_ORIENTATIONS` locks landscape.
+comes as finger events; landscape is kept by the manifest and our activity (below).
 
 **The surface goes away.** On Android the window's surface is destroyed whenever the app goes to the
 background (and on some devices on rotation or multi-window changes); `onNativeSurfaceDestroyed`
@@ -397,9 +397,10 @@ SDL's default. The game saves on its own at its usual points; Android may kill a
 at any time, so a save only happens if the game made it: the same as closing the window on
 desktop. Stage A1 (section 7, A1.3) has the design.
 
-**Rotation.** Landscape only (`SDL_HINT_ORIENTATIONS` and the manifest): the game's frame is 16:9;
-the aspect setting (`aspect = "auto"`) follows the screen as on desktop (phones are 19.5:9 to
-21:9: the ultrawide path, docs/ultrawide.md).
+**Rotation.** Landscape only, either side, following the system's rotation lock (`userLandscape` in
+the manifest, the owner's choice of 2026-10-17; TorchlightActivity keeps SDL from turning the
+activity to each window's shape): the game's frame is 16:9; the aspect setting (`aspect = "auto"`)
+follows the screen as on desktop (phones are 19.5:9 to 21:9: the ultrawide path, docs/ultrawide.md).
 
 ## 5. Memory and performance on a mid-range phone
 
