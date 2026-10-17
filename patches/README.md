@@ -639,7 +639,9 @@ in number order; a branch adds its own line at its number's place.
     so on Linux FILETIME 0 (1601) came out as 2185 and dates after 2262 wrapped too. The guest's
     `RtlTimeToTimeFields` and `RtlTimeFieldsToTime` go through it. `to_sys` now returns a
     `sys_time` in 100 ns and `from_sys` takes any `sys_time`. Test: `chrono_test`, with 2300
-    besides 1601; without the change 19 assertions fail on Linux, with it all pass (Android
-    too). Upstream draft D29.
+    besides 1601; without the change 19 assertions fail on Linux in Release (the overflow is
+    undefined behaviour: a Debug build may count 21), with it all pass (Android too). Upstream
+    draft D29. Still open, from before: `RtlTimeFieldsToTime` accepts years up to 32767, and
+    past NT's limit of 30827 the FILETIME overflows.
 
 The observation and diagnostic patches there were before remain in the git history.

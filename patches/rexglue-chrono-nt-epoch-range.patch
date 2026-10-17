@@ -12,8 +12,9 @@ RtlTimeFieldsToTime builds its time in 100 ns.
 
 Test: chrono_test, with a date after 2262 (2300-03-01 12:34:56.789) besides 1601; its
 decompose and recompose mirror the two RTL functions. Without the change 4 cases and 19
-assertions fail on Linux (the 2300 case among them); with it all 101 assertions pass, and on the
-Android tablet. Dates 1677-2262 convert as before.
+assertions fail on Linux in Release (the 2300 case among them; the overflow is undefined
+behaviour, so a Debug build may count 5 cases and 21); with it all 101 assertions pass, and on
+the Android tablet. Dates 1677-2262 convert as before.
 
 diff --git a/include/rex/chrono/chrono.h b/include/rex/chrono/chrono.h
 index b15adc5..b916a93 100644
