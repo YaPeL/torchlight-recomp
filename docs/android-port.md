@@ -17,7 +17,7 @@ Mac today (section 6).
 | SDK | ReXGlue keeps Xenia's Android code (`REX_PLATFORM_ANDROID`: `ASharedMemory`, threads), but has no Android preset or toolchain, and it was never built for Android | Yes: a `android-arm64` preset and the NDK toolchain, as a patch |
 | Render | OGRE's GLES2 render system (GLES 3.x when available) with RTSS's GLSL ES writer; Vulkan later. The backend uploads DXT1/3/5 as they come from the guest; Mali and Adreno have no BCn | Yes: textures converted ahead of time, never during play (section 3) |
 | Window and lifecycle | SDL3 has Android support (SDLActivity, lifecycle events, `ANativeWindow`); OGRE's Android EGL window takes an `ANativeWindow` and can keep its context when the surface goes | No, but surface loss is the main risk (section 4) |
-| Controls | The game is built for a gamepad, which helps: a touch overlay emulates one. The closest precedent, UnleashedRecomp-Android, draws it in-engine and hides it on gamepad input. A setting Auto / Always / Never (A5) | No; gamepad first |
+| Controls | The game is built for a gamepad, which helps: a touch overlay emulates one. The closest precedent, UnleashedRecomp-Android, draws it in-engine and hides it on gamepad input. A setting Auto / Always / Never (A4) | No; gamepad first |
 | Game data | Pick the XBLA package with Android's document picker, copy it into app storage, install as today | No |
 | Packaging | Signed arm64 APK on GitHub Releases; no Play (single commercial game, user-supplied data; precedent below) | No |
 | Performance | CPU-bound on desktop (the guest's own code); a mid-range phone is slower per core: 30 fps is the realistic target, 60 to be measured | Unknown until measured |
@@ -69,7 +69,7 @@ without ImGui or a Java view, and the controls feed the same virtual pad the SDK
 reads (`--mnk_mode` already maps keys to a pad). Torchlight XBLA is played with a pad (move on the
 left stick, attacks and skills on the face buttons and the triggers, the D-pad for quick use), so a
 pad overlay covers the game; no tap-to-move is needed. Its layout and controls are a design task of
-their own (stage A5).
+their own (stage A4).
 
 **Game data.**
 
@@ -111,7 +111,7 @@ first version takes the package file only.
 
 For this port: a signed APK (arm64-v8a, minSdk 30, targetSdk 35+, 16 KB aligned) on GitHub Releases with the
 other platforms' downloads and in `SHA256SUMS`. The signing key is a new secret of the `release`
-environment, generated and kept by the owner (A7); losing it means users cannot update in place.
+environment, generated and kept by the owner (A6); losing it means users cannot update in place.
 
 ## 2. NDK, toolchain and what ARM64 work carries over
 
@@ -156,15 +156,16 @@ The NDK's `android.toolchain.cmake` drives CMake for the SDK, OGRE and the game 
   devices. Since the shift works for any granularity of 4 KB or more (Windows uses it with 64 KB),
   the proposal is to build Android always with it, as macOS arm64: an SDK patch adding Android to
   that condition and to the mapping code that follows it, and the same line in
-  `guest_host_offset.cmake`. Verified by the SDK's tests on both a 4 KB and a 16 KB image (A1).
+  `guest_host_offset.cmake`. Verified by the SDK's tests on both a 4 KB and a 16 KB image (A0).
 - What differs: Android has no `shm_open`. The SDK's Android branch already maps guest memory
   through `ASharedMemory_create` (API 26+, loaded with `dlopen`) or `/dev/ashmem`
   (`src/core/memory_posix.cpp`), as Dolphin does for its 14 GiB fastmem arena
   (https://github.com/dolphin-emu/dolphin/blob/master/Source/Core/Common/MemArenaAndroid.cpp). That
   branch was written for Xenia and never run in ReXGlue: the first thing to test.
   A ReXGlue game does publish Android APKs (`edeegg/origins-recomp`, Rayman Origins; noted in
-  docs/installer-research.md): its Android changes to the SDK are worth reading before A1
-  (*not read yet*).
+  docs/installer-research.md): its Android changes to the SDK were read for A0 (2026-10-17: the
+  ReXGlue agent's patch 34 adapts XDanfr/RaymanOriginsRecomp's 0001 and the AndroidInitialize calls
+  of its 0002).
 
 **16 KB pages on Android.** Apps targeting API 35+ must support 16 KB pages on 64-bit devices; the
 developer guide now gives 2027-02-01 for updates
@@ -319,7 +320,7 @@ programs) and only remakes the surface
 If a device loses the context anyway, OGRE's `notifyOnContextLost` path rebuilds its resources, but
 the backend's mirrors of guest textures and buffers would be gone: they would need the guest's data
 again (the guest only re-uploads what it changes). That is the hardest part of the port; the
-prototype in stage A3 answers it before the game runs.
+prototype in stage A1 answers it before the game runs.
 
 This fits the macOS work: `platform::RunOnWindowThread` already moves window work to the window
 system's thread (the main thread on macOS); on Android the surface callbacks come on the UI thread
@@ -332,7 +333,7 @@ the guest's threads block on their next present, or suspend the guest's threads 
 them suspended at launch, `runtime.h`; a suspend at run time is to be checked). Audio pauses with
 SDL's default. The game saves on its own at its usual points; Android may kill a background app
 at any time, so a save only happens if the game made it: the same as closing the window on
-desktop. To be designed in stage A3 with the lifecycle prototype.
+desktop. Stage A1 (section 7, A1.3) has the design.
 
 **Rotation.** Landscape only (`SDL_HINT_ORIENTATIONS` and the manifest): the game's frame is 16:9;
 the aspect setting (`aspect = "auto"`) follows the screen as on desktop (phones are 19.5:9 to
@@ -346,9 +347,9 @@ town, walking, spends about 9 ms per frame in the game's code and 81–97 fps ov
 (docs/macos-port.md, MAC.6). A mid-range phone's big cores (Cortex-A76/A78 class at 2.2–2.4 GHz)
 are slower per core than either; the main game thread is mostly one core. Without a measurement, a
 ratio of 2–3 times the laptop's frame time puts the town at roughly 30–45 fps: 30 fps is the
-realistic target, 60 on high-end phones. *Estimate, to be measured* (stage A6).
+realistic target, 60 on high-end phones. *Estimate, to be measured* (stage A5).
 
-**Decided (owner, 2026-10-17): A6's targets.** On the Galaxy Tab S5e (the floor) 30 fps held, with
+**Decided (owner, 2026-10-17): A5's targets.** On the Galaxy Tab S5e (the floor) 30 fps held, with
 no drops in fights; on the POCO X7 5G (the main device) 60 fps.
 
 The two estimates behind it: the render agent's for the Tab S5e alone (2026-10-16) was higher: its two fast cores (Cortex-A75-class at 2.0 GHz) at a rough 4-5 times the
@@ -418,29 +419,116 @@ and the surface/context behaviour may differ from real drivers).
 - **POCO X7 5G**, the main device: MediaTek Dimensity 7300 Ultra (4 Cortex-A78 at 2.5 GHz, 4
   Cortex-A55), Mali-G615 MC2 (GLES 3.2, Vulkan 1.3), 8 or 12 GB, 1220x2712, shipped with Android 14
   (HyperOS) (*from its specifications; to confirm on the device*). It decides the mid-range
-  measurements (A6). Mali: no DXT, ETC2 and ASTC present.
+  measurements (A5). Mali: no DXT, ETC2 and ASTC present.
 
 The Tab S5e is the floor (owner's decision, 2026-10-12): Android 11 and 4 GB. So **minSdk is 30
 or lower** (API 30, Android 11), and the memory budget, the frame-rate levers and the converted
 textures have to fit 4 GB.
 
-A Bluetooth pad for stages A4-A5 (any Xbox or PlayStation pad), and the Auto mode of the touch
+A Bluetooth pad for stages A3-A4 (any Xbox or PlayStation pad), and the Auto mode of the touch
 controls is tested with it connected at start and connected later.
 
 ## 7. Plan by stages
 
 | Stage | Tickets | Needs | Validated by | Risks |
 |---|---|---|---|---|
-| A0. Tools | AND.0 | Approved 2026-10-10: command-line tools, NDK, one arm64 emulator image (section 6) | `adb devices` lists the tablet and the phone; the emulator boots the 16 KB image | Disk (about 9 GB left after) |
-| A1. SDK on Android | AND.1 | NDK | The SDK builds with an `android-arm64` preset and the 0x1000 host offset (patches); its PPC tests (`ppc_tests`) and unit tests pass through `adb shell` on the 16 KB emulator image and on the 4 KB tablet and phone | `ASharedMemory` path never run in ReXGlue; the offset on 4 KB devices |
-| A2. OGRE GLES 3 and the backend | AND.2 | A1's toolchain | OGRE 14.6 GLES2/GLES3 builds; the backend's tests and the 20 captures replayed on the phone against Linux (PSNR); DXT decoded by capability | Precision (`mediump`), GLES format gaps, DXT memory |
-| A3. Skeleton APK and lifecycle | AND.3 | A2 | An APK (SDLActivity, `libmain.so`) that replays a capture in a loop and survives background/foreground, screen off/on and low memory without losing the picture | Surface loss with an OGRE-owned EGL; a lost context |
-| A4. Game to the main menu | AND.4 | A1–A3; the XBLA package on the phone | First start: package picked with SAF, installed; the main menu with a gamepad; saves on app storage | Memory; file paths and case |
-| A5. Touch controls | AND.5 | A4 | An overlay drawn by the backend's UI pass, a layout editor, the Auto / Always / Never setting (below); a dungeon played by touch | Design for a pad-built ARPG on a phone screen |
-| A6. Play and measure | AND.6 | A4 | Town and dungeon frame times, memory, thermals: 60 fps on the POCO X7 5G; 30 fps held on the Tab S5e, the floor, with no drops in fights | CPU too slow; throttling |
-| A7. Package and CI | AND.7 | A1–A6; the owner's signing key (below) | A signed, 16 KB-aligned APK (`check_elf_alignment.sh`, `apksigner verify`); CI builds the deps and the tests without the game; the release job builds and signs the APK at a freeze and publishes it on GitHub Releases only | Developer verification (2027) |
+| A0. Tools and builds | AND.0 | Approved 2026-10-10 and 2026-10-17: command-line tools, JDK, NDK r30 (section 6); the SDK's Android patches (the ReXGlue agent's 34-37: Rayman's 0001 adapted, host codegen, no package registry on cross installs, the fixed 0x1000 host offset) | OGRE 14.6 static with GLES2 (`build_ogre.sh ... android-arm64`, installed in `~/android-work/ogre-install`, the backend's default there); the SDK with its `android-arm64` preset (`~/android-work/sdk-install`); the game links as `libtorchlight.so` (`android-arm64-release` preset with `-DREXGLUE_HOST_TOOL`); the SDK's PPC and unit tests pass through `adb shell` on the 4 KB tablet and phone (and the 16 KB emulator image on the Mac) | `ASharedMemory` path never run in ReXGlue; the offset on 4 KB devices |
+| A1. The Android platform | AND.1 | A0 | Window, files, lifecycle and input (A1 below): a skeleton APK (our SDLActivity subclass, `libtorchlight.so`) replays a capture in a loop and survives background/foreground, screen off/on and low memory without losing the picture; the first start imports the XBLA package with SAF; saves export to and import from a zip; the log shows the folders below | Surface loss with an OGRE-owned EGL; a lost context |
+| A2. OGRE GLES 3 and the backend | AND.2 | A1's APK | The backend's tests and the 20 captures replayed on the phone against Linux (PSNR); DXT decoded by capability | Precision (`mediump`), GLES format gaps, DXT memory |
+| A3. Game to the main menu | AND.3 | A1-A2; the XBLA package on the phone | The game from the imported package to the main menu with a gamepad; a save made, exported and imported back. Then mods and texture replacements imported with SAF (below) | Memory; file paths and case |
+| A4. Touch controls | AND.4 | A3 | An overlay drawn by the backend's UI pass, a layout editor, the Auto / Always / Never setting (below); a dungeon played by touch | Design for a pad-built ARPG on a phone screen |
+| A5. Play and measure | AND.5 | A3 | Town and dungeon frame times, memory, thermals: 60 fps on the POCO X7 5G; 30 fps held on the Tab S5e, the floor, with no drops in fights | CPU too slow; throttling |
+| A6. Package and CI | AND.6 | A0-A5; the owner's signing key (below) | A signed, 16 KB-aligned APK (`check_elf_alignment.sh`, `apksigner verify`); CI builds the deps and the tests without the game; the release job builds and signs the APK at a freeze and publishes it on GitHub Releases only | Developer verification (2027) |
 
-**A5, the touch controls setting** (owner's decision, 2026-10-10). A setting with three values,
+The stages were renumbered on 2026-10-17 (owner): the SDK's build joined the tools as A0, and the
+Android platform (window, files, lifecycle, input, with the skeleton APK that was A3) became A1.
+The tickets follow the stages.
+
+**A1, the Android platform** (plan approved by the owner, 2026-10-17). The game side of the build
+is on the branch `android/game-build`: OGRE's render system and codec registered in code where
+OGRE is static (`src/backend/ogre_plugins.h`), the NDK's cpufeatures, the game as a shared library,
+and `src/platform/platform_android.cpp`, where everything below is still missing and says so.
+
+- **A1.1 Window.** `NativeWindow` and `tl_native_window` get an Android system. The game window is
+  SDL's (`SDL_PROP_WINDOW_ANDROID_WINDOW_POINTER`, an `ANativeWindow`); OGRE's Android EGL window
+  draws in it (`externalWindowHandle`, `preserveContext=true`). Landscape only.
+- **A1.2 Files.**
+  - Folders: the settings, the saves and the installed game in the app's internal storage
+    (`SDL_GetAndroidInternalStoragePath`, deleted with the app); the logs and captures in its
+    external app-specific storage (readable with `adb pull` without root); the shader cache in
+    its cache (`SDL_GetAndroidCachePath`).
+  - OGRE's media and `data/ui` travel in the APK and are copied to internal storage on the first
+    start of each version (owner, 2026-10-17), so the backend and the menus keep reading plain
+    paths.
+  - **The player's game.** The APK never carries anything of the game. On the first start the
+    player picks their copy of Torchlight XBLA with Android's document picker (SAF:
+    `SDL_ShowOpenFileDialog`, `ACTION_OPEN_DOCUMENT` on Android; `SDL_IOFromFile` reads the
+    `content://` URI). The app copies it into internal storage with the progress window and
+    installs it with `game_setup::Install`, as on every platform, which checks the package before
+    copying the game's files. No storage permission. Rayman's port (XDanfr/RaymanOriginsRecomp,
+    `LauncherActivity.java`, read as a reference only) does the same from its own launcher: a
+    zip or a folder picked with SAF, copied into app-specific storage, and the game's files
+    checked afterwards (`default.xex`); it takes a folder too, through
+    `ACTION_OPEN_DOCUMENT_TREE`, which SDL3's dialogs do not offer on Android. We take the package
+    file only, as section 1 says.
+  - **Saves and uninstalling.** Internal storage is deleted when the app is uninstalled. Three
+    things keep the saves:
+    - Export and import (the primary way): the host's options get "Export saves" (a zip of the
+      saves and their backups, written where the player chooses with SAF's save dialog,
+      `SDL_ShowSaveFileDialog`, `ACTION_CREATE_DOCUMENT`) and "Import saves" (a zip picked with
+      SAF, replacing the current saves after a confirmation, and only from the title screen, never
+      while a game holds a save). Rayman's launcher does the same ("Back up saves", "Restore
+      saves").
+    - `android:hasFragileUserData="true"` in the manifest: Android's uninstall dialog then offers
+      to keep the app's data, and a reinstall signed with the same key finds the saves.
+    - Android's Auto Backup (`allowBackup`), recommended with rules: only the saves and the
+      settings (`dataExtractionRules`), never the installed game, the cache, the logs or the
+      captures (backups are limited to 25 MB). It restores them on a reinstall or a new phone with
+      the same Google account. That it also restores a sideloaded APK is *unverified*: tested on
+      the tablet in A1.
+    - Rayman's manifest sets `allowBackup="false"`; we would rather keep the saves.
+- **A1.3 Lifecycle.**
+  - SDL3 waits for nobody before releasing the surface of a window it does not render in (only
+    its own OpenGL windows wait, `onNativeSurfaceDestroyed`). So our SDLActivity subclass gives
+    SDL its own `SDLSurface` (`createSDLSurface`), whose `surfaceDestroyed` first calls a native
+    function of ours. That function asks the render thread to let go of the EGL surface (OGRE's
+    `_notifySurfaceDestroyed`) and waits for it, through `RunOnWindowThread`'s handoff; the surface
+    comes back with `_notifySurfaceCreated`.
+  - In the background the presenter blocks, so the guest's threads stop at their next present;
+    audio pauses with SDL's default.
+  - A lost EGL context is detected and logged; rebuilding the guest's resources is the
+    prototype's question (risk 1).
+- **A1.4 Input.**
+  - Pads through SDL as on desktop, hot-plug included.
+  - Android's Back button is the pad's Back (owner, 2026-10-17).
+  - Development flags from an arguments file pushed with `adb` (SDLActivity's `getArguments`);
+    releases have none.
+  - Touch is A4. There is no F9 on Android: captures stay on desktop.
+
+**Mods and texture replacements on Android** (after A3; not part of A1). From Android 11, file
+managers cannot open the app's private folders, so mods are added from inside the app, never by
+copying into its folder:
+
+- a zip picked with SAF (`SDL_ShowOpenFileDialog`), unpacked into the app's mods or replacements
+  folder, as the desktop installs one;
+- a folder picked with SAF (`ACTION_OPEN_DOCUMENT_TREE`, walked with `DocumentsContract` in a
+  small Java helper, since SDL3 has no folder dialog on Android), copied the same way;
+- the textures converted to ETC2 as they are imported, with the progress shown (section 3:
+  never during play);
+- later, if players ask for it: a `DocumentsProvider` that shows the app's mods folder in file
+  managers, as UnleashedRecomp-Android does.
+
+**For players: your saves on Android** (text for the player docs when Android ships, A6):
+
+> Your saves live inside the app. **Uninstalling the app deletes them**, unless you tick "Keep app
+> data" in Android's uninstall dialog. Before uninstalling, or to move to another phone, use
+> **Export saves** in the options: it writes a zip wherever you choose (Downloads, a memory card,
+> a cloud folder). On the new install, **Import saves** from the title screen and pick that zip;
+> it replaces the saves the app has. If Android's backup is on for your Google account, the app
+> also backs up your saves and settings (not the game) and restores them when you install it
+> again.
+
+**A4, the touch controls setting** (owner's decision, 2026-10-10). A setting with three values,
 in the settings file and, once it exists, in the launcher:
 
 - **Auto** (the default): if a pad is connected at start, the built-in pad of an Android handheld
@@ -454,7 +542,7 @@ A pad is what SDL reports as a gamepad (`SDL_EVENT_GAMEPAD_ADDED`, its button an
 built-in pad of a handheld reports as one. Validated on the phone with a Bluetooth pad connected
 before start and after start, and with none.
 
-**A7, the signing key** (owner's decision, 2026-10-10). The owner generates and keeps the key; the
+**A6, the signing key** (owner's decision, 2026-10-10). The owner generates and keeps the key; the
 agents never generate, see or copy it. The CI uses it only as secrets of the `release`
 environment. Generated once, on the owner's machine, with the JDK's `keytool` (the Android build
 tools need a JDK anyway):
@@ -474,7 +562,7 @@ What to keep:
 - The keystore file `torchlight-release.p12` and its password, in at least two places offline (a
   password manager that holds files, and an encrypted copy on another device). Lost, no update can
   install over a version already installed: users would have to uninstall, and their saves live
-  in the app's storage (A4). Leaked, anyone can publish an APK that installs over ours.
+  in the app's storage (A1, A3). Leaked, anyone can publish an APK that installs over ours.
 - The alias (`torchlight`) and the certificate's SHA-256 fingerprint, which is not secret: the
   README publishes it so users can check a download (`apksigner verify --print-certs`), and
   Android's developer verification (2027) registers the package name with it.
@@ -485,51 +573,56 @@ The secrets of the `release` environment (Settings, Environments, `release`), se
 runner's temporary folder, signs with `apksigner` (schemes v2 and v3), and deletes it; no other
 job and no pull request sees them.
 
-Order and reasons: A1 first because nothing runs without the SDK, and its tests run without the
-game; A2 before any app because replays isolate the renderer, as MAC.5 did; A3 before the game
-because the surface and context loss is the main architectural risk and a capture replay is
-enough to find it; A4–A6 with the game; A7 last. Vulkan (with MAC.10) after the first Android
-release.
+Order and reasons: A0 first because nothing runs without the SDK, and its tests run without the
+game; A1 before the game because the surface and context loss is the main architectural risk and a
+capture replay is enough to find it, and its APK is what A2's replays run in; A2 before the game
+because replays isolate the renderer, as MAC.5 did; A3-A5 with the game; A6 last. Vulkan (with
+MAC.10) after the first Android release.
 
 **Risks, most serious first.**
 
 1. **Surface and context loss** (section 4): OGRE owns EGL while SDL owns the activity; a device
    that drops the context would leave the backend without its mirrors of guest resources.
-   Prototype in A3.
+   Prototype in A1.
 2. **CPU performance**: the game is CPU-bound on desktop; a phone may not hold 30 fps in busy
-   dungeons. Measured in A6; the levers are the internal resolution, the frame cap and the
+   dungeons. Measured in A5; the levers are the internal resolution, the frame cap and the
    guest-side work already profiled.
 3. **Memory**: unmeasured; DXT decoding multiplies texture memory. Measured on the Mac before A2.
 4. **The SDK's Android memory code** (`ASharedMemory`) never run in ReXGlue, and the host offset
-   chosen at compile time for a page size known only at run time (A1).
+   chosen at compile time for a page size known only at run time (A0; decided: a fixed 0x1000
+   on every Android device).
 5. **Distribution**: no Play; developer verification applies to sideloading in 2027; the signing
    key is a long-lived secret.
 6. **Controls**: a pad overlay on a phone screen for a game designed for a pad; the layout needs
-   play-testing (A5).
+   play-testing (A4).
 
-**Decided so far** (owner, 2026-10-10 and 2026-10-12):
+**Decided so far** (owner, 2026-10-10, 2026-10-12 and 2026-10-17):
 
 - Devices: POCO X7 5G (main) and Galaxy Tab S5e (floor: Android 11, 4 GB) (section 6).
 - minSdk compatible with API 30 (Android 11).
 - Textures: never converted during play; a desktop tool converts the `pak`, mods and texture
   replacements ahead of time; on the phone, conversion only when importing or turning something
   on, from the launcher (section 3).
-- Touch controls: the setting Auto / Always / Never, in the settings and the launcher (A5).
+- Touch controls: the setting Auto / Always / Never, in the settings and the launcher (A4).
 - The signing key generated and kept by the owner; CI uses it as `release` environment secrets
-  (A7).
+  (A6).
 - GitHub Releases only, no Play.
 - Run-time DXT (2026-10-17): decoded to RGBA with a log line, as a safety net; none appears today
   (section 3).
-- A6's targets (2026-10-17): 30 fps held on the Tab S5e with no drops in fights; 60 fps on the
+- A5's targets (2026-10-17): 30 fps held on the Tab S5e with no drops in fights; 60 fps on the
   POCO X7 5G (section 5).
-- The Android tools installed here when work resumes: command-line tools, NDK, the 16 KB arm64
-  emulator image only (section 6). `sdkmanager` needs JDK 17 or later and this Mac has only Java 8:
-  a JDK (proposed: Temurin 21 unpacked under `~/android-sdk`, no installer) to be approved first.
-- The 0x1000 host offset on Android proposed to the ReXGlue agent as a patch of the series
-  (section 2), relayed by the owner; its number still to come.
+- The Android tools: command-line tools, NDK, the 16 KB arm64 emulator image only on the Mac
+  (section 6). On the Linux machine (2026-10-17): Temurin 21 and the command-line tools unpacked
+  under `~/android-sdk` (no installer), the NDK r30 in `~/android-sdk/ndk/30.0.16248370`; no
+  emulator (arm64 images need an arm64 host), the Tab S5e plugged in by USB instead.
+- The host offset (2026-10-17): a fixed 0x1000 on every Android aarch64 device, so one APK runs on
+  4 KB and 16 KB pages; the ReXGlue agent's patch 37, with the line in `guest_host_offset.cmake`.
+- Stage A1's plan (2026-10-17, section 7): OGRE's media and `data/ui` copied to internal storage on
+  the first start of each version; Android's Back button is the pad's Back; the player's game
+  picked with SAF and copied into internal storage; saves exported and imported as a zip.
 
-**Paused** (2026-10-12) until the owner resumes Android. **The next iteration starts with the
-pending measurements**, before A0-A1:
+**Resumed** (owner, 2026-10-17): A0 under way (the ReXGlue agent's SDK patches, the game side on
+`android/game-build`), A1's plan approved. Measurements still pending from the pause of 2026-10-12:
 
 1. **Memory** on this Mac: the game's footprint (Apple Silicon counts GPU memory in the process,
    as Android does) in the main menu, the dungeon standing still and fighting, and the town, with
