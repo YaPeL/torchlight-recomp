@@ -3,7 +3,11 @@
 # default, what CI and the published game use (docs/release-pipeline.md, REL.5); developers build
 # every configuration (docs/BUILDING.md). Nothing of the game is involved.
 #
-# Usage: tools/deps/build_sdk.sh PREFIX [WORK_DIR] [CONFIGS]
+# Usage: tools/deps/build_sdk.sh [--tests [--ppc-test-data DIR]] PREFIX [WORK_DIR] [CONFIGS]
+#   --tests   also builds the SDK's own tests (unit_tests, ppc_tests) and runs them with ctest;
+#             fails if one fails, is skipped or does not run (the sdk-tests workflow)
+#   --ppc-test-data DIR  the PPC tests' .bin and .map files assembled elsewhere
+#             (tools/deps/build_ppc_test_data.sh), for hosts without the PowerPC binutils (macOS)
 #   PREFIX    where the SDK is installed (its lib/cmake/rexglue is what -DCMAKE_PREFIX_PATH finds)
 #   WORK_DIR  the checkout and build directory (default, or empty: a temporary one, removed after)
 #   CONFIGS   Release (default) or all (Debug, Release and RelWithDebInfo, for the dev presets)
@@ -15,7 +19,16 @@ set -eu
 SDK_REPOSITORY=https://github.com/rexglue/rexglue-sdk.git
 SDK_COMMIT=bd833a2
 
-[ $# -ge 1 ] || { echo "usage: $0 PREFIX [WORK_DIR]" >&2; exit 2; }
+tests=false ppc_test_data=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --tests) tests=true; shift ;;
+    --ppc-test-data) [ $# -ge 2 ] || { echo "--ppc-test-data needs a folder" >&2; exit 2; }
+      ppc_test_data=$(cd "$2" && pwd); shift 2 ;;
+    *) break ;;
+  esac
+done
+[ $# -ge 1 ] || { echo "usage: $0 [--tests [--ppc-test-data DIR]] PREFIX [WORK_DIR]" >&2; exit 2; }
 root=$(cd "$(dirname "$0")/../.." && pwd)
 prefix=$(mkdir -p "$1" && cd "$1" && pwd)
 work=${2:-}
@@ -54,12 +67,34 @@ case "$(uname -s)" in
   *) echo "unsupported host: $(uname -s)" >&2; exit 2 ;;
 esac
 
+test_options=""
+if [ "$tests" = true ]; then
+  test_options="-DREXGLUE_BUILD_TESTS=ON"
+  [ -z "$ppc_test_data" ] || test_options="$test_options -DREXGLUE_PPC_TEST_BIN_DIR=$ppc_test_data"
+fi
+
 cd "$src"
 # shellcheck disable=SC2086
-cmake --preset "$preset" $platform_options \
+cmake --preset "$preset" $platform_options $test_options \
   -DCMAKE_C_COMPILER="${CC:-clang}" -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
   -DCMAKE_CONFIGURATION_TYPES="$configs" -DCMAKE_DEFAULT_BUILD_TYPE=Release \
   -DCMAKE_CROSS_CONFIGS="$configs" -DCMAKE_DEFAULT_CONFIGS="$configs" \
   -DCMAKE_INSTALL_PREFIX="$prefix"
 cmake --build "out/build/$preset" --target install --parallel
 echo "SDK installed in $prefix"
+
+if [ "$tests" = true ]; then
+  # Every test has to run and pass: a skipped or not-run one fails too (docs/regressions.md).
+  log="$work/sdk-tests.log"
+  status=0
+  ctest --test-dir "out/build/$preset" -C Release --output-on-failure --no-tests=error \
+    --parallel "$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)" > "$log" 2>&1 \
+    || status=$?
+  cat "$log"
+  if grep -E '\*\*\*Skipped|Not Run' "$log"; then
+    echo "an SDK test did not run (skipped or not run): see above" >&2
+    exit 1
+  fi
+  [ "$status" -eq 0 ] || { echo "SDK tests failed (ctest $status): see above" >&2; exit 1; }
+  grep -E 'tests passed' "$log"
+fi
