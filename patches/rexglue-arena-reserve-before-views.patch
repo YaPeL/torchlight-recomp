@@ -19,12 +19,19 @@ of the reservation, which is then freed, so no hole opens for another thread to 
 Desktop Linux: the same base as before whenever 2^32 is free (it was in all 101 desktop game logs
 on this machine, 2026-10-17); otherwise the next free base, instead of mapping over what is there.
 
+Every way it fails is logged: the arena base and what holds a taken range, the reservation's
+errno, views that could not be mapped, a file mapping that could not be made.
+
 Test: tests/unit/memory/alloc_fixed_test.cpp, "The guest memory arena does not map over someone
-else's mapping": a page mapped in the middle of the first free candidate range keeps its contents
-and the arena goes elsewhere, and the pages before and after the views have no access. Without
-the change the arena maps at that candidate and the page reads 0. Linux SDK ctest 1773 of 1773.
-On the devices: the tablet's starts with the game, and the POCO X7 (docs/rexglue-upstream.md,
-section 8).
+else's mapping", in a child process (a process holds one Memory at a time, its MMIO handler being
+the process's, and the other [memory] cases keep theirs for the whole run): a page mapped in the
+middle of the first free candidate range keeps its contents and the arena goes elsewhere, and the
+pages before and after the views have no access. Without the change the arena maps at that
+candidate and the page reads 0. In one process with the other [memory] cases it had failed on the
+tablet, and on Linux in the same order, on the second Memory's MMIO handler. Linux SDK ctest 1773 of 1773.
+Desktop game runs (2026-10-17, Release, an isolated profile: menu, town, two floors down):
+with the arena at 2^32, and with a page mapped at 0x150000000 so that it went to 0x200000000;
+both to the end, the taken range logged.
 
 diff --git a/include/rex/system/xmemory.h b/include/rex/system/xmemory.h
 index 97a3eaa..7b7c76b 100644
@@ -39,10 +46,14 @@ index 97a3eaa..7b7c76b 100644
      struct {
        uint8_t* v00000000;
 diff --git a/src/system/xmemory.cpp b/src/system/xmemory.cpp
-index f109149..6cb3258 100644
+index f109149..e1086fb 100644
 --- a/src/system/xmemory.cpp
 +++ b/src/system/xmemory.cpp
-@@ -13,7 +13,12 @@
+@@ -10,10 +10,16 @@
+  */
+ 
+ #include <algorithm>
++#include <cerrno>
  #include <cstring>
  #include <utility>
  
@@ -56,7 +67,7 @@ index f109149..6cb3258 100644
  #include <sys/mman.h>
  #endif
  
-@@ -122,6 +127,12 @@ Memory::~Memory() {
+@@ -122,6 +128,12 @@ Memory::~Memory() {
    // Unmap all views and close mapping.
    if (mapping_ != rex::memory::kFileMappingHandleInvalid) {
      UnmapViews();
@@ -69,7 +80,7 @@ index f109149..6cb3258 100644
      rex::memory::CloseFileMappingHandle(mapping_, file_name_);
      mapping_base_ = nullptr;
      mapping_ = rex::memory::kFileMappingHandleInvalid;
-@@ -131,6 +142,41 @@ Memory::~Memory() {
+@@ -131,6 +143,45 @@ Memory::~Memory() {
    physical_membase_ = nullptr;
  }
  
@@ -77,12 +88,13 @@ index f109149..6cb3258 100644
 +// Reserves [base, base + size) without access if nothing is mapped anywhere in it, and says what
 +// is there otherwise. Kernels before 4.17 take MAP_FIXED_NOREPLACE as a hint (patch 38): there a
 +// reservation placed elsewhere means the range was taken.
-+static bool ReserveFreeRange(uint8_t* base, size_t size) {
++static bool ReserveFreeRange(uint8_t* base, size_t size, uint8_t* arena_base) {
 +  int flags = MAP_PRIVATE | MAP_ANONYMOUS | MAP_NORESERVE;
 +#if defined(MAP_FIXED_NOREPLACE)
 +  flags |= MAP_FIXED_NOREPLACE;
 +#endif
 +  void* result = mmap(base, size, PROT_NONE, flags, -1, 0);
++  const int reserve_errno = errno;
 +  if (result == base) {
 +    return true;
 +  }
@@ -97,12 +109,15 @@ index f109149..6cb3258 100644
 +  while (listed < 4 && std::getline(maps, line)) {
 +    uintptr_t start = 0, stop = 0;
 +    if (std::sscanf(line.c_str(), "%zx-%zx", &start, &stop) == 2 && start < end && stop > begin) {
-+      REXSYS_INFO("Guest memory arena: 0x{:X} is taken by {}", begin, line);
++      REXSYS_INFO("Guest memory arena: 0x{:X} is taken by {}",
++                  reinterpret_cast<uintptr_t>(arena_base), line);
 +      ++listed;
 +    }
 +  }
 +  if (listed == 0) {
-+    REXSYS_INFO("Guest memory arena: 0x{:X} could not be reserved", begin);
++    REXSYS_INFO("Guest memory arena: 0x{:X} could not be reserved ({})",
++                reinterpret_cast<uintptr_t>(arena_base),
++                result == MAP_FAILED ? std::strerror(reserve_errno) : "placed elsewhere");
 +  }
 +  return false;
 +}
@@ -111,7 +126,16 @@ index f109149..6cb3258 100644
  bool Memory::Initialize() {
    file_name_ = fmt::format("xenia_memory_{}", chrono::Clock::QueryHostTickCount());
  
-@@ -157,6 +203,37 @@ bool Memory::Initialize() {
+@@ -143,7 +194,7 @@ bool Memory::Initialize() {
+   mapping_ = rex::memory::CreateFileMappingHandle(file_name_, mapping_size,
+                                                   rex::memory::PageAccess::kReadWrite, false);
+   if (mapping_ == rex::memory::kFileMappingHandleInvalid) {
+-    REXSYS_ERROR("Unable to reserve the 4gb guest address space.");
++    REXSYS_ERROR("Unable to reserve the 4gb guest address space ({}).", std::strerror(errno));
+     assert_always();
+     return false;
+   }
+@@ -157,6 +208,39 @@ bool Memory::Initialize() {
      return false;
    }
    mapping_base_ = views_.all_views[0];
@@ -127,7 +151,7 @@ index f109149..6cb3258 100644
 +  mapping_base_ = 0;
 +  for (size_t n = 32; n < 64; n++) {
 +    auto mapping_base = reinterpret_cast<uint8_t*>(1ull << n);
-+    if (!ReserveFreeRange(mapping_base - guard, arena_size + 2 * guard)) {
++    if (!ReserveFreeRange(mapping_base - guard, arena_size + 2 * guard, mapping_base)) {
 +      continue;
 +    }
 +    if (!MapViews(mapping_base)) {
@@ -135,6 +159,8 @@ index f109149..6cb3258 100644
 +      guard_size_ = guard;
 +      break;
 +    }
++    REXSYS_INFO("Guest memory arena: the views could not be mapped at 0x{:X} ({})",
++                reinterpret_cast<uintptr_t>(mapping_base), std::strerror(errno));
 +    // MapViews left the views it had made in place: replace them and the rest of the reservation,
 +    // all ours, with one reservation in one call (no hole opens), then free it.
 +    mmap(mapping_base - guard, arena_size + 2 * guard, PROT_NONE,
@@ -149,7 +175,7 @@ index f109149..6cb3258 100644
  #else
    // Attempt to create our views. This may fail at the first address
    // we pick, so try a few times.
-@@ -383,7 +460,15 @@ int Memory::MapViews(uint8_t* mapping_base) {
+@@ -383,7 +467,15 @@ int Memory::MapViews(uint8_t* mapping_base) {
          rex::memory::PageAccess::kReadWrite, ViewFileOffset(map_info[n], granularity_mask)));
      if (!views_.all_views[n]) {
        // Failed, so bail and try again.
@@ -166,7 +192,7 @@ index f109149..6cb3258 100644
      }
    }
 diff --git a/tests/unit/memory/alloc_fixed_test.cpp b/tests/unit/memory/alloc_fixed_test.cpp
-index 6fbeeb7..6ea5ec7 100644
+index 6fbeeb7..453e40d 100644
 --- a/tests/unit/memory/alloc_fixed_test.cpp
 +++ b/tests/unit/memory/alloc_fixed_test.cpp
 @@ -1,6 +1,6 @@
@@ -177,7 +203,7 @@ index 6fbeeb7..6ea5ec7 100644
   *
   * @license     BSD 3-Clause License
   *              See LICENSE file in the project root for full license text.
-@@ -69,3 +69,71 @@ TEST_CASE("AllocFixed fails a commit of no bytes", "[memory][alloc_fixed]") {
+@@ -69,3 +69,80 @@ TEST_CASE("AllocFixed fails a commit of no bytes", "[memory][alloc_fixed]") {
    CHECK(AllocFixed(r.base, 0, AllocationType::kCommit, PageAccess::kReadWrite) == nullptr);
  }
  #endif
@@ -190,6 +216,8 @@ index 6fbeeb7..6ea5ec7 100644
 +#include <string>
 +
 +#include <rex/system/xmemory.h>
++
++#include "child_process.h"
 +
 +namespace {
 +// The protection /proc/self/maps shows for the mapping holding `address` ("rw-s", "---p"), or
@@ -212,8 +240,10 @@ index 6fbeeb7..6ea5ec7 100644
 +
 +// The guest arena's views are mapped with MAP_FIXED, which replaces what is there: something else
 +// mapped where the arena would go (a driver's or an allocator's memory, placed there by address
-+// space randomization) has to make it go elsewhere, not become guest memory.
-+TEST_CASE("The guest memory arena does not map over someone else's mapping", "[memory][arena]") {
++// space randomization) has to make it go elsewhere, not become guest memory. In a child process
++// of its own: a process holds one Memory at a time (its MMIO handler is the process's), and the
++// other [memory] cases keep theirs (GetTestMemory) for the whole run.
++TEST_CASE("child: an arena beside someone else's mapping", "[.][arena_child]") {
 +  const size_t arena = size_t(0x120000000ull);
 +  const size_t page = size_t(sysconf(_SC_PAGESIZE));
 +  // The first candidate base with nothing mapped yet, as the arena looks for one (from 2^32 up).
@@ -247,5 +277,10 @@ index 6fbeeb7..6ea5ec7 100644
 +    CHECK(HostAccessAt(memory.virtual_membase()) != "---p");
 +  }
 +  munmap(other, page);
++}
++TEST_CASE("The guest memory arena does not map over someone else's mapping", "[memory][arena]") {
++  const int status = rex::testing::RunTestInChild("child: an arena beside someone else's mapping");
++  REQUIRE(WIFEXITED(status));
++  CHECK(WEXITSTATUS(status) == 0);
 +}
 +#endif
