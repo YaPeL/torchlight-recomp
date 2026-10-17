@@ -17,6 +17,7 @@
 #include "frontend/frontend.h"
 #include "frontend/zip_archive.h"
 #include "live/busy_notice.h"
+#include "platform/display_refresh.h"
 #include "live/frame_reclaimer.h"
 #include "live/frame_step.h"
 #include "live/frame_timing.h"
@@ -244,6 +245,12 @@ void LiveMode::Run() {
       parent.system != platform::NativeWindow::kNone ? platform::CreatePresentationClock(parent)
                                                      : nullptr;
   if (presentation) REXLOG_INFO("live: presentation times from the window system");
+  // Where the swap interval does not pace the presents (macOS, display_refresh.h): the display's
+  // refresh does, waited for before each present while vsync is on, with the swap interval left off
+  // so the two never wait together.
+  std::unique_ptr<platform::RefreshClock> refresh =
+      parent.system != platform::NativeWindow::kNone ? platform::CreateRefreshClock(parent) : nullptr;
+  if (refresh) tl_backend_set_vsync(backend, 0);
   std::deque<std::pair<uint64_t, Clock::time_point>> cuts;  // presented frames awaiting the screen
   Clock::time_point last_shown{};  // the screen's previous frame
   // Internal render scale for the current window size (LiveOptions::render_resolution).
@@ -371,7 +378,7 @@ void LiveMode::Run() {
       if (video) {
         if (video->vsync != options_.vsync) {
           options_.vsync = video->vsync;
-          tl_backend_set_vsync(backend, video->vsync);
+          if (!refresh) tl_backend_set_vsync(backend, video->vsync);
           queue_.SetCapacity(FrameQueueDepth(options_.frame_queue, video->vsync));
           REXLOG_INFO("live: vsync {}", video->vsync ? "on" : "off");
         }
@@ -384,6 +391,7 @@ void LiveMode::Run() {
         if (options_.ui) ApplyUi(backend, *options_.ui);
         if (presentation) presentation->BeforePresent(frame->swap);
         auto present_start = Clock::now();
+        if (refresh && options_.vsync) refresh->WaitNextRefresh(std::chrono::milliseconds(100));
         window_open = tl_backend_present(backend) != 0;
         const auto present_end = Clock::now();
         if (window_open) {
