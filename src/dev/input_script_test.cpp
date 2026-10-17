@@ -94,10 +94,12 @@ void TestWaitLevelLoad() {
   Check(!r.Has(Kind::kMark), "still waiting");
   r.e.level_loads = 5;
   r.Frames(1);
-  Check(r.actions.size() >= 3 && r.actions[0].kind == Kind::kMark &&
-            r.actions[0].text == "DUNGEON: stand still" && r.actions[1].kind == Kind::kCapture &&
-            r.actions[2].kind == Kind::kCommand && r.actions[2].text == "ASCEND",
-        "the load ends the wait; mark, capture and command in the same frame");
+  Check(r.actions.size() == 2 && r.actions[0].kind == Kind::kMark &&
+            r.actions[0].text == "DUNGEON: stand still" && r.actions[1].kind == Kind::kCapture,
+        "the load ends the wait; mark and capture in the same frame");
+  r.Frames(int(kCaptureFrames));
+  Check(r.actions.size() >= 3 && r.actions[2].kind == Kind::kCommand && r.actions[2].text == "ASCEND",
+        "the command once the capture's still frames are over");
 }
 
 void TestWaitTimeout() {
@@ -142,9 +144,89 @@ void TestKeystrokes() {
   Check(PadKeystrokes(down, down).empty(), "no change, no keys");
 }
 
+
+void TestUiCommandsParse() {
+  std::string error;
+  Check(InputScript::Parse("focus Options\n", error).has_value(), "focus NAME");
+  Check(InputScript::Parse("focus Options by UP every 0.2s timeout 10s\n", error).has_value(), "focus with options");
+  Check(!InputScript::Parse("focus Options by A\n", error), "focus by a button that is not a direction");
+  Check(InputScript::Parse("wait window Sheet timeout 5s\nwait focus Ok\n", error).has_value(), "wait window, focus");
+  Check(InputScript::Parse("press A every 1s until window Inventory\n", error).has_value(), "press until window");
+  Check(InputScript::Parse("dump_ui title-screen_1.x\ncapture title\ncapture\n", error).has_value(),
+        "dump_ui NAME, capture [NAME]");
+  Check(!InputScript::Parse("dump_ui ../x\n", error), "dump_ui: no paths");
+  Check(!InputScript::Parse("dump_ui\n", error), "dump_ui needs a name");
+  Check(!InputScript::Parse("capture a b\n", error), "capture takes one name");
+  Check(MustParse("wait focus X\n").ReadsUi() && !MustParse("wait level_loaded\n").ReadsUi(), "ReadsUi");
+}
+
+void TestFocusPressesUntilFocused() {
+  Run r("focus Back by UP every 10f\n");
+  r.e.ui_reads = 1;
+  r.e.focused = {"Play"};
+  r.Frames(30);
+  int presses = 0;
+  for (size_t i = 1; i < r.pads.size(); ++i)
+    if (r.pads[i].buttons == pad::kUp && r.pads[i - 1].buttons == 0) ++presses;
+  Check(r.pads[0].buttons == pad::kUp, "the first press at once");
+  Check(presses >= 2, "pressed again every 10 frames");
+  Check(!r.script.done(), "still waiting");
+  r.e.focused = {"12_back"};  // matches ignoring case and the layout prefix, from a fresh read only
+  r.Frame();
+  Check(!r.script.done(), "a stale read does not count");
+  ++r.e.ui_reads;
+  r.Frames(2);
+  Check(r.script.done() && r.Has(Kind::kFinished), "done once a fresh read has the focus there");
+}
+
+void TestWaitWindowAndTimeout() {
+  Run r("wait window Inventory timeout 1s\n");
+  r.e.shown_windows = {"Inventory"};
+  r.Frame();
+  Check(!r.script.done(), "shown before the command began: not yet");
+  ++r.e.ui_reads;
+  r.Frames(2);
+  Check(r.script.done() && !r.Has(Kind::kFailed), "seen on a fresh read");
+  Run t("wait focus Nowhere timeout 1s\n");
+  t.Frames(70);
+  Check(t.Has(Kind::kFailed), "times out");
+  bool says = false;
+  for (const auto& a : t.actions) says |= a.kind == Kind::kFailed && a.text.find("focus on Nowhere") != std::string::npos;
+  Check(says, "the failure names the focus it waited for");
+  Run p("wait window Help\n");
+  p.e.shown_windows = {"43_i_406", "4_Helper", "x_Help"};
+  ++p.e.ui_reads;
+  p.Frames(2);
+  Check(!p.script.done(), "only a numeric prefix is dropped, and the rest must match whole");
+}
+
+void TestDumpAndNamedCapture() {
+  Run r("capture title\ndump_ui title\npress A\n");
+  r.Frame();
+  Check(r.actions.size() == 1 && r.actions[0].kind == Kind::kCapture && r.actions[0].text == "title",
+        "capture NAME");
+  r.Frames(int(kCaptureFrames));
+  Check(r.actions.size() == 2 && r.actions[1].kind == Kind::kDumpUi && r.actions[1].text == "title",
+        "dump_ui NAME after the capture's still frames");
+  r.Frames(10);
+  bool pressed = false;
+  for (const auto& p : r.pads) pressed |= p.buttons != 0;
+  Check(!pressed && r.actions.size() == 2, "nothing pressed and no new action while the dump is pending");
+  ++r.e.dumps_written;
+  r.Frames(3);
+  Check(r.pads.back().buttons == pad::kA || r.pads[r.pads.size() - 2].buttons == pad::kA, "on once written");
+  Run t("dump_ui x\n");
+  t.Frames(700);
+  Check(t.Has(Kind::kFailed), "a dump never written fails the script");
+}
+
 }  // namespace
 
 int main() {
+  TestUiCommandsParse();
+  TestFocusPressesUntilFocused();
+  TestWaitWindowAndTimeout();
+  TestDumpAndNamedCapture();
   TestParseErrors();
   TestPressAndIdle();
   TestHoldStickAndTriggers();

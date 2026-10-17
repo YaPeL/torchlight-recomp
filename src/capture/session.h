@@ -146,6 +146,9 @@ class Session {
   void RequestCapture();
 
   bool armed() const { return armed_.load(std::memory_order_relaxed); }
+  // Captures requested and accepted so far (F9 or a script's capture): the development UI dump
+  // writes the game UI's window tree beside each one (dev/script_input.h).
+  uint64_t capture_requests() const { return capture_requests_.load(std::memory_order_relaxed); }
   // Live mode (--native_live): every frame is also recorded into a LiveFrame, cut at the swap and
   // pushed to `queue`; content snapshots go to `store`. Main thread, before the game runs.
   void EnableLive(live::FrameQueue* queue, live::SnapshotStore* store);
@@ -308,6 +311,7 @@ class Session {
 
   std::atomic<bool> armed_{false};
   std::atomic<bool> requested_{false};
+  std::atomic<uint64_t> capture_requests_{0};
   std::string output_dir_;
   uint32_t frames_to_capture_ = 1;
   ReferenceImageProvider reference_provider_;

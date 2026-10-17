@@ -23,6 +23,7 @@
 #include "guest_abi/ogre_layout.h"
 #include "hooks/bucket_cull_hooks.h"
 #include "hooks/video_mode_hooks.h"
+#include "dev/script_input.h"
 #include "live/frame_timing.h"
 
 namespace {
@@ -260,6 +261,9 @@ REX_FUNC(sub_827765F8) {
 FUNCTION_ADDRESS_CHECK(kDeviceSwap, 821F31C8);
 REX_EXTERN(__imp__sub_821F31C8);
 REX_FUNC(sub_821F31C8) {
+  // Development builds with an input script: the game UI as this frame left it, for the script's
+  // waits and dumps (dev/script_input.h; nothing otherwise).
+  torchlight::dev::OnUiFrame(ctx, base);
   {
     auto timer = Timed(Hook::kSwap);
     torchlight::live::FrameTiming::Get().OnSwap();

@@ -61,6 +61,38 @@ bool AddButton(std::string_view word, PadState& pad) {
 
 int16_t Axis(double value) { return int16_t(std::lround(std::clamp(value, -1.0, 1.0) * 32767)); }
 
+bool SameName(std::string_view a, std::string_view b) {
+  if (a.size() != b.size()) return false;
+  for (size_t i = 0; i < a.size(); ++i) {
+    const auto lower = [](char c) { return c >= 'A' && c <= 'Z' ? char(c - 'A' + 'a') : c; };
+    if (lower(a[i]) != lower(b[i])) return false;
+  }
+  return true;
+}
+
+// A window name without the layout instance prefix the game gives the windows of a loaded layout
+// ("43_NewCharacter": digits, then '_'), which varies with the order layouts load in.
+std::string_view Unprefixed(std::string_view name) {
+  size_t i = 0;
+  while (i < name.size() && name[i] >= '0' && name[i] <= '9') ++i;
+  return i > 0 && i < name.size() && name[i] == '_' ? name.substr(i + 1) : name;
+}
+
+// `name` matches a window named exactly so, or so after its layout prefix.
+bool HasName(const std::vector<std::string>& names, std::string_view name) {
+  return std::any_of(names.begin(), names.end(),
+                     [&](const std::string& n) { return SameName(n, name) || SameName(Unprefixed(n), name); });
+}
+
+// A file name for dump_ui: letters, digits, '-', '_' and '.', not starting with '.'.
+bool FileName(std::string_view name) {
+  if (name.empty() || name.front() == '.') return false;
+  return std::all_of(name.begin(), name.end(), [](char c) {
+    return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '_' ||
+           c == '.';
+  });
+}
+
 }  // namespace
 
 std::optional<InputScript> InputScript::Parse(std::string_view text, std::string& error) {
@@ -110,6 +142,22 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       if (w[i] != "timeout" || i + 2 != w.size()) return false;
       return duration(w[i + 1], c.timeout);
     };
+    // An event at w[i]: level_loaded | menu NAME | focus NAME | window NAME.
+    auto event = [&]() -> bool {
+      if (i < w.size() && w[i] == "level_loaded") {
+        c.event = Event::kLevelLoaded;
+        ++i;
+        return true;
+      }
+      if (i + 1 >= w.size()) return false;
+      if (w[i] == "menu") c.event = Event::kMenu;
+      else if (w[i] == "focus") c.event = Event::kFocus;
+      else if (w[i] == "window") c.event = Event::kWindow;
+      else return false;
+      c.text = std::string(w[i + 1]);
+      i += 2;
+      return true;
+    };
     if (verb == "press" || verb == "hold") {
       while (i < w.size() && AddButton(w[i], c.pad)) ++i;
       if (i == 1) return fail("a button is needed (A B X Y START BACK LB RB LT RT UP DOWN LEFT RIGHT LS RS)");
@@ -133,16 +181,7 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
           return fail("press BUTTON... every DURATION until EVENT [timeout DURATION] | "
                       "every DURATION for DURATION");
         i += 3;
-        if (w[i] == "level_loaded") {
-          c.event = Event::kLevelLoaded;
-          ++i;
-        } else if (w[i] == "menu" && i + 1 < w.size()) {
-          c.event = Event::kMenu;
-          c.text = std::string(w[i + 1]);
-          i += 2;
-        } else {
-          return fail("unknown event (level_loaded, menu NAME)");
-        }
+        if (!event()) return fail("unknown event (level_loaded, menu NAME, focus NAME, window NAME)");
         if (!timeout()) return fail("expected timeout DURATION");
         c.op = Op::kPressUntil;
       } else {
@@ -161,18 +200,37 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       if (w.size() != 2 || !duration(w[1], c.duration)) return fail("idle DURATION");
       c.op = Op::kIdle;
     } else if (verb == "wait") {
-      if (i < w.size() && w[i] == "level_loaded") {
-        c.event = Event::kLevelLoaded;
-        ++i;
-      } else if (i + 1 < w.size() && w[i] == "menu") {
-        c.event = Event::kMenu;
-        c.text = std::string(w[i + 1]);
-        i += 2;
-      } else {
-        return fail("wait level_loaded | wait menu NAME [timeout DURATION]");
-      }
+      if (!event()) return fail("wait level_loaded | menu NAME | focus NAME | window NAME [timeout DURATION]");
       if (!timeout()) return fail("expected timeout DURATION");
       c.op = Op::kWait;
+    } else if (verb == "focus") {
+      // focus NAME [by DIR] [every DUR] [timeout DUR]: a press until the focus is on NAME.
+      if (w.size() < 2) return fail("focus NAME [by UP|DOWN|LEFT|RIGHT] [every DURATION] [timeout DURATION]");
+      c.event = Event::kFocus;
+      c.text = std::string(w[1]);
+      c.pad.buttons = pad::kDown;
+      c.every = {0.4, false};
+      c.timeout = {30, false};
+      i = 2;
+      if (i + 1 < w.size() && w[i] == "by") {
+        PadState direction;
+        if (!AddButton(w[i + 1], direction) ||
+            (direction.buttons != pad::kUp && direction.buttons != pad::kDown && direction.buttons != pad::kLeft &&
+             direction.buttons != pad::kRight))
+          return fail("focus NAME by UP|DOWN|LEFT|RIGHT");
+        c.pad = direction;
+        i += 2;
+      }
+      if (i + 1 < w.size() && w[i] == "every") {
+        if (!duration(w[i + 1], c.every)) return fail("bad duration");
+        i += 2;
+      }
+      if (!timeout()) return fail("focus NAME [by UP|DOWN|LEFT|RIGHT] [every DURATION] [timeout DURATION]");
+      c.op = Op::kPressUntil;
+    } else if (verb == "dump_ui") {
+      if (w.size() != 2 || !FileName(w[1])) return fail("dump_ui NAME (letters, digits, '-', '_', '.')");
+      c.text = std::string(w[1]);
+      c.op = Op::kDumpUi;
     } else if (verb == "mark" || verb == "command") {
       if (w.size() < 2) return fail(std::string(verb) + " TEXT");
       const size_t from = line.find(w[1]);
@@ -180,9 +238,13 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       while (!rest.empty() && (rest.back() == ' ' || rest.back() == '\t')) rest.remove_suffix(1);
       c.text = std::string(rest);
       c.op = verb == "mark" ? Op::kMark : Op::kCommand;
-    } else if (verb == "capture" || verb == "quit") {
-      if (w.size() != 1) return fail(std::string(verb) + " takes nothing");
-      c.op = verb == "capture" ? Op::kCapture : Op::kQuit;
+    } else if (verb == "capture") {
+      if (w.size() > 2 || (w.size() == 2 && !FileName(w[1]))) return fail("capture [NAME]");
+      if (w.size() == 2) c.text = std::string(w[1]);
+      c.op = Op::kCapture;
+    } else if (verb == "quit") {
+      if (w.size() != 1) return fail("quit takes nothing");
+      c.op = Op::kQuit;
     } else {
       return fail("unknown command '" + std::string(verb) + "'");
     }
@@ -195,12 +257,31 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
   return script;
 }
 
+std::string InputScript::Describe(const Command& c) {
+  switch (c.event) {
+    case Event::kLevelLoaded: return "a level load";
+    case Event::kMenu: return "menu " + c.text;
+    case Event::kFocus: return "the focus on " + c.text;
+    case Event::kWindow: return "window " + c.text;
+    case Event::kNone: break;
+  }
+  return "nothing";
+}
+
 bool InputScript::Elapsed(const Duration& d, const ScriptEvents& e, const Start& since) const {
   return d.frames ? double(e.frame - since.frame) >= d.value : e.seconds - since.seconds >= d.value;
 }
 
+bool InputScript::ReadsUi() const {
+  return std::any_of(commands_.begin(), commands_.end(),
+                     [](const Command& c) { return c.event == Event::kFocus || c.event == Event::kWindow; });
+}
+
 bool InputScript::EventSeen(const Command& c, const ScriptEvents& e) const {
   if (c.event == Event::kLevelLoaded) return e.level_loads > start_.level_loads;
+  // The UI as read after the command began.
+  if (c.event == Event::kFocus) return e.ui_reads > start_.ui_reads && HasName(e.focused, c.text);
+  if (c.event == Event::kWindow) return e.ui_reads > start_.ui_reads && HasName(e.shown_windows, c.text);
   for (size_t i = start_.menus; i < e.menus_opened.size(); ++i) {
     if (e.menus_opened[i].find(c.text) != std::string::npos) return true;
   }
@@ -208,7 +289,7 @@ bool InputScript::EventSeen(const Command& c, const ScriptEvents& e) const {
 }
 
 void InputScript::Begin(const ScriptEvents& e) {
-  start_ = {e.frame, e.seconds, e.level_loads, e.menus_opened.size()};
+  start_ = {e.frame, e.seconds, e.level_loads, e.menus_opened.size(), e.ui_reads, e.dumps_written};
   press_ = start_;
   started_ = true;
 }
@@ -228,9 +309,24 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         advance();
         continue;
       case Op::kCapture:
-        actions.push_back({ScriptAction::Kind::kCapture, {}});
+        if (frames == 0) actions.push_back({ScriptAction::Kind::kCapture, c.text});
+        if (frames < kCaptureFrames) return {};
         advance();
         continue;
+      case Op::kDumpUi:
+        // The dump is written at a later frame (dev/script_input.cpp): nothing moves until then.
+        if (frames == 0) actions.push_back({ScriptAction::Kind::kDumpUi, c.text});
+        if (e.dumps_written > start_.dumps) {
+          advance();
+          continue;
+        }
+        if (e.seconds - start_.seconds >= 10) {
+          actions.push_back({ScriptAction::Kind::kFailed,
+                             "line " + std::to_string(c.line) + ": dump_ui " + c.text + " was not written"});
+          next_ = commands_.size();
+          ended_ = true;
+        }
+        return {};
       case Op::kCommand:
         actions.push_back({ScriptAction::Kind::kCommand, c.text});
         advance();
@@ -259,7 +355,7 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
           advance();
           continue;
         }
-        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0};
+        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0, 0};
         return e.frame - press_.frame < c.press_frames ? c.pad : PadState{};
       case Op::kWait:
       case Op::kPressUntil:
@@ -269,16 +365,14 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         }
         if (Elapsed(c.timeout, e, start_)) {
           actions.push_back({ScriptAction::Kind::kFailed,
-                             "line " + std::to_string(c.line) + ": timed out waiting for " +
-                                 (c.event == Event::kLevelLoaded ? std::string("a level load")
-                                                                 : "menu " + c.text)});
+                             "line " + std::to_string(c.line) + ": timed out waiting for " + Describe(c)});
           next_ = commands_.size();
           ended_ = true;
           return {};
         }
         if (c.op == Op::kWait) return {};
         // A press now and then: down for press_frames, up as long, again when `every` elapsed.
-        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0};
+        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0, 0};
         return e.frame - press_.frame < c.press_frames ? c.pad : PadState{};
     }
   }

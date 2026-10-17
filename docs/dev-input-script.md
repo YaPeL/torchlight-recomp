@@ -70,13 +70,42 @@ One command per line; `#` starts a comment. Durations are `N` or `Ns` (seconds),
 | `hold BUTTON... for DUR` | hold |
 | `stick left\|right X Y for DUR` | a stick at X, Y from -1 to 1 (Y up is positive) |
 | `idle DUR` | nothing pressed |
-| `wait level_loaded \| menu NAME [timeout DUR]` | wait for the event |
+| `wait level_loaded \| menu NAME \| focus NAME \| window NAME [timeout DUR]` | wait for the event (below) |
+| `focus NAME [by UP\|DOWN\|LEFT\|RIGHT] [every DUR] [timeout DUR]` | press the direction (DOWN) every DUR (0.4 s) until the pad focus is on NAME (30 s) |
 | `mark TEXT` | a step of the run |
-| `capture` | an F9 capture |
+| `capture [NAME]` | an F9 capture, NAME in the log; the controller stays still a few frames |
+| `dump_ui NAME` | the game UI's window tree to `<capture folder>/NAME.json` (below); the script waits until it is written |
 | `command TEXT` | a guest developer command, e.g. `ASCEND` (to the town from the mine's first floor) |
 | `quit` | close the game |
 
 An event only counts if it happens after its command starts.
+
+- `menu NAME`: a menu whose class name contains NAME opens (`MainMenu`, `NewGameMenu`,
+  `OptionsMenu`: the pause menu). The main menu is open behind the title screen from the start.
+- `focus NAME`: the pad focus is on a window named NAME, or whose text or a child's text is NAME (a
+  button's label: `focus Options`). The focus is the deepest active window of a shown root
+  (guest_abi/game_ui.h, kWindowActive). Every change of focus is in the log (`dev input script:
+  focus: ...`), which is how to find the names for a script.
+- `window NAME`: a window named NAME is shown (an inner screen: a page, a tab, a dialog).
+
+Window names match whole, ignoring case, with or without the layout instance prefix the game
+gives the windows of a loaded layout (`43_NewCharacter` matches `NewCharacter`; the number varies
+between runs).
+
+### UI dumps
+
+`dump_ui NAME`, and every capture in development builds (F9 too, with or without a script, as
+`ui-capture-N.json`), write the CEGUI window tree as shown in that frame: for each window its name
+and the name without the layout prefix, type, C++ class, visible / shown / active, its screen
+rectangle unclipped and clipped (guest pixels, and scaled to 1080 lines), alpha, font, text, images
+(imageset and image of `Image`, `NormalImage`...) and the other properties it has (area,
+alignments, text colour, `tabOrder`...); and the open menus with their focus. The format is
+`torchlight-ui-dump 1` (`src/dev/ui_tree.h`). Hidden windows are in the tree too
+(`"shown": false`).
+
+The dumps run on the game's thread at the frame's swap (CGameUI::Update does not run on every
+screen). Host dialogs (the achievement list, the runtime's message boxes) are ImGui, not CEGUI:
+they are neither in the dumps nor in the captures, and they take the controller while open.
 
 ## The game, as the scripts see it
 

@@ -77,6 +77,7 @@ void Session::RequestCapture() {
     return;
   }
   requested_.store(true);
+  capture_requests_.fetch_add(1, std::memory_order_relaxed);
   REXLOG_INFO("capture: requested, starts at the next swap ({} frame(s))", frames_to_capture_);
 }
 
