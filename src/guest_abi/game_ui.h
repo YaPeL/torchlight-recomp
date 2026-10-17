@@ -126,9 +126,13 @@ inline constexpr Field kOpen{0x18, Confidence::kConfirmed};
 inline constexpr Field kGameUi{0x20, Confidence::kConfirmed};
 // [confirmed] "Title" window (@0x823803E4); kSetTitle writes its text (@0x82351FC8).
 inline constexpr Field kTitle{0x28, Confidence::kConfirmed};
-// [confirmed] Embedded gamepad navigation handler (CDropdownMenuTabNavigationHandler, ctor
-// sub_82348B60 @0x823516B4 with this+0x5C).
+// [confirmed] The menu's tab navigation state, embedded (zeroed by sub_82346A60, called from the
+// ctor with this+0x5C, the call returning to 0x82351684). The pad's event handler is a separate
+// 44-byte CDropdownMenuTabNavigationHandler, allocated by the ctor, built by sub_82348B60 with r4 =
+// this+0x5C (@0x823516B0; it keeps it at +8, `stw r4,8(r3)`) and stored at kNavigationHandlerObject
+// (@0x823516D0).
 inline constexpr Field kNavigation{0x5C, Confidence::kConfirmed};
+inline constexpr Field kNavigationHandlerObject{0xF4, Confidence::kConfirmed};
 // [confirmed] Tab order dirty flag (u8, set by the ctor @0x82351684): on the next open the
 // navigation handler collects tabOrder / tabOrderRow / tabOrderColumn / tabOrderGroupMatrix from
 // the root again (sub_82352528, from SetOpen @0x82352178; collector sub_82347F18), then clears it.
@@ -152,6 +156,17 @@ inline constexpr VtableSlot kOnCommand{9, Confidence::kConfirmed};
 inline constexpr VtableSlot kNavigationHandler{11, Confidence::kConfirmed};
 }  // namespace dropdown_menu
 inline constexpr GuestFunction kSetTitle{0x82351F78, Confidence::kConfirmed};
+
+// [confirmed] The tab navigation state (dropdown_menu::kNavigation). The window the pad focus is on
+// is at +44: its setter sub_82346D10 (r3 = state, r4 = window) drops the previous window's four
+// event connections (+48..+79) and subscribes the new window's, then stores it (`stw r28,44(r31)`
+// @0x82346F8C); the tab order collector calls it (sub_82347F18). The base handler's event slot
+// (0x82348C38) clicks the event's window only when it is not this one (`lwz r9,44(r11)` on the
+// state at handler +8, @0x82348C44..@0x82348C50).
+namespace tab_navigation {
+inline constexpr Field kFocusWindow{44, Confidence::kConfirmed};
+}  // namespace tab_navigation
+inline constexpr GuestFunction kTabNavigationSetFocus{0x82346D10, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // Gamepad navigation (TabNavigationHandler and subclasses). Slot 6 receives the navigation event:
@@ -346,6 +361,9 @@ namespace game_ui_object {
 // them (slot 1 then slot 3, sub_8233E338 @0x8233E3F0, @0x8233E40C); "is a menu open" scans the
 // same list (sub_82191210, open flag @0x82191240).
 inline constexpr Field kMenus{0x17A8, Confidence::kConfirmed};
+// [confirmed] The list's end: "is a menu open" walks begin (+6056) to end (+6060), 4 bytes a menu
+// (sub_82191210 @0x82191210..@0x82191220), testing each one's open flag (dropdown_menu::kOpen).
+inline constexpr Field kMenusEnd{0x17AC, Confidence::kConfirmed};
 }  // namespace game_ui_object
 // [confirmed] The CGameUI instance pointer (read before calling its methods, e.g. @0x82380110 ->
 // kCloseAllMenus; its +0x18A0 member is deleted by kGameUiDtor @0x823372FC).
@@ -400,6 +418,39 @@ inline constexpr GuestFunction kFindDescendant{0x825AE360, Confidence::kConfirme
 // byte (@0x821AFE64) and, unless local_only, the parents' too.
 inline constexpr GuestFunction kWindowSetVisible{0x821A56C0, Confidence::kConfirmed};
 inline constexpr Field kWindowVisible{0x161, Confidence::kConfirmed};
+
+// ---------------------------------------------------------------------------------------------
+// What the development UI dump reads of a window (dev/ui_probe in script_input.cpp).
+// [confirmed] Window type (CEGUI String, "ceguiWidget/StaticImage" and the like): the ctor
+// sub_825AD818 copies its type argument (r4, kept in r27) to +688 (the String copy returning to
+// 0x825AD92C), then its name argument to +840 (kWindowName).
+inline constexpr Field kWindowType{688, Confidence::kConfirmed};
+// [confirmed] Window text (CEGUI String): kWindowSetText assigns it (@0x825AEAB4).
+inline constexpr Field kWindowText{0x58, Confidence::kConfirmed};
+// [confirmed] Window::getUnclippedPixelRect (r3 = the Rect to fill, r4 = window): the window's
+// screen rectangle in pixels, cached at +628..+643 (valid flag +644), computed through vtable slot
+// 2 when the cache is stale (the virtual call returning to 0x821FD7F4). getPixelRect (sub_821AFB68), the same
+// clipped by the parents, caches at +648 (flag +664); Window::isHit (vtable 0x8210119C slot 3,
+// 0x821AFCA8) tests a point against it.
+inline constexpr GuestFunction kWindowUnclippedPixelRect{0x821FD7B8, Confidence::kConfirmed};
+inline constexpr GuestFunction kWindowPixelRect{0x821AFB68, Confidence::kConfirmed};
+// [confirmed] CEGUI Rect (16 bytes, floats): isHit tests x against +8 and +12 and y against +0
+// and +4 (after getPixelRect, the call returning to 0x821AFCE0): top, bottom, left, right.
+namespace cegui_rect {
+inline constexpr Field kTop{0, Confidence::kConfirmed};
+inline constexpr Field kBottom{4, Confidence::kConfirmed};
+inline constexpr Field kLeft{8, Confidence::kConfirmed};
+inline constexpr Field kRight{12, Confidence::kConfirmed};
+inline constexpr uint32_t kSize = 16;
+}  // namespace cegui_rect
+// [confirmed] Whether a window has a property: kGameUiBindCommands looks "onClick" up in the
+// window's property map (std::map<String, Property*> at window +4, the find sub_825C9F10 with r3 =
+// the iterator to fill, r4 = window + 4, r5 = String*, @0x82338EF8) and compares the iterator with
+// the map's end node (`lwz r11,8(r27)`, @0x82338EFC..@0x82338F04) before kWindowGetProperty, which
+// throws for a property the window lacks.
+inline constexpr Field kWindowPropertyMap{4, Confidence::kConfirmed};
+inline constexpr Field kWindowPropertyMapEnd{8, Confidence::kConfirmed};
+inline constexpr GuestFunction kPropertyMapFind{0x825C9F10, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // CNewGameMenu: the character creation screen (vtable 0x820D2658; its layout

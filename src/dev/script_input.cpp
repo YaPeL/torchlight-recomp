@@ -10,6 +10,7 @@ REXCVAR_DEFINE_STRING(dev_input_script, "", "Torchlight",
 #ifndef TORCHLIGHT_DEV_INPUT
 
 namespace torchlight::dev {
+void OnUiFrame(PPCContext&, uint8_t*, uint32_t) {}
 void InstallInputScript(rex::Runtime*, std::function<void()>) {
   if (!REXCVAR_GET(dev_input_script).empty()) {
     REXLOG_WARN("dev: --dev_input_script ignored: this build has no input scripts "
@@ -25,9 +26,11 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <chrono>
 #include <cstring>
 #include <deque>
+#include <filesystem>
 #include <fstream>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -37,13 +40,18 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <rex/input/input_system.h>
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
+#include <rex/cvar.h>
 #include <rex/runtime.h>
 
 #include "capture/session.h"
 #include "dev/guest_command.h"
 #include "dev/input_script.h"
+#include "dev/ui_tree.h"
+#include "game_menu/guest_call.h"
 #include "guest_abi/game_ui.h"
+#include "guest_abi/game_ui_sheet.h"
 #include "guest_abi/ogre_layout.h"
+#include "guest_abi/xbox_memory.h"
 #include "live/frame_timing.h"
 
 namespace torchlight::dev {
@@ -73,6 +81,193 @@ std::string ClassName(const uint8_t* base, uint32_t object) {
     name.push_back(c);
   }
   return name.rfind(".?A", 0) == 0 ? name : std::string();
+}
+
+// ---------------------------------------------------------------------------------------------
+// The game UI, read from the guest's CEGUI (guest_abi game_ui.h, game_ui_sheet.h): what focus and
+// window waits match, and dump_ui's tree. On the game's thread, from CGameUI::Update (OnUiFrame).
+namespace ui_abi = torchlight::guest_abi::game_ui;
+namespace sheet_abi = torchlight::guest_abi::game_ui_sheet;
+
+constexpr size_t kMaxWindows = 6000;
+constexpr int kMaxDepth = 40;
+
+bool InGuestHeap(uint32_t a) { return a >= 0x40000000u && a < 0xA0000000u; }
+
+// A CEGUI String (UTF-32): length +0, reserve +4, inline code points at +0x14 or the heap buffer at
+// +0x94 past 0x20 (game_ui.h cegui_string).
+std::string ReadCeguiString(const uint8_t* base, uint32_t str) {
+  namespace cs = ui_abi::cegui_string;
+  if (!InGuestHeap(str)) return {};
+  const uint32_t length = abi::ReadU32(base, str + cs::kLength.offset);
+  const uint32_t reserve = abi::ReadU32(base, str + cs::kReserve.offset);
+  if (length > 4096) return {};
+  const uint32_t data = reserve > cs::kInlineCapacity ? abi::ReadU32(base, str + cs::kHeapBuffer.offset)
+                                                      : str + cs::kInlineBuffer.offset;
+  if (length && !InGuestHeap(data)) return {};
+  std::vector<uint32_t> points(length);
+  for (uint32_t i = 0; i < length; ++i) points[i] = abi::ReadU32(base, data + 4 * i);
+  return Utf32ToUtf8(points);
+}
+
+std::string WindowName(const uint8_t* base, uint32_t window) {
+  return ReadCeguiString(base, window + ui_abi::kWindowName.offset);
+}
+
+std::vector<uint32_t> Children(const uint8_t* base, uint32_t window) {
+  namespace w = sheet_abi::window;
+  const uint32_t begin = abi::ReadU32(base, window + w::kChildrenBegin.offset);
+  const uint32_t end = abi::ReadU32(base, window + w::kChildrenEnd.offset);
+  std::vector<uint32_t> out;
+  if (!begin || end < begin || end - begin > 4 * 4096) return out;
+  for (uint32_t at = begin; at < end; at += 4) {
+    const uint32_t child = abi::ReadU32(base, at);
+    if (InGuestHeap(child)) out.push_back(child);
+  }
+  return out;
+}
+
+bool OwnVisible(const uint8_t* base, uint32_t window) {
+  return abi::ReadU8(base, window + ui_abi::kWindowVisible.offset) != 0;
+}
+
+uint32_t Sheet(const uint8_t* base, uint32_t game_ui) {
+  return abi::ReadU32(base, game_ui + sheet_abi::game_ui_object::kSheet.offset);
+}
+
+// The names of the windows shown (visible with every parent) under the sheet.
+void CollectShown(const uint8_t* base, uint32_t window, int depth, std::vector<std::string>& out) {
+  if (depth > kMaxDepth || out.size() >= kMaxWindows || !OwnVisible(base, window)) return;
+  out.push_back(WindowName(base, window));
+  for (uint32_t child : Children(base, window)) CollectShown(base, child, depth + 1, out);
+}
+
+// The open menus of CGameUI's list (game_ui_object::kMenus), each with its layout's root and the
+// window its pad focus is on (tab_navigation::kFocusWindow).
+std::vector<UiMenu> OpenMenus(const uint8_t* base, uint32_t game_ui) {
+  namespace obj = ui_abi::game_ui_object;
+  namespace dm = ui_abi::dropdown_menu;
+  std::vector<UiMenu> out;
+  const uint32_t begin = abi::ReadU32(base, game_ui + obj::kMenus.offset);
+  const uint32_t end = abi::ReadU32(base, game_ui + obj::kMenusEnd.offset);
+  if (!begin || end < begin || end - begin > 4 * 1024) return out;
+  for (uint32_t at = begin; at < end; at += 4) {
+    const uint32_t menu = abi::ReadU32(base, at);
+    if (!InGuestHeap(menu) || abi::ReadU8(base, menu + dm::kOpen.offset) == 0) continue;
+    UiMenu m;
+    m.class_name = ClassName(base, menu);
+    const uint32_t root = abi::ReadU32(base, menu + dm::kRoot.offset);
+    if (InGuestHeap(root)) m.root = WindowName(base, root);
+    const uint32_t focus =
+        abi::ReadU32(base, menu + dm::kNavigation.offset + ui_abi::tab_navigation::kFocusWindow.offset);
+    if (InGuestHeap(focus)) m.focus = WindowName(base, focus);
+    out.push_back(std::move(m));
+  }
+  return out;
+}
+
+// Guest calls for one dump: CEGUI Strings in the scratch area, the rect getters, the property map.
+class WindowReader {
+ public:
+  WindowReader(PPCContext& ctx, uint8_t* base) : call_(ctx, base, 0x4000), base_(base) {}
+
+  UiRect Rect(uint32_t window, bool clipped) {
+    namespace r = ui_abi::cegui_rect;
+    const uint32_t mark = call_.Mark();
+    const uint32_t rect = call_.Reserve(r::kSize);
+    UiRect out;
+    if (rect) {
+      call_.Call((clipped ? ui_abi::kWindowPixelRect : ui_abi::kWindowUnclippedPixelRect).address, {rect, window});
+      out.top = Float(rect + r::kTop.offset);
+      out.bottom = Float(rect + r::kBottom.offset);
+      out.left = Float(rect + r::kLeft.offset);
+      out.right = Float(rect + r::kRight.offset);
+    }
+    call_.Release(mark);
+    return out;
+  }
+
+  // The property's value when the window has it (kWindowPropertyMap), else none: getProperty
+  // throws for a property the window lacks.
+  std::optional<std::string> Property(uint32_t window, const char* name) {
+    const uint32_t mark = call_.Mark();
+    const uint32_t key = MakeString(name);
+    const uint32_t iterator = call_.Reserve(8);
+    std::optional<std::string> value;
+    if (key && iterator) {
+      call_.Call(ui_abi::kPropertyMapFind.address, {iterator, window + ui_abi::kWindowPropertyMap.offset, key});
+      const bool present = call_.ReadU32(iterator) != call_.ReadU32(window + ui_abi::kWindowPropertyMapEnd.offset);
+      const uint32_t result = present ? call_.Reserve(ui_abi::kCeguiStringSize) : 0;
+      if (result) {
+        call_.Call(ui_abi::kWindowGetProperty.address, {result, window, key});
+        value = ReadCeguiString(base_, result);
+        call_.Call(ui_abi::kCeguiStringDtor.address, {result});
+      }
+      call_.Call(ui_abi::kCeguiStringDtor.address, {key});
+    }
+    call_.Release(mark);
+    return value;
+  }
+
+ private:
+  uint32_t MakeString(const char* text) {
+    const size_t n = std::strlen(text);
+    const uint32_t chars = call_.Reserve(uint32_t(n + 1));
+    const uint32_t str = call_.Reserve(ui_abi::kCeguiStringSize);
+    if (!chars || !str) return 0;
+    std::memcpy(abi::xbox_memory::HostAddress(base_, chars), text, n + 1);
+    call_.Call(ui_abi::kCeguiStringFromUtf8.address, {str, chars});
+    return str;
+  }
+  float Float(uint32_t address) {
+    const uint32_t bits = call_.ReadU32(address);
+    float f;
+    std::memcpy(&f, &bits, 4);
+    return f;
+  }
+
+  game_menu::GuestCall call_;
+  uint8_t* base_;
+};
+
+constexpr const char* kImageProperties[] = {"Image", "NormalImage", "HoverImage", "PushedImage", "DisabledImage"};
+constexpr const char* kOtherProperties[] = {
+    "UnifiedAreaRect", "HorizontalAlignment", "VerticalAlignment", "TextColour", "HorzTextFormatting",
+    "VertFormatting",  "tabOrder",            "ClippedByParent",   "AlwaysOnTop", "InheritsAlpha",
+    "Disabled"};
+
+UiWindow ReadWindow(WindowReader& reader, const uint8_t* base, uint32_t window, bool parent_shown,
+                    float parent_alpha, int depth, size_t& count) {
+  UiWindow w;
+  ++count;
+  w.name = WindowName(base, window);
+  w.type = ReadCeguiString(base, window + ui_abi::kWindowType.offset);
+  w.class_name = ClassName(base, window);
+  w.visible = OwnVisible(base, window);
+  w.shown = parent_shown && w.visible;
+  w.rect = reader.Rect(window, false);
+  w.clipped = reader.Rect(window, true);
+  w.text = ReadCeguiString(base, window + ui_abi::kWindowText.offset);
+  if (const auto alpha = reader.Property(window, "Alpha")) w.alpha = std::strtof(alpha->c_str(), nullptr);
+  if (const auto font = reader.Property(window, "Font")) w.font = *font;
+  for (const char* name : kImageProperties) {
+    if (const auto value = reader.Property(window, name)) {
+      if (const auto image = ParseImageProperty(*value)) w.images[name] = *image;
+    }
+  }
+  for (const char* name : kOtherProperties) {
+    if (const auto value = reader.Property(window, name)) w.properties[name] = *value;
+  }
+  const auto inherits = w.properties.find("InheritsAlpha");
+  const bool inherit = inherits == w.properties.end() || inherits->second != "False";
+  w.effective_alpha = w.alpha.value_or(1.0f) * (inherit ? parent_alpha : 1.0f);
+  if (depth < kMaxDepth) {
+    for (uint32_t child : Children(base, window)) {
+      if (count >= kMaxWindows) break;
+      w.children.push_back(ReadWindow(reader, base, child, w.shown, w.effective_alpha, depth + 1, count));
+    }
+  }
+  return w;
 }
 
 // One run of measured frames between two marks, logged as the step overlay logs its steps (the
@@ -223,7 +418,7 @@ class ScriptRunner : public live::FrameObserver {
  public:
   ScriptRunner(InputScript script, ScriptInputDriver* driver, std::function<void()> close)
       : script_(std::move(script)), driver_(driver), close_(std::move(close)),
-        start_(Clock::now()) {}
+        start_(Clock::now()), reads_ui_(script_.ReadsUi()) {}
 
   void OnGuestFrame(double ms) override {
     std::lock_guard lock(mutex_);
@@ -256,6 +451,26 @@ class ScriptRunner : public live::FrameObserver {
     REXLOG_INFO("dev input script: menu opened: {}", name);
     events_.menus_opened.push_back(std::move(name));
   }
+  // The game's thread (OnUiFrame): whether the script waits on the UI, the UI as read now, and
+  // the dumps asked for.
+  bool ReadsUi() const { return reads_ui_; }
+  void OnUiState(std::vector<std::string> focused, std::vector<std::string> shown) {
+    std::lock_guard lock(mutex_);
+    events_.ui_reads++;
+    events_.focused = std::move(focused);
+    events_.shown_windows = std::move(shown);
+  }
+  std::optional<std::string> TakeDump() {
+    std::lock_guard lock(mutex_);
+    if (dumps_.empty()) return std::nullopt;
+    std::string name = std::move(dumps_.front());
+    dumps_.pop_front();
+    return name;
+  }
+  uint64_t frame() {
+    std::lock_guard lock(mutex_);
+    return events_.frame;
+  }
 
  private:
   // With the mutex held.
@@ -267,8 +482,16 @@ class ScriptRunner : public live::FrameObserver {
         REXLOG_INFO("perf step {}: {}", step_++, a.text);
         break;
       case ScriptAction::Kind::kCapture:
-        REXLOG_INFO("dev input script: capture");
+        if (a.text.empty()) {
+          REXLOG_INFO("dev input script: capture");
+        } else {
+          REXLOG_INFO("dev input script: capture {}", a.text);
+        }
         capture::Session::Get().RequestCapture();
+        break;
+      case ScriptAction::Kind::kDumpUi:
+        REXLOG_INFO("dev input script: dump_ui {}", a.text);
+        dumps_.push_back(a.text);
         break;
       case ScriptAction::Kind::kCommand:
         if (QueueGuestCommand(a.text)) {
@@ -306,6 +529,7 @@ class ScriptRunner : public live::FrameObserver {
   }
 
   std::mutex mutex_;
+  std::deque<std::string> dumps_;  // dump_ui names, for OnUiFrame
   InputScript script_;
   ScriptInputDriver* driver_;
   std::function<void()> close_;
@@ -314,11 +538,65 @@ class ScriptRunner : public live::FrameObserver {
   Segment segment_;
   int step_ = 0;
   bool finished_ = false;
+  const bool reads_ui_;
 };
 
 std::unique_ptr<ScriptRunner> g_runner;
 
+void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::string& name) {
+  const std::string folder = rex::cvar::Query<std::string>("capture_dir");
+  if (folder.empty()) {
+    REXLOG_ERROR("dev input script: dump_ui {} needs --capture_dir; not written", name);
+    return;
+  }
+  const uint32_t sheet = Sheet(base, game_ui);
+  if (!InGuestHeap(sheet)) {
+    REXLOG_ERROR("dev input script: dump_ui {}: no GUI sheet", name);
+    return;
+  }
+  UiDump dump;
+  dump.name = name;
+  dump.frame = g_runner->frame();
+  dump.menus = OpenMenus(base, game_ui);
+  size_t count = 0;
+  {
+    WindowReader reader(ctx, base);
+    const UiRect screen = reader.Rect(sheet, false);
+    dump.display_width = screen.right - screen.left;
+    dump.display_height = screen.bottom - screen.top;
+    for (uint32_t child : Children(base, sheet)) {
+      if (count >= kMaxWindows) break;
+      dump.windows.push_back(ReadWindow(reader, base, child, OwnVisible(base, sheet), 1.0f, 1, count));
+    }
+  }
+  std::error_code ec;
+  std::filesystem::create_directories(folder, ec);
+  const std::filesystem::path path = std::filesystem::path(folder) / (name + ".json");
+  std::ofstream out(path, std::ios::binary);
+  out << UiDumpJson(dump);
+  if (!out) {
+    REXLOG_ERROR("dev input script: dump_ui {}: cannot write {}", name, path.string());
+    return;
+  }
+  REXLOG_INFO("dev input script: dump_ui {}: {} windows, display {}x{}, to {}", name, count, dump.display_width,
+              dump.display_height, path.string());
+}
+
 }  // namespace
+
+void OnUiFrame(PPCContext& ctx, uint8_t* base, uint32_t game_ui) {
+  if (!g_runner || !game_ui) return;
+  if (g_runner->ReadsUi()) {
+    std::vector<std::string> focused, shown;
+    for (const UiMenu& m : OpenMenus(base, game_ui)) {
+      if (!m.focus.empty()) focused.push_back(m.focus);
+    }
+    const uint32_t sheet = Sheet(base, game_ui);
+    if (InGuestHeap(sheet)) CollectShown(base, sheet, 0, shown);
+    g_runner->OnUiState(std::move(focused), std::move(shown));
+  }
+  while (auto name = g_runner->TakeDump()) WriteDump(ctx, base, game_ui, *name);
+}
 
 void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_close) {
   const std::string path = REXCVAR_GET(dev_input_script);

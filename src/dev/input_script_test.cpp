@@ -142,9 +142,72 @@ void TestKeystrokes() {
   Check(PadKeystrokes(down, down).empty(), "no change, no keys");
 }
 
+
+void TestUiCommandsParse() {
+  std::string error;
+  Check(InputScript::Parse("focus Options\n", error).has_value(), "focus NAME");
+  Check(InputScript::Parse("focus Options by UP every 0.2s timeout 10s\n", error).has_value(), "focus with options");
+  Check(!InputScript::Parse("focus Options by A\n", error), "focus by a button that is not a direction");
+  Check(InputScript::Parse("wait window Sheet timeout 5s\nwait focus Ok\n", error).has_value(), "wait window, focus");
+  Check(InputScript::Parse("press A every 1s until window Inventory\n", error).has_value(), "press until window");
+  Check(InputScript::Parse("dump_ui title-screen_1.x\ncapture title\ncapture\n", error).has_value(),
+        "dump_ui NAME, capture [NAME]");
+  Check(!InputScript::Parse("dump_ui ../x\n", error), "dump_ui: no paths");
+  Check(!InputScript::Parse("dump_ui\n", error), "dump_ui needs a name");
+  Check(!InputScript::Parse("capture a b\n", error), "capture takes one name");
+  Check(MustParse("wait focus X\n").ReadsUi() && !MustParse("wait level_loaded\n").ReadsUi(), "ReadsUi");
+}
+
+void TestFocusPressesUntilFocused() {
+  Run r("focus Back by UP every 10f\n");
+  r.e.ui_reads = 1;
+  r.e.focused = {"Play"};
+  r.Frames(30);
+  int presses = 0;
+  for (size_t i = 1; i < r.pads.size(); ++i)
+    if (r.pads[i].buttons == pad::kUp && r.pads[i - 1].buttons == 0) ++presses;
+  Check(r.pads[0].buttons == pad::kUp, "the first press at once");
+  Check(presses >= 2, "pressed again every 10 frames");
+  Check(!r.script.done(), "still waiting");
+  r.e.focused = {"back"};  // the name matches ignoring case, but only from a read after the start
+  r.Frame();
+  Check(!r.script.done(), "a stale read does not count");
+  ++r.e.ui_reads;
+  r.Frames(2);
+  Check(r.script.done() && r.Has(Kind::kFinished), "done once a fresh read has the focus there");
+}
+
+void TestWaitWindowAndTimeout() {
+  Run r("wait window Inventory timeout 1s\n");
+  r.e.shown_windows = {"Inventory"};
+  r.Frame();
+  Check(!r.script.done(), "shown before the command began: not yet");
+  ++r.e.ui_reads;
+  r.Frames(2);
+  Check(r.script.done() && !r.Has(Kind::kFailed), "seen on a fresh read");
+  Run t("wait focus Nowhere timeout 1s\n");
+  t.Frames(70);
+  Check(t.Has(Kind::kFailed), "times out");
+  bool says = false;
+  for (const auto& a : t.actions) says |= a.kind == Kind::kFailed && a.text.find("focus on Nowhere") != std::string::npos;
+  Check(says, "the failure names the focus it waited for");
+}
+
+void TestDumpAndNamedCapture() {
+  Run r("capture title\ndump_ui title\n");
+  r.Frame();
+  Check(r.actions.size() >= 2 && r.actions[0].kind == Kind::kCapture && r.actions[0].text == "title" &&
+            r.actions[1].kind == Kind::kDumpUi && r.actions[1].text == "title",
+        "capture NAME and dump_ui NAME actions");
+}
+
 }  // namespace
 
 int main() {
+  TestUiCommandsParse();
+  TestFocusPressesUntilFocused();
+  TestWaitWindowAndTimeout();
+  TestDumpAndNamedCapture();
   TestParseErrors();
   TestPressAndIdle();
   TestHoldStickAndTriggers();
