@@ -13,8 +13,14 @@
 # OGRE installs Media/ and CMake/ at the prefix's top there (share/OGRE/ on Linux); consumers take
 # them from OGRE_MEDIA_DIR and OGRE_PLUGIN_DIR.
 #
-# Usage: tools/deps/build_ogre.sh PREFIX [WORK_DIR] [BUILD_TYPE]
+# Android (TARGET android-arm64; first build attempt, not used by CI; docs/android-port.md): the
+# NDK's arm64-v8a, API 30, through cmake/android-arm64.toolchain.cmake, with the GLES2 render
+# system (GLES 3 where the device has it) in place of GL3+. Which render system Android uses is
+# the render's decision; this only shows whether it builds.
+#
+# Usage: tools/deps/build_ogre.sh PREFIX [WORK_DIR] [BUILD_TYPE] [TARGET]
 #   BUILD_TYPE  Release (default; what CI and the published game use) or RelWithDebInfo
+#   TARGET      host (default) or android-arm64
 # Needs: git, cmake >= 3.25, ninja, clang/clang++ (CC/CXX pick others); on Linux libX11/libXrandr,
 # EGL, Wayland and zlib development packages; on macOS the Command Line Tools.
 set -eu
@@ -26,6 +32,8 @@ OGRE_TAG=v14.6.0
 prefix=$(mkdir -p "$1" && cd "$1" && pwd)
 work=${2:-}
 build_type=${3:-Release}
+target=${4:-host}
+root=$(cd "$(dirname "$0")/../.." && pwd)
 if [ -z "$work" ]; then
   work=$(mktemp -d)
   trap 'rm -rf "$work"' EXIT
@@ -36,16 +44,26 @@ if [ ! -d "$src/.git" ]; then
   git clone --quiet --depth 1 --branch "$OGRE_TAG" "$OGRE_REPOSITORY" "$src"
 fi
 
-case "$(uname -s)" in
-  Linux) host=linux ;;
-  Darwin) host=macos ;;
+case "$target-$(uname -s)" in
+  android-arm64-*) host=android ;;
+  host-Linux) host=linux ;;
+  host-Darwin) host=macos ;;
   *) echo "unsupported host: $(uname -s)" >&2; exit 2 ;;
 esac
 
 configure() {  # BUILD_DIR [extra options...]
   dir=$1
   shift
-  if [ "$host" = macos ]; then
+  if [ "$host" = android ]; then
+    # ANDROID_ABI and ANDROID_PLATFORM given here as well: OGRE's CMakeLists.txt tests APPLE before
+    # project() (the toolchain file is read only at project()), and on a macOS host only
+    # ANDROID_PLATFORM keeps it from enabling Objective-C for the NDK's clang.
+    set -- -DCMAKE_TOOLCHAIN_FILE="$root/cmake/android-arm64.toolchain.cmake" \
+      -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-30 \
+      -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--as-needed -DCMAKE_MODULE_LINKER_FLAGS=-Wl,--as-needed \
+      "$@" -DOGRE_BUILD_RENDERSYSTEM_GL3PLUS=OFF -DOGRE_BUILD_RENDERSYSTEM_GLES2=ON \
+      -DOGRE_BUILD_ANDROID_JNI_SAMPLE=OFF
+  elif [ "$host" = macos ]; then
     set -- -DCMAKE_OSX_SYSROOT=macosx -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 \
       -DCMAKE_OSX_ARCHITECTURES=arm64 -DOGRE_BUILD_LIBS_AS_FRAMEWORKS=OFF \
       -DCMAKE_INSTALL_RPATH='@loader_path;@loader_path/..' \
@@ -55,8 +73,10 @@ configure() {  # BUILD_DIR [extra options...]
     set -- -DCMAKE_INSTALL_RPATH='$ORIGIN;$ORIGIN/..;$ORIGIN/../..' \
       -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--as-needed -DCMAKE_MODULE_LINKER_FLAGS=-Wl,--as-needed "$@"
   fi
-  cmake -S "$src" -B "$dir" -G Ninja -DCMAKE_BUILD_TYPE="$build_type" \
-    -DCMAKE_C_COMPILER="${CC:-clang}" -DCMAKE_CXX_COMPILER="${CXX:-clang++}" \
+  compilers="-DCMAKE_C_COMPILER=${CC:-clang} -DCMAKE_CXX_COMPILER=${CXX:-clang++}"
+  [ "$host" = android ] && compilers=""  # the toolchain file picks the NDK's clang
+  # shellcheck disable=SC2086
+  cmake -S "$src" -B "$dir" -G Ninja -DCMAKE_BUILD_TYPE="$build_type" $compilers \
     -DCMAKE_INSTALL_PREFIX="$prefix" \
     -DOGRE_BUILD_DEPENDENCIES=OFF \
     -DOGRE_BUILD_RENDERSYSTEM_GL=OFF -DOGRE_BUILD_RENDERSYSTEM_GL3PLUS=ON \
@@ -80,6 +100,10 @@ configure() {  # BUILD_DIR [extra options...]
 configure "$work/build"
 cmake --build "$work/build" --parallel
 cmake --install "$work/build"
+if [ "$host" = android ]; then
+  echo "OGRE installed in $prefix"
+  exit 0
+fi
 if [ "$host" = macos ]; then
   # OGRE appends its install's lib/ to every rpath (its CMakeLists.txt, after ConfigureBuild): an
   # absolute path of this machine, which @loader_path makes unnecessary.
