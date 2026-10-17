@@ -1,0 +1,16 @@
+diff --git a/CMakePresets.json b/CMakePresets.json
+index d95d352..4f07384 100644
+--- a/CMakePresets.json
++++ b/CMakePresets.json
+@@ -260,7 +260,10 @@
+             "binaryDir": "${sourceDir}/out/build/${presetName}",
+             "toolchainFile": "${sourceDir}/cmake/android-arm64.toolchain.cmake",
+             "cacheVariables": {
+-                "CMAKE_BUILD_TYPE": "Release"
++                "CMAKE_BUILD_TYPE": "Release",
++                "rexglue_DIR": "$env{HOME}/android-work/sdk-install/lib/cmake/rexglue",
++                "OGRE_DIR": "$env{HOME}/android-work/ogre-install/lib/OGRE/cmake",
++                "CMAKE_FIND_ROOT_PATH": "$env{HOME}/android-work/sdk-install;$env{HOME}/android-work/ogre-install"
+             }
+         }
+     ],

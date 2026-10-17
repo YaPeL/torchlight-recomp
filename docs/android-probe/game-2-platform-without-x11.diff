@@ -1,0 +1,66 @@
+diff --git a/src/platform/CMakeLists.txt b/src/platform/CMakeLists.txt
+index da6ee62..abee071 100644
+--- a/src/platform/CMakeLists.txt
++++ b/src/platform/CMakeLists.txt
+@@ -8,7 +8,7 @@ if(UNIX AND NOT APPLE)
+     add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp power_supply_linux.cpp
+                 text_wrap.cpp display_refresh_none.cpp)
+     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
+-                          PRIVATE X11)
++                          PRIVATE $<$<NOT:$<BOOL:${ANDROID}>>:X11>)  # LOCAL PROBE (android)
+     # When each present reached the screen (presentation_time.h): a development measurement, on
+     # Wayland's presentation-time protocol; off in releases, which then need no Wayland libraries.
+     option(TORCHLIGHT_PRESENTATION_TIME "Measure when presents reach the screen (Wayland)" OFF)
+diff --git a/src/platform/platform_linux.cpp b/src/platform/platform_linux.cpp
+index 9af004a..b309f46 100644
+--- a/src/platform/platform_linux.cpp
++++ b/src/platform/platform_linux.cpp
+@@ -24,8 +24,10 @@
+ #include <SDL3/SDL_properties.h>
+ #include <SDL3/SDL_stdinc.h>
+ #include <SDL3/SDL_video.h>
++#if !defined(__ANDROID__)  // LOCAL PROBE (android)
+ #include <X11/Xlib.h>
+ #include <X11/keysym.h>
++#endif
+ 
+ namespace torchlight::platform {
+ 
+@@ -273,6 +275,9 @@ std::string OgreMediaDir() {
+ }
+ 
+ void BlackGameWindowBackground() {
++#if defined(__ANDROID__)  // LOCAL PROBE (android)
++  return;
++#else
+   if (VideoDriver() != "x11") return;  // Wayland: nothing shows before the first buffer
+   // SDL creates X11 windows with background None (SDL_x11window.c), so until something draws the
+   // server shows whatever is there. The first event of a window gives it a black background.
+@@ -297,6 +302,7 @@ void BlackGameWindowBackground() {
+         return true;
+       },
+       nullptr);
++#endif
+ }
+ 
+ std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWindow& window) {
+@@ -355,6 +361,12 @@ std::string RenderingDeviceForGpu(const std::string&, const std::vector<std::str
+   return "";
+ }
+ 
++#if defined(__ANDROID__)  // LOCAL PROBE (android)
++std::unique_ptr<KeyReader> KeyReader::ForOgreWindow(
++    const std::function<void(const char* name, void* out)>&) {
++  return nullptr;
++}
++#else
+ namespace {
+ 
+ // X11: OGRE's message handling selects window events only; key presses are added to the window's
+@@ -391,5 +403,6 @@ std::unique_ptr<KeyReader> KeyReader::ForOgreWindow(
+   if (!display || !window) return nullptr;
+   return std::make_unique<X11KeyReader>(display, window);
+ }
++#endif
+ 
+ }  // namespace torchlight::platform

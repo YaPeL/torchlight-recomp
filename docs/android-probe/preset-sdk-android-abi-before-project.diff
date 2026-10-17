@@ -1,0 +1,13 @@
+diff --git a/tools/deps/android/CMakeUserPresets.json b/tools/deps/android/CMakeUserPresets.json
+index b931775..32eb271 100644
+--- a/tools/deps/android/CMakeUserPresets.json
++++ b/tools/deps/android/CMakeUserPresets.json
+@@ -9,6 +9,8 @@
+       "generator": "Ninja Multi-Config",
+       "binaryDir": "${sourceDir}/out/build/${presetName}",
+       "cacheVariables": {
++        "ANDROID_ABI": "arm64-v8a",
++        "ANDROID_PLATFORM": "android-30",
+         "CMAKE_CXX_STANDARD": "23",
+         "CMAKE_CONFIGURATION_TYPES": "Debug;Release;RelWithDebInfo",
+         "CMAKE_CROSS_CONFIGS": "all",

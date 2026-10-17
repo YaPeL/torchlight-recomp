@@ -1,0 +1,15 @@
+diff --git a/src/backend/CMakeLists.txt b/src/backend/CMakeLists.txt
+index 6b50a3e..8a42db8 100644
+--- a/src/backend/CMakeLists.txt
++++ b/src/backend/CMakeLists.txt
+@@ -25,6 +25,10 @@ target_include_directories(torchlight_backend PUBLIC "${CMAKE_CURRENT_SOURCE_DIR
+ target_compile_features(torchlight_backend PRIVATE cxx_std_23)
+ target_compile_options(torchlight_backend PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
+ target_link_libraries(torchlight_backend PUBLIC OgreMain OgreRTShaderSystem torchlight_platform)
++if(ANDROID)  # LOCAL PROBE (android): OGRE links the NDK's cpufeatures only in its own build tree
++    add_library(torchlight_cpufeatures STATIC "${ANDROID_NDK}/sources/android/cpufeatures/cpu-features.c")
++    target_link_libraries(torchlight_backend PUBLIC torchlight_cpufeatures)
++endif()
+ 
+ # OGRE's plugins and the media the backend uses, as the backend finds them at run time: next to the
+ # executable, in ogre/plugins/ (the Wayland GL build in its wayland/ subdirectory) and ogre/media/

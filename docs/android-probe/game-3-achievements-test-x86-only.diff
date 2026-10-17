@@ -1,0 +1,13 @@
+diff --git a/src/achievements/CMakeLists.txt b/src/achievements/CMakeLists.txt
+index ee1e4ed..fe2745a 100644
+--- a/src/achievements/CMakeLists.txt
++++ b/src/achievements/CMakeLists.txt
+@@ -34,7 +34,7 @@ target_link_libraries(achievement_guest_abi_test PRIVATE torchlight_achievements
+ target_compile_options(achievement_guest_abi_test PRIVATE -Wall -Wextra -Werror)
+ add_test(NAME achievement_guest_abi_test COMMAND achievement_guest_abi_test)
+ # PPC bridge doubles use a sparse 4GiB Linux arena; no guest executable is linked or run.
+-if(TARGET rex::runtime AND UNIX AND NOT APPLE)
++if(TARGET rex::runtime AND UNIX AND NOT APPLE AND NOT ANDROID)  # LOCAL PROBE (android)
+   add_executable(achievement_hooks_test guest_hooks.cpp guest_hooks_test.cpp)
+   target_link_libraries(achievement_hooks_test PRIVATE torchlight_achievements)
+   target_include_directories(achievement_hooks_test PRIVATE "${TORCHLIGHT_REX_INCLUDE}")

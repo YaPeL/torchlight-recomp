@@ -1,0 +1,13 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d7fb319..09f0fd8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -30,6 +30,8 @@ if(TORCHLIGHT_GAME)
+             "tools).")
+     endif()
+     include(generated/rexglue.cmake)
++    # LOCAL PROBE (android): the codegen runs on the host; the host SDK's tool, same version
++    set_target_properties(rex::rexglue PROPERTIES IMPORTED_LOCATION_RELEASE "$ENV{HOME}/macos-port-work/v0124/sdk-install/bin/rexglue")
+ else()
+     # What generated/rexglue.cmake does for the SDK, without the game's code.
+     find_package(rexglue 0.10.0 REQUIRED CONFIG)

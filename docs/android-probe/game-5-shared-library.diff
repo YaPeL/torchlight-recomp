@@ -1,0 +1,15 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d7fb319..f5f17f7 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -97,7 +97,9 @@ set(TORCHLIGHT_SOURCES
+     src/game_menu/video_menu.cpp
+ )
+ 
+-if(WIN32)
++if(ANDROID)  # LOCAL PROBE (android): SDLActivity loads the game as a shared library
++    add_library(torchlight SHARED ${TORCHLIGHT_SOURCES})
++elseif(WIN32)
+     add_executable(torchlight WIN32 ${TORCHLIGHT_SOURCES})
+ else()
+     add_executable(torchlight ${TORCHLIGHT_SOURCES})
