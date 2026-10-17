@@ -656,8 +656,8 @@ bool WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::stri
   return true;
 }
 
-// The run's start in UTC (yyyymmdd-hhmmss), in the names of the dumps captures get: two runs into
-// one capture folder do not overwrite each other's.
+// The run's start in UTC (yyyymmdd-hhmmss; taken at its first frame), in the names of the dumps
+// captures get: two runs into one capture folder do not overwrite each other's.
 const std::string& RunStamp() {
   static const std::string stamp = [] {
     const std::time_t now = std::time(nullptr);
@@ -677,8 +677,9 @@ const std::string& RunStamp() {
 }  // namespace
 
 void OnUiFrame(PPCContext& ctx, uint8_t* base) {
-  ++g_swaps;
-  // Every capture (F9 included, with or without a script) gets the UI dump of the frame it records.
+  if (++g_swaps == 1) RunStamp();  // taken at the first frame
+  // Every capture (F9 included, with or without a script) gets the UI dump of the first frame it
+  // records.
   // A capture starts at the swap after the request and records the next frame; here, before this
   // swap's capture work, it is still armed at the end of that frame: the dump waits until then (an
   // F9 from the host thread is seen one swap before its capture starts).
@@ -693,7 +694,8 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
     pending_since = 0;
     const uint32_t ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
     if (InGuestHeap(ui)) {
-      WriteDump(ctx, base, ui, "ui-capture-" + RunStamp() + "-" + std::to_string(captures_seen));
+      // The capture's own swap number (its file's "swapK"): it started at the previous swap.
+      WriteDump(ctx, base, ui, "ui-capture-" + RunStamp() + "-swap" + std::to_string(g_swaps - 1));
     }
   } else if (pending_since && g_swaps - pending_since > 4) {
     pending_since = 0;

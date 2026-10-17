@@ -95,8 +95,8 @@ between runs).
 ### UI dumps
 
 `dump_ui NAME`, and every capture in development builds (F9 too, with or without a script, as
-`ui-capture-<run start, UTC>-N.json`, the frame the capture records), write the CEGUI window tree as
-shown in that frame: for each window its name
+`ui-capture-<run start, UTC>-swap<K>.json`, K as in the capture's own file name, of the first frame
+the capture records), write the CEGUI window tree as shown in that frame: for each window its name
 and the name without the layout prefix, type, C++ class, visible / shown / active, its screen
 rectangle unclipped and clipped (guest pixels, and scaled to 1080 lines), alpha, font, text, images
 (imageset and image of `Image`, `NormalImage`...) and the other properties it has (area,
