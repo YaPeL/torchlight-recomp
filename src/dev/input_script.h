@@ -30,9 +30,11 @@
 //                                            press the direction (DOWN) every DUR (0.4 s) until
 //                                            the focus is on NAME (timeout 30 s)
 //   mark TEXT                                a step of the run, in the log as the step overlay's
-//   capture [NAME]                           an F9 capture of the next frame, NAME in the log
+//   capture [NAME]                           an F9 capture of the next frame, NAME in the log; the
+//                                            controller stays still for kCaptureFrames
 //   dump_ui NAME                             the game UI's window tree, as shown now, to
-//                                            <capture folder>/NAME.json (dev/ui_probe.h)
+//                                            <capture folder>/NAME.json; the script waits for it
+//                                            (at most 10 s), the controller still
 //   command TEXT                             a guest developer command (dev/guest_command.h, e.g.
 //                                            ASCEND to the town), in development builds with
 //                                            TORCHLIGHT_DEV_COMMANDS too
@@ -75,6 +77,7 @@ struct ScriptEvents {
   // The game UI as last read (dev/ui_probe.h), when a script waits on it: how many times it was
   // read, the windows the open menus' pad focus is on and the windows shown.
   uint64_t ui_reads = 0;
+  uint64_t dumps_written = 0;  // dump_ui files written (or given up on)
   std::vector<std::string> focused;
   std::vector<std::string> shown_windows;
 };
@@ -86,6 +89,10 @@ struct ScriptAction {
   // file's name; kFailed: why
   std::string text;
 };
+
+// Frames the controller stays still after a capture, so the next command's press does not reach
+// the captured frame.
+inline constexpr uint64_t kCaptureFrames = 4;
 
 class InputScript {
  public:
@@ -123,6 +130,7 @@ class InputScript {
     uint32_t level_loads = 0;
     size_t menus = 0;
     uint64_t ui_reads = 0;
+    uint64_t dumps = 0;
   };
 
   static std::string Describe(const Command& c);

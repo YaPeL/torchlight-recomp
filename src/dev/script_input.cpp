@@ -509,6 +509,10 @@ class ScriptRunner : public live::FrameObserver {
     events_.focused = std::move(focused);
     events_.shown_windows = std::move(shown);
   }
+  void OnDumpDone() {
+    std::lock_guard lock(mutex_);
+    events_.dumps_written++;
+  }
   std::optional<std::string> TakeDump() {
     std::lock_guard lock(mutex_);
     if (dumps_.empty()) return std::nullopt;
@@ -636,7 +640,13 @@ void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::stri
 void OnUiFrame(PPCContext& ctx, uint8_t* base) {
   if (!g_runner) return;
   const uint32_t game_ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
-  if (!InGuestHeap(game_ui)) return;
+  if (!InGuestHeap(game_ui)) {
+    while (auto name = g_runner->TakeDump()) {
+      REXLOG_ERROR("dev input script: dump_ui {}: no game UI yet", *name);
+      g_runner->OnDumpDone();
+    }
+    return;
+  }
   if (g_runner->ReadsUi()) {
     std::vector<std::string> focused, shown;
     for (const UiMenu& m : OpenMenus(base)) {
@@ -657,7 +667,10 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
     }
     g_runner->OnUiState(std::move(focused), std::move(shown));
   }
-  while (auto name = g_runner->TakeDump()) WriteDump(ctx, base, game_ui, *name);
+  while (auto name = g_runner->TakeDump()) {
+    WriteDump(ctx, base, game_ui, *name);
+    g_runner->OnDumpDone();
+  }
 }
 
 void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_close) {

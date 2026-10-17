@@ -289,7 +289,7 @@ bool InputScript::EventSeen(const Command& c, const ScriptEvents& e) const {
 }
 
 void InputScript::Begin(const ScriptEvents& e) {
-  start_ = {e.frame, e.seconds, e.level_loads, e.menus_opened.size(), e.ui_reads};
+  start_ = {e.frame, e.seconds, e.level_loads, e.menus_opened.size(), e.ui_reads, e.dumps_written};
   press_ = start_;
   started_ = true;
 }
@@ -309,13 +309,24 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         advance();
         continue;
       case Op::kCapture:
-        actions.push_back({ScriptAction::Kind::kCapture, c.text});
+        if (frames == 0) actions.push_back({ScriptAction::Kind::kCapture, c.text});
+        if (frames < kCaptureFrames) return {};
         advance();
         continue;
       case Op::kDumpUi:
-        actions.push_back({ScriptAction::Kind::kDumpUi, c.text});
-        advance();
-        continue;
+        // The dump is written at a later frame (dev/script_input.cpp): nothing moves until then.
+        if (frames == 0) actions.push_back({ScriptAction::Kind::kDumpUi, c.text});
+        if (e.dumps_written > start_.dumps) {
+          advance();
+          continue;
+        }
+        if (e.seconds - start_.seconds >= 10) {
+          actions.push_back({ScriptAction::Kind::kFailed,
+                             "line " + std::to_string(c.line) + ": dump_ui " + c.text + " was not written"});
+          next_ = commands_.size();
+          ended_ = true;
+        }
+        return {};
       case Op::kCommand:
         actions.push_back({ScriptAction::Kind::kCommand, c.text});
         advance();
@@ -344,7 +355,7 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
           advance();
           continue;
         }
-        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0};
+        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0, 0};
         return e.frame - press_.frame < c.press_frames ? c.pad : PadState{};
       case Op::kWait:
       case Op::kPressUntil:
@@ -361,7 +372,7 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         }
         if (c.op == Op::kWait) return {};
         // A press now and then: down for press_frames, up as long, again when `every` elapsed.
-        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0};
+        if (Elapsed(c.every, e, press_)) press_ = {e.frame, e.seconds, 0, 0, 0, 0};
         return e.frame - press_.frame < c.press_frames ? c.pad : PadState{};
     }
   }

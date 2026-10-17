@@ -94,10 +94,12 @@ void TestWaitLevelLoad() {
   Check(!r.Has(Kind::kMark), "still waiting");
   r.e.level_loads = 5;
   r.Frames(1);
-  Check(r.actions.size() >= 3 && r.actions[0].kind == Kind::kMark &&
-            r.actions[0].text == "DUNGEON: stand still" && r.actions[1].kind == Kind::kCapture &&
-            r.actions[2].kind == Kind::kCommand && r.actions[2].text == "ASCEND",
-        "the load ends the wait; mark, capture and command in the same frame");
+  Check(r.actions.size() == 2 && r.actions[0].kind == Kind::kMark &&
+            r.actions[0].text == "DUNGEON: stand still" && r.actions[1].kind == Kind::kCapture,
+        "the load ends the wait; mark and capture in the same frame");
+  r.Frames(int(kCaptureFrames));
+  Check(r.actions.size() >= 3 && r.actions[2].kind == Kind::kCommand && r.actions[2].text == "ASCEND",
+        "the command once the capture's still frames are over");
 }
 
 void TestWaitTimeout() {
@@ -199,11 +201,23 @@ void TestWaitWindowAndTimeout() {
 }
 
 void TestDumpAndNamedCapture() {
-  Run r("capture title\ndump_ui title\n");
+  Run r("capture title\ndump_ui title\npress A\n");
   r.Frame();
-  Check(r.actions.size() >= 2 && r.actions[0].kind == Kind::kCapture && r.actions[0].text == "title" &&
-            r.actions[1].kind == Kind::kDumpUi && r.actions[1].text == "title",
-        "capture NAME and dump_ui NAME actions");
+  Check(r.actions.size() == 1 && r.actions[0].kind == Kind::kCapture && r.actions[0].text == "title",
+        "capture NAME");
+  r.Frames(int(kCaptureFrames));
+  Check(r.actions.size() == 2 && r.actions[1].kind == Kind::kDumpUi && r.actions[1].text == "title",
+        "dump_ui NAME after the capture's still frames");
+  r.Frames(10);
+  bool pressed = false;
+  for (const auto& p : r.pads) pressed |= p.buttons != 0;
+  Check(!pressed && r.actions.size() == 2, "nothing pressed and no new action while the dump is pending");
+  ++r.e.dumps_written;
+  r.Frames(3);
+  Check(r.pads.back().buttons == pad::kA || r.pads[r.pads.size() - 2].buttons == pad::kA, "on once written");
+  Run t("dump_ui x\n");
+  t.Frames(700);
+  Check(t.Has(Kind::kFailed), "a dump never written fails the script");
 }
 
 }  // namespace
