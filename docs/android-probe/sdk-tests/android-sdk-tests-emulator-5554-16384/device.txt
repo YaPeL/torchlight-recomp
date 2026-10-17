@@ -1,0 +1,4 @@
+device: sdk_gphone16k_arm64 (emulator-5554), API 36, ABIs arm64-v8a
+page size: 16384 bytes
+binaries: <sdk checkout>/out/android-arm64/Release
+run: 2026-10-17T18:37:02Z

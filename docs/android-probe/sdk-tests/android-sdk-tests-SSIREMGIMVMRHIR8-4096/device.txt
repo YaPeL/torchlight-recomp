@@ -1,0 +1,4 @@
+device: 24095PCADG (SSIREMGIMVMRHIR8), API 36, ABIs arm64-v8a
+page size: 4096 bytes
+binaries: <sdk checkout>/out/android-arm64/Release
+run: 2026-10-17T18:38:11Z
