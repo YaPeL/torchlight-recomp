@@ -39,3 +39,4 @@ rexglue-alloc-fixed-old-kernels.patch posix
 rexglue-tests-depfile-escape-literals.patch
 rexglue-chrono-nt-epoch-range.patch
 rexglue-bitstream-write-byte-order.patch
+rexglue-alloc-commit-mprotect-first.patch posix
