@@ -103,32 +103,14 @@ cmake --build "out/build/$preset" --target install --parallel
 echo "SDK installed in $prefix"
 
 if [ "$tests" = true ]; then
-  # Every test has to run and pass: a skipped or not-run one fails too (docs/regressions.md).
+  # Every test has to run and pass, and the only skips are the platform's in
+  # tools/deps/sdk_test_skips.txt: checked from ctest's JUnit file (check_sdk_tests.py), not from
+  # its text.
   # One at a time: the SDK's tests are not written for parallel processes (fixed temporary
   # folder names, a guest memory named by the clock's tick), and in parallel they collided on
   # macOS.
-  log="$work/sdk-tests.log"
-  status=0
-  ctest --test-dir "out/build/$preset" -C Release --output-on-failure --no-tests=error \
-    > "$log" 2>&1 || status=$?
-  cat "$log"
-  [ "$status" -eq 0 ] || { echo "SDK tests failed (ctest $status): see above" >&2; exit 1; }
-  # Skips only as tools/deps/sdk_test_skips.txt lists them for this platform, and all of those.
   case "$(uname -s)" in Darwin) platform=macos ;; *) platform=linux ;; esac
-  # ctest marks a test it could not start with ***Not Run (its summary's "did not run" lists the
-  # skips too).
-  if grep -q '\*\*\*Not Run' "$log"; then
-    echo "an SDK test did not run: see above" >&2
-    exit 1
-  fi
-  sed -n 's/^[[:space:]]*[0-9]* - \(.*\) (Skipped)$/\1/p' "$log" | sort > "$work/skipped.txt"
-  grep -vE '^(#|$)' "$root/tools/deps/sdk_test_skips.txt" |
-    awk -F ' [|] ' -v p="$platform" '$1 == p { print $2 }' | sort > "$work/allowed.txt"
-  if ! cmp -s "$work/skipped.txt" "$work/allowed.txt"; then
-    echo "skipped tests differ from tools/deps/sdk_test_skips.txt for $platform" \
-      "(< skipped, not listed; > listed, ran):" >&2
-    diff "$work/skipped.txt" "$work/allowed.txt" >&2 || true
-    exit 1
-  fi
-  grep -E 'tests passed' "$log"
+  ctest --test-dir "out/build/$preset" -C Release --output-on-failure --no-tests=error \
+    --output-junit "$work/sdk-tests.xml" || true
+  python3 "$root/tools/deps/check_sdk_tests.py" "$work/sdk-tests.xml" "$platform"
 fi

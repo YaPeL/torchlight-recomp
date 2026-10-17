@@ -180,38 +180,18 @@ function Build-Sdk {
     Write-Host "Installed the ReXGlue SDK $SdkCommit ($($SdkConfigs -join ', ')) into $SdkPrefix"
 }
 
-# Runs the SDK's tests (from its checkout): every one has to run and pass, a skipped or not-run one
-# fails too (docs/regressions.md). One at a time, as build_sdk.sh does: they are not written for
+# Runs the SDK's tests (from its checkout): every one has to run and pass, and the only skips are
+# Windows' in tools/deps/sdk_test_skips.txt, checked from ctest's JUnit file by
+# tools/deps/check_sdk_tests.py as build_sdk.sh does. One at a time: they are not written for
 # parallel processes.
 function Test-Sdk {
-    $log = Join-Path $WorkDir 'sdk-tests.log'
+    $junit = Join-Path $WorkDir 'sdk-tests.xml'
     $ErrorActionPreference = 'Continue'
     & ctest --test-dir out/build/win-amd64 -C $SdkConfigs[0] --output-on-failure --no-tests=error `
-        2>&1 | ForEach-Object { "$_" } | Tee-Object -FilePath $log
-    $code = $LASTEXITCODE
-    if ($code -ne 0) {
-        throw "SDK tests failed (ctest $code): see above"
-    }
-    # ctest marks a test it could not start with ***Not Run (its summary's "did not run" lists the
-    # skips too, so the match is exact and case-sensitive).
-    if (Select-String -Path $log -Pattern '\*\*\*Not Run' -CaseSensitive -Quiet) {
-        throw 'an SDK test did not run: see above'
-    }
-    # Skips only as tools/deps/sdk_test_skips.txt lists them for Windows, and all of those.
-    $skipped = @(Get-Content $log | ForEach-Object {
-        if ($_ -match '^\s*\d+ - (.*) \(Skipped\)\s*$') { $Matches[1] } } | Sort-Object)
-    $allowed = @(Get-Content (Join-Path $Root 'tools\deps\sdk_test_skips.txt') | ForEach-Object {
-        if ($_ -notmatch '^\s*(#|$)') {
-            $fields = $_ -split ' \| '
-            if ($fields[0] -eq 'windows') { $fields[1] }
-        } } | Sort-Object)
-    $difference = Compare-Object $skipped $allowed
-    if ($difference) {
-        $difference | ForEach-Object {
-            $where = if ($_.SideIndicator -eq '<=') { 'skipped, not listed' } else { 'listed, ran' }
-            Write-Host "${where}: $($_.InputObject)"
-        }
-        throw 'skipped tests differ from tools/deps/sdk_test_skips.txt for Windows: see above'
+        --output-junit $junit 2>&1 | ForEach-Object { "$_" }
+    & python (Join-Path $Root 'tools\deps\check_sdk_tests.py') $junit windows
+    if ($LASTEXITCODE -ne 0) {
+        throw 'the SDK tests are not as expected: see above'
     }
 }
 
