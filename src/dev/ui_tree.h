@@ -1,4 +1,4 @@
-// Development only: the game UI's window tree as dev/ui_probe reads it from the guest's CEGUI, and
+// Development only: the game UI's window tree as script_input.cpp reads it from the guest's CEGUI, and
 // its JSON (dump_ui in input scripts, docs/dev-input-script.md). Pure, so it can be tested; the
 // guest reading is in script_input.cpp.
 

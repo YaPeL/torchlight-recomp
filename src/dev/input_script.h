@@ -34,7 +34,8 @@
 //                                            controller stays still for kCaptureFrames
 //   dump_ui NAME                             the game UI's window tree, as shown now, to
 //                                            <capture folder>/NAME.json; the script waits for it
-//                                            (at most 10 s), the controller still
+//                                            (at most 10 s), the controller still, and fails when
+//                                            it cannot be written
 //   command TEXT                             a guest developer command (dev/guest_command.h, e.g.
 //                                            ASCEND to the town), in development builds with
 //                                            TORCHLIGHT_DEV_COMMANDS too
@@ -74,10 +75,11 @@ struct ScriptEvents {
   double seconds = 0;       // host seconds since the start
   uint32_t level_loads = 0; // level loads completed
   std::vector<std::string> menus_opened;  // class names of the menus opened, in order
-  // The game UI as last read (dev/ui_probe.h), when a script waits on it: how many times it was
+  // The game UI as last read (script_input.cpp), when a script waits on it: how many times it was
   // read, the windows the open menus' pad focus is on and the windows shown.
   uint64_t ui_reads = 0;
-  uint64_t dumps_written = 0;  // dump_ui files written (or given up on)
+  uint64_t dumps_written = 0;  // dump_ui files written
+  uint64_t dumps_failed = 0;   // dump_ui files that could not be written (no capture folder...)
   std::vector<std::string> focused;
   std::vector<std::string> shown_windows;
 };
@@ -131,6 +133,7 @@ class InputScript {
     size_t menus = 0;
     uint64_t ui_reads = 0;
     uint64_t dumps = 0;
+    uint64_t dumps_failed = 0;
   };
 
   static std::string Describe(const Command& c);

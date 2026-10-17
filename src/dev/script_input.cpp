@@ -25,6 +25,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <ctime>
 #include <deque>
 #include <filesystem>
 #include <fstream>
@@ -85,7 +86,7 @@ std::string ClassName(const uint8_t* base, uint32_t object) {
 
 // ---------------------------------------------------------------------------------------------
 // The game UI, read from the guest's CEGUI (guest_abi game_ui.h, game_ui_sheet.h): what focus and
-// window waits match, and dump_ui's tree. On the game's thread, from CGameUI::Update (OnUiFrame).
+// window waits match, and dump_ui's tree. On the game's thread, at the frame's swap (OnUiFrame).
 namespace ui_abi = torchlight::guest_abi::game_ui;
 namespace sheet_abi = torchlight::guest_abi::game_ui_sheet;
 
@@ -525,9 +526,9 @@ class ScriptRunner : public live::FrameObserver {
     events_.focused = std::move(focused);
     events_.shown_windows = std::move(shown);
   }
-  void OnDumpDone() {
+  void OnDumpDone(bool written) {
     std::lock_guard lock(mutex_);
-    events_.dumps_written++;
+    (written ? events_.dumps_written : events_.dumps_failed)++;
   }
   std::optional<std::string> TakeDump() {
     std::lock_guard lock(mutex_);
@@ -612,20 +613,23 @@ class ScriptRunner : public live::FrameObserver {
 
 std::unique_ptr<ScriptRunner> g_runner;
 
-void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::string& name) {
+uint64_t g_swaps = 0;  // swaps seen by OnUiFrame: a dump's frame
+
+// Whether the file was written.
+bool WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::string& name) {
   const std::string folder = rex::cvar::Query<std::string>("capture_dir");
   if (folder.empty()) {
     REXLOG_ERROR("dev input script: dump_ui {} needs --capture_dir; not written", name);
-    return;
+    return false;
   }
   const uint32_t sheet = Sheet(base, game_ui);
   if (!InGuestHeap(sheet)) {
     REXLOG_ERROR("dev input script: dump_ui {}: no GUI sheet", name);
-    return;
+    return false;
   }
   UiDump dump;
   dump.name = name;
-  dump.frame = g_runner ? g_runner->frame() : 0;
+  dump.frame = g_swaps;
   dump.menus = OpenMenus(base, sheet);
   size_t count = 0;
   {
@@ -645,29 +649,62 @@ void WriteDump(PPCContext& ctx, uint8_t* base, uint32_t game_ui, const std::stri
   out << UiDumpJson(dump);
   if (!out) {
     REXLOG_ERROR("dev input script: dump_ui {}: cannot write {}", name, path.string());
-    return;
+    return false;
   }
-  REXLOG_INFO("dev input script: dump_ui {}: {} windows, display {}x{}, to {}", name, count, dump.display_width,
-              dump.display_height, path.string());
+  REXLOG_INFO("dev input script: dump_ui {}: {} windows, display {}x{}, frame {}, to {}", name, count,
+              dump.display_width, dump.display_height, dump.frame, path.string());
+  return true;
+}
+
+// The run's start in UTC (yyyymmdd-hhmmss), in the names of the dumps captures get: two runs into
+// one capture folder do not overwrite each other's.
+const std::string& RunStamp() {
+  static const std::string stamp = [] {
+    const std::time_t now = std::time(nullptr);
+    std::tm utc{};
+#if defined(_WIN32)
+    gmtime_s(&utc, &now);
+#else
+    gmtime_r(&now, &utc);
+#endif
+    char text[32];
+    std::strftime(text, sizeof(text), "%Y%m%d-%H%M%S", &utc);
+    return std::string(text);
+  }();
+  return stamp;
 }
 
 }  // namespace
 
 void OnUiFrame(PPCContext& ctx, uint8_t* base) {
-  // Every capture (F9 included, with or without a script) gets the UI dump beside it.
+  ++g_swaps;
+  // Every capture (F9 included, with or without a script) gets the UI dump of the frame it records.
+  // A capture starts at the swap after the request and records the next frame; here, before this
+  // swap's capture work, it is still armed at the end of that frame: the dump waits until then (an
+  // F9 from the host thread is seen one swap before its capture starts).
   static uint64_t captures_seen = 0;
-  const uint64_t captures = capture::Session::Get().capture_requests();
-  if (captures != captures_seen) {
+  static uint64_t pending_since = 0;  // swaps; 0: no dump pending
+  const capture::Session& session = capture::Session::Get();
+  if (const uint64_t captures = session.capture_requests(); captures != captures_seen) {
     captures_seen = captures;
+    pending_since = g_swaps;
+  }
+  if (pending_since && session.armed()) {
+    pending_since = 0;
     const uint32_t ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
-    if (InGuestHeap(ui)) WriteDump(ctx, base, ui, "ui-capture-" + std::to_string(captures));
+    if (InGuestHeap(ui)) {
+      WriteDump(ctx, base, ui, "ui-capture-" + RunStamp() + "-" + std::to_string(captures_seen));
+    }
+  } else if (pending_since && g_swaps - pending_since > 4) {
+    pending_since = 0;
+    REXLOG_ERROR("dev input script: capture {} never started; no UI dump for it", captures_seen);
   }
   if (!g_runner) return;
   const uint32_t game_ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
   if (!InGuestHeap(game_ui)) {
     while (auto name = g_runner->TakeDump()) {
       REXLOG_ERROR("dev input script: dump_ui {}: no game UI yet", *name);
-      g_runner->OnDumpDone();
+      g_runner->OnDumpDone(false);
     }
     return;
   }
@@ -691,10 +728,7 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
     }
     g_runner->OnUiState(std::move(focused), std::move(shown));
   }
-  while (auto name = g_runner->TakeDump()) {
-    WriteDump(ctx, base, game_ui, *name);
-    g_runner->OnDumpDone();
-  }
+  while (auto name = g_runner->TakeDump()) g_runner->OnDumpDone(WriteDump(ctx, base, game_ui, *name));
 }
 
 void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_close) {

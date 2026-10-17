@@ -427,7 +427,7 @@ inline constexpr GuestFunction kWindowSetVisible{0x821A56C0, Confidence::kConfir
 inline constexpr Field kWindowVisible{0x161, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
-// What the development UI dump reads of a window (dev/ui_probe in script_input.cpp).
+// What the development UI dump reads of a window (dev/script_input.cpp).
 // [confirmed] Window type (CEGUI String, "ceguiWidget/StaticImage" and the like): the ctor
 // sub_825AD818 copies its type argument (r4, kept in r27) to +688 (the String copy returning to
 // 0x825AD92C), then its name argument to +840 (kWindowName).

@@ -218,6 +218,11 @@ void TestDumpAndNamedCapture() {
   Run t("dump_ui x\n");
   t.Frames(700);
   Check(t.Has(Kind::kFailed), "a dump never written fails the script");
+  Run f("dump_ui x\npress A\n");
+  f.Frames(3);
+  ++f.e.dumps_failed;
+  f.Frames(2);
+  Check(f.Has(Kind::kFailed) && f.pads.back().buttons == 0, "a dump that could not be written fails at once");
 }
 
 }  // namespace

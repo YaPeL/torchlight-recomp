@@ -23,8 +23,9 @@ void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_clo
 
 // The game's thread, at every frame's swap (hooks/resource_hooks.cpp; CGameUI::Update does not run
 // in every state, the character creation screen's among them): reads the game UI when the script
-// waits on it (focus, window) and writes the dumps it asked for (dump_ui). Nothing without a
-// script, or in builds without input scripts.
+// waits on it (focus, window), writes the dumps it asked for (dump_ui), and writes a dump of the
+// frame every capture records (F9 too, with or without a script). Nothing in builds without input
+// scripts.
 void OnUiFrame(PPCContext& ctx, uint8_t* base);
 
 }  // namespace torchlight::dev
