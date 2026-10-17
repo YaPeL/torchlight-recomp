@@ -1439,7 +1439,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 38 | `rexglue-alloc-fixed-old-kernels.patch` | `sdk/android-device` | `bd833a2`, after 37 |
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | `bd833a2`, after 38 |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` (D29) | `sdk/known-test-failures` | `bd833a2`, after 39 |
-| 41 | next free | | |
+| 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | `bd833a2`, after 40 |
+| 42 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

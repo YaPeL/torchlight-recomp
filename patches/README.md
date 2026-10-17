@@ -11,10 +11,11 @@ only touch POSIX files (`threading_posix.cpp`, `memory_posix.cpp`). `series` mar
 patches 17 and 18 `windows`; the build scripts apply what their platform takes. Patches 17 and 18 only change Windows
 files or Windows branches, so on Linux they build nothing new.
 
-The SDK's own tests (`unit_tests`, `ppc_tests`) with this series: all pass on Linux (1767 of
-1767) and on the Android tablet (4 KB pages). Five cases had failed from the base on, and patches
-39 and 40 fix them: one test with a wrong literal (every platform) and four `chrono_test` cases
-(libstdc++, so Linux). Windows and macOS have not run them since 39 and 40; before, Windows
+The SDK's own tests (`unit_tests`, `ppc_tests`) with this series: all pass on Linux (1768 of
+1768, none skipped) and on the Android tablet (4 KB pages). Five cases had failed from the base
+on, and patches 39 and 40 fix them: one test with a wrong literal (every platform) and four
+`chrono_test` cases (libstdc++, so Linux); four more were skipped, and patch 41 fixes what they
+test. Windows and macOS have not run them since 39 and 40; before, Windows
 failed only the depfile case, and macOS passed the chrono ones. CI does not build or run these
 tests (`docs/regressions.md`), so they are run by hand when the series changes: `ctest` in the
 SDK's build tree with `REXGLUE_BUILD_TESTS=ON`, and `tools/android/run_sdk_tests.sh` on Android.
@@ -53,7 +54,8 @@ in number order; a branch adds its own line at its number's place.
 | 38 | `rexglue-alloc-fixed-old-kernels.patch` | `sdk/android-device` | In the branch (after 37) |
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | In the branch (after 38) |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` | `sdk/known-test-failures` | In the branch (after 39) |
-| 41 | | | Next free number |
+| 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | In the branch (after 40) |
+| 42 | | | Next free number |
 
 ## The patches
 
@@ -643,5 +645,11 @@ in number order; a branch adds its own line at its number's place.
     undefined behaviour: a Debug build may count 21), with it all pass (Android too). Upstream
     draft D29. Still open, from before: `RtlTimeFieldsToTime` accepts years up to 32767, and
     past NT's limit of 30827 the FILETIME overflows.
+
+41. `rexglue-bitstream-write-byte-order.patch`: `BitStream::Write` stored in the opposite byte
+    order to what `Peek` and `Read` read (they swap the big-endian bytes, it did not), and four
+    `stream_test` cases had been disabled with `SKIP` for it. It swaps as `Peek` does now, and
+    the cases run again (the 16-bit one also checks the bytes in memory). Nothing in the runtime
+    calls it (the XMA decoder only reads). Without the change 6 assertions fail.
 
 The observation and diagnostic patches there were before remain in the git history.

@@ -113,6 +113,6 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   by hand on a device.
 - **Should have been caught by:** a CI job that builds and runs the SDK's tests with the series;
   and no known failure accepted as upstream without a fix or a written skip.
-- **Covered now:** patches 39 and 40 fix the five cases (Linux 1767 of 1767, the Android tablet
-  all). A CI job for the SDK's tests is proposed to the owner (it changes the workflows). Until
+- **Covered now:** patches 39 and 40 fix the five cases, and patch 41 the four that were
+  skipped (`BitStream::Write`'s byte order): Linux 1768 of 1768 with none skipped. A CI job for the SDK's tests is proposed to the owner (it changes the workflows). Until
   then `patches/README.md` says to run them by hand when the series changes.
