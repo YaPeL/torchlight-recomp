@@ -1,7 +1,7 @@
 // The program cache file (tl_backend_open_program_cache): OGRE's serialised microcode cache with a
 // trailer of our own, its length and a checksum, so a file cut short or damaged is recognised before
-// OGRE reads it. OGRE's loadMicrocodeCache catches its own read errors and leaves the cache empty,
-// so a damaged file would otherwise look loaded. No OGRE types.
+// OGRE reads it. OGRE's loadMicrocodeCache swallows some read errors (leaving the cache empty, as
+// if loaded) and throws on others after part of the entries are in. No OGRE types.
 
 #pragma once
 

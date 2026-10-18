@@ -2833,8 +2833,9 @@ void tl_backend_open_program_cache(tl_backend* b, const char* version) {
   programs.setSaveMicrocodesToCache(true);
   if (!std::filesystem::exists(b->microcode_file, error)) return;
   // A file cut short or damaged is told by our trailer (program_cache_file.h): OGRE's own load
-  // catches its read errors and leaves the cache empty, which would look loaded. Such a file is
-  // removed and the cache rebuilt from what this session compiles.
+  // swallows some read errors and leaves the cache empty, which would look loaded, and throws on
+  // others after part of the entries are in. Such a file is removed, the cache emptied, and it is
+  // rebuilt from what this session compiles.
   std::ifstream in(b->microcode_file, std::ios::binary);
   const std::string file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
   std::optional<std::string> payload = torchlight::backend::UnwrapProgramCache(file);
@@ -2846,6 +2847,8 @@ void tl_backend_open_program_cache(tl_backend* b, const char* version) {
       Ogre::LogManager::getSingleton().logMessage("program cache: " + b->microcode_file.string());
       return;
     } catch (Ogre::Exception&) {
+      // Whatever was read before the error goes: loading an empty stream clears the cache.
+      programs.loadMicrocodeCache(std::make_shared<Ogre::MemoryDataStream>(size_t(0)));
     }
   }
   Ogre::LogManager::getSingleton().logWarning("program cache unreadable, rebuilt: " +
@@ -2875,6 +2878,10 @@ void tl_backend_save_program_cache(tl_backend* b) {
       std::ifstream in(temp, std::ios::binary);
       payload.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
     }
+    // Loading them back checks they are whole (a failed write throws here), and clears OGRE's dirty
+    // flag, which saving does not: without it every later level load would write the file again.
+    programs.loadMicrocodeCache(
+        std::make_shared<Ogre::MemoryDataStream>(payload.data(), payload.size(), false, true));
     std::ofstream out(temp, std::ios::binary | std::ios::trunc);
     const std::string file = torchlight::backend::WrapProgramCache(payload);
     out.write(file.data(), std::streamsize(file.size()));
@@ -2910,6 +2917,10 @@ size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms) {
       Ogre::LogManager::getSingleton().logError("RTSS program precompile: " +
                                                 e.getFullDescription());
       p.failed = true;
+    } catch (std::exception& e) {
+      Ogre::LogManager::getSingleton().logError(std::string("RTSS program precompile: ") +
+                                                e.what());
+      p.failed = true;
     }
     if (p.failed) continue;
     ++b->counters.programs_precompiled;
@@ -2926,9 +2937,9 @@ size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms) {
       b->rs->bindGpuProgram(p.pass->getVertexProgram()->_getBindingDelegate());
       b->rs->bindGpuProgram(p.pass->getFragmentProgram()->_getBindingDelegate());
       DrawQuad(b, b->quad);
-    } catch (Ogre::Exception& e) {
-      Ogre::LogManager::getSingleton().logError("RTSS program precompile draw: " +
-                                                e.getDescription());
+    } catch (std::exception& e) {
+      Ogre::LogManager::getSingleton().logError(std::string("RTSS program precompile draw: ") +
+                                                e.what());
     }
   }
   std::memcpy(b->unit_cube, cube, sizeof(cube));
