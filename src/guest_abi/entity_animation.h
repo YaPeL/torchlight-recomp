@@ -37,6 +37,13 @@ inline constexpr uint32_t kSkeletonReset = 0x821A7428;
 // props (the level's decor) come through it.
 inline constexpr uint32_t kGenericModelUpdate = 0x821DEDF8;
 
+// [confirmed] Skeleton::getBone(const String&) (src/OgreSkeleton.cpp; throws "Skeleton::getBone" /
+// "Bone named '" @0x824E90F4/@0x824E9104), vtable +0xCC of Skeleton (vtable 0x820043AC, whose +0xFC is
+// setAnimationState 0x821CC498 and +0xDC reset 0x821A7428) and of SkeletonInstance (0x820044FC);
+// +0xD0 is getBone(unsigned short), 0x821CCDC0. No direct callers (tools/guest_re/xref.py): only
+// through the vtable.
+inline constexpr uint32_t kGetBoneByName = 0x824E90B0;
+
 namespace entity {
 // [confirmed] mChildObjectList (OgreEntity.h ChildObjectList, a std::map): its head node at +0x20C
 // (walked @0x821B95A0) and its size at +0x210 (tested @0x821B9508), stl_tree layout at +0x208.

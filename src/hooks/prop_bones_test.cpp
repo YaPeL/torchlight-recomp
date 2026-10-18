@@ -25,17 +25,25 @@ int main() {
 
   PropBonesCounts c;
   c.NewFrame(10);
-  c.Deferred(0x1000);
-  c.Deferred(0x2000);
+  c.Deferred(0x1000, 0xA000);
+  c.Deferred(0x2000, 0xB000);
   c.Evaluated();
-  c.RenderPath(0x1000);  // drawn: required
-  c.RenderPath(0x3000);  // never deferred: not counted
-  c.RenderPath(0x1000);  // a second call in the frame: counted once
-  Check(c.deferred() == 2 && c.evaluated() == 1 && c.required() == 1, "counts in one frame");
+  Check(c.BoneLookup(0xA000), "a lookup on a deferred skeleton is caught");
+  Check(!c.BoneLookup(0xC000), "a lookup on another skeleton is not");
+  c.RenderPath(0x1000, 0xA000);  // drawn: required
+  Check(!c.BoneLookup(0xA000), "after the render path evaluated it, a lookup is fine");
+  c.RenderPath(0x3000, 0xC000);  // never deferred: not counted
+  c.RenderPath(0x1000, 0xA000);  // a second call in the frame: counted once
+  Check(c.deferred() == 2 && c.evaluated() == 1 && c.required() == 1 &&
+            c.read_while_deferred() == 1,
+        "counts in one frame");
   c.NewFrame(11);
-  c.RenderPath(0x2000);  // deferred in the previous frame only
+  c.RenderPath(0x2000, 0xB000);  // deferred in the previous frame only
+  Check(!c.BoneLookup(0xB000), "a new frame forgets the deferred skeletons");
   Check(c.required() == 1, "a deferral is required only in its own frame");
   c.ResetTotals();
-  Check(c.deferred() == 0 && c.required() == 0 && c.evaluated() == 0, "totals reset");
+  Check(c.deferred() == 0 && c.required() == 0 && c.evaluated() == 0 &&
+            c.read_while_deferred() == 0,
+        "totals reset");
   return g_failures ? 1 : 0;
 }
