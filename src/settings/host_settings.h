@@ -33,6 +33,9 @@ enum class AchievementSet { kXbox, kPc };
 // The pad prompts' style (mods/pad_prompts.h): automatic (the connected pad's) or a fixed one. Read
 // once at startup.
 enum class PadPrompts { kAuto, kXbox, kPlayStation, kNintendo };
+// The touch controls (docs/android-port.md, A4; input/touch_visibility.h): automatic (hidden while a
+// physical pad is used, shown on a touch), always shown or never. Read once at startup.
+enum class TouchControls { kAuto, kAlways, kNever };
 
 // Stored values. Empty strings and zero sizes mean "automatic".
 // HostSettings::fps_cap's automatic value, "auto" in the file.
@@ -66,6 +69,8 @@ struct HostSettings {
   // With Nintendo's style: the right button (A) confirms and the bottom one (B) cancels, as on a
   // Switch, instead of by position as on the 360.
   bool swap_confirm_cancel = false;
+  // The touch controls' visibility.
+  TouchControls touch_controls = TouchControls::kAuto;
   bool operator==(const HostSettings&) const = default;
 };
 
@@ -117,6 +122,8 @@ inline AchievementSet EffectiveAchievements(const HostSettings& settings) {
 std::string_view AchievementSetName(AchievementSet set);
 // "auto" / "xbox" / "playstation" / "nintendo".
 std::string_view PadPromptsName(PadPrompts prompts);
+// "auto" / "always" / "never".
+std::string_view TouchControlsName(TouchControls touch);
 
 // The GPU setting for the log: "automatic" without a choice, else "NAME (ID)", the name looked up
 // in `gpus` by id, else the stored gpu_name (files written before gpu_name existed lack it), else

@@ -85,6 +85,17 @@ void TestAchievementSet() {
 void TestPadPrompts() {
   std::vector<std::string> warnings;
   HostSettings s = Parse("", &warnings);
+  {
+    std::vector<std::string> w;
+    Check(Parse("", &w).touch_controls == TouchControls::kAuto, "touch controls: auto by default");
+    for (const TouchControls t : {TouchControls::kAuto, TouchControls::kAlways, TouchControls::kNever}) {
+      HostSettings one;
+      one.touch_controls = t;
+      Check(Parse(Serialize(one), &w).touch_controls == t && w.empty(), "touch controls round trip");
+    }
+    Check(Parse("touch_controls = \"sometimes\"\n", &w).touch_controls == TouchControls::kAuto && !w.empty(),
+          "an unknown touch mode warns and stays auto");
+  }
   Check(s.pad_prompts == PadPrompts::kAuto && !s.swap_confirm_cancel && warnings.empty(),
         "no keys: automatic prompts, no swap");
   s = Parse("pad_prompts = \"nintendo\"\nswap_confirm_cancel = true\n", &warnings);

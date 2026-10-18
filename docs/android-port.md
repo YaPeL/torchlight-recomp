@@ -803,11 +803,29 @@ needed.
       only the SAF import.
   - **The owner's hand pass** closes A4: a dungeon played by touch on both devices.
 
+**A4.1, done** (2026-10-18, branch `android/a4-touch-driver`). The pure parts are in
+`src/input/` (`touch_pad`, `touch_visibility`, and `pad_state` shared with the input scripts),
+with `touch_test`. The driver is `live/touch_input.cpp`, installed after the system Back button.
+The setting is `touch_controls` in settings.toml.
+- **Desktop development:** `--dev_touch_mouse` makes the left mouse button a finger, and the input
+  scripts gained `touch` and `release`.
+- **Density:** the platform module gives the game window's pixels per millimetre
+  (`GameWindowPixelsPerMm`: SDL's display scale times 160 dpi on Android, 96 on Windows and Linux,
+  72 on macOS).
+- **Validated on desktop** by an unattended run with `touch_controls = "always"`, all touches
+  through the script:
+  - one finger on the stick's zone dragged right walks the hero right;
+  - with it held, X held attacks and LB is tapped; the potion count did not change because the hero
+    was at full health, so the potion itself is left for the device;
+  - after lifting, Back opens the inventory and RB turns its page (the menus read keystrokes).
+- **Not drawn yet:** that is A4.2.
+
 *Steps* (each validated before the next):
 
 | Step | What | Validated by |
 |---|---|---|
 | A4.1 | The touch driver, the finger rules (held buttons, several fingers), Auto/Always/Never | Unit tests (several fingers included); the desktop mouse-as-finger moves the hero |
+
 | A4.2 | The drawing (ImGui foreground) and the converted icons | A capture of the overlay on desktop; the owner's look at the preview strip |
 | A4.3 | The gameplay layout (stick, attack cluster, potions, orbs, minimap, pinch) | Input scripts on desktop; on a device, synthetic touches with two and three fingers (move + attack held + a potion) |
 | A4.4 | The menus' context layout | Every catalog menu opened and closed by synthetic taps |

@@ -225,9 +225,30 @@ void TestDumpAndNamedCapture() {
   Check(f.Has(Kind::kFailed) && f.pads.back().buttons == 0, "a dump that could not be written fails at once");
 }
 
+void TestTouch() {
+  std::string error;
+  Check(!InputScript::Parse("touch 0 0.5 0.5\n", error), "finger 0");
+  Check(!InputScript::Parse("touch 1 1.5 0.5\n", error), "outside the window");
+  Check(!InputScript::Parse("touch 1 0.5\n", error), "touch needs X and Y");
+  Check(!InputScript::Parse("release\n", error), "release needs the finger");
+  Check(!InputScript::Parse("touch 1 Z\n", error), "an unknown control");
+  Run n("touch 2 lb\n");
+  n.Frame();
+  Check(n.actions[0].kind == Kind::kTouch && n.actions[0].text == "lb" && n.actions[0].finger == 2, "touch on a control");
+  Run r("touch 1 0.2 0.8\ntouch 1 0.1 0.8\ntouch 2 0.9 0.85\nrelease 1\n");
+  r.Frame();
+  Check(r.actions.size() == 5 && r.actions[4].kind == Kind::kFinished, "touches act at once, one after another");
+  const auto& down = r.actions[0];
+  Check(down.kind == Kind::kTouch && down.finger == 1 && down.x == 0.2f && down.y == 0.8f && !down.release,
+        "touch 1 at 0.2, 0.8");
+  Check(r.actions[2].finger == 2 && r.actions[3].finger == 1 && r.actions[3].release, "finger 2, then 1 lifted");
+  Check(r.pads.back() == PadState{}, "the script's own pad stays still");
+}
+
 }  // namespace
 
 int main() {
+  TestTouch();
   TestUiCommandsParse();
   TestFocusPressesUntilFocused();
   TestWaitWindowAndTimeout();

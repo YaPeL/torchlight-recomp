@@ -39,6 +39,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <rex/input/input.h>
 #include <rex/input/input_driver.h>
 #include <rex/input/input_system.h>
+#include "live/touch_input.h"
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 #include <rex/cvar.h>
@@ -560,6 +561,23 @@ class ScriptRunner : public live::FrameObserver {
           finished_ = true;
           driver_->Disconnect();
           if (close_) close_();
+        }
+        break;
+      case ScriptAction::Kind::kTouch:
+        if (a.release) {
+          REXLOG_INFO("dev input script: finger {} lifted", a.finger);
+          live::InjectTouch(static_cast<uint64_t>(a.finger), a.x, a.y, true);
+        } else if (!a.text.empty()) {
+          float x = 0, y = 0;
+          if (live::TouchControlCentre(a.text, x, y)) {
+            REXLOG_INFO("dev input script: finger {} on {} ({:.3f}, {:.3f})", a.finger, a.text, x, y);
+            live::InjectTouch(static_cast<uint64_t>(a.finger), x, y, false);
+          } else {
+            REXLOG_WARN("dev input script: no touch control {} (touch controls off?)", a.text);
+          }
+        } else {
+          REXLOG_INFO("dev input script: finger {} at {:.3f}, {:.3f}", a.finger, a.x, a.y);
+          live::InjectTouch(static_cast<uint64_t>(a.finger), a.x, a.y, false);
         }
         break;
       case ScriptAction::Kind::kQuit:

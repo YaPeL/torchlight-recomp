@@ -36,6 +36,12 @@
 //                                            <capture folder>/NAME.json; the script waits for it
 //                                            (at most 10 s), the controller still, and fails when
 //                                            it cannot be written
+//   touch ID X Y                             a finger (ID 1-9) on the touch controls, down at X, Y
+//                                            (window fractions 0 to 1, Y down) or moved there when
+//                                            it is down already (docs/android-port.md, A4)
+//   touch ID CONTROL                         the same at the centre of a touch control: X, Y, A,
+//                                            B, LT, RT, LB, RB, Back or Start
+//   release ID                               that finger lifted
 //   command TEXT                             a guest developer command (dev/guest_command.h, e.g.
 //                                            ASCEND to the town), in development builds with
 //                                            TORCHLIGHT_DEV_COMMANDS too
@@ -76,11 +82,16 @@ struct ScriptEvents {
 };
 
 struct ScriptAction {
-  enum class Kind { kMark, kCapture, kCommand, kDumpUi, kQuit, kFailed, kFinished };
+  enum class Kind { kMark, kCapture, kCommand, kDumpUi, kQuit, kTouch, kFailed, kFinished };
   Kind kind;
   // kMark: the step's name; kCapture: its name (may be empty); kCommand: the command; kDumpUi: the
   // file's name; kFailed: why
   std::string text;
+  // kTouch: the finger, where (window fractions, or the control named in `text`) and whether it
+  // lifts.
+  int finger = 0;
+  float x = 0, y = 0;
+  bool release = false;
 };
 
 // Frames the controller stays still after a capture, so the next command's press does not reach
@@ -102,7 +113,7 @@ class InputScript {
   bool ReadsUi() const;
 
  private:
-  enum class Op { kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kDumpUi, kQuit };
+  enum class Op { kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kDumpUi, kQuit, kTouch, kRelease };
   enum class Event { kNone, kLevelLoaded, kMenu, kFocus, kWindow };
   struct Duration {
     double value = 0;
@@ -116,6 +127,8 @@ class InputScript {
     Duration duration, every, timeout{120, false};
     Event event = Event::kNone;
     std::string text;  // mark text, menu name
+    int finger = 0;    // touch, release
+    float x = 0, y = 0;
   };
   struct Start {
     uint64_t frame = 0;

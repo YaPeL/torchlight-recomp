@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <utility>
@@ -196,6 +197,27 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       (w[1] == "left" ? c.pad.left_x : c.pad.right_x) = Axis(*x);
       (w[1] == "left" ? c.pad.left_y : c.pad.right_y) = Axis(*y);
       c.op = Op::kStick;
+    } else if (verb == "touch" || verb == "release") {
+      const bool touch = verb == "touch";
+      if (touch ? (w.size() != 3 && w.size() != 4) : w.size() != 2)
+        return fail(touch ? "touch ID X Y | touch ID CONTROL" : "release ID");
+      const auto id = Number(w[1]);
+      if (!id || *id < 1 || *id > 9 || *id != std::floor(*id)) return fail("the finger's ID goes from 1 to 9");
+      c.finger = static_cast<int>(*id);
+      if (touch && w.size() == 3) {
+        static constexpr std::string_view kControls[] = {"X", "Y", "A", "B", "LT", "RT", "LB", "RB", "BACK", "START"};
+        std::string name(w[2]);
+        for (char& ch : name) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (std::find(std::begin(kControls), std::end(kControls), name) == std::end(kControls))
+          return fail("unknown touch control '" + std::string(w[2]) + "'");
+        c.text = std::string(w[2]);
+      } else if (touch) {
+        const auto x = Number(w[2]), y = Number(w[3]);
+        if (!x || !y || *x < 0 || *x > 1 || *y < 0 || *y > 1) return fail("X and Y go from 0 to 1");
+        c.x = static_cast<float>(*x);
+        c.y = static_cast<float>(*y);
+      }
+      c.op = touch ? Op::kTouch : Op::kRelease;
     } else if (verb == "idle") {
       if (w.size() != 2 || !duration(w[1], c.duration)) return fail("idle DURATION");
       c.op = Op::kIdle;
@@ -335,6 +357,17 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         actions.push_back({ScriptAction::Kind::kQuit, {}});
         advance();
         continue;
+      case Op::kTouch:
+      case Op::kRelease: {
+        ScriptAction a{ScriptAction::Kind::kTouch, c.text};
+        a.finger = c.finger;
+        a.x = c.x;
+        a.y = c.y;
+        a.release = c.op == Op::kRelease;
+        actions.push_back(a);
+        advance();
+        continue;
+      }
       case Op::kPress:
         if (frames < 2 * uint64_t(c.press_frames)) {
           return frames < c.press_frames ? c.pad : PadState{};

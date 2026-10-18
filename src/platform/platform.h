@@ -64,6 +64,10 @@ bool IsSteamDeck();
 // Whether the system has a Back button of its own (Android's navigation Back), which the game takes
 // as the pad's Back (live/system_back_button.h).
 bool HasSystemBackButton();
+// The game window's pixels per millimetre, for sizes meant for a finger (the touch controls,
+// live/touch_input.h): SDL's content scale times the density it is relative to (ContentScaleDpi).
+// Approximate: Android's density buckets, desktops' nominal 96 dpi. 0 without a game window.
+float GameWindowPixelsPerMm();
 // Gamepad input keeps reaching the game while another window (the backend's) has the focus.
 void AllowBackgroundGamepad();
 

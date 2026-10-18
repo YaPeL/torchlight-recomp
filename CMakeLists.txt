@@ -193,6 +193,9 @@ option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_scri
 if(TORCHLIGHT_DEV_INPUT)
     set_source_files_properties(src/dev/script_input.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    # The mouse as a finger on the touch controls (--dev_touch_mouse).
+    set_source_files_properties(src/live/touch_input.cpp DIRECTORY src/live PROPERTIES
+        COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
 endif()
 # Our layouts for the game's UI (game_menu/video_menu.h), next to the executable; copied on every
 # build (an edited layout needs no relink).
