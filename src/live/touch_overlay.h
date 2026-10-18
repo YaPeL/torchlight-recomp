@@ -5,9 +5,9 @@
 // touch would also reach it. While it is in the drawer, the drawer listens to the window (as with
 // any dialog): the game's own input comes through the input drivers, not the window's listeners.
 //
-// Until the owner approves the icons (Kenney's Onscreen Controls), the controls are plain shapes:
-// a dark round button with a light ring and its pad name, the face buttons in their 360 colours;
-// the stick a ring with its knob.
+// The look: Kenney's "Mobile Controls" style A (CC0; the dark round button, its pressed highlight,
+// the stick's pad and nub), from data/ui/touch/ next to the executable, with the pad's name on each
+// button (A, B, X, Y in the 360's colours). Without those files: plain shapes in their place.
 
 #pragma once
 
@@ -16,6 +16,7 @@ class Runtime;
 namespace ui {
 class ImGuiDialog;
 class ImGuiDrawer;
+class ImmediateDrawer;
 }  // namespace ui
 }  // namespace rex
 
@@ -24,7 +25,7 @@ namespace torchlight::live {
 // UI thread, each dialog frame (live/install.cpp): the overlay's dialog, made on the first call once
 // the drawer exists; null without touch controls installed. Left out of "a dialog is open", which
 // would cut the guest's input.
-rex::ui::ImGuiDialog* TouchOverlayDialog(rex::ui::ImGuiDrawer* drawer);
+rex::ui::ImGuiDialog* TouchOverlayDialog(rex::ui::ImGuiDrawer* drawer, rex::ui::ImmediateDrawer* textures);
 // Whether the touch controls are shown now (installed and visible): the overlay is in the drawer
 // only then, and only while no other dialog is open (live/install.cpp).
 bool TouchControlsShown();

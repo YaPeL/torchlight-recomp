@@ -96,6 +96,7 @@ The full inventory of the released APK is made with stage A6.
 | Component | Version | License | In the package | Linking |
 |---|---|---|---|---|
 | Kenney "Input Prompts" (the PlayStation and Nintendo Switch button icons the pad prompt styles use, converted by `tools/pad_prompts/make_icons.py`) | 1.5 (`kenney_input-prompts_1.5.zip`, SHA-256 `ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1`, from https://kenney.nl/assets/input-prompts) | CC0-1.0 | `data/ui/prompts/` (next to the executable; `Resources/data/ui/prompts/` on macOS) | data files |
+| Kenney "Mobile Controls" (the touch controls' style A buttons, pressed highlight and stick, docs/android-port.md A4) | 1.0 (`mobile-controls-1.zip`, SHA-256 `7331c648651858fb3186a8c76e0e360e4d3ea71cfec9b502eb5cbb04a02e192b`, from https://kenney.nl/assets/mobile-controls; files copied unchanged from `Sprites/Style A/Large (2×)/` and `Sprites/Highlights A/Large (2×)/`) | CC0-1.0 | `data/ui/touch/` (next to the executable; `Resources/data/ui/touch/` on macOS) | data files |
 
 ## FFmpeg, libmspack and libfuse (LGPL)
 
@@ -3453,6 +3454,39 @@ requirements of the license of GCC.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+```
+
+### Kenney "Mobile Controls"
+
+```
+
+
+Mobile Controls (1.0)
+
+Created/distributed by Kenney (www.kenney.nl)
+Creation date: 09-08-2025
+
+------------------------------
+
+License: (Creative Commons Zero, CC0)
+http://creativecommons.org/publicdomain/zero/1.0/
+
+You can use this content for personal, educational, and commercial purposes.
+
+Support by crediting 'Kenney' or 'www.kenney.nl' (this is not a requirement)
+
+------------------------------
+
+• Website : www.kenney.nl
+• Donate  : www.kenney.nl/donate
+
+• Patreon : patreon.com/kenney
+
+Follow on social media for updates:
+
+• Twitter:	 twitter.com/KenneyNL
+• BlueSky:	 kenney.bsky.social
+• Instagram:	 instagram.com/kenney_nl
 ```
 
 ### Kenney "Input Prompts"

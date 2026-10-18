@@ -5,13 +5,22 @@
 #include <cmath>
 #include <string>
 
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <memory>
+#include <vector>
+
 #include <imgui.h>
 #include <rex/logging.h>
+#include <rex/ui/image_decode.h>
+#include <rex/ui/immediate_drawer.h>
 #include <rex/ui/imgui_dialog.h>
 #include <rex/ui/imgui_drawer.h>
 
 #include "input/pad_state.h"
 #include "live/touch_input.h"
+#include "platform/platform.h"
 
 namespace torchlight::live {
 namespace {
@@ -39,9 +48,34 @@ bool Pressed(const input::TouchButton& b, const input::PadState& s) {
          (b.right_trigger && s.right_trigger);
 }
 
+// A PNG of data/ui/touch/ as a texture the drawer can draw; null when it cannot be read.
+std::unique_ptr<rex::ui::ImmediateTexture> LoadIcon(rex::ui::ImmediateDrawer* textures, const char* name) {
+  if (!textures) return nullptr;
+  const std::filesystem::path path = std::filesystem::path(platform::ResourceDir()) / "data" / "ui" / "touch" / name;
+  std::ifstream in(path, std::ios::binary);
+  const std::vector<uint8_t> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  int w = 0, h = 0;
+  std::vector<uint8_t> rgba = bytes.empty() ? std::vector<uint8_t>{} : rex::ui::DecodeImageRGBA(bytes.data(), bytes.size(), w, h);
+  if (rgba.empty()) {
+    REXLOG_WARN("touch: no icon {} (plain shapes instead)", path.string());
+    return nullptr;
+  }
+  return textures->CreateTexture(uint32_t(w), uint32_t(h), rex::ui::ImmediateTextureFilter::kLinear, false,
+                                 rgba.data());
+}
+
+ImTextureID Id(const std::unique_ptr<rex::ui::ImmediateTexture>& t) {
+  return reinterpret_cast<ImTextureID>(t.get());
+}
+
 class OverlayDialog : public rex::ui::ImGuiDialog {
  public:
-  explicit OverlayDialog(rex::ui::ImGuiDrawer* drawer) : ImGuiDialog(drawer) {}
+  OverlayDialog(rex::ui::ImGuiDrawer* drawer, rex::ui::ImmediateDrawer* textures)
+      : ImGuiDialog(drawer),
+        button_(LoadIcon(textures, "button_circle.png")),
+        pressed_(LoadIcon(textures, "button_circle_highlight.png")),
+        pad_(LoadIcon(textures, "joystick_circle_pad_a.png")),
+        nub_(LoadIcon(textures, "joystick_circle_nub_a.png")) {}
 
  protected:
   void OnDraw(ImGuiIO& io) override {
@@ -55,34 +89,57 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
       const ImVec2 c(b.x * k, b.y * k);
       const float r = b.radius * k;
       const bool down = Pressed(b, snap.state);
-      list->AddCircleFilled(c, r, down ? Colour(1, 1, 1, 0.45f * kOpacity) : Colour(0, 0, 0, 0.45f * kOpacity), 48);
-      list->AddCircle(c, r, Colour(1, 1, 1, 0.85f * kOpacity), 48, std::max(2.0f, r * 0.06f));
+      if (button_) {
+        const ImVec2 a(c.x - r, c.y - r), z(c.x + r, c.y + r);
+        list->AddImage(Id(button_), a, z, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
+        if (down && pressed_) {
+          list->AddImage(Id(pressed_), a, z, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
+        } else if (down) {
+          list->AddCircleFilled(c, r, Colour(1, 1, 1, 0.35f * kOpacity), 48);  // no highlight file
+        }
+      } else {
+        list->AddCircleFilled(c, r, down ? Colour(1, 1, 1, 0.45f * kOpacity) : Colour(0, 0, 0, 0.45f * kOpacity), 48);
+        list->AddCircle(c, r, Colour(1, 1, 1, 0.85f * kOpacity), 48, std::max(2.0f, r * 0.06f));
+      }
       float lr, lg, lb;
       LabelColour(b, lr, lg, lb);
       const std::string label(b.name);
       const float size = r * (label.size() > 2 ? 0.55f : 0.9f);
       const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, label.c_str());
-      list->AddText(font, size, ImVec2(c.x - extent.x / 2, c.y - extent.y / 2), Colour(lr, lg, lb, kOpacity),
-                    label.c_str());
+      // The names stronger than the buttons, to read them at a glance.
+      list->AddText(font, size, ImVec2(c.x - extent.x / 2, c.y - extent.y / 2),
+                    Colour(lr, lg, lb, std::min(1.0f, kOpacity + 0.3f)), label.c_str());
     }
     // The stick: its base where it rests or where the thumb landed, the knob where the thumb is.
     const float sr = snap.layout.stick_radius * k;
     const ImVec2 base(snap.stick_base_x * k, snap.stick_base_y * k);
-    list->AddCircleFilled(base, sr, Colour(0, 0, 0, (snap.stick_held ? 0.35f : 0.2f) * kOpacity), 64);
-    list->AddCircle(base, sr, Colour(1, 1, 1, (snap.stick_held ? 0.85f : 0.5f) * kOpacity), 64,
-                    std::max(2.0f, sr * 0.04f));
     const ImVec2 knob(base.x + snap.state.left_x / 32767.0f * sr, base.y - snap.state.left_y / 32767.0f * sr);
-    list->AddCircleFilled(knob, sr * 0.42f, Colour(1, 1, 1, (snap.stick_held ? 0.6f : 0.3f) * kOpacity), 48);
+    // Fainter while it rests, so the resting place is a hint, not a control in the way.
+    const float a = (snap.stick_held ? 1.0f : 0.6f) * kOpacity;
+    if (pad_ && nub_) {
+      list->AddImage(Id(pad_), ImVec2(base.x - sr, base.y - sr), ImVec2(base.x + sr, base.y + sr), ImVec2(0, 0),
+                     ImVec2(1, 1), Colour(1, 1, 1, a));
+      const float nr = sr * 0.5f;
+      list->AddImage(Id(nub_), ImVec2(knob.x - nr, knob.y - nr), ImVec2(knob.x + nr, knob.y + nr), ImVec2(0, 0),
+                     ImVec2(1, 1), Colour(1, 1, 1, a));
+    } else {
+      list->AddCircleFilled(base, sr, Colour(0, 0, 0, 0.35f * a), 64);
+      list->AddCircle(base, sr, Colour(1, 1, 1, 0.85f * a), 64, std::max(2.0f, sr * 0.04f));
+      list->AddCircleFilled(knob, sr * 0.42f, Colour(1, 1, 1, 0.6f * a), 48);
+    }
   }
+
+ private:
+  std::unique_ptr<rex::ui::ImmediateTexture> button_, pressed_, pad_, nub_;
 };
 
 }  // namespace
 
-rex::ui::ImGuiDialog* TouchOverlayDialog(rex::ui::ImGuiDrawer* drawer) {
+rex::ui::ImGuiDialog* TouchOverlayDialog(rex::ui::ImGuiDrawer* drawer, rex::ui::ImmediateDrawer* textures) {
   if (rex::ui::ImGuiDialog* dialog = g_dialog.load()) return dialog;
   TouchSnapshot snap;
   if (!drawer || !ReadTouchControls(snap)) return nullptr;  // no touch controls
-  g_dialog = new OverlayDialog(drawer);
+  g_dialog = new OverlayDialog(drawer, textures);
   REXLOG_INFO("touch: controls drawn over the game");
   return g_dialog.load();
 }
