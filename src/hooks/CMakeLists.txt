@@ -90,3 +90,10 @@ add_executable(frustum_test_test frustum_test_test.cpp)
 target_link_libraries(frustum_test_test PRIVATE torchlight_frustum_test)
 target_compile_options(frustum_test_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME frustum_test_test COMMAND frustum_test_test)
+
+# The layout props' bone evaluation deferral's decision and counts (prop_bones.h), header only.
+add_executable(prop_bones_test prop_bones_test.cpp)
+target_include_directories(prop_bones_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(prop_bones_test PRIVATE cxx_std_23)
+target_compile_options(prop_bones_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME prop_bones_test COMMAND prop_bones_test)
