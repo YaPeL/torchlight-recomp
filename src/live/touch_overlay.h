@@ -5,9 +5,10 @@
 // touch would also reach it. While it is in the drawer, the drawer listens to the window (as with
 // any dialog): the game's own input comes through the input drivers, not the window's listeners.
 //
-// The look: Kenney's "Mobile Controls" style A (CC0; the dark round button, its pressed highlight,
-// the stick's pad and nub), from data/ui/touch/ next to the executable, with the pad's name on each
-// button (A, B, X, Y in the 360's colours). Without those files: plain shapes in their place.
+// The look: Kenney's "Mobile Controls" style C (CC0; thin white rings, round and wide, the stick's
+// pad and nub) and the pressed highlights, from data/ui/touch/ next to the executable. A, B, X and Y
+// have their ring and name in the 360's colours; the d-pad an arrow; the rest their pad name.
+// Without those files: plain shapes in their place.
 
 #pragma once
 

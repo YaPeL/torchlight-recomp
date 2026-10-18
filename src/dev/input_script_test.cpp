@@ -235,6 +235,9 @@ void TestTouch() {
   Run n("touch 2 lb\n");
   n.Frame();
   Check(n.actions[0].kind == Kind::kTouch && n.actions[0].text == "lb" && n.actions[0].finger == 2, "touch on a control");
+  Run u("touch 3 Up\n");
+  u.Frame();
+  Check(u.actions[0].kind == Kind::kTouch && u.actions[0].text == "Up", "touch on the d-pad's up");
   Run r("touch 1 0.2 0.8\ntouch 1 0.1 0.8\ntouch 2 0.9 0.85\nrelease 1\n");
   r.Frame();
   Check(r.actions.size() == 5 && r.actions[4].kind == Kind::kFinished, "touches act at once, one after another");

@@ -40,7 +40,8 @@
 //                                            (window fractions 0 to 1, Y down) or moved there when
 //                                            it is down already (docs/android-port.md, A4)
 //   touch ID CONTROL                         the same at the centre of a touch control: X, Y, A,
-//                                            B, LT, RT, LB, RB, Back or Start
+//                                            B, LT, RT, LB, RB, Back, Start, or the d-pad's Up,
+//                                            Down, Left, Right
 //   release ID                               that finger lifted
 //   command TEXT                             a guest developer command (dev/guest_command.h, e.g.
 //                                            ASCEND to the town), in development builds with

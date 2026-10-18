@@ -15,45 +15,59 @@ TouchLayout GameplayLayout(const TouchScreen& screen) {
   using namespace touch_mm;
   const float mm = screen.px_per_mm;
   const float w = screen.width, h = screen.height;
-  // From the right and the bottom edge, in millimetres, to pixels (y down).
-  const auto right = [&](float from_right) { return w - from_right * mm; };
-  const auto bottom = [&](float from_bottom) { return h - from_bottom * mm; };
-
+  const float h_mm = mm > 0 ? h / mm : 0;
+  // From an edge, in millimetres, to pixels (y down).
+  const auto left = [&](float v) { return v * mm; };
+  const auto right = [&](float v) { return w - v * mm; };
+  const auto top = [&](float v) { return v * mm; };
+  const auto bottom = [&](float v) { return h - v * mm; };
+  const float small_r = kSmall / 2, face_r = kFace / 2;
   TouchLayout layout;
-  // The attack cluster: X in the corner, the four skills on an arc 40 degrees apart (their chord,
-  // 13.7 mm, keeps the 1.5 mm gap between 11 mm buttons), A apart on the arc's left.
-  const float attack_r = kAttack / 2, skill_r = kSkill / 2, small_r = kSmall / 2;
-  const float cx_mm = 20, cy_mm = 20, arc = 20;  // X's centre from the right and the bottom
-  layout.buttons.push_back({"X", pad::kX, false, false, right(cx_mm), bottom(cy_mm), attack_r * mm});
-  struct Skill {
-    std::string_view name;
-    uint16_t bits;
-    bool lt, rt;
-    float degrees;
+  const auto round = [&](std::string_view name, uint16_t bits, float x, float y, float r, TouchShape shape) {
+    layout.buttons.push_back({name, bits, false, false, x, y, r * mm, shape, 0});
   };
-  for (const Skill& s : {Skill{"LT", 0, true, false, 185}, Skill{"Y", pad::kY, false, false, 145},
-                         Skill{"B", pad::kB, false, false, 105}, Skill{"RT", 0, false, true, 65}}) {
-    const float a = s.degrees * std::numbers::pi_v<float> / 180;
-    layout.buttons.push_back({s.name, s.bits, s.lt, s.rt, right(cx_mm - arc * std::cos(a)),
-                              bottom(cy_mm + arc * std::sin(a)), skill_r * mm});
-  }
-  layout.buttons.push_back({"A", pad::kA, false, false, right(cx_mm + 36), bottom(cy_mm - 2), skill_r * mm});
-  // The stick's resting place and the potions above it.
-  const float stick_x_mm = 25, stick_y_mm = 25;
-  layout.stick_x = stick_x_mm * mm;
-  layout.stick_y = bottom(stick_y_mm);
+  const auto wide = [&](std::string_view name, uint16_t bits, bool lt, bool rt, float x, float y, float width) {
+    layout.buttons.push_back({name, bits, lt, rt, x, y, small_r * mm, TouchShape::kWide, width / 2 * mm});
+  };
+
+  // A, B, X, Y: the pad's diamond, its centre at 40% of the height (and low enough to leave the
+  // shoulders room on a short screen, high enough for A to keep the margin).
+  const float face_x = kSideMargin + face_r + kFaceSpread;
+  const float face_y = std::max(0.4f * h_mm, kLongMargin + face_r + kFaceSpread);
+  round("A", pad::kA, right(face_x), bottom(face_y - kFaceSpread), face_r, TouchShape::kRound);
+  round("B", pad::kB, right(face_x - kFaceSpread), bottom(face_y), face_r, TouchShape::kRound);
+  round("X", pad::kX, right(face_x + kFaceSpread), bottom(face_y), face_r, TouchShape::kRound);
+  round("Y", pad::kY, right(face_x), bottom(face_y + kFaceSpread), face_r, TouchShape::kRound);
+
+  // The stick's resting place, at the same height on the left.
+  const float stick_x = kSideMargin + kStickRadius + 3;
+  const float stick_y = std::max(0.4f * h_mm, kLongMargin + kStickRadius + 3);
+  layout.stick_x = left(stick_x);
+  layout.stick_y = bottom(stick_y);
   layout.stick_radius = kStickRadius * mm;
-  layout.buttons.push_back({"LB", pad::kLeftShoulder, false, false, 16 * mm, bottom(44), small_r * mm});
-  layout.buttons.push_back({"RB", pad::kRightShoulder, false, false, 30 * mm, bottom(44), small_r * mm});
-  // Back and Start along the top, 44 mm in from the sides: in the corners they met the potions
-  // and the skills' arc on a short screen (the POCO's landscape is about 60 mm tall), and there
-  // the HUD's orbs are.
-  layout.buttons.push_back({"Back", pad::kBack, false, false, 44 * mm, (kLongMargin + small_r) * mm, small_r * mm});
-  layout.buttons.push_back({"Start", pad::kStart, false, false, right(44), (kLongMargin + small_r) * mm,
-                            small_r * mm});
-  // The stick's zone: the lower left 40% x 60% of the screen.
+
+  // The d-pad: below and inward of the stick, on the bottom margin.
+  const float dpad_x = stick_x + kStickRadius + kMinGap + small_r + kDpadSpread;
+  const float dpad_y = kLongMargin + small_r + kDpadSpread;
+  round("Up", pad::kUp, left(dpad_x), bottom(dpad_y + kDpadSpread), small_r, TouchShape::kUp);
+  round("Down", pad::kDown, left(dpad_x), bottom(dpad_y - kDpadSpread), small_r, TouchShape::kDown);
+  round("Left", pad::kLeft, left(dpad_x - kDpadSpread), bottom(dpad_y), small_r, TouchShape::kLeft);
+  round("Right", pad::kRight, left(dpad_x + kDpadSpread), bottom(dpad_y), small_r, TouchShape::kRight);
+
+  // The shoulders in the top corners, and Back and Start at the top centre.
+  const float row = kLongMargin + small_r;
+  const float outer = kSideMargin + kShoulderWidth / 2, inner = outer + kShoulderWidth + kMinGap;
+  wide("LT", 0, true, false, left(outer), top(row), kShoulderWidth);
+  wide("LB", pad::kLeftShoulder, false, false, left(inner), top(row), kShoulderWidth);
+  wide("RB", pad::kRightShoulder, false, false, right(inner), top(row), kShoulderWidth);
+  wide("RT", 0, false, true, right(outer), top(row), kShoulderWidth);
+  const float centre = (kMenuWidth + kMinGap) / 2 * mm;
+  wide("Back", pad::kBack, false, false, w / 2 - centre, top(row), kMenuWidth);
+  wide("Start", pad::kStart, false, false, w / 2 + centre, top(row), kMenuWidth);
+
+  // The stick's zone: the lower left 40% x 70% of the screen (a button there takes the touch).
   layout.zone_x0 = 0;
-  layout.zone_y0 = h * 0.4f;
+  layout.zone_y0 = h * 0.3f;
   layout.zone_x1 = w * 0.4f;
   layout.zone_y1 = h;
   return layout;
@@ -64,15 +78,32 @@ void TouchPad::SetLayout(TouchLayout layout) {
   fingers_.clear();
 }
 
+// How far a point is into a control, 0 at its centre and 1 at its edge (a wide one's box).
+static float Reach(const TouchButton& b, float x, float y) {
+  if (b.shape == TouchShape::kWide && b.half_width > 0) {
+    return std::max(std::abs(x - b.x) / b.half_width, std::abs(y - b.y) / b.radius);
+  }
+  return Distance(x, y, b.x, b.y) / b.radius;
+}
+
+// Whether a point is within a control grown by `slop`: a round one's radius times it; a wide one by
+// (slop - 1) times its height's half on every side, so its ends grow as little as its sides.
+static bool Inside(const TouchButton& b, float x, float y, float slop) {
+  if (b.shape == TouchShape::kWide && b.half_width > 0) {
+    const float grow = (slop - 1) * b.radius;
+    return std::abs(x - b.x) <= b.half_width + grow && std::abs(y - b.y) <= b.radius + grow;
+  }
+  return Distance(x, y, b.x, b.y) <= b.radius * slop;
+}
+
 int TouchPad::ButtonAt(float x, float y) const {
   int best = -1;
-  float best_d = 0;
+  float best_reach = 0;
   for (int i = 0; i < static_cast<int>(layout_.buttons.size()); ++i) {
-    const TouchButton& b = layout_.buttons[i];
-    const float d = Distance(x, y, b.x, b.y);
-    if (d <= b.radius && (best < 0 || d < best_d)) {
+    const float reach = Reach(layout_.buttons[i], x, y);
+    if (reach <= 1 && (best < 0 || reach < best_reach)) {
       best = i;
-      best_d = d;
+      best_reach = reach;
     }
   }
   return best;
@@ -102,7 +133,7 @@ void TouchPad::Move(uint64_t id, float x, float y) {
   f.y = y;
   if (f.role == Role::kButton) {
     const TouchButton& b = layout_.buttons[f.button];
-    if (Distance(x, y, b.x, b.y) <= b.radius * kHoldSlop) return;
+    if (Inside(b, x, y, kHoldSlop)) return;
     // Off its button: onto another one, or nothing until it reaches one.
     if (const int other = ButtonAt(x, y); other >= 0) {
       f.button = other;
