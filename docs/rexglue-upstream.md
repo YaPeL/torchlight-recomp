@@ -1442,7 +1442,9 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | `bd833a2`, after 40 |
 | 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | `bd833a2`, after 41 |
 | 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | `bd833a2`, after 42 |
-| 44 | next free | | |
+| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `develop` | `bd833a2`, after 43 |
+| 45 | `rexglue-arena-reserve-before-views.patch` | `develop` | `bd833a2`, after 44 |
+| 46 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
@@ -1552,6 +1554,19 @@ these agents lives here and in `patches/README.md`.
      page size, and the full text of any failing case. Linux fails four `chrono_test` cases and
      one `output_stamp_test` case with or without the series (`patches/README.md`); the same on
      Android is not new. A failure in `[memory]`, in the fibers or in `ppc_tests` is.
+- **Android: the guest memory arena on the POCO X7** (patch 45, 2026-10-17; for the Mac agent,
+  which has the phone). On the Galaxy Tab S5e (Android 11, kernel 4.9) about one start in two
+  crashed in the GPU driver on a corrupted pointer; patch 45 found the guest memory being mapped
+  over other memory and fixes it. Run the same on the POCO X7, a newer kernel and another GPU,
+  to tell what is ours from what is the tablet's (its 4.9 kernel, patch 38):
+  1. The SDK's tests with this branch's series, as in the item above:
+     `tools/android/run_sdk_tests.sh -s <serial> <checkout>/out/android-arm64/Release --
+     "[memory]"`, then the whole suite.
+  2. The game's APK the owner brings (built here against this series): about ten starts to the
+     main menu. Note each crash, and pull the logs (`adb pull
+     /sdcard/Android/data/io.github.yapel.tlrecomp.dev/files/TorchlightRecomp/logs/`).
+  3. Back through the owner: the tests' summary lines, how many starts crashed, and every
+     "Guest memory arena" line of the logs (where the arena went, and what held a taken range).
 - **Windows.** The SDL software renderer patch is now number 21 for good. The tests patch moved to
   22. Your version of 21 with Metal on Apple (`5a98b6f`) is now the last line of the `bd833a2`
   series (2026-10-09); it applies after the two Windows patches. When you next touch the series,

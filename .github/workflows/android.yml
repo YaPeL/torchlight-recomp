@@ -1,0 +1,93 @@
+# Android arm64-v8a (NDK r30, API 30), compiled only: the patched SDK, OGRE with GLES2, and this
+# project's libraries, tests and tools without the game (TORCHLIGHT_GAME=OFF, as the desktop jobs:
+# CI has no recompiled code). Nothing runs: the devices are tested by hand
+# (tools/android/run_sdk_tests.sh, docs/android-port.md). On every change but documentation, and
+# by hand. Builds everything from scratch, publishes nothing, no secrets.
+name: Android build
+
+on:
+  pull_request:
+    branches: [develop, main]
+    # Everything but what cannot change the build: the Android build compiles src/, tools/,
+    # tests/ and third_party/, and reads cmake/, the presets and tools/deps/.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  push:
+    branches: [develop, main]
+    # Everything but what cannot change the build: the Android build compiles src/, tools/,
+    # tests/ and third_party/, and reads cmake/, the presets and tools/deps/.
+    paths-ignore:
+      - 'docs/**'
+      - '**/*.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The NDK, where cmake/android-arm64.toolchain.cmake looks for it:
+  # $HOME/android-sdk/ndk/<version>.
+  NDK_VERSION: 30.0.16248370
+  NDK_RELEASE: r30
+  # Of android-ndk-r30-linux.zip; its SHA-1 (5107f898313790e449e87eee2183d9a20602dee9) is the one
+  # developer.android.com/ndk/downloads lists.
+  NDK_SHA256: 753611f410d002cfcd3f3dc2ef49aad532089d3180b436c060a90bf0fcb64df2
+
+jobs:
+  build:
+    name: Android build (arm64-v8a, no game)
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    timeout-minutes: 120
+    steps:
+      - name: Bootstrap
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git unzip
+          git config --global --add safe.directory '*'
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: sh tools/deps/ubuntu_toolchain.sh
+      - id: ndk-cache
+        uses: actions/cache@v6
+        with:
+          path: ~/android-sdk/ndk/${{ env.NDK_VERSION }}
+          key: android-ndk-${{ env.NDK_VERSION }}-${{ env.NDK_SHA256 }}
+      - name: NDK
+        if: steps.ndk-cache.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o /tmp/ndk.zip \
+            "https://dl.google.com/android/repository/android-ndk-$NDK_RELEASE-linux.zip"
+          echo "$NDK_SHA256  /tmp/ndk.zip" | sha256sum -c -
+          unzip -q /tmp/ndk.zip -d /tmp/ndk
+          mkdir -p "$HOME/android-sdk/ndk"
+          mv "/tmp/ndk/android-ndk-$NDK_RELEASE" "$HOME/android-sdk/ndk/$NDK_VERSION"
+          rm -rf /tmp/ndk /tmp/ndk.zip
+      - name: NDK version
+        run: >-
+          grep -x "Pkg.Revision = $NDK_VERSION"
+          "$HOME/android-sdk/ndk/$NDK_VERSION/source.properties"
+      - name: SDK
+        run: tools/deps/build_sdk.sh /tmp/sdk-android /tmp/sdk-android-work Release android-arm64
+      # A cross install must stay out of the CMake package registry (patch 36).
+      - name: No registry entry
+        run: |
+          registry="$HOME/.cmake/packages/rexglue"
+          if [ -d "$registry" ] && [ -n "$(ls -A "$registry")" ]; then
+            echo "::error::the Android install registered itself in ~/.cmake/packages/rexglue"
+            exit 1
+          fi
+      - name: OGRE
+        run: tools/deps/build_ogre.sh /tmp/ogre-android /tmp/ogre-android-work Release android-arm64
+      - name: Configure
+        run: >-
+          cmake --preset android-arm64-release -DTORCHLIGHT_GAME=OFF
+          -Drexglue_DIR=/tmp/sdk-android/lib/cmake/rexglue
+          -DTORCHLIGHT_OGRE_INSTALL=/tmp/ogre-android
+      - name: Build
+        run: cmake --build --preset android-arm64-release --parallel

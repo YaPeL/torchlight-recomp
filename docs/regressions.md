@@ -105,7 +105,9 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   - four `chrono_test` cases on Linux: libstdc++'s `system_clock` cannot hold 1601. This was not
     only a test problem: the guest's `RtlTimeToTimeFields`/`RtlTimeFieldsToTime` go through the
     same conversion, so on Linux they returned wrong dates for zero, pre-1677 and post-2262
-    FILETIMEs.
+    FILETIMEs. Not seen by a player: a run with a probe runtime (boot, menu, a save loaded;
+    2026-10-17) made 189 `RtlTimeToTimeFields` calls, all with 2026 file times, and no
+    `RtlTimeFieldsToTime` call.
   - `output_stamp_test`'s depfile case on every platform: the test's own literals were wrong.
   Not machine-specific (no time zone, clock or path involved). CI stayed green because it builds
   the SDK without its tests (`build_sdk.sh`, `windows.ps1`) and runs only this repository's ctest.
@@ -114,5 +116,8 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 - **Should have been caught by:** a CI job that builds and runs the SDK's tests with the series;
   and no known failure accepted as upstream without a fix or a written skip.
 - **Covered now:** patches 39 and 40 fix the five cases, and patch 41 the four that were
-  skipped (`BitStream::Write`'s byte order): Linux 1768 of 1768 with none skipped. A CI job for the SDK's tests is proposed to the owner (it changes the workflows). Until
-  then `patches/README.md` says to run them by hand when the series changes.
+  skipped (`BitStream::Write`'s byte order): Linux 1768 of 1768 with none skipped. The
+  `SDK tests` workflow runs them on Linux, Windows and macOS when the patches or the dependency
+  scripts change: one at a time (in parallel they collided on macOS), and a skip fails it unless
+  `tools/deps/sdk_test_skips.txt` lists it for that platform with its reason (two case-variant
+  tests on the case-insensitive hosts).
