@@ -6,12 +6,12 @@ folder, and an app that keeps its libraries inside the APK (extractNativeLibs=fa
 installing every library twice) has it as base.apk!/lib/<abi>: no file is there. On Android, when
 the file is not there, the plugin is loaded by its name, which the app's linker namespace finds in
 the APK, and a failed load logs the linker's reason (dlerror: missing from the APK, a
-dependency missing or refused by the namespace). Every other platform is unchanged: the path must exist, as
-before, whatever GetExecutableFolder returns.
+dependency missing or refused by the namespace). Every other platform is unchanged: the path must
+exist, as before, whatever GetExecutableFolder returns.
 
-Test: built for Android and Linux here, and for Windows and macOS by CI. On the POCO X7 (Android 16) the game's APK built
-with extractNativeLibs=false (checked with pm dump) starts and draws, with no "GPU plugin ... not
-found".
+Test: built for Android and Linux here, and for Windows and macOS by CI. On the POCO X7 (Android
+16) the game's APK built with extractNativeLibs=false (checked with pm dump) starts and draws,
+with no "GPU plugin ... not found".
 
 diff --git a/src/system/gpu_plugin_loader.cpp b/src/system/gpu_plugin_loader.cpp
 index 754fa13..27504be 100644
