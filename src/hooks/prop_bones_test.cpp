@@ -17,11 +17,10 @@ void Check(bool ok, const char* what) {
 int main() {
   using torchlight::hooks::PropBonesCounts;
   using torchlight::hooks::ShouldDeferPropBones;
-  Check(ShouldDeferPropBones(true, true, true, 0), "a prop with nothing attached is deferred");
-  Check(!ShouldDeferPropBones(false, true, true, 0), "never with the option off");
-  Check(!ShouldDeferPropBones(true, false, true, 0), "never outside a layout prop's update (units)");
-  Check(!ShouldDeferPropBones(true, true, false, 0), "never on the render path's own call");
-  Check(!ShouldDeferPropBones(true, true, true, 1), "never with an object attached to a bone");
+  Check(ShouldDeferPropBones(true, true, 0), "a prop with nothing attached is deferred");
+  Check(!ShouldDeferPropBones(false, true, 0), "never with the option off");
+  Check(!ShouldDeferPropBones(true, false, 0), "never outside a layout prop's update (units)");
+  Check(!ShouldDeferPropBones(true, true, 1), "never with an object attached to a bone");
 
   PropBonesCounts c;
   c.NewFrame(10);
