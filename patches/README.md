@@ -61,7 +61,8 @@ in number order; a branch adds its own line at its number's place.
 | 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In that branch (after 42) |
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
-| 46 | | | Next free number |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
+| 47 | | | Next free number |
 
 ## The patches
 
@@ -680,5 +681,13 @@ in number order; a branch adds its own line at its number's place.
     is free (all 101 desktop logs here). Test: a foreign page in the first free range survives
     and the arena goes elsewhere (without the change the page reads 0); the guard pages have no
     access.
+
+46. `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` (Android only; SDL's file): SDL 3.4.14's
+    `SDL_WaitEventTimeoutNS` waited on Android in a loop that pushed a poll sentinel each time,
+    and every pushed event sends a wakeup, so `Android_PumpEvents` returned at once and the SDL
+    thread spun about a full big core on the POCO X7 the whole game. The loop now pumps without
+    a new sentinel and waits at most 1 ms, as SDL's polling loop elsewhere. Upstream SDL (main,
+    release-3.4.x) has the same loop: worth reporting there. The first patch to a submodule's
+    file: the build scripts update submodules with `--force`.
 
 The observation and diagnostic patches there were before remain in the git history.

@@ -41,3 +41,4 @@ rexglue-chrono-nt-epoch-range.patch
 rexglue-bitstream-write-byte-order.patch
 rexglue-alloc-commit-mprotect-first.patch posix
 rexglue-arena-reserve-before-views.patch posix
+rexglue-android-sdl-wait-no-sentinel-wakeup.patch

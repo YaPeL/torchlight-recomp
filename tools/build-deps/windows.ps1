@@ -147,7 +147,9 @@ function Build-Sdk {
     Invoke-Native 'git' @('-C', $sdkSrc, '-c', 'advice.detachedHead=false', 'checkout', '--quiet',
         '--force', $SdkCommit)
     Invoke-Native 'git' @('-C', $sdkSrc, 'clean', '-fdxq', '-e', 'out')
-    Invoke-Native 'git' @('-C', $sdkSrc, 'submodule', 'update', '--init', '--recursive', '--quiet')
+    # --force, as build_sdk.sh: patches change files inside submodules (thirdparty/sdl3).
+    Invoke-Native 'git' @('-C', $sdkSrc, 'submodule', 'update', '--init', '--recursive', '--force',
+        '--quiet')
 
     # The patches, in order; the POSIX-only ones are skipped.
     foreach ($line in Get-Content (Join-Path $Root 'patches\series')) {
