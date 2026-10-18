@@ -468,7 +468,8 @@ hook is timed with `--native_producer_timing` (off by default); the live mode's 
   1.5 s per session, the worst frame 226 ms on the title screen; `perf/win-d3d11-shaders`,
   2026-10-17). There OGRE's microcode cache is on (`tl_backend_open_program_cache`): one file in the
   shader cache folder, named by the game's build, OGRE's version and D3DCompiler's, saved after each
-  level load and at exit through a temporary file; a second session then compiled nothing. The 14.6
+  level load and at exit through a temporary file, with a trailer of ours (length and checksum) so a
+  file cut short is removed and rebuilt; a second session then compiled nothing. The 14.6
   bug does not reach it: Direct3D 11 compiles only what the cache does not have, and DXBC is never
   rejected by a driver, so an entry is never replaced. Pending when testing on macOS: if Apple's GL
   does not cache well, evaluate OGRE's microcode cache there, first solving the rejected binary

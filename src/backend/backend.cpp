@@ -22,6 +22,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <optional>
 #include <cmath>
 #include <cstddef>
@@ -48,6 +49,7 @@
 
 #include "backend/ogre_plugins.h"
 #include "backend/ogre_window_surface.h"
+#include "backend/program_cache_file.h"
 #include "backend/program_list.h"
 #include "backend/xbox_to_gl_conventions.h"
 #include "platform/platform.h"
@@ -2830,18 +2832,25 @@ void tl_backend_open_program_cache(tl_backend* b, const char* version) {
   }
   programs.setSaveMicrocodesToCache(true);
   if (!std::filesystem::exists(b->microcode_file, error)) return;
-  try {
-    std::ifstream* in = OGRE_NEW_T(std::ifstream, Ogre::MEMCATEGORY_GENERAL)(
-        b->microcode_file, std::ios::binary);
-    Ogre::DataStreamPtr stream(OGRE_NEW Ogre::FileStreamDataStream(in, true));
-    programs.loadMicrocodeCache(stream);
-    Ogre::LogManager::getSingleton().logMessage("program cache: " + b->microcode_file.string());
-  } catch (Ogre::Exception& e) {
-    // A damaged file: start again from nothing.
-    Ogre::LogManager::getSingleton().logWarning("program cache unreadable, removed: " +
-                                                e.getDescription());
-    std::filesystem::remove(b->microcode_file, error);
+  // A file cut short or damaged is told by our trailer (program_cache_file.h): OGRE's own load
+  // catches its read errors and leaves the cache empty, which would look loaded. Such a file is
+  // removed and the cache rebuilt from what this session compiles.
+  std::ifstream in(b->microcode_file, std::ios::binary);
+  const std::string file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::optional<std::string> payload = torchlight::backend::UnwrapProgramCache(file);
+  if (payload) {
+    try {
+      Ogre::DataStreamPtr stream = std::make_shared<Ogre::MemoryDataStream>(
+          payload->data(), payload->size(), false, true);
+      programs.loadMicrocodeCache(stream);
+      Ogre::LogManager::getSingleton().logMessage("program cache: " + b->microcode_file.string());
+      return;
+    } catch (Ogre::Exception&) {
+    }
   }
+  Ogre::LogManager::getSingleton().logWarning("program cache unreadable, rebuilt: " +
+                                              b->microcode_file.string());
+  std::filesystem::remove(b->microcode_file, error);
 }
 
 void tl_backend_save_program_cache(tl_backend* b) {
@@ -2852,6 +2861,7 @@ void tl_backend_save_program_cache(tl_backend* b) {
   std::filesystem::path temp = b->microcode_file;
   temp += ".tmp";
   std::error_code error;
+  bool written = false;
   try {
     {
       std::fstream* out = OGRE_NEW_T(std::fstream, Ogre::MEMCATEGORY_GENERAL)(
@@ -2859,11 +2869,21 @@ void tl_backend_save_program_cache(tl_backend* b) {
       Ogre::DataStreamPtr stream(OGRE_NEW Ogre::FileStreamDataStream(out, true));
       programs.saveMicrocodeCache(stream);
     }
-    std::filesystem::rename(temp, b->microcode_file, error);
+    // OGRE's bytes, then our trailer (program_cache_file.h).
+    std::string payload;
+    {
+      std::ifstream in(temp, std::ios::binary);
+      payload.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+    const std::string file = torchlight::backend::WrapProgramCache(payload);
+    out.write(file.data(), std::streamsize(file.size()));
+    written = bool(out.flush());
   } catch (Ogre::Exception& e) {
     Ogre::LogManager::getSingleton().logWarning("program cache not saved: " + e.getDescription());
   }
-  if (error) std::filesystem::remove(temp, error);
+  if (written) std::filesystem::rename(temp, b->microcode_file, error);
+  if (!written || error) std::filesystem::remove(temp, error);
 }
 
 size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms) {

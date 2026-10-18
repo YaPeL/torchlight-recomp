@@ -58,7 +58,8 @@ else()
 endif()
 
 add_library(torchlight_backend OBJECT backend.cpp ${_ogre_plugins_source} ${_window_surface_source}
-            xbox_to_gl_conventions.cpp program_list.cpp)
+            xbox_to_gl_conventions.cpp program_list.cpp
+            program_cache_file.cpp)
 target_include_directories(torchlight_backend PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_backend PRIVATE cxx_std_23)
 target_compile_options(torchlight_backend PRIVATE -Wall -Wextra -Wno-deprecated-declarations)
@@ -178,6 +179,13 @@ target_include_directories(program_list_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR
 target_compile_features(program_list_test PRIVATE cxx_std_23)
 target_compile_options(program_list_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME program_list_test COMMAND program_list_test)
+
+# The program cache file's trailer (program_cache_file.h), tested on its own.
+add_executable(program_cache_file_test program_cache_file_test.cpp program_cache_file.cpp)
+target_include_directories(program_cache_file_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(program_cache_file_test PRIVATE cxx_std_23)
+target_compile_options(program_cache_file_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME program_cache_file_test COMMAND program_cache_file_test)
 
 # The tests below draw with the render system of their command line (test_render_system.h)
 # and skip (code 77) without a display. Each runs with GL3+ everywhere and, on Windows, also with

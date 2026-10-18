@@ -5,6 +5,8 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
+- Windows (Direct3D 11): shaders are now cached between sessions, removing small stutters at the
+  title screen and after loading a level.
 - Linux: the game's memory is now reserved before use and moves to a free address if its usual
   one is taken, instead of silently overwriting memory already in use (a possible cause of rare
   crashes).
