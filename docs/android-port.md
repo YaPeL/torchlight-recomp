@@ -740,8 +740,8 @@ needed.
     menus). The owner asked for it much smaller than the first four 9 mm buttons.
   - **Right, as high as mid height:** A, B, X and Y in the pad's diamond, 10 mm each, ringed in the
     360's colours. The owner asked for the stick and the diamond higher: both go up to mid height,
-    or as high as the shoulders' row leaves room for (on the POCO: the stick at mid height, the
-    diamond's centre at about 44% of it).
+    or as high as the shoulders' row leaves room for (with the top row 2 mm from the top, both sit at mid
+    height on every supported screen).
   - **Top corners:** the shoulders, wide (14 x 9 mm): LT and LB on the left, RB and RT on the right.
   - **Top centre:** Back and Start, wide (12 x 9 mm).
   - **The top row** sits 2 mm from the top edge, not 8 (the owner, 2026-10-18: with 8 mm it took too

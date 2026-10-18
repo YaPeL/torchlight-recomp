@@ -86,7 +86,7 @@ TouchLayout GameplayLayout(const TouchScreen& screen);
 // within a fifth of the radius of the centre.
 uint16_t DpadDirections(const TouchButton& dpad, float x, float y);
 
-constexpr float kMinHeightMm = 57;
+constexpr float kMinHeightMm = 57;  // the shortest devices expected; the geometry fits down to ~55
 constexpr float kMinWidthMm = 100;
 
 // Past this many radii from its centre a held button lets go (a wide one: past a quarter of its

@@ -93,6 +93,8 @@ void TestLayout(const TouchScreen& screen, const char* device) {
   // shoulders leave room; the d-pad below and inward of the stick.
   const float h_mm = screen.height / mm;
   const auto from_bottom = [&](float y) { return (screen.height - y) / mm; };
+  // (The row's term in these min()s only guards screens shorter than the supported ones: on every
+  // screen tested here, mid height wins.)
   Check(from_bottom(layout.stick_y) >= std::min(0.5f * h_mm, h_mm - 23.5f) - 0.01f,
         d + ": the stick as high as mid height or the shoulders' row allows");
   const float diamond = (from_bottom(Find(layout, "X").y));
