@@ -613,6 +613,9 @@ A pad is what SDL reports as a gamepad (`SDL_EVENT_GAMEPAD_ADDED`, its button an
 built-in pad of a handheld reports as one. Validated on the phone with a Bluetooth pad connected
 before start and after start, and with none.
 
+On 2026-10-18 the owner tried it on the POCO: the touch controls, then a pad connected and
+disconnected while playing, and the switch between them "todo bien".
+
 **A4, the touch controls: survey and plan** (2026-10-17; plan only, no code until the owner
 approves it). The setting above stays as decided. The hooks below follow the Android and backend
 agent's answers (2026-10-17, from `android/a2-gles`).
