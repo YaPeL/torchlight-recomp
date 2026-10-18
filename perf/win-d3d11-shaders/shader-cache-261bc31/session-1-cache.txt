@@ -1,0 +1,6 @@
+cache before: 215 hlsl sources
+started 23:47:36.509
+exit code 0
+cache after: 217 hlsl sources
+  microcode-63e1450d4c3f107f.bin 529628 bytes, written 23:52:10.933, sha256 89E9A946AE16882C
+  programs.txt 166619 bytes, written 23:52:06.286, sha256 6FA56A91FA432025

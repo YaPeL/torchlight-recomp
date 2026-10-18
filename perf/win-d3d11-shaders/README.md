@@ -75,6 +75,9 @@ during level loads or in the first frames after one.
 
 ## Files
 
+- `shader-cache.md`: the check of perf/shader-cache's program cache and precompilation (49bbb88
+  and 261bc31), with its files in `shader-cache-<commit>/`.
+
 - `analyze.py`: the summary script (`python analyze.py torchlight_N.log torchlight_N_ogre.log`).
 - `session-N-summary.txt`: its output for each session.
 - `session-N-log.txt`: from the game's log, the build line, level loads, slow-frame period

@@ -1,0 +1,36 @@
+log: session-2 log
+level loads (ms): [5022, 3400]
+precompile lines: 3, 61 programs, 642 ms
+  23:27:48.201  14 programs precompiled in 187 ms
+  23:31:09.085  29 programs precompiled in 291 ms
+  23:32:06.404  18 programs precompiled in 164 ms
+OGRE log program cache lines: 1
+  23:27:46: program cache: %LOCALAPPDATA%\TorchlightRecomp\ogre\microcode-19c98c38273db469.bin
+OGRE log: 330 RTSS pass uses, 151 distinct programs created (49 vertex, 102 fragment)
+slow frames: 259 in the period summaries, 173 not reported, 106 reported
+reported slow frames with programs: 11, 60 program generations, 283.0 ms in their draws (rtss 281.1 ms)
+  per generated program, ms (draw time / programs): median 4.46, max 11.08
+10 worst reported frames (by the larger of guest, backend, present interval):
+  time          by       guest  backend  interval  programs/ms (rtss)   textures/ms
+  23:31:14.091  guest    5001.8      5.8    4998.3    0/    0.0 (   0.0)     0/    0.0
+  23:27:48.109  guest    1834.8     15.8       0.0    0/    0.0 (   0.0)    19/   12.9
+  23:32:02.853  both      689.9     41.7     725.5    3/   33.2 (  33.1)     0/    0.0
+  23:34:37.586  guest     682.6      8.0     683.6    0/    0.0 (   0.0)     0/    0.0
+  23:31:08.193  both      391.1     44.5     431.5    0/    0.0 (   0.0)    55/    0.7
+  23:31:04.020  guest     303.2      0.5     302.7    0/    0.0 (   0.0)     0/    0.0
+  23:27:48.563  guest     289.1      0.6     289.5    0/    0.0 (   0.0)     0/    0.0
+  23:31:08.416  guest     252.7     14.8     223.2    0/    0.0 (   0.0)     9/    0.0
+  23:27:49.429  guest     209.1      9.0     217.9    0/    0.0 (   0.0)    32/    0.9
+  23:27:48.781  guest     180.1      0.2     180.1    0/    0.0 (   0.0)     0/    0.0
+title screen (first 15 s of reports): no reported frame with programs
+10 reported frames with the most program time:
+  23:32:02.853  both    guest   689.9  backend    41.7  programs 3/33.2 ms (rtss 33.1)
+  23:31:08.633  both    guest    66.3  backend    39.9  programs 6/27.5 ms (rtss 27.3)
+  23:31:08.566  both    guest    62.0  backend    40.0  programs 6/27.4 ms (rtss 27.2)
+  23:31:08.696  both    guest    64.6  backend    38.6  programs 6/26.9 ms (rtss 26.7)
+  23:31:08.959  both    guest    66.4  backend    39.2  programs 6/26.8 ms (rtss 26.6)
+  23:31:09.024  both    guest    66.3  backend    38.5  programs 6/26.8 ms (rtss 26.6)
+  23:31:08.760  both    guest    64.8  backend    38.4  programs 6/26.8 ms (rtss 26.6)
+  23:31:08.827  both    guest    66.1  backend    39.0  programs 6/26.7 ms (rtss 26.6)
+  23:31:08.891  both    guest    64.7  backend    38.4  programs 6/26.6 ms (rtss 26.4)
+  23:31:08.496  both    guest    63.4  backend    31.9  programs 5/18.4 ms (rtss 18.2)

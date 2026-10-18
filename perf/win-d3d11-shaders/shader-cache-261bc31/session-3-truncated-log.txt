@@ -1,0 +1,13 @@
+[2026-10-17 23:56:20.471] [info] [core] [t18592] torchlight: D:\torchlight-recomp-public\out\build\win-amd64-release\torchlight.exe (build v0.12.5-beta-113-g261bc314cf09)
+[2026-10-17 23:56:24.908] [info] [core] [t23764] live: 42 programs precompiled in 520 ms (more at the next load)
+[2026-10-17 23:56:34.302] [info] [core] [t23764] live: slow frames (over 25 ms): 65 (guest 65, backend 0, present interval only 0), 45 not reported
+[2026-10-17 23:56:34.790] [info] [core] [t23764] live: 157 programs precompiled in 1176 ms
+[2026-10-17 23:56:38.594] [info] [core] [t21204] level load: 5001 ms
+[2026-10-17 23:56:44.314] [info] [core] [t23764] live: slow frames (over 25 ms): 103 (guest 103, backend 2, present interval only 0), 83 not reported
+[2026-10-17 23:57:04.319] [info] [core] [t23764] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:57:14.323] [info] [core] [t23764] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:57:19.457] [info] [core] [t21204] level load: 3071 ms
+[2026-10-17 23:57:24.323] [info] [core] [t23764] live: slow frames (over 25 ms): 74 (guest 74, backend 1, present interval only 0), 54 not reported
+[2026-10-17 23:58:34.348] [info] [core] [t23764] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:59:04.355] [info] [core] [t23764] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:59:31.235] [info] [krnl] [t21204] XamLoaderLaunchTitle: game requested exit to dashboard; terminating title

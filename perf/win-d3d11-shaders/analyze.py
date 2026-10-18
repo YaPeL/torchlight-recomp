@@ -21,10 +21,12 @@ TEXTURES = re.compile(r"textures=(\d+)/([\d.]+)ms")
 SUMMARY = re.compile(r"slow frames \(over 25 ms\): (\d+) .*?, (\d+) not reported")
 LOAD = re.compile(r"level load: (\d+) ms")
 RTSS = re.compile(r"RTSS: using (\S+) for Pass")
+PRECOMPILED = re.compile(r"live: (\d+) programs precompiled in (\d+) ms")
+CACHE = re.compile(r"program cache[^\n]*")
 
 
 def main(log_path, ogre_path):
-    frames, slow_total, unreported, loads = [], 0, 0, []
+    frames, slow_total, unreported, loads, precompiled, cache_lines = [], 0, 0, [], [], []
     with open(log_path, encoding="utf-8", errors="replace") as f:
         for line in f:
             m = FRAME.search(line)
@@ -51,6 +53,10 @@ def main(log_path, ogre_path):
             m = LOAD.search(line)
             if m:
                 loads.append(int(m.group(1)))
+                continue
+            m = PRECOMPILED.search(line)
+            if m:
+                precompiled.append((line[12:24], int(m.group(1)), int(m.group(2))))
     uses, names = 0, set()
     with open(ogre_path, encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -58,10 +64,21 @@ def main(log_path, ogre_path):
             if m:
                 uses += 1
                 names.add(m.group(1))
+                continue
+            m = CACHE.search(line)
+            if m:
+                cache_lines.append(line.strip())
     vs = sum(1 for n in names if n.endswith("_VS"))
     with_programs = [f for f in frames if f["programs"]]
     print(f"log: {log_path}")
     print(f"level loads (ms): {loads}")
+    print(f"precompile lines: {len(precompiled)}, {sum(n for _, n, _ in precompiled)} programs, "
+          f"{sum(ms for _, _, ms in precompiled)} ms")
+    for t, n, ms in precompiled:
+        print(f"  {t}  {n} programs precompiled in {ms} ms")
+    print(f"OGRE log program cache lines: {len(cache_lines)}")
+    for c in cache_lines:
+        print(f"  {c}")
     print(f"OGRE log: {uses} RTSS pass uses, {len(names)} distinct programs created "
           f"({vs} vertex, {len(names) - vs} fragment)")
     print(f"slow frames: {slow_total} in the period summaries, {unreported} not reported, "
@@ -81,6 +98,19 @@ def main(log_path, ogre_path):
         print(f"  {f['time']}  {f['by']:<7} {f['guest']:7.1f}  {f['backend']:7.1f}  "
               f"{f['interval']:8.1f}  {f['programs']:3d}/{f['program_ms']:7.1f} "
               f"({f['rtss_ms']:6.1f})  {f['textures']:4d}/{f['texture_ms']:7.1f}")
+    if frames:
+        first = frames[0]["time"]
+        def secs(s):
+            h, m, rest = s.split(":")
+            return int(h) * 3600 + int(m) * 60 + float(rest)
+        early = [f for f in frames if secs(f["time"]) - secs(first) < 15 and f["programs"]]
+        if early:
+            w = max(early, key=lambda f: f["program_ms"])
+            print(f"title screen (first 15 s of reports), frame with the most program time: "
+                  f"{w['time']} guest {w['guest']:.1f} backend {w['backend']:.1f} "
+                  f"programs {w['programs']}/{w['program_ms']:.1f} ms")
+        else:
+            print("title screen (first 15 s of reports): no reported frame with programs")
     print("10 reported frames with the most program time:")
     for f in sorted(with_programs, key=lambda f: -f["program_ms"])[:10]:
         print(f"  {f['time']}  {f['by']:<7} guest {f['guest']:7.1f}  backend {f['backend']:7.1f}  "

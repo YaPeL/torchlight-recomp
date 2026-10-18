@@ -1,0 +1,24 @@
+log: session-3-truncated log
+level loads (ms): [5001, 3071]
+precompile lines: 2, 199 programs, 1696 ms
+  23:56:24.908  42 programs precompiled in 520 ms
+  23:56:34.790  157 programs precompiled in 1176 ms
+OGRE log program cache lines: 1
+  23:56:23: program cache: %LOCALAPPDATA%\TorchlightRecomp\ogre\microcode-63e1450d4c3f107f.bin
+OGRE log: 398 RTSS pass uses, 191 distinct programs created (59 vertex, 132 fragment)
+slow frames: 246 in the period summaries, 182 not reported, 84 reported
+reported slow frames with programs: 0, 0 program generations, 0.0 ms in their draws (rtss 0.0 ms)
+10 worst reported frames (by the larger of guest, backend, present interval):
+  time          by       guest  backend  interval  programs/ms (rtss)   textures/ms
+  23:56:24.830  guest    1853.0     15.8       0.0    0/    0.0 (   0.0)    19/   13.0
+  23:57:16.313  guest     682.5      7.2     684.9    0/    0.0 (   0.0)     0/    0.0
+  23:59:28.967  guest     655.7      5.4     656.4    0/    0.0 (   0.0)     0/    0.0
+  23:56:25.283  guest     302.3      0.5     302.4    0/    0.0 (   0.0)     0/    0.0
+  23:56:26.173  guest     210.7      5.9     216.3    0/    0.0 (   0.0)    32/    0.9
+  23:56:25.525  guest     193.2      0.3     193.2    0/    0.0 (   0.0)     0/    0.0
+  23:56:24.923  guest     108.2     14.7      92.4    0/    0.0 (   0.0)    18/   13.7
+  23:56:25.620  guest      95.5      0.2      95.5    0/    0.0 (   0.0)     0/    0.0
+  23:56:34.707  guest      31.3      0.1      77.0    0/    0.0 (   0.0)     0/    0.0
+  23:56:25.806  guest      71.3      0.2      71.3    0/    0.0 (   0.0)     0/    0.0
+title screen (first 15 s of reports): no reported frame with programs
+10 reported frames with the most program time:

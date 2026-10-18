@@ -1,0 +1,19 @@
+[2026-10-17 23:52:24.995] [info] [core] [t28000] torchlight: D:\torchlight-recomp-public\out\build\win-amd64-release\torchlight.exe (build v0.12.5-beta-113-g261bc314cf09)
+[2026-10-17 23:52:28.896] [info] [core] [t5080] live: 46 programs precompiled in 555 ms (more at the next load)
+[2026-10-17 23:52:38.255] [info] [core] [t5080] live: slow frames (over 25 ms): 42 (guest 42, backend 1, present interval only 0), 22 not reported
+[2026-10-17 23:52:45.123] [info] [core] [t5080] live: 150 programs precompiled in 1046 ms
+[2026-10-17 23:52:48.390] [info] [core] [t5080] live: slow frames (over 25 ms): 112 (guest 110, backend 2, present interval only 2), 92 not reported
+[2026-10-17 23:52:49.019] [info] [core] [t5312] level load: 4962 ms
+[2026-10-17 23:52:58.392] [info] [core] [t5080] live: slow frames (over 25 ms): 15 (guest 14, backend 1, present interval only 0), 0 not reported
+[2026-10-17 23:53:18.395] [info] [core] [t5080] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:53:28.416] [info] [core] [t5080] live: slow frames (over 25 ms): 30 (guest 30, backend 0, present interval only 0), 10 not reported
+[2026-10-17 23:53:30.305] [info] [core] [t5312] level load: 2750 ms
+[2026-10-17 23:53:38.417] [info] [core] [t5080] live: slow frames (over 25 ms): 39 (guest 39, backend 1, present interval only 0), 19 not reported
+[2026-10-17 23:53:48.418] [info] [core] [t5080] live: slow frames (over 25 ms): 2 (guest 2, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:54:18.424] [info] [core] [t5080] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:54:38.436] [info] [core] [t5080] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:54:48.439] [info] [core] [t5080] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-17 23:55:23.825] [info] [core] [t5312] level load: 4427 ms
+[2026-10-17 23:55:28.444] [info] [core] [t5080] live: slow frames (over 25 ms): 117 (guest 117, backend 3, present interval only 0), 97 not reported
+[2026-10-17 23:55:48.449] [info] [core] [t5080] live: slow frames (over 25 ms): 32 (guest 32, backend 0, present interval only 0), 12 not reported
+[2026-10-17 23:55:50.283] [info] [krnl] [t5312] XamLoaderLaunchTitle: game requested exit to dashboard; terminating title

@@ -1,0 +1,8 @@
+cache before: 215 hlsl sources
+  microcode-19c98c38273db469.bin 518441 bytes, written 23:27:30.760, sha256 5D84582D4CC94CC5
+  programs.txt 164919 bytes, written 23:27:18.020, sha256 8C9B777EBDF874B4
+started 23:27:43.786
+exit code 0
+cache after: 215 hlsl sources
+  microcode-19c98c38273db469.bin 518441 bytes, written 23:27:30.760, sha256 5D84582D4CC94CC5
+  programs.txt 164919 bytes, written 23:27:18.020, sha256 8C9B777EBDF874B4

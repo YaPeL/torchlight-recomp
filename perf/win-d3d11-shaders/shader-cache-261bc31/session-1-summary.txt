@@ -1,0 +1,27 @@
+log: session-1 log
+level loads (ms): [5090, 3148, 5056]
+precompile lines: 0, 0 programs, 0 ms
+OGRE log program cache lines: 0
+OGRE log: 392 RTSS pass uses, 187 distinct programs created (57 vertex, 130 fragment)
+slow frames: 367 in the period summaries, 279 not reported, 108 reported
+reported slow frames with programs: 5, 17 program generations, 232.1 ms in their draws (rtss 204.2 ms)
+  per generated program, ms (draw time / programs): median 11.15, max 15.50
+10 worst reported frames (by the larger of guest, backend, present interval):
+  time          by       guest  backend  interval  programs/ms (rtss)   textures/ms
+  23:47:42.008  both     1941.6     26.4       0.0    1/   11.0 (   9.1)    19/   12.9
+  23:52:08.388  guest     802.4     13.9     805.1    0/    0.0 (   0.0)     0/    0.0
+  23:49:30.013  both      684.0     44.5     723.6    3/   37.2 (  33.0)     0/    0.0
+  23:52:01.049  guest     643.4      8.0     644.5    0/    0.0 (   0.0)     0/    0.0
+  23:47:43.499  both      211.0    159.9     370.7   10/  155.0 ( 138.0)    32/    0.9
+  23:48:26.057  guest     300.7      0.6     300.5    0/    0.0 (   0.0)     0/    0.0
+  23:47:42.451  guest     285.1      0.5     285.4    0/    0.0 (   0.0)     0/    0.0
+  23:47:42.675  guest     186.4      0.3     186.4    0/    0.0 (   0.0)     0/    0.0
+  23:48:36.328  guest     134.5      5.1     134.2    0/    0.0 (   0.0)     2/    2.0
+  23:48:23.504  guest     130.9      3.6     133.7    0/    0.0 (   0.0)    11/    1.5
+title screen (first 15 s of reports), frame with the most program time: 23:47:43.499 guest 211.0 backend 159.9 programs 10/155.0 ms
+10 reported frames with the most program time:
+  23:47:43.499  both    guest   211.0  backend   159.9  programs 10/155.0 ms (rtss 138.0)
+  23:49:30.013  both    guest   684.0  backend    44.5  programs 3/37.2 ms (rtss 33.0)
+  23:52:01.687  interval guest    21.4  backend    19.2  programs 2/17.7 ms (rtss 14.7)
+  23:47:42.829  guest   guest    44.9  backend    12.1  programs 1/11.2 ms (rtss 9.4)
+  23:47:42.008  both    guest  1941.6  backend    26.4  programs 1/11.0 ms (rtss 9.1)
