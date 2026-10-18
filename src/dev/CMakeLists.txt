@@ -11,6 +11,7 @@ add_test(NAME dev_command_list_test COMMAND dev_command_list_test)
 add_library(torchlight_dev_input_script STATIC input_script.cpp ui_tree.cpp)
 target_include_directories(torchlight_dev_input_script PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_dev_input_script PUBLIC cxx_std_23)
+target_link_libraries(torchlight_dev_input_script PUBLIC torchlight_input)
 target_compile_options(torchlight_dev_input_script PRIVATE -Wall -Wextra)
 
 add_executable(dev_input_script_test input_script_test.cpp)

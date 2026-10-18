@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <utility>
@@ -196,6 +197,27 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       (w[1] == "left" ? c.pad.left_x : c.pad.right_x) = Axis(*x);
       (w[1] == "left" ? c.pad.left_y : c.pad.right_y) = Axis(*y);
       c.op = Op::kStick;
+    } else if (verb == "touch" || verb == "release") {
+      const bool touch = verb == "touch";
+      if (touch ? (w.size() != 3 && w.size() != 4) : w.size() != 2)
+        return fail(touch ? "touch ID X Y | touch ID CONTROL" : "release ID");
+      const auto id = Number(w[1]);
+      if (!id || *id < 1 || *id > 9 || *id != std::floor(*id)) return fail("the finger's ID goes from 1 to 9");
+      c.finger = static_cast<int>(*id);
+      if (touch && w.size() == 3) {
+        static constexpr std::string_view kControls[] = {"X", "Y", "A", "B", "LT", "RT", "LB", "RB", "BACK", "START"};
+        std::string name(w[2]);
+        for (char& ch : name) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
+        if (std::find(std::begin(kControls), std::end(kControls), name) == std::end(kControls))
+          return fail("unknown touch control '" + std::string(w[2]) + "'");
+        c.text = std::string(w[2]);
+      } else if (touch) {
+        const auto x = Number(w[2]), y = Number(w[3]);
+        if (!x || !y || *x < 0 || *x > 1 || *y < 0 || *y > 1) return fail("X and Y go from 0 to 1");
+        c.x = static_cast<float>(*x);
+        c.y = static_cast<float>(*y);
+      }
+      c.op = touch ? Op::kTouch : Op::kRelease;
     } else if (verb == "idle") {
       if (w.size() != 2 || !duration(w[1], c.duration)) return fail("idle DURATION");
       c.op = Op::kIdle;
@@ -335,6 +357,17 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         actions.push_back({ScriptAction::Kind::kQuit, {}});
         advance();
         continue;
+      case Op::kTouch:
+      case Op::kRelease: {
+        ScriptAction a{ScriptAction::Kind::kTouch, c.text};
+        a.finger = c.finger;
+        a.x = c.x;
+        a.y = c.y;
+        a.release = c.op == Op::kRelease;
+        actions.push_back(a);
+        advance();
+        continue;
+      }
       case Op::kPress:
         if (frames < 2 * uint64_t(c.press_frames)) {
           return frames < c.press_frames ? c.pad : PadState{};
@@ -381,27 +414,6 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
     ended_ = true;
   }
   return {};
-}
-
-std::vector<PadKeystroke> PadKeystrokes(const PadState& before, const PadState& after) {
-  static constexpr std::pair<uint16_t, uint16_t> kKeys[] = {
-      {pad::kA, 0x5800},         {pad::kB, 0x5801},           {pad::kX, 0x5802},
-      {pad::kY, 0x5803},         {pad::kRightShoulder, 0x5804}, {pad::kLeftShoulder, 0x5805},
-      {pad::kUp, 0x5810},        {pad::kDown, 0x5811},        {pad::kLeft, 0x5812},
-      {pad::kRight, 0x5813},     {pad::kStart, 0x5814},       {pad::kBack, 0x5815},
-      {pad::kLeftThumb, 0x5816}, {pad::kRightThumb, 0x5817},
-  };
-  std::vector<PadKeystroke> keys;
-  for (const auto& [bit, vk] : kKeys) {
-    const bool was = before.buttons & bit, is = after.buttons & bit;
-    if (was != is) keys.push_back({vk, is});
-  }
-  const auto trigger = [&](uint8_t was, uint8_t is, uint16_t vk) {
-    if ((was > 0) != (is > 0)) keys.push_back({vk, is > 0});
-  };
-  trigger(before.left_trigger, after.left_trigger, 0x5806);
-  trigger(before.right_trigger, after.right_trigger, 0x5807);
-  return keys;
 }
 
 }  // namespace torchlight::dev

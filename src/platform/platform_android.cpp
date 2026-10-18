@@ -296,6 +296,10 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   return plugin_dir;
 }
 
+float ContentScaleDpi() { return 160.0f; }  // Android's density baseline
+
+bool TouchControlsByDefault() { return true; }
+
 bool HasSystemBackButton() { return true; }
 
 // Android's picker (SDL's, through the Storage Access Framework) gives a document URI

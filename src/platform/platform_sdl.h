@@ -14,5 +14,8 @@ bool NativeGameWindow(SDL_Window* game, NativeWindow& window);
 // macOS brings the application to the front (started from a terminal, it stays behind the
 // terminal and its dialogs with it); Linux and Windows show them in front already.
 void BringToFront();
+// The dots per inch SDL's content scale 1.0 stands for here: Android's 160 (its density's
+// baseline), 96 on Windows and Linux, 72 on macOS (points).
+float ContentScaleDpi();
 
 }  // namespace torchlight::platform

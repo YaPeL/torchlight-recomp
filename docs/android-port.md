@@ -599,11 +599,14 @@ copying into its folder:
 **A4, the touch controls setting** (owner's decision, 2026-10-10). A setting with three values,
 in the settings file and, once it exists, in the launcher:
 
-- **Auto** (the default): if a pad is connected at start, the built-in pad of an Android handheld
+- **Auto** (the default on Android): if a pad is connected at start, the built-in pad of an Android handheld
   included, the touch controls are not shown; the first touch on the screen shows them, and the
   first input from a pad hides them again. With no pad at start they are shown.
 - **Always**: shown, whatever pads are connected.
-- **Never**: never shown, for the Android handhelds with a built-in pad (Retroid, AYN Odin,
+- **Never** (the default on Windows, Linux and macOS, the Steam Deck included; the owner's decision,
+  2026-10-18: the Deck always has its pad, and a touch on its screen must not bring them up;
+  `touch_controls = "auto"` in settings.toml turns them on): never shown, as also for the Android
+  handhelds with a built-in pad (Retroid, AYN Odin,
   Anbernic and the like), where a touch on the screen must not bring them up.
 
 A pad is what SDL reports as a gamepad (`SDL_EVENT_GAMEPAD_ADDED`, its button and axis events); the
@@ -803,11 +806,43 @@ needed.
       only the SAF import.
   - **The owner's hand pass** closes A4: a dungeon played by touch on both devices.
 
+**A4.1, done** (2026-10-18, branch `android/a4-touch-driver`). The pure parts are in
+`src/input/` (`touch_pad`, `touch_visibility`, and `pad_state` shared with the input scripts),
+with `touch_test`. The driver is `live/touch_input.cpp`, installed after the system Back button.
+The setting is `touch_controls` in settings.toml; without it, Auto on Android and Never elsewhere
+(`platform::TouchControlsByDefault`, `settings::EffectiveTouchControls`).
+- **Desktop development:** `--dev_touch_mouse` makes the left mouse button a finger, and the input
+  scripts gained `touch` and `release`.
+- **Density:** the platform module gives the game window's pixels per millimetre
+  (`GameWindowPixelsPerMm`: SDL's display scale times 160 dpi on Android, 96 on Windows and Linux,
+  72 on macOS).
+- **Validated on desktop** by an unattended run with `touch_controls = "always"`, all touches
+  through the script:
+  - one finger on the stick's zone dragged right walks the hero right;
+  - with it held, X held attacks and LB is tapped; the potion count did not change because the hero
+    was at full health, so the potion itself is left for the device;
+  - after lifting, Back opens the inventory and RB turns its page (the menus read keystrokes).
+- **The clean-context review's findings, fixed:**
+  - the touch state lives for the whole process and the driver only reads it, so nothing can reach
+    a driver already destroyed;
+  - window events are taken only from the game window, and a change of display scale lays the
+    controls out again;
+  - the scripts' fingers follow the controls' own (a new layout drops them);
+  - keystrokes are not taken while the input is inactive.
+- **Packet numbers:** the SDK's merge keeps the larger packet number of the devices, so a pad used a
+  lot hides the touch controls' changes in that number. The game ignores it: its two reads of the
+  pad state (`0x821FE8A8`, `0x822DF798`) compare buttons, not packets. A run with a virtual pad
+  connected and moved 120 times before the touches walked the hero all the same.
+- **For A4.4:** `PadKeystrokes` makes no left-stick keystrokes (`VK_PAD_LTHUMB_*`), so the touch
+  stick does not move menus that navigate by keystrokes. The menus' layout uses the D-pad.
+- **Not drawn yet:** that is A4.2.
+
 *Steps* (each validated before the next):
 
 | Step | What | Validated by |
 |---|---|---|
 | A4.1 | The touch driver, the finger rules (held buttons, several fingers), Auto/Always/Never | Unit tests (several fingers included); the desktop mouse-as-finger moves the hero |
+
 | A4.2 | The drawing (ImGui foreground) and the converted icons | A capture of the overlay on desktop; the owner's look at the preview strip |
 | A4.3 | The gameplay layout (stick, attack cluster, potions, orbs, minimap, pinch) | Input scripts on desktop; on a device, synthetic touches with two and three fingers (move + attack held + a potion) |
 | A4.4 | The menus' context layout | Every catalog menu opened and closed by synthetic taps |

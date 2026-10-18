@@ -150,6 +150,7 @@ add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR
     -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
+add_subdirectory(src/input)
 add_subdirectory(src/dev)
 add_subdirectory(src/hooks)
 add_subdirectory(src/commands)
@@ -191,6 +192,9 @@ endif()
 option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_script" OFF)
 if(TORCHLIGHT_DEV_INPUT)
     set_source_files_properties(src/dev/script_input.cpp PROPERTIES
+        COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    # The mouse as a finger on the touch controls (--dev_touch_mouse).
+    set_source_files_properties(src/live/touch_input.cpp DIRECTORY src/live PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
 endif()
 # Our layouts for the game's UI (game_menu/video_menu.h), next to the executable; copied on every

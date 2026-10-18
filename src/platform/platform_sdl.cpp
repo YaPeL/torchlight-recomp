@@ -72,6 +72,19 @@ bool FindGameWindow(NativeWindow& window, uint32_t& width, uint32_t& height, std
   return true;
 }
 
+float GameWindowPixelsPerMm() {
+  int count = 0;
+  SDL_Window** windows = SDL_GetWindows(&count);
+  if (!windows) return 0;
+  SDL_Window* game = count == 1 ? windows[0] : nullptr;
+  SDL_free(windows);
+  if (!game) return 0;
+  // The window's display scale is its pixel density times the display's content scale: pixels per
+  // point times points per ContentScaleDpi.
+  const float scale = SDL_GetWindowDisplayScale(game);
+  return scale > 0 ? scale * ContentScaleDpi() / 25.4f : 0;
+}
+
 DisplayInfo GameDisplay() {
   DisplayInfo info;
   int count = 0;
