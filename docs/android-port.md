@@ -686,10 +686,17 @@ needed.
     (`tl_backend_output_rect`), never recomputed here.
 - **Touch rules.**
   - Each finger owns one control from the moment it lands.
-  - A button presses when a finger lands on it or slides onto it from another button. A finger
-    resting between buttons does nothing.
+  - **Held while the finger stays on it** (owner, 2026-10-17): the 360 attacks while X is held, so a
+    virtual button stays pressed as long as its finger is on it. It is released when the finger
+    lifts or leaves it, as in the Rayman recomp; leaving means going past 1.25 times its touch
+    radius, so a thumb that rolls a little does not drop the attack.
+  - A button also presses when a finger slides onto it from another button; the first one is then
+    released. A finger resting between buttons does nothing.
   - The stick's finger keeps the stick until it lifts, wherever it goes.
-  - Several fingers at once: move and attack together, and a potion during it.
+  - **Several fingers at once** (owner, 2026-10-17): moving with the stick, attacking and drinking a
+    potion at the same time. Every finger is tracked by SDL's finger id; the pad's state is the
+    union of all of them. The unit tests and the first device test cover it: stick + X held + LB
+    tapped, then the fingers lifted in another order.
 - **Sizes in millimetres,** from the display's density: SDL's `SDL_GetDisplayContentScale`,
   Android's density, where 160 dpi = 1.0. That is a density bucket, not the panel's real ppi (the
   POCO likely reports 2.75 or 3.0, about 440-480 dpi), so the millimetres are a few percent off,
@@ -728,6 +735,11 @@ needed.
     - a two-finger pinch moves the right stick up or down (zoom);
     - a small skill-set button presses the D-pad direction the 360 uses for the skill set (which
       direction to be read from the guest).
+  - **The right stick** (owner's question, 2026-10-17). The 360 uses it for two things only, by
+    its How To Play screen: up and down zoom the camera, and pressing it opens the automap. Left
+    and right are not listed (to be confirmed in the guest's input code at A4.3). By touch: the
+    pinch zooms (the right stick's Y while the fingers spread or close) and a tap on the minimap
+    presses it. No second on-screen stick.
 - **Menus: a context layout.** When a 360 menu is open (inventory, stats, skills, shops, stash,
   dialogs, pause), the overlay switches to the pad that menu needs: a D-pad on the left; A, B, X, Y
   on the right; LB/RB and LT/RT at the top edges as tab switches; Back and Start. That is how the
@@ -753,7 +765,11 @@ needed.
   - opacity (default 60%);
   - size (0.75-1.5);
   - the stick floating or fixed;
-  - Swap sides (a mirror for left-handed players).
+  - Swap sides (a mirror for left-handed players);
+  - **a short vibration** when a virtual button is pressed (owner, 2026-10-17): off by default, with
+    the opacity and the size. Android's vibrator through SDL's haptic API (the app needs the
+    `VIBRATE` permission in its manifest, which is the Android agent's; agreed before A4.5). A
+    platform function (`platform::ShortVibration`) does nothing on the other platforms.
 
   The layout's positions are saved as fractions. An in-game editor (drag, resize, reset), like
   Unleashed's and Dolphin's, is the last step of A4, after a layout has been played.
@@ -763,6 +779,11 @@ needed.
     dialog: while a host dialog is open the overlay is hidden, and the dialog is touched directly.
   - On Android SDL's loop sleeps up to 1 ms between passes (patch 46). Input wakes it, but the
     latency from finger to guest is measured anyway.
+- **Auto, the rule** (owner, 2026-10-17, restating the decision above): the controls hide as soon as
+  a physical pad is used, and come back as soon as the screen is touched, even with the pad still
+  connected. "Used" is a button or an axis past its dead zone on a real pad (SDL's gamepad events),
+  never our own synthetic device; a touch is any finger down. At start: a pad connected means
+  hidden, none means shown.
 - **Testing without a hand on the screen.**
   - **Unit tests on Linux:**
     - the layout for both devices' sizes and densities: within the window and the 6 mm margin, no
@@ -786,9 +807,9 @@ needed.
 
 | Step | What | Validated by |
 |---|---|---|
-| A4.1 | The touch driver, the finger rules, Auto/Always/Never | Unit tests; the desktop mouse-as-finger moves the hero |
+| A4.1 | The touch driver, the finger rules (held buttons, several fingers), Auto/Always/Never | Unit tests (several fingers included); the desktop mouse-as-finger moves the hero |
 | A4.2 | The drawing (ImGui foreground) and the converted icons | A capture of the overlay on desktop; the owner's look at the preview strip |
-| A4.3 | The gameplay layout (stick, attack cluster, potions, orbs, minimap, pinch) | Input scripts on desktop; synthetic taps on the POCO |
+| A4.3 | The gameplay layout (stick, attack cluster, potions, orbs, minimap, pinch) | Input scripts on desktop; on a device, synthetic touches with two and three fingers (move + attack held + a potion) |
 | A4.4 | The menus' context layout | Every catalog menu opened and closed by synthetic taps |
 | A4.5 | The settings and the Options rows | Unit tests; the setting takes effect on the device |
 | A4.6 | The layout editor | Moved, resized and reset by hand; saved across starts |
