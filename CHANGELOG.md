@@ -5,6 +5,10 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
+- Linux: the game's memory is now reserved before use and moves to a free address if its usual
+  one is taken, instead of silently overwriting memory already in use (a possible cause of rare
+  crashes).
+
 ## v0.12.5-beta (2026-10-17)
 
 Everything integrated into `develop` since v0.7.6-beta, for players.

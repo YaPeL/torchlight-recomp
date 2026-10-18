@@ -60,7 +60,8 @@ in number order; a branch adds its own line at its number's place.
 | 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41) |
 | 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In that branch (after 42) |
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
-| 45 | | | Next free number |
+| 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
+| 46 | | | Next free number |
 
 ## The patches
 
@@ -668,5 +669,16 @@ in number order; a branch adds its own line at its number's place.
     commit over a range only partly mapped, which no caller makes, may change the mapped part
     before it fails). Tests in `alloc_fixed_test.cpp` pin the results: in place, mapped where
     nothing was, a hole and zero bytes fail.
+
+45. `rexglue-arena-reserve-before-views.patch` (POSIX only): on Linux and Android the guest
+    memory's views were mapped with `MAP_FIXED` at fixed bases without reserving the range, and
+    `MAP_FIXED` replaces what is there: another library's memory that address space
+    randomization put in the range became guest memory and was corrupted (on the Galaxy Tab S5e
+    about one start in two crashed in the GPU driver on a pointer made of text). The range is
+    now reserved first where nothing is mapped, a taken range is logged with its occupant, and
+    one page without access stays before and after the views. Desktop Linux keeps 2^32 when it
+    is free (all 101 desktop logs here). Test: a foreign page in the first free range survives
+    and the arena goes elsewhere (without the change the page reads 0); the guard pages have no
+    access.
 
 The observation and diagnostic patches there were before remain in the git history.
