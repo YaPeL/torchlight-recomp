@@ -841,7 +841,10 @@ The setting is `touch_controls` in settings.toml; without it, Auto on Android an
 `live/touch_overlay.cpp`, a runtime dialog that never takes the input (like the frame counter), on
 ImGui's foreground draw list.
 - **Hidden while another dialog is open:** the dialog is touched directly.
-- **Placeholder look** until the owner approves the icon strip: round buttons with a light ring and
+- **The look** (2026-10-18): Kenney's "Mobile Controls" style A (CC0, `data/ui/touch/`, the owner
+  left the choice to the agent: dark and solid, it matches the game's dark UI and keeps the
+  coloured names readable), the button's pressed highlight a golden ring; the names drawn over
+  them at 90%. Without the files, the placeholder shapes: round buttons with a light ring and
   the pad's name (A, B, X, Y in the 360's colours), a lighter fill while pressed; the stick a ring
   whose knob follows the thumb. Opacity is fixed at 60% (A4.5 makes it a setting).
 - **Out of the drawer** while hidden or while another dialog is open: no ImGui frame for them

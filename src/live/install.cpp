@@ -130,7 +130,7 @@ void RequestDialogFrame() {
     // The touch controls (touch_overlay.h) too.
     rex::ui::ImGuiDialog* counter = FrameCounterDialog();
     rex::ui::ImGuiDialog* notice = BusyNoticeDialog();
-    rex::ui::ImGuiDialog* touch = TouchOverlayDialog(d->drawer.get());
+    rex::ui::ImGuiDialog* touch = TouchOverlayDialog(d->drawer.get(), d->overlay.get());
     if (counter) d->drawer->RemoveDialog(counter);
     if (notice) d->drawer->RemoveDialog(notice);
     if (touch) d->drawer->RemoveDialog(touch);
