@@ -45,8 +45,8 @@ struct Series {
     for (double v : values) sum += v;
     auto pct = [&](double p) { return values[std::min(values.size() - 1, size_t(p * values.size()))]; };
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "mean %.2f ms, p95 %.2f, p99 %.2f, max %.2f", sum / values.size(),
-                  pct(0.95), pct(0.99), values.back());
+    std::snprintf(buf, sizeof(buf), "mean %.2f ms, p50 %.2f, p95 %.2f, p99 %.2f, max %.2f",
+                  sum / values.size(), pct(0.5), pct(0.95), pct(0.99), values.back());
     values.clear();
     return buf;
   }
@@ -502,6 +502,14 @@ void LiveMode::Run() {
     record.program_generate_ms = counters.program_generate_ms;
     record.gpu_buffers_created = counters.gpu_buffers_created;
     record.vertex_layouts_created = counters.vertex_layouts_created;
+    record.uploads = counters.textures_uploaded;
+    record.uploads_rgba8 = counters.textures_rgba8;
+    record.uploads_rgb8 = counters.textures_rgb8;
+    record.uploads_compressed = counters.textures_compressed;
+    record.uploads_other = counters.textures_other;
+    record.upload_bytes = counters.texture_bytes;
+    record.dxt_decoded = counters.dxt_decoded;
+    record.dxt_decode_ms = counters.dxt_decode_ms;
     if (auto line = slow_frames.Add(record)) REXLOG_INFO("live: {}", *line);
 
     if (end - last_summary >= std::chrono::seconds(10)) {
