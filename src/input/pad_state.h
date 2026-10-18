@@ -10,6 +10,8 @@
 #include <optional>
 #include <vector>
 
+#include <rex/input/keystroke_repeat.h>
+
 namespace torchlight::input {
 
 // XINPUT_GAMEPAD button bits.
@@ -32,8 +34,47 @@ struct PadState {
 struct PadKeystroke {
   uint16_t virtual_key;
   bool down;
+  bool repeat = false;  // a held key's repeated down
 };
 std::vector<PadKeystroke> PadKeystrokes(const PadState& before, const PadState& after);
+
+// The pad's state as XInput's keystroke bits, as the SDK's SDL pad driver builds them
+// (sdl_input_driver.cpp, AnalogToKeyfield and its key table), so a host controller's keystrokes
+// match a real pad's: bits 0-15 the buttons; 16-17 the triggers past kTriggerKeyThreshold; 18-25
+// the left stick's directions past kThumbKeyThreshold (up, down, right, left, then the diagonals,
+// which replace their two sides); 26-33 the right stick's the same. The menus that read keystrokes
+// move with the stick through these (VK_PAD_LTHUMB_*).
+constexpr int kPadKeyCount = 34;
+constexpr int16_t kThumbKeyThreshold = 0x4E00;
+constexpr uint8_t kTriggerKeyThreshold = 0x1F;
+uint64_t PadKeyBits(const PadState& pad);
+// The virtual key (VK_PAD_*) of a keystroke bit; 0 for the bits that have none.
+uint16_t PadKeyVirtualKey(int bit);
+
+// A host controller's keystrokes as a real pad's: rex's NextKeystroke (the SDK's SDL pad driver's,
+// with its repeat) over PadKeyBits of the state now. A button or trigger pressed and released
+// between two of the game's reads still gives its down, then its up, if the game reads within
+// KeystrokeQueue::kLifetime of the press (a screen that reads no keystrokes, the title, must not
+// leave presses to the next one). The sticks' directions are not kept that way: a direction the
+// stick only passed through is not a step (a real pad would not report it either).
+class PadKeystrokeSource {
+ public:
+  static constexpr uint32_t kRepeatDelayMs = 400, kRepeatRateMs = 100;  // the SDK's HID_SDL_REPEAT_*
+
+  // The state changed at `now_ms`.
+  void Changed(const PadState& next, uint32_t now_ms);
+  // The next keystroke at `now_ms`; with the input inactive (a dialog has it), everything is
+  // released.
+  std::optional<PadKeystroke> Next(bool active, uint32_t now_ms);
+  void Reset() { *this = {}; }
+
+ private:
+  static constexpr uint64_t kLatchable = (uint64_t(1) << 18) - 1;  // buttons and triggers
+  PadState state_;
+  rex::input::KeystrokeTracker tracker_;
+  uint64_t latched_ = 0;
+  uint32_t latched_at_[18] = {};
+};
 
 // The keystrokes of a host controller, waiting for the game to read them. One the game did not
 // read soon after it happened is dropped: a screen that does not read keystrokes (the title) left

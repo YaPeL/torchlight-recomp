@@ -26,6 +26,12 @@ void Check(bool ok, const std::string& what) {
 // about 446 ppi) and the Galaxy Tab S5e (2560x1600, about 287 ppi).
 constexpr float kMmPerInch = 25.4f;
 TouchScreen Poco() { return {2712, 1220, 2.75f * 160 / kMmPerInch}; }
+// What the POCO reported on the device (2026-10-18): 20.5 px/mm, so about 59.5 mm tall.
+TouchScreen PocoMeasured() { return {2712, 1220, 20.5f}; }
+// A 20:9 5.5" phone at the 3.0 bucket: 2400x1080, about 57 x 127 mm (kMinHeightMm).
+TouchScreen ShortPhone() { return {2400, 1080, 3.0f * 160 / kMmPerInch}; }
+// The narrowest realistic case: 16:9 at 57 mm tall, about 101 mm wide (kMinWidthMm).
+TouchScreen Narrow169() { return {1920, 1080, 3.0f * 160 / kMmPerInch}; }
 TouchScreen Tab() { return {2560, 1600, 1.8f * 160 / kMmPerInch}; }
 
 const TouchButton& Find(const TouchLayout& layout, std::string_view name) {
@@ -205,10 +211,90 @@ void TestKeystrokes() {
   Check(k && k->virtual_key == 0x5806 && k->down, "a trigger pulled is its key");
 }
 
+void TestKeyBits() {
+  // As the SDK's SDL pad driver: past 0x4E00 a stick is a direction, both axes a diagonal.
+  PadState p;
+  p.left_y = kThumbKeyThreshold;
+  Check(PadKeyBits(p) == 0, "at the threshold, nothing");
+  p.left_y = kThumbKeyThreshold + 1;
+  Check(PadKeyBits(p) == (uint64_t(1) << 18) && PadKeyVirtualKey(18) == 0x5820, "left stick up: VK_PAD_LTHUMB_UP");
+  p.left_y = -32768;
+  Check(PadKeyBits(p) == (uint64_t(1) << 19) && PadKeyVirtualKey(19) == 0x5821, "down");
+  p.left_x = 32767;
+  Check(PadKeyBits(p) == (uint64_t(1) << 24) && PadKeyVirtualKey(24) == 0x5826, "down and right: the diagonal only");
+  p = {};
+  p.right_x = -32768;
+  Check(PadKeyBits(p) == (uint64_t(1) << 29) && PadKeyVirtualKey(29) == 0x5833, "right stick left");
+  p = {};
+  p.left_trigger = kTriggerKeyThreshold + 1;
+  p.buttons = pad::kA | pad::kLeftShoulder;
+  Check(PadKeyBits(p) == ((uint64_t(1) << 16) | pad::kA | pad::kLeftShoulder), "a trigger and buttons");
+  Check(PadKeyVirtualKey(12) == 0x5800 && PadKeyVirtualKey(8) == 0x5805 && PadKeyVirtualKey(9) == 0x5804 &&
+            PadKeyVirtualKey(16) == 0x5806 && PadKeyVirtualKey(0) == 0x5810,
+        "A, LB, RB, LT and d-pad up keys");
+  Check(PadKeyVirtualKey(10) == 0 && PadKeyVirtualKey(11) == 0 && PadKeyVirtualKey(34) == 0, "bits with no key");
+}
+
+void TestKeystrokeSource() {
+  PadKeystrokeSource src;
+  PadState up, a;
+  a.buttons = pad::kA;
+  // A tap between two reads: its down, then its up.
+  src.Changed(a, 1000);
+  src.Changed(up, 1030);
+  auto k = src.Next(true, 1040);
+  Check(k && k->virtual_key == 0x5800 && k->down && !k->repeat, "a short tap: down");
+  k = src.Next(true, 1041);
+  Check(k && k->virtual_key == 0x5800 && !k->down, "then up");
+  Check(!src.Next(true, 1042), "then nothing");
+  // A tap the game reads too late (a screen that reads no keystrokes): dropped.
+  src.Changed(a, 2000);
+  src.Changed(up, 2030);
+  Check(!src.Next(true, 2000 + 201), "a tap older than the lifetime is dropped");
+  // A held stick direction repeats as a pad's: the down, then after 400 ms every 100 ms.
+  PadState down;
+  down.left_y = -32768;
+  src.Changed(down, 3000);
+  k = src.Next(true, 3001);
+  Check(k && k->virtual_key == 0x5821 && k->down && !k->repeat, "stick down: VK_PAD_LTHUMB_DOWN");
+  Check(!src.Next(true, 3300), "no repeat before the delay");
+  k = src.Next(true, 3402);
+  Check(k && k->repeat, "a repeat after 400 ms");
+  Check(!src.Next(true, 3450), "not before the rate");
+  k = src.Next(true, 3503);
+  Check(k && k->repeat, "then every 100 ms");
+  src.Changed(up, 3510);
+  k = src.Next(true, 3511);
+  Check(k && k->virtual_key == 0x5821 && !k->down, "released: up");
+  // A direction the stick only passed through between two reads is not a step.
+  PadState right;
+  right.left_x = 32767;
+  src.Changed(down, 4000);
+  src.Changed(right, 4010);
+  k = src.Next(true, 4020);
+  Check(k && k->virtual_key == 0x5822 && k->down, "only the direction it is in now: right");
+  Check(!src.Next(true, 4021), "and no down for the one it passed");
+  src.Changed(up, 4030);
+  Check(src.Next(true, 4031).has_value(), "right up");
+  // Inactive (a dialog has the input): released, and a tap made then is not kept.
+  src.Changed(a, 5000);
+  k = src.Next(false, 5001);
+  Check(!k, "inactive: nothing down");
+  src.Changed(up, 5002);
+  Check(!src.Next(true, 5003), "the tap made while inactive is not delivered later");
+}
+
 }  // namespace
 
 int main() {
   TestLayout(Poco(), "POCO X7");
+  TestLayout(PocoMeasured(), "POCO X7 as measured");
+  Check(1080 / ShortPhone().px_per_mm >= kMinHeightMm, "the short phone is the shortest supported");
+  TestLayout(ShortPhone(), "a short phone");
+  TestLayout(Narrow169(), "a 16:9 phone at the minimum height");
+  TestKeyBits();
+  TestKeystrokeSource();
+  Check(1920 / Narrow169().px_per_mm >= kMinWidthMm, "the 16:9 phone is the narrowest supported");
   TestLayout(Tab(), "Tab S5e");
   TestHeldButton();
   TestSliding();

@@ -644,6 +644,10 @@ agent's answers (2026-10-17, from `android/a2-gles`).
   game (`src/pc/controller/controller_touchscreen.c`), drawn by the game's own renderer.
   - **Layout:** a fixed stick and the buttons placed from the screen's left and right edges in a
     1280×960 space.
+- **Their icons** (looked at 2026-10-18):
+  - Unleashed draws no button shapes: it draws the game's own button glyphs (A, B, X, Y, LB,
+    Start...), the ones its menus show.
+  - The Rayman recomp has art made for the port (`GamePad/`), in the game's style.
 - **Mobile ARPGs** (Torchlight: Infinite, Diablo Immortal): a stick at the bottom left. At the
   bottom right, a large basic-attack button with the skills in a ring or arc around it. Targeting is
   automatic; potions sit next to the attack cluster.
@@ -731,8 +735,12 @@ needed.
       instead is a later option: it reads guest state.
   - **Potions:** LB and RB as two small buttons above the stick's area. A tap on the HUD's health
     or mana orb (top left and right, where the 360 already prints LB and RB) presses them too.
-  - **Top corners:** Back (inventory) at the top left and Start at the top right, small, out of the
-    thumbs' way.
+  - **Top:** Back (inventory) and Start along the top edge, 44 mm in from the sides, small, out of
+    the thumbs' way. They were in the corners until the first device run (2026-10-18). The POCO
+    reports 20.5 px/mm, so its landscape is about 59.5 mm tall, not the 70 mm its density bucket
+    suggested: in the corners Back met the potions and Start the skills' arc. The layout now fits
+    any screen at least 57 mm tall (a 6" 20:9 phone), which `touch_test` checks on the POCO as
+    measured and on a 57 mm phone.
   - **The rest:**
     - a tap on the minimap presses the right stick (automap);
     - a two-finger pinch moves the right stick up or down (zoom);
@@ -835,8 +843,22 @@ The setting is `touch_controls` in settings.toml; without it, Auto on Android an
   lot hides the touch controls' changes in that number. The game ignores it: its two reads of the
   pad state (`0x821FE8A8`, `0x822DF798`) compare buttons, not packets. A run with a virtual pad
   connected and moved 120 times before the touches walked the hero all the same.
-- **For A4.4:** `PadKeystrokes` makes no left-stick keystrokes (`VK_PAD_LTHUMB_*`), so the touch
-  stick does not move menus that navigate by keystrokes. The menus' layout uses the D-pad.
+- **The menus with the touch stick** (2026-10-18; the owner, after the first device run: the menus
+  could not be navigated). The touch controls now give keystrokes as the SDK's SDL pad driver
+  does for a real pad:
+  - the same bits and keys: buttons, the triggers, and both sticks' directions past 0x4E00, with
+    diagonals as `VK_PAD_LTHUMB_*`;
+  - the same repeat, through rex's `NextKeystroke`: a held direction repeats after 400 ms, then
+    every 100 ms;
+  - a button or trigger tapped between two of the game's reads still gives its down and its up,
+    if the game reads within 200 ms (a screen that reads no keystrokes must not pass its taps to
+    the next one); a direction the stick only passed through is not a step.
+
+  The Rayman recomp gets the same from SDL's virtual pad, which goes through that driver. A run
+  showed it: Start tapped opened the pause menu; a short flick down moved Options to Help; held
+  down 0.75 s, it repeated through Achievements, Leaderboards and Exit to Title, round to Options
+  and Help. A4.4's context layout (a D-pad and the face buttons while a menu is open, as Unleashed
+  does) stays for the D-pad's own uses.
 - **Not drawn yet:** that is A4.2.
 
 **A4.2, first part** (2026-10-18, branch `android/a4-touch-overlay`). The controls are drawn by

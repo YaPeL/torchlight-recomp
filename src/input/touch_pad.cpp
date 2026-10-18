@@ -45,11 +45,12 @@ TouchLayout GameplayLayout(const TouchScreen& screen) {
   layout.stick_radius = kStickRadius * mm;
   layout.buttons.push_back({"LB", pad::kLeftShoulder, false, false, 16 * mm, bottom(44), small_r * mm});
   layout.buttons.push_back({"RB", pad::kRightShoulder, false, false, 30 * mm, bottom(44), small_r * mm});
-  // Back and Start in the top corners.
-  layout.buttons.push_back({"Back", pad::kBack, false, false, (kSideMargin + small_r) * mm,
-                            (kLongMargin + small_r) * mm, small_r * mm});
-  layout.buttons.push_back({"Start", pad::kStart, false, false, right(kSideMargin + small_r),
-                            (kLongMargin + small_r) * mm, small_r * mm});
+  // Back and Start along the top, 44 mm in from the sides: in the corners they met the potions
+  // and the skills' arc on a short screen (the POCO's landscape is about 60 mm tall), and there
+  // the HUD's orbs are.
+  layout.buttons.push_back({"Back", pad::kBack, false, false, 44 * mm, (kLongMargin + small_r) * mm, small_r * mm});
+  layout.buttons.push_back({"Start", pad::kStart, false, false, right(44), (kLongMargin + small_r) * mm,
+                            small_r * mm});
   // The stick's zone: the lower left 40% x 60% of the screen.
   layout.zone_x0 = 0;
   layout.zone_y0 = h * 0.4f;

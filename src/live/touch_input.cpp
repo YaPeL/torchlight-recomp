@@ -1,6 +1,7 @@
 #include "live/touch_input.h"
 
 #include <algorithm>
+#include <chrono>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -44,6 +45,14 @@ constexpr int kPadUsedAxis = 8000;
 constexpr uint64_t kMouseFinger = 0xF1D6E700'00000001ull;
 constexpr uint64_t kInjectedFingers = 0xF1D6E700'00010000ull;
 
+// Milliseconds since the program started (the keystrokes' clock; from 0, as the SDK's guest
+// uptime, so it does not wrap for 49 days of play).
+uint32_t NowMs() {
+  static const auto start = std::chrono::steady_clock::now();
+  return static_cast<uint32_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
+}
+
 input::TouchMode ModeOf(settings::TouchControls mode) {
   switch (mode) {
     case settings::TouchControls::kAlways:
@@ -74,7 +83,7 @@ class TouchState {
     pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
     ignored_.clear();
     state_ = {};
-    keys_.Clear();
+    keys_.Reset();
     installed_ = true;
   }
   // The driver went away (the input system shut down).
@@ -84,7 +93,7 @@ class TouchState {
     pad_.Clear();
     ignored_.clear();
     state_ = {};
-    keys_.Clear();
+    keys_.Reset();
   }
 
   // The guest's input poll.
@@ -101,9 +110,11 @@ class TouchState {
     out->gamepad.thumb_rx = state_.right_x;
     out->gamepad.thumb_ry = state_.right_y;
   }
-  std::optional<input::PadKeystroke> Keystroke() {
+  // The next keystroke, as the SDK's SDL pad driver makes them for a real pad
+  // (input::PadKeystrokeSource): the touch stick moves the menus as a pad's does.
+  std::optional<input::PadKeystroke> Keystroke(bool active) {
     std::lock_guard lock(mutex_);
-    return keys_.Pop(input::KeystrokeQueue::Clock::now());
+    return keys_.Next(active, NowMs());
   }
 
   // A finger in window fractions: down, moved or lifted.
@@ -220,7 +231,7 @@ class TouchState {
   void Update() {
     const input::PadState next = visibility_.visible() ? pad_.State() : input::PadState{};
     if (next == state_) return;
-    keys_.Push(state_, next, input::KeystrokeQueue::Clock::now());
+    keys_.Changed(next, NowMs());
     state_ = next;
     ++packet_;
   }
@@ -230,7 +241,7 @@ class TouchState {
   input::TouchPad pad_;
   input::TouchVisibility visibility_{input::TouchMode::kNever, false, false};
   input::PadState state_;
-  input::KeystrokeQueue keys_;
+  input::PadKeystrokeSource keys_;
   std::set<uint64_t> ignored_;
   uint32_t packet_ = 1;
   bool mouse_finger_ = false;
@@ -351,14 +362,14 @@ class TouchInputDriver : public rex::input::InputDriver {
   X_RESULT GetDeviceKeystroke(rex::input::DeviceId id, uint32_t,
                               rex::input::X_INPUT_KEYSTROKE* out) override {
     if (id != kDevice) return X_ERROR_DEVICE_NOT_CONNECTED;
-    // Not read while the input is inactive: the keystrokes wait (and expire) as they would.
-    if (!is_active()) return X_ERROR_EMPTY;
-    const auto key = State().Keystroke();
+    const auto key = State().Keystroke(is_active());
     if (!key) return X_ERROR_EMPTY;
     if (out) {
       std::memset(out, 0, sizeof(*out));
       out->virtual_key = key->virtual_key;
-      out->flags = key->down ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN : rex::input::X_INPUT_KEYSTROKE_KEYUP;
+      out->flags = !key->down     ? rex::input::X_INPUT_KEYSTROKE_KEYUP
+                   : key->repeat ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN | rex::input::X_INPUT_KEYSTROKE_REPEAT
+                                 : rex::input::X_INPUT_KEYSTROKE_KEYDOWN;
     }
     return X_ERROR_SUCCESS;
   }

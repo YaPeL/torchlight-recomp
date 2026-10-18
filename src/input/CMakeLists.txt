@@ -4,6 +4,8 @@
 # (live/touch_input.cpp, dev/script_input.cpp).
 add_library(torchlight_input STATIC pad_state.cpp touch_pad.cpp touch_visibility.cpp)
 target_include_directories(torchlight_input PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+# rex's keystroke_repeat.h (header only), as the SDK's pad driver uses it.
+target_include_directories(torchlight_input PUBLIC "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_features(torchlight_input PUBLIC cxx_std_23)
 target_compile_options(torchlight_input PRIVATE -Wall -Wextra)
 
