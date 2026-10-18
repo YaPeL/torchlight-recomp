@@ -21,7 +21,6 @@
 #include <rex/input/input.h>
 #include <rex/input/input_driver.h>
 #include <rex/input/input_system.h>
-#include <rex/input/keystroke_repeat.h>
 #include <rex/logging.h>
 #include <rex/runtime.h>
 
@@ -45,6 +44,14 @@ constexpr int kPadUsedAxis = 8000;
 // The mouse as a finger (development) and the input scripts' fingers: ids no screen gives.
 constexpr uint64_t kMouseFinger = 0xF1D6E700'00000001ull;
 constexpr uint64_t kInjectedFingers = 0xF1D6E700'00010000ull;
+
+// Milliseconds since the program started (the keystrokes' clock; from 0, as the SDK's guest
+// uptime, so it does not wrap for 49 days of play).
+uint32_t NowMs() {
+  static const auto start = std::chrono::steady_clock::now();
+  return static_cast<uint32_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
+}
 
 input::TouchMode ModeOf(settings::TouchControls mode) {
   switch (mode) {
@@ -76,8 +83,7 @@ class TouchState {
     pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
     ignored_.clear();
     state_ = {};
-    tracker_ = {};
-    latched_ = 0;
+    keys_.Reset();
     installed_ = true;
   }
   // The driver went away (the input system shut down).
@@ -87,8 +93,7 @@ class TouchState {
     pad_.Clear();
     ignored_.clear();
     state_ = {};
-    tracker_ = {};
-    latched_ = 0;
+    keys_.Reset();
   }
 
   // The guest's input poll.
@@ -105,28 +110,11 @@ class TouchState {
     out->gamepad.thumb_rx = state_.right_x;
     out->gamepad.thumb_ry = state_.right_y;
   }
-  // The next keystroke, as the SDK's SDL pad driver makes them for a real pad (rex's
-  // NextKeystroke, the same bits, delay and rate): the buttons, the triggers and the sticks'
-  // directions, a held one repeating, so the menus move with the touch stick as with a pad's. A
-  // press that came and went between two reads still gives its down, then its up. While the input
-  // is inactive (a dialog has it), everything is released.
+  // The next keystroke, as the SDK's SDL pad driver makes them for a real pad
+  // (input::PadKeystrokeSource): the touch stick moves the menus as a pad's does.
   std::optional<input::PadKeystroke> Keystroke(bool active) {
     std::lock_guard lock(mutex_);
-    static constexpr uint32_t kRepeatDelayMs = 400, kRepeatRateMs = 100;  // the SDK's HID_SDL_REPEAT_*
-    uint64_t reportable = 0;
-    for (int i = 0; i < input::kPadKeyCount; ++i) {
-      if (input::PadKeyVirtualKey(i)) reportable |= uint64_t(1) << i;
-    }
-    const uint64_t pressed = active ? (input::PadKeyBits(state_) | latched_) : 0;
-    const auto now_ms = static_cast<uint32_t>(
-        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
-            .count());
-    const auto key = rex::input::NextKeystroke(tracker_, pressed, reportable, input::kPadKeyCount, now_ms,
-                                               kRepeatDelayMs, kRepeatRateMs);
-    latched_ &= ~tracker_.buttons;  // reported down: from now on the state says when it is up
-    if (!active) latched_ = 0;
-    if (!key) return std::nullopt;
-    return input::PadKeystroke{input::PadKeyVirtualKey(key->index), key->down, key->repeat};
+    return keys_.Next(active, NowMs());
   }
 
   // A finger in window fractions: down, moved or lifted.
@@ -243,7 +231,7 @@ class TouchState {
   void Update() {
     const input::PadState next = visibility_.visible() ? pad_.State() : input::PadState{};
     if (next == state_) return;
-    latched_ |= input::PadKeyBits(next);
+    keys_.Changed(next, NowMs());
     state_ = next;
     ++packet_;
   }
@@ -253,8 +241,7 @@ class TouchState {
   input::TouchPad pad_;
   input::TouchVisibility visibility_{input::TouchMode::kNever, false, false};
   input::PadState state_;
-  rex::input::KeystrokeTracker tracker_;
-  uint64_t latched_ = 0;  // keystroke bits pressed since the game last read one
+  input::PadKeystrokeSource keys_;
   std::set<uint64_t> ignored_;
   uint32_t packet_ = 1;
   bool mouse_finger_ = false;

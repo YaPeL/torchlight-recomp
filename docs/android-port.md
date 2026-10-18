@@ -850,7 +850,9 @@ The setting is `touch_controls` in settings.toml; without it, Auto on Android an
     diagonals as `VK_PAD_LTHUMB_*`;
   - the same repeat, through rex's `NextKeystroke`: a held direction repeats after 400 ms, then
     every 100 ms;
-  - a tap shorter than the time between two of the game's reads still gives its down and its up.
+  - a button or trigger tapped between two of the game's reads still gives its down and its up,
+    if the game reads within 200 ms (a screen that reads no keystrokes must not pass its taps to
+    the next one); a direction the stick only passed through is not a step.
 
   The Rayman recomp gets the same from SDL's virtual pad, which goes through that driver. A run
   showed it: Start tapped opened the pause menu; a short flick down moved Options to Help; held

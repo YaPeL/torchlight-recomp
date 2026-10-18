@@ -59,6 +59,33 @@ uint16_t PadKeyVirtualKey(int bit) {
   return bit >= 0 && bit < kPadKeyCount ? kKeys[bit] : 0;
 }
 
+void PadKeystrokeSource::Changed(const PadState& next, uint32_t now_ms) {
+  const uint64_t pressed = PadKeyBits(next) & kLatchable & ~PadKeyBits(state_);
+  for (int i = 0; i < 18; ++i) {
+    if (pressed & (uint64_t(1) << i)) latched_at_[i] = now_ms;
+  }
+  latched_ |= pressed;
+  state_ = next;
+}
+
+std::optional<PadKeystroke> PadKeystrokeSource::Next(bool active, uint32_t now_ms) {
+  const auto lifetime = static_cast<uint32_t>(KeystrokeQueue::kLifetime.count());
+  for (int i = 0; i < 18; ++i) {
+    if ((latched_ & (uint64_t(1) << i)) && now_ms - latched_at_[i] > lifetime) latched_ &= ~(uint64_t(1) << i);
+  }
+  if (!active) latched_ = 0;
+  uint64_t reportable = 0;
+  for (int i = 0; i < kPadKeyCount; ++i) {
+    if (PadKeyVirtualKey(i)) reportable |= uint64_t(1) << i;
+  }
+  const uint64_t pressed = active ? (PadKeyBits(state_) | latched_) : 0;
+  const auto key =
+      rex::input::NextKeystroke(tracker_, pressed, reportable, kPadKeyCount, now_ms, kRepeatDelayMs, kRepeatRateMs);
+  latched_ &= ~tracker_.buttons;  // reported down: from now on the state says when it is up
+  if (!key) return std::nullopt;
+  return PadKeystroke{PadKeyVirtualKey(key->index), key->down, key->repeat};
+}
+
 void KeystrokeQueue::Push(const PadState& before, const PadState& after, Clock::time_point now) {
   for (const auto& k : PadKeystrokes(before, after)) {
     if (keys_.size() < kMaxQueued) keys_.push_back({k, now});

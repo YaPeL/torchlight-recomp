@@ -235,6 +235,55 @@ void TestKeyBits() {
   Check(PadKeyVirtualKey(10) == 0 && PadKeyVirtualKey(11) == 0 && PadKeyVirtualKey(34) == 0, "bits with no key");
 }
 
+void TestKeystrokeSource() {
+  PadKeystrokeSource src;
+  PadState up, a;
+  a.buttons = pad::kA;
+  // A tap between two reads: its down, then its up.
+  src.Changed(a, 1000);
+  src.Changed(up, 1030);
+  auto k = src.Next(true, 1040);
+  Check(k && k->virtual_key == 0x5800 && k->down && !k->repeat, "a short tap: down");
+  k = src.Next(true, 1041);
+  Check(k && k->virtual_key == 0x5800 && !k->down, "then up");
+  Check(!src.Next(true, 1042), "then nothing");
+  // A tap the game reads too late (a screen that reads no keystrokes): dropped.
+  src.Changed(a, 2000);
+  src.Changed(up, 2030);
+  Check(!src.Next(true, 2000 + 201), "a tap older than the lifetime is dropped");
+  // A held stick direction repeats as a pad's: the down, then after 400 ms every 100 ms.
+  PadState down;
+  down.left_y = -32768;
+  src.Changed(down, 3000);
+  k = src.Next(true, 3001);
+  Check(k && k->virtual_key == 0x5821 && k->down && !k->repeat, "stick down: VK_PAD_LTHUMB_DOWN");
+  Check(!src.Next(true, 3300), "no repeat before the delay");
+  k = src.Next(true, 3402);
+  Check(k && k->repeat, "a repeat after 400 ms");
+  Check(!src.Next(true, 3450), "not before the rate");
+  k = src.Next(true, 3503);
+  Check(k && k->repeat, "then every 100 ms");
+  src.Changed(up, 3510);
+  k = src.Next(true, 3511);
+  Check(k && k->virtual_key == 0x5821 && !k->down, "released: up");
+  // A direction the stick only passed through between two reads is not a step.
+  PadState right;
+  right.left_x = 32767;
+  src.Changed(down, 4000);
+  src.Changed(right, 4010);
+  k = src.Next(true, 4020);
+  Check(k && k->virtual_key == 0x5822 && k->down, "only the direction it is in now: right");
+  Check(!src.Next(true, 4021), "and no down for the one it passed");
+  src.Changed(up, 4030);
+  Check(src.Next(true, 4031).has_value(), "right up");
+  // Inactive (a dialog has the input): released, and a tap made then is not kept.
+  src.Changed(a, 5000);
+  k = src.Next(false, 5001);
+  Check(!k, "inactive: nothing down");
+  src.Changed(up, 5002);
+  Check(!src.Next(true, 5003), "the tap made while inactive is not delivered later");
+}
+
 }  // namespace
 
 int main() {
@@ -244,6 +293,8 @@ int main() {
   TestLayout(ShortPhone(), "a short phone");
   TestLayout(Narrow169(), "a 16:9 phone at the minimum height");
   TestKeyBits();
+  TestKeystrokeSource();
+  Check(1920 / Narrow169().px_per_mm >= kMinWidthMm, "the 16:9 phone is the narrowest supported");
   TestLayout(Tab(), "Tab S5e");
   TestHeldButton();
   TestSliding();
