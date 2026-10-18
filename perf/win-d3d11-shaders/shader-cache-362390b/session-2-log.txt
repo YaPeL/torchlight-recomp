@@ -1,0 +1,22 @@
+[2026-10-18 14:36:30.274] [info] [core] [t3704] torchlight: D:\torchlight-recomp-public\out\build\win-amd64-release\torchlight.exe (build v0.12.5-beta-116-g362390bea879)
+[2026-10-18 14:36:34.758] [info] [core] [t20772] live: 44 programs precompiled in 576 ms (more at the next load)
+[2026-10-18 14:36:44.118] [info] [core] [t20772] live: slow frames (over 25 ms): 44 (guest 44, backend 0, present interval only 0), 24 not reported
+[2026-10-18 14:36:45.532] [info] [core] [t20772] live: 123 programs precompiled in 801 ms
+[2026-10-18 14:36:49.673] [info] [core] [t32700] level load: 4960 ms
+[2026-10-18 14:36:54.690] [info] [core] [t20772] live: slow frames (over 25 ms): 124 (guest 122, backend 2, present interval only 2), 104 not reported
+[2026-10-18 14:37:04.691] [info] [core] [t20772] live: slow frames (over 25 ms): 2 (guest 2, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:37:14.693] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:37:24.695] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:37:28.585] [info] [core] [t32700] level load: 2712 ms
+[2026-10-18 14:37:34.695] [info] [core] [t20772] live: slow frames (over 25 ms): 65 (guest 65, backend 1, present interval only 0), 45 not reported
+[2026-10-18 14:37:54.700] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:38:04.702] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:38:44.704] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:38:54.706] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:39:35.158] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:39:39.674] [info] [core] [t32700] level load: 4456 ms
+[2026-10-18 14:39:45.161] [info] [core] [t20772] live: slow frames (over 25 ms): 114 (guest 114, backend 13, present interval only 0), 94 not reported
+[2026-10-18 14:40:15.169] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:41:05.182] [info] [core] [t20772] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:41:25.653] [info] [core] [t20772] live: slow frames (over 25 ms): 2 (guest 2, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:41:28.080] [info] [krnl] [t32700] XamLoaderLaunchTitle: game requested exit to dashboard; terminating title

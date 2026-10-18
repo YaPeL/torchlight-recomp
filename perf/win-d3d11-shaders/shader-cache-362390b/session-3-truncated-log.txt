@@ -1,0 +1,5 @@
+[2026-10-18 14:41:47.250] [info] [core] [t26508] torchlight: D:\torchlight-recomp-public\out\build\win-amd64-release\torchlight.exe (build v0.12.5-beta-116-g362390bea879)
+[2026-10-18 14:41:51.690] [info] [core] [t19876] live: 44 programs precompiled in 549 ms (more at the next load)
+[2026-10-18 14:42:01.042] [info] [core] [t19876] live: slow frames (over 25 ms): 41 (guest 41, backend 0, present interval only 0), 21 not reported
+[2026-10-18 14:42:21.045] [info] [core] [t19876] live: slow frames (over 25 ms): 1 (guest 1, backend 0, present interval only 0), 0 not reported
+[2026-10-18 14:42:51.532] [info] [krnl] [t25728] XamLoaderLaunchTitle: game requested exit to dashboard; terminating title

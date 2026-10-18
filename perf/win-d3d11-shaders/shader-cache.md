@@ -1,6 +1,6 @@
 # perf/shader-cache on Direct3D 11: the program cache and the precompilation
 
-Windows, 2026-10-17. RTX 5080, 3840x2160, D3D11. Release builds from scratch (SDK
+Windows, 2026-10-17 and 18. RTX 5080, 3840x2160, D3D11. Release builds from scratch (SDK
 D:\rexglue-sdk-33). Isolated profile (`--user_data_root`, a copy of the plain test save, no mods).
 The route each session is start, Continue, town, into the mine, one floor, quit from the menu.
 
@@ -11,6 +11,44 @@ stayed. `session-N-cache.txt` records the files before and after each session (s
 SHA-256 prefix). The rest is as in `README.md`: `analyze.py` output, log excerpts. `analyze.py`
 now also lists the precompile lines, the OGRE log's program cache lines and the title screen's
 frame with the most program time (the reported frames in the first 15 s).
+
+## 362390b (the cache saved only when it grew; a cut file detected), ctest 105/105
+
+Run on 2026-10-18. All three sessions start from the same save (copied before session 1 and
+restored before sessions 2 and 3). `watch.ps1` ran during each session and recorded, once a second,
+the size and write time of `microcode-*.bin` and `programs.txt`. Its output is
+`session-N-bin-watch.csv`; a row is marked "rewritten" when the .bin's write time changed.
+
+| | Session 1 (empty cache) | Session 2 | Session 3 (.bin cut in half) |
+|---|---|---|---|
+| Level loads (ms) | 5073, 3032, 4527 | 4960, 2712, 4456 | none (title screen and quit) |
+| Precompile lines | none (empty list) | 44 in 576 ms "(more at the next load)" (start); 123 in 801 ms (first load) | 44 in 549 ms "(more at the next load)" (start) |
+| OGRE log on the cache | no file yet | "program cache: <path>" | "program cache unreadable, rebuilt: <path>" |
+| .bin rewrites (watch.ps1) | 3, one after each load: 269082, 379567, 428625 B | 1, after the third load: 428625 -> 518465 B | 1, at exit: 259232 -> 177991 B |
+| Distinct programs (OGRE log) | 154 | 184 (154 of session 1 + 30 new) | 68 |
+| Reported slow frames with programs | 8 (20 generations, median 26.34 ms) | 0 | 0 |
+| Title screen frame with the most program time | 10 programs / 263.4 ms | none | none |
+
+Session 2:
+- The .bin was not rewritten after the first or the second load. It was rewritten once, at
+  14:39:39.798, right after the third load ended (14:39:39.674). The 30 programs that session 1
+  never created all appear between 14:39:38 and 14:39:39, during that load (`tl_rtss#168` to
+  `#194`: 25 fragment and 5 vertex programs). The floor was different from session 1's, even with
+  the same save. They are listed in `session-2-ogre-log.txt`, and `programs.txt` gained their keys
+  in the same rewrite.
+- No reported slow frame generated a program, after the loads or on the title screen.
+- The precompile still splits in two: 44 programs at the start "(more at the next load)", then
+  the remaining 123 during the first load.
+
+Session 3 (the .bin cut from 518465 to 259232 bytes; title screen, then quit):
+- The game started normally (0 [error] lines apart from SAVE:, clean exit).
+- The cut file is now detected: OGRE's log says "program cache unreadable, rebuilt: <path>".
+  The earlier "program cache: <path>" line is gone.
+- At exit the .bin was rewritten as 177991 bytes. That is a whole file: its trailer is `tlpcach1`,
+  the payload length matches the file and the FNV-1a checksum matches (checked after the session).
+  But it holds only what this session compiled: the 44 programs precompiled at the start, plus the
+  title screen's. The rest of the list was not reached, because no level was loaded. So it is
+  smaller than session 2's 518465 bytes; the next session's precompile compiles the rest.
 
 ## 261bc31 (precompilation through the whole list), ctest 103/103
 
