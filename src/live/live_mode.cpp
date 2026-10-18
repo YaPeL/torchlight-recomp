@@ -239,6 +239,7 @@ void LiveMode::Run() {
     return;
   }
   REXLOG_INFO("live: renderer {}", tl_backend_renderer(backend));
+  tl_backend_open_program_cache(backend, options_.build.c_str());
   // When the presents reach the screen, where the window system says (presentation_time.h): the
   // swap-to-screen latency, next to the swap-to-presented one.
   std::unique_ptr<platform::PresentationClock> presentation =
@@ -309,6 +310,7 @@ void LiveMode::Run() {
   size_t precompiled = 0;
   double precompile_ms = 0;
   bool precompile_done = false;
+  bool was_loading = false;
   // The window's new size, when it changed (before presenting); whether it did. A new render
   // scale remakes the targets, whose content is then lost.
   auto apply_window_size = [&] {
@@ -324,10 +326,12 @@ void LiveMode::Run() {
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
-    // While the game loads a level it draws nothing: the backend thread generates the programs
-    // this device used before (a driver's own cache does not survive an update of the game),
-    // 50 ms at a time so a frame that comes waits little.
-    if (!frame && !precompile_done && LevelLoading()) {
+    // While the game loads a level, and before its first frame (the start, the busy notices), it
+    // draws nothing: the backend thread generates the programs this device used before (a driver's
+    // own cache does not survive an update of the game), 50 ms at a time so a frame that comes
+    // waits little. The title screen's programs are among them.
+    const bool idle_start = last_present.time_since_epoch().count() == 0;
+    if (!frame && !precompile_done && (LevelLoading() || idle_start)) {
       const size_t left = tl_backend_precompile_programs(backend, 50.0);
       tl_backend_counters counters;
       tl_backend_take_counters(backend, &counters);
@@ -335,9 +339,13 @@ void LiveMode::Run() {
       precompile_ms += counters.precompile_ms;
       precompile_done = left == 0;
     }
-    if (precompiled && (precompile_done || !LevelLoading())) {
-      REXLOG_INFO("live: {} programs precompiled during the level load in {:.0f} ms{}", precompiled,
-                  precompile_ms, precompile_done ? "" : " (more at the next load)");
+    // A level load ended: what was compiled during and before it goes to the program cache.
+    const bool loading = LevelLoading();
+    if (was_loading && !loading) tl_backend_save_program_cache(backend);
+    was_loading = loading;
+    if (precompiled && (precompile_done || (!loading && !idle_start))) {
+      REXLOG_INFO("live: {} programs precompiled in {:.0f} ms{}", precompiled, precompile_ms,
+                  precompile_done ? "" : " (more at the next load)");
       precompiled = 0;
       precompile_ms = 0;
     }

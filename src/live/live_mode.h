@@ -30,6 +30,7 @@ namespace torchlight::live {
 
 struct LiveOptions {
   std::filesystem::path game_data_root;  // holds pak.zip
+  std::string build;  // the game's build (its commit), part of the program cache's key
   uint32_t width = 1280, height = 720;
   // Diagnostics (--native_live=parallel_nodraw): record and consume the frames (resources
   // applied, content freed) without creating the backend: no GL, nothing drawn or presented. Tells

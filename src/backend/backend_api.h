@@ -333,6 +333,14 @@ void tl_backend_take_counters(tl_backend* b, tl_backend_counters* out);
  * through. */
 size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms);
 
+/* OGRE's cache of compiled programs, on where the render system compiles programs in the
+ * application instead of in the driver (Direct3D 11): loaded from the shader cache folder, its file
+ * named by the game's build (`version`), OGRE's version and the compiler's; nothing elsewhere.
+ * tl_backend_save_program_cache writes what was compiled since (at the end of each level load; the
+ * backend's destruction saves too). */
+void tl_backend_open_program_cache(tl_backend* b, const char* version);
+void tl_backend_save_program_cache(tl_backend* b);
+
 /* Display gamma ramp the guest set (commands::SetGammaRamp values), applied when the frame ends.
  * Linear until set. */
 void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768]);

@@ -140,6 +140,10 @@ class ProgressWindow {
 // The backend's generated shaders (OGRE RTSS). Linux: $XDG_CACHE_HOME/TorchlightRecomp/ogre/, else
 // ~/.cache/TorchlightRecomp/ogre/. Windows: %LOCALAPPDATA%\TorchlightRecomp\ogre\.
 std::string ShaderCacheDir();
+// The version of the shader compiler the application itself runs, where the render system has
+// one outside the driver (Windows: D3DCompiler_47.dll's file version, for Direct3D 11's HLSL);
+// empty elsewhere. Part of the key of the backend's cache of compiled programs.
+std::string ShaderCompilerVersion();
 // Other files the host generates for this machine (`name` below the cache folder).
 std::string CacheDir(const std::string& name);
 // Directory of the running executable, ending in a separator; empty when unknown.
