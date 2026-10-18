@@ -178,7 +178,8 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::live::InstallSystemBackButton(runtime());
     // The touch controls (settings.toml "touch_controls"): a controller of their own fed by the
     // fingers (docs/android-port.md, A4).
-    torchlight::live::InstallTouchControls(runtime(), host.touch_controls);
+    torchlight::live::InstallTouchControls(
+        runtime(), torchlight::settings::EffectiveTouchControls(host, torchlight::platform::TouchControlsByDefault()));
     // Development builds: a controller script (before live::Install sets the input's active
     // callback, which the script's controller follows too).
     torchlight::dev::InstallInputScript(runtime(), [this] {

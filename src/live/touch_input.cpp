@@ -368,7 +368,7 @@ class TouchInputDriver : public rex::input::InputDriver {
 
 void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode) {
   if (mode == settings::TouchControls::kNever) {
-    REXLOG_INFO("touch: controls off (touch_controls = \"never\")");
+    REXLOG_INFO("touch: controls off (touch_controls \"never\", or not set off Android)");
     return;
   }
   auto* input = runtime ? static_cast<rex::input::InputSystem*>(runtime->input_system()) : nullptr;

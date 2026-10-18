@@ -68,6 +68,10 @@ bool HasSystemBackButton();
 // live/touch_input.h): SDL's content scale times the density it is relative to (ContentScaleDpi).
 // Approximate: Android's density buckets, desktops' nominal 96 dpi. 0 without a game window.
 float GameWindowPixelsPerMm();
+// Whether the touch controls are on by default here (settings::EffectiveTouchControls): Android's
+// players have a touch screen and often no pad. Elsewhere, the Steam Deck included, they are off
+// unless settings.toml asks for them.
+bool TouchControlsByDefault();
 // Gamepad input keeps reaching the game while another window (the backend's) has the focus.
 void AllowBackgroundGamepad();
 

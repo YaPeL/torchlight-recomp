@@ -506,8 +506,13 @@ std::string Serialize(const HostSettings& settings) {
       << "# on a Switch; takes effect after a restart.\n"
       << "swap_confirm_cancel = " << (settings.swap_confirm_cancel ? "true" : "false") << "\n"
       << "# Touch controls: \"auto\" (hidden while a pad is used, shown again on a touch; never\n"
-      << "# without a touch screen), \"always\" or \"never\"; takes effect after a restart.\n"
-      << "touch_controls = " << Quote(std::string(TouchControlsName(settings.touch_controls))) << "\n";
+      << "# without a touch screen), \"always\" or \"never\"; by default auto on Android, never\n"
+      << "# elsewhere (the Steam Deck included); takes effect after a restart.\n";
+  if (settings.touch_controls) {
+    out << "touch_controls = " << Quote(std::string(TouchControlsName(*settings.touch_controls))) << "\n";
+  } else {
+    out << "# touch_controls = \"auto\"\n";
+  }
   return out.str();
 }
 

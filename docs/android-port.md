@@ -599,11 +599,14 @@ copying into its folder:
 **A4, the touch controls setting** (owner's decision, 2026-10-10). A setting with three values,
 in the settings file and, once it exists, in the launcher:
 
-- **Auto** (the default): if a pad is connected at start, the built-in pad of an Android handheld
+- **Auto** (the default on Android): if a pad is connected at start, the built-in pad of an Android handheld
   included, the touch controls are not shown; the first touch on the screen shows them, and the
   first input from a pad hides them again. With no pad at start they are shown.
 - **Always**: shown, whatever pads are connected.
-- **Never**: never shown, for the Android handhelds with a built-in pad (Retroid, AYN Odin,
+- **Never** (the default on Windows, Linux and macOS, the Steam Deck included; the owner's decision,
+  2026-10-18: the Deck always has its pad, and a touch on its screen must not bring them up;
+  `touch_controls = "auto"` in settings.toml turns them on): never shown, as also for the Android
+  handhelds with a built-in pad (Retroid, AYN Odin,
   Anbernic and the like), where a touch on the screen must not bring them up.
 
 A pad is what SDL reports as a gamepad (`SDL_EVENT_GAMEPAD_ADDED`, its button and axis events); the
@@ -806,7 +809,8 @@ needed.
 **A4.1, done** (2026-10-18, branch `android/a4-touch-driver`). The pure parts are in
 `src/input/` (`touch_pad`, `touch_visibility`, and `pad_state` shared with the input scripts),
 with `touch_test`. The driver is `live/touch_input.cpp`, installed after the system Back button.
-The setting is `touch_controls` in settings.toml.
+The setting is `touch_controls` in settings.toml; without it, Auto on Android and Never elsewhere
+(`platform::TouchControlsByDefault`, `settings::EffectiveTouchControls`).
 - **Desktop development:** `--dev_touch_mouse` makes the left mouse button a finger, and the input
   scripts gained `touch` and `release`.
 - **Density:** the platform module gives the game window's pixels per millimetre

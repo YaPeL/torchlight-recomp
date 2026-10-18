@@ -337,6 +337,8 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 
 float ContentScaleDpi() { return 96.0f; }  // the desktop's nominal
 
+bool TouchControlsByDefault() { return false; }
+
 bool HasSystemBackButton() { return false; }
 
 // The picker's paths are files the program opens as they are.
