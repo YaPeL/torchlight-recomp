@@ -1,0 +1,19 @@
+The touch controls' icons (docs/android-port.md, stage A4)
+
+Pack:     Kenney "Mobile Controls" (the pack once called "Onscreen Controls")
+Version:  1.0 (created 2025-08-09)
+Author:   Kenney (www.kenney.nl)
+License:  Creative Commons Zero (CC0 1.0), http://creativecommons.org/publicdomain/zero/1.0/
+          (the pack's own text is in LICENSE.txt next to this file; crediting is not required)
+Source:   https://kenney.nl/assets/mobile-controls
+Download: https://kenney.nl/media/pages/assets/mobile-controls/0d047b3be4-1754738457/mobile-controls-1.zip
+Zip:      mobile-controls-1.zip, SHA-256 7331c648651858fb3186a8c76e0e360e4d3ea71cfec9b502eb5cbb04a02e192b
+          (checked 2026-10-18)
+
+Files, copied unchanged from the zip (byte for byte):
+  button_circle.png            Sprites/Style A/Large (2x)/button_circle.png
+  joystick_circle_pad_a.png    Sprites/Style A/Large (2x)/joystick_circle_pad_a.png
+  joystick_circle_nub_a.png    Sprites/Style A/Large (2x)/joystick_circle_nub_a.png
+  button_circle_highlight.png  Sprites/Highlights A/Large (2x)/button_circle_highlight.png
+  LICENSE.txt                  License.txt
+(The zip's folder is "Large (2×)", with the multiplication sign.)
