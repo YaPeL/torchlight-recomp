@@ -74,6 +74,8 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
       : ImGuiDialog(drawer),
         button_(LoadIcon(textures, "button_circle.png")),
         pressed_(LoadIcon(textures, "button_circle_highlight.png")),
+        wide_(LoadIcon(textures, "button_circle_wide.png")),
+        wide_pressed_(LoadIcon(textures, "button_circle_wide_highlight.png")),
         pad_(LoadIcon(textures, "joystick_circle_pad_a.png")),
         nub_(LoadIcon(textures, "joystick_circle_nub_a.png")) {}
 
@@ -88,27 +90,45 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
     for (const input::TouchButton& b : snap.layout.buttons) {
       const ImVec2 c(b.x * k, b.y * k);
       const float r = b.radius * k;
+      const bool wide = b.shape == input::TouchShape::kWide;
+      const float hw = wide ? b.half_width * k : r;
+      const ImVec2 lo(c.x - hw, c.y - r), hi(c.x + hw, c.y + r);
       const bool down = Pressed(b, snap.state);
-      if (button_) {
-        const ImVec2 a(c.x - r, c.y - r), z(c.x + r, c.y + r);
-        list->AddImage(Id(button_), a, z, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
-        if (down && pressed_) {
-          list->AddImage(Id(pressed_), a, z, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
-        } else if (down) {
-          list->AddCircleFilled(c, r, Colour(1, 1, 1, 0.35f * kOpacity), 48);  // no highlight file
-        }
-      } else {
-        list->AddCircleFilled(c, r, down ? Colour(1, 1, 1, 0.45f * kOpacity) : Colour(0, 0, 0, 0.45f * kOpacity), 48);
-        list->AddCircle(c, r, Colour(1, 1, 1, 0.85f * kOpacity), 48, std::max(2.0f, r * 0.06f));
-      }
       float lr, lg, lb;
       LabelColour(b, lr, lg, lb);
+      // The ring in the button's colour (A, B, X, Y) or white; the highlight while pressed.
+      const auto& ring = wide ? wide_ : button_;
+      const auto& lit = wide ? wide_pressed_ : pressed_;
+      if (ring) {
+        list->AddImage(Id(ring), lo, hi, ImVec2(0, 0), ImVec2(1, 1), Colour(lr, lg, lb, kOpacity));
+        if (down && lit) {
+          list->AddImage(Id(lit), lo, hi, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
+        } else if (down) {
+          list->AddRectFilled(lo, hi, Colour(1, 1, 1, 0.35f * kOpacity), r);  // no highlight file
+        }
+      } else {
+        list->AddRectFilled(lo, hi, down ? Colour(1, 1, 1, 0.45f * kOpacity) : Colour(0, 0, 0, 0.45f * kOpacity), r);
+        list->AddRect(lo, hi, Colour(lr, lg, lb, 0.85f * kOpacity), r, 0, std::max(2.0f, r * 0.06f));
+      }
+      const ImU32 ink = Colour(lr, lg, lb, std::min(1.0f, kOpacity + 0.3f));
+      // The d-pad's buttons: an arrow; the rest: the pad's name.
+      if (b.shape != input::TouchShape::kRound && !wide) {
+        float dx = 0, dy = 0;
+        if (b.shape == input::TouchShape::kUp) dy = -1;
+        if (b.shape == input::TouchShape::kDown) dy = 1;
+        if (b.shape == input::TouchShape::kLeft) dx = -1;
+        if (b.shape == input::TouchShape::kRight) dx = 1;
+        const float t = r * 0.45f;
+        const ImVec2 tip(c.x + dx * t, c.y + dy * t);
+        const ImVec2 b1(c.x - dx * t * 0.6f - dy * t * 0.8f, c.y - dy * t * 0.6f - dx * t * 0.8f);
+        const ImVec2 b2(c.x - dx * t * 0.6f + dy * t * 0.8f, c.y - dy * t * 0.6f + dx * t * 0.8f);
+        list->AddTriangleFilled(tip, b1, b2, ink);
+        continue;
+      }
       const std::string label(b.name);
-      const float size = r * (label.size() > 2 ? 0.55f : 0.9f);
+      const float size = r * (label.size() > 2 ? 0.75f : 0.9f);
       const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, label.c_str());
-      // The names stronger than the buttons, to read them at a glance.
-      list->AddText(font, size, ImVec2(c.x - extent.x / 2, c.y - extent.y / 2),
-                    Colour(lr, lg, lb, std::min(1.0f, kOpacity + 0.3f)), label.c_str());
+      list->AddText(font, size, ImVec2(c.x - extent.x / 2, c.y - extent.y / 2), ink, label.c_str());
     }
     // The stick: its base where it rests or where the thumb landed, the knob where the thumb is.
     const float sr = snap.layout.stick_radius * k;
@@ -130,7 +150,7 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
   }
 
  private:
-  std::unique_ptr<rex::ui::ImmediateTexture> button_, pressed_, pad_, nub_;
+  std::unique_ptr<rex::ui::ImmediateTexture> button_, pressed_, wide_, wide_pressed_, pad_, nub_;
 };
 
 }  // namespace

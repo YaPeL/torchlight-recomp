@@ -723,34 +723,23 @@ needed.
 
   A size setting scales all of them (0.75-1.5). The same millimetres suit the tablet, because the
   thumbs reach the same distances: the tablet gets more free picture, not bigger buttons.
-- **The gameplay layout** (landscape; all positions as fractions of the window, stored as such):
-  - **Bottom left: the stick.** Floating: it appears where the thumb lands in the lower left
-    40% × 60% of the screen, with a faint resting base drawn at its default place as a hint.
-    "Fixed" is an option.
-  - **Bottom right: the attack cluster.**
-    - X (Attack, the largest) in the corner.
-    - Y, B, LT and RT in an arc around it, the pad's own skill slots.
-    - A (Interact) apart, above the arc, so picking up is never a mis-tapped attack.
-    - Each skill button shows the glyph of its pad button. Showing the skill's icon from the HUD
-      instead is a later option: it reads guest state.
-  - **Potions:** LB and RB as two small buttons above the stick's area. A tap on the HUD's health
-    or mana orb (top left and right, where the 360 already prints LB and RB) presses them too.
-  - **Top:** Back (inventory) and Start along the top edge, 44 mm in from the sides, small, out of
-    the thumbs' way. They were in the corners until the first device run (2026-10-18). The POCO
-    reports 20.5 px/mm, so its landscape is about 59.5 mm tall, not the 70 mm its density bucket
-    suggested: in the corners Back met the potions and Start the skills' arc. The layout now fits
-    any screen at least 57 mm tall (a 6" 20:9 phone), which `touch_test` checks on the POCO as
-    measured and on a 57 mm phone.
-  - **The rest:**
-    - a tap on the minimap presses the right stick (automap);
-    - a two-finger pinch moves the right stick up or down (zoom);
-    - a small skill-set button presses the D-pad direction the 360 uses for the skill set (which
-      direction to be read from the guest).
-  - **The right stick** (owner's question, 2026-10-17). The 360 uses it for two things only, by
-    its How To Play screen: up and down zoom the camera, and pressing it opens the automap. Left
-    and right are not listed (to be confirmed in the guest's input code at A4.3). By touch: the
-    pinch zooms (the right stick's Y while the fingers spread or close) and a tap on the minimap
-    presses it. No second on-screen stick.
+- **The gameplay layout: a pad's** (the owner's choice, 2026-10-18, after the first device runs; their
+  reference was an emulator's on-screen pad on a phone, with the stick where that one has its
+  d-pad, and Back and Start where it has its two centre buttons):
+  - **Left, mid height:** the stick, floating (it appears where the thumb lands in the lower left),
+    11 mm radius.
+  - **Below and inward of it:** a small d-pad, four 9 mm round buttons with arrows (the skill set,
+    the menus).
+  - **Right, mid height:** A, B, X and Y in the pad's diamond, 10 mm each, ringed in the 360's
+    colours.
+  - **Top corners:** the shoulders, wide (14 x 9 mm): LT and LB on the left, RB and RT on the right.
+  - **Top centre:** Back and Start, wide (12 x 9 mm).
+  - It fits any landscape screen at least 57 mm tall and 100 mm wide (`touch_test`: the POCO as
+    measured, a 57 mm 20:9 phone, a 16:9 one at 57 x 101 mm, the Tab S5e).
+  - It replaced the first layout (an attack button with the skills in an arc, LB and RB above the
+    stick, 16 mm X), which the first device run found too big for a 59.5 mm tall phone.
+  - **The right stick:** none on screen. The 360 uses it only to zoom (the pinch, A4.3) and for the
+    automap (a tap on the minimap, A4.3).
 - **Menus: a context layout.** When a 360 menu is open (inventory, stats, skills, shops, stash,
   dialogs, pause), the overlay switches to the pad that menu needs: a D-pad on the left; A, B, X, Y
   on the right; LB/RB and LT/RT at the top edges as tab switches; Back and Start. That is how the
@@ -762,8 +751,10 @@ needed.
     its focus set from outside, through each menu's own logic.
 - **The icons.**
   - **The shapes:** Kenney's "Mobile Controls" 1.0, the pack once called "Onscreen Controls" (CC0,
-    attribution optional). Style A, copied unchanged into `data/ui/touch/`, with a line in
-    `THIRD_PARTY_NOTICES.md`: the round button, its pressed highlight, and the stick's pad and nub.
+    attribution optional). Style C since the pad layout (style A before), copied unchanged into
+    `data/ui/touch/` with its `LICENSE.txt` and a `SOURCE.txt` (origin, version, URL, the zip's
+    hash), and a line in `THIRD_PARTY_NOTICES.md`: the round and wide buttons, their pressed
+    highlights, and the stick's pad and nub.
   - **The choice:** the owner saw a preview strip of the eight styles and left it to the agent
     (2026-10-18, "me importa muy poco, busca el más popular, o el más usado, o el que te guste más a
     vos"). Style A: dark and solid, it matches the game's dark UI and keeps the coloured names
@@ -865,8 +856,10 @@ The setting is `touch_controls` in settings.toml; without it, Auto on Android an
 `live/touch_overlay.cpp`, a runtime dialog that never takes the input (like the frame counter), on
 ImGui's foreground draw list.
 - **Hidden while another dialog is open:** the dialog is touched directly.
-- **The look** (2026-10-18): Kenney's "Mobile Controls" style A (the icons above), the button's
-  pressed highlight a golden ring, the names drawn over them at 90%. Without the files, the
+- **The look** (2026-10-18): Kenney's "Mobile Controls", first style A (dark solid buttons), then
+  style C (thin white rings, round and wide) with the layout above, as the owner's reference;
+  A, B, X and Y ringed in the 360's colours, the d-pad with arrows, the pressed highlight a golden
+  ring, the names drawn over them at 90%. Without the files, the
   placeholder shapes: round buttons with a light ring and
   the pad's name (A, B, X, Y in the 360's colours), a lighter fill while pressed; the stick a ring
   whose knob follows the thumb. Opacity is fixed at 60% (A4.5 makes it a setting).

@@ -42,34 +42,47 @@ const TouchButton& Find(const TouchLayout& layout, std::string_view name) {
   std::exit(1);
 }
 
+// A control's box (wide ones) or circle, for the margins and the gaps.
+float HalfW(const TouchButton& b) { return b.shape == TouchShape::kWide ? b.half_width : b.radius; }
+float Gap(const TouchButton& a, const TouchButton& b) {
+  if (a.shape != TouchShape::kWide && b.shape != TouchShape::kWide) {
+    return std::hypot(a.x - b.x, a.y - b.y) - a.radius - b.radius;
+  }
+  const float gx = std::abs(a.x - b.x) - HalfW(a) - HalfW(b), gy = std::abs(a.y - b.y) - a.radius - b.radius;
+  return std::max(gx, gy);
+}
+
 void TestLayout(const TouchScreen& screen, const char* device) {
   const TouchLayout layout = GameplayLayout(screen);
   const std::string d = device;
   const float mm = screen.px_per_mm;
   const float slack = 0.01f * mm;  // float rounding
-  Check(layout.buttons.size() == 10, d + ": X, four skills, A, LB, RB, Back, Start");
+  Check(layout.buttons.size() == 14, d + ": A, B, X, Y, the d-pad, four shoulders, Back, Start");
   for (const auto& b : layout.buttons) {
     const std::string n = d + " " + std::string(b.name);
     Check(b.radius * 2 >= touch_mm::kSmall * mm - slack, n + ": at least 9 mm (48 dp)");
-    Check(b.x - b.radius >= touch_mm::kSideMargin * mm - slack &&
-              b.x + b.radius <= screen.width - touch_mm::kSideMargin * mm + slack,
+    Check(b.x - HalfW(b) >= touch_mm::kSideMargin * mm - slack &&
+              b.x + HalfW(b) <= screen.width - touch_mm::kSideMargin * mm + slack,
           n + ": inside the side margins");
     Check(b.y - b.radius >= touch_mm::kLongMargin * mm - slack &&
               b.y + b.radius <= screen.height - touch_mm::kLongMargin * mm + slack,
           n + ": inside the long edges' margins");
     for (const auto& o : layout.buttons) {
       if (&o == &b) continue;
-      const float gap = std::hypot(o.x - b.x, o.y - b.y) - b.radius - o.radius;
-      Check(gap >= touch_mm::kMinGap * mm - slack, n + " and " + std::string(o.name) + ": 1.5 mm apart");
+      Check(Gap(b, o) >= touch_mm::kMinGap * mm - slack, n + " and " + std::string(o.name) + ": 1.5 mm apart");
     }
     // The stick's resting base stays clear of the buttons.
-    const float stick_gap = std::hypot(layout.stick_x - b.x, layout.stick_y - b.y) - b.radius - layout.stick_radius;
-    Check(stick_gap >= 0, n + ": clear of the stick's base");
+    TouchButton stick;
+    stick.x = layout.stick_x;
+    stick.y = layout.stick_y;
+    stick.radius = layout.stick_radius;
+    Check(Gap(stick, b) >= 0, n + ": clear of the stick's base");
   }
-  Check(Find(layout, "X").radius > Find(layout, "Y").radius, d + ": attack is the largest");
   Check(layout.stick_x - layout.stick_radius >= touch_mm::kSideMargin * mm - slack &&
             layout.stick_y + layout.stick_radius <= screen.height - touch_mm::kLongMargin * mm + slack,
         d + ": the stick inside the margins");
+  // The pad's diamond: Y above A, X left of B.
+  Check(Find(layout, "Y").y < Find(layout, "A").y && Find(layout, "X").x < Find(layout, "B").x, d + ": the diamond");
 }
 
 void TestHeldButton() {
@@ -99,14 +112,20 @@ void TestSliding() {
   pad.Down(1, y.x, y.y);
   pad.Move(1, b.x, b.y);
   Check(pad.State().buttons == pad::kB, "sliding from Y onto B presses B and lets Y go");
-  // A finger that landed between the controls never presses one.
-  const float mid_x = (y.x + b.x) / 2, mid_y = (y.y + b.y) / 2 - b.radius * 3;
-  pad.Down(2, mid_x, mid_y);
+  // A finger that landed between the controls (between Y and B, outside both) never presses one.
+  pad.Down(2, (y.x + b.x) / 2, (y.y + b.y) / 2);
   pad.Move(2, y.x, y.y);
   Check(pad.State().buttons == pad::kB, "a finger landed on nothing does not press Y");
   const TouchButton rt = Find(pad.layout(), "RT");
   pad.Down(3, rt.x, rt.y);
   Check(pad.State().right_trigger == 255, "RT is the right trigger, pulled");
+  // A wide control is hit across its width, not only within its height's circle.
+  pad.Up(3);
+  pad.Down(4, rt.x + rt.half_width * 0.9f, rt.y);
+  Check(pad.State().right_trigger == 255, "RT is hit near its end");
+  const TouchButton up = Find(pad.layout(), "Up");
+  pad.Down(5, up.x, up.y);
+  Check((pad.State().buttons & pad::kUp) != 0, "the d-pad's up");
 }
 
 void TestStick() {
@@ -131,7 +150,7 @@ void TestStick() {
   Check(pad.State() == PadState{} && !pad.stick_held(), "lifted: centred");
   Check(pad.stick_base_x() == pad.layout().stick_x, "back at its resting place");
   // Outside the zone (upper half, off the buttons): nothing.
-  pad.Down(3, screen.width * 0.5f, screen.height * 0.2f);
+  pad.Down(3, screen.width * 0.6f, screen.height * 0.25f);
   Check(!pad.stick_held() && pad.State() == PadState{}, "outside the zone, nothing");
 }
 
