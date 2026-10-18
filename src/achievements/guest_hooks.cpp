@@ -316,8 +316,8 @@ REX_FUNC(sub_82217DA8) {
   // game's loads PC raises STAT_DEEPEST_FLOOR to the new level's depth through its
   // eligibility-gated stat assignment (kGameLevelLoadReturns), evaluated at the next flush.
   // Also timed for the log, in every mode (docs/performance-profile.md): the call builds the new
-  // level and loads what it needs on the game's thread; the live mode saves its program cache
-  // after it (live::LevelLoadStarted).
+  // level and loads what it needs on the game's thread; meanwhile the live mode precompiles
+  // programs (live::LevelLoadStarted).
   const auto game = ctx.r3.u32;
   const auto from = uint32_t(ctx.lr);
   if (pc::NativeEnabled()) pc::FlushCounters(Observe("counter-flush",ctx,base));

@@ -106,9 +106,9 @@ class FrameTiming {
 
 // "level load: N ms" in the log: one call of the guest's level load (guest_abi kLevelLoad).
 void LogLevelLoad(std::chrono::milliseconds duration);
-// The guest's level load starting (on the guest thread) and whether one is under way, until it
-// ends (LogLevelLoad): the live mode saves the program cache after each one
-// (tl_backend_save_program_cache).
+// The guest's level load starting (on the guest thread) and whether one is under way: until it
+// ends (LogLevelLoad) the game draws no frames, and the live mode uses the backend thread's idle
+// time for program precompilation (tl_backend_precompile_programs).
 void LevelLoadStarted();
 bool LevelLoading();
 
