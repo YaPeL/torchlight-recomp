@@ -7,8 +7,9 @@ installing every library twice) has it as base.apk!/lib/<abi>: no file is there.
 the file is not there, the plugin is loaded by its name, which the app's linker namespace finds in
 the APK. Every other platform is unchanged (the path keeps its folder and must exist).
 
-Test: the SDK builds for Android and desktop; the load from the APK is checked on a device with
-the game's APK built with extractNativeLibs=false (by the render agent, on the Galaxy Tab S5e).
+Test: the SDK builds for Android and desktop. On the POCO X7 (Android 16) the game's APK built
+with extractNativeLibs=false (checked with pm dump) starts and draws, with no "GPU plugin ... not
+found".
 
 diff --git a/src/system/gpu_plugin_loader.cpp b/src/system/gpu_plugin_loader.cpp
 index 754fa13..9f47ff6 100644

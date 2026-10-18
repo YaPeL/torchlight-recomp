@@ -7,8 +7,9 @@ data (user_data_root, by default the user folder, which the Android main points 
 internal storage). An app can still move them (OnConfigurePaths, OnConfigureLogging). Every
 other platform is unchanged.
 
-Test: the SDK builds for Android and desktop; on the device, by the render agent with the game's
-APK (the game sets its own folders; the defaults matter to apps that do not).
+Test: the SDK builds for Android and desktop. On the POCO X7 the game's settings are in the app's
+internal files, and its logs in the folder the game chooses, with no write error (the game sets
+its own folders; these defaults matter to apps that do not).
 
 diff --git a/src/ui/rex_app.cpp b/src/ui/rex_app.cpp
 index 1284c38..a1b624b 100644

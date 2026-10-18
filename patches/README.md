@@ -661,12 +661,13 @@ in number order; a branch adds its own line at its number's place.
 42. `rexglue-android-gpu-plugin-by-name.patch` (Android only): the GPU plugin was looked for as a
     file next to the executable, which an app that keeps its libraries inside the APK
     (`extractNativeLibs=false`) does not have; on Android, when the file is not there, it is
-    loaded by its name through the app's linker namespace. Still to be checked on a device with
-    the game's APK built with `extractNativeLibs=false`.
+    loaded by its name through the app's linker namespace. Checked on the POCO X7 (Android 16)
+    with the game's APK built with `extractNativeLibs=false`: it starts and draws.
 
 43. `rexglue-android-writable-settings.patch` (Android only): `ReXApp`'s config (which the
     settings dialog saves) and logs went next to the executable, the read-only native library
-    folder on Android; there they go with the user data. Apps can still move both.
+    folder on Android; there they go with the user data. Apps can still move both. On the POCO
+    X7 the game's config is in the app's internal storage, with no write error.
 
 44. `rexglue-alloc-commit-mprotect-first.patch` (POSIX only): a commit over a reserved range
     tried `mmap(MAP_FIXED_NOREPLACE)` first, failed with `EEXIST`, and then parsed the whole of
