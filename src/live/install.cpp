@@ -135,10 +135,12 @@ void RequestDialogFrame() {
     if (notice) d->drawer->RemoveDialog(notice);
     if (touch) d->drawer->RemoveDialog(touch);
     const bool open = d->drawer->HasDialogs();
+    // The touch controls stay out of the drawer while they draw nothing (hidden, or a dialog open):
+    // no ImGui frame for them then, and the drawer listens to the window only for what it shows.
+    if (touch && (open || !TouchControlsShown())) touch = nullptr;
     if (counter) d->drawer->AddDialog(counter);
     if (notice) d->drawer->AddDialog(notice);
     if (touch) d->drawer->AddDialog(touch);
-    SetTouchOverlayDialogOpen(open);
     const platform::GamepadState pad = platform::ReadGamepad();
     g_guest_input_blocked = BlockGuestInput(open, g_guest_input_blocked.load(), pad);
     if (open || counter || notice || touch) {
@@ -189,6 +191,8 @@ void ShutdownDialogs() {
   // As ReXApp::OnDestroy does with its own: unlinked from the immediate drawer first (its font
   // texture goes back to the overlay), then destroyed.
   g_dialogs->drawer->SetPresenterAndImmediateDrawer(nullptr, nullptr);
+  // The drawer deletes the dialogs it holds; the touch controls' is made again on a new drawer.
+  ForgetTouchOverlayDialog();
   g_dialogs->drawer.reset();
   g_dialogs->overlay.reset();
   g_dialogs.reset();

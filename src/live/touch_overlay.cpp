@@ -17,7 +17,6 @@ namespace torchlight::live {
 namespace {
 
 std::atomic<rex::ui::ImGuiDialog*> g_dialog{nullptr};
-std::atomic<bool> g_other_dialog{false};
 
 // The controls' opacity (A4.5 makes it a setting).
 constexpr float kOpacity = 0.6f;
@@ -47,7 +46,7 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
  protected:
   void OnDraw(ImGuiIO& io) override {
     TouchSnapshot snap;
-    if (g_other_dialog.load() || !ReadTouchControls(snap) || !snap.visible || snap.width <= 0) return;
+    if (!ReadTouchControls(snap) || !snap.visible || snap.width <= 0) return;
     // The layout is in the window's pixels; ImGui's frame spans the window in its own units.
     const float k = io.DisplaySize.x / snap.width;
     ImDrawList* list = ImGui::GetForegroundDrawList();
@@ -88,6 +87,15 @@ rex::ui::ImGuiDialog* TouchOverlayDialog(rex::ui::ImGuiDrawer* drawer) {
   return g_dialog.load();
 }
 
-void SetTouchOverlayDialogOpen(bool open) { g_other_dialog = open; }
+bool TouchControlsShown() {
+  TouchSnapshot snap;
+  return ReadTouchControls(snap) && snap.visible;
+}
+
+void ForgetTouchOverlayDialog() {
+  // Deleted here, in the drawer or not: a dialog takes itself out of its drawer when deleted, so the
+  // drawer does not delete it again.
+  delete g_dialog.exchange(nullptr);
+}
 
 }  // namespace torchlight::live

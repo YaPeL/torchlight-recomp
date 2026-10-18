@@ -844,8 +844,10 @@ ImGui's foreground draw list.
 - **Placeholder look** until the owner approves the icon strip: round buttons with a light ring and
   the pad's name (A, B, X, Y in the 360's colours), a lighter fill while pressed; the stick a ring
   whose knob follows the thumb. Opacity is fixed at 60% (A4.5 makes it a setting).
+- **Out of the drawer** while hidden or while another dialog is open: no ImGui frame for them
+  then (the clean-context review).
 - **Validated on desktop:** a window grab during an unattended run shows the controls at rest and
-  with the stick and X held.
+  with the stick and X held. There is no unit test of the drawing itself.
 
 *Steps* (each validated before the next):
 
