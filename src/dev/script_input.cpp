@@ -350,10 +350,11 @@ struct Segment {
     double sum = 0, p99 = 0;
     const auto f = stats(frames, sum, p99);
     const auto over = [&](double ms) { return f.end() - std::upper_bound(f.begin(), f.end(), ms); };
-    REXLOG_INFO("perf step '{}': {} frames, {:.1f} fps, mean {:.2f} ms, p99 {:.2f}, max {:.2f}, "
-                "over 33 ms {}, over 50 ms {}",
-                name, f.size(), 1000.0 * f.size() / sum, sum / f.size(), p99, f.back(), over(33.0),
-                over(50.0));
+    const auto pct = [&](double q) { return f[std::min(f.size() - 1, size_t(q * f.size()))]; };
+    REXLOG_INFO("perf step '{}': {} frames, {:.1f} fps, mean {:.2f} ms, p50 {:.2f}, p95 {:.2f}, "
+                "p99 {:.2f}, max {:.2f}, over 33 ms {}, over 50 ms {}",
+                name, f.size(), 1000.0 * f.size() / sum, sum / f.size(), pct(0.5), pct(0.95), p99,
+                f.back(), over(33.0), over(50.0));
     if (presented.empty()) return;
     const auto p = stats(presented, sum, p99);
     REXLOG_INFO("perf step '{}' presented: {} frames, {:.1f} fps, mean {:.2f} ms, p99 {:.2f}, max "
