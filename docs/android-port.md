@@ -774,8 +774,9 @@ needed.
     - Synthetic touches with `adb -s <serial> shell input tap/swipe`, and `input motionevent` or
       `sendevent` for two fingers.
     - Screenshots with `adb exec-out screencap -p`, compared with the layout.
-    - Always agreed first: the POCO with the render agent, which uses it for A2; the Tab S5e with
-      the ReXGlue agent. Never pushing game files: only the SAF import.
+    - Always agreed first with both the render and the ReXGlue agents, whichever device it is
+      (neither belongs to one agent), always with `adb -s <serial>`. Never pushing game files:
+      only the SAF import.
   - **The owner's hand pass** closes A4: a dungeon played by touch on both devices.
 
 *Steps* (each validated before the next):
