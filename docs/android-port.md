@@ -718,7 +718,7 @@ needed.
   | Element | Size | POCO | Tab S5e |
   |---|---|---|---|
   | A, B, X, Y | 10 mm | 205 px | 113 px |
-  | The d-pad's buttons | 9 mm | 185 px | 102 px |
+  | The d-pad's cross | 16 mm | 328 px | 181 px |
   | Shoulders (wide) | 14 x 9 mm | 287 x 185 px | 159 x 102 px |
   | Back, Start (wide) | 12 x 9 mm | 246 x 185 px | 136 x 102 px |
   | Stick base (radius) | 11 mm | 226 px | 125 px |
@@ -730,12 +730,15 @@ needed.
 - **The gameplay layout: a pad's** (the owner's choice, 2026-10-18, after the first device runs; their
   reference was an emulator's on-screen pad on a phone, with the stick where that one has its
   d-pad, and Back and Start where it has its two centre buttons):
-  - **Left, mid height:** the stick, floating (it appears where the thumb lands in the lower left),
-    11 mm radius.
-  - **Below and inward of it:** a small d-pad, four 9 mm round buttons with arrows (the skill set,
-    the menus).
-  - **Right, mid height:** A, B, X and Y in the pad's diamond, 10 mm each, ringed in the 360's
-    colours.
+  - **Left, as high as mid height:** the stick, floating (it appears where the thumb lands in the
+    lower left), 11 mm radius.
+  - **Below and inward of it:** a small d-pad, one 16 mm cross (Kenney's), the direction from the
+    finger's angle on it, a diagonal pressing both sides as Unleashed's does (the skill set, the
+    menus). The owner asked for it much smaller than the first four 9 mm buttons.
+  - **Right, as high as mid height:** A, B, X and Y in the pad's diamond, 10 mm each, ringed in the
+    360's colours. The owner asked for the stick and the diamond higher: both go up to mid height,
+    or as high as the shoulders' row leaves room for (on the POCO: the stick at mid height, the
+    diamond's centre at about 44% of it).
   - **Top corners:** the shoulders, wide (14 x 9 mm): LT and LB on the left, RB and RT on the right.
   - **Top centre:** Back and Start, wide (12 x 9 mm).
   - It fits any landscape screen at least 57 mm tall and 100 mm wide (`touch_test`: the POCO as

@@ -30,29 +30,32 @@ TouchLayout GameplayLayout(const TouchScreen& screen) {
     layout.buttons.push_back({name, bits, lt, rt, x, y, small_r * mm, TouchShape::kWide, width / 2 * mm});
   };
 
-  // A, B, X, Y: the pad's diamond, its centre at 40% of the height (and low enough to leave the
-  // shoulders room on a short screen, high enough for A to keep the margin).
+  // The shoulders' row ends here (from the top); what is below it keeps the gap.
+  const float below_row = kLongMargin + kSmall + kMinGap;
+
+  // A, B, X, Y: the pad's diamond, as high as mid height, below the shoulders, above the margin.
   const float face_x = kSideMargin + face_r + kFaceSpread;
-  const float face_y = std::max(0.4f * h_mm, kLongMargin + face_r + kFaceSpread);
+  const float face_y = std::max(std::min(0.5f * h_mm, h_mm - below_row - kFaceSpread - face_r),
+                                kLongMargin + face_r + kFaceSpread);
   round("A", pad::kA, right(face_x), bottom(face_y - kFaceSpread), face_r, TouchShape::kRound);
   round("B", pad::kB, right(face_x - kFaceSpread), bottom(face_y), face_r, TouchShape::kRound);
   round("X", pad::kX, right(face_x + kFaceSpread), bottom(face_y), face_r, TouchShape::kRound);
   round("Y", pad::kY, right(face_x), bottom(face_y + kFaceSpread), face_r, TouchShape::kRound);
 
-  // The stick's resting place, at the same height on the left.
+  // The stick's resting place: as high as mid height on the left, below the shoulders.
   const float stick_x = kSideMargin + kStickRadius + 3;
-  const float stick_y = std::max(0.4f * h_mm, kLongMargin + kStickRadius + 3);
+  const float stick_y = std::max(std::min(0.5f * h_mm, h_mm - below_row - kStickRadius),
+                                 kLongMargin + kStickRadius + 3);
   layout.stick_x = left(stick_x);
   layout.stick_y = bottom(stick_y);
   layout.stick_radius = kStickRadius * mm;
 
-  // The d-pad: below and inward of the stick, on the bottom margin.
-  const float dpad_x = stick_x + kStickRadius + kMinGap + small_r + kDpadSpread;
-  const float dpad_y = kLongMargin + small_r + kDpadSpread;
-  round("Up", pad::kUp, left(dpad_x), bottom(dpad_y + kDpadSpread), small_r, TouchShape::kUp);
-  round("Down", pad::kDown, left(dpad_x), bottom(dpad_y - kDpadSpread), small_r, TouchShape::kDown);
-  round("Left", pad::kLeft, left(dpad_x - kDpadSpread), bottom(dpad_y), small_r, TouchShape::kLeft);
-  round("Right", pad::kRight, left(dpad_x + kDpadSpread), bottom(dpad_y), small_r, TouchShape::kRight);
+  // The d-pad: on the bottom margin, tucked under the stick and inward of it, the gap between them.
+  const float dpad_y = kLongMargin + kDpadRadius;
+  const float reach = kStickRadius + kDpadRadius + kMinGap, dy = stick_y - dpad_y;
+  // At least a stick's radius inward, so on a tall screen (a tablet) it is not under the stick.
+  const float dpad_x = stick_x + std::max(std::sqrt(std::max(0.0f, reach * reach - dy * dy)), kStickRadius);
+  round("D-pad", 0, left(dpad_x), bottom(dpad_y), kDpadRadius, TouchShape::kDpad);
 
   // The shoulders in the top corners, and Back and Start at the top centre.
   const float row = kLongMargin + small_r;
@@ -94,6 +97,15 @@ static bool Inside(const TouchButton& b, float x, float y, float slop) {
     return std::abs(x - b.x) <= b.half_width + grow && std::abs(y - b.y) <= b.radius + grow;
   }
   return Distance(x, y, b.x, b.y) <= b.radius * slop;
+}
+
+uint16_t DpadDirections(const TouchButton& dpad, float x, float y) {
+  const float dx = x - dpad.x, dy = y - dpad.y;
+  if (std::hypot(dx, dy) < dpad.radius * 0.2f) return 0;
+  uint16_t bits = 0;
+  if (std::abs(dx) >= std::abs(dy) * 0.5f) bits |= dx > 0 ? pad::kRight : pad::kLeft;
+  if (std::abs(dy) >= std::abs(dx) * 0.5f) bits |= dy > 0 ? pad::kDown : pad::kUp;
+  return bits;
 }
 
 int TouchPad::ButtonAt(float x, float y) const {
@@ -176,6 +188,7 @@ PadState TouchPad::State() const {
     if (f.role == Role::kButton) {
       const TouchButton& b = layout_.buttons[f.button];
       pad.buttons |= b.buttons;
+      if (b.shape == TouchShape::kDpad) pad.buttons |= DpadDirections(b, f.x, f.y);
       if (b.left_trigger) pad.left_trigger = 255;
       if (b.right_trigger) pad.right_trigger = 255;
     } else if (f.role == Role::kStick && layout_.stick_radius > 0) {

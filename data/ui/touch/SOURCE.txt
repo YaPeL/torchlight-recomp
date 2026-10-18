@@ -17,6 +17,11 @@ Files, copied unchanged from the zip (byte for byte):
   joystick_circle_nub_a.png         Sprites/Style C/Large (2x)/joystick_circle_nub_a.png
   button_circle_highlight.png       Sprites/Highlights A/Large (2x)/button_circle_highlight.png
   button_circle_wide_highlight.png  Sprites/Highlights A/Large (2x)/button_circle_wide_highlight.png
+  dpad.png                          Sprites/Style C/Large (2x)/dpad.png
+  dpad_element_north_highlight.png  Sprites/Highlights A/Large (2x)/dpad_element_north_highlight.png
+  dpad_element_east_highlight.png   Sprites/Highlights A/Large (2x)/dpad_element_east_highlight.png
+  dpad_element_south_highlight.png  Sprites/Highlights A/Large (2x)/dpad_element_south_highlight.png
+  dpad_element_west_highlight.png   Sprites/Highlights A/Large (2x)/dpad_element_west_highlight.png
   LICENSE.txt                       License.txt
 (The zip's folder is "Large (2×)", with the multiplication sign. Style C: thin white rings, as the
 owner's reference, an emulator's on-screen pad, 2026-10-18.)

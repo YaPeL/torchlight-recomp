@@ -31,8 +31,9 @@ struct TouchScreen {
   float px_per_mm = 0;
 };
 
-// A control's shape: round, wide (a pill), or a d-pad button (round, with its arrow).
-enum class TouchShape { kRound, kWide, kUp, kDown, kLeft, kRight };
+// A control's shape: round, wide (a pill), or the d-pad (one round cross whose direction comes from
+// where the finger is on it).
+enum class TouchShape { kRound, kWide, kDpad };
 
 // A control, in pixels: round ones have `radius`; wide ones are `half_width` across and `radius`
 // up and down from their centre.
@@ -59,22 +60,29 @@ constexpr float kFace = 10, kSmall = 9;  // diameters: A, B, X, Y; the rest
 constexpr float kShoulderWidth = 14, kMenuWidth = 12;  // the wide ones (kSmall tall)
 constexpr float kStickRadius = 11;
 constexpr float kFaceSpread = 10;  // the face buttons' centres from the diamond's centre
-constexpr float kDpadSpread = 9.5f;  // the d-pad buttons' centres from the cross's centre
+constexpr float kDpadRadius = 8;   // the d-pad's cross, half its width (the owner: much smaller
+                                   // than four 9 mm buttons)
 constexpr float kSideMargin = 6;   // left and right edges
 constexpr float kLongMargin = 8;   // top and bottom: the POCO's curved long edges in landscape
 constexpr float kMinGap = 1.5f;    // Android's 8 dp between targets
 }  // namespace touch_mm
 
 // The gameplay layout, a pad's (the owner's choice, 2026-10-18, after an emulator's on a phone):
-// - the stick on the left at mid height (where that pad has its d-pad; moving is what matters most
-//   here), floating;
-// - a small d-pad below and inward of it (the skill set; the menus);
-// - A, B, X and Y on the right at mid height, in the pad's diamond;
+// - the stick on the left, as high as mid height (where that pad has its d-pad; moving is what
+//   matters most here), floating;
+// - a small d-pad below and inward of it (the skill set; the menus): one cross, 8 directions;
+// - A, B, X and Y on the right, as high as mid height, in the pad's diamond;
+// (as high as the shoulders' row leaves room for: the owner wanted them higher, 2026-10-18)
 // - the shoulders in the top corners, wide: LT and LB on the left, RB and RT on the right;
 // - Back and Start at the top centre, wide.
 // It fits screens at least kMinHeightMm tall and kMinWidthMm wide in landscape (phones and tablets
 // are: a 20:9 phone about 57-60 x 127-132 mm, a 16:9 one at 57 mm about 101 mm wide).
 TouchLayout GameplayLayout(const TouchScreen& screen);
+
+// The d-pad's directions (pad::kUp...) for a point on it: by its angle from the centre, a
+// diagonal pressing both sides (one component counts when it is at least half the other); none
+// within a fifth of the radius of the centre.
+uint16_t DpadDirections(const TouchButton& dpad, float x, float y);
 
 constexpr float kMinHeightMm = 57;
 constexpr float kMinWidthMm = 100;

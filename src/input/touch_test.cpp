@@ -57,10 +57,13 @@ void TestLayout(const TouchScreen& screen, const char* device) {
   const std::string d = device;
   const float mm = screen.px_per_mm;
   const float slack = 0.01f * mm;  // float rounding
-  Check(layout.buttons.size() == 14, d + ": A, B, X, Y, the d-pad, four shoulders, Back, Start");
+  Check(layout.buttons.size() == 11, d + ": A, B, X, Y, the d-pad, four shoulders, Back, Start");
   for (const auto& b : layout.buttons) {
     const std::string n = d + " " + std::string(b.name);
     Check(b.radius * 2 >= touch_mm::kSmall * mm - slack, n + ": at least 9 mm (48 dp)");
+    if (b.shape == TouchShape::kDpad) {
+      Check(std::abs(b.radius - touch_mm::kDpadRadius * mm) < slack, n + ": the d-pad's cross, 16 mm");
+    }
     Check(b.x - HalfW(b) >= touch_mm::kSideMargin * mm - slack &&
               b.x + HalfW(b) <= screen.width - touch_mm::kSideMargin * mm + slack,
           n + ": inside the side margins");
@@ -81,6 +84,10 @@ void TestLayout(const TouchScreen& screen, const char* device) {
   Check(layout.stick_x - layout.stick_radius >= touch_mm::kSideMargin * mm - slack &&
             layout.stick_y + layout.stick_radius <= screen.height - touch_mm::kLongMargin * mm + slack,
         d + ": the stick inside the margins");
+  // Higher on the screen (the owner): the stick and the diamond as high as mid height when the
+  // shoulders leave room; the d-pad below and inward of the stick.
+  Check(layout.stick_y <= screen.height * 0.6f, d + ": the stick in the upper part of the lower half or higher");
+  Check(Find(layout, "D-pad").y > layout.stick_y && Find(layout, "D-pad").x > layout.stick_x, d + ": the d-pad below and inward");
   // The pad's diamond: Y above A, X left of B.
   Check(Find(layout, "Y").y < Find(layout, "A").y && Find(layout, "X").x < Find(layout, "B").x, d + ": the diamond");
 }
@@ -130,9 +137,18 @@ void TestSliding() {
   pad.Move(4, rt.x - rt.half_width - grow * 1.1f, rt.y);
   Check(pad.State().right_trigger == 0, "and let go beyond");
   Check(grow < touch_mm::kMinGap * Poco().px_per_mm, "a wide one's slop is less than the gap");
-  const TouchButton up = Find(pad.layout(), "Up");
-  pad.Down(5, up.x, up.y);
-  Check((pad.State().buttons & pad::kUp) != 0, "the d-pad's up");
+  // The d-pad: one cross, the direction from where the finger is, a diagonal both sides.
+  const TouchButton dp = Find(pad.layout(), "D-pad");
+  const float dr = dp.radius;
+  pad.Down(5, dp.x, dp.y - dr * 0.6f);
+  Check((pad.State().buttons & (pad::kUp | pad::kDown | pad::kLeft | pad::kRight)) == pad::kUp, "the d-pad's up");
+  pad.Move(5, dp.x + dr * 0.6f, dp.y - dr * 0.6f);
+  Check((pad.State().buttons & 0x000F) == (pad::kUp | pad::kRight), "up and right on the diagonal");
+  pad.Move(5, dp.x + dr * 0.6f, dp.y + dr * 0.1f);
+  Check((pad.State().buttons & 0x000F) == pad::kRight, "rolled to the right: right only");
+  pad.Move(5, dp.x, dp.y);
+  Check((pad.State().buttons & 0x000F) == 0, "at the centre: none");
+  pad.Up(5);
 }
 
 void TestStick() {
@@ -140,7 +156,7 @@ void TestStick() {
   TouchPad pad(GameplayLayout(screen));
   const float r = pad.layout().stick_radius;
   // Floating: the base goes where the thumb lands.
-  const float x0 = screen.width * 0.2f, y0 = screen.height * 0.8f;
+  const float x0 = screen.width * 0.12f, y0 = screen.height * 0.6f;  // in the zone, off the d-pad
   pad.Down(1, x0, y0);
   Check(pad.stick_held() && pad.stick_base_x() == x0 && pad.stick_base_y() == y0, "the stick under the thumb");
   Check(pad.State() == PadState{}, "no movement before the thumb moves");
