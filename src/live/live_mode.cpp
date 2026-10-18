@@ -304,6 +304,11 @@ void LiveMode::Run() {
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
   bool blank_output = false;  // the output cleared for the busy notice before the first frame
+  // Programs precompiled during the current level load (tl_backend_precompile_programs), for its
+  // log line; whether the list has been gone through.
+  size_t precompiled = 0;
+  double precompile_ms = 0;
+  bool precompile_done = false;
   // The window's new size, when it changed (before presenting); whether it did. A new render
   // scale remakes the targets, whose content is then lost.
   auto apply_window_size = [&] {
@@ -319,6 +324,23 @@ void LiveMode::Run() {
 
   while (running_) {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
+    // While the game loads a level it draws nothing: the backend thread generates the programs
+    // this device used before (a driver's own cache does not survive an update of the game),
+    // 50 ms at a time so a frame that comes waits little.
+    if (!frame && !precompile_done && LevelLoading()) {
+      const size_t left = tl_backend_precompile_programs(backend, 50.0);
+      tl_backend_counters counters;
+      tl_backend_take_counters(backend, &counters);
+      precompiled += counters.programs_precompiled;
+      precompile_ms += counters.precompile_ms;
+      precompile_done = left == 0;
+    }
+    if (precompiled && (precompile_done || !LevelLoading())) {
+      REXLOG_INFO("live: {} programs precompiled during the level load in {:.0f} ms{}", precompiled,
+                  precompile_ms, precompile_done ? "" : " (more at the next load)");
+      precompiled = 0;
+      precompile_ms = 0;
+    }
     if (!frame) {
       // No guest frame while the game's thread is held by work of ours (busy_notice.h): the last
       // frame shown again with the UI over it, so the notice appears and its progress moves.
