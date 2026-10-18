@@ -753,15 +753,17 @@ needed.
     later, as a survey of its own. Unlike DevilutionX, the 360 has no mouse: every menu would need
     its focus set from outside, through each menu's own logic.
 - **The icons.**
-  - **The shapes:** Kenney's "Onscreen Controls" (CC0, attribution optional): the stick, its base,
-    round and rounded buttons, pressed states. Converted by a tool, like
-    `tools/pad_prompts/make_icons.py` does for the prompts, into `data/ui/touch/`, with a line in
-    `THIRD_PARTY_NOTICES.md`.
-  - **The letters on them follow the game's prompts:** the 360's own glossy glyphs, read from the
-    player's pak at run time and never committed, or the PlayStation/Nintendo set
-    `data/ui/prompts/` already has when `pad_prompts` picks one. The overlay then always matches the
-    prompts the game prints ("A Chest", "X Attack").
-  - A preview strip of the converted shapes goes to the owner before they are used.
+  - **The shapes:** Kenney's "Mobile Controls" 1.0, the pack once called "Onscreen Controls" (CC0,
+    attribution optional). Style A, copied unchanged into `data/ui/touch/`, with a line in
+    `THIRD_PARTY_NOTICES.md`: the round button, its pressed highlight, and the stick's pad and nub.
+  - **The choice:** the owner saw a preview strip of the eight styles and left it to the agent
+    (2026-10-18, "me importa muy poco, busca el más popular, o el más usado, o el que te guste más a
+    vos"). Style A: dark and solid, it matches the game's dark UI and keeps the coloured names
+    readable.
+  - **The names on them:** for now the pad's names as text, with A, B, X and Y in the 360's colours.
+    Following the game's prompts (the 360's own glyphs, read from the player's pak at run time and
+    never committed, or the PlayStation/Nintendo set `data/ui/prompts/` has when `pad_prompts` picks
+    one) is left for later in A4.
 - **Settings** (`settings.toml`, then the Options menu's Controls section where Button Prompts
   lives, and the launcher):
   - the mode (Auto/Always/Never, as decided);
@@ -841,10 +843,9 @@ The setting is `touch_controls` in settings.toml; without it, Auto on Android an
 `live/touch_overlay.cpp`, a runtime dialog that never takes the input (like the frame counter), on
 ImGui's foreground draw list.
 - **Hidden while another dialog is open:** the dialog is touched directly.
-- **The look** (2026-10-18): Kenney's "Mobile Controls" style A (CC0, `data/ui/touch/`, the owner
-  left the choice to the agent: dark and solid, it matches the game's dark UI and keeps the
-  coloured names readable), the button's pressed highlight a golden ring; the names drawn over
-  them at 90%. Without the files, the placeholder shapes: round buttons with a light ring and
+- **The look** (2026-10-18): Kenney's "Mobile Controls" style A (the icons above), the button's
+  pressed highlight a golden ring, the names drawn over them at 90%. Without the files, the
+  placeholder shapes: round buttons with a light ring and
   the pad's name (A, B, X, Y in the 360's colours), a lighter fill while pressed; the stick a ring
   whose knob follows the thumb. Opacity is fixed at 60% (A4.5 makes it a setting).
 - **Out of the drawer** while hidden or while another dialog is open: no ImGui frame for them

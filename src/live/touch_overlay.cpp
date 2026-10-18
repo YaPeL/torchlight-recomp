@@ -92,7 +92,11 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
       if (button_) {
         const ImVec2 a(c.x - r, c.y - r), z(c.x + r, c.y + r);
         list->AddImage(Id(button_), a, z, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
-        if (down && pressed_) list->AddImage(Id(pressed_), a, z, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
+        if (down && pressed_) {
+          list->AddImage(Id(pressed_), a, z, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
+        } else if (down) {
+          list->AddCircleFilled(c, r, Colour(1, 1, 1, 0.35f * kOpacity), 48);  // no highlight file
+        }
       } else {
         list->AddCircleFilled(c, r, down ? Colour(1, 1, 1, 0.45f * kOpacity) : Colour(0, 0, 0, 0.45f * kOpacity), 48);
         list->AddCircle(c, r, Colour(1, 1, 1, 0.85f * kOpacity), 48, std::max(2.0f, r * 0.06f));
