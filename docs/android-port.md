@@ -489,6 +489,22 @@ The Tab S5e is the floor (owner's decision, 2026-10-12): Android 11 and 4 GB. So
 or lower** (API 30, Android 11), and the memory budget, the frame-rate levers and the converted
 textures have to fit 4 GB.
 
+**Known issue (2026-10-17): the Tab S5e crashes at startup about one start in three.** A SIGSEGV
+inside the Adreno driver (`libGLESv2_adreno.so` +0x198d8c) on the SDL thread, at OGRE's first
+texture upload (`glTexSubImage2D` of the backend's gamma LUT). The driver reads an object of its own
+from freed memory. It happens with the replay as well (no guest, no SDK runtime), so it is not the
+game's code. What was ruled out:
+- ASan and UBSan on Linux, OGRE's GLES2 on Mesa: no report with the synthetic capture or four game
+  captures.
+- HWASan on the POCO X7 (Mali): 3 of 3 clean, and 10 of 10 replays without HWASan without a crash.
+- Probing only the FBO format the backend uses (RGBA8, packed D24S8): 6 of 15 crashed.
+- Fullscreen flags set in `onCreate`: 7 of 15. The window still opened at 2560x1438, so this did
+  not test the lead below.
+- 15 s between starts: 5 of 15.
+The lead left: the crashes fall within tens of milliseconds of the surface resizing from 2560x1438
+to 2560x1600, when SDL hides the system bars. Work goes on on the POCO X7 (owner, 2026-10-17); the
+issue comes back if the Tab S5e has to stay the floor.
+
 A Bluetooth pad for stages A3-A4 (any Xbox or PlayStation pad), and the Auto mode of the touch
 controls is tested with it connected at start and connected later.
 
