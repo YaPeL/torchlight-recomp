@@ -50,11 +50,19 @@
 #include "backend/ogre_plugins.h"
 #include "backend/ogre_window_surface.h"
 #include "backend/program_cache_file.h"
+#include "backend/program_key.h"
 #include "backend/program_list.h"
 #include "backend/xbox_to_gl_conventions.h"
 #include "platform/platform.h"
 
 namespace {
+
+using torchlight::backend::InputsFromKey;
+using torchlight::backend::MakeProgramKey;
+using torchlight::backend::ProgramInputs;
+using torchlight::backend::ProgramKey;
+using torchlight::backend::UnitDesc;
+using torchlight::backend::UnitKey;
 
 namespace conv = torchlight::backend;
 
@@ -204,33 +212,6 @@ Ogre::Matrix4 ToMatrix(const float* m) {
                        m[12], m[13], m[14], m[15]);
 }
 
-// Transform, lighting, fog and skinning of a draw: the values behind its RTSS program
-// (ApplyProgram).
-struct ProgramInputs {
-  Ogre::Matrix4 world = Ogre::Matrix4::IDENTITY;
-  Ogre::Matrix4 projection = Ogre::Matrix4::IDENTITY;  // GL clip; the data source flips it for RTs
-  // The guest's own clip matrix (world-view-projection), in GL conventions: the position
-  // transform. projection * world equals it, but when world is the guest world-view split from it
-  // (GuestWorldViewFromWvp) the product carries float error, enough to push geometry the guest
-  // places exactly on the near plane (z = 0 in D3D, -w in GL) outside the clip volume.
-  Ogre::Matrix4 clip = Ogre::Matrix4::IDENTITY;
-  bool lighting = false;
-  Ogre::TrackVertexColourType tracking = Ogre::TVC_NONE;
-  Ogre::ColourValue diffuse = Ogre::ColourValue::White, emissive = Ogre::ColourValue::Black;
-  bool light = false;
-  float towards_light[3] = {0, 0, 1};  // view space
-  Ogre::ColourValue light_diffuse = Ogre::ColourValue::Black;
-  bool fog = false;
-  float fog_start = 0, fog_end = 0;
-  Ogre::ColourValue fog_colour = Ogre::ColourValue::Black;
-  // Skinning (RTSS HardwareSkinning): palette size, influences and the guest's bones (3x4
-  // row-major, world space).
-  uint32_t skin_bones = 0, skin_weights = 0;
-  const float* skin_palette = nullptr;
-  // Alpha test (render state; GuestAlphaTest).
-  Ogre::CompareFunction alpha_function = Ogre::CMPF_ALWAYS_PASS;
-  uint8_t alpha_reference = 0;
-};
 
 }  // namespace
 
@@ -584,18 +565,6 @@ bool ToBlendMode(const tl_combine& c, Ogre::LayerBlendType type, Ogre::LayerBlen
   return true;
 }
 
-// What a draw's texture unit does, for the program generation (ProgramKey) and its constants.
-struct UnitDesc {
-  bool present = false;  // sampled with a texture bound
-  Ogre::LayerBlendModeEx colour, alpha;
-  Ogre::TexCoordCalcMethod texgen = Ogre::TEXCALC_NONE;
-  uint32_t coord_set = 0;
-  bool has_matrix = false;
-  Ogre::Matrix4 matrix = Ogre::Matrix4::IDENTITY;
-  // Coordinates the program computes itself (GuestTexgen); coord_set is then the reserved output
-  // set.
-  enum class Guest : uint8_t { kNone, kViewNormal2d, kReflect } guest_texgen = Guest::kNone;
-};
 
 void Combine(Ogre::LayerBlendModeEx& m, Ogre::LayerBlendType type, Ogre::LayerBlendOperationEx op,
              Ogre::LayerBlendSource source1, Ogre::LayerBlendSource source2) {
@@ -982,64 +951,7 @@ constexpr const char* kProgramScheme = "tl_rtss";
 // fog, texture matrices).
 constexpr size_t kProgramRegisterReserve = 64;
 
-// A unit's combination as it reaches the RTSS: the operations and sources, and the constant
-// arguments where a source reads them. The blend factor is not in the key: only
-// LBX_BLEND_MANUAL reads it, and no operation of the API maps to it (ToOgre(tl_combine_op)), so it
-// is always the default. An operation that reads it must add it here.
-#pragma pack(push, 1)
-struct UnitKey {
-  uint8_t present, cube, texgen, coord_set, has_matrix, guest_texgen;
-  uint8_t colour_op, colour_source1, colour_source2, alpha_op, alpha_source1, alpha_source2;
-  float colour_arg1[4], colour_arg2[4], alpha_arg1, alpha_arg2;
-};
-struct ProgramKey {
-  uint8_t lighting, tracking, light_count, fog, unit_count, skin_weights;
-  uint16_t skin_bones;
-  UnitKey units[TL_MAX_STAGES];
-};
-#pragma pack(pop)
 
-std::string MakeProgramKey(const tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
-                           uint32_t unit_count) {
-  ProgramKey k;
-  std::memset(&k, 0, sizeof(k));
-  k.lighting = f.lighting;
-  k.tracking = uint8_t(f.tracking);
-  k.light_count = f.lighting && f.light ? 1 : 0;
-  k.fog = f.fog;
-  k.unit_count = uint8_t(unit_count);
-  k.skin_bones = uint16_t(f.skin_bones);
-  k.skin_weights = uint8_t(f.skin_weights);
-  for (uint32_t u = 0; u < unit_count; ++u) {
-    const UnitDesc& d = units[u];
-    UnitKey& uk = k.units[u];
-    uk.present = d.present;
-    if (!d.present) continue;
-    uk.cube = b->unit_cube[u];
-    uk.texgen = uint8_t(d.texgen);
-    uk.coord_set = uint8_t(d.coord_set);
-    uk.has_matrix = d.has_matrix;
-    uk.guest_texgen = uint8_t(d.guest_texgen);
-    uk.colour_op = uint8_t(d.colour.operation);
-    uk.colour_source1 = uint8_t(d.colour.source1);
-    uk.colour_source2 = uint8_t(d.colour.source2);
-    uk.alpha_op = uint8_t(d.alpha.operation);
-    uk.alpha_source1 = uint8_t(d.alpha.source1);
-    uk.alpha_source2 = uint8_t(d.alpha.source2);
-    if (d.colour.source1 == Ogre::LBS_MANUAL || d.colour.source2 == Ogre::LBS_MANUAL) {
-      const Ogre::ColourValue* args[2] = {&d.colour.colourArg1, &d.colour.colourArg2};
-      for (int i = 0; i < 4; ++i) {
-        uk.colour_arg1[i] = args[0]->ptr()[i];
-        uk.colour_arg2[i] = args[1]->ptr()[i];
-      }
-    }
-    if (d.alpha.source1 == Ogre::LBS_MANUAL || d.alpha.source2 == Ogre::LBS_MANUAL) {
-      uk.alpha_arg1 = d.alpha.alphaArg1;
-      uk.alpha_arg2 = d.alpha.alphaArg2;
-    }
-  }
-  return std::string(reinterpret_cast<const char*>(&k), sizeof(k));
-}
 
 // Builds the source Pass for a key and lets the RTSS generate (and compile) its programs.
 void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
@@ -1173,59 +1085,12 @@ void RememberProgram(tl_backend* b, const std::string& key) {
   }
 }
 
-// The inputs MakeProgramKey made `key` from, as far as the program depends on them (what is not in
-// the key, the matrices and colours, is written per draw): false when `key` is not a ProgramKey
-// this build can generate. Sets the units' texture types (unit_cube) as the key has them.
-bool InputsFromKey(tl_backend* b, const std::string& key, ProgramInputs& f, UnitDesc* units,
-                   uint32_t& unit_count) {
-  if (key.size() != sizeof(ProgramKey)) return false;
-  ProgramKey k;
-  std::memcpy(&k, key.data(), sizeof(k));
-  if (k.unit_count > TL_MAX_STAGES) return false;
-  f.lighting = k.lighting != 0;
-  f.tracking = Ogre::TrackVertexColourType(k.tracking);
-  f.light = k.light_count != 0;
-  f.fog = k.fog != 0;
-  f.skin_bones = k.skin_bones;
-  f.skin_weights = k.skin_weights;
-  unit_count = k.unit_count;
-  for (uint32_t u = 0; u < unit_count; ++u) {
-    const UnitKey& uk = k.units[u];
-    UnitDesc& d = units[u];
-    d = UnitDesc();
-    d.present = uk.present != 0;
-    if (!d.present) continue;
-    b->unit_cube[u] = uk.cube != 0;
-    d.texgen = Ogre::TexCoordCalcMethod(uk.texgen);
-    // A projective unit needs the draw's projector (DescribeUnits).
-    if (d.texgen == Ogre::TEXCALC_PROJECTIVE_TEXTURE && !b->projectors[u]) return false;
-    d.coord_set = uk.coord_set;
-    d.has_matrix = uk.has_matrix != 0;
-    d.guest_texgen = UnitDesc::Guest(uk.guest_texgen);
-    d.colour.blendType = Ogre::LBT_COLOUR;
-    d.colour.operation = Ogre::LayerBlendOperationEx(uk.colour_op);
-    d.colour.source1 = Ogre::LayerBlendSource(uk.colour_source1);
-    d.colour.source2 = Ogre::LayerBlendSource(uk.colour_source2);
-    d.colour.colourArg1 = Ogre::ColourValue(uk.colour_arg1[0], uk.colour_arg1[1],
-                                            uk.colour_arg1[2], uk.colour_arg1[3]);
-    d.colour.colourArg2 = Ogre::ColourValue(uk.colour_arg2[0], uk.colour_arg2[1],
-                                            uk.colour_arg2[2], uk.colour_arg2[3]);
-    d.alpha.blendType = Ogre::LBT_ALPHA;
-    d.alpha.operation = Ogre::LayerBlendOperationEx(uk.alpha_op);
-    d.alpha.source1 = Ogre::LayerBlendSource(uk.alpha_source1);
-    d.alpha.source2 = Ogre::LayerBlendSource(uk.alpha_source2);
-    d.alpha.alphaArg1 = uk.alpha_arg1;
-    d.alpha.alphaArg2 = uk.alpha_arg2;
-  }
-  // Only a key that comes back the same: anything this build would key differently is skipped.
-  return MakeProgramKey(b, f, units, unit_count) == key;
-}
 
 // Binds the draw's program and writes its auto constants. Returns false when the RTSS could not
 // generate it.
 bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
                   uint32_t unit_count) {
-  const std::string key = MakeProgramKey(b, f, units, unit_count);
+  const std::string key = MakeProgramKey(b->unit_cube, f, units, unit_count);
   tl_backend::Program& p = b->programs[key];
   if (!p.pass && !p.failed) {
     ++b->counters.programs_generated;
@@ -2909,7 +2774,7 @@ size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms) {
     ProgramInputs f;
     UnitDesc units[TL_MAX_STAGES];
     uint32_t unit_count = 0;
-    if (!InputsFromKey(b, key, f, units, unit_count)) continue;
+    if (!InputsFromKey(key, f, units, unit_count, b->unit_cube)) continue;
     tl_backend::Program& p = b->programs[key];
     try {
       GenerateProgram(b, f, units, unit_count, p);

@@ -58,7 +58,7 @@ else()
 endif()
 
 add_library(torchlight_backend OBJECT backend.cpp ${_ogre_plugins_source} ${_window_surface_source}
-            xbox_to_gl_conventions.cpp program_list.cpp
+            xbox_to_gl_conventions.cpp program_key.cpp program_list.cpp
             program_cache_file.cpp)
 target_include_directories(torchlight_backend PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_backend PRIVATE cxx_std_23)
@@ -179,6 +179,14 @@ target_include_directories(program_list_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR
 target_compile_features(program_list_test PRIVATE cxx_std_23)
 target_compile_options(program_list_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME program_list_test COMMAND program_list_test)
+
+# The program key's way back (program_key.h): OGRE's types, no render system.
+add_executable(program_key_test program_key_test.cpp program_key.cpp)
+target_include_directories(program_key_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(program_key_test PRIVATE cxx_std_23)
+target_compile_options(program_key_test PRIVATE -Wall -Wextra -Werror -Wno-deprecated-declarations)
+target_link_libraries(program_key_test PRIVATE OgreMain)
+add_test(NAME program_key_test COMMAND program_key_test)
 
 # The program cache file's trailer (program_cache_file.h), tested on its own.
 add_executable(program_cache_file_test program_cache_file_test.cpp program_cache_file.cpp)
