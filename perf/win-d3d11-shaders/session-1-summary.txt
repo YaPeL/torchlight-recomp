@@ -1,0 +1,25 @@
+log: session-1 log
+level loads (ms): [5053, 2978, 5542]
+OGRE log: 396 RTSS pass uses, 189 distinct programs created (58 vertex, 131 fragment)
+slow frames: 422 in the period summaries, 324 not reported, 100 reported
+reported slow frames with programs: 6, 18 program generations, 404.6 ms in their draws (rtss 402.1 ms)
+  per generated program, ms (draw time / programs): median 22.65, max 26.57
+10 worst reported frames (by the larger of guest, backend, present interval):
+  time          by       guest  backend  interval  programs/ms (rtss)   textures/ms
+  22:44:25.679  both     2038.8     38.9       0.0    1/   22.7 (  22.2)    19/   13.4
+  22:47:38.273  both      685.2    113.5     794.2    4/  106.3 ( 106.1)     0/    0.0
+  22:50:26.708  guest     741.5      5.3     741.9    0/    0.0 (   0.0)     0/    0.0
+  22:44:27.284  both      227.8    231.1     458.8   10/  226.5 ( 224.9)    32/    1.0
+  22:46:55.643  guest     294.9      0.7     294.6    0/    0.0 (   0.0)     0/    0.0
+  22:44:26.124  guest     288.3      0.5     288.4    0/    0.0 (   0.0)     0/    0.0
+  22:46:26.790  guest     234.8      1.0     235.0    0/    0.0 (   0.0)     0/    0.0
+  22:46:28.441  guest     234.4      1.0     234.6    0/    0.0 (   0.0)     0/    0.0
+  22:44:26.350  guest     188.7      0.3     188.8    0/    0.0 (   0.0)     0/    0.0
+  22:50:36.000  guest     148.0      8.4     156.2    0/    0.0 (   0.0)    19/    0.7
+10 reported frames with the most program time:
+  22:44:27.284  both    guest   227.8  backend   231.1  programs 10/226.5 ms (rtss 224.9)
+  22:47:38.273  both    guest   685.2  backend   113.5  programs 4/106.3 ms (rtss 106.1)
+  22:44:25.679  both    guest  2038.8  backend    38.9  programs 1/22.7 ms (rtss 22.2)
+  22:44:26.547  guest   guest    65.0  backend    21.7  programs 1/20.5 ms (rtss 20.4)
+  22:49:25.155  guest   guest    38.6  backend    18.1  programs 1/15.3 ms (rtss 15.1)
+  22:47:07.283  interval guest    15.4  backend    15.8  programs 1/13.4 ms (rtss 13.4)
