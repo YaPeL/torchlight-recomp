@@ -610,6 +610,211 @@ A pad is what SDL reports as a gamepad (`SDL_EVENT_GAMEPAD_ADDED`, its button an
 built-in pad of a handheld reports as one. Validated on the phone with a Bluetooth pad connected
 before start and after start, and with none.
 
+**A4, the touch controls: survey and plan** (2026-10-17; plan only, no code until the owner
+approves it). The setting above stays as decided. The hooks below follow the Android and backend
+agent's answers (2026-10-17, from `android/a2-gles`).
+
+*What others do (read only; no code taken from any of them).*
+
+- **DevilutionX** (Diablo; its own "Sustainable Use License", not open source), the closest case: an
+  ARPG built for the mouse, which grew a virtual pad (`Source/controls/touch/gamepad.cpp`).
+  - **Sizes:** in inches from the display's DPI: a 1-inch fixed direction pad at the bottom left;
+    0.3-inch buttons at the bottom right (primary action, secondary, spell, cancel); a 0.25-inch
+    margin; 0.1 inch between buttons.
+  - **The rest of the pad:** health and mana potion buttons above the direction pad; a "stand"
+    button.
+  - **Menus:** a top-right strip of menu buttons (character, quests, inventory, map). The game's
+    panels (inventory, character, stash) are used by touching them directly: a touch outside the
+    controls is turned into the game's mouse (`event_handlers.cpp`), which DevilutionX can do
+    because the game is a mouse game.
+- **Rayman Origins recomp for Android** (GPL-3.0): an Android `View` over SDL's surface
+  (`TouchControls.java`) feeding an SDL3 virtual joystick (`rex/src/android_touch.cpp`,
+  `SDL_AttachVirtualJoystick`), so the game sees an Xbox 360 pad.
+  - **Stick and buttons:** a floating stick that appears under the thumb; the face buttons in a
+    diamond at the bottom right; Back and Start at the top.
+  - **Sizes:** in units of 1/1080 of the screen's height (face button radius 70, stick radius 150,
+    margin 60).
+  - **Settings:** opacity and size.
+  - **Touch rules:** a button presses only when a finger lands on it, or slides onto it from another
+    button; a thumb resting between buttons is inert.
+- **Super Mario 64's Android port** (VDavid003; no license file): touch handled in C inside the
+  game (`src/pc/controller/controller_touchscreen.c`), drawn by the game's own renderer.
+  - **Layout:** a fixed stick and the buttons placed from the screen's left and right edges in a
+    1280×960 space.
+- **Mobile ARPGs** (Torchlight: Infinite, Diablo Immortal): a stick at the bottom left. At the
+  bottom right, a large basic-attack button with the skills in a ring or arc around it. Targeting is
+  automatic; potions sit next to the attack cluster.
+
+*Our case.* Torchlight XBLA is a pad game: the 360 targets on its own, and every menu is pad-driven.
+The pad, from its How To Play screen:
+
+| Control | Action |
+|---|---|
+| Left stick | Move |
+| X | Attack |
+| A | Interact / pick up |
+| Y, B, LT, RT | The four assignable skills |
+| LB, RB | Health and mana potions |
+| Back | Inventory and submenus |
+| Start | Options |
+| D-pad | Switch the active skill set |
+| Right stick up/down | Zoom |
+| Right stick press | Automap |
+
+So, as decided, the overlay is a virtual pad. Nothing in the guest changes, and no tap-to-move is
+needed.
+
+*The plan.*
+
+- **Input: a synthetic pad.** A `TouchInputDriver` added to the SDK's `InputSystem`, the same
+  pattern as `dev/script_input.cpp`'s `ScriptInputDriver`. It is a synthetic device that the
+  SDK's state merge ORs with the real pads: no SDK patch and no SDL virtual joystick. Since it is
+  not an SDL gamepad, the Auto mode's "a pad's input hides the controls" never sees it.
+  - Finger events come from an `SDL_AddEventWatch`, registered and removed together with the
+    driver. Its callback only stores the fingers under a lock; the driver turns them into the
+    pad's state on the guest's input poll. This is the pattern of `live/system_back_button.cpp`,
+    because on Android SDL raises them on the Java side's thread. Coordinates come normalised to
+    the window.
+  - The code lives in `src/live/`; only what is truly Android-specific goes to `platform/`.
+- **Drawing.** Through the runtime's ImGui frame, which the live consumer already hands to the
+  backend's UI pass (`tl_backend_set_ui_frame`): textured triangles with alpha. Opacity is each
+  vertex's alpha. The controls go on `ImGui::GetForegroundDrawList()`, over the dialogs and the
+  notices, from a drawer installed at start like `live/frame_counter.cpp`.
+  - No backend change. The frame covers the whole window, so on the POCO's 20:9 screen the
+    controls can sit in the side bars, off the 16:9 picture.
+  - A future need for the game's letterboxed rectangle is a small C API from the render agent
+    (`tl_backend_output_rect`), never recomputed here.
+- **Touch rules.**
+  - Each finger owns one control from the moment it lands.
+  - **Held while the finger stays on it** (owner, 2026-10-17): the 360 attacks while X is held, so a
+    virtual button stays pressed as long as its finger is on it. It is released when the finger
+    lifts or leaves it, as in the Rayman recomp; leaving means going past 1.25 times its touch
+    radius, so a thumb that rolls a little does not drop the attack.
+  - A button also presses when a finger slides onto it from another button; the first one is then
+    released. A finger resting between buttons does nothing.
+  - The stick's finger keeps the stick until it lifts, wherever it goes.
+  - **Several fingers at once** (owner, 2026-10-17): moving with the stick, attacking and drinking a
+    potion at the same time. Every finger is tracked by SDL's finger id; the pad's state is the
+    union of all of them. The unit tests and the first device test cover it: stick + X held + LB
+    tapped, then the fingers lifted in another order.
+- **Sizes in millimetres,** from the display's density: SDL's `SDL_GetDisplayContentScale`,
+  Android's density, where 160 dpi = 1.0. That is a density bucket, not the panel's real ppi (the
+  POCO likely reports 2.75 or 3.0, about 440-480 dpi), so the millimetres are a few percent off,
+  which is fine for buttons; exact ones would need the real xdpi/ydpi from Java's
+  `DisplayMetrics`, a small platform addition. The floor is Android's 48 dp target (about 9 mm), with at least 8 dp (1.5 mm) between
+  targets. The devices:
+  - the POCO X7 5G: 6.67", 2712×1220, about 446 ppi, curved at the long edges;
+  - the Tab S5e: 10.5", 2560×1600, about 287 ppi.
+
+  | Element | Size | POCO | Tab S5e |
+  |---|---|---|---|
+  | Attack (X) | 16 mm | 281 px | 181 px |
+  | Skills, A | 11 mm | 193 px | 124 px |
+  | Small buttons | 9 mm | 158 px | 102 px |
+  | Stick base (radius) | 13 mm | 228 px | 147 px |
+  | Edge margin | 6 mm (8 mm at the POCO's curved sides) | | |
+
+  A size setting scales all of them (0.75-1.5). The same millimetres suit the tablet, because the
+  thumbs reach the same distances: the tablet gets more free picture, not bigger buttons.
+- **The gameplay layout** (landscape; all positions as fractions of the window, stored as such):
+  - **Bottom left: the stick.** Floating: it appears where the thumb lands in the lower left
+    40% × 60% of the screen, with a faint resting base drawn at its default place as a hint.
+    "Fixed" is an option.
+  - **Bottom right: the attack cluster.**
+    - X (Attack, the largest) in the corner.
+    - Y, B, LT and RT in an arc around it, the pad's own skill slots.
+    - A (Interact) apart, above the arc, so picking up is never a mis-tapped attack.
+    - Each skill button shows the glyph of its pad button. Showing the skill's icon from the HUD
+      instead is a later option: it reads guest state.
+  - **Potions:** LB and RB as two small buttons above the stick's area. A tap on the HUD's health
+    or mana orb (top left and right, where the 360 already prints LB and RB) presses them too.
+  - **Top corners:** Back (inventory) at the top left and Start at the top right, small, out of the
+    thumbs' way.
+  - **The rest:**
+    - a tap on the minimap presses the right stick (automap);
+    - a two-finger pinch moves the right stick up or down (zoom);
+    - a small skill-set button presses the D-pad direction the 360 uses for the skill set (which
+      direction to be read from the guest).
+  - **The right stick** (owner's question, 2026-10-17). The 360 uses it for two things only, by
+    its How To Play screen: up and down zoom the camera, and pressing it opens the automap. Left
+    and right are not listed (to be confirmed in the guest's input code at A4.3). By touch: the
+    pinch zooms (the right stick's Y while the fingers spread or close) and a tap on the minimap
+    presses it. No second on-screen stick.
+- **Menus: a context layout.** When a 360 menu is open (inventory, stats, skills, shops, stash,
+  dialogs, pause), the overlay switches to the pad that menu needs: a D-pad on the left; A, B, X, Y
+  on the right; LB/RB and LT/RT at the top edges as tab switches; Back and Start. That is how the
+  360 navigates them all.
+  - The live layer already knows which menu is open (the menu tracking behind `dump_ui`), so
+    nothing new is read for it. Unleashed does the same.
+  - Touching the 360's menus directly (tap an item or a tab to focus and select it) is left for
+    later, as a survey of its own. Unlike DevilutionX, the 360 has no mouse: every menu would need
+    its focus set from outside, through each menu's own logic.
+- **The icons.**
+  - **The shapes:** Kenney's "Onscreen Controls" (CC0, attribution optional): the stick, its base,
+    round and rounded buttons, pressed states. Converted by a tool, like
+    `tools/pad_prompts/make_icons.py` does for the prompts, into `data/ui/touch/`, with a line in
+    `THIRD_PARTY_NOTICES.md`.
+  - **The letters on them follow the game's prompts:** the 360's own glossy glyphs, read from the
+    player's pak at run time and never committed, or the PlayStation/Nintendo set
+    `data/ui/prompts/` already has when `pad_prompts` picks one. The overlay then always matches the
+    prompts the game prints ("A Chest", "X Attack").
+  - A preview strip of the converted shapes goes to the owner before they are used.
+- **Settings** (`settings.toml`, then the Options menu's Controls section where Button Prompts
+  lives, and the launcher):
+  - the mode (Auto/Always/Never, as decided);
+  - opacity (default 60%);
+  - size (0.75-1.5);
+  - the stick floating or fixed;
+  - Swap sides (a mirror for left-handed players);
+  - **a short vibration** when a virtual button is pressed (owner, 2026-10-17): off by default, with
+    the opacity and the size. Android's vibrator through SDL's haptic API (the app needs the
+    `VIBRATE` permission in its manifest, which is the Android agent's; agreed before A4.5). A
+    platform function (`platform::ShortVibration`) does nothing on the other platforms.
+
+  The layout's positions are saved as fractions. An in-game editor (drag, resize, reset), like
+  Unleashed's and Dolphin's, is the last step of A4, after a layout has been played.
+- **Two traps.**
+  - SDL turns touches into mouse events by default (`SDL_HINT_TOUCH_MOUSE_EVENTS`), and our ImGui
+    dialogs (save import, video settings) rely on that. So a touch on the pad must not also click a
+    dialog: while a host dialog is open the overlay is hidden, and the dialog is touched directly.
+  - On Android SDL's loop sleeps up to 1 ms between passes (patch 46). Input wakes it, but the
+    latency from finger to guest is measured anyway.
+- **Auto, the rule** (owner, 2026-10-17, restating the decision above): the controls hide as soon as
+  a physical pad is used, and come back as soon as the screen is touched, even with the pad still
+  connected. "Used" is a button or an axis past its dead zone on a real pad (SDL's gamepad events),
+  never our own synthetic device; a touch is any finger down. At start: a pad connected means
+  hidden, none means shown.
+- **Testing without a hand on the screen.**
+  - **Unit tests on Linux:**
+    - the layout for both devices' sizes and densities: within the window and the 6 mm margin, no
+      overlaps, every target ≥ 48 dp;
+    - hit-testing and the finger rules;
+    - fingers to pad state;
+    - Auto's state machine.
+  - **Desktop:** a development-only option where the mouse is one finger, and new input-script
+    commands (`touch`, `drag`, `release` with window fractions) that feed the same driver. The
+    automatic runs then play the overlay and capture it like any other run.
+  - **On the devices:**
+    - Synthetic touches with `adb -s <serial> shell input tap/swipe`, and `input motionevent` or
+      `sendevent` for two fingers.
+    - Screenshots with `adb exec-out screencap -p`, compared with the layout.
+    - Always agreed first with both the render and the ReXGlue agents, whichever device it is
+      (neither belongs to one agent), always with `adb -s <serial>`. Never pushing game files:
+      only the SAF import.
+  - **The owner's hand pass** closes A4: a dungeon played by touch on both devices.
+
+*Steps* (each validated before the next):
+
+| Step | What | Validated by |
+|---|---|---|
+| A4.1 | The touch driver, the finger rules (held buttons, several fingers), Auto/Always/Never | Unit tests (several fingers included); the desktop mouse-as-finger moves the hero |
+| A4.2 | The drawing (ImGui foreground) and the converted icons | A capture of the overlay on desktop; the owner's look at the preview strip |
+| A4.3 | The gameplay layout (stick, attack cluster, potions, orbs, minimap, pinch) | Input scripts on desktop; on a device, synthetic touches with two and three fingers (move + attack held + a potion) |
+| A4.4 | The menus' context layout | Every catalog menu opened and closed by synthetic taps |
+| A4.5 | The settings and the Options rows | Unit tests; the setting takes effect on the device |
+| A4.6 | The layout editor | Moved, resized and reset by hand; saved across starts |
+| A4.7 | The hand pass | The owner plays a dungeon by touch on the POCO and the Tab S5e |
+
 **A6, the signing key** (owner's decision, 2026-10-10). The owner generates and keeps the key; the
 agents never generate, see or copy it. The CI uses it only as secrets of the `release`
 environment. Generated once, on the owner's machine, with the JDK's `keytool` (the Android build
@@ -732,3 +937,9 @@ https://github.com/OGRECave/ogre/blob/master/Docs/14-Notes.md.
 SDL: https://github.com/libsdl-org/SDL/blob/main/docs/README-android.md,
 https://wiki.libsdl.org/SDL3/SDL_HINT_ANDROID_BLOCK_ON_PAUSE.
 GPUs: https://vulkan.gpuinfo.org/listfeaturescore10.php?platform=android.
+Touch controls: https://github.com/diasurgical/DevilutionX (Source/controls/touch/),
+https://github.com/XDanfr/RaymanOriginsRecomp (docs/ANDROID.md, android/.../TouchControls.java,
+rex/src/android_touch.cpp), https://github.com/VDavid003/sm64-port (src/pc/controller/),
+https://www.kenney.nl/assets/onscreen-controls,
+https://support.google.com/accessibility/android/answer/7101858 (48 dp targets),
+https://www.gsmarena.com/xiaomi_poco_x7-13604.php, https://www.pockettactics.com/torchlight-infinite/review.
