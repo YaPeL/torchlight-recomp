@@ -725,7 +725,7 @@ needed.
   | Shoulders (wide) | 14 x 9 mm | 287 x 185 px | 159 x 102 px |
   | Back, Start (wide) | 12 x 9 mm | 246 x 185 px | 136 x 102 px |
   | Stick base (radius) | 11 mm | 226 px | 125 px |
-  | Margins | 6 mm at the sides, 8 mm top and bottom (the POCO's curved long edges) | | |
+  | Margins | 6 mm at the sides, 8 mm at the bottom (the POCO's curved long edge); the top row 2 mm from the top (the owner: it hid too much of the picture) | | |
   | The stick's zone | the lower left 40% x 70% of the screen (a button there takes the touch) | | |
 
   A size setting scales all of them (0.75-1.5). The same millimetres suit the tablet, because the
@@ -744,6 +744,8 @@ needed.
     diamond's centre at about 44% of it).
   - **Top corners:** the shoulders, wide (14 x 9 mm): LT and LB on the left, RB and RT on the right.
   - **Top centre:** Back and Start, wide (12 x 9 mm).
+  - **The top row** sits 2 mm from the top edge, not 8 (the owner, 2026-10-18: with 8 mm it took too
+    much of the picture). On the POCO that edge is curved; the owner chose the picture.
   - It fits any landscape screen at least 57 mm tall and 100 mm wide (`touch_test`: the POCO as
     measured, a 57 mm 20:9 phone, a 16:9 one at 57 x 101 mm, the Tab S5e).
   - It replaced the first layout (an attack button with the skills in an arc, LB and RB above the
