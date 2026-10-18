@@ -86,7 +86,12 @@ void TestLayout(const TouchScreen& screen, const char* device) {
         d + ": the stick inside the margins");
   // Higher on the screen (the owner): the stick and the diamond as high as mid height when the
   // shoulders leave room; the d-pad below and inward of the stick.
-  Check(layout.stick_y <= screen.height * 0.6f, d + ": the stick in the upper part of the lower half or higher");
+  const float h_mm = screen.height / mm;
+  const auto from_bottom = [&](float y) { return (screen.height - y) / mm; };
+  Check(from_bottom(layout.stick_y) >= std::min(0.5f * h_mm, h_mm - 29.5f) - 0.01f,
+        d + ": the stick as high as mid height or the shoulders' row allows");
+  const float diamond = (from_bottom(Find(layout, "X").y));
+  Check(diamond >= std::min(0.5f * h_mm, h_mm - 33.5f) - 0.01f, d + ": the diamond as high as allowed");
   Check(Find(layout, "D-pad").y > layout.stick_y && Find(layout, "D-pad").x > layout.stick_x, d + ": the d-pad below and inward");
   // The pad's diamond: Y above A, X left of B.
   Check(Find(layout, "Y").y < Find(layout, "A").y && Find(layout, "X").x < Find(layout, "B").x, d + ": the diamond");
@@ -148,6 +153,14 @@ void TestSliding() {
   Check((pad.State().buttons & 0x000F) == pad::kRight, "rolled to the right: right only");
   pad.Move(5, dp.x, dp.y);
   Check((pad.State().buttons & 0x000F) == 0, "at the centre: none");
+  pad.Move(5, dp.x + dr * 0.15f, dp.y);
+  Check((pad.State().buttons & 0x000F) == 0, "within a fifth of the radius: none");
+  pad.Move(5, dp.x + dr * 0.6f, dp.y - dr * 0.3f);
+  Check((pad.State().buttons & 0x000F) == (pad::kUp | pad::kRight), "exactly 2:1 counts as the diagonal");
+  pad.Move(5, dp.x + dr * 0.6f, dp.y - dr * 0.29f);
+  Check((pad.State().buttons & 0x000F) == pad::kRight, "just under 2:1: the side only");
+  pad.Move(5, dp.x + dr * 1.3f, dp.y);
+  Check((pad.State().buttons & 0x000F) == 0, "past 1.25 of its radius: let go");
   pad.Up(5);
 }
 

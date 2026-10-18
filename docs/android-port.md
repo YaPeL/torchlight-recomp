@@ -799,7 +799,8 @@ needed.
 - **Testing without a hand on the screen.**
   - **Unit tests on Linux:**
     - the layout for both devices' sizes and densities: within the window and the 6 mm margin, no
-      overlaps, every target ≥ 48 dp;
+      overlaps, every target ≥ 48 dp except the d-pad's arms (the cross is 16 mm, each arm about 8
+      mm wide: the owner asked for it smaller, 2026-10-18);
     - hit-testing and the finger rules;
     - fingers to pad state;
     - Auto's state machine.
@@ -866,7 +867,7 @@ ImGui's foreground draw list.
 - **Hidden while another dialog is open:** the dialog is touched directly.
 - **The look** (2026-10-18): Kenney's "Mobile Controls", first style A (dark solid buttons), then
   style C (thin white rings, round and wide) with the layout above, as the owner's reference;
-  A, B, X and Y ringed in the 360's colours, the d-pad with arrows, the pressed highlight a golden
+  A, B, X and Y ringed in the 360's colours, the d-pad Kenney's cross, the pressed highlight a golden
   ring, the names drawn over them at 90%. Without the files, the
   placeholder shapes: round buttons with a light ring and
   the pad's name (A, B, X, Y in the 360's colours), a lighter fill while pressed; the stick a ring

@@ -96,7 +96,7 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
     list->AddImage(Id(dpad_), lo, hi, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
     const struct {
       uint16_t bit;
-      float x, y;  // the arm's top left corner, in halves of the radius from the cross's
+      float x, y;  // the arm's top left corner from the cross's, in fractions of its radius
       int arm;
     } arms[] = {{input::pad::kUp, 0.5f, 0, 0}, {input::pad::kRight, 1, 0.5f, 1},
                 {input::pad::kDown, 0.5f, 1, 2}, {input::pad::kLeft, 0, 0.5f, 3}};

@@ -38,8 +38,9 @@ bool ReadTouchControls(TouchSnapshot& out);
 // Development (the input scripts' touch commands, dev/script_input.cpp): a finger by id at a
 // position in window fractions (0..1), down or moved; `up` lifts it. As if it came from the screen.
 void InjectTouch(uint64_t finger, float x, float y, bool up);
-// Development: the centre of the touch control named `name` (ignoring case: "X", "LB", "Back"...)
-// in window fractions; false when there is none.
+// Development: the centre of the touch control named `name` (ignoring case: "X", "LB", "Back"...),
+// or for "up", "down", "left" and "right" a point on that arm of the d-pad, in window fractions;
+// false when there is none.
 bool TouchControlCentre(std::string_view name, float& x, float& y);
 
 }  // namespace torchlight::live
