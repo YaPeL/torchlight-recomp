@@ -4,15 +4,18 @@ ReXApp (src/ui/rex_app.cpp) puts its config, <app>.toml (which the settings dial
 its logs next to the executable. On Android the executable's folder is the app's native library
 folder, read-only or inside the APK, so neither could be written. There they go with the user
 data (user_data_root, by default the user folder, which the Android main points at the app's
-internal storage). An app can still move them (OnConfigurePaths, OnConfigureLogging). Every
-other platform is unchanged.
+internal storage), or with user_data_root where the app's OnConfigurePaths moved it, and that
+folder is made then (on a fresh install nothing else has made it when the settings are first
+saved). An app can still move both (OnConfigurePaths, OnConfigureLogging). Every other platform
+is unchanged.
 
-Test: the SDK builds for Android and desktop. On the POCO X7 the game's settings are in the app's
-internal files, and its logs in the folder the game chooses, with no write error (the game sets
-its own folders; these defaults matter to apps that do not).
+Test: built for Android and Linux here, and for Windows and macOS by CI. On the POCO X7 the game
+runs with no write error; its settings and logs are where the game's own ConfigurePaths puts them
+(src/live/install.cpp), so this patch's defaults are not what placed them: they matter to
+apps that keep the defaults.
 
 diff --git a/src/ui/rex_app.cpp b/src/ui/rex_app.cpp
-index 1284c38..a1b624b 100644
+index 1284c38..781c0e0 100644
 --- a/src/ui/rex_app.cpp
 +++ b/src/ui/rex_app.cpp
 @@ -20,6 +20,7 @@
@@ -49,12 +52,32 @@ index 1284c38..a1b624b 100644
    OnConfigurePaths(path_config);
    game_data_root_ = path_config.game_data_root;
    user_data_root_ = path_config.user_data_root;
-@@ -166,7 +172,7 @@ bool ReXApp::SetupEnvironment() {
+@@ -153,6 +159,19 @@ bool ReXApp::SetupEnvironment() {
+   cache_root_ = path_config.cache_root;
+   metadata_root_ = path_config.metadata_root;
+   config_path_ = path_config.config_path;
++#if REX_PLATFORM_ANDROID
++  // Where the app moved the user data, the default config and logs go with it, and the folder
++  // is made here: on a fresh install nothing else has made it yet when the settings are saved.
++  std::filesystem::path writable_dir = settings_dir;
++  if (config_path_ == settings_dir / (std::string(GetName()) + ".toml")) {
++    writable_dir = path_config.user_data_root;
++    config_path_ = writable_dir / (std::string(GetName()) + ".toml");
++  }
++  std::error_code mkdir_error;
++  std::filesystem::create_directories(config_path_.parent_path(), mkdir_error);
++#else
++  const std::filesystem::path& writable_dir = settings_dir;
++#endif
+   resolved_defaults_ = std::move(path_config);
+ 
+   // Load config FIRST so log cvars have final values
+@@ -166,7 +185,7 @@ bool ReXApp::SetupEnvironment() {
    auto log_config =
        rex::BuildLogConfig(log_level_str, rex::ParseCategoryLevelsFromConfig(config_path_));
    log_config.app_name = std::string(GetName());
 -  log_config.log_dir = exe_dir / "logs";
-+  log_config.log_dir = settings_dir / "logs";
++  log_config.log_dir = writable_dir / "logs";
    OnConfigureLogging(log_config);
    rex::ApplyLogCvarOverrides(log_config);
    rex::InitLogging(log_config);
