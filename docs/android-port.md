@@ -505,6 +505,17 @@ The lead left: the crashes fall within tens of milliseconds of the surface resiz
 to 2560x1600, when SDL hides the system bars. Work goes on on the POCO X7 (owner, 2026-10-17); the
 issue comes back if the Tab S5e has to stay the floor.
 
+**Shader compilation on the POCO X7 (measured 2026-10-17).** The first session after installing
+an APK compiled each new GLSL ES program on the Mali in 360-680 ms (13 frames over 100 ms, 5.7 s
+in five minutes of town and mine). The next session had none: the Mali driver keeps its own cache
+of program binaries between sessions. Nothing in the backend precompiles programs today; the only
+cache of ours is RTSS's GLSL sources (`CacheDir`/ogre). Decided (owner, 2026-10-17):
+- (a) OGRE's program binary cache (`GL_OES_get_program_binary`, keyed by the driver and the game's
+  version, with a forced rewrite to work around 14.6's rejected-binary bug) is on hold; it comes
+  back if the Tab S5e's Adreno driver turns out to have no cache of its own.
+- (b) precompiling the programs this device has used before during the loading screens goes
+  ahead, measured on the first session after an install.
+
 A Bluetooth pad for stages A3-A4 (any Xbox or PlayStation pad), and the Auto mode of the touch
 controls is tested with it connected at start and connected later.
 
