@@ -79,7 +79,8 @@ TouchLayout GameplayLayout(const TouchScreen& screen);
 constexpr float kMinHeightMm = 57;
 constexpr float kMinWidthMm = 100;
 
-// Past this many radii (or half widths) from its centre a held button lets go.
+// Past this many radii from its centre a held button lets go (a wide one: past a quarter of its
+// height's half beyond its box).
 constexpr float kHoldSlop = 1.25f;
 
 class TouchPad {

@@ -123,6 +123,13 @@ void TestSliding() {
   pad.Up(3);
   pad.Down(4, rt.x + rt.half_width * 0.9f, rt.y);
   Check(pad.State().right_trigger == 255, "RT is hit near its end");
+  // Held past its end by less than the gap to the next control: still held; past it: let go.
+  const float grow = (kHoldSlop - 1) * rt.radius;
+  pad.Move(4, rt.x - rt.half_width - grow * 0.9f, rt.y);
+  Check(pad.State().right_trigger == 255, "a wide one held a little past its end");
+  pad.Move(4, rt.x - rt.half_width - grow * 1.1f, rt.y);
+  Check(pad.State().right_trigger == 0, "and let go beyond");
+  Check(grow < touch_mm::kMinGap * Poco().px_per_mm, "a wide one's slop is less than the gap");
   const TouchButton up = Find(pad.layout(), "Up");
   pad.Down(5, up.x, up.y);
   Check((pad.State().buttons & pad::kUp) != 0, "the d-pad's up");

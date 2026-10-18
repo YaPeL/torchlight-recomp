@@ -205,7 +205,7 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       if (!id || *id < 1 || *id > 9 || *id != std::floor(*id)) return fail("the finger's ID goes from 1 to 9");
       c.finger = static_cast<int>(*id);
       if (touch && w.size() == 3) {
-        static constexpr std::string_view kControls[] = {"X", "Y", "A", "B", "LT", "RT", "LB", "RB", "BACK", "START"};
+        static constexpr std::string_view kControls[] = {"X", "Y", "A", "B", "LT", "RT", "LB", "RB", "BACK", "START", "UP", "DOWN", "LEFT", "RIGHT"};
         std::string name(w[2]);
         for (char& ch : name) ch = static_cast<char>(std::toupper(static_cast<unsigned char>(ch)));
         if (std::find(std::begin(kControls), std::end(kControls), name) == std::end(kControls))

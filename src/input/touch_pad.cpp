@@ -86,6 +86,16 @@ static float Reach(const TouchButton& b, float x, float y) {
   return Distance(x, y, b.x, b.y) / b.radius;
 }
 
+// Whether a point is within a control grown by `slop`: a round one's radius times it; a wide one by
+// (slop - 1) times its height's half on every side, so its ends grow as little as its sides.
+static bool Inside(const TouchButton& b, float x, float y, float slop) {
+  if (b.shape == TouchShape::kWide && b.half_width > 0) {
+    const float grow = (slop - 1) * b.radius;
+    return std::abs(x - b.x) <= b.half_width + grow && std::abs(y - b.y) <= b.radius + grow;
+  }
+  return Distance(x, y, b.x, b.y) <= b.radius * slop;
+}
+
 int TouchPad::ButtonAt(float x, float y) const {
   int best = -1;
   float best_reach = 0;
@@ -123,7 +133,7 @@ void TouchPad::Move(uint64_t id, float x, float y) {
   f.y = y;
   if (f.role == Role::kButton) {
     const TouchButton& b = layout_.buttons[f.button];
-    if (Reach(b, x, y) <= kHoldSlop) return;
+    if (Inside(b, x, y, kHoldSlop)) return;
     // Off its button: onto another one, or nothing until it reaches one.
     if (const int other = ButtonAt(x, y); other >= 0) {
       f.button = other;

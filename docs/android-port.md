@@ -713,13 +713,17 @@ needed.
   - the POCO X7 5G: 6.67", 2712×1220, about 446 ppi, curved at the long edges;
   - the Tab S5e: 10.5", 2560×1600, about 287 ppi.
 
+  The POCO reports 20.5 px/mm (its landscape is about 59.5 mm tall); the Tab S5e about 11.3.
+
   | Element | Size | POCO | Tab S5e |
   |---|---|---|---|
-  | Attack (X) | 16 mm | 281 px | 181 px |
-  | Skills, A | 11 mm | 193 px | 124 px |
-  | Small buttons | 9 mm | 158 px | 102 px |
-  | Stick base (radius) | 13 mm | 228 px | 147 px |
-  | Edge margin | 6 mm (8 mm at the POCO's curved sides) | | |
+  | A, B, X, Y | 10 mm | 205 px | 113 px |
+  | The d-pad's buttons | 9 mm | 185 px | 102 px |
+  | Shoulders (wide) | 14 x 9 mm | 287 x 185 px | 159 x 102 px |
+  | Back, Start (wide) | 12 x 9 mm | 246 x 185 px | 136 x 102 px |
+  | Stick base (radius) | 11 mm | 226 px | 125 px |
+  | Margins | 6 mm at the sides, 8 mm top and bottom (the POCO's curved long edges) | | |
+  | The stick's zone | the lower left 40% x 70% of the screen (a button there takes the touch) | | |
 
   A size setting scales all of them (0.75-1.5). The same millimetres suit the tablet, because the
   thumbs reach the same distances: the tablet gets more free picture, not bigger buttons.
@@ -757,8 +761,9 @@ needed.
     highlights, and the stick's pad and nub.
   - **The choice:** the owner saw a preview strip of the eight styles and left it to the agent
     (2026-10-18, "me importa muy poco, busca el más popular, o el más usado, o el que te guste más a
-    vos"). Style A: dark and solid, it matches the game's dark UI and keeps the coloured names
-    readable.
+    vos"). The agent picked style A (dark and solid) for the first layout. With the pad layout the
+    owner pointed at an emulator's on-screen pad (thin rings), and the controls moved to style C,
+    its closest match.
   - **The names on them:** for now the pad's names as text, with A, B, X and Y in the 360's colours.
     Following the game's prompts (the 360's own glyphs, read from the player's pak at run time and
     never committed, or the PlayStation/Nintendo set `data/ui/prompts/` has when `pad_prompts` picks

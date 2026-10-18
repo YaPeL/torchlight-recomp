@@ -120,8 +120,10 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
         if (b.shape == input::TouchShape::kRight) dx = 1;
         const float t = r * 0.45f;
         const ImVec2 tip(c.x + dx * t, c.y + dy * t);
-        const ImVec2 b1(c.x - dx * t * 0.6f - dy * t * 0.8f, c.y - dy * t * 0.6f - dx * t * 0.8f);
-        const ImVec2 b2(c.x - dx * t * 0.6f + dy * t * 0.8f, c.y - dy * t * 0.6f + dx * t * 0.8f);
+        // The base across the arrow: the direction turned a quarter, (-dy, dx), so all four come
+        // out with the same winding (ImGui anti-aliases a filled shape by its winding).
+        const ImVec2 b1(c.x - dx * t * 0.6f - dy * t * 0.8f, c.y - dy * t * 0.6f + dx * t * 0.8f);
+        const ImVec2 b2(c.x - dx * t * 0.6f + dy * t * 0.8f, c.y - dy * t * 0.6f - dx * t * 0.8f);
         list->AddTriangleFilled(tip, b1, b2, ink);
         continue;
       }
