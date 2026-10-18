@@ -32,8 +32,22 @@ struct PadState {
 struct PadKeystroke {
   uint16_t virtual_key;
   bool down;
+  bool repeat = false;  // a held key's repeated down
 };
 std::vector<PadKeystroke> PadKeystrokes(const PadState& before, const PadState& after);
+
+// The pad's state as XInput's keystroke bits, as the SDK's SDL pad driver builds them
+// (sdl_input_driver.cpp, AnalogToKeyfield and its key table), so a host controller's keystrokes
+// match a real pad's: bits 0-15 the buttons; 16-17 the triggers past kTriggerKeyThreshold; 18-25
+// the left stick's directions past kThumbKeyThreshold (up, down, right, left, then the diagonals,
+// which replace their two sides); 26-33 the right stick's the same. The menus that read keystrokes
+// move with the stick through these (VK_PAD_LTHUMB_*).
+constexpr int kPadKeyCount = 34;
+constexpr int16_t kThumbKeyThreshold = 0x4E00;
+constexpr uint8_t kTriggerKeyThreshold = 0x1F;
+uint64_t PadKeyBits(const PadState& pad);
+// The virtual key (VK_PAD_*) of a keystroke bit; 0 for the bits that have none.
+uint16_t PadKeyVirtualKey(int bit);
 
 // The keystrokes of a host controller, waiting for the game to read them. One the game did not
 // read soon after it happened is dropped: a screen that does not read keystrokes (the title) left

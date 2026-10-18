@@ -59,10 +59,12 @@ constexpr float kMinGap = 1.5f;    // Android's 8 dp between targets
 // The gameplay layout (A4.1's; refined at A4.3): the stick at the bottom left; X (attack, the
 // largest) at the bottom right with Y, B, LT and RT in an arc around it; A apart, left of the arc;
 // LB and RB above the stick; Back and Start along the top, 44 mm in from the sides. It fits screens
-// at least kMinHeightMm tall in landscape (a 6" 20:9 phone is about 57-60 mm).
+// at least kMinHeightMm tall and kMinWidthMm wide in landscape (phones and tablets are: a 20:9
+// phone about 57-60 x 127-132 mm, a 16:9 one at 57 mm about 101 mm wide).
 TouchLayout GameplayLayout(const TouchScreen& screen);
 
 constexpr float kMinHeightMm = 57;
+constexpr float kMinWidthMm = 100;
 
 // Past this many radii from its centre a held button lets go.
 constexpr float kHoldSlop = 1.25f;

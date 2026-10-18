@@ -28,8 +28,10 @@ constexpr float kMmPerInch = 25.4f;
 TouchScreen Poco() { return {2712, 1220, 2.75f * 160 / kMmPerInch}; }
 // What the POCO reported on the device (2026-10-18): 20.5 px/mm, so about 59.5 mm tall.
 TouchScreen PocoMeasured() { return {2712, 1220, 20.5f}; }
-// A 16:9-ish 6.1" phone at the 3.0 bucket: 2400x1080, about 57 mm tall (kMinHeightMm).
-TouchScreen ShortPhone() { return {2400, 1080, 3.0f * 160 / kMmPerInch * (1080.0f / 1080.0f)}; }
+// A 20:9 5.5" phone at the 3.0 bucket: 2400x1080, about 57 x 127 mm (kMinHeightMm).
+TouchScreen ShortPhone() { return {2400, 1080, 3.0f * 160 / kMmPerInch}; }
+// The narrowest realistic case: 16:9 at 57 mm tall, about 101 mm wide (kMinWidthMm).
+TouchScreen Narrow169() { return {1920, 1080, 3.0f * 160 / kMmPerInch}; }
 TouchScreen Tab() { return {2560, 1600, 1.8f * 160 / kMmPerInch}; }
 
 const TouchButton& Find(const TouchLayout& layout, std::string_view name) {
@@ -209,6 +211,30 @@ void TestKeystrokes() {
   Check(k && k->virtual_key == 0x5806 && k->down, "a trigger pulled is its key");
 }
 
+void TestKeyBits() {
+  // As the SDK's SDL pad driver: past 0x4E00 a stick is a direction, both axes a diagonal.
+  PadState p;
+  p.left_y = kThumbKeyThreshold;
+  Check(PadKeyBits(p) == 0, "at the threshold, nothing");
+  p.left_y = kThumbKeyThreshold + 1;
+  Check(PadKeyBits(p) == (uint64_t(1) << 18) && PadKeyVirtualKey(18) == 0x5820, "left stick up: VK_PAD_LTHUMB_UP");
+  p.left_y = -32768;
+  Check(PadKeyBits(p) == (uint64_t(1) << 19) && PadKeyVirtualKey(19) == 0x5821, "down");
+  p.left_x = 32767;
+  Check(PadKeyBits(p) == (uint64_t(1) << 24) && PadKeyVirtualKey(24) == 0x5826, "down and right: the diagonal only");
+  p = {};
+  p.right_x = -32768;
+  Check(PadKeyBits(p) == (uint64_t(1) << 29) && PadKeyVirtualKey(29) == 0x5833, "right stick left");
+  p = {};
+  p.left_trigger = kTriggerKeyThreshold + 1;
+  p.buttons = pad::kA | pad::kLeftShoulder;
+  Check(PadKeyBits(p) == ((uint64_t(1) << 16) | pad::kA | pad::kLeftShoulder), "a trigger and buttons");
+  Check(PadKeyVirtualKey(12) == 0x5800 && PadKeyVirtualKey(8) == 0x5805 && PadKeyVirtualKey(9) == 0x5804 &&
+            PadKeyVirtualKey(16) == 0x5806 && PadKeyVirtualKey(0) == 0x5810,
+        "A, LB, RB, LT and d-pad up keys");
+  Check(PadKeyVirtualKey(10) == 0 && PadKeyVirtualKey(11) == 0 && PadKeyVirtualKey(34) == 0, "bits with no key");
+}
+
 }  // namespace
 
 int main() {
@@ -216,6 +242,8 @@ int main() {
   TestLayout(PocoMeasured(), "POCO X7 as measured");
   Check(1080 / ShortPhone().px_per_mm >= kMinHeightMm, "the short phone is the shortest supported");
   TestLayout(ShortPhone(), "a short phone");
+  TestLayout(Narrow169(), "a 16:9 phone at the minimum height");
+  TestKeyBits();
   TestLayout(Tab(), "Tab S5e");
   TestHeldButton();
   TestSliding();

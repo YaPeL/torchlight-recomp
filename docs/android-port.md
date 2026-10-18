@@ -644,6 +644,10 @@ agent's answers (2026-10-17, from `android/a2-gles`).
   game (`src/pc/controller/controller_touchscreen.c`), drawn by the game's own renderer.
   - **Layout:** a fixed stick and the buttons placed from the screen's left and right edges in a
     1280×960 space.
+- **Their icons** (looked at 2026-10-18):
+  - Unleashed draws no button shapes: it draws the game's own button glyphs (A, B, X, Y, LB,
+    Start...), the ones its menus show.
+  - The Rayman recomp has art made for the port (`GamePad/`), in the game's style.
 - **Mobile ARPGs** (Torchlight: Infinite, Diablo Immortal): a stick at the bottom left. At the
   bottom right, a large basic-attack button with the skills in a ring or arc around it. Targeting is
   automatic; potions sit next to the attack cluster.
@@ -839,8 +843,20 @@ The setting is `touch_controls` in settings.toml; without it, Auto on Android an
   lot hides the touch controls' changes in that number. The game ignores it: its two reads of the
   pad state (`0x821FE8A8`, `0x822DF798`) compare buttons, not packets. A run with a virtual pad
   connected and moved 120 times before the touches walked the hero all the same.
-- **For A4.4:** `PadKeystrokes` makes no left-stick keystrokes (`VK_PAD_LTHUMB_*`), so the touch
-  stick does not move menus that navigate by keystrokes. The menus' layout uses the D-pad.
+- **The menus with the touch stick** (2026-10-18; the owner, after the first device run: the menus
+  could not be navigated). The touch controls now give keystrokes as the SDK's SDL pad driver
+  does for a real pad:
+  - the same bits and keys: buttons, the triggers, and both sticks' directions past 0x4E00, with
+    diagonals as `VK_PAD_LTHUMB_*`;
+  - the same repeat, through rex's `NextKeystroke`: a held direction repeats after 400 ms, then
+    every 100 ms;
+  - a tap shorter than the time between two of the game's reads still gives its down and its up.
+
+  The Rayman recomp gets the same from SDL's virtual pad, which goes through that driver. A run
+  showed it: Start tapped opened the pause menu; a short flick down moved Options to Help; held
+  down 0.75 s, it repeated through Achievements, Leaderboards and Exit to Title, round to Options
+  and Help. A4.4's context layout (a D-pad and the face buttons while a menu is open, as Unleashed
+  does) stays for the D-pad's own uses.
 - **Not drawn yet:** that is A4.2.
 
 **A4.2, first part** (2026-10-18, branch `android/a4-touch-overlay`). The controls are drawn by

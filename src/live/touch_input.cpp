@@ -1,6 +1,7 @@
 #include "live/touch_input.h"
 
 #include <algorithm>
+#include <chrono>
 #include <atomic>
 #include <cctype>
 #include <cmath>
@@ -20,6 +21,7 @@
 #include <rex/input/input.h>
 #include <rex/input/input_driver.h>
 #include <rex/input/input_system.h>
+#include <rex/input/keystroke_repeat.h>
 #include <rex/logging.h>
 #include <rex/runtime.h>
 
@@ -74,7 +76,8 @@ class TouchState {
     pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
     ignored_.clear();
     state_ = {};
-    keys_.Clear();
+    tracker_ = {};
+    latched_ = 0;
     installed_ = true;
   }
   // The driver went away (the input system shut down).
@@ -84,7 +87,8 @@ class TouchState {
     pad_.Clear();
     ignored_.clear();
     state_ = {};
-    keys_.Clear();
+    tracker_ = {};
+    latched_ = 0;
   }
 
   // The guest's input poll.
@@ -101,9 +105,28 @@ class TouchState {
     out->gamepad.thumb_rx = state_.right_x;
     out->gamepad.thumb_ry = state_.right_y;
   }
-  std::optional<input::PadKeystroke> Keystroke() {
+  // The next keystroke, as the SDK's SDL pad driver makes them for a real pad (rex's
+  // NextKeystroke, the same bits, delay and rate): the buttons, the triggers and the sticks'
+  // directions, a held one repeating, so the menus move with the touch stick as with a pad's. A
+  // press that came and went between two reads still gives its down, then its up. While the input
+  // is inactive (a dialog has it), everything is released.
+  std::optional<input::PadKeystroke> Keystroke(bool active) {
     std::lock_guard lock(mutex_);
-    return keys_.Pop(input::KeystrokeQueue::Clock::now());
+    static constexpr uint32_t kRepeatDelayMs = 400, kRepeatRateMs = 100;  // the SDK's HID_SDL_REPEAT_*
+    uint64_t reportable = 0;
+    for (int i = 0; i < input::kPadKeyCount; ++i) {
+      if (input::PadKeyVirtualKey(i)) reportable |= uint64_t(1) << i;
+    }
+    const uint64_t pressed = active ? (input::PadKeyBits(state_) | latched_) : 0;
+    const auto now_ms = static_cast<uint32_t>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
+            .count());
+    const auto key = rex::input::NextKeystroke(tracker_, pressed, reportable, input::kPadKeyCount, now_ms,
+                                               kRepeatDelayMs, kRepeatRateMs);
+    latched_ &= ~tracker_.buttons;  // reported down: from now on the state says when it is up
+    if (!active) latched_ = 0;
+    if (!key) return std::nullopt;
+    return input::PadKeystroke{input::PadKeyVirtualKey(key->index), key->down, key->repeat};
   }
 
   // A finger in window fractions: down, moved or lifted.
@@ -220,7 +243,7 @@ class TouchState {
   void Update() {
     const input::PadState next = visibility_.visible() ? pad_.State() : input::PadState{};
     if (next == state_) return;
-    keys_.Push(state_, next, input::KeystrokeQueue::Clock::now());
+    latched_ |= input::PadKeyBits(next);
     state_ = next;
     ++packet_;
   }
@@ -230,7 +253,8 @@ class TouchState {
   input::TouchPad pad_;
   input::TouchVisibility visibility_{input::TouchMode::kNever, false, false};
   input::PadState state_;
-  input::KeystrokeQueue keys_;
+  rex::input::KeystrokeTracker tracker_;
+  uint64_t latched_ = 0;  // keystroke bits pressed since the game last read one
   std::set<uint64_t> ignored_;
   uint32_t packet_ = 1;
   bool mouse_finger_ = false;
@@ -351,14 +375,14 @@ class TouchInputDriver : public rex::input::InputDriver {
   X_RESULT GetDeviceKeystroke(rex::input::DeviceId id, uint32_t,
                               rex::input::X_INPUT_KEYSTROKE* out) override {
     if (id != kDevice) return X_ERROR_DEVICE_NOT_CONNECTED;
-    // Not read while the input is inactive: the keystrokes wait (and expire) as they would.
-    if (!is_active()) return X_ERROR_EMPTY;
-    const auto key = State().Keystroke();
+    const auto key = State().Keystroke(is_active());
     if (!key) return X_ERROR_EMPTY;
     if (out) {
       std::memset(out, 0, sizeof(*out));
       out->virtual_key = key->virtual_key;
-      out->flags = key->down ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN : rex::input::X_INPUT_KEYSTROKE_KEYUP;
+      out->flags = !key->down     ? rex::input::X_INPUT_KEYSTROKE_KEYUP
+                   : key->repeat ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN | rex::input::X_INPUT_KEYSTROKE_REPEAT
+                                 : rex::input::X_INPUT_KEYSTROKE_KEYDOWN;
     }
     return X_ERROR_SUCCESS;
   }
