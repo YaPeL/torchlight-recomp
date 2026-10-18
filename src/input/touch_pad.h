@@ -63,7 +63,9 @@ constexpr float kFaceSpread = 10;  // the face buttons' centres from the diamond
 constexpr float kDpadRadius = 8;   // the d-pad's cross, half its width (the owner: much smaller
                                    // than four 9 mm buttons)
 constexpr float kSideMargin = 6;   // left and right edges
-constexpr float kLongMargin = 8;   // top and bottom: the POCO's curved long edges in landscape
+constexpr float kLongMargin = 8;   // the bottom: the POCO's curved long edge in landscape
+constexpr float kTopRowMargin = 2;  // the top row (the shoulders, Back, Start): almost at the top,
+                                    // so they hide less of the picture (the owner, 2026-10-18)
 constexpr float kMinGap = 1.5f;    // Android's 8 dp between targets
 }  // namespace touch_mm
 
@@ -84,7 +86,7 @@ TouchLayout GameplayLayout(const TouchScreen& screen);
 // within a fifth of the radius of the centre.
 uint16_t DpadDirections(const TouchButton& dpad, float x, float y);
 
-constexpr float kMinHeightMm = 57;
+constexpr float kMinHeightMm = 57;  // the shortest devices expected; the geometry fits down to ~55
 constexpr float kMinWidthMm = 100;
 
 // Past this many radii from its centre a held button lets go (a wide one: past a quarter of its

@@ -31,7 +31,7 @@ TouchLayout GameplayLayout(const TouchScreen& screen) {
   };
 
   // The shoulders' row ends here (from the top); what is below it keeps the gap.
-  const float below_row = kLongMargin + kSmall + kMinGap;
+  const float below_row = kTopRowMargin + kSmall + kMinGap;
 
   // A, B, X, Y: the pad's diamond, as high as mid height, below the shoulders, above the margin.
   const float face_x = kSideMargin + face_r + kFaceSpread;
@@ -58,7 +58,7 @@ TouchLayout GameplayLayout(const TouchScreen& screen) {
   round("D-pad", 0, left(dpad_x), bottom(dpad_y), kDpadRadius, TouchShape::kDpad);
 
   // The shoulders in the top corners, and Back and Start at the top centre.
-  const float row = kLongMargin + small_r;
+  const float row = kTopRowMargin + small_r;
   const float outer = kSideMargin + kShoulderWidth / 2, inner = outer + kShoulderWidth + kMinGap;
   wide("LT", 0, true, false, left(outer), top(row), kShoulderWidth);
   wide("LB", pad::kLeftShoulder, false, false, left(inner), top(row), kShoulderWidth);

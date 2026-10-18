@@ -67,9 +67,14 @@ void TestLayout(const TouchScreen& screen, const char* device) {
     Check(b.x - HalfW(b) >= touch_mm::kSideMargin * mm - slack &&
               b.x + HalfW(b) <= screen.width - touch_mm::kSideMargin * mm + slack,
           n + ": inside the side margins");
-    Check(b.y - b.radius >= touch_mm::kLongMargin * mm - slack &&
+    // The top row (the wide ones) almost at the top; the rest keep the long edges' margin.
+    const float top_margin = b.shape == TouchShape::kWide ? touch_mm::kTopRowMargin : touch_mm::kLongMargin;
+    Check(b.y - b.radius >= top_margin * mm - slack &&
               b.y + b.radius <= screen.height - touch_mm::kLongMargin * mm + slack,
-          n + ": inside the long edges' margins");
+          n + ": inside the margins");
+    if (b.shape == TouchShape::kWide) {
+      Check(std::abs(b.y - b.radius - touch_mm::kTopRowMargin * mm) < slack, n + ": the top row 2 mm from the top");
+    }
     for (const auto& o : layout.buttons) {
       if (&o == &b) continue;
       Check(Gap(b, o) >= touch_mm::kMinGap * mm - slack, n + " and " + std::string(o.name) + ": 1.5 mm apart");
@@ -88,10 +93,12 @@ void TestLayout(const TouchScreen& screen, const char* device) {
   // shoulders leave room; the d-pad below and inward of the stick.
   const float h_mm = screen.height / mm;
   const auto from_bottom = [&](float y) { return (screen.height - y) / mm; };
-  Check(from_bottom(layout.stick_y) >= std::min(0.5f * h_mm, h_mm - 29.5f) - 0.01f,
+  // (The row's term in these min()s only guards screens shorter than the supported ones: on every
+  // screen tested here, mid height wins.)
+  Check(from_bottom(layout.stick_y) >= std::min(0.5f * h_mm, h_mm - 23.5f) - 0.01f,
         d + ": the stick as high as mid height or the shoulders' row allows");
   const float diamond = (from_bottom(Find(layout, "X").y));
-  Check(diamond >= std::min(0.5f * h_mm, h_mm - 33.5f) - 0.01f, d + ": the diamond as high as allowed");
+  Check(diamond >= std::min(0.5f * h_mm, h_mm - 27.5f) - 0.01f, d + ": the diamond as high as allowed");
   Check(Find(layout, "D-pad").y > layout.stick_y && Find(layout, "D-pad").x > layout.stick_x, d + ": the d-pad below and inward");
   // The pad's diamond: Y above A, X left of B.
   Check(Find(layout, "Y").y < Find(layout, "A").y && Find(layout, "X").x < Find(layout, "B").x, d + ": the diamond");
