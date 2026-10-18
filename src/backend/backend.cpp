@@ -22,15 +22,19 @@
 
 #include <algorithm>
 #include <chrono>
+#include <iterator>
 #include <optional>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -45,10 +49,20 @@
 
 #include "backend/ogre_plugins.h"
 #include "backend/ogre_window_surface.h"
+#include "backend/program_cache_file.h"
+#include "backend/program_key.h"
+#include "backend/program_list.h"
 #include "backend/xbox_to_gl_conventions.h"
 #include "platform/platform.h"
 
 namespace {
+
+using torchlight::backend::InputsFromKey;
+using torchlight::backend::MakeProgramKey;
+using torchlight::backend::ProgramInputs;
+using torchlight::backend::ProgramKey;
+using torchlight::backend::UnitDesc;
+using torchlight::backend::UnitKey;
 
 namespace conv = torchlight::backend;
 
@@ -198,33 +212,6 @@ Ogre::Matrix4 ToMatrix(const float* m) {
                        m[12], m[13], m[14], m[15]);
 }
 
-// Transform, lighting, fog and skinning of a draw: the values behind its RTSS program
-// (ApplyProgram).
-struct ProgramInputs {
-  Ogre::Matrix4 world = Ogre::Matrix4::IDENTITY;
-  Ogre::Matrix4 projection = Ogre::Matrix4::IDENTITY;  // GL clip; the data source flips it for RTs
-  // The guest's own clip matrix (world-view-projection), in GL conventions: the position
-  // transform. projection * world equals it, but when world is the guest world-view split from it
-  // (GuestWorldViewFromWvp) the product carries float error, enough to push geometry the guest
-  // places exactly on the near plane (z = 0 in D3D, -w in GL) outside the clip volume.
-  Ogre::Matrix4 clip = Ogre::Matrix4::IDENTITY;
-  bool lighting = false;
-  Ogre::TrackVertexColourType tracking = Ogre::TVC_NONE;
-  Ogre::ColourValue diffuse = Ogre::ColourValue::White, emissive = Ogre::ColourValue::Black;
-  bool light = false;
-  float towards_light[3] = {0, 0, 1};  // view space
-  Ogre::ColourValue light_diffuse = Ogre::ColourValue::Black;
-  bool fog = false;
-  float fog_start = 0, fog_end = 0;
-  Ogre::ColourValue fog_colour = Ogre::ColourValue::Black;
-  // Skinning (RTSS HardwareSkinning): palette size, influences and the guest's bones (3x4
-  // row-major, world space).
-  uint32_t skin_bones = 0, skin_weights = 0;
-  const float* skin_palette = nullptr;
-  // Alpha test (render state; GuestAlphaTest).
-  Ogre::CompareFunction alpha_function = Ogre::CMPF_ALWAYS_PASS;
-  uint8_t alpha_reference = 0;
-};
 
 }  // namespace
 
@@ -372,6 +359,17 @@ struct tl_backend {
   };
   std::unordered_map<std::string, Program> programs;
   uint32_t program_serial = 0;
+  // Programs generated before on this device (program_list.h): the file, its keys in order, the
+  // keys tl_backend_precompile_programs has gone through, and whether the next key added starts
+  // the file again (it was missing or of another format).
+  std::filesystem::path program_list;
+  std::vector<std::string> known_programs;
+  std::unordered_set<std::string> known_program_set;
+  size_t precompile_next = 0;
+  bool program_list_fresh = true;
+  // OGRE's cache of compiled programs, where the render system compiles them itself (Direct3D 11's
+  // HLSL; tl_backend_open_program_cache): its file, empty when the cache is off.
+  std::filesystem::path microcode_file;
   std::vector<Ogre::Affine3> world_matrices;  // ApplyProgram's world + bone palette
   std::unique_ptr<Ogre::RTShader::SubRenderStateFactory> guest_texgen_factory, guest_pixel_fog,
       guest_alpha_test, guest_lighting;
@@ -567,18 +565,6 @@ bool ToBlendMode(const tl_combine& c, Ogre::LayerBlendType type, Ogre::LayerBlen
   return true;
 }
 
-// What a draw's texture unit does, for the program generation (ProgramKey) and its constants.
-struct UnitDesc {
-  bool present = false;  // sampled with a texture bound
-  Ogre::LayerBlendModeEx colour, alpha;
-  Ogre::TexCoordCalcMethod texgen = Ogre::TEXCALC_NONE;
-  uint32_t coord_set = 0;
-  bool has_matrix = false;
-  Ogre::Matrix4 matrix = Ogre::Matrix4::IDENTITY;
-  // Coordinates the program computes itself (GuestTexgen); coord_set is then the reserved output
-  // set.
-  enum class Guest : uint8_t { kNone, kViewNormal2d, kReflect } guest_texgen = Guest::kNone;
-};
 
 void Combine(Ogre::LayerBlendModeEx& m, Ogre::LayerBlendType type, Ogre::LayerBlendOperationEx op,
              Ogre::LayerBlendSource source1, Ogre::LayerBlendSource source2) {
@@ -965,64 +951,7 @@ constexpr const char* kProgramScheme = "tl_rtss";
 // fog, texture matrices).
 constexpr size_t kProgramRegisterReserve = 64;
 
-// A unit's combination as it reaches the RTSS: the operations and sources, and the constant
-// arguments where a source reads them. The blend factor is not in the key: only
-// LBX_BLEND_MANUAL reads it, and no operation of the API maps to it (ToOgre(tl_combine_op)), so it
-// is always the default. An operation that reads it must add it here.
-#pragma pack(push, 1)
-struct UnitKey {
-  uint8_t present, cube, texgen, coord_set, has_matrix, guest_texgen;
-  uint8_t colour_op, colour_source1, colour_source2, alpha_op, alpha_source1, alpha_source2;
-  float colour_arg1[4], colour_arg2[4], alpha_arg1, alpha_arg2;
-};
-struct ProgramKey {
-  uint8_t lighting, tracking, light_count, fog, unit_count, skin_weights;
-  uint16_t skin_bones;
-  UnitKey units[TL_MAX_STAGES];
-};
-#pragma pack(pop)
 
-std::string MakeProgramKey(const tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
-                           uint32_t unit_count) {
-  ProgramKey k;
-  std::memset(&k, 0, sizeof(k));
-  k.lighting = f.lighting;
-  k.tracking = uint8_t(f.tracking);
-  k.light_count = f.lighting && f.light ? 1 : 0;
-  k.fog = f.fog;
-  k.unit_count = uint8_t(unit_count);
-  k.skin_bones = uint16_t(f.skin_bones);
-  k.skin_weights = uint8_t(f.skin_weights);
-  for (uint32_t u = 0; u < unit_count; ++u) {
-    const UnitDesc& d = units[u];
-    UnitKey& uk = k.units[u];
-    uk.present = d.present;
-    if (!d.present) continue;
-    uk.cube = b->unit_cube[u];
-    uk.texgen = uint8_t(d.texgen);
-    uk.coord_set = uint8_t(d.coord_set);
-    uk.has_matrix = d.has_matrix;
-    uk.guest_texgen = uint8_t(d.guest_texgen);
-    uk.colour_op = uint8_t(d.colour.operation);
-    uk.colour_source1 = uint8_t(d.colour.source1);
-    uk.colour_source2 = uint8_t(d.colour.source2);
-    uk.alpha_op = uint8_t(d.alpha.operation);
-    uk.alpha_source1 = uint8_t(d.alpha.source1);
-    uk.alpha_source2 = uint8_t(d.alpha.source2);
-    if (d.colour.source1 == Ogre::LBS_MANUAL || d.colour.source2 == Ogre::LBS_MANUAL) {
-      const Ogre::ColourValue* args[2] = {&d.colour.colourArg1, &d.colour.colourArg2};
-      for (int i = 0; i < 4; ++i) {
-        uk.colour_arg1[i] = args[0]->ptr()[i];
-        uk.colour_arg2[i] = args[1]->ptr()[i];
-      }
-    }
-    if (d.alpha.source1 == Ogre::LBS_MANUAL || d.alpha.source2 == Ogre::LBS_MANUAL) {
-      uk.alpha_arg1 = d.alpha.alphaArg1;
-      uk.alpha_arg2 = d.alpha.alphaArg2;
-    }
-  }
-  return std::string(reinterpret_cast<const char*>(&k), sizeof(k));
-}
 
 // Builds the source Pass for a key and lets the RTSS generate (and compile) its programs.
 void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
@@ -1147,11 +1076,22 @@ void BindChangedParameters(tl_backend* b, Ogre::GpuProgramType type,
   b->rs->bindGpuProgramParameters(type, params, mask);
 }
 
+// Adds a program generated in play to the device's list (program_list.h), once.
+void RememberProgram(tl_backend* b, const std::string& key) {
+  if (b->program_list.empty() || !b->known_program_set.insert(key).second) return;
+  if (torchlight::backend::AppendProgram(b->program_list, key, sizeof(ProgramKey),
+                                         b->program_list_fresh)) {
+    b->program_list_fresh = false;
+  }
+}
+
+
 // Binds the draw's program and writes its auto constants. Returns false when the RTSS could not
 // generate it.
 bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
                   uint32_t unit_count) {
-  tl_backend::Program& p = b->programs[MakeProgramKey(b, f, units, unit_count)];
+  const std::string key = MakeProgramKey(b->unit_cube, f, units, unit_count);
+  tl_backend::Program& p = b->programs[key];
   if (!p.pass && !p.failed) {
     ++b->counters.programs_generated;
     const auto start = std::chrono::steady_clock::now();
@@ -1163,6 +1103,7 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
     }
     b->counters.program_generate_ms +=
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
+    if (!p.failed) RememberProgram(b, key);
   }
   if (p.failed) return false;
   Ogre::RenderSystem* rs = b->rs;
@@ -1711,8 +1652,14 @@ void CreateProgramGenerator(tl_backend* b) {
     OGRE_EXCEPT(Ogre::Exception::ERR_INTERNAL_ERROR, "cannot initialise the RTSS",
                 "CreateProgramGenerator");
   }
-  Ogre::RTShader::ShaderGenerator::getSingleton().setShaderCachePath(
-      torchlight::platform::ShaderCacheDir());
+  const std::string cache_dir = torchlight::platform::ShaderCacheDir();
+  Ogre::RTShader::ShaderGenerator::getSingleton().setShaderCachePath(cache_dir);
+  if (!cache_dir.empty()) {
+    b->program_list = std::filesystem::path(cache_dir) / "programs.txt";
+    b->known_programs = torchlight::backend::ReadProgramList(b->program_list, sizeof(ProgramKey));
+    b->known_program_set.insert(b->known_programs.begin(), b->known_programs.end());
+    b->program_list_fresh = b->known_programs.empty();
+  }
   b->guest_texgen_factory = std::make_unique<GuestTexgenFactory>();
   b->guest_pixel_fog = std::make_unique<GuestPixelFogFactory>();
   b->guest_alpha_test = std::make_unique<GuestAlphaTestFactory>();
@@ -1908,6 +1855,7 @@ tl_backend* tl_backend_create_child(tl_render_system render_system, const char* 
 
 void tl_backend_destroy(tl_backend* b) {
   if (!b) return;
+  tl_backend_save_program_cache(b);
   b->host_vertex.clear();
   b->host_index.clear();
   b->vertex_layouts.clear();
@@ -2720,6 +2668,156 @@ int tl_backend_draw(tl_backend* b, const tl_draw* d) {
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   }
   return result;
+}
+
+void tl_backend_open_program_cache(tl_backend* b, const char* version) {
+  // GL's drivers compile and cache GLSL themselves (OGRE's GL caches also keep a rejected binary
+  // forever, docs/ARCHITECTURE.md); Direct3D 11 compiles HLSL in the application (D3DCompile),
+  // which no driver caches. Its compiled form (DXBC) does not depend on the driver: the key is the
+  // game's build, OGRE's version and the compiler's.
+  auto& programs = Ogre::GpuProgramManager::getSingleton();
+  const std::string dir = torchlight::platform::ShaderCacheDir();
+  if (dir.empty() || b->rs->getName().find("Direct3D") == std::string::npos ||
+      !programs.canGetCompiledShaderBuffer()) {
+    return;
+  }
+  const std::string key = std::string(version ? version : "") + "|" + OGRE_VERSION_NAME + "|" +
+                          std::to_string(OGRE_VERSION) + "|" +
+                          torchlight::platform::ShaderCompilerVersion() + "|" + b->rs->getName();
+  char name[48];
+  std::snprintf(name, sizeof(name), "microcode-%016llx.bin",
+                (unsigned long long)std::hash<std::string>{}(key));
+  b->microcode_file = std::filesystem::path(dir) / name;
+  // Caches of other keys (an earlier build, another compiler) are never read again.
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(dir, error)) {
+    const std::string file = entry.path().filename().string();
+    if (file.rfind("microcode-", 0) == 0 && entry.path() != b->microcode_file)
+      std::filesystem::remove(entry.path(), error);
+  }
+  programs.setSaveMicrocodesToCache(true);
+  if (!std::filesystem::exists(b->microcode_file, error)) return;
+  // A file cut short or damaged is told by our trailer (program_cache_file.h): OGRE's own load
+  // swallows some read errors and leaves the cache empty, which would look loaded, and throws on
+  // others after part of the entries are in. Such a file is removed, the cache emptied, and it is
+  // rebuilt from what this session compiles.
+  std::ifstream in(b->microcode_file, std::ios::binary);
+  const std::string file((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  std::optional<std::string> payload = torchlight::backend::UnwrapProgramCache(file);
+  if (payload) {
+    try {
+      Ogre::DataStreamPtr stream = std::make_shared<Ogre::MemoryDataStream>(
+          payload->data(), payload->size(), false, true);
+      programs.loadMicrocodeCache(stream);
+      Ogre::LogManager::getSingleton().logMessage("program cache: " + b->microcode_file.string());
+      return;
+    } catch (Ogre::Exception&) {
+      // Whatever was read before the error goes: loading an empty stream clears the cache.
+      programs.loadMicrocodeCache(std::make_shared<Ogre::MemoryDataStream>(size_t(0)));
+    }
+  }
+  Ogre::LogManager::getSingleton().logWarning("program cache unreadable, rebuilt: " +
+                                              b->microcode_file.string());
+  std::filesystem::remove(b->microcode_file, error);
+}
+
+void tl_backend_save_program_cache(tl_backend* b) {
+  if (b->microcode_file.empty()) return;
+  auto& programs = Ogre::GpuProgramManager::getSingleton();
+  if (!programs.isCacheDirty()) return;
+  // Written next to the file and renamed over it: an interrupted write never leaves half a cache.
+  std::filesystem::path temp = b->microcode_file;
+  temp += ".tmp";
+  std::error_code error;
+  bool written = false;
+  try {
+    {
+      std::fstream* out = OGRE_NEW_T(std::fstream, Ogre::MEMCATEGORY_GENERAL)(
+          temp, std::ios::binary | std::ios::out | std::ios::trunc);
+      Ogre::DataStreamPtr stream(OGRE_NEW Ogre::FileStreamDataStream(out, true));
+      programs.saveMicrocodeCache(stream);
+    }
+    // OGRE's bytes, then our trailer (program_cache_file.h).
+    std::string payload;
+    {
+      std::ifstream in(temp, std::ios::binary);
+      payload.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
+    // Loading them back checks they are whole (a failed write throws here), and clears OGRE's dirty
+    // flag, which saving does not: without it every later level load would write the file again.
+    programs.loadMicrocodeCache(
+        std::make_shared<Ogre::MemoryDataStream>(payload.data(), payload.size(), false, true));
+    std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+    const std::string file = torchlight::backend::WrapProgramCache(payload);
+    out.write(file.data(), std::streamsize(file.size()));
+    written = bool(out.flush());
+  } catch (Ogre::Exception& e) {
+    Ogre::LogManager::getSingleton().logWarning("program cache not saved: " + e.getDescription());
+  }
+  if (written) std::filesystem::rename(temp, b->microcode_file, error);
+  if (!written || error) std::filesystem::remove(temp, error);
+}
+
+size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms) {
+  using Clock = std::chrono::steady_clock;
+  const auto start = Clock::now();
+  // GL links a program pair at its first draw, which costs as much as the compilation on some
+  // drivers (Mali): there one draw that writes nothing links it. Direct3D 11 compiles at load.
+  const bool links_at_draw = b->rs->getName().find("OpenGL") != std::string::npos;
+  bool cube[TL_MAX_STAGES];
+  std::memcpy(cube, b->unit_cube, sizeof(cube));
+  bool drew = false;
+  while (b->precompile_next < b->known_programs.size() &&
+         std::chrono::duration<double, std::milli>(Clock::now() - start).count() < budget_ms) {
+    const std::string& key = b->known_programs[b->precompile_next++];
+    if (b->programs.count(key)) continue;
+    ProgramInputs f;
+    UnitDesc units[TL_MAX_STAGES];
+    uint32_t unit_count = 0;
+    if (!InputsFromKey(key, f, units, unit_count, b->unit_cube)) continue;
+    tl_backend::Program& p = b->programs[key];
+    try {
+      GenerateProgram(b, f, units, unit_count, p);
+    } catch (Ogre::Exception& e) {
+      Ogre::LogManager::getSingleton().logError("RTSS program precompile: " +
+                                                e.getFullDescription());
+      p.failed = true;
+    } catch (std::exception& e) {
+      Ogre::LogManager::getSingleton().logError(std::string("RTSS program precompile: ") +
+                                                e.what());
+      p.failed = true;
+    }
+    if (p.failed) continue;
+    ++b->counters.programs_precompiled;
+    if (!links_at_draw) continue;
+    try {
+      if (!drew) {
+        SetViewport(b, b->main.viewport);
+        b->rs->_beginFrame();
+        SetColourBlend(b, Ogre::SBF_ONE, Ogre::SBF_ZERO, 0);
+        b->rs->_setDepthBufferParams(false, false);
+        b->rs->_setCullingMode(Ogre::CULL_NONE);
+        drew = true;
+      }
+      b->rs->bindGpuProgram(p.pass->getVertexProgram()->_getBindingDelegate());
+      b->rs->bindGpuProgram(p.pass->getFragmentProgram()->_getBindingDelegate());
+      DrawQuad(b, b->quad);
+    } catch (std::exception& e) {
+      Ogre::LogManager::getSingleton().logError(std::string("RTSS program precompile draw: ") +
+                                                e.what());
+    }
+  }
+  std::memcpy(b->unit_cube, cube, sizeof(cube));
+  if (drew) {
+    EndFullScreenPass(b);
+    b->rs->_endFrame();
+    b->bound_program = nullptr;
+    for (auto& constants : b->bound_constants) constants.clear();
+    ForgetActiveViewport(b);
+  }
+  b->counters.precompile_ms +=
+      std::chrono::duration<double, std::milli>(Clock::now() - start).count();
+  return b->known_programs.size() - b->precompile_next;
 }
 
 void tl_backend_take_counters(tl_backend* b, tl_backend_counters* out) {

@@ -316,11 +316,13 @@ REX_FUNC(sub_82217DA8) {
   // game's loads PC raises STAT_DEEPEST_FLOOR to the new level's depth through its
   // eligibility-gated stat assignment (kGameLevelLoadReturns), evaluated at the next flush.
   // Also timed for the log, in every mode (docs/performance-profile.md): the call builds the new
-  // level and loads what it needs on the game's thread.
+  // level and loads what it needs on the game's thread; meanwhile the live mode precompiles
+  // programs (live::LevelLoadStarted).
   const auto game = ctx.r3.u32;
   const auto from = uint32_t(ctx.lr);
   if (pc::NativeEnabled()) pc::FlushCounters(Observe("counter-flush",ctx,base));
   const auto load_start = std::chrono::steady_clock::now();
+  torchlight::live::LevelLoadStarted();
   __imp__sub_82217DA8(ctx,base);
   torchlight::live::LogLevelLoad(std::chrono::duration_cast<std::chrono::milliseconds>(
       std::chrono::steady_clock::now() - load_start));

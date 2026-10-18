@@ -55,9 +55,10 @@ elseif(WIN32)
                 gl_probe_win.cpp text_wrap.cpp
                 presentation_time_none.cpp display_refresh_none.cpp)
     # dxgi: the GPUs (DXGI adapters); opengl32 and gdi32: the OpenGL 3.3 probe (WGL, pixel formats);
-    # advapi32: the firmware's system information (IsSteamDeck).
+    # advapi32: the firmware's system information (IsSteamDeck); version: the HLSL compiler's file
+    # version (ShaderCompilerVersion).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
-                          PRIVATE dxgi opengl32 gdi32 advapi32)
+                          PRIVATE dxgi opengl32 gdi32 advapi32 version)
 elseif(APPLE)
     enable_language(OBJCXX)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_mac.cpp)

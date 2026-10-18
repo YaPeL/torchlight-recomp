@@ -236,6 +236,12 @@ Without them nothing moves. The settings (`settings.toml`, the config folder), t
 the widened layouts do not follow these flags: a test run that must not touch them also needs its
 own `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` (Linux).
 
+Pending (isolation): on Windows and macOS there is no such variable, so a test run with
+`--user_data_root` still reads and writes the real shader cache folder
+(`%LOCALAPPDATA%\TorchlightRecomp\ogre`, with Direct3D 11's program cache in it, and
+`~/Library/Caches/TorchlightRecomp/ogre`) and the real settings. Making them follow
+`--user_data_root` / `--cache_root` is still to do.
+
 The logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
 runtime's as `torchlight_NNN.log` and OGRE's next to it as `torchlight_NNN_ogre.log`. The game
 prints the log's path at startup, and the first line of each log has the executable's path and the

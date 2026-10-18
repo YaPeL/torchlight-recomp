@@ -6,6 +6,7 @@
 #ifndef TORCHLIGHT_BACKEND_API_H
 #define TORCHLIGHT_BACKEND_API_H
 
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -319,8 +320,26 @@ typedef struct tl_backend_counters {
   double program_generate_ms;
   uint32_t gpu_buffers_created;
   uint32_t vertex_layouts_created;
+  uint32_t programs_precompiled;  /* by tl_backend_precompile_programs */
+  double precompile_ms;
 } tl_backend_counters;
 void tl_backend_take_counters(tl_backend* b, tl_backend_counters* out);
+
+/* Generates, within about `budget_ms`, programs this device generated in earlier sessions and this
+ * one has not yet (the list in the shader cache folder, backend/program_list.h), so their
+ * compilation happens now instead of at their first draw; on GL each is also linked with a draw
+ * that writes nothing. For the live mode while the game loads a level and draws nothing; never
+ * between tl_backend_begin and tl_backend_end. Returns how many listed programs are left to go
+ * through. */
+size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms);
+
+/* OGRE's cache of compiled programs, on where the render system compiles programs in the
+ * application instead of in the driver (Direct3D 11): loaded from the shader cache folder, its file
+ * named by the game's build (`version`), OGRE's version and the compiler's; nothing elsewhere.
+ * tl_backend_save_program_cache writes what was compiled since (at the end of each level load; the
+ * backend's destruction saves too). */
+void tl_backend_open_program_cache(tl_backend* b, const char* version);
+void tl_backend_save_program_cache(tl_backend* b);
 
 /* Display gamma ramp the guest set (commands::SetGammaRamp values), applied when the frame ends.
  * Linear until set. */
