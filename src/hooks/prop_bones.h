@@ -9,14 +9,13 @@
 
 namespace torchlight::hooks {
 
-// Whether the forced path's Entity::cacheBoneMatrices may be skipped: the option is on, the call
-// comes from the forced path (Entity::updateAnimation) inside a layout prop's update, and the entity
-// has no child object attached to a bone (no TagPoint, light or effect that would follow it). The
-// render path still evaluates the pose lazily before drawing the entity (Entity::_updateRenderQueue
-// calls cacheBoneMatrices itself), in any camera, shadows included.
-inline bool ShouldDeferPropBones(bool enabled, bool in_prop_update, bool forced_call,
-                                 uint32_t child_objects) {
-  return enabled && in_prop_update && forced_call && child_objects == 0;
+// Whether the forced Entity::updateAnimation of an entity may be skipped: the option is on, the call
+// comes inside a layout prop's update, and the entity has no child object attached to a bone (no
+// TagPoint, light or effect that would follow it). The render path still evaluates the pose before
+// drawing the entity (Entity::_updateRenderQueue runs the full updateAnimation for every skeletal
+// entity it queues), in any camera, shadows included.
+inline bool ShouldDeferPropBones(bool enabled, bool in_prop_update, uint32_t child_objects) {
+  return enabled && in_prop_update && child_objects == 0;
 }
 
 // Per frame: the entities deferred (and their skeletons), whether the render path evaluated one of
@@ -31,6 +30,7 @@ class PropBonesCounts {
     deferred_now_.clear();
     skeletons_now_.clear();
   }
+  // A forced update that ran (a unit's, or a prop with attachments; it may still find nothing to do).
   void Evaluated() { ++evaluated_; }
   void Deferred(uint32_t entity, uint32_t skeleton) {
     ++deferred_;

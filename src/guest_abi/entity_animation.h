@@ -17,21 +17,21 @@ namespace torchlight::guest_abi::entity_animation {
 // manual bones are dirty (vtable +0x134), applies the animation state set unless
 // mSkipAnimStateUpdates (SkeletonInstance vtable +0xFC: Skeleton::setAnimationState 0x821CC498,
 // @0x821B943C), builds the bone matrices (vtable +0x108, 0x821CB3C0, @0x821B9454) and stores the
-// frame number. Three callers: Entity::updateAnimation (@0x821B9504, the forced path) and the render
-// path, Entity::_updateRenderQueue 0x821E0D18 (@0x821E0DFC) and 0x821E0EA8 (@0x821E11B0).
+// frame number. Three callers: the forced path 0x821B9478 (@0x821B9504) and the render path:
+// Entity::_updateRenderQueue 0x821E0D18 (@0x821E0DFC, only with mDisplaySkeleton +0x1B9) and OGRE 1.7's
+// full Entity::updateAnimation 0x821E0EA8 (@0x821E11B0), which _updateRenderQueue calls for every
+// skeletal entity it queues (@0x821E0E34). That call is unconditional only with hardware animation
+// (kHardwareAnimationEnabled true): with software animation it is skipped when
+// mFrameAnimationLastUpdated (+0x188) equals the state set's dirty frame and the blended buffers are
+// still held (@0x821E0F54..0x821E1098), and the forced path stores +0x188 (@0x821B9534).
 inline constexpr uint32_t kCacheBoneMatrices = 0x821B93B0;
-// Return address of the forced path's call: Entity::updateAnimation 0x821B9478 calls
-// cacheBoneMatrices with `bl` at 0x821B9504.
-inline constexpr uint32_t kForcedCallReturn = 0x821B9508;
-// [confirmed] Entity::updateAnimation() 0x821B9478: only caller the game's animation player update
+// [confirmed] [Runic difference] 0x821B9478, a trimmed Entity::updateAnimation (OGRE 1.7's full one is
+// 0x821E0EA8): only caller the game's animation player update
 // 0x821BB578 (@0x821BC3AC; tools/guest_re/xref.py). It caches the bone matrices when the animation
 // state set's dirty frame (+0 of the set, @0x821B94A4) differs from mFrameAnimationLastUpdated, then,
 // when the animation or the parent node's full transform changed, notifies every child object
 // attached to a bone (the map walk @0x821B95A0..0x821B95F0: child->getParentNode()->needUpdate).
-inline constexpr uint32_t kUpdateAnimation = 0x821B9478;
-// [confirmed] Skeleton::reset(bool) 0x821A7428 (src/OgreSkeleton.cpp): walks mBoneList (+0xBC/+0xC0)
-// and resets each bone not manually controlled (Bone +0x136); called by setAnimationState.
-inline constexpr uint32_t kSkeletonReset = 0x821A7428;
+inline constexpr uint32_t kForcedUpdateAnimation = 0x821B9478;
 // The game's CGenericModelDescriptor update (layout descriptors, slot 7; game-thread-parallelism.md
 // 11.2): for each child that is an animation player it calls 0x821BB578 (@0x821DEE70). Only layout
 // props (the level's decor) come through it.

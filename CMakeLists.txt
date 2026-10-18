@@ -72,10 +72,10 @@ set(TORCHLIGHT_SOURCES
     src/capture/session.cpp
     src/hooks/bucket_cull_hooks.cpp
     src/hooks/frustum_hooks.cpp
-    src/hooks/prop_bones_hooks.cpp
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
     src/hooks/guest_io_hooks.cpp
+    src/hooks/prop_bones_hooks.cpp
     src/hooks/render_system_hooks.cpp
     src/hooks/rtss_listener_hooks.cpp
     src/hooks/resource_hooks.cpp
