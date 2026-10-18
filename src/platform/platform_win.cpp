@@ -29,6 +29,7 @@
 #define NOMINMAX
 #endif
 #include <windows.h>
+#include <winver.h>  // GetFileVersionInfoW (not in windows.h with WIN32_LEAN_AND_MEAN)
 #include <dxgi1_6.h>
 #include <wrl/client.h>
 
@@ -141,6 +142,26 @@ void BlackGameWindowBackground() {}
 bool HasDisplay() { return true; }
 
 std::string ShaderCacheDir() { return UserDir(UserFolderKind::kCache, "ogre"); }
+
+std::string ShaderCompilerVersion() {
+  // The DLL the Direct3D 11 render system compiles HLSL with, as the loader would find it.
+  const wchar_t* dll = L"d3dcompiler_47.dll";
+  DWORD handle = 0;
+  const DWORD size = GetFileVersionInfoSizeW(dll, &handle);
+  if (size == 0) return {};
+  std::vector<unsigned char> data(size);
+  VS_FIXEDFILEINFO* info = nullptr;
+  UINT length = 0;
+  if (!GetFileVersionInfoW(dll, 0, size, data.data()) ||
+      !VerQueryValueW(data.data(), L"\\", reinterpret_cast<void**>(&info), &length) || !info) {
+    return {};
+  }
+  char version[64];
+  std::snprintf(version, sizeof(version), "%u.%u.%u.%u", unsigned(HIWORD(info->dwFileVersionMS)),
+                unsigned(LOWORD(info->dwFileVersionMS)), unsigned(HIWORD(info->dwFileVersionLS)),
+                unsigned(LOWORD(info->dwFileVersionLS)));
+  return version;
+}
 
 std::string CacheDir(const std::string& name) {
   // `name` is UTF-8 (a std::string path would be read in the ANSI code page).

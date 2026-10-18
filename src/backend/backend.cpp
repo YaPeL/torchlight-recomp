@@ -28,6 +28,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <fstream>
 #include <map>
 #include <memory>
 #include <string>
@@ -385,6 +386,9 @@ struct tl_backend {
   std::unordered_set<std::string> known_program_set;
   size_t precompile_next = 0;
   bool program_list_fresh = true;
+  // OGRE's cache of compiled programs, where the render system compiles them itself (Direct3D 11's
+  // HLSL; tl_backend_open_program_cache): its file, empty when the cache is off.
+  std::filesystem::path microcode_file;
   std::vector<Ogre::Affine3> world_matrices;  // ApplyProgram's world + bone palette
   std::unique_ptr<Ogre::RTShader::SubRenderStateFactory> guest_texgen_factory, guest_pixel_fog,
       guest_alpha_test, guest_lighting;
@@ -2004,6 +2008,7 @@ tl_backend* tl_backend_create_child(tl_render_system render_system, const char* 
 
 void tl_backend_destroy(tl_backend* b) {
   if (!b) return;
+  tl_backend_save_program_cache(b);
   b->host_vertex.clear();
   b->host_index.clear();
   b->vertex_layouts.clear();
@@ -2858,6 +2863,69 @@ int tl_backend_draw(tl_backend* b, const tl_draw* d) {
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count();
   }
   return result;
+}
+
+void tl_backend_open_program_cache(tl_backend* b, const char* version) {
+  // GL's drivers compile and cache GLSL themselves (OGRE's GL caches also keep a rejected binary
+  // forever, docs/ARCHITECTURE.md); Direct3D 11 compiles HLSL in the application (D3DCompile),
+  // which no driver caches. Its compiled form (DXBC) does not depend on the driver: the key is the
+  // game's build, OGRE's version and the compiler's.
+  auto& programs = Ogre::GpuProgramManager::getSingleton();
+  const std::string dir = torchlight::platform::ShaderCacheDir();
+  if (dir.empty() || b->rs->getName().find("Direct3D") == std::string::npos ||
+      !programs.canGetCompiledShaderBuffer()) {
+    return;
+  }
+  const std::string key = std::string(version ? version : "") + "|" + OGRE_VERSION_NAME + "|" +
+                          std::to_string(OGRE_VERSION) + "|" +
+                          torchlight::platform::ShaderCompilerVersion() + "|" + b->rs->getName();
+  char name[48];
+  std::snprintf(name, sizeof(name), "microcode-%016llx.bin",
+                (unsigned long long)std::hash<std::string>{}(key));
+  b->microcode_file = std::filesystem::path(dir) / name;
+  // Caches of other keys (an earlier build, another compiler) are never read again.
+  std::error_code error;
+  for (const auto& entry : std::filesystem::directory_iterator(dir, error)) {
+    const std::string file = entry.path().filename().string();
+    if (file.rfind("microcode-", 0) == 0 && entry.path() != b->microcode_file)
+      std::filesystem::remove(entry.path(), error);
+  }
+  programs.setSaveMicrocodesToCache(true);
+  if (!std::filesystem::exists(b->microcode_file, error)) return;
+  try {
+    std::ifstream* in = OGRE_NEW_T(std::ifstream, Ogre::MEMCATEGORY_GENERAL)(
+        b->microcode_file, std::ios::binary);
+    Ogre::DataStreamPtr stream(OGRE_NEW Ogre::FileStreamDataStream(in, true));
+    programs.loadMicrocodeCache(stream);
+    Ogre::LogManager::getSingleton().logMessage("program cache: " + b->microcode_file.string());
+  } catch (Ogre::Exception& e) {
+    // A damaged file: start again from nothing.
+    Ogre::LogManager::getSingleton().logWarning("program cache unreadable, removed: " +
+                                                e.getDescription());
+    std::filesystem::remove(b->microcode_file, error);
+  }
+}
+
+void tl_backend_save_program_cache(tl_backend* b) {
+  if (b->microcode_file.empty()) return;
+  auto& programs = Ogre::GpuProgramManager::getSingleton();
+  if (!programs.isCacheDirty()) return;
+  // Written next to the file and renamed over it: an interrupted write never leaves half a cache.
+  std::filesystem::path temp = b->microcode_file;
+  temp += ".tmp";
+  std::error_code error;
+  try {
+    {
+      std::fstream* out = OGRE_NEW_T(std::fstream, Ogre::MEMCATEGORY_GENERAL)(
+          temp, std::ios::binary | std::ios::out | std::ios::trunc);
+      Ogre::DataStreamPtr stream(OGRE_NEW Ogre::FileStreamDataStream(out, true));
+      programs.saveMicrocodeCache(stream);
+    }
+    std::filesystem::rename(temp, b->microcode_file, error);
+  } catch (Ogre::Exception& e) {
+    Ogre::LogManager::getSingleton().logWarning("program cache not saved: " + e.getDescription());
+  }
+  if (error) std::filesystem::remove(temp, error);
 }
 
 size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms) {

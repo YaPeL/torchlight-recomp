@@ -84,6 +84,8 @@ void SetCurrentThreadName(const char* name) {
 
 std::string ShaderCacheDir() { return UserDir(UserFolderKind::kCache, "ogre"); }
 
+std::string ShaderCompilerVersion() { return {}; }
+
 std::string CacheDir(const std::string& name) { return UserDir(UserFolderKind::kCache, name); }
 
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }

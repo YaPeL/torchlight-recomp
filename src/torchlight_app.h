@@ -198,7 +198,8 @@ class TorchlightApp : public rex::ReXApp {
              torchlight::game_setup::ShowRendererError(reason);
              if (window()) window()->RequestClose();
            });
-         }});
+         }},
+        TORCHLIGHT_BUILD_COMMIT);
   }
 
   void OnWindowPixelSizeChanged(uint32_t pixel_width, uint32_t pixel_height) override {

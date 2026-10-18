@@ -529,7 +529,8 @@ void PreSetup(rex::RuntimeConfig& config) {
   platform::AllowBackgroundGamepad();
 }
 
-void Install(const std::filesystem::path& game_data_root, const DialogHost& dialogs) {
+void Install(const std::filesystem::path& game_data_root, const DialogHost& dialogs,
+             const std::string& build) {
   // Before the guest runs, in every mode.
   ApplyLanguage(g_host_settings.values.language, game_data_root);
   InstallFrameCounter(dialogs.runtime);
@@ -545,6 +546,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   }
   LiveOptions options;
   options.game_data_root = game_data_root;
+  options.build = build;
   options.draw = !ParallelNoDraw();
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);

@@ -56,8 +56,9 @@ struct DialogHost {
 // mode the runtime reports for the aspect setting (settings::Aspect, automatic = the game
 // display's), unless --video_mode_width/height came on the command line.
 void ApplyAspect();
-// After the runtime is set up (OnPostSetup, UI thread).
-void Install(const std::filesystem::path& game_data_root, const DialogHost& dialogs);
+// After the runtime is set up (OnPostSetup, UI thread). `build`: the game's build (its commit).
+void Install(const std::filesystem::path& game_data_root, const DialogHost& dialogs,
+             const std::string& build);
 // The game window's pixel size changed (UI thread).
 void OnWindowPixelSizeChanged(uint32_t width, uint32_t height);
 // The language pack in use (translations/<code>/ of a language the game does not pick by itself),

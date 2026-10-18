@@ -460,11 +460,19 @@ hook is timed with `--native_producer_timing` (off by default); the live mode's 
   (5.7 s of hitches in five minutes) and the next session none. So the backend keeps the key of every
   program it generates in the shader cache folder, and while the game loads a level (it draws no
   frames then) it generates the listed ones it does not have yet, 50 ms at a time, linking each on
-  GL with a draw that writes nothing; after an update the loads compile what play would have. The
-  rest relies on the driver's cache, guaranteed on Linux with NVIDIA and Mesa (Steam Deck included),
-  on Windows with GL and on the Mali; Direct3D 11's HLSL compilation (`D3DCompile`) is not a
-  driver's and is being measured. Pending when testing on macOS: if Apple's GL does not cache well,
-  evaluate OGRE's microcode cache there, first solving the rejected binary problem.
+  GL with a draw that writes nothing; after an update the loads compile what play would have. It
+  also runs before the game's first frame, for the title screen's programs. On GL the rest relies
+  on the driver's cache, guaranteed on Linux with NVIDIA and Mesa (Steam Deck included), on Windows
+  with GL3+ and on the Mali. Direct3D 11 is not covered by a driver: HLSL becomes DXBC in the
+  application (`D3DCompile`), and on Windows 154 of the 156 programs of a second session were
+  compiled again (about 1.5 s per session, the worst frame 226 ms on the title screen;
+  `perf/win-d3d11-shaders`, 2026-10-17). There OGRE's microcode cache is on
+  (`tl_backend_open_program_cache`): one file in the shader cache folder, named by the game's build,
+  OGRE's version and D3DCompiler's, saved after each level load and at exit through a temporary
+  file. The 14.6 bug below does not reach it: Direct3D 11 compiles only what the cache does not have,
+  and DXBC is never rejected by a driver, so an entry is never replaced. Pending when testing on
+  macOS: if Apple's GL does not cache well, evaluate OGRE's microcode cache there, first solving the
+  rejected binary problem.
 - OGRE 14.6 bug (possible upstream report), confirmed by reading the code and with a test:
   `GpuProgramManager::addMicrocodeToCache` (`OgreGpuProgramManager.cpp:314-328`) marks the cache as
   modified only on insertion. When the driver rejects a binary loaded from the cache, GL3+ recompiles
