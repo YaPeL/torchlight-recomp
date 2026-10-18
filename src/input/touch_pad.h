@@ -78,6 +78,8 @@ class TouchPad {
   void Up(uint64_t finger);
   // Every finger lifted (the controls hid).
   void Clear() { fingers_.clear(); }
+  // Whether a finger is on the screen as far as the pad knows (a new layout drops them).
+  bool tracks(uint64_t finger) const { return fingers_.contains(finger); }
 
   PadState State() const;
   // Where the stick's base and knob are now (the resting base while no finger holds it).

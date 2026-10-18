@@ -439,8 +439,10 @@ class ScriptInputDriver : public rex::input::InputDriver {
                               rex::input::X_INPUT_KEYSTROKE* out) override {
     if (id != kDevice || !connected_) return X_ERROR_DEVICE_NOT_CONNECTED;
     std::lock_guard lock(mutex_);
+    // Not read while the input is inactive: the keystrokes wait (and expire) as they would.
+    if (!is_active()) return X_ERROR_EMPTY;
     const auto key = keys_.Pop(input::KeystrokeQueue::Clock::now());
-    if (!key || !is_active()) return X_ERROR_EMPTY;
+    if (!key) return X_ERROR_EMPTY;
     if (out) {
       std::memset(out, 0, sizeof(*out));
       out->virtual_key = key->virtual_key;

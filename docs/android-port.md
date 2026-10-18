@@ -818,6 +818,19 @@ The setting is `touch_controls` in settings.toml.
   - with it held, X held attacks and LB is tapped; the potion count did not change because the hero
     was at full health, so the potion itself is left for the device;
   - after lifting, Back opens the inventory and RB turns its page (the menus read keystrokes).
+- **The clean-context review's findings, fixed:**
+  - the touch state lives for the whole process and the driver only reads it, so nothing can reach
+    a driver already destroyed;
+  - window events are taken only from the game window, and a change of display scale lays the
+    controls out again;
+  - the scripts' fingers follow the controls' own (a new layout drops them);
+  - keystrokes are not taken while the input is inactive.
+- **Packet numbers:** the SDK's merge keeps the larger packet number of the devices, so a pad used a
+  lot hides the touch controls' changes in that number. The game ignores it: its two reads of the
+  pad state (`0x821FE8A8`, `0x822DF798`) compare buttons, not packets. A run with a virtual pad
+  connected and moved 120 times before the touches walked the hero all the same.
+- **For A4.4:** `PadKeystrokes` makes no left-stick keystrokes (`VK_PAD_LTHUMB_*`), so the touch
+  stick does not move menus that navigate by keystrokes. The menus' layout uses the D-pad.
 - **Not drawn yet:** that is A4.2.
 
 *Steps* (each validated before the next):

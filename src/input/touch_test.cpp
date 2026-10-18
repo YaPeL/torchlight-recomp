@@ -79,8 +79,12 @@ void TestHeldButton() {
   Check(pad.State().buttons == 0, "released when the finger leaves it");
   pad.Move(1, x.x, x.y);
   Check(pad.State().buttons == pad::kX, "pressed again when the same finger comes back");
+  Check(pad.tracks(1), "the finger is tracked");
   pad.Up(1);
-  Check(pad.State() == PadState{}, "released when the finger lifts");
+  Check(pad.State() == PadState{} && !pad.tracks(1), "released when the finger lifts");
+  pad.Down(2, x.x, x.y);
+  pad.SetLayout(GameplayLayout(Tab()));
+  Check(!pad.tracks(2) && pad.State() == PadState{}, "a new layout drops the fingers");
 }
 
 void TestSliding() {

@@ -8,6 +8,7 @@
 #include <cstring>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
 
 #include <SDL3/SDL_events.h>
@@ -54,24 +55,259 @@ input::TouchMode ModeOf(settings::TouchControls mode) {
   }
 }
 
+// The touch controls' state, for the life of the process: the driver the input system owns, the
+// event watch, the drawing (A4.2) and the scripts all reach it here, so none of them can outlive it.
+class TouchState {
+ public:
+  // Under install, UI thread.
+  void Start(input::TouchMode mode, bool pad_at_start, bool touch_screen, bool mouse_finger, SDL_WindowID window,
+             float width, float height, float points_w, float points_h, float px_per_mm) {
+    std::lock_guard lock(mutex_);
+    visibility_ = input::TouchVisibility(mode, pad_at_start, touch_screen);
+    mouse_finger_ = mouse_finger;
+    window_ = window;
+    width_ = width;
+    height_ = height;
+    points_w_ = points_w;
+    points_h_ = points_h;
+    px_per_mm_ = px_per_mm;
+    pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
+    ignored_.clear();
+    state_ = {};
+    keys_.Clear();
+    installed_ = true;
+  }
+  // The driver went away (the input system shut down).
+  void Stop() {
+    std::lock_guard lock(mutex_);
+    installed_ = false;
+    pad_.Clear();
+    ignored_.clear();
+    state_ = {};
+    keys_.Clear();
+  }
+
+  // The guest's input poll.
+  void Read(rex::input::X_INPUT_STATE* out, bool active) {
+    std::lock_guard lock(mutex_);
+    std::memset(out, 0, sizeof(*out));
+    out->packet_number = packet_;
+    if (!active) return;
+    out->gamepad.buttons = state_.buttons;
+    out->gamepad.left_trigger = state_.left_trigger;
+    out->gamepad.right_trigger = state_.right_trigger;
+    out->gamepad.thumb_lx = state_.left_x;
+    out->gamepad.thumb_ly = state_.left_y;
+    out->gamepad.thumb_rx = state_.right_x;
+    out->gamepad.thumb_ry = state_.right_y;
+  }
+  std::optional<input::PadKeystroke> Keystroke() {
+    std::lock_guard lock(mutex_);
+    return keys_.Pop(input::KeystrokeQueue::Clock::now());
+  }
+
+  // A finger in window fractions: down, moved or lifted.
+  void Finger(uint64_t id, float fx, float fy, bool down, bool up) {
+    std::lock_guard lock(mutex_);
+    FingerLocked(id, fx, fy, down, up);
+  }
+  // A script's finger: down when the controls do not track it (any more), else moved.
+  void Touch(uint64_t id, float fx, float fy, bool up) {
+    std::lock_guard lock(mutex_);
+    if (!installed_) return;
+    const bool known = ignored_.contains(id) || pad_.tracks(id);
+    if (up) {
+      if (known) FingerLocked(id, fx, fy, false, true);
+    } else {
+      FingerLocked(id, fx, fy, !known, false);
+    }
+  }
+
+  void PadUsed() {
+    std::lock_guard lock(mutex_);
+    if (!installed_ || !visibility_.OnPadUsed()) return;
+    REXLOG_INFO("touch: controls hidden (a pad was used)");
+    pad_.Clear();
+    ignored_.clear();
+    Update();
+  }
+
+  // The game window's size in pixels and in points, and its density, when they change.
+  void Resized(SDL_WindowID window, float width, float height) {
+    std::lock_guard lock(mutex_);
+    if (!installed_ || window != window_ || width <= 0 || height <= 0 || (width == width_ && height == height_))
+      return;
+    width_ = width;
+    height_ = height;
+    Relayout();
+  }
+  void ResizedPoints(SDL_WindowID window, float width, float height) {
+    std::lock_guard lock(mutex_);
+    if (window != window_ || width <= 0 || height <= 0) return;
+    points_w_ = width;
+    points_h_ = height;
+  }
+  void Density(SDL_WindowID window, float px_per_mm) {
+    std::lock_guard lock(mutex_);
+    if (!installed_ || window != window_ || px_per_mm <= 0 || px_per_mm == px_per_mm_) return;
+    px_per_mm_ = px_per_mm;
+    Relayout();
+  }
+
+  bool Snapshot(TouchSnapshot& out) {
+    std::lock_guard lock(mutex_);
+    if (!installed_) return false;
+    out.visible = visibility_.visible();
+    out.layout = pad_.layout();
+    out.state = state_;
+    out.stick_base_x = pad_.stick_base_x();
+    out.stick_base_y = pad_.stick_base_y();
+    out.stick_held = pad_.stick_held();
+    out.width = width_;
+    out.height = height_;
+    return true;
+  }
+
+  // The mouse as a finger (development), from the watch on the UI thread.
+  bool mouse_finger() {
+    std::lock_guard lock(mutex_);
+    return installed_ && mouse_finger_;
+  }
+  SDL_WindowID window() {
+    std::lock_guard lock(mutex_);
+    return window_;
+  }
+  float points_w() {
+    std::lock_guard lock(mutex_);
+    return points_w_;
+  }
+  float points_h() {
+    std::lock_guard lock(mutex_);
+    return points_h_;
+  }
+  bool mouse_down = false;  // UI thread only
+
+ private:
+  void FingerLocked(uint64_t id, float fx, float fy, bool down, bool up) {
+    if (!installed_) return;
+    const float x = fx * width_, y = fy * height_;
+    if (down) {
+      const bool was_visible = visibility_.visible();
+      if (!visibility_.OnFingerDown()) {
+        // The touch that showed them only shows them: its finger acts on nothing until it lifts.
+        ignored_.insert(id);
+        if (!was_visible && visibility_.visible()) REXLOG_INFO("touch: controls shown (a touch)");
+        return;
+      }
+      pad_.Down(id, x, y);
+    } else if (up) {
+      if (ignored_.erase(id)) return;
+      pad_.Up(id);
+    } else {
+      if (ignored_.contains(id)) return;
+      pad_.Move(id, x, y);
+    }
+    Update();
+  }
+  // A new layout drops the fingers (as if lifted); those still on the screen act again when they
+  // land anew.
+  void Relayout() {
+    pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
+    ignored_.clear();
+    Update();
+  }
+  // The new state, its keystrokes and a new packet.
+  void Update() {
+    const input::PadState next = visibility_.visible() ? pad_.State() : input::PadState{};
+    if (next == state_) return;
+    keys_.Push(state_, next, input::KeystrokeQueue::Clock::now());
+    state_ = next;
+    ++packet_;
+  }
+
+  std::mutex mutex_;
+  bool installed_ = false;
+  input::TouchPad pad_;
+  input::TouchVisibility visibility_{input::TouchMode::kNever, false, false};
+  input::PadState state_;
+  input::KeystrokeQueue keys_;
+  std::set<uint64_t> ignored_;
+  uint32_t packet_ = 1;
+  bool mouse_finger_ = false;
+  SDL_WindowID window_ = 0;
+  float width_ = 0, height_ = 0, points_w_ = 0, points_h_ = 0, px_per_mm_ = 0;
+};
+
+// Never destroyed: the event watch and other threads may still reach it while the program ends.
+TouchState& State() {
+  static TouchState* state = new TouchState;
+  return *state;
+}
+
+// SDL's event watch: on Android, finger events come on the Java side's thread.
+bool Watch(void*, SDL_Event* event) {
+  TouchState& state = State();
+  switch (event->type) {
+    case SDL_EVENT_FINGER_DOWN:
+    case SDL_EVENT_FINGER_MOTION:
+    case SDL_EVENT_FINGER_UP:
+    case SDL_EVENT_FINGER_CANCELED:
+      state.Finger(static_cast<uint64_t>(event->tfinger.fingerID), event->tfinger.x, event->tfinger.y,
+                   event->type == SDL_EVENT_FINGER_DOWN,
+                   event->type == SDL_EVENT_FINGER_UP || event->type == SDL_EVENT_FINGER_CANCELED);
+      break;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+      state.PadUsed();
+      break;
+    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
+      if (std::abs(static_cast<int>(event->gaxis.value)) > kPadUsedAxis) state.PadUsed();
+      break;
+    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+      state.Resized(event->window.windowID, static_cast<float>(event->window.data1),
+                    static_cast<float>(event->window.data2));
+      break;
+    case SDL_EVENT_WINDOW_RESIZED:
+      state.ResizedPoints(event->window.windowID, static_cast<float>(event->window.data1),
+                          static_cast<float>(event->window.data2));
+      break;
+    case SDL_EVENT_WINDOW_DISPLAY_SCALE_CHANGED:
+      // Moved to a display of another density (desktops; a phone keeps its own).
+      if (event->window.windowID == state.window()) state.Density(event->window.windowID, platform::GameWindowPixelsPerMm());
+      break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+      // The mouse as a finger (development); never the mouse SDL makes from touches.
+      if (event->button.which != SDL_TOUCH_MOUSEID && event->button.button == SDL_BUTTON_LEFT &&
+          event->button.windowID == state.window() && state.mouse_finger()) {
+        const bool down = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
+        state.mouse_down = down;
+        state.Finger(kMouseFinger, event->button.x / state.points_w(), event->button.y / state.points_h(), down,
+                     !down);
+      }
+      break;
+    case SDL_EVENT_MOUSE_MOTION:
+      if (state.mouse_down && event->motion.which != SDL_TOUCH_MOUSEID && event->motion.windowID == state.window() &&
+          state.mouse_finger()) {
+        state.Finger(kMouseFinger, event->motion.x / state.points_w(), event->motion.y / state.points_h(), false,
+                     false);
+      }
+      break;
+    default:
+      break;
+  }
+  return true;
+}
+
+// The controller the input system owns; the state is TouchState's.
 class TouchInputDriver : public rex::input::InputDriver {
  public:
   static constexpr rex::input::DeviceId kDevice = static_cast<rex::input::DeviceId>(0x544F5543);
 
-  TouchInputDriver(input::TouchMode mode, bool pad_at_start, bool touch_screen, bool mouse_finger,
-                   float width, float height, float points_w, float points_h, float px_per_mm)
-      : InputDriver(nullptr, 0),
-        visibility_(mode, pad_at_start, touch_screen),
-        mouse_finger_(mouse_finger),
-        width_(width),
-        height_(height),
-        points_w_(points_w),
-        points_h_(points_h),
-        px_per_mm_(px_per_mm) {
-    pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
-    SDL_AddEventWatch(Watch, this);
+  TouchInputDriver() : InputDriver(nullptr, 0) { SDL_AddEventWatch(Watch, nullptr); }
+  ~TouchInputDriver() override {
+    SDL_RemoveEventWatch(Watch, nullptr);
+    State().Stop();
   }
-  ~TouchInputDriver() override { SDL_RemoveEventWatch(Watch, this); }
 
   X_STATUS Setup() override { return X_STATUS_SUCCESS; }
 
@@ -86,20 +322,7 @@ class TouchInputDriver : public rex::input::InputDriver {
 
   X_RESULT GetDeviceState(rex::input::DeviceId id, rex::input::X_INPUT_STATE* out) override {
     if (id != kDevice) return X_ERROR_DEVICE_NOT_CONNECTED;
-    std::lock_guard lock(mutex_);
-    if (out) {
-      std::memset(out, 0, sizeof(*out));
-      out->packet_number = packet_;
-      if (is_active()) {
-        out->gamepad.buttons = state_.buttons;
-        out->gamepad.left_trigger = state_.left_trigger;
-        out->gamepad.right_trigger = state_.right_trigger;
-        out->gamepad.thumb_lx = state_.left_x;
-        out->gamepad.thumb_ly = state_.left_y;
-        out->gamepad.thumb_rx = state_.right_x;
-        out->gamepad.thumb_ry = state_.right_y;
-      }
-    }
+    if (out) State().Read(out, is_active());
     return X_ERROR_SUCCESS;
   }
 
@@ -128,9 +351,10 @@ class TouchInputDriver : public rex::input::InputDriver {
   X_RESULT GetDeviceKeystroke(rex::input::DeviceId id, uint32_t,
                               rex::input::X_INPUT_KEYSTROKE* out) override {
     if (id != kDevice) return X_ERROR_DEVICE_NOT_CONNECTED;
-    std::lock_guard lock(mutex_);
-    const auto key = keys_.Pop(input::KeystrokeQueue::Clock::now());
-    if (!key || !is_active()) return X_ERROR_EMPTY;
+    // Not read while the input is inactive: the keystrokes wait (and expire) as they would.
+    if (!is_active()) return X_ERROR_EMPTY;
+    const auto key = State().Keystroke();
+    if (!key) return X_ERROR_EMPTY;
     if (out) {
       std::memset(out, 0, sizeof(*out));
       out->virtual_key = key->virtual_key;
@@ -138,141 +362,7 @@ class TouchInputDriver : public rex::input::InputDriver {
     }
     return X_ERROR_SUCCESS;
   }
-
-  // A finger in window fractions (screens and scripts).
-  void Finger(uint64_t id, float fx, float fy, bool down, bool up) {
-    std::lock_guard lock(mutex_);
-    const float x = fx * width_, y = fy * height_;
-    if (down) {
-      const bool was_visible = visibility_.visible();
-      if (!visibility_.OnFingerDown()) {
-        // The touch that showed them only shows them: its finger acts on nothing until it lifts.
-        ignored_.insert(id);
-        if (!was_visible && visibility_.visible()) REXLOG_INFO("touch: controls shown (a touch)");
-        return;
-      }
-      pad_.Down(id, x, y);
-    } else if (up) {
-      if (ignored_.erase(id)) return;
-      pad_.Up(id);
-    } else {
-      if (ignored_.contains(id)) return;
-      pad_.Move(id, x, y);
-    }
-    Update();
-  }
-
-  void PadUsed() {
-    std::lock_guard lock(mutex_);
-    if (!visibility_.OnPadUsed()) return;
-    REXLOG_INFO("touch: controls hidden (a pad was used)");
-    pad_.Clear();
-    ignored_.clear();
-    Update();
-  }
-
-  void Resized(float width, float height) {
-    std::lock_guard lock(mutex_);
-    if (width <= 0 || height <= 0 || (width == width_ && height == height_)) return;
-    width_ = width;
-    height_ = height;
-    pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
-    Update();
-  }
-
-  void ResizedPoints(float width, float height) {
-    std::lock_guard lock(mutex_);
-    if (width > 0 && height > 0) {
-      points_w_ = width;
-      points_h_ = height;
-    }
-  }
-
-  bool Snapshot(TouchSnapshot& out) {
-    std::lock_guard lock(mutex_);
-    out.visible = visibility_.visible();
-    out.layout = pad_.layout();
-    out.state = state_;
-    out.stick_base_x = pad_.stick_base_x();
-    out.stick_base_y = pad_.stick_base_y();
-    out.stick_held = pad_.stick_held();
-    out.width = width_;
-    out.height = height_;
-    return true;
-  }
-
- private:
-  // Under the lock: the new state, its keystrokes and a new packet.
-  void Update() {
-    const input::PadState next = visibility_.visible() ? pad_.State() : input::PadState{};
-    if (next == state_) return;
-    keys_.Push(state_, next, input::KeystrokeQueue::Clock::now());
-    state_ = next;
-    ++packet_;
-  }
-
-  static bool Watch(void* self, SDL_Event* event);
-
-  std::mutex mutex_;
-  input::TouchPad pad_;
-  input::TouchVisibility visibility_;
-  input::PadState state_;
-  input::KeystrokeQueue keys_;
-  std::set<uint64_t> ignored_;
-  uint32_t packet_ = 1;
-  bool mouse_finger_;
-  bool mouse_down_ = false;  // the mouse finger (UI thread only)
-  float width_, height_, points_w_, points_h_, px_per_mm_;
 };
-
-// SDL's event watch: on Android, finger events come on the Java side's thread.
-bool TouchInputDriver::Watch(void* self, SDL_Event* event) {
-  auto* driver = static_cast<TouchInputDriver*>(self);
-  switch (event->type) {
-    case SDL_EVENT_FINGER_DOWN:
-    case SDL_EVENT_FINGER_MOTION:
-    case SDL_EVENT_FINGER_UP:
-    case SDL_EVENT_FINGER_CANCELED:
-      driver->Finger(static_cast<uint64_t>(event->tfinger.fingerID), event->tfinger.x, event->tfinger.y,
-                     event->type == SDL_EVENT_FINGER_DOWN,
-                     event->type == SDL_EVENT_FINGER_UP || event->type == SDL_EVENT_FINGER_CANCELED);
-      break;
-    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-      driver->PadUsed();
-      break;
-    case SDL_EVENT_GAMEPAD_AXIS_MOTION:
-      if (std::abs(static_cast<int>(event->gaxis.value)) > kPadUsedAxis) driver->PadUsed();
-      break;
-    case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
-      driver->Resized(static_cast<float>(event->window.data1), static_cast<float>(event->window.data2));
-      break;
-    case SDL_EVENT_WINDOW_RESIZED:
-      driver->ResizedPoints(static_cast<float>(event->window.data1), static_cast<float>(event->window.data2));
-      break;
-    case SDL_EVENT_MOUSE_BUTTON_DOWN:
-    case SDL_EVENT_MOUSE_BUTTON_UP:
-      // The mouse as a finger (development); never the mouse SDL makes from touches.
-      if (driver->mouse_finger_ && event->button.which != SDL_TOUCH_MOUSEID &&
-          event->button.button == SDL_BUTTON_LEFT) {
-        const bool down = event->type == SDL_EVENT_MOUSE_BUTTON_DOWN;
-        driver->mouse_down_ = down;
-        driver->Finger(kMouseFinger, event->button.x / driver->points_w_, event->button.y / driver->points_h_,
-                       down, !down);
-      }
-      break;
-    case SDL_EVENT_MOUSE_MOTION:
-      if (driver->mouse_finger_ && driver->mouse_down_ && event->motion.which != SDL_TOUCH_MOUSEID) {
-        driver->Finger(kMouseFinger, event->motion.x / driver->points_w_, event->motion.y / driver->points_h_,
-                       false, false);
-      }
-      break;
-    default:
-      break;
-  }
-  return true;
-}
-
-std::atomic<TouchInputDriver*> g_driver{nullptr};
 
 }  // namespace
 
@@ -294,10 +384,12 @@ void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode) {
   if (SDL_JoystickID* pads = SDL_GetGamepads(&gamepads)) SDL_free(pads);
   // The game window's size (its pixels for the layout, its points for the mouse) and density.
   int count = 0, w = 0, h = 0, pw = 0, ph = 0;
+  SDL_WindowID window_id = 0;
   SDL_Window** windows = SDL_GetWindows(&count);
   if (windows && count == 1) {
     SDL_GetWindowSizeInPixels(windows[0], &w, &h);
     SDL_GetWindowSize(windows[0], &pw, &ph);
+    window_id = SDL_GetWindowID(windows[0]);
   }
   if (windows) SDL_free(windows);
   const float px_per_mm = platform::GameWindowPixelsPerMm();
@@ -307,10 +399,9 @@ void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode) {
   }
   // The real pad's events reach the watch only with SDL's gamepad support on.
   SDL_InitSubSystem(SDL_INIT_GAMEPAD);
-  auto driver = std::make_unique<TouchInputDriver>(ModeOf(mode), gamepads > 0, touch_screen, mouse_finger,
-                                                   float(w), float(h), float(pw), float(ph), px_per_mm);
-  g_driver = driver.get();
-  input->AddDriver(std::move(driver));
+  State().Start(ModeOf(mode), gamepads > 0, touch_screen, mouse_finger, window_id, float(w), float(h), float(pw),
+                float(ph), px_per_mm);
+  input->AddDriver(std::make_unique<TouchInputDriver>());
   TouchSnapshot snap;
   ReadTouchControls(snap);
   REXLOG_INFO("touch: controls {} (mode {}, {} touch screen(s){}, {} pad(s) at start, {:.1f} px/mm, {}x{})",
@@ -335,28 +426,10 @@ bool TouchControlCentre(std::string_view name, float& x, float& y) {
   return false;
 }
 
-bool ReadTouchControls(TouchSnapshot& out) {
-  TouchInputDriver* driver = g_driver.load();
-  return driver && driver->Snapshot(out);
-}
+bool ReadTouchControls(TouchSnapshot& out) { return State().Snapshot(out); }
 
 void InjectTouch(uint64_t finger, float x, float y, bool up) {
-  TouchInputDriver* driver = g_driver.load();
-  if (!driver) return;
-  // A finger the driver has not seen is a new one.
-  static std::mutex mutex;
-  static std::set<uint64_t> down;
-  std::lock_guard lock(mutex);
-  const uint64_t id = kInjectedFingers + finger;
-  const bool is_down = down.contains(id);
-  if (up) {
-    if (!is_down) return;
-    down.erase(id);
-    driver->Finger(id, x, y, false, true);
-  } else {
-    if (!is_down) down.insert(id);
-    driver->Finger(id, x, y, !is_down, false);
-  }
+  State().Touch(kInjectedFingers + finger, x, y, up);
 }
 
 }  // namespace torchlight::live
