@@ -43,6 +43,8 @@ int main() {
   Check(dropped == 20, "the period's dropped frames");
   Check(summary && summary->starts_with("101 frames,"), "the period's frame count");
   Check(summary && summary->find("max 10000.00") != std::string::npos, "the long frame is the max");
+  Check(summary && summary->find("p50 10.00, p95 10.00") != std::string::npos,
+        "the median and p95 are the 10 ms frames");
   Check(summary && summary->find("over 33 ms 1, over 50 ms 1") != std::string::npos,
         "the long frame counted");
   Check(!series.TakeSummary(t), "the next period starts empty");

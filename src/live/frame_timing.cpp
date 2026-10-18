@@ -38,10 +38,10 @@ std::optional<std::string> FrameSeries::TakeSummary(Clock::time_point now, size_
     return period_ms_.end() - std::upper_bound(period_ms_.begin(), period_ms_.end(), ms);
   };
   std::string line = fmt::format(
-      "{} frames, mean {:.2f} ms ({:.1f} fps), p95 {:.2f}, p99 {:.2f}, max {:.2f}, over 33 ms {}, "
-      "over 50 ms {}",
+      "{} frames, mean {:.2f} ms ({:.1f} fps), p50 {:.2f}, p95 {:.2f}, p99 {:.2f}, max {:.2f}, "
+      "over 33 ms {}, over 50 ms {}",
       period_ms_.size(), sum / double(period_ms_.size()), 1000.0 * double(period_ms_.size()) / sum,
-      pct(0.95), pct(0.99), period_ms_.back(), over(33.0), over(50.0));
+      pct(0.5), pct(0.95), pct(0.99), period_ms_.back(), over(33.0), over(50.0));
   if (dropped) *dropped = period_dropped_;
   period_ms_.clear();
   period_dropped_ = 0;

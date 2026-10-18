@@ -2012,6 +2012,32 @@ int tl_backend_index_buffer(tl_backend* b, uint64_t id, const void* data, uint32
   return 0;
 }
 
+// A texture uploaded, for tl_backend_take_counters: the format it has on the GPU and its bytes.
+static void CountTextureUpload(tl_backend* b, const Ogre::TexturePtr& texture) {
+  tl_backend_counters& c = b->counters;
+  ++c.textures_uploaded;
+  const Ogre::PixelFormat format = texture->getFormat();
+  if (Ogre::PixelUtil::isCompressed(format)) {
+    ++c.textures_compressed;
+  } else if (format == Ogre::PF_A8B8G8R8 || format == Ogre::PF_A8R8G8B8 ||
+             format == Ogre::PF_X8B8G8R8 || format == Ogre::PF_X8R8G8B8) {
+    ++c.textures_rgba8;
+  } else if (format == Ogre::PF_B8G8R8 || format == Ogre::PF_R8G8B8) {
+    ++c.textures_rgb8;
+  } else {
+    ++c.textures_other;
+  }
+  c.texture_bytes += texture->getSize();
+}
+
+// Whether `data` is a DDS file of DXT1/3/5 blocks (its pixel format's FourCC, at byte 84).
+static bool IsDxtDds(const void* data, uint32_t size) {
+  const auto* bytes = static_cast<const char*>(data);
+  return size >= 88 && std::memcmp(bytes, "DDS ", 4) == 0 &&
+         (std::memcmp(bytes + 84, "DXT1", 4) == 0 || std::memcmp(bytes + 84, "DXT3", 4) == 0 ||
+          std::memcmp(bytes + 84, "DXT5", 4) == 0);
+}
+
 int tl_backend_texture_file(tl_backend* b, uint64_t id, const char* name, const void* data,
                             uint32_t size, const char* extension, uint32_t type, char* error,
                             uint32_t error_size) {
@@ -2019,7 +2045,18 @@ int tl_backend_texture_file(tl_backend* b, uint64_t id, const char* name, const 
     Ogre::DataStreamPtr stream =
         std::make_shared<Ogre::MemoryDataStream>(const_cast<void*>(data), size, false, true);
     Ogre::Image image;
+    // Without DXT on the GPU, OGRE's DDS codec decodes a DXT file to RGB(A) inside the load.
+    const bool cpu_decode =
+        IsDxtDds(data, size) &&
+        !b->rs->getCapabilities()->hasCapability(Ogre::RSC_TEXTURE_COMPRESSION_DXT);
+    const auto load_start = std::chrono::steady_clock::now();
     image.load(stream, extension);
+    if (cpu_decode) {
+      ++b->counters.dxt_decoded;
+      b->counters.dxt_decode_ms += std::chrono::duration<double, std::milli>(
+                                       std::chrono::steady_clock::now() - load_start)
+                                       .count();
+    }
     char unique[32];
     std::snprintf(unique, sizeof(unique), "#%u", ++b->texture_serial);
     const int mipmaps = Ogre::PixelUtil::isCompressed(image.getFormat())
@@ -2031,6 +2068,7 @@ int tl_backend_texture_file(tl_backend* b, uint64_t id, const char* name, const 
         std::string(name) + unique, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME,
         image, type == TL_TEXTURE_CUBE ? Ogre::TEX_TYPE_CUBE_MAP : Ogre::TEX_TYPE_2D, mipmaps,
         1.0f, false, SampledTextureFormat(b, image.getFormat()));
+    CountTextureUpload(b, b->textures[id]);
   } catch (Ogre::Exception& e) {
     SetError(error, error_size, e.getDescription());
     return 1;
@@ -2059,6 +2097,7 @@ int tl_backend_texture_linear(tl_backend* b, uint64_t id, uint32_t width, uint32
           texture->getNumMipmaps() == 0) {
         Ogre::PixelBox box(width, height, 1, pf, const_cast<void*>(data));
         texture->getBuffer()->blitFromMemory(box);
+        CountTextureUpload(b, texture);
         return 0;
       }
       tl_backend_release_texture(b, id);
@@ -2071,6 +2110,7 @@ int tl_backend_texture_linear(tl_backend* b, uint64_t id, uint32_t width, uint32
     b->textures[id] = Ogre::TextureManager::getSingleton().loadImage(
         unique, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, image,
         Ogre::TEX_TYPE_2D, 0, 1.0f, false, SampledTextureFormat(b, pf));
+    CountTextureUpload(b, b->textures[id]);
   } catch (Ogre::Exception&) {
     return 3;
   }
