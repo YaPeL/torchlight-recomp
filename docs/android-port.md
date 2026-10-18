@@ -731,8 +731,12 @@ needed.
       instead is a later option: it reads guest state.
   - **Potions:** LB and RB as two small buttons above the stick's area. A tap on the HUD's health
     or mana orb (top left and right, where the 360 already prints LB and RB) presses them too.
-  - **Top corners:** Back (inventory) at the top left and Start at the top right, small, out of the
-    thumbs' way.
+  - **Top:** Back (inventory) and Start along the top edge, 44 mm in from the sides, small, out of
+    the thumbs' way. They were in the corners until the first device run (2026-10-18). The POCO
+    reports 20.5 px/mm, so its landscape is about 59.5 mm tall, not the 70 mm its density bucket
+    suggested: in the corners Back met the potions and Start the skills' arc. The layout now fits
+    any screen at least 57 mm tall (a 6" 20:9 phone), which `touch_test` checks on the POCO as
+    measured and on a 57 mm phone.
   - **The rest:**
     - a tap on the minimap presses the right stick (automap);
     - a two-finger pinch moves the right stick up or down (zoom);

@@ -26,6 +26,10 @@ void Check(bool ok, const std::string& what) {
 // about 446 ppi) and the Galaxy Tab S5e (2560x1600, about 287 ppi).
 constexpr float kMmPerInch = 25.4f;
 TouchScreen Poco() { return {2712, 1220, 2.75f * 160 / kMmPerInch}; }
+// What the POCO reported on the device (2026-10-18): 20.5 px/mm, so about 59.5 mm tall.
+TouchScreen PocoMeasured() { return {2712, 1220, 20.5f}; }
+// A 16:9-ish 6.1" phone at the 3.0 bucket: 2400x1080, about 57 mm tall (kMinHeightMm).
+TouchScreen ShortPhone() { return {2400, 1080, 3.0f * 160 / kMmPerInch * (1080.0f / 1080.0f)}; }
 TouchScreen Tab() { return {2560, 1600, 1.8f * 160 / kMmPerInch}; }
 
 const TouchButton& Find(const TouchLayout& layout, std::string_view name) {
@@ -209,6 +213,9 @@ void TestKeystrokes() {
 
 int main() {
   TestLayout(Poco(), "POCO X7");
+  TestLayout(PocoMeasured(), "POCO X7 as measured");
+  Check(1080 / ShortPhone().px_per_mm >= kMinHeightMm, "the short phone is the shortest supported");
+  TestLayout(ShortPhone(), "a short phone");
   TestLayout(Tab(), "Tab S5e");
   TestHeldButton();
   TestSliding();
