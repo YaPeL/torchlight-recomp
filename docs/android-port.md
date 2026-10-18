@@ -718,7 +718,7 @@ needed.
   | Element | Size | POCO | Tab S5e |
   |---|---|---|---|
   | A, B, X, Y | 10 mm | 205 px | 113 px |
-  | The d-pad's buttons | 9 mm | 185 px | 102 px |
+  | The d-pad's cross | 16 mm | 328 px | 181 px |
   | Shoulders (wide) | 14 x 9 mm | 287 x 185 px | 159 x 102 px |
   | Back, Start (wide) | 12 x 9 mm | 246 x 185 px | 136 x 102 px |
   | Stick base (radius) | 11 mm | 226 px | 125 px |
@@ -730,12 +730,15 @@ needed.
 - **The gameplay layout: a pad's** (the owner's choice, 2026-10-18, after the first device runs; their
   reference was an emulator's on-screen pad on a phone, with the stick where that one has its
   d-pad, and Back and Start where it has its two centre buttons):
-  - **Left, mid height:** the stick, floating (it appears where the thumb lands in the lower left),
-    11 mm radius.
-  - **Below and inward of it:** a small d-pad, four 9 mm round buttons with arrows (the skill set,
-    the menus).
-  - **Right, mid height:** A, B, X and Y in the pad's diamond, 10 mm each, ringed in the 360's
-    colours.
+  - **Left, as high as mid height:** the stick, floating (it appears where the thumb lands in the
+    lower left), 11 mm radius.
+  - **Below and inward of it:** a small d-pad, one 16 mm cross (Kenney's), the direction from the
+    finger's angle on it, a diagonal pressing both sides as Unleashed's does (the skill set, the
+    menus). The owner asked for it much smaller than the first four 9 mm buttons.
+  - **Right, as high as mid height:** A, B, X and Y in the pad's diamond, 10 mm each, ringed in the
+    360's colours. The owner asked for the stick and the diamond higher: both go up to mid height,
+    or as high as the shoulders' row leaves room for (on the POCO: the stick at mid height, the
+    diamond's centre at about 44% of it).
   - **Top corners:** the shoulders, wide (14 x 9 mm): LT and LB on the left, RB and RT on the right.
   - **Top centre:** Back and Start, wide (12 x 9 mm).
   - It fits any landscape screen at least 57 mm tall and 100 mm wide (`touch_test`: the POCO as
@@ -796,7 +799,8 @@ needed.
 - **Testing without a hand on the screen.**
   - **Unit tests on Linux:**
     - the layout for both devices' sizes and densities: within the window and the 6 mm margin, no
-      overlaps, every target ≥ 48 dp;
+      overlaps, every target ≥ 48 dp except the d-pad's arms (the cross is 16 mm, each arm about 8
+      mm wide: the owner asked for it smaller, 2026-10-18);
     - hit-testing and the finger rules;
     - fingers to pad state;
     - Auto's state machine.
@@ -863,7 +867,7 @@ ImGui's foreground draw list.
 - **Hidden while another dialog is open:** the dialog is touched directly.
 - **The look** (2026-10-18): Kenney's "Mobile Controls", first style A (dark solid buttons), then
   style C (thin white rings, round and wide) with the layout above, as the owner's reference;
-  A, B, X and Y ringed in the 360's colours, the d-pad with arrows, the pressed highlight a golden
+  A, B, X and Y ringed in the 360's colours, the d-pad Kenney's cross, the pressed highlight a golden
   ring, the names drawn over them at 90%. Without the files, the
   placeholder shapes: round buttons with a light ring and
   the pad's name (A, B, X, Y in the 360's colours), a lighter fill while pressed; the stick a ring

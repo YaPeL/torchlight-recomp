@@ -76,10 +76,38 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
         pressed_(LoadIcon(textures, "button_circle_highlight.png")),
         wide_(LoadIcon(textures, "button_circle_wide.png")),
         wide_pressed_(LoadIcon(textures, "button_circle_wide_highlight.png")),
+        dpad_(LoadIcon(textures, "dpad.png")),
+        dpad_arms_{LoadIcon(textures, "dpad_element_north_highlight.png"),
+                   LoadIcon(textures, "dpad_element_east_highlight.png"),
+                   LoadIcon(textures, "dpad_element_south_highlight.png"),
+                   LoadIcon(textures, "dpad_element_west_highlight.png")},
         pad_(LoadIcon(textures, "joystick_circle_pad_a.png")),
         nub_(LoadIcon(textures, "joystick_circle_nub_a.png")) {}
 
  protected:
+  // The d-pad: Kenney's cross, and the highlight of each arm pressed. The arms' highlights are a
+  // quarter of the cross's size, each in the middle of its side.
+  void DrawDpad(ImDrawList* list, ImVec2 c, float r, uint16_t buttons) {
+    const ImVec2 lo(c.x - r, c.y - r), hi(c.x + r, c.y + r);
+    if (!dpad_) {
+      list->AddCircle(c, r, Colour(1, 1, 1, 0.85f * kOpacity), 48, std::max(2.0f, r * 0.06f));
+      return;
+    }
+    list->AddImage(Id(dpad_), lo, hi, ImVec2(0, 0), ImVec2(1, 1), Colour(1, 1, 1, kOpacity));
+    const struct {
+      uint16_t bit;
+      float x, y;  // the arm's top left corner from the cross's, in fractions of its radius
+      int arm;
+    } arms[] = {{input::pad::kUp, 0.5f, 0, 0}, {input::pad::kRight, 1, 0.5f, 1},
+                {input::pad::kDown, 0.5f, 1, 2}, {input::pad::kLeft, 0, 0.5f, 3}};
+    for (const auto& a : arms) {
+      if (!(buttons & a.bit) || !dpad_arms_[a.arm]) continue;
+      const ImVec2 alo(lo.x + a.x * r, lo.y + a.y * r);
+      list->AddImage(Id(dpad_arms_[a.arm]), alo, ImVec2(alo.x + r, alo.y + r), ImVec2(0, 0), ImVec2(1, 1),
+                     Colour(1, 1, 1, kOpacity));
+    }
+  }
+
   void OnDraw(ImGuiIO& io) override {
     TouchSnapshot snap;
     if (!ReadTouchControls(snap) || !snap.visible || snap.width <= 0) return;
@@ -90,6 +118,10 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
     for (const input::TouchButton& b : snap.layout.buttons) {
       const ImVec2 c(b.x * k, b.y * k);
       const float r = b.radius * k;
+      if (b.shape == input::TouchShape::kDpad) {
+        DrawDpad(list, c, r, snap.state.buttons);
+        continue;
+      }
       const bool wide = b.shape == input::TouchShape::kWide;
       const float hw = wide ? b.half_width * k : r;
       const ImVec2 lo(c.x - hw, c.y - r), hi(c.x + hw, c.y + r);
@@ -111,22 +143,6 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
         list->AddRect(lo, hi, Colour(lr, lg, lb, 0.85f * kOpacity), r, 0, std::max(2.0f, r * 0.06f));
       }
       const ImU32 ink = Colour(lr, lg, lb, std::min(1.0f, kOpacity + 0.3f));
-      // The d-pad's buttons: an arrow; the rest: the pad's name.
-      if (b.shape != input::TouchShape::kRound && !wide) {
-        float dx = 0, dy = 0;
-        if (b.shape == input::TouchShape::kUp) dy = -1;
-        if (b.shape == input::TouchShape::kDown) dy = 1;
-        if (b.shape == input::TouchShape::kLeft) dx = -1;
-        if (b.shape == input::TouchShape::kRight) dx = 1;
-        const float t = r * 0.45f;
-        const ImVec2 tip(c.x + dx * t, c.y + dy * t);
-        // The base across the arrow: the direction turned a quarter, (-dy, dx), so all four come
-        // out with the same winding (ImGui anti-aliases a filled shape by its winding).
-        const ImVec2 b1(c.x - dx * t * 0.6f - dy * t * 0.8f, c.y - dy * t * 0.6f + dx * t * 0.8f);
-        const ImVec2 b2(c.x - dx * t * 0.6f + dy * t * 0.8f, c.y - dy * t * 0.6f - dx * t * 0.8f);
-        list->AddTriangleFilled(tip, b1, b2, ink);
-        continue;
-      }
       const std::string label(b.name);
       const float size = r * (label.size() > 2 ? 0.75f : 0.9f);
       const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, label.c_str());
@@ -152,7 +168,9 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
   }
 
  private:
-  std::unique_ptr<rex::ui::ImmediateTexture> button_, pressed_, wide_, wide_pressed_, pad_, nub_;
+  std::unique_ptr<rex::ui::ImmediateTexture> button_, pressed_, wide_, wide_pressed_, dpad_;
+  std::unique_ptr<rex::ui::ImmediateTexture> dpad_arms_[4];
+  std::unique_ptr<rex::ui::ImmediateTexture> pad_, nub_;
 };
 
 }  // namespace

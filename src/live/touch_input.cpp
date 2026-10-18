@@ -11,6 +11,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <string>
 
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_gamepad.h>
@@ -424,6 +425,23 @@ bool TouchControlCentre(std::string_view name, float& x, float& y) {
   TouchSnapshot snap;
   if (!ReadTouchControls(snap)) return false;
   const auto lower = [](char c) { return static_cast<char>(std::tolower(static_cast<unsigned char>(c))); };
+  // The d-pad's directions: a point on the cross's arm.
+  static constexpr struct {
+    std::string_view name;
+    float dx, dy;
+  } kArms[] = {{"up", 0, -0.6f}, {"down", 0, 0.6f}, {"left", -0.6f, 0}, {"right", 0.6f, 0}};
+  std::string lowered(name);
+  for (char& ch : lowered) ch = lower(ch);
+  for (const auto& arm : kArms) {
+    if (lowered != arm.name) continue;
+    for (const auto& b : snap.layout.buttons) {
+      if (b.shape != input::TouchShape::kDpad || snap.width <= 0 || snap.height <= 0) continue;
+      x = (b.x + arm.dx * b.radius) / snap.width;
+      y = (b.y + arm.dy * b.radius) / snap.height;
+      return true;
+    }
+    return false;
+  }
   for (const auto& b : snap.layout.buttons) {
     if (b.name.size() != name.size()) continue;
     if (!std::equal(b.name.begin(), b.name.end(), name.begin(),
