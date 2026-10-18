@@ -611,8 +611,8 @@ built-in pad of a handheld reports as one. Validated on the phone with a Bluetoo
 before start and after start, and with none.
 
 **A4, the touch controls: survey and plan** (2026-10-17; plan only, no code until the owner
-approves it). The setting above stays as decided. The render agent reviewed the hooks below
-against `android/a2-gles`.
+approves it). The setting above stays as decided. The hooks below follow the Android and backend
+agent's answers (2026-10-17, from `android/a2-gles`).
 
 *What others do (read only; no code taken from any of them).*
 
@@ -690,8 +690,11 @@ needed.
     resting between buttons does nothing.
   - The stick's finger keeps the stick until it lifts, wherever it goes.
   - Several fingers at once: move and attack together, and a potion during it.
-- **Sizes in millimetres,** from the display's density (SDL's display scale; Android's 160 dpi =
-  1.0). The floor is Android's 48 dp target (about 9 mm), with at least 8 dp (1.5 mm) between
+- **Sizes in millimetres,** from the display's density: SDL's `SDL_GetDisplayContentScale`,
+  Android's density, where 160 dpi = 1.0. That is a density bucket, not the panel's real ppi (the
+  POCO likely reports 2.75 or 3.0, about 440-480 dpi), so the millimetres are a few percent off,
+  which is fine for buttons; exact ones would need the real xdpi/ydpi from Java's
+  `DisplayMetrics`, a small platform addition. The floor is Android's 48 dp target (about 9 mm), with at least 8 dp (1.5 mm) between
   targets. The devices:
   - the POCO X7 5G: 6.67", 2712×1220, about 446 ppi, curved at the long edges;
   - the Tab S5e: 10.5", 2560×1600, about 287 ppi.
