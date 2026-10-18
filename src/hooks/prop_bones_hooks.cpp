@@ -63,14 +63,15 @@ REX_FUNC(sub_821B93B0) {
   const bool forced = uint32_t(ctx.lr) == anim::kForcedCallReturn;
   const uint32_t frame = NextFrame(base);
   g_counts.NewFrame(frame);
+  const uint32_t skeleton = abi::ReadU32(base, entity, anim::entity::kSkeletonInstance);
   if (!forced) {
-    g_counts.RenderPath(entity);
+    g_counts.RenderPath(entity, skeleton);
     __imp__sub_821B93B0(ctx, base);
     return;
   }
   const uint32_t children = abi::ReadU32(base, entity, anim::entity::kChildObjectCount);
   if (torchlight::hooks::ShouldDeferPropBones(true, g_in_prop_update, true, children)) {
-    g_counts.Deferred(entity);
+    g_counts.Deferred(entity, skeleton);
   } else {
     g_counts.Evaluated();
     __imp__sub_821B93B0(ctx, base);
@@ -82,11 +83,28 @@ REX_FUNC(sub_821B93B0) {
     REXLOG_INFO("prop bones: deferring the forced evaluation of layout props (--defer_prop_bones)");
   } else if (now - g_last_log >= std::chrono::seconds(10)) {
     REXLOG_INFO("prop bones (10 s): forced evaluations {}, deferred {}, deferred then required by "
-                "the render path {}",
-                g_counts.evaluated(), g_counts.deferred(), g_counts.required());
+                "the render path {}, bones looked up by name while deferred {}",
+                g_counts.evaluated(), g_counts.deferred(), g_counts.required(),
+                g_counts.read_while_deferred());
     g_counts.ResetTotals();
     g_last_log = now;
   }
+}
+
+// Skeleton::getBone(const String&) (vtable +0xCC of Skeleton 0x820043AC and SkeletonInstance
+// 0x820044FC; guest_abi entity_animation::kGetBoneByName): a lookup on a deferred skeleton is logged
+// with its caller, the first ones in full, so a direct reader of a deferred prop's bones shows up.
+REX_EXTERN(__imp__sub_824E90B0);
+REX_FUNC(sub_824E90B0) {
+  static_assert(anim::kGetBoneByName == 0x824E90B0u);
+  static const bool enabled = REXCVAR_GET(defer_prop_bones);
+  static uint32_t logged = 0;
+  if (enabled && g_counts.BoneLookup(ctx.r3.u32) && logged < 20) {
+    ++logged;
+    REXLOG_WARN("prop bones: a bone looked up by name on a deferred skeleton {:08X}, caller {:08X}",
+                ctx.r3.u32, uint32_t(ctx.lr));
+  }
+  __imp__sub_824E90B0(ctx, base);
 }
 
 }  // extern "C"
