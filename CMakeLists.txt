@@ -150,6 +150,7 @@ add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR
     -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
+add_subdirectory(src/input)
 add_subdirectory(src/dev)
 add_subdirectory(src/hooks)
 add_subdirectory(src/commands)

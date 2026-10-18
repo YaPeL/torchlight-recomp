@@ -383,25 +383,4 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
   return {};
 }
 
-std::vector<PadKeystroke> PadKeystrokes(const PadState& before, const PadState& after) {
-  static constexpr std::pair<uint16_t, uint16_t> kKeys[] = {
-      {pad::kA, 0x5800},         {pad::kB, 0x5801},           {pad::kX, 0x5802},
-      {pad::kY, 0x5803},         {pad::kRightShoulder, 0x5804}, {pad::kLeftShoulder, 0x5805},
-      {pad::kUp, 0x5810},        {pad::kDown, 0x5811},        {pad::kLeft, 0x5812},
-      {pad::kRight, 0x5813},     {pad::kStart, 0x5814},       {pad::kBack, 0x5815},
-      {pad::kLeftThumb, 0x5816}, {pad::kRightThumb, 0x5817},
-  };
-  std::vector<PadKeystroke> keys;
-  for (const auto& [bit, vk] : kKeys) {
-    const bool was = before.buttons & bit, is = after.buttons & bit;
-    if (was != is) keys.push_back({vk, is});
-  }
-  const auto trigger = [&](uint8_t was, uint8_t is, uint16_t vk) {
-    if ((was > 0) != (is > 0)) keys.push_back({vk, is > 0});
-  };
-  trigger(before.left_trigger, after.left_trigger, 0x5806);
-  trigger(before.right_trigger, after.right_trigger, 0x5807);
-  return keys;
-}
-
 }  // namespace torchlight::dev

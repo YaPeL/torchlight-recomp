@@ -52,22 +52,13 @@
 #include <string_view>
 #include <vector>
 
+#include "input/pad_state.h"
+
 namespace torchlight::dev {
 
-// XINPUT_GAMEPAD button bits and the controller state the game reads.
-namespace pad {
-constexpr uint16_t kUp = 0x0001, kDown = 0x0002, kLeft = 0x0004, kRight = 0x0008;
-constexpr uint16_t kStart = 0x0010, kBack = 0x0020, kLeftThumb = 0x0040, kRightThumb = 0x0080;
-constexpr uint16_t kLeftShoulder = 0x0100, kRightShoulder = 0x0200;
-constexpr uint16_t kA = 0x1000, kB = 0x2000, kX = 0x4000, kY = 0x8000;
-}  // namespace pad
-
-struct PadState {
-  uint16_t buttons = 0;
-  uint8_t left_trigger = 0, right_trigger = 0;
-  int16_t left_x = 0, left_y = 0, right_x = 0, right_y = 0;
-  bool operator==(const PadState&) const = default;
-};
+// The controller state the game reads (input/pad_state.h, shared with the touch controls).
+namespace pad = input::pad;
+using input::PadState;
 
 // What the game did, as the app sees it; counters only grow.
 struct ScriptEvents {
@@ -149,12 +140,7 @@ class InputScript {
   bool ended_ = false;    // kFinished or kFailed was reported
 };
 
-// XINPUT keystrokes (VK_PAD_*) for the buttons that changed between two frames: what
-// XamInputGetKeystroke reports to menus that read keys rather than the state.
-struct PadKeystroke {
-  uint16_t virtual_key;
-  bool down;
-};
-std::vector<PadKeystroke> PadKeystrokes(const PadState& before, const PadState& after);
+using input::PadKeystroke;
+using input::PadKeystrokes;
 
 }  // namespace torchlight::dev
