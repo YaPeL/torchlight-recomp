@@ -325,13 +325,17 @@ void LiveMode::Run() {
   };
 
   while (running_) {
-    auto frame = queue_.Pop(std::chrono::milliseconds(100));
     // While the game loads a level, and before its first frame (the start, the busy notices), it
-    // draws nothing: the backend thread generates the programs this device used before (a driver's
-    // own cache does not survive an update of the game), 50 ms at a time so a frame that comes
-    // waits little. The title screen's programs are among them.
+    // draws next to nothing: the backend thread generates the programs this device used before, so
+    // their generation (the RTSS's, ~4 ms each on the CPU on every platform) and compilation happen
+    // there instead of in play. The title screen's programs are among them. In 50 ms slices with
+    // the queue looked at between them, so a frame that comes waits little; the list is gone
+    // through whole while the load lasts (a load is 3-5 s) instead of waiting 100 ms for a frame
+    // between slices.
     const bool idle_start = last_present.time_since_epoch().count() == 0;
-    if (!frame && !precompile_done && (LevelLoading() || idle_start)) {
+    const bool precompiling = !precompile_done && (LevelLoading() || idle_start);
+    auto frame = queue_.Pop(std::chrono::milliseconds(precompiling ? 0 : 100));
+    if (!frame && precompiling) {
       const size_t left = tl_backend_precompile_programs(backend, 50.0);
       tl_backend_counters counters;
       tl_backend_take_counters(backend, &counters);
