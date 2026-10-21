@@ -122,7 +122,7 @@ void TestLateConsumer() {
   std::thread consumer([&] {
     FrameReclaimer reclaimer;
     while (auto frame = queue.Pop(std::chrono::milliseconds(500))) {
-      std::this_thread::sleep_for(std::chrono::microseconds(800));  // the backend behind
+      std::this_thread::sleep_for(std::chrono::milliseconds(2));  // the backend well behind
       all_intact = all_intact && Intact(*frame);
       ++consumed;
       reclaimer.Free(std::move(*frame));
@@ -130,8 +130,7 @@ void TestLateConsumer() {
   });
   for (uint32_t f = 0; f < kFrames; ++f) {
     queue.Push(MakeFrame(f));
-    pool.Refill();  // the cut
-    std::this_thread::sleep_for(std::chrono::microseconds(200));
+    pool.Refill();  // the cut, with no wait: the producer runs ahead
   }
   queue.Close();
   consumer.join();
@@ -147,11 +146,29 @@ void TestLateConsumer() {
   Check(counts.reused > counts.allocated, "most buffers were reused");
 }
 
+// Every frame handed to a reclaimer, whichever thread frees it (its own, or the caller's when its
+// backlog is full, as a burst of frees makes likely), comes back to the pool.
+void TestReclaimerBurst() {
+  auto& pool = ConstantBufferPool::Get();
+  pool.Refill();
+  pool.TakeCounts();
+  constexpr uint32_t kFrames = 64;
+  {
+    FrameReclaimer reclaimer;
+    for (uint32_t f = 0; f < kFrames; ++f) reclaimer.Free(MakeFrame(f));
+  }  // joins: everything handed over is returned
+  const auto counts = pool.TakeCounts();
+  Check(counts.returned + counts.freed == uint64_t(kFrames) * kCommands * (kRanges + 2),
+        "every buffer of every freed frame was returned or freed");
+  pool.Refill();
+}
+
 }  // namespace
 
 int main() {
   TestSingleThread();
   TestLateConsumer();
+  TestReclaimerBurst();
   std::printf("constant_buffer_pool_test: %s\n", failures ? "FAILED" : "OK");
   return failures ? 1 : 0;
 }
