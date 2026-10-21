@@ -393,9 +393,11 @@ struct tl_backend {
   std::unique_ptr<Ogre::RTShader::SubRenderStateFactory> guest_texgen_factory, guest_pixel_fog,
       guest_alpha_test, guest_lighting;
   const Program* bound_program = nullptr;
-  // The constants last bound per stage for bound_program (BindChangedParameters); emptied when
-  // another program is bound and when the render system binds a render target (SetViewport).
-  std::vector<Ogre::uchar> bound_constants[Ogre::GPT_COUNT];
+  // The constants last bound per stage for bound_program (BindChangedParameters); reset (nothing
+  // bound) when another program is bound and when the render system binds a render target
+  // (SetViewport). Not an empty list: a program may have no constants in the list at all and
+  // still need its parameters bound once (GLES sends sampler units with them).
+  std::optional<std::vector<Ogre::uchar>> bound_constants[Ogre::GPT_COUNT];
   // The viewport last given to the render system (SetViewport; null after ForgetActiveViewport).
   Ogre::Viewport* render_system_viewport = nullptr;
   std::unique_ptr<Ogre::AutoParamDataSource> params_source;
@@ -437,7 +439,7 @@ void SetViewport(tl_backend* b, Ogre::Viewport* viewport) {
   // again on the next draw (otherwise a draw whose constants did not change reads none, e.g. an
   // alpha test function of 0, CMPF_ALWAYS_FAIL, that drops every pixel).
   if (viewport != b->render_system_viewport || viewport->_isUpdated()) {
-    for (auto& constants : b->bound_constants) constants.clear();
+    for (auto& constants : b->bound_constants) constants.reset();
   }
   b->rs->_setViewport(viewport);
   b->render_system_viewport = viewport;
@@ -1158,10 +1160,10 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
 // constant buffer per stage, not per program.
 void BindChangedParameters(tl_backend* b, Ogre::GpuProgramType type,
                            const Ogre::GpuProgramParametersSharedPtr& params) {
-  std::vector<Ogre::uchar>& last = b->bound_constants[type];
+  std::optional<std::vector<Ogre::uchar>>& bound = b->bound_constants[type];
   const Ogre::ConstantList& now = params->getConstantList();
   uint16_t mask = 0;
-  if (last.size() != now.size()) {
+  if (!bound || bound->size() != now.size()) {
     mask = Ogre::GPV_ALL;
   } else {
     for (const auto& [name, def] : params->getConstantDefinitions().map) {
@@ -1173,13 +1175,13 @@ void BindChangedParameters(tl_backend* b, Ogre::GpuProgramType type,
         mask = Ogre::GPV_ALL;
         break;
       }
-      if (std::memcmp(&now[def.physicalIndex], &last[def.physicalIndex], bytes) != 0) {
+      if (std::memcmp(&now[def.physicalIndex], &(*bound)[def.physicalIndex], bytes) != 0) {
         mask |= def.variability;
       }
     }
   }
   if (mask == 0) return;
-  last = now;
+  bound = now;
   b->rs->bindGpuProgramParameters(type, params, mask);
 }
 
@@ -1265,7 +1267,7 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
     rs->bindGpuProgram(p.pass->getVertexProgram()->_getBindingDelegate());
     rs->bindGpuProgram(p.pass->getFragmentProgram()->_getBindingDelegate());
     b->bound_program = &p;
-    for (auto& constants : b->bound_constants) constants.clear();
+    for (auto& constants : b->bound_constants) constants.reset();
   }
   // Values the data source reads from the pass and the scene objects.
   p.pass->setDiffuse(f.diffuse);
@@ -2985,7 +2987,7 @@ size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms) {
     EndFullScreenPass(b);
     b->rs->_endFrame();
     b->bound_program = nullptr;
-    for (auto& constants : b->bound_constants) constants.clear();
+    for (auto& constants : b->bound_constants) constants.reset();
     ForgetActiveViewport(b);
   }
   b->counters.precompile_ms +=
