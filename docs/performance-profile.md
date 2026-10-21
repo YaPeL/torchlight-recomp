@@ -1074,10 +1074,10 @@ against `develop`:
 | H: buffer entry memo | Cached the live buffer entry per address and generation | Already in `develop`: `DrawBuffer`, kept by the registry's stamp |
 | S: state lookup memo | Cached pointers into the ordered state shadow | Moot: `develop`'s shadow is an unordered map |
 | U: hash set for sent declarations | Replaced an ordered set of tuples | Already in `develop`: the live stream's sent declarations are a hashed flat set |
-| C: compact commands | Moved the gamma ramp's table out of the command | Taken, behind a build option, off (below) |
+| C: compact commands | Moved the gamma ramp's table out of the command | Taken, behind a build option, on by default since the POCO X7 A/B (below) |
 | J, K, and H's measurement fix | | Out of scope (J and K excluded by the owner; the fix only concerns H) |
 
-**C** (`TORCHLIGHT_COMPACT_COMMANDS`, CMake, default off). `SetGammaRamp` carries a 768-entry
+**C** (`TORCHLIGHT_COMPACT_COMMANDS`, CMake). `SetGammaRamp` carries a 768-entry
 table inline, so every `Command` is 1,560 bytes while the next largest payload (`Draw`) is
 152: with the option the table lives on the heap and a command is 168 bytes. The three F9
 captures of 2026-10-18 hold 1,174 to 2,174 commands in their frame: 1.8 to 3.4 MB of commands per
@@ -1085,7 +1085,7 @@ frame written and read by the producer and the consumer, 0.2 to 0.37 MB with the
 capture format does not change: `command_storage_test` checks that copies own their values, that
 the gamma body on the wire is the same bytes in both layouts, and, given capture files, that real
 captures read and write back byte for byte (the three captures above, both layouts);
-`command_storage_compact_test` builds the compact layout in every build, so CI covers both. The full
+`command_storage_other_layout_test` builds the layout the option did not pick, so CI covers both. The full
 suite passes in both layouts (107/107, 108 with that test), and the replay of those three captures (all draws drawn,
 display gamma ramp applied, images not black) writes the same PNG files, byte for byte, from
 both builds. Why it may matter: in the POCO X7's town profile of 2026-10-17 (Release, before the
@@ -1125,8 +1125,9 @@ change: in the fight the presented rate is held by the backend and the Mali GPU 
 only drops more frames. Profiles of the fight (simpleperf, 25 s after the spawn) put the removed
 work in sight: `LiveAppend` 2.5 % to 0.4 % of the guest thread, the frame cut, the frame queue's
 push and the merge of dropped frames 2.9 % to 0.6 %; the rest of the gain is spread over the
-thread (less memory traffic on a device whose CPU and GPU share it). The option stays off until
-the GPU side of the fight is addressed and the presented rate can show it.
+thread (less memory traffic on a device whose CPU and GPU share it). The owner took it on these
+numbers: the option is on by default since 2026-10-21 (OFF rebuilds the inline table); the
+presented rate will show it once the GPU side of the fight is addressed.
 
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
