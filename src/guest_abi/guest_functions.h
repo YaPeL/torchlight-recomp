@@ -31,6 +31,23 @@ inline constexpr GuestFunction kDeviceSwap{0x821F31C8, Confidence::kConfirmed};
 // only while the target is not reached, so the step may sleep (hooks/gpu_wait_hooks.cpp).
 inline constexpr GuestFunction kGpuProgressWaitStep{0x82774170, Confidence::kConfirmed};
 
+// [confirmed] D3D9RenderTexture::update(bool swap) (OGRE 1.7 OgreD3D9Texture.cpp:1966; Xbox: no
+// device-lost test), this in r3: with no active render target device (+20 of the device list at
+// *(0x8355A2E0)+2184) it sets each device active (0x821FAD30) and calls RenderTarget::update
+// (0x821F95B0: updateImpl, then swapBuffers when r4) once per device. Reached only through the
+// vtable from RenderSystem::_updateAllRenderTargets (0x821EE1C0).
+inline constexpr GuestFunction kD3D9RenderTextureUpdate{0x82198608, Confidence::kConfirmed};
+
+// The game client's shadow and light projector textures (OpenTorchlight, PC decompilation,
+// decomp/src/gameclient.cpp, CGameClient::resetShadows: "ProjectorRTT" and "ProjectorRTTLight",
+// both auto-updated, CGameClient added as their listener). [confirmed] The RenderTargetListener
+// vtable of that listener: its preRenderTargetUpdate (slot 1, 0x821E9C50) compares
+// this+460 (m_shadowTexture)'s render target with event.source and sets the scene manager's
+// visibility mask to 4 (shadows) or 2 (vt+876, as the decompilation's 4 and 2); its
+// postRenderTargetUpdate (slot 2, 0x821A0078) sets it back to 7. A run on 2026-10-21 found these
+// two the only render textures of a session (menu, level, fight), 512x512, this one listener each.
+inline constexpr uint32_t kGameClientRenderTargetListenerVtable = 0x82000C80;
+
 // Resource constructors and destructors (this in r3). Each constructor has one caller, the
 // creating factory, so every instance passes through them.
 // [confirmed] D3D9HardwareVertexBuffer ctor: stores vtable 0x8200118C (@0x82582A84); called
