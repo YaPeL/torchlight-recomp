@@ -91,6 +91,10 @@ void ConstantBufferPool::ReturnFrame(LiveFrame& frame) {
       back.data.push_back(std::move(r.data));
     }
     if (ranges.capacity() == 0) return;
+    if (ranges.capacity() > kMaxListCapacity) {
+      ++freed;
+      return;
+    }
     ranges.clear();
     back.ranges.push_back(std::move(ranges));
   };
@@ -99,7 +103,9 @@ void ConstantBufferPool::ReturnFrame(LiveFrame& frame) {
     if (!c) continue;
     keep_ranges(c->floats);
     keep_ranges(c->ints);
-    if (c->autos.capacity() != 0) {
+    if (c->autos.capacity() > kMaxListCapacity) {
+      ++freed;
+    } else if (c->autos.capacity() != 0) {
       c->autos.clear();
       back.autos.push_back(std::move(c->autos));
     }

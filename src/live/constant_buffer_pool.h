@@ -46,9 +46,11 @@ class ConstantBufferPool {
   // Since the previous call (they restart from zero).
   Counts TakeCounts();
 
-  // Limits: buffers kept, and the largest buffer kept (larger ones are freed).
-  static constexpr size_t kMaxData = 16384, kMaxRanges = 4096, kMaxAutos = 4096;
-  static constexpr size_t kMaxDataCapacity = 4096;
+  // Limits: buffers kept, and the largest kept (larger ones are freed; a recycled vector keeps its
+  // capacity, so without a cap every buffer would grow to the largest range it ever held, such as a
+  // skinning palette). At most ~8 MiB of data buffers and a few hundred KiB of lists.
+  static constexpr size_t kMaxData = 8192, kMaxRanges = 4096, kMaxAutos = 4096;
+  static constexpr size_t kMaxDataCapacity = 256, kMaxListCapacity = 64;
 
  private:
   struct Spares {
