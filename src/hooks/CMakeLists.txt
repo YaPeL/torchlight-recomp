@@ -109,3 +109,10 @@ add_executable(projector_textures_test projector_textures_test.cpp)
 target_link_libraries(projector_textures_test PRIVATE torchlight_projector_textures)
 target_compile_options(projector_textures_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME projector_textures_test COMMAND projector_textures_test)
+# The graphics quality levels (quality.h, header only); the hook (quality_hooks.cpp) is part of the
+# executable.
+add_executable(quality_test quality_test.cpp)
+target_include_directories(quality_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(quality_test PRIVATE cxx_std_23)
+target_compile_options(quality_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME quality_test COMMAND quality_test)
