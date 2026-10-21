@@ -376,7 +376,7 @@ inline constexpr size_t kGammaRampEntries = 768;
 struct SetGammaRamp {
   bool pwl = false;
 #ifdef TORCHLIGHT_COMPACT_COMMANDS
-  // Evaluation build (TORCHLIGHT_COMPACT_COMMANDS, src/commands/CMakeLists.txt): the table on the
+  // TORCHLIGHT_COMPACT_COMMANDS (src/commands/CMakeLists.txt, on by default): the table on the
   // heap, always kGammaRampEntries long, so this command stops setting the size of every Command
   // (~1.5 KB inline against ~150 bytes for the next largest payload, Draw). Each copy owns its
   // values; the wire body is the same.
