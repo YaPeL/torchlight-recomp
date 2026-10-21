@@ -1094,6 +1094,20 @@ the one that sets the new command's variant index at the end of its ~1.5 KB slot
 ReXGlue agent). A gain in frame time is not shown yet: it needs a Release A/B on the combat
 benchmark (and one on Android) before the option becomes the default.
 
+Desktop A/B (2026-10-21, this laptop, Release `-O3 -g` with frame pointers and the developer
+input, the scripted mine fight of the combat benchmark, no cap or vsync, A C C A A C C A with
+60 s of cool-down; mean frame time per run, ms):
+
+| Step | A (inline) | C (compact) | Means |
+| --- | --- | --- | --- |
+| rest | 5.77, 6.72, 6.60, 5.78 | 6.54, 7.24, 6.60, 6.00 | 6.22 against 6.60 (+6 %) |
+| fight | 10.88, 11.86, 11.23, 11.46 | 9.86, 12.45, 11.33, 10.43 | 11.36 against 11.02 (-3 %) |
+
+The spread inside each build (C's fight 9.86 to 12.45; temperatures 59 to 83 C before the runs,
+average clocks 2.9 to 4.0 GHz) is larger than the difference, and the two steps move in opposite
+directions: no gain or loss is shown on this machine. The option stays off; the place where it may
+matter is the ARM device, where the store above was measured.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
