@@ -97,3 +97,11 @@ target_include_directories(prop_bones_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 target_compile_features(prop_bones_test PRIVATE cxx_std_23)
 target_compile_options(prop_bones_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME prop_bones_test COMMAND prop_bones_test)
+
+# The graphics quality levels (quality.h, header only); the hook (quality_hooks.cpp) is part of the
+# executable.
+add_executable(quality_test quality_test.cpp)
+target_include_directories(quality_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(quality_test PRIVATE cxx_std_23)
+target_compile_options(quality_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME quality_test COMMAND quality_test)

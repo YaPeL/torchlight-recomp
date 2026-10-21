@@ -78,6 +78,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/prop_bones_hooks.cpp
     src/hooks/render_system_hooks.cpp
     src/hooks/rtss_listener_hooks.cpp
+    src/hooks/quality_hooks.cpp
     src/hooks/resource_hooks.cpp
     src/hooks/video_mode_hooks.cpp
     src/hooks/find_file_hooks.cpp
