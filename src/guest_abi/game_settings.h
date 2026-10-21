@@ -41,5 +41,12 @@ inline constexpr Field kFloatValuesEnd{0x80, Confidence::kConfirmed};
 // SHADOWS_ENABLED (index at 0x83558F1C) is set.
 inline constexpr uint32_t kShadowResolutionIndex = 0x83558E88;
 inline constexpr uint32_t kShadowsEnabledIndex = 0x83558F1C;
+// PARTICLEFPS and PARTICLE_EMIT_PCT (float values; the 8th and 9th registrations, stw @-29028 and
+// @-29032), which the console defaults set through SetFloat 0x821FA090 and the game reads after
+// them (PARTICLE_EMIT_PCT @0x822068A0, with MAX_PARTICLES; PARTICLEFPS in 0x8234BE20). On the PC
+// they are the particle system's update rate and the percentage of looping emitters' particles
+// released (settingsmenu.cpp: setParticleFPS, setEmitterLoopingReleasePCT(pct / 100)).
+inline constexpr uint32_t kParticleFpsIndex = 0x83558E9C;
+inline constexpr uint32_t kParticleEmitPercentIndex = 0x83558E98;
 
 }  // namespace torchlight::guest_abi::game_settings

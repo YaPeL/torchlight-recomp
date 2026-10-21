@@ -21,6 +21,11 @@ int main() {
   check(!QualityShadowResolution(Quality::kNormal), "normal keeps the game's shadow resolution");
   check(QualityShadowResolution(Quality::kLow) == 256u, "low: 256, the PC's detail level 2");
   check(QualityShadowResolution(Quality::kVeryLow) == 128u, "very low: 128, its lowest");
+  check(!QualityParticles(Quality::kNormal), "normal keeps the game's particles");
+  check(QualityParticles(Quality::kLow) == ParticleFactors{0.75f, 0.5f},
+        "low: the PC's medium relative to its highest (30/40 fps, 50/100 %)");
+  check(QualityParticles(Quality::kVeryLow) == ParticleFactors{0.5f, 0.1f},
+        "very low: the PC's lowest (20/40 fps, 10/100 %)");
   std::printf("quality_test: %s\n", failures ? "FAILED" : "OK");
   return failures ? 1 : 0;
 }

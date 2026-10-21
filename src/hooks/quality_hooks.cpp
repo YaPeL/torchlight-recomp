@@ -4,6 +4,7 @@
 
 #include "hooks/quality_hooks.h"
 
+#include <bit>
 #include <string>
 
 #include <rex/cvar.h>
@@ -36,6 +37,19 @@ bool SetInt(uint8_t* base, uint32_t settings, uint32_t index_global, uint32_t va
   return true;
 }
 
+// The address of float setting `index_global`'s value; 0 when its index is out of the values.
+uint32_t FloatSlot(const uint8_t* base, uint32_t settings, uint32_t index_global) {
+  const uint32_t index = abi::ReadU32(base, index_global);
+  const uint32_t begin = abi::ReadU32(base, settings + gs::kFloatValuesBegin.offset);
+  const uint32_t end = abi::ReadU32(base, settings + gs::kFloatValuesEnd.offset);
+  if (begin == 0 || end < begin || index >= (end - begin) / 4) return 0;
+  return begin + 4 * index;
+}
+
+void ScaleFloat(uint8_t* base, uint32_t slot, float factor) {
+  abi::WriteU32(base, slot, std::bit_cast<uint32_t>(abi::ReadF32(base, slot) * factor));
+}
+
 }  // namespace
 
 namespace torchlight::hooks {
@@ -66,6 +80,19 @@ REX_FUNC(sub_823E1040) {
       REXLOG_WARN("quality: SHADOWRESOLUTION's index is out of the settings' values; left as is");
     }
   }
+  const uint32_t fps = FloatSlot(base, settings, gs::kParticleFpsIndex);
+  const uint32_t emit = FloatSlot(base, settings, gs::kParticleEmitPercentIndex);
+  if (!fps || !emit) {
+    REXLOG_WARN("quality: the particle settings' indices are out of the settings' values");
+    return;
+  }
+  const float game_fps = abi::ReadF32(base, fps), game_emit = abi::ReadF32(base, emit);
+  if (auto factors = torchlight::hooks::QualityParticles(g_quality)) {
+    ScaleFloat(base, fps, factors->fps);
+    ScaleFloat(base, emit, factors->emit_percent);
+  }
+  REXLOG_INFO("quality: PARTICLEFPS {} (game {}), PARTICLE_EMIT_PCT {} (game {})",
+              abi::ReadF32(base, fps), game_fps, abi::ReadF32(base, emit), game_emit);
 }
 
 }  // extern "C"

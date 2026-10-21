@@ -3,9 +3,9 @@
 // decomp/src/Settings.cpp, CSettings::assignDefault: SHADOWRESOLUTION 128 << (detail - 1), down to
 // 128). Normal leaves the game's values.
 //
-// So far the shadow resolution only: the width and height of the game client's shadow (and light)
-// projector render textures, a third of the guest thread and a share of the GPU's frame in the
-// POCO X7's fight (docs/performance-profile.md).
+// The shadow resolution (the width and height of the game client's shadow and light projector
+// render textures, a third of the guest thread and a share of the GPU's frame in the POCO X7's
+// fight, docs/performance-profile.md) and the particles' update rate and emission.
 
 #pragma once
 
@@ -37,6 +37,21 @@ constexpr std::optional<uint32_t> QualityShadowResolution(Quality q) {
   switch (q) {
     case Quality::kLow: return 256;
     case Quality::kVeryLow: return 128;
+    default: return std::nullopt;
+  }
+}
+
+// Factors on the game's particle update rate and emission percentage; none keeps them. The PC's
+// levels relative to its highest (KParticleFPSDetail 40, 30, 20; KParticlePCTDetail 100, 50, 10),
+// applied to whatever the console sets, so the result does not depend on its units.
+struct ParticleFactors {
+  float fps = 1, emit_percent = 1;
+  bool operator==(const ParticleFactors&) const = default;
+};
+constexpr std::optional<ParticleFactors> QualityParticles(Quality q) {
+  switch (q) {
+    case Quality::kLow: return ParticleFactors{0.75f, 0.5f};
+    case Quality::kVeryLow: return ParticleFactors{0.5f, 0.1f};
     default: return std::nullopt;
   }
 }
