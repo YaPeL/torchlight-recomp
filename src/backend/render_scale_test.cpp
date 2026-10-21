@@ -83,6 +83,17 @@ int main(int argc, char** argv) {
   DrawFrame(b);
   CheckHalves(b, "scale 1");
 
+  // Frames that do not draw the target (the guest skipped its update) leave its content as the
+  // last frame that did: nothing clears, discards or recreates it at a frame's end.
+  for (int i = 0; i < 2; ++i) {
+    tl_backend_begin(b);
+    tl_backend_set_target(b, 0);
+    tl_backend_set_viewport(b, 0, 0, kWidth, kHeight);
+    tl_backend_clear(b, 1, kBlue, 1, 0);
+    tl_backend_end(b);
+  }
+  CheckHalves(b, "after two frames without drawing it");
+
   // Between frames, with the target already in use.
   Check(tl_backend_set_render_scale(b, 2) == 0, "scale 2 accepted");
   DrawFrame(b);
