@@ -90,7 +90,8 @@ void TestCaptureFile(const char* path) {
     Check(std::fread(bytes.data(), 1, bytes.size(), f) == bytes.size(), "capture file read");
     std::fclose(f);
   }
-  Check(DeserializeCapture(bytes, capture, error), error.c_str());
+  const bool read = DeserializeCapture(bytes, capture, error);
+  Check(read, error.c_str());
   Check(SerializeCapture(capture) == bytes, "the capture writes back byte for byte");
   size_t commands = 0;
   for (const Frame& frame : capture.frames) commands += frame.commands.size();

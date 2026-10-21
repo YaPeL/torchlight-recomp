@@ -1073,7 +1073,7 @@ against `develop`:
 | D: declaration memo | Reused a declaration's hash when its guest bytes are unchanged | Already in `develop`: `LiveDeclarationBytesSent` and the declaration slots compare the bytes the same way |
 | H: buffer entry memo | Cached the live buffer entry per address and generation | Already in `develop`: `DrawBuffer`, kept by the registry's stamp |
 | S: state lookup memo | Cached pointers into the ordered state shadow | Moot: `develop`'s shadow is an unordered map |
-| U: hash set for sent declarations | Replaced an ordered set of tuples | Moot: `develop` keys declarations in a flat map |
+| U: hash set for sent declarations | Replaced an ordered set of tuples | Already in `develop`: the live stream's sent declarations are a hashed flat set |
 | C: compact commands | Moved the gamma ramp's table out of the command | Taken, behind a build option, off (below) |
 | J, K, and H's measurement fix | | Out of scope (J and K excluded by the owner; the fix only concerns H) |
 
@@ -1084,8 +1084,9 @@ captures of 2026-10-18 hold 1,174 to 2,174 commands in their frame: 1.8 to 3.4 M
 frame written and read by the producer and the consumer, 0.2 to 0.37 MB with the option. The
 capture format does not change: `command_storage_test` checks that copies own their values, that
 the gamma body on the wire is the same bytes in both layouts, and, given capture files, that real
-captures read and write back byte for byte (the three captures above, both layouts). The full
-suite passes in both layouts (107/107), and the replay of those three captures (all draws drawn,
+captures read and write back byte for byte (the three captures above, both layouts);
+`command_storage_compact_test` builds the compact layout in every build, so CI covers both. The full
+suite passes in both layouts (107/107, 108 with that test), and the replay of those three captures (all draws drawn,
 display gamma ramp applied, images not black) writes the same PNG files, byte for byte, from
 both builds. Why it may matter: in the POCO X7's town profile of 2026-10-17 (Release, before the
 option existed) 13 % of the guest thread's samples sit on one store in `Session::LiveAppend`,

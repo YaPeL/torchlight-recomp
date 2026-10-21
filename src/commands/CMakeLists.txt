@@ -28,3 +28,11 @@ add_executable(command_storage_test command_storage_test.cpp)
 target_link_libraries(command_storage_test PRIVATE torchlight_commands)
 target_compile_options(command_storage_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME command_storage_test COMMAND command_storage_test)
+# The other layout too, whichever the option: this test compiles its own copy of the serializer
+# with the compact definition, so nothing else in the build mixes the two.
+add_executable(command_storage_compact_test command_storage_test.cpp serialize.cpp)
+target_include_directories(command_storage_compact_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(command_storage_compact_test PRIVATE cxx_std_23)
+target_compile_definitions(command_storage_compact_test PRIVATE TORCHLIGHT_COMPACT_COMMANDS)
+target_compile_options(command_storage_compact_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME command_storage_compact_test COMMAND command_storage_compact_test)
