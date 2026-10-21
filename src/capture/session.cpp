@@ -17,6 +17,7 @@
 #include "guest_abi/ogre_layout.h"
 #include "hooks/hooks.h"
 #include "mods/texture_files.h"
+#include "live/constant_buffer_pool.h"
 
 namespace torchlight::capture {
 
@@ -217,6 +218,8 @@ void Session::CutLiveFrame(bool measured) {
   live_frame_.commands.reserve(commands + commands / 8);
   live_frame_.cut = std::chrono::steady_clock::now();
   live_frame_contents_.clear();
+  // The constant buffers of frames the backend has finished, for the next frame's commands.
+  live::ConstantBufferPool::Get().Refill();
 }
 
 Session::RecordedContent Session::RecordContent(const commands::ResourceId& id,

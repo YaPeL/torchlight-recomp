@@ -1,4 +1,5 @@
 #include "live/frame_reclaimer.h"
+#include "live/constant_buffer_pool.h"
 
 #include <utility>
 
@@ -25,6 +26,7 @@ void FrameReclaimer::Free(LiveFrame&& frame) {
     }
     ++freed_inline_;
   }
+  ConstantBufferPool::Get().ReturnFrame(frame);
   LiveFrame freed = std::move(frame);  // the backlog is full: freed here, outside the lock
 }
 
@@ -36,6 +38,8 @@ void FrameReclaimer::Run() {
     LiveFrame frame = std::move(pending_.front());
     pending_.pop_front();
     lock.unlock();
+    // Its constant buffers go back to the guest thread (constant_buffer_pool.h), the rest is freed.
+    ConstantBufferPool::Get().ReturnFrame(frame);
     { LiveFrame freed = std::move(frame); }
     lock.lock();
     ++freed_behind_;

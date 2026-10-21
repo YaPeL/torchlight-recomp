@@ -26,6 +26,7 @@
 #include "live/slow_frames.h"
 #include "mods/texture_files.h"
 #include "platform/presentation_time.h"
+#include "live/constant_buffer_pool.h"
 
 namespace torchlight::live {
 
@@ -159,6 +160,7 @@ void LiveMode::RunWithoutDrawing() {
     content.Apply(*frame);
     for (const auto& cmd : frame->commands) draws += std::holds_alternative<commands::Draw>(cmd.payload);
     content.Finish();
+    ConstantBufferPool::Get().ReturnFrame(*frame);
     ++frames;
     auto end = Clock::now();
     consume_ms.Add(Ms(end - start));
@@ -568,6 +570,9 @@ void LiveMode::Run() {
               per_frame(ns[size_t(PS::kCut)]));
       LogMeasurements(cuts, measured);
       REXLOG_INFO("live commands consumed: {}", FormatCommandCounts(command_counts, frames));
+      const ConstantBufferPool::Counts pool = ConstantBufferPool::Get().TakeCounts();
+      REXLOG_INFO("live constant buffers: {} reused, {} allocated, {} returned, {} freed",
+                  pool.reused, pool.allocated, pool.returned, pool.freed);
       command_counts = {};
       if (std::string slow = slow_frames.TakePeriodSummary(); !slow.empty()) {
         REXLOG_INFO("live: {}", slow);
