@@ -109,6 +109,16 @@ endif()
 
 set(TORCHLIGHT_GPU_PLUGINS xenos null)
 rexglue_setup_target(torchlight GPU_PLUGINS ${TORCHLIGHT_GPU_PLUGINS})
+# On Android the game is a shared library that the SDK links with -Wl,-Bsymbolic-functions (patch
+# 47): every link checks that the generated code's calls are bound inside it and reach the hooks.
+if(ANDROID)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_custom_command(TARGET torchlight POST_BUILD
+        COMMAND ${Python3_EXECUTABLE} -I
+                ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
+                $<TARGET_FILE:torchlight> --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP}
+        VERBATIM)
+endif()
 # The default code model for the game on Linux x86-64 (docs/guest-hot-paths.md). The SDK compiles
 # its targets with -mcmodel=large ("large executable support"), which makes every call between
 # guest functions a 64-bit absolute address in a register and an indirect call; the executable's
@@ -176,6 +186,9 @@ add_subdirectory(tools/achievement_coverage)
 add_subdirectory(tools/class_skill_check)
 add_subdirectory(tools/release)
 add_subdirectory(tests/save_convert)
+if(ANDROID)
+    add_subdirectory(tests/guest_call_binding)
+endif()
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)
