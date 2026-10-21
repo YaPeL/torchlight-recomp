@@ -12,7 +12,7 @@ target_link_libraries(measured_mutex_test PRIVATE torchlight_measure)
 target_compile_options(measured_mutex_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME measured_mutex_test COMMAND measured_mutex_test)
 
-add_library(torchlight_live STATIC snapshot_store.cpp frame_queue.cpp session_file.cpp
+add_library(torchlight_live STATIC snapshot_store.cpp frame_queue.cpp constant_buffer_pool.cpp session_file.cpp
     slow_frames.cpp guest_events.cpp log_budget.cpp frame_reclaimer.cpp busy_notice_text.cpp)
 target_include_directories(torchlight_live PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_live PUBLIC cxx_std_23)
@@ -115,3 +115,8 @@ target_link_libraries(frame_series_test PRIVATE torchlight_live_mode)
 target_include_directories(frame_series_test PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_options(frame_series_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME frame_series_test COMMAND frame_series_test)
+
+add_executable(constant_buffer_pool_test constant_buffer_pool_test.cpp)
+target_link_libraries(constant_buffer_pool_test PRIVATE torchlight_live)
+target_compile_options(constant_buffer_pool_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME constant_buffer_pool_test COMMAND constant_buffer_pool_test)

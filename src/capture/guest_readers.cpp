@@ -10,6 +10,7 @@
 #include "capture/constant_mirror.h"
 #include "capture/session.h"
 #include "capture/translate.h"
+#include "live/constant_buffer_pool.h"
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_enums.h"
 #include "guest_abi/ogre_layout.h"
@@ -520,7 +521,11 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
       if (mirror && filter && mirror->Holds(floats, stage, physical, values.data(), r.element_count))
         return;
       if (mirror) mirror->Store(floats, stage, physical, values.data(), r.element_count);
+      // Vectors the backend has finished with when there are any (live/constant_buffer_pool.h).
+      auto& pool = live::ConstantBufferPool::Get();
+      r.data = pool.TakeData();
       r.data.assign(values.begin(), values.end());
+      if (out.capacity() == 0) out = pool.TakeRanges();
       out.push_back(std::move(r));
     });
   };
@@ -558,7 +563,10 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
     }
     mirror->StoreTail(c.stage.value, autos, c.transpose_matrices);
   }
-  c.autos.assign(autos.begin(), autos.end());
+  if (!autos.empty()) {
+    c.autos = live::ConstantBufferPool::Get().TakeAutos();
+    c.autos.assign(autos.begin(), autos.end());
+  }
   return c;
 }
 
