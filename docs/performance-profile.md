@@ -1055,6 +1055,44 @@ over a snapshot of the render queue (the study's 9.3 and F2, the legacy's road, 
 thread remains the limit in the fight and the town square; the backend in the mine standing
 still.
 
+## The research branch's renderer experiments: reviewed (2026-10-21)
+
+A separate research worktree (`research/particleuniverse`, archive repository, based on an older
+tree of 2026-10-06) measured a package of recording experiments behind `--renderer_aggressive`:
+combat 16.39 to 13.09 ms presented in one manual A/B pair. Its own reports qualify that pair (B's
+clock 7 % higher, thermal throttling in both, no per-component attribution, no F9 capture; its
+replay path produced black images, so no visual parity was shown), and every measurement was taken
+on a RelWithDebInfo build with the SDK's profiling counters. Reviewed component by component
+against `develop`:
+
+| Component | What it did | Decision and reason |
+| --- | --- | --- |
+| G: no indirect-dispatch counter | Removed the SDK's per-indirect-call counter from the generated code | Discarded: the counter only exists in non-Release builds; the Release builds we ship and profile have none. Much of the package's combat gain may have been this, which would not carry over to a release |
+| X: skip the Xbox draw calls | Skipped `DrawIndexedPrimitive`/`DrawPrimitive` under `_render` | Already in `develop`, wider: `--native_skip_guest_d3d` (on by default, native mode only) skips those and `SetIndices`/`SetStreamSource` (docs/native-skip-guest-d3d.md) |
+| M: mutexes without measurement | Skipped the two clock reads per lock | Already covered: `develop`'s `MeasuredMutex` times the hold on one acquisition in 64 and the wait only when contended; what is left is one relaxed atomic add per lock |
+| D: declaration memo | Reused a declaration's hash when its guest bytes are unchanged | Already in `develop`: `LiveDeclarationBytesSent` and the declaration slots compare the bytes the same way |
+| H: buffer entry memo | Cached the live buffer entry per address and generation | Already in `develop`: `DrawBuffer`, kept by the registry's stamp |
+| S: state lookup memo | Cached pointers into the ordered state shadow | Moot: `develop`'s shadow is an unordered map |
+| U: hash set for sent declarations | Replaced an ordered set of tuples | Moot: `develop` keys declarations in a flat map |
+| C: compact commands | Moved the gamma ramp's table out of the command | Taken, behind a build option, off (below) |
+| J, K, and H's measurement fix | | Out of scope (J and K excluded by the owner; the fix only concerns H) |
+
+**C** (`TORCHLIGHT_COMPACT_COMMANDS`, CMake, default off). `SetGammaRamp` carries a 768-entry
+table inline, so every `Command` is 1,560 bytes while the next largest payload (`Draw`) is
+152: with the option the table lives on the heap and a command is 168 bytes. The three F9
+captures of 2026-10-18 hold 1,174 to 2,174 commands in their frame: 1.8 to 3.4 MB of commands per
+frame written and read by the producer and the consumer, 0.2 to 0.37 MB with the option. The
+capture format does not change: `command_storage_test` checks that copies own their values, that
+the gamma body on the wire is the same bytes in both layouts, and, given capture files, that real
+captures read and write back byte for byte (the three captures above, both layouts). The full
+suite passes in both layouts (107/107), and the replay of those three captures (all draws drawn,
+display gamma ramp applied, images not black) writes the same PNG files, byte for byte, from
+both builds. Why it may matter: in the POCO X7's town profile of 2026-10-17 (Release, before the
+option existed) 13 % of the guest thread's samples sit on one store in `Session::LiveAppend`,
+the one that sets the new command's variant index at the end of its ~1.5 KB slot (found by the
+ReXGlue agent). A gain in frame time is not shown yet: it needs a Release A/B on the combat
+benchmark (and one on Android) before the option becomes the default.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked

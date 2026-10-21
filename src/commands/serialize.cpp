@@ -313,7 +313,11 @@ template <typename IO> void S(IO& io, Draw& c) {
   }
 }
 
-template <typename IO> void S(IO& io, SetGammaRamp& c) { io.num(c.pwl); Arr(io, c.values); }
+template <typename IO> void S(IO& io, SetGammaRamp& c) {
+  // kGammaRampEntries values and no count, whichever the host storage (types.h).
+  io.num(c.pwl);
+  for (size_t i = 0; i < kGammaRampEntries; ++i) io.num(c.values[i]);
+}
 template <typename IO> void S(IO& io, SetSceneClip& c) { io.num(c.viewport); }
 
 template <typename IO> void S(IO& io, SetTextureBlend& c) {
