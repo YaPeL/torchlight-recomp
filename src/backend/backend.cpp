@@ -1007,6 +1007,10 @@ struct UnitKey {
 struct ProgramKey {
   uint8_t lighting, tracking, light_count, fog, unit_count, skin_weights;
   uint16_t skin_bones;
+  // Whether the fragment program has the alpha test (GuestAlphaTest): only when the draw's alpha
+  // function is not "always pass". Its discard, even when it never discards, turns off the GPU's
+  // early depth test and hidden-surface removal for every draw that uses the program.
+  uint8_t alpha_test;
   UnitKey units[TL_MAX_STAGES];
 };
 #pragma pack(pop)
@@ -1022,6 +1026,7 @@ std::string MakeProgramKey(const tl_backend* b, const ProgramInputs& f, const Un
   k.unit_count = uint8_t(unit_count);
   k.skin_bones = uint16_t(f.skin_bones);
   k.skin_weights = uint8_t(f.skin_weights);
+  k.alpha_test = f.alpha_function != Ogre::CMPF_ALWAYS_PASS;
   for (uint32_t u = 0; u < unit_count; ++u) {
     const UnitDesc& d = units[u];
     UnitKey& uk = k.units[u];
@@ -1104,7 +1109,10 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
     state->addTemplateSubRenderState(lighting);
   }
   if (f.fog) state->addTemplateSubRenderState(sg.createSubRenderState(GuestPixelFog::kType));
-  state->addTemplateSubRenderState(sg.createSubRenderState(GuestAlphaTest::kType));
+  // Only with a test: its discard turns the GPU's early depth test and hidden-surface removal off
+  // for the draw, even when the function passes everything (ProgramKey::alpha_test).
+  const bool alpha_test = f.alpha_function != Ogre::CMPF_ALWAYS_PASS;
+  if (alpha_test) state->addTemplateSubRenderState(sg.createSubRenderState(GuestAlphaTest::kType));
   if (f.skin_bones) {
     // Linear blend of world-space bones given as object-space ones (setBonesUseObjectSpace): the
     // blended position is the guest's world-space one and the rest of the program takes it as the
@@ -1140,7 +1148,7 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
       if (name.rfind(kAlphaFunctionUniform, 0) == 0 && def.isFloat())
         p.alpha_function = def.physicalIndex;
     }
-    if (!p.alpha_function) break;
+    if (alpha_test && !p.alpha_function) break;
     for (const auto& entry : p.vertex_params->getAutoConstantList()) {
       if (entry.paramType == Ogre::GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX)
         p.worldviewproj.push_back({entry.physicalIndex, entry.elementCount});
@@ -1200,6 +1208,8 @@ bool InputsFromKey(tl_backend* b, const std::string& key, ProgramInputs& f, Unit
   f.fog = k.fog != 0;
   f.skin_bones = k.skin_bones;
   f.skin_weights = k.skin_weights;
+  // The key keeps only whether there is a test; the function itself is a uniform written per draw.
+  f.alpha_function = k.alpha_test ? Ogre::CMPF_GREATER : Ogre::CMPF_ALWAYS_PASS;
   unit_count = k.unit_count;
   for (uint32_t u = 0; u < unit_count; ++u) {
     const UnitKey& uk = k.units[u];
@@ -1263,7 +1273,8 @@ bool ApplyProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* units,
   // Values the data source reads from the pass and the scene objects.
   p.pass->setDiffuse(f.diffuse);
   p.pass->setAlphaRejectValue(f.alpha_reference);
-  p.fragment_params->_writeRawConstant(*p.alpha_function, float(f.alpha_function));
+  if (p.alpha_function)
+    p.fragment_params->_writeRawConstant(*p.alpha_function, float(f.alpha_function));
   p.pass->setSelfIllumination(f.emissive);
   for (uint32_t u = 0; u < unit_count && u < p.pass->getNumTextureUnitStates(); ++u) {
     if (units[u].has_matrix) p.pass->getTextureUnitState(u)->setTextureTransform(units[u].matrix);
