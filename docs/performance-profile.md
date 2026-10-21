@@ -1108,6 +1108,26 @@ average clocks 2.9 to 4.0 GHz) is larger than the difference, and the two steps 
 directions: no gain or loss is shown on this machine. The option stays off; the place where it may
 matter is the ARM device, where the store above was measured.
 
+POCO X7 A/B (2026-10-21, `android/a2-gles` with these commits, Release with the developer input,
+the same scripted fight, no cap or vsync, the frame counter on in both, A C C A A C C A, battery
+at or below 30 C before each run; mean ms per run):
+
+| Measure | A (inline) | C (compact) | Means |
+| --- | --- | --- | --- |
+| rest, guest frame | 14.46, 14.60, 14.43, 14.56 | 14.44, 14.84, 15.01, 14.19 | 14.51 against 14.62 |
+| fight, guest frame | 33.85, 32.86, 30.26, 32.05 | 27.82, 28.89, 27.29, 24.45 | 32.26 against 27.11 (-16 %) |
+| fight, frames over 33 ms | 550, 432, 376, 410 | 71, 185, 89, 52 | |
+| fight, presented interval | 39.25, 37.99, 32.64, 35.23 | 40.06, 35.78, 34.92, 31.22 | 36.28 against 35.50 |
+
+On the phone the guest's fight is faster in every C run, but what reaches the screen does not
+change: in the fight the presented rate is held by the backend and the Mali GPU (present latency
+~24 ms, guest frames dropped: 150, 153, 89, 105 against 403, 245, 294, 324), so the faster guest
+only drops more frames. Profiles of the fight (simpleperf, 25 s after the spawn) put the removed
+work in sight: `LiveAppend` 2.5 % to 0.4 % of the guest thread, the frame cut, the frame queue's
+push and the merge of dropped frames 2.9 % to 0.6 %; the rest of the gain is spread over the
+thread (less memory traffic on a device whose CPU and GPU share it). The option stays off until
+the GPU side of the fight is addressed and the presented rate can show it.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
