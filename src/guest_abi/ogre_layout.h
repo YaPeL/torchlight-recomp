@@ -521,6 +521,11 @@ inline constexpr Field kColourDepth{0x2C, Confidence::kConfirmed};
 // [confirmed] D3D9RenderSystem::_setViewport 0x821A4368 calls vt+0xA0 to decide the flipped
 // viewport origin (@0x821A43F4); _setCullingMode uses it the same way (@0x821C6D20).
 inline constexpr VtableSlot kRequiresTextureFlipping{40, Confidence::kConfirmed};
+// [confirmed] mListeners (std::vector<RenderTargetListener*>, OgreRenderTarget.h:413): addListener
+// (D3D9RenderTexture vtable 0x8200394C, 0x826576B8) push_backs at this+160; removeListener
+// (0x826576E8) walks [+0xA0, +0xA4) for the pointer.
+inline constexpr Field kListenersBegin{0xA0, Confidence::kConfirmed};
+inline constexpr Field kListenersEnd{0xA4, Confidence::kConfirmed};
 }  // namespace render_target
 
 namespace viewport {

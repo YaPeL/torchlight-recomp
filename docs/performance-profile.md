@@ -1458,3 +1458,22 @@ cmake --build --preset linux-amd64-relwithdebinfo -j 4
 
 No generated guest source, runtime synchronization, renderer logic, frame pacing,
 resolution settings, UI behavior or license handling was modified.
+
+## The projector textures every other frame (2026-10-21, prototype)
+
+The POCO X7's fight profile put 31 % of the guest thread under `0x82198608`, which is
+`D3D9RenderTexture::update` (OGRE 1.7 OgreD3D9Texture.cpp:1966). A diagnostic run (owner's OK,
+since removed) found two render textures in a whole session, both updated by OGRE every frame,
+512x512, each with one listener: the game client's shadow and light projectors (OpenTorchlight's
+PC decompilation, `decomp/src/gameclient.cpp`, `CGameClient::resetShadows`, `ProjectorRTT` and
+`ProjectorRTTLight`). In the bench's fight they take about 60 and 42 of some 350 draws.
+
+`--projector_textures_every_other_frame` (off by default; for Android as a quality option, the owner
+decides after seeing it) skips every other update of the render textures whose listener has the
+game client's vtable (guest_abi `kGameClientRenderTargetListenerVtable`): chosen by that, not by name
+(the names are a counter, `rtt/<pointer>/207`). The data the run found (512x512, one listener, the
+same in both) is a control logged once when it disagrees, without changing the choice. A skipped
+update runs no listener and no draw; the backend keeps the target's content
+(`render_scale_test`, "after two frames without drawing it"), so shadows and the light map lag one
+frame. A desktop smoke run with it on: no control note; of its three F9 captures, two are frames
+without the projector draws and one has them (57 and 42).

@@ -97,3 +97,15 @@ target_include_directories(prop_bones_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/
 target_compile_features(prop_bones_test PRIVATE cxx_std_23)
 target_compile_options(prop_bones_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME prop_bones_test COMMAND prop_bones_test)
+
+# The projector textures every other frame (projector_textures.h): the choice, its control and the
+# alternation, tested on their own; the hook (projector_texture_hooks.cpp) is part of the executable.
+add_library(torchlight_projector_textures STATIC projector_textures.cpp)
+target_include_directories(torchlight_projector_textures PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_projector_textures PUBLIC cxx_std_23)
+target_compile_options(torchlight_projector_textures PRIVATE -Wall -Wextra)
+
+add_executable(projector_textures_test projector_textures_test.cpp)
+target_link_libraries(projector_textures_test PRIVATE torchlight_projector_textures)
+target_compile_options(projector_textures_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME projector_textures_test COMMAND projector_textures_test)
