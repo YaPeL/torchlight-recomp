@@ -1065,7 +1065,14 @@ void BindChangedParameters(tl_backend* b, Ogre::GpuProgramType type,
     mask = Ogre::GPV_ALL;
   } else {
     for (const auto& [name, def] : params->getConstantDefinitions().map) {
+      // A sampler is bound by its unit, not a value in the list (GLES lists them among the
+      // uniforms, with an index into another buffer).
+      if (def.isSampler()) continue;
       const size_t bytes = size_t(def.elementSize) * def.arraySize * (def.isDouble() ? 8 : 4);
+      if (def.physicalIndex + bytes > now.size()) {
+        mask = Ogre::GPV_ALL;
+        break;
+      }
       if (std::memcmp(&now[def.physicalIndex], &last[def.physicalIndex], bytes) != 0) {
         mask |= def.variability;
       }
