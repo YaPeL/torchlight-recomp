@@ -9,10 +9,12 @@ builds SDL_GetPowerInfo_Android into libSDL3.a; the desktop platforms keep it of
 
 Test: configured for Android (NDK r30, arm64-v8a), SDL_POWER is ON in the cache and libSDL3.a
 defines SDL_GetPowerInfo_Android; configured for Linux, SDL_POWER stays OFF. The codegen id is
-unchanged (the file is not one of its inputs). Not yet checked on a device: nothing calls
-SDL_GetPowerInfo until Torchlight's OnBattery does (the POCO X7, `dumpsys battery unplug` and
-`reset`, is the check planned with it). It needs the app's JVM: a native executable run through
-adb shell has none, and there the call would crash.
+unchanged (the file is not one of its inputs). On a device (2026-10-22, POCO X7, Torchlight's
+android/on-battery built on this series with patch 51), the game's startup line reports the
+state SDL_GetPowerInfo gives: "plugged in" on USB, "on battery" after `adb shell dumpsys battery
+unplug`, and "plugged in" again after `dumpsys battery reset`; one app start each, no crash, and
+no permission or manifest entry needed. The call needs the app's JVM: a native executable run
+through adb shell has none, and there it would crash.
 
 diff --git a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
 index c192ac2..c830b6e 100644
