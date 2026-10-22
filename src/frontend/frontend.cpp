@@ -246,6 +246,7 @@ void Frontend::ApplySceneClip() {
 
 void Frontend::PlanTargets(const std::vector<Command>& commands) {
   discard_depth_before_.clear();
+  if (!depth_discard_) return;
   // The frame starts on the main target (tl_backend_begin), the guest's frame size.
   std::optional<TargetSize> bound;
   if (guest_width_ && guest_height_) bound = TargetSize{guest_width_, guest_height_};
