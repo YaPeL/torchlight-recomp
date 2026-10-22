@@ -1129,6 +1129,46 @@ thread (less memory traffic on a device whose CPU and GPU share it). The owner t
 numbers: the option is on by default since 2026-10-21 (OFF rebuilds the inline table); the
 presented rate will show it once the GPU side of the fight is addressed.
 
+## The display gamma inside the present pass: no gain on the POCO X7 (2026-10-22)
+
+A frame in a window ended with two full-screen passes: the display gamma from the main target to
+the output target (the Xbox ramp, a table lookup per channel), then the output's copy to the window.
+The branch `perf/present-gamma` draws the main target to the window through the gamma lookup in
+one pass, filtering the looked-up texels itself when the window is larger (bilinear, as the
+sampler filtered the output's), or as a plain filtered copy when the ramp is the identity (the
+game's never is: it lifts the blacks, 0 to 47 of 1023). Offscreen, and for read-backs of the
+output, nothing changes.
+
+Where a fight frame's framebuffer changes come from (POCO X7, a GLES layer recording one frame in
+300 of the live game, the same every time): the main target bound by `tl_backend_begin` with
+nothing drawn; the shadow projector (colour and depth clear, 11 to 13 draws); the light projector
+(clear, 36 draws); the main target (clear, ~95 draws, two depth-only clears inside the pass, ~30
+draws more); the output (the gamma pass); the window (clear, copy, UI). Six changes, five passes
+that draw; the guest uses three targets per frame.
+
+Images: the window's image (the replay's `--window` writes it as `window.png`) from the old and
+the new presentation, 8 captures at 4 render scales: identical at scale 1; at 0.5 (the POCO X7's
+case, 1356x610 to 2712x1220), 0.75 and 0.6, at most 1 apart on a channel, in 507, 741 and 9,288
+pixels of 921,600 on average (the hardware filter's rounding against the shader's, scattered, no
+edges). `present_test` checks the window against the output at scales 1 and 0.5, with and without
+a ramp, on GL3+ and Direct3D 11.
+
+POCO X7, combat benchmark, uncapped, no vsync, A B B A, both APKs against the same SDK (patch 47):
+
+| Run | fight presented (ms) | present, the GPU wait (ms) | framebuffer changes per frame |
+| --- | --- | --- | --- |
+| A (two passes) | 38.64 | 28.03 | 9.5 |
+| B (one pass) | 38.77 | 28.59 | 8.7 |
+| B (one pass) | 39.61 | 29.55 | 8.6 |
+| A (two passes) | 34.53 | 24.26 | 9.3 |
+
+No gain: the GPU wait does not go down. One target written and read again less per frame is offset
+by the new pass's work at the window's size, 16 texture fetches per window pixel (4 texels, 3
+lookups each) at 2712x1220 against 4 at 1356x610 plus 1 at the window's size before (an
+explanation, not measured apart). Applying the gamma after the hardware's filter would cost 4
+fetches but changes the image (the gamma of a filtered value is not the filtered gamma), so it was
+not tried. Not integrated; the branch keeps it.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked

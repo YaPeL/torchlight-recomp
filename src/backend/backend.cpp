@@ -10,7 +10,7 @@
 //   scene: a SceneManager exists only to own the camera and the light the data source reads.
 //   The data source also negates clip y for render textures (GL textures have their first row at
 //   the bottom); the front face follows on the render system's side (flipFrontFace);
-// - the full-screen passes (gamma, present) use two small programs of the backend's own;
+// - the full-screen passes (gamma, present) use small programs of the backend's own;
 // - texture filtering, addressing and anisotropy go through Sampler objects (cached per state);
 // - blending and the colour write mask through setColourBlendState;
 // - the projective texgen projector is a Frustum with custom matrices;
@@ -244,6 +244,12 @@ struct tl_backend {
   // `window`.
   std::unique_ptr<torchlight::platform::OgreTopLevelWindow> top_level;
   bool visible_window = false;
+  // tl_backend_read_next_present's request, served and cleared by the next present.
+  struct WindowRead {
+    void* rgba = nullptr;
+    uint32_t width = 0, height = 0, stride = 0;
+    int* done = nullptr;
+  } window_read;
   bool child_window = false;  // inside another application's window (tl_backend_create_child)
   std::string window_title;    // OGRE's window's; its name on Cocoa (tl_backend_destroy)
   Ogre::Viewport* window_viewport = nullptr;
@@ -263,10 +269,15 @@ struct tl_backend {
   };
   Target main;
   Target output;  // main after the display gamma (DisplayGammaPass)
+  // The output is not drawn when the frame ends in a visible window: the present pass applies the
+  // gamma itself on its way to the window (PresentPass), and a read-back of the output draws it
+  // first (EnsureOutput).
+  bool output_stale = false;
+  bool gamma_identity = true;  // the ramp maps every value to itself: nothing to apply
   std::map<uint64_t, Target> targets;
   Ogre::TexturePtr gamma_lut;  // 256 x 1, one texel per 8-bit value
-  Ogre::HighLevelGpuProgramPtr quad_vertex_program, gamma_program, copy_program;
-  Ogre::GpuProgramParametersSharedPtr gamma_params, copy_params;
+  Ogre::HighLevelGpuProgramPtr quad_vertex_program, gamma_program, present_program;
+  Ogre::GpuProgramParametersSharedPtr gamma_params, present_params;
   Ogre::HardwareVertexBufferSharedPtr quad;
   Ogre::HardwareVertexBufferSharedPtr window_quad;  // for tl_backend_present
   // Host UI (tl_backend_set_ui_frame), drawn by DrawUiPass.
@@ -1206,7 +1217,9 @@ void UnbindProgram(tl_backend* b) {
 // Two small programs of the backend's own, created through OGRE's HighLevelGpuProgramManager:
 // the display gamma (the Xbox ramp is a per-channel table lookup on the final colour,
 // xbox_to_gl_conventions GammaRampLut) in one full-screen pass from the main target to the output
-// target, and the copy of the output to the window. Both share a pass-through vertex program.
+// target, and the present pass from the main target to the window, which applies the same gamma
+// on the way (one pass to the window instead of two; on tile GPUs a whole target written and read
+// again less per frame). Both share a pass-through vertex program.
 //
 // The backend's programs are written once with OGRE's unified shader macros (OgreUnifiedShader.h,
 // in OGRE's Main media) and compiled as GLSL or HLSL, whichever the render system takes
@@ -1240,14 +1253,51 @@ MAIN_DECLARATION
 }
 )";
 
-const char* kCopyFragmentSource = R"(OGRE_NATIVE_GLSL_VERSION_DIRECTIVE
+// The main target to the window, as the gamma pass to the output and the output's copy to the
+// window would give: the gamma lookup on every texel, then the window's filtering. Without the
+// gamma (an identity ramp) the sampler filters (point or bilinear, PresentPass). With it the
+// sampler takes points and the shader filters the looked-up texels itself when `mode.y` is set:
+// bilinear between the four texels around the sample, as the sampler would between the output's.
+// Texel positions need more than OGRE's default precision for ES fragment shaders (mediump: 16-bit
+// floats on Mali, whole numbers only above 1024), so ES computes in highp. Fetches take level 0
+// explicitly: no gradients inside the branches (HLSL's Sample needs them).
+const char* kPresentFragmentSource = R"(OGRE_NATIVE_GLSL_VERSION_DIRECTIVE
 #include <OgreUnifiedShader.h>
-SAMPLER2D(image, 0);
+#ifdef OGRE_GLSLES
+precision highp float;
+#endif
+SAMPLER2D(scene, 0);
+SAMPLER2D(lut, 1);
+OGRE_UNIFORMS(
+uniform vec4 size; // the scene's texels: width, height, 1 / width, 1 / height
+uniform vec4 mode; // x: apply the gamma lookup, y: filter between texels (bilinear)
+)
+vec3 Gamma(vec3 c)
+{
+  vec3 u = (floor(c * 255.0 + 0.5) + 0.5) / 256.0;
+  return vec3(texture2DLod(lut, vec2(u.r, 0.5), 0.0).r, texture2DLod(lut, vec2(u.g, 0.5), 0.0).g,
+              texture2DLod(lut, vec2(u.b, 0.5), 0.0).b);
+}
 MAIN_PARAMETERS
 IN(vec2 uv, TEXCOORD0)
 MAIN_DECLARATION
 {
-  gl_FragColor = texture2D(image, uv);
+  vec3 c;
+  if (mode.x < 0.5) {
+    c = texture2DLod(scene, uv, 0.0).rgb;
+  } else if (mode.y < 0.5) {
+    c = Gamma(texture2DLod(scene, uv, 0.0).rgb);
+  } else {
+    vec2 p = uv * size.xy - 0.5;
+    vec2 f = fract(p);
+    vec2 t = (floor(p) + 0.5) * size.zw;
+    vec3 c00 = Gamma(texture2DLod(scene, t, 0.0).rgb);
+    vec3 c10 = Gamma(texture2DLod(scene, t + vec2(size.z, 0.0), 0.0).rgb);
+    vec3 c01 = Gamma(texture2DLod(scene, t + vec2(0.0, size.w), 0.0).rgb);
+    vec3 c11 = Gamma(texture2DLod(scene, t + size.zw, 0.0).rgb);
+    c = mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
+  }
+  gl_FragColor = vec4(c, 1.0);
 }
 )";
 
@@ -1302,9 +1352,11 @@ void CreateDisplayGamma(tl_backend* b) {
   b->gamma_params = MakeParameters(b->gamma_program);
   b->gamma_params->setNamedConstant("scene", 0);
   b->gamma_params->setNamedConstant("lut", 1);
-  b->copy_program = MakeProgram("tl_copy", Ogre::GPT_FRAGMENT_PROGRAM, kCopyFragmentSource);
-  b->copy_params = MakeParameters(b->copy_program);
-  b->copy_params->setNamedConstant("image", 0);
+  b->present_program =
+      MakeProgram("tl_present", Ogre::GPT_FRAGMENT_PROGRAM, kPresentFragmentSource);
+  b->present_params = MakeParameters(b->present_program);
+  b->present_params->setNamedConstant("scene", 0);
+  b->present_params->setNamedConstant("lut", 1);
   auto& buffers = Ogre::HardwareBufferManager::getSingleton();
   // Full-screen quad between render textures: position xy (clip space), uv, keeping memory order
   // on the render system's render textures (conventions RenderTextureCopyQuad).
@@ -1478,6 +1530,16 @@ void DisplayGammaPass(tl_backend* b) {
   rs->_disableTextureUnitsFrom(2);
   DrawQuad(b, b->quad);
   EndFullScreenPass(b);
+  b->output_stale = false;
+}
+
+// The output for a read-back, drawn now if the frame ended without it (output_stale).
+void EnsureOutput(tl_backend* b) {
+  if (!b->output_stale) return;
+  SetViewport(b, b->output.viewport);  // the render system begins a frame on a viewport
+  b->rs->_beginFrame();
+  DisplayGammaPass(b);
+  b->rs->_endFrame();
 }
 
 // ---- host UI pass ------------------------------------------------------------------------------
@@ -1886,9 +1948,9 @@ void tl_backend_destroy(tl_backend* b) {
   b->ui_fragment_program.reset();
   b->window_quad.reset();
   b->gamma_params.reset();
-  b->copy_params.reset();
+  b->present_params.reset();
   b->gamma_program.reset();
-  b->copy_program.reset();
+  b->present_program.reset();
   b->quad_vertex_program.reset();
   b->clear_vertex_params.reset();
   b->clear_fragment_params.reset();
@@ -2080,15 +2142,22 @@ void tl_backend_begin(tl_backend* b) {
 
 void tl_backend_end(tl_backend* b) {
   try {
-    DisplayGammaPass(b);
-    // Offscreen there is no window to present the UI on: it goes over the output.
-    if (!b->visible_window) DrawUiPass(b, b->output.viewport);
+    // With a window the present pass applies the gamma (PresentPass); offscreen the output is the
+    // frame's result, with the UI over it (there is no window to present the UI on).
+    if (b->visible_window) {
+      b->output_stale = true;
+    } else {
+      DisplayGammaPass(b);
+      DrawUiPass(b, b->output.viewport);
+    }
   } catch (Ogre::Exception&) {
   }
   b->rs->_endFrame();
 }
 
 int tl_backend_present(tl_backend* b) {
+  // This present serves a pending read (tl_backend_read_next_present) or drops it.
+  const tl_backend::WindowRead read = std::exchange(b->window_read, {});
   if (!b->visible_window) return 0;
   // The window system taking the surface away and giving it back (Android: the app in the
   // background); this blocks while there is none. False: the app is ending.
@@ -2106,8 +2175,9 @@ int tl_backend_present(tl_backend* b) {
       });
   if (app_ending || b->window->isClosed()) return 0;
   try {
-    // The output texture (top row first, see DisplayGammaPass) on a full-window quad (copy
-    // program): the window is not a render texture, so no y flip applies.
+    // The main target through the display gamma (PresentPass, the same image as the output's)
+    // on a full-window quad; the main target keeps the output's row order (DisplayGammaPass), and
+    // the window is not a render texture, so no y flip applies.
     Ogre::RenderSystem* rs = b->rs;
     // The output keeps its aspect: black bars around it when the window's aspect differs.
     b->window_viewport->setDimensions(0, 0, 1, 1);
@@ -2126,21 +2196,46 @@ int tl_backend_present(tl_backend* b) {
       b->window_viewport->setDimensions(0, (1 - h) / 2, 1, h);
     }
     SetViewport(b, b->window_viewport);
-    FullScreenPassState(b, b->copy_program, b->copy_params);
-    rs->_setTexture(0, true, b->output.texture);
-    // One output pixel per window pixel: point sampling is exact. Scaled to the window: bilinear,
-    // as the emulated GPU's presenter does by default. Clamped: bilinear filtering at the edges
-    // must not blend in the opposite edge.
-    bool scaled = b->window_viewport->getActualWidth() != int(b->output.rt->getWidth()) ||
-                  b->window_viewport->getActualHeight() != int(b->output.rt->getHeight());
-    Ogre::FilterOptions filter = scaled ? Ogre::FO_LINEAR : Ogre::FO_POINT;
-    rs->_setSampler(0, *GetSampler(b, filter, filter, Ogre::FO_NONE, Ogre::TAM_CLAMP,
-                                   Ogre::TAM_CLAMP, Ogre::TAM_CLAMP, 1));
-    rs->_disableTextureUnitsFrom(1);
+    // One pixel per window pixel: point sampling is exact. Scaled to the window: bilinear, as the
+    // emulated GPU's presenter does by default. Clamped: bilinear filtering at the edges must not
+    // blend in the opposite edge. With the gamma the shader filters (kPresentFragmentSource).
+    const uint32_t scene_w = b->main.rt->getWidth(), scene_h = b->main.rt->getHeight();
+    const bool scaled = b->window_viewport->getActualWidth() != int(scene_w) ||
+                        b->window_viewport->getActualHeight() != int(scene_h);
+    const bool gamma = !b->gamma_identity;
+    b->present_params->setNamedConstant(
+        "size", Ogre::Vector4(Ogre::Real(scene_w), Ogre::Real(scene_h), 1.0f / Ogre::Real(scene_w),
+                              1.0f / Ogre::Real(scene_h)));
+    b->present_params->setNamedConstant(
+        "mode", Ogre::Vector4(gamma ? 1.0f : 0.0f, gamma && scaled ? 1.0f : 0.0f, 0, 0));
+    FullScreenPassState(b, b->present_program, b->present_params);
+    const Ogre::FilterOptions filter = scaled && !gamma ? Ogre::FO_LINEAR : Ogre::FO_POINT;
+    const Ogre::SamplerPtr scene_sampler = GetSampler(
+        b, filter, filter, Ogre::FO_NONE, Ogre::TAM_CLAMP, Ogre::TAM_CLAMP, Ogre::TAM_CLAMP, 1);
+    const Ogre::SamplerPtr lut_sampler = GetSampler(
+        b, Ogre::FO_POINT, Ogre::FO_POINT, Ogre::FO_NONE, Ogre::TAM_CLAMP, Ogre::TAM_CLAMP,
+        Ogre::TAM_CLAMP, 1);
+    rs->_setTexture(0, true, b->main.texture);
+    rs->_setSampler(0, *scene_sampler);
+    rs->_setTexture(1, true, b->gamma_lut);
+    rs->_setSampler(1, *lut_sampler);
+    rs->_disableTextureUnitsFrom(2);
     DrawQuad(b, b->window_quad);
     EndFullScreenPass(b);
     DrawUiPass(b, b->window_viewport);
     rs->_endFrame();
+    if (read.rgba) {
+      const tl_backend::WindowRead& r = read;
+      if (b->window->getWidth() == r.width && b->window->getHeight() == r.height) {
+        Ogre::PixelBox out(r.width, r.height, 1, Ogre::PF_BYTE_RGBA, r.rgba);
+        out.rowPitch = r.stride / 4;
+        out.slicePitch = out.rowPitch * r.height;
+        b->window->copyContentsToMemory(Ogre::Box(0, 0, r.width, r.height), out,
+                                        Ogre::RenderTarget::FB_BACK);
+        *r.done = 1;
+      }
+      ForgetActiveViewport(b);
+    }
     b->window->swapBuffers();
   } catch (Ogre::Exception&) {
     return 0;
@@ -2241,6 +2336,8 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
   uint8_t lut[256 * 3];
   conv::GammaRampLut(pwl != 0, values, lut);
   UploadGammaLut(b, lut);
+  b->gamma_identity = true;
+  for (int v = 0; v < 256 * 3; ++v) b->gamma_identity &= lut[v] == uint8_t(v / 3);
 }
 
 int tl_backend_set_target(tl_backend* b, uint64_t target_id) {
@@ -2851,6 +2948,7 @@ uint32_t tl_backend_probe_samples(tl_backend* b) { return b->probe_samples; }
 
 int tl_backend_read_rgba(tl_backend* b, void* rgba, uint32_t stride) {
   try {
+    EnsureOutput(b);
     ReadTarget(b, b->output, rgba, stride);
   } catch (Ogre::Exception&) {
     return 1;
@@ -2865,11 +2963,18 @@ void tl_backend_output_size(tl_backend* b, uint32_t* width, uint32_t* height) {
 
 int tl_backend_read_output_rgba(tl_backend* b, void* rgba, uint32_t stride) {
   try {
+    EnsureOutput(b);
     ReadTargetHost(b, b->output, rgba, stride);
   } catch (Ogre::Exception&) {
     return 1;
   }
   return 0;
+}
+
+void tl_backend_read_next_present(tl_backend* b, void* rgba, uint32_t width, uint32_t height,
+                                  uint32_t stride, int* done) {
+  *done = 0;
+  b->window_read = {rgba, width, height, stride, done};
 }
 
 int tl_backend_read_target_rgba(tl_backend* b, uint64_t target_id, uint32_t width,
