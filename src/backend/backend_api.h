@@ -341,6 +341,11 @@ size_t tl_backend_precompile_programs(tl_backend* b, double budget_ms);
 void tl_backend_open_program_cache(tl_backend* b, const char* version);
 void tl_backend_save_program_cache(tl_backend* b);
 
+/* Diagnostics: whether GLES writes a texture's sampler state only when it changes
+ * (patches/ogre-gles2-sampler-once-per-texture.patch; on by default), to measure with and without it
+ * in one build. Nothing on other render systems, or with an OGRE built without the patch. */
+void tl_backend_set_sampler_once(tl_backend* b, int enabled);
+
 /* Display gamma ramp the guest set (commands::SetGammaRamp values), applied when the frame ends.
  * Linear until set. */
 void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768]);

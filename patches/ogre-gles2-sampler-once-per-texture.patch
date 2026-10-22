@@ -6,7 +6,9 @@ patches/ogre/0020-switch-gles2-sampler-once-per-texture.patch, and the two lines
 patches/ogre/0018-switch-gles2-texture-max-level.patch that reset the remembered state when the GL
 texture is made or freed (0020 relies on them). Adapted: their __SWITCH__ guards removed (the
 change applies to every GLES2 build), the code comment's Switch measurement left out and a line on
-the unit array's use added; the code is theirs. This header is ours.
+the unit array's use added, and ours: a switch to turn it off at run time (setConfigOption
+"Sampler State Once Per Texture" = "No", for measuring with and without it in one build). This
+header is ours.
 
 What it does: OGRE 14.6's GLES2RenderSystem::_setSampler writes every sampler parameter
 (glTexParameter) into the bound texture each time a texture is bound, as GLES2 has no separate
@@ -17,10 +19,10 @@ written. On the POCO X7 _setSampler was 2.3 % of the backend thread in a fight (
 almost all glTexParameter.
 
 diff --git a/RenderSystems/GLES2/include/OgreGLES2RenderSystem.h b/RenderSystems/GLES2/include/OgreGLES2RenderSystem.h
-index 5862a5e..7cea0ac 100644
+index 5862a5e..39e9fdd 100644
 --- a/RenderSystems/GLES2/include/OgreGLES2RenderSystem.h
 +++ b/RenderSystems/GLES2/include/OgreGLES2RenderSystem.h
-@@ -69,6 +69,10 @@ namespace Ogre {
+@@ -69,6 +69,13 @@ namespace Ogre {
  
              /// Holds texture type settings for every stage
              GLenum mTextureTypes[OGRE_MAX_TEXTURE_LAYERS];
@@ -28,9 +30,20 @@ index 5862a5e..7cea0ac 100644
 +            /// Not cleared when a texture is destroyed: _setSampler must follow a
 +            /// _setTexture of the same unit, as every caller does.
 +            GLES2Texture* mSamplerTextures[OGRE_MAX_TEXTURE_LAYERS] = {};
++            /// Whether _setSampler skips state already written into the texture
++            /// ("Sampler State Once Per Texture", Yes by default; No to measure without it).
++            bool mSamplerOncePerTexture = true;
  
              /// State cache manager which responsible to reduce redundant state changes
              GLES2StateCacheManager* mStateCacheManager;
+@@ -141,6 +148,7 @@ namespace Ogre {
+             // -----------------------------
+             void _setTexture(size_t unit, bool enabled, const TexturePtr &tex) override;
+ 
++            void setConfigOption(const String &name, const String &value) override;
+             void _setSampler(size_t unit, Sampler& sampler) override;
+ 
+             void _setLineWidth(float width) override;
 diff --git a/RenderSystems/GLES2/include/OgreGLES2Texture.h b/RenderSystems/GLES2/include/OgreGLES2Texture.h
 index 510a371..a5e0807 100644
 --- a/RenderSystems/GLES2/include/OgreGLES2Texture.h
@@ -48,7 +61,7 @@ index 510a371..a5e0807 100644
          protected:
              /// @copydoc Texture::createInternalResourcesImpl
 diff --git a/RenderSystems/GLES2/src/OgreGLES2RenderSystem.cpp b/RenderSystems/GLES2/src/OgreGLES2RenderSystem.cpp
-index 1c11e3b..cace845 100644
+index 1c11e3b..02f1944 100644
 --- a/RenderSystems/GLES2/src/OgreGLES2RenderSystem.cpp
 +++ b/RenderSystems/GLES2/src/OgreGLES2RenderSystem.cpp
 @@ -669,11 +669,15 @@ namespace Ogre {
@@ -67,7 +80,24 @@ index 1c11e3b..cace845 100644
          }
      }
  
-@@ -703,6 +707,28 @@ namespace Ogre {
+@@ -695,6 +699,16 @@ namespace Ogre {
+         }
+     }
+ 
++    void GLES2RenderSystem::setConfigOption(const String &name, const String &value)
++    {
++        if (name == "Sampler State Once Per Texture")
++        {
++            mSamplerOncePerTexture = value != "No";
++            return;
++        }
++        GLRenderSystemCommon::setConfigOption(name, value);
++    }
++
+     void GLES2RenderSystem::_setSampler(size_t unit, Sampler& sampler)
+     {
+         mStateCacheManager->activateGLTextureUnit(unit);
+@@ -703,6 +717,28 @@ namespace Ogre {
  
          const Sampler::UVWAddressingMode& uvw = sampler.getAddressingMode();
  
@@ -79,7 +109,7 @@ index 1c11e3b..cace845 100644
 +        // the key, so a border sampler is always written.
 +        GLES2Texture* samplerTexture = unit < OGRE_MAX_TEXTURE_LAYERS ? mSamplerTextures[unit] : NULL;
 +        uint64 samplerKey = 0;
-+        if (samplerTexture && uvw.u != TAM_BORDER && uvw.v != TAM_BORDER && uvw.w != TAM_BORDER)
++        if (mSamplerOncePerTexture && samplerTexture && uvw.u != TAM_BORDER && uvw.v != TAM_BORDER && uvw.w != TAM_BORDER)
 +        {
 +            samplerKey = uint64(1) | (uint64(uvw.u & 7) << 1) | (uint64(uvw.v & 7) << 4) |
 +                         (uint64(uvw.w & 7) << 7) | (uint64(sampler.getFiltering(FT_MIN) & 7) << 10) |
@@ -96,7 +126,7 @@ index 1c11e3b..cace845 100644
          bool hasBorderClamp = hasMinGLVersion(3, 2) || checkExtension("GL_EXT_texture_border_clamp") ||
                                checkExtension("GL_OES_texture_border_clamp");
  
-@@ -748,6 +774,8 @@ namespace Ogre {
+@@ -748,6 +784,8 @@ namespace Ogre {
              mStateCacheManager->setTexParameteri(target, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
              break;
          }

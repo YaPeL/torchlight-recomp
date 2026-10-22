@@ -277,6 +277,9 @@ void LiveMode::Run() {
   }
   LiveContentSource content(pak);
   frontend::Frontend frontend(backend, content);
+  tl_backend_set_sampler_once(backend, options_.sampler_once);
+  REXLOG_INFO("live: sampler state once per texture {} (--diag_sampler_once)",
+              options_.sampler_once ? "on" : "off");
 
   // Session recording (--live_record): every consumed frame, before it is run.
   SessionWriter recorder;
