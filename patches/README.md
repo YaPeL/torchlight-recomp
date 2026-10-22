@@ -59,8 +59,8 @@ in number order; a branch adds its own line at its number's place.
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | In the branch (after 40) |
 | 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41), until the APK keeps its libraries inside (A6, `docs/android-port.md`) |
 | 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | Withdrawn from our series (2026-10-22); an upstream draft (`docs/rexglue-upstream.md`, D33) |
-| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
-| 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
+| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `develop` | In the series (after 41); changes desktop Linux (the owner's OK) |
+| 45 | `rexglue-arena-reserve-before-views.patch` | `develop` | In the series (after 44); changes desktop Linux (the owner's OK) |
 | 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `develop` | In the series (after 45); Android only |
 | 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 46); Android only |
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
