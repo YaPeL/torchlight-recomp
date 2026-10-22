@@ -8,6 +8,7 @@
 #include <initializer_list>
 #include <iterator>
 #include <string_view>
+#include <vector>
 
 #include "guest_abi/game_ui.h"
 #include "guest_abi/guest_functions.h"
@@ -329,6 +330,30 @@ int main() {
         "ReadU32 from the host offset boundary up");
   Check(xbox_memory::HostAddress(low, 0x10) == low + 0x10, "HostAddress below the boundary");
   Check(ReadU32(low, 0x10) == 0xCAFEF00D, "ReadU32 below the boundary");
+
+  // GuestWords: four words from two below the seam (0xE0000000) to two above it, with a host offset
+  // of 0x1000 above it (as on Windows and macOS): in a fake memory whose seam falls 8 bytes into
+  // `seam`, the words above it are 0x1000 further on.
+  {
+    std::vector<uint8_t> seam(0x1100, 0);
+    const uint8_t bytes[4][4] = {
+        {0x00, 0x00, 0x00, 0x01}, {0x00, 0x00, 0x00, 0x02}, {0x00, 0x00, 0x00, 0x03},
+        {0x00, 0x00, 0x00, 0x04}};
+    std::memcpy(&seam[0], bytes[0], 4);
+    std::memcpy(&seam[4], bytes[1], 4);
+    std::memcpy(&seam[8 + 0x1000], bytes[2], 4);
+    std::memcpy(&seam[12 + 0x1000], bytes[3], 4);
+    const uint32_t first = xbox_memory::kHostOffsetBoundary - 8;
+    const auto base = reinterpret_cast<const uint8_t*>(reinterpret_cast<uintptr_t>(seam.data()) -
+                                                       uintptr_t(first));
+    const uint8_t* across = GuestWords(base, first, 4, 0x1000);
+    bool in_order = across != seam.data();
+    for (uint32_t i = 0; i < 4; ++i) in_order = in_order && GuestWordToHost(across + 4 * i) == i + 1;
+    Check(in_order, "GuestWords across the seam: a copy, word by word");
+    Check(GuestWords(base, first, 2, 0x1000) == seam.data(), "GuestWords below the seam: in place");
+    Check(GuestWords(base, first, 0, 0x1000) == seam.data(), "GuestWords of no words: in place");
+    Check(GuestWordToHost(word) == 0xCAFEF00D, "GuestWordToHost");
+  }
 
   if (failures == 0) std::printf("guest_abi layout test: ok\n");
   return failures == 0 ? 0 : 1;
