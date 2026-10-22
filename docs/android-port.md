@@ -895,6 +895,17 @@ ImGui's foreground draw list.
 | A4.6 | The layout editor | Moved, resized and reset by hand; saved across starts |
 | A4.7 | The hand pass | The owner plays a dungeon by touch on the POCO and the Tab S5e |
 
+**A6, the native libraries inside the APK** (owner's decision, 2026-10-22). The manifest has
+`extractNativeLibs="true"` now, so Android copies every library out of the APK at install and
+the phone keeps them twice (about 60 MB more). The release APK keeps them inside
+(`extractNativeLibs="false"`, stored uncompressed and page-aligned). The runtime then needs the
+SDK's patch 42 (`rexglue-android-gpu-plugin-by-name.patch`, branch `sdk/android-apk-libs`): the
+GPU plugin is no longer a file next to the executable, and the patch loads it by name. Checked on
+the POCO X7 on 2026-10-17: an APK built that way (checked with `pm dump`) started and drew, with no
+"GPU plugin ... not found".
+At A6 the patch joins the series alone, with the manifest change. Patch 43 from the same branch
+is withdrawn (an upstream draft): the game sets its own settings and log paths.
+
 **A6, the signing key** (owner's decision, 2026-10-10). The owner generates and keeps the key; the
 agents never generate, see or copy it. The CI uses it only as secrets of the `release`
 environment. Generated once, on the owner's machine, with the JDK's `keytool` (the Android build

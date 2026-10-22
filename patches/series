@@ -44,3 +44,4 @@ rexglue-arena-reserve-before-views.patch posix
 rexglue-android-sdl-wait-no-sentinel-wakeup.patch
 rexglue-android-bsymbolic-functions.patch
 rexglue-command-processor-spin-backoff.patch
+rexglue-command-processor-pending-calls-lock.patch
