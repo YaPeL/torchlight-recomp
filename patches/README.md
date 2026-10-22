@@ -62,7 +62,7 @@ in number order; a branch adds its own line at its number's place.
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
 | 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
-| 47 | `rexglue-android-bsymbolic-functions.patch` | `sdk/android-bsymbolic-functions` | In the branch (after 46); Android only |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
 | 48 | | | Next free number |
 
 ## The patches
