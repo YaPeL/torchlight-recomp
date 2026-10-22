@@ -281,6 +281,9 @@ void LiveMode::Run() {
   frontend::Frontend frontend(backend, content);
   frontend.SetDepthDiscard(options_.depth_discard);
   REXLOG_INFO("live: depth discard {} (--diag_depth_discard)", options_.depth_discard ? "on" : "off");
+  tl_backend_set_sampler_once(backend, options_.sampler_once);
+  REXLOG_INFO("live: sampler state once per texture {} (--diag_sampler_once)",
+              options_.sampler_once ? "on" : "off");
 
   // Session recording (--live_record): every consumed frame, before it is run.
   SessionWriter recorder;

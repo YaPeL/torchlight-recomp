@@ -64,6 +64,8 @@ struct LiveOptions {
   bool capture_lean = true;
   // Render textures' depth dropped on GLES when the next pass clears it (--diag_depth_discard).
   bool depth_discard = true;
+  // GLES writes a texture's sampler state only when it changes (--diag_sampler_once).
+  bool sampler_once = true;
   // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue); 0:
   // one with vsync, two without (frame_queue.h FrameQueueDepth).
   size_t frame_queue = 0;

@@ -2244,6 +2244,15 @@ void tl_backend_release_texture(tl_backend* b, uint64_t id) {
       name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
 }
 
+void tl_backend_set_sampler_once(tl_backend* b, int enabled) {
+  if (b->rs->getName().find("OpenGL ES") == std::string::npos) return;
+  try {
+    b->rs->setConfigOption("Sampler State Once Per Texture", enabled ? "Yes" : "No");
+  } catch (Ogre::Exception&) {
+    // An OGRE without the patch: nothing to switch.
+  }
+}
+
 void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768]) {
   uint8_t lut[256 * 3];
   conv::GammaRampLut(pwl != 0, values, lut);
