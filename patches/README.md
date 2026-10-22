@@ -64,7 +64,8 @@ in number order; a branch adds its own line at its number's place.
 | 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
 | 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
-| 49 | | | Next free number |
+| 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
+| 50 | | | Next free number |
 
 ## The patches
 
@@ -709,6 +710,13 @@ in number order; a branch adds its own line at its number's place.
     loops. Torchlight on the POCO X7 (A B B A): the thread's share of the app's cycles in a
     fight 9.49 -> 2.83 % with fps_cap 0 and 3.42 -> 2.24 % with fps_cap 60; frame times,
     temperature and battery current unchanged beyond the runs' spread.
+
+49. `rexglue-command-processor-pending-calls-lock.patch`: the command processor's queue of calls
+    from other threads (`CallInThread`) was a `std::queue` without a lock, pushed from other
+    threads while the command processor's thread took calls from it. It is now
+    `rex::graphics::PendingCalls`, with a mutex; each call runs outside the lock, in the order
+    queued. Test: several threads push while one drains, every call runs in each thread's order;
+    under ThreadSanitizer no report with it, 61 races and a hang with its locks removed.
 
 The observation and diagnostic patches there were before remain in the git history.
 
