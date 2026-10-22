@@ -1,4 +1,4 @@
-Patch 46. In the series since 2026-10-17, after patch 45.
+Patch 46 (written 2026-10-17). In the series after patch 45.
 
 SDL 3.4.14's SDL_WaitEventTimeoutNS (thirdparty/sdl3/src/events/SDL_events.c) waits on Android in
 a loop that calls SDL_PumpEventsInternal(true) and then Android_PumpEvents(delay). Pumping with
