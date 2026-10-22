@@ -1055,6 +1055,80 @@ over a snapshot of the render queue (the study's 9.3 and F2, the legacy's road, 
 thread remains the limit in the fight and the town square; the backend in the mine standing
 still.
 
+## The research branch's renderer experiments: reviewed (2026-10-21)
+
+A separate research worktree (`research/particleuniverse`, archive repository, based on an older
+tree of 2026-10-06) measured a package of recording experiments behind `--renderer_aggressive`:
+combat 16.39 to 13.09 ms presented in one manual A/B pair. Its own reports qualify that pair (B's
+clock 7 % higher, thermal throttling in both, no per-component attribution, no F9 capture; its
+replay path produced black images, so no visual parity was shown), and every measurement was taken
+on a RelWithDebInfo build with the SDK's profiling counters. Reviewed component by component
+against `develop`:
+
+| Component | What it did | Decision and reason |
+| --- | --- | --- |
+| G: no indirect-dispatch counter | Removed the SDK's per-indirect-call counter from the generated code | Discarded: the counter only exists in non-Release builds; the Release builds we ship and profile have none. Much of the package's combat gain may have been this, which would not carry over to a release |
+| X: skip the Xbox draw calls | Skipped `DrawIndexedPrimitive`/`DrawPrimitive` under `_render` | Already in `develop`, wider: `--native_skip_guest_d3d` (on by default, native mode only) skips those and `SetIndices`/`SetStreamSource` (docs/native-skip-guest-d3d.md) |
+| M: mutexes without measurement | Skipped the two clock reads per lock | Already covered: `develop`'s `MeasuredMutex` times the hold on one acquisition in 64 and the wait only when contended; what is left is one relaxed atomic add per lock |
+| D: declaration memo | Reused a declaration's hash when its guest bytes are unchanged | Already in `develop`: `LiveDeclarationBytesSent` and the declaration slots compare the bytes the same way |
+| H: buffer entry memo | Cached the live buffer entry per address and generation | Already in `develop`: `DrawBuffer`, kept by the registry's stamp |
+| S: state lookup memo | Cached pointers into the ordered state shadow | Moot: `develop`'s shadow is an unordered map |
+| U: hash set for sent declarations | Replaced an ordered set of tuples | Already in `develop`: the live stream's sent declarations are a hashed flat set |
+| C: compact commands | Moved the gamma ramp's table out of the command | Taken, behind a build option, on by default since the POCO X7 A/B (below) |
+| J, K, and H's measurement fix | | Out of scope (J and K excluded by the owner; the fix only concerns H) |
+
+**C** (`TORCHLIGHT_COMPACT_COMMANDS`, CMake). `SetGammaRamp` carries a 768-entry
+table inline, so every `Command` is 1,560 bytes while the next largest payload (`Draw`) is
+152: with the option the table lives on the heap and a command is 168 bytes. The three F9
+captures of 2026-10-18 hold 1,174 to 2,174 commands in their frame: 1.8 to 3.4 MB of commands per
+frame written and read by the producer and the consumer, 0.2 to 0.37 MB with the option. The
+capture format does not change: `command_storage_test` checks that copies own their values, that
+the gamma body on the wire is the same bytes in both layouts, and, given capture files, that real
+captures read and write back byte for byte (the three captures above, both layouts);
+`command_storage_other_layout_test` builds the layout the option did not pick, so CI covers both. The full
+suite passes in both layouts (107/107, 108 with that test), and the replay of those three captures (all draws drawn,
+display gamma ramp applied, images not black) writes the same PNG files, byte for byte, from
+both builds. Why it may matter: in the POCO X7's town profile of 2026-10-17 (Release, before the
+option existed) 13 % of the guest thread's samples sit on one store in `Session::LiveAppend`,
+the one that sets the new command's variant index at the end of its ~1.5 KB slot (found by the
+ReXGlue agent). A gain in frame time is not shown yet: it needs a Release A/B on the combat
+benchmark (and one on Android) before the option becomes the default.
+
+Desktop A/B (2026-10-21, this laptop, Release `-O3 -g` with frame pointers and the developer
+input, the scripted mine fight of the combat benchmark, no cap or vsync, A C C A A C C A with
+60 s of cool-down; mean frame time per run, ms):
+
+| Step | A (inline) | C (compact) | Means |
+| --- | --- | --- | --- |
+| rest | 5.77, 6.72, 6.60, 5.78 | 6.54, 7.24, 6.60, 6.00 | 6.22 against 6.60 (+6 %) |
+| fight | 10.88, 11.86, 11.23, 11.46 | 9.86, 12.45, 11.33, 10.43 | 11.36 against 11.02 (-3 %) |
+
+The spread inside each build (C's fight 9.86 to 12.45; temperatures 59 to 83 C before the runs,
+average clocks 2.9 to 4.0 GHz) is larger than the difference, and the two steps move in opposite
+directions: no gain or loss is shown on this machine. The option stays off; the place where it may
+matter is the ARM device, where the store above was measured.
+
+POCO X7 A/B (2026-10-21, `android/a2-gles` with these commits, Release with the developer input,
+the same scripted fight, no cap or vsync, the frame counter on in both, A C C A A C C A, battery
+at or below 30 C before each run; mean ms per run):
+
+| Measure | A (inline) | C (compact) | Means |
+| --- | --- | --- | --- |
+| rest, guest frame | 14.46, 14.60, 14.43, 14.56 | 14.44, 14.84, 15.01, 14.19 | 14.51 against 14.62 |
+| fight, guest frame | 33.85, 32.86, 30.26, 32.05 | 27.82, 28.89, 27.29, 24.45 | 32.26 against 27.11 (-16 %) |
+| fight, frames over 33 ms | 550, 432, 376, 410 | 71, 185, 89, 52 | |
+| fight, presented interval | 39.25, 37.99, 32.64, 35.23 | 40.06, 35.78, 34.92, 31.22 | 36.28 against 35.50 |
+
+On the phone the guest's fight is faster in every C run, but what reaches the screen does not
+change: in the fight the presented rate is held by the backend and the Mali GPU (present latency
+~24 ms, guest frames dropped: 150, 153, 89, 105 against 403, 245, 294, 324), so the faster guest
+only drops more frames. Profiles of the fight (simpleperf, 25 s after the spawn) put the removed
+work in sight: `LiveAppend` 2.5 % to 0.4 % of the guest thread, the frame cut, the frame queue's
+push and the merge of dropped frames 2.9 % to 0.6 %; the rest of the gain is spread over the
+thread (less memory traffic on a device whose CPU and GPU share it). The owner took it on these
+numbers: the option is on by default since 2026-10-21 (OFF rebuilds the inline table); the
+presented rate will show it once the GPU side of the fight is addressed.
+
 ## OGRE Release against RelWithDebInfo on Windows (2026-10-07)
 
 The Windows release links OGRE built RelWithDebInfo by MSVC (`/Zi /O2 /Ob1`: only functions marked
