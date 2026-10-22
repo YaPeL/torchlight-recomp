@@ -135,8 +135,14 @@ void tl_backend_set_scene_clip(tl_backend* b, int enabled);
  * next target. */
 void tl_backend_discard_depth(tl_backend* b);
 /* 1 when tl_backend_discard_depth acts: OGRE's GLES render system (Android) only. Elsewhere the
- * targets keep OGRE's shared depth pool and nothing is discarded. */
+ * targets keep OGRE's shared depth pool and nothing is discarded. On GLES every target has a depth
+ * buffer of its own whether or not discards happen (--diag_depth_discard off included), where
+ * OGRE's shared pool let the smaller targets use the main target's: a target bound again without
+ * a depth clear sees its own old depth (no game frame captured does that). */
 int tl_backend_discards_depth(const tl_backend* b);
+/* The guest size of the target bound now (the main target when none was bound): what
+ * tl_backend_discard_depth would discard. */
+void tl_backend_current_target_size(const tl_backend* b, uint32_t* width, uint32_t* height);
 /* Target 0 is the main colour target. */
 /* Binding a target (or reading one back) may reset the render system's device state: Direct3D
  * 11's target bind clears every binding (ClearState) while OGRE keeps its blend, depth and texture

@@ -277,8 +277,14 @@ void Frontend::Execute(const Command& command) {
           // Only when the target the plan saw is the one bound (a render texture not ready yet is
           // replaced by the main target).
           const bool planned_target = target != 0 || p.name.rfind("rtt/", 0) != 0;
-          if (planned_target && discard_depth_before_.count(&command))
-            tl_backend_discard_depth(backend_);
+          // And only when the new target covers the one actually bound: the plan follows the
+          // guest's binds, and a render texture replaced by the main target leaves the host on a
+          // larger target than the plan saw.
+          if (planned_target && discard_depth_before_.count(&command)) {
+            uint32_t bound_w = 0, bound_h = 0;
+            tl_backend_current_target_size(backend_, &bound_w, &bound_h);
+            if (p.width >= bound_w && p.height >= bound_h) tl_backend_discard_depth(backend_);
+          }
           tl_backend_set_target(backend_, target);
           // A viewport belongs to its target. The guest D3D9 _setViewport binds the
           // viewport's target from inside (OgreD3D9RenderSystem.cpp:2778), so that

@@ -764,6 +764,12 @@ rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Andr
   parameter; Mali's compiler copies it to the stack for every vertex. The blend becomes a macro
   that indexes the uniform in place, the same arithmetic in the same order. The file is shared by
   GLSL, GLSL ES and HLSL.
+- `ogre-gles2-discard-depth-on-swap.patch`: ours. On GLES 3, a render texture's
+  `swapBuffers` (a no-op for a frame buffer object before) invalidates its depth and stencil
+  attachments (`glInvalidateFramebuffer`), restoring the frame buffer bound before; multisampled
+  targets keep their resolve, GLES 2 does nothing. The backend calls it when the frontend's plan
+  says no pass reads that depth again (`frontend/depth_discard.h`, `tl_backend_discard_depth`), so
+  a tile GPU does not write it back to memory. GLES only (Android, and CI's GLES test build).
 - `ogre-gles2-sampler-once-per-texture.patch`: from torchlight-rekindled (its patch 0020 and the
   sampler-state resets of its 0018, commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), Switch
   guards removed. GLES2 writes a texture's sampler parameters only when they change (remembered on

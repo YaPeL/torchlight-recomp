@@ -110,6 +110,20 @@ int main() {
         Viewport(kMain, 0, 0, 1280, 720), Target(kMain, 1280, 720), ClearOf(3)};
     Check(Plan(f) == std::vector<size_t>({5}), "merged frames");
   }
+  // A clear with the scissor on covers only its rectangle: not whole.
+  {
+    SetScissor on;
+    on.enabled = true;
+    on.right = 64;
+    on.bottom = 64;
+    SetScissor off;
+    std::vector<Command> f = {Viewport(kMain, 0, 0, 1280, 720), Command{0, on},
+                              Target(kMain, 1280, 720), ClearOf(3)};
+    Check(Plan(f).empty(), "scissored clear");
+    f = {Viewport(kMain, 0, 0, 1280, 720), Command{0, on}, Command{0, off},
+         Target(kMain, 1280, 720), ClearOf(3)};
+    Check(Plan(f) == std::vector<size_t>({3}), "scissor turned off before the clear");
+  }
   if (failures == 0) std::printf("depth_discard_test: ok\n");
   return failures == 0 ? 0 : 1;
 }
