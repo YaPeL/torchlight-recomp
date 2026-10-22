@@ -247,7 +247,8 @@ jobs:
           grep -m1 -E "GL_RENDERER|OpenGL ES" tl_backend_ogre.log
           python3 tools/replay/check_replay_output.py tl_backend_ogre.log gles-out/render.png
           # Against the capture's reference frame: a wrong colour order (BGRA/RGBA) is not black.
-          if ! grep -qE "metric vs reference: PSNR (inf|[4-9][0-9](\.[0-9]+)?) dB" replay.log; then
+          psnr=$(sed -nE 's/.*metric vs reference: PSNR ([0-9.]+|inf) dB.*/\1/p' replay.log)
+          if [ -z "$psnr" ] || { [ "$psnr" != inf ] && ! awk -v p="$psnr" 'BEGIN{exit !(p >= 40)}'; }; then
             echo "::error::the replay's image differs from the reference (PSNR under 40 dB)"
             exit 1
           fi
