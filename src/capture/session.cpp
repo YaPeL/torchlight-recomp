@@ -154,7 +154,8 @@ bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> r
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return false;
   const ArgsMemo& m = memos_[slot * kMemoSubs + sub];
   if (m.stamp == kNoStamp) return false;
-  const Stamp& stamp = stamps_[m.stamp];
+  // The former path (SetLean(false)): through the map's node, as the memos did before the stamps.
+  const Stamp& stamp = stamps_[lean_ ? m.stamp : m.entry->stamp];
   return stamp.present && stamp.version == m.version &&
          m.count == raw.size() && std::equal(raw.begin(), raw.end(), m.raw.begin());
 }
@@ -165,6 +166,7 @@ void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<cons
   if (it == shadow_.end()) return;
   ArgsMemo& m = memos_[slot * kMemoSubs + sub];
   m.stamp = it->second.stamp;
+  m.entry = &it->second;
   m.version = stamps_[it->second.stamp].version;
   m.count = uint32_t(raw.size());
   std::copy(raw.begin(), raw.end(), m.raw.begin());

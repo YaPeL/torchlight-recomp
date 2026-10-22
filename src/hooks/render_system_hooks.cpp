@@ -437,7 +437,7 @@ RECORD_HOOK(91, 821C2118, ({
     const bool filter = mirror && !s.armed();
     bool unchanged = false;
     cmd::SetConstants c = cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF,
-                                             mirror, filter, &unchanged);
+                                             mirror, filter, &unchanged, s.lean());
     // (No return here: the guest's own bindGpuProgramParameters runs after this body.)
     if (!unchanged) s.Event(std::move(c));
   }

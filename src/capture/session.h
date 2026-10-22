@@ -165,6 +165,11 @@ class Session {
     measure_frame_.store(on, std::memory_order_relaxed);
   }
   bool producer_timing() const { return producer_timing_; }
+  // The leaner recording paths (on by default): constant ranges compared as the guest's bytes,
+  // state early outs through the dense stamps. Off (--diag_capture_lean=false) runs the former
+  // paths, to measure the difference in one build. Set before recording starts.
+  void SetLean(bool on) { lean_ = on; }
+  bool lean() const { return lean_; }
   // Recording, on a frame whose recording cost is timed (kMeasureEveryFrames).
   bool measuring() const {
     return recording() && measure_frame_.load(std::memory_order_relaxed);
@@ -343,6 +348,7 @@ class Session {
   static constexpr uint32_t kNoStamp = UINT32_MAX;
   struct ArgsMemo {
     uint32_t stamp = kNoStamp;
+    const ShadowEntry* entry = nullptr;  // the former path (SetLean(false)) reads through it
     uint64_t version = 0;
     uint32_t count = 0;
     std::array<uint32_t, kMaxRawArgs> raw{};
@@ -352,6 +358,7 @@ class Session {
   ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;
   bool producer_timing_ = true;  // SetProducerTiming
+  bool lean_ = true;             // SetLean
   std::atomic<bool> measure_frame_{true};
   bool finishing_ = false;
   commands::Capture capture_;
