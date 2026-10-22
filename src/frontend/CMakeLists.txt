@@ -2,7 +2,7 @@
 # (frames from a capture file) and the live mode (frames from the running guest).
 find_package(ZLIB REQUIRED)
 add_library(torchlight_frontend STATIC frontend.cpp content_source.cpp zip_archive.cpp detile.cpp
-    physical_constants.cpp)
+    physical_constants.cpp depth_discard.cpp)
 target_include_directories(torchlight_frontend PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_frontend PUBLIC cxx_std_23)
 # torchlight_backend (an OBJECT library) is linked by the executables themselves.
@@ -21,3 +21,9 @@ add_executable(physical_constants_test physical_constants_test.cpp)
 target_link_libraries(physical_constants_test PRIVATE torchlight_frontend)
 target_compile_options(physical_constants_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME physical_constants_test COMMAND physical_constants_test)
+
+# Which target binds discard the depth they leave (depth_discard.h).
+add_executable(depth_discard_test depth_discard_test.cpp)
+target_link_libraries(depth_discard_test PRIVATE torchlight_frontend)
+target_compile_options(depth_discard_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME depth_discard_test COMMAND depth_discard_test)

@@ -127,9 +127,12 @@ int tl_backend_set_guest_size(tl_backend* b, uint32_t width, uint32_t height);
 void tl_backend_set_scene_clip(tl_backend* b, int enabled);
 /* The current target's depth and stencil are not needed again: the next pass clears them before
  * it draws (the guest has one depth surface for all its targets: guest_abi/ogre_layout.h,
- * render_system). A tile GPU then need not write them back to memory. Through OGRE's RenderTexture::swapBuffers, which
- * only GLES acts on (patches/ogre-gles2-discard-depth-on-swap.patch); nothing for the main target
- * when it is the window. Call before tl_backend_set_target binds the next target. */
+ * render_system; the frontend decides, depth_discard.h). A tile GPU then need not write them back
+ * to memory. Every target has a depth buffer of its own, so no other target's is touched. The
+ * stencil goes with the depth: the backend never tests it. Through OGRE's
+ * RenderTexture::swapBuffers, which only GLES acts on
+ * (patches/ogre-gles2-discard-depth-on-swap.patch). Call before tl_backend_set_target binds the
+ * next target. */
 void tl_backend_discard_depth(tl_backend* b);
 /* Target 0 is the main colour target. */
 /* Binding a target (or reading one back) may reset the render system's device state: Direct3D
