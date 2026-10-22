@@ -1722,6 +1722,14 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
 
+OGRE is built with this project's patches (`patches/ogre-*.patch`, applied by `tools/deps/build_ogre.sh`
+and `tools/build-deps/windows.ps1`). `patches/ogre-rtss-skinning-blend-without-array-copy.patch`
+comes unchanged from torchlight-rekindled (https://github.com/GreenSwampDweller/torchlight-rekindled,
+`patches/ogre/0024-rtss-skinning-blend-without-array-copy.patch` at commit
+`42e9bac358b3f260baefd6efa380e0864895c2a7`), licensed under the GNU General Public License 3.0
+(text below), as this project is. It changes the RTSS shader library file
+`RTShaderLib/SGXLib_DualQuaternion.glsl`, which every package carries in OGRE's media.
+
 ### gl3w (OGRE)
 
 ```
