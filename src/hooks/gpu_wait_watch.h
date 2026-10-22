@@ -3,10 +3,12 @@
 // wait itself goes on untouched. For hangs like the Intel startup one (docs/regressions.md, "Known,
 // open"), so that one occurrence, on a player's machine too, says where it stopped.
 //
-// A wait is the steps of one guest thread that follow each other (less than kNewWaitGap between
-// one step's end and the next one's start). The count starts again:
-// - while the app is away on purpose and after it comes back (platform::SurfaceAwayCount changed
-//   or is odd: Android's background; never on the desktop, where nothing blocks the guest);
+// A wait is the steps of one guest thread that share the guest's own mark of its beginning (the
+// time base its begin function stores, xbox_d3d::gpu_wait::kBeganTimeBase): with vsync the guest
+// waits in every frame's swap, a few milliseconds apart, and each of those is a wait of its own.
+// The count also starts again:
+// - while the app is away (platform::SurfaceAwayCount changed or is odd: Android's background,
+//   where the system may slow down or stop the app's threads; never on the desktop);
 // - after a step that took longer than kStoppedStep (a step sleeps ~0.2 ms: the process was
 //   stopped, by the system's freezer, a debugger or a suspend, not waiting).
 // No guest or SDK dependency: tested on its own (gpu_wait_watch_test.cpp).
@@ -24,7 +26,6 @@ class GpuWaitWatch {
   using Clock = std::chrono::steady_clock;
   static constexpr std::chrono::seconds kReportAfter{10};
   static constexpr std::chrono::seconds kRepeatEvery{60};
-  static constexpr std::chrono::milliseconds kNewWaitGap{100};
   static constexpr std::chrono::seconds kStoppedStep{1};
 
   struct Report {
@@ -36,14 +37,15 @@ class GpuWaitWatch {
     bool repeat = false;             // not the wait's first report
   };
 
-  // One step, from `start` to `end`, that read `progress`; `away_count` is
-  // platform::SurfaceAwayCount() at the step.
-  std::optional<Report> Step(Clock::time_point start, Clock::time_point end, uint32_t progress,
-                             uint64_t away_count);
+  // One step, from `start` to `end`, of the wait marked `wait` (its kBeganTimeBase), that read
+  // `progress`; `away_count` is platform::SurfaceAwayCount() at the step.
+  std::optional<Report> Step(Clock::time_point start, Clock::time_point end, uint32_t wait,
+                             uint32_t progress, uint64_t away_count);
 
  private:
   bool waiting_ = false;
-  Clock::time_point wait_start_{}, last_end_{}, last_report_{};
+  Clock::time_point wait_start_{}, last_report_{};
+  uint32_t wait_ = 0;
   bool reported_ = false;
   uint64_t steps_ = 0, changes_ = 0, away_count_ = 0;
   uint32_t first_progress_ = 0, last_progress_ = 0;

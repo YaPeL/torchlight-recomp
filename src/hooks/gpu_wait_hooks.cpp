@@ -82,7 +82,8 @@ uint32_t GpuProgress(const uint8_t* base, uint32_t state) {
 void Watch(const uint8_t* base, uint32_t state, std::chrono::steady_clock::time_point start,
            std::chrono::steady_clock::time_point end) {
   thread_local GpuWaitWatch watch;  // a wait is one guest thread's
-  const auto report = watch.Step(start, end, GpuProgress(base, state),
+  const uint32_t wait = torchlight::guest_abi::ReadU32(base, state, d3d::gpu_wait::kBeganTimeBase);
+  const auto report = watch.Step(start, end, wait, GpuProgress(base, state),
                                  torchlight::platform::SurfaceAwayCount());
   if (!report) return;
   REXLOG_WARN(

@@ -3,13 +3,13 @@
 namespace torchlight::hooks {
 
 std::optional<GpuWaitWatch::Report> GpuWaitWatch::Step(Clock::time_point start,
-                                                       Clock::time_point end, uint32_t progress,
-                                                       uint64_t away_count) {
+                                                       Clock::time_point end, uint32_t wait,
+                                                       uint32_t progress, uint64_t away_count) {
   const bool away = (away_count & 1) != 0;
-  const bool new_wait = !waiting_ || away || away_count != away_count_ ||
-                        start - last_end_ >= kNewWaitGap || end - start >= kStoppedStep;
+  const bool new_wait = !waiting_ || wait != wait_ || away || away_count != away_count_ ||
+                        end - start >= kStoppedStep;
   away_count_ = away_count;
-  last_end_ = end;
+  wait_ = wait;
   if (new_wait) {
     waiting_ = !away;
     wait_start_ = end;

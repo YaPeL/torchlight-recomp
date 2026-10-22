@@ -277,8 +277,8 @@ bool ServeSurfaceChanges(const std::function<void()>& lost,
                          const std::function<bool(const NativeWindow&)>& restored);
 // How many times that surface has gone away or come back: odd while it is away (Android, the app
 // in the background), 0 elsewhere. Any thread, without a lock: for the guest's GPU wait watch
-// (hooks/gpu_wait_hooks.cpp), which keeps quiet while the app is away on purpose. Minimized
-// desktop windows block nothing here: the backend's presents do not hold the guest.
+// (hooks/gpu_wait_watch.h), which keeps quiet while the app is away, where the system may slow
+// down or stop its threads.
 uint64_t SurfaceAwayCount();
 
 // The backend's own top-level window (offscreen backends keep a hidden one for the GL context, the
