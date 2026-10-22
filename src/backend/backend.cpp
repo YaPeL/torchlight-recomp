@@ -372,7 +372,7 @@ struct tl_backend {
   std::filesystem::path microcode_file;
   std::vector<Ogre::Affine3> world_matrices;  // ApplyProgram's world + bone palette
   std::unique_ptr<Ogre::RTShader::SubRenderStateFactory> guest_texgen_factory, guest_pixel_fog,
-      guest_alpha_test, guest_lighting;
+      guest_alpha_test, guest_lighting, guest_skinning;
   const Program* bound_program = nullptr;
   // The constants last bound per stage for bound_program (BindChangedParameters); reset (nothing
   // bound) when another program is bound and when the render system binds a render target
@@ -941,6 +941,109 @@ class GuestTexgenFactory : public Ogre::RTShader::SubRenderStateFactory {
   Ogre::RTShader::SubRenderState* createInstanceImpl() override { return OGRE_NEW GuestTexgen(); }
 };
 
+// RTSS replacement of OGRE's linear hardware skinning (SRS_HARDWARE_SKINNING, "linear"): the same
+// program, but the bone blend written in place. OGRE's blendBonesMat3x4 (SGXLib_DualQuaternion)
+// takes the whole bone palette as a parameter, which GLSL passes by value: Mali's compiler copies
+// the palette to the stack for every vertex (malioc, Mali-G615: 3 KB of stack, ~470 load/store
+// cycles a vertex against ~35 indexed in place). The blend keeps that function's statements and
+// order (the first term assigned, the others added one by one) so the floats come out the same.
+class GuestBoneBlend : public Ogre::RTShader::FunctionAtom {
+ public:
+  GuestBoneBlend(int group, const Ogre::RTShader::ParameterPtr& bones,
+                 const Ogre::RTShader::ParameterPtr& indices,
+                 const Ogre::RTShader::ParameterPtr& weights,
+                 const Ogre::RTShader::ParameterPtr& blended, uint32_t weight_count)
+      : weight_count_(weight_count) {
+    using Ogre::RTShader::Operand;
+    mGroupExecutionOrder = group;
+    mFunctionName = "tl_bone_blend";
+    pushOperand(bones, Operand::OPS_IN);
+    pushOperand(indices, Operand::OPS_IN);
+    pushOperand(weights, Operand::OPS_IN);
+    pushOperand(blended, Operand::OPS_OUT);
+  }
+  void writeSourceCode(std::ostream& os, const Ogre::String&) const override {
+    const std::string bones = mOperands[0].getParameter()->getName(),
+                      indices = mOperands[1].getParameter()->getName(),
+                      weights = mOperands[2].getParameter()->getName(),
+                      blended = mOperands[3].getParameter()->getName();
+    static const char kLane[] = {'x', 'y', 'z', 'w'};
+    for (uint32_t i = 0; i < weight_count_; ++i) {
+      if (i) os << "\n\t";
+      os << blended << (i ? " += " : " = ") << bones << "[int(" << indices << "." << kLane[i]
+         << ")] * " << weights << "." << kLane[i] << ";";
+    }
+  }
+
+ private:
+  uint32_t weight_count_;
+};
+
+class GuestSkinning : public Ogre::RTShader::SubRenderState {
+ public:
+  static const Ogre::String kType;
+  uint32_t bone_count = 0, weight_count = 0;
+
+  const Ogre::String& getType() const override { return kType; }
+  int getExecutionOrder() const override { return Ogre::RTShader::FFP_TRANSFORM; }
+  void copyFrom(const SubRenderState& rhs) override {
+    const auto& other = static_cast<const GuestSkinning&>(rhs);
+    bone_count = other.bone_count;
+    weight_count = other.weight_count;
+  }
+  bool preAddToRenderState(const Ogre::RTShader::RenderState*, Ogre::Pass* src,
+                           Ogre::Pass*) override {
+    lighting_ = src->getLightingEnabled();
+    return bone_count && weight_count && weight_count <= 4;
+  }
+  bool resolveDependencies(Ogre::RTShader::ProgramSet* set) override {
+    set->getCpuProgram(Ogre::GPT_VERTEX_PROGRAM)->addDependency("FFPLib_Transform");
+    return true;
+  }
+  bool addFunctionInvocations(Ogre::RTShader::ProgramSet* set) override {
+    using namespace Ogre::RTShader;
+    using Ogre::GpuProgramParameters;
+    Program* vs = set->getCpuProgram(Ogre::GPT_VERTEX_PROGRAM);
+    Function* main = vs->getMain();
+    vs->setSkeletalAnimationIncluded(true);
+    // Row-major on HLSL, as OGRE's skinning sets it: 3x4 matrices there instead of 4x4.
+    if (ShaderGenerator::getSingleton().getTargetLanguage() == "hlsl")
+      vs->setUseColumnMajorMatrices(false);
+    ParameterPtr position = main->resolveInputParameter(Parameter::SPC_POSITION_OBJECT_SPACE);
+    ParameterPtr normal;
+    if (lighting_) normal = main->resolveInputParameter(Parameter::SPC_NORMAL_OBJECT_SPACE);
+    ParameterPtr projected = main->resolveOutputParameter(Parameter::SPC_POSITION_PROJECTIVE_SPACE);
+    ParameterPtr indices = main->resolveInputParameter(Parameter::SPC_BLEND_INDICES);
+    ParameterPtr weights = main->resolveInputParameter(Parameter::SPC_BLEND_WEIGHTS);
+    UniformParameterPtr bones =
+        vs->resolveParameter(GpuProgramParameters::ACT_WORLD_MATRIX_ARRAY_3x4, bone_count);
+    ParameterPtr blended = main->resolveLocalParameter(Ogre::GCT_MATRIX_3X4, "blendMat");
+    UniformParameterPtr world_view_proj =
+        vs->resolveParameter(GpuProgramParameters::ACT_WORLDVIEWPROJ_MATRIX);
+    // Object-space bones (setBonesUseObjectSpace): no inverse world afterwards.
+    main->addAtomInstance(
+        OGRE_NEW GuestBoneBlend(FFP_VS_TRANSFORM, bones, indices, weights, blended, weight_count));
+    FunctionStageRef stage = main->getStage(FFP_VS_TRANSFORM);
+    stage.callFunction("FFP_Transform", blended, position, Out(position).xyz());
+    stage.assign(1, Out(position).w());
+    stage.callBuiltin("mul", world_view_proj, position, projected);
+    if (lighting_) stage.callFunction("FFP_Transform", blended, normal, normal);
+    return true;
+  }
+
+ private:
+  bool lighting_ = false;
+};
+const Ogre::String GuestSkinning::kType = "tl_guest_skinning";
+
+class GuestSkinningFactory : public Ogre::RTShader::SubRenderStateFactory {
+ public:
+  const Ogre::String& getType() const override { return GuestSkinning::kType; }
+
+ protected:
+  Ogre::RTShader::SubRenderState* createInstanceImpl() override { return OGRE_NEW GuestSkinning(); }
+};
+
 // ---- RTSS programs ----------------------------------------------------------------------------
 //
 // The RTSS generates a vertex and a fragment program from a Pass. Everything that changes the
@@ -1011,11 +1114,9 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
     // Linear blend of world-space bones given as object-space ones (setBonesUseObjectSpace): the
     // blended position is the guest's world-space one and the rest of the program takes it as the
     // object-space position under the host world, as Runic writes it back into its position input.
-    Ogre::RTShader::SubRenderState* skin =
-        sg.createSubRenderState(Ogre::RTShader::SRS_HARDWARE_SKINNING);
-    skin->setParameter("type", "linear");
-    skin->setParameter("max_bone_count", std::to_string(f.skin_bones));
-    skin->setParameter("weight_count", std::to_string(f.skin_weights));
+    auto* skin = static_cast<GuestSkinning*>(sg.createSubRenderState(GuestSkinning::kType));
+    skin->bone_count = f.skin_bones;
+    skin->weight_count = f.skin_weights;
     state->addTemplateSubRenderState(skin);
   }
   std::vector<GuestTexgen::Unit> guest_units;
@@ -1675,8 +1776,9 @@ void CreateProgramGenerator(tl_backend* b) {
   b->guest_pixel_fog = std::make_unique<GuestPixelFogFactory>();
   b->guest_alpha_test = std::make_unique<GuestAlphaTestFactory>();
   b->guest_lighting = std::make_unique<GuestLightingFactory>();
+  b->guest_skinning = std::make_unique<GuestSkinningFactory>();
   for (auto* factory : {b->guest_texgen_factory.get(), b->guest_pixel_fog.get(),
-                        b->guest_alpha_test.get(), b->guest_lighting.get()})
+                        b->guest_alpha_test.get(), b->guest_lighting.get(), b->guest_skinning.get()})
     Ogre::RTShader::ShaderGenerator::getSingleton().addSubRenderStateFactory(factory);
   Ogre::MeshManager::setBonesUseObjectSpace(true);  // see GenerateProgram (skinning)
   b->params_source = std::make_unique<Ogre::AutoParamDataSource>();
@@ -1903,12 +2005,13 @@ void tl_backend_destroy(tl_backend* b) {
   // until then.
   if (Ogre::RTShader::ShaderGenerator::getSingletonPtr()) Ogre::RTShader::ShaderGenerator::destroy();
   for (auto* factory : {b->guest_texgen_factory.get(), b->guest_pixel_fog.get(),
-                        b->guest_alpha_test.get(), b->guest_lighting.get()})
+                        b->guest_alpha_test.get(), b->guest_lighting.get(), b->guest_skinning.get()})
     if (factory) factory->destroyAllInstances();
   b->guest_texgen_factory.reset();
   b->guest_pixel_fog.reset();
   b->guest_alpha_test.reset();
   b->guest_lighting.reset();
+  b->guest_skinning.reset();
   if (b->query) b->rs->destroyHardwareOcclusionQuery(b->query);
   for (auto& p : b->projectors) p.reset();
   // OGRE's window goes with the root, on the window system's thread.
