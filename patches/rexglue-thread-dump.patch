@@ -1,0 +1,1284 @@
+Patch 50. After patch 49.
+
+A watchdog that finds the guest stuck (Torchlight's, on a guest GPU wait that lasts more than
+10 s) has nothing to say about where. rex::system::LogThreadDump(reason)
+(include/rex/system/thread_dump.h) logs, as one error-level log call, every guest thread's
+name, thread id, host thread id and state (running, waiting, suspended); for a waiting thread
+the kernel objects it waits on (type and handle, the first 4 and the count), the kind of wait,
+its timeout, how long it has waited and the guest LR of the kernel call; then the command
+processor: ring read and write pointers, whether its worker runs, whether it is idle on an empty
+ring or in WAIT_REG_MEM and for how long (with the register or memory address, function,
+reference, mask and the last value read), and its pending calls.
+
+It never waits on a lock, because the hang it is called for can be a lock held forever:
+- Every XThread writes its own state into a fixed table (256 records, never freed): its ids,
+  its current wait (XObject::Wait, WaitMultiple, SignalAndWait and XThread::Delay, which every
+  Ke/Nt wait and blocking critical section goes through). Every field is an atomic, each part
+  of a record has a sequence counter that is odd while it is written, and the dump keeps a read
+  only when the counter was even and unchanged across it. A record being written at that moment
+  is counted as "inconsistent".
+- Other threads write a record's name (its own counter) and suspend count (one atomic), and
+  only try its writer: on Windows a thread can be suspended in the middle of its own write, and
+  the thread that resumes, renames or terminates it must not wait for it.
+- The command processor is in the GPU plugin; it registers a section with the runtime
+  (RegisterThreadDumpSection). Its worker writes its state into atomics; the dump only tries the
+  pending calls' lock (PendingCalls::TrySize) and prints "inconsistent (locked)" when it is
+  taken. Unregister waits until no dump runs the section, so the command processor can be
+  destroyed after it.
+- The one lock left is the log sink's, for the single call that writes the block.
+
+Cost: each kernel wait on a guest thread stores a dozen atomics and reads the steady clock
+once; the command processor stores a few relaxed atomics per packet loop, idle wait and
+WAIT_REG_MEM wait.
+
+Test: tests/unit/system/thread_dump_test.cpp. A thread's wait on two objects shows with its
+kind, objects, timeout and LR, then as running once it ends; a record held by a writer on
+another thread is counted as inconsistent and the dump still returns; renaming a record and
+setting its suspend count return while its writer holds it; the command processor's section
+prints a WAIT_REG_MEM wait and an idle one, and prints its pending calls as inconsistent while
+another thread holds their lock; LogThreadDump returns with no kernel or GPU. Every dump in the
+tests must return within 1 s. The tests built alone with ThreadSanitizer (clang 21, Linux):
+three runs, no report. The SDK's tests pass with it (Linux: 1780); built for Android.
+
+diff --git a/include/rex/graphics/command_processor.h b/include/rex/graphics/command_processor.h
+index d6f6c6a..4dc61e3 100644
+--- a/include/rex/graphics/command_processor.h
++++ b/include/rex/graphics/command_processor.h
+@@ -21,6 +21,7 @@
+ #include <unordered_map>
+ #include <vector>
+ 
++#include <rex/graphics/command_processor_dump.h>
+ #include <rex/graphics/pending_calls.h>
+ #include <rex/graphics/register_file.h>
+ #include <rex/graphics/registers.h>
+@@ -240,6 +241,9 @@ class CommandProcessor {
+   system::object_ref<system::XHostThread> worker_thread_;
+ 
+   PendingCalls pending_fns_;
++  // For the thread dump (rex/system/thread_dump.h): written by the worker, read by the dump.
++  CommandProcessorDumpState dump_state_;
++  static void AppendToThreadDump(void* context, std::string& out);
+ 
+   // MicroEngine binary from PM4_ME_INIT
+   std::vector<uint32_t> me_bin_;
+diff --git a/include/rex/graphics/command_processor_dump.h b/include/rex/graphics/command_processor_dump.h
+new file mode 100644
+index 0000000..3c092f3
+--- /dev/null
++++ b/include/rex/graphics/command_processor_dump.h
+@@ -0,0 +1,78 @@
++/**
++ * @file        rex/graphics/command_processor_dump.h
++ * @brief       The command processor's part of the thread dump, read without waiting on a lock
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#pragma once
++
++#include <atomic>
++#include <chrono>
++#include <cstddef>
++#include <cstdint>
++#include <iterator>
++#include <string>
++
++#include <fmt/format.h>
++
++#include <rex/graphics/pending_calls.h>
++
++namespace rex::graphics {
++
++// What the command processor's worker is doing, written by the worker with atomics for the
++// thread dump (rex/system/thread_dump.h). A time of -1 means "not in that wait".
++struct CommandProcessorDumpState {
++  std::atomic<uint32_t> read_ptr{0};
++  std::atomic<int64_t> idle_since_ms{-1};
++  std::atomic<int64_t> wait_reg_mem_since_ms{-1};
++  std::atomic<uint32_t> wait_reg_mem_address{0};
++  std::atomic<uint32_t> wait_reg_mem_info{0};
++  std::atomic<uint32_t> wait_reg_mem_reference{0};
++  std::atomic<uint32_t> wait_reg_mem_mask{0};
++  std::atomic<uint32_t> wait_reg_mem_value{0};
++};
++
++inline int64_t CommandProcessorDumpNowMs() {
++  return std::chrono::duration_cast<std::chrono::milliseconds>(
++             std::chrono::steady_clock::now().time_since_epoch())
++      .count();
++}
++
++// Appends the command processor's state. It only tries the pending calls' lock: taken, their
++// count is "inconsistent (locked)".
++inline void AppendCommandProcessorState(const CommandProcessorDumpState& state,
++                                        uint32_t write_ptr, bool worker_running,
++                                        const PendingCalls& pending_calls, int64_t now_ms,
++                                        std::string& out) {
++  auto it = std::back_inserter(out);
++  fmt::format_to(it, "  command processor: worker {}, ring read {:08X} write {:08X}, ",
++                 worker_running ? "running" : "stopped",
++                 state.read_ptr.load(std::memory_order_relaxed), write_ptr);
++  int64_t idle_since = state.idle_since_ms.load(std::memory_order_relaxed);
++  int64_t wait_since = state.wait_reg_mem_since_ms.load(std::memory_order_relaxed);
++  if (wait_since >= 0) {
++    uint32_t info = state.wait_reg_mem_info.load(std::memory_order_relaxed);
++    fmt::format_to(it,
++                   "in WAIT_REG_MEM for {:.1f} s ({} {:08X}, function {}, reference {:08X}, "
++                   "mask {:08X}, last value {:08X}), ",
++                   (now_ms - wait_since) / 1000.0, (info & 0x10) ? "memory" : "register",
++                   state.wait_reg_mem_address.load(std::memory_order_relaxed), info & 0x7,
++                   state.wait_reg_mem_reference.load(std::memory_order_relaxed),
++                   state.wait_reg_mem_mask.load(std::memory_order_relaxed),
++                   state.wait_reg_mem_value.load(std::memory_order_relaxed));
++  } else if (idle_since >= 0) {
++    fmt::format_to(it, "idle (ring empty) for {:.1f} s, ", (now_ms - idle_since) / 1000.0);
++  } else {
++    out += "executing packets, ";
++  }
++  size_t pending = 0;
++  if (pending_calls.TrySize(&pending)) {
++    fmt::format_to(it, "{} pending calls\n", pending);
++  } else {
++    out += "pending calls inconsistent (locked)\n";
++  }
++}
++
++}  // namespace rex::graphics
+diff --git a/include/rex/graphics/pending_calls.h b/include/rex/graphics/pending_calls.h
+index d68b79f..5ae473c 100644
+--- a/include/rex/graphics/pending_calls.h
++++ b/include/rex/graphics/pending_calls.h
+@@ -8,6 +8,7 @@
+ 
+ #pragma once
+ 
++#include <cstddef>
+ #include <functional>
+ #include <mutex>
+ #include <queue>
+@@ -29,6 +30,20 @@ class PendingCalls {
+     return queue_.empty();
+   }
+ 
++  // The number of queued calls, without waiting: false, and nothing stored, when another thread
++  // holds the lock (the thread dump reads it this way).
++  bool TrySize(size_t* out) const {
++    std::unique_lock lock(mutex_, std::try_to_lock);
++    if (!lock.owns_lock()) {
++      return false;
++    }
++    *out = queue_.size();
++    return true;
++  }
++
++  // For tests: holds the lock until the returned object is destroyed.
++  std::unique_lock<std::mutex> LockForTesting() const { return std::unique_lock(mutex_); }
++
+   void RunAll() {
+     while (true) {
+       std::function<void()> fn;
+diff --git a/include/rex/system/thread_dump.h b/include/rex/system/thread_dump.h
+new file mode 100644
+index 0000000..51b7bea
+--- /dev/null
++++ b/include/rex/system/thread_dump.h
+@@ -0,0 +1,116 @@
++/**
++ * @file        rex/system/thread_dump.h
++ * @brief       A dump of every guest thread's state, for a watchdog that found a hang
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#pragma once
++
++#include <cstddef>
++#include <cstdint>
++#include <span>
++#include <string>
++#include <string_view>
++
++namespace rex::system {
++
++// Logs, as one error-level log call, every guest thread's name, thread id, host thread id, state
++// (running, waiting, suspended), the kernel objects a waiting thread waits on and for how long,
++// and the guest LR of that wait's kernel call; then each registered section (the command
++// processor's). It can be called from any thread, before or after the kernel and the GPU exist.
++// It never waits on a lock: the threads write their own state into a fixed table with atomics,
++// a record being written at that moment is printed as "inconsistent", and the sections only try
++// their locks. The one lock it can wait on is the log sink's, for the single call that writes
++// the block.
++void LogThreadDump(std::string_view reason);
++
++// The text LogThreadDump logs.
++std::string FormatThreadDump(std::string_view reason);
++
++// A part of the dump that lives outside the runtime (the command processor, in the GPU plugin).
++// It appends its state to `out` and takes no lock it would wait for. Unregister waits until no
++// dump is running the section, so `context` can be destroyed after it returns.
++using ThreadDumpSection = void (*)(void* context, std::string& out);
++bool RegisterThreadDumpSection(ThreadDumpSection section, void* context);
++void UnregisterThreadDumpSection(ThreadDumpSection section, void* context);
++
++namespace thread_dump {
++
++// What the threads record about themselves (XThread and XObject call these).
++
++enum class WaitKind : uint32_t {
++  kNone,
++  kSingle,         // XObject::Wait
++  kAll,            // XObject::WaitMultiple, every object
++  kAny,            // XObject::WaitMultiple, any object
++  kSignalAndWait,  // XObject::SignalAndWait: the signalled object first
++  kDelay,          // XThread::Delay
++};
++
++struct WaitObject {
++  uint32_t type;  // XObject::Type
++  uint32_t handle;
++};
++
++constexpr size_t kMaxRecords = 256;
++constexpr size_t kMaxWaitObjects = 4;
++constexpr size_t kMaxNameLength = 63;
++
++// Takes a record for the calling thread, which then belongs to it until ReleaseRecord. Returns
++// the record's index, or -1 when the table is full (the dump then counts the thread as not
++// recorded).
++int AcquireRecord(uint32_t thread_id, uint32_t host_thread_id, std::string_view name);
++void ReleaseRecord(int record);
++void SetName(int record, std::string_view name);
++void SetSuspendCount(int record, uint32_t suspend_count);
++
++// The calling thread's record (the one AcquireRecord took on it), or -1.
++int CurrentRecord();
++
++// Around a kernel wait on the calling thread; nothing happens on a thread without a record.
++// `timeout_ms` is -1 for an infinite wait. Waits on more than kMaxWaitObjects objects record the
++// first ones and the total count.
++void BeginWait(WaitKind kind, std::span<const WaitObject> objects, uint32_t object_count,
++               int64_t timeout_ms, uint64_t guest_lr);
++void EndWait();
++
++// BeginWait for as long as it lives, then EndWait.
++class ScopedWait {
++ public:
++  ScopedWait(WaitKind kind, std::span<const WaitObject> objects, uint32_t object_count,
++             int64_t timeout_ms, uint64_t guest_lr)
++      : active_(CurrentRecord() >= 0) {
++    if (active_) {
++      BeginWait(kind, objects, object_count, timeout_ms, guest_lr);
++    }
++  }
++  ~ScopedWait() {
++    if (active_) {
++      EndWait();
++    }
++  }
++  ScopedWait(const ScopedWait&) = delete;
++  ScopedWait& operator=(const ScopedWait&) = delete;
++
++ private:
++  bool active_;
++};
++
++// For tests: holds `record` as if its thread were writing it, until the returned object is
++// destroyed.
++class ScopedWriteForTesting {
++ public:
++  explicit ScopedWriteForTesting(int record);
++  ~ScopedWriteForTesting();
++  ScopedWriteForTesting(const ScopedWriteForTesting&) = delete;
++  ScopedWriteForTesting& operator=(const ScopedWriteForTesting&) = delete;
++
++ private:
++  int record_;
++};
++
++}  // namespace thread_dump
++
++}  // namespace rex::system
+diff --git a/include/rex/system/xthread.h b/include/rex/system/xthread.h
+index a72911e..1dad77b 100644
+--- a/include/rex/system/xthread.h
++++ b/include/rex/system/xthread.h
+@@ -424,6 +424,8 @@ class XThread : public XObject {
+ 
+   std::string thread_name_;
+   std::unique_ptr<runtime::ThreadState> thread_state_;
++  // This thread's record in the thread dump's table (thread_dump.h), -1 when it has none.
++  std::atomic<int> dump_record_{-1};
+ 
+   int32_t priority_ = 0;
+ 
+diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
+index 72ef9a6..0f0179b 100644
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -33,6 +33,7 @@
+ #include <rex/memory/ring_buffer.h>
+ #include <rex/stream.h>
+ #include <rex/system/kernel_state.h>
++#include <rex/system/thread_dump.h>
+ #include <rex/system/user_module.h>
+ 
+ REXCVAR_DEFINE_BOOL(vsync, true, "GPU", "Enable vertical sync");
+@@ -122,7 +123,16 @@ CommandProcessor::CommandProcessor(GraphicsSystem* graphics_system,
+   assert_not_null(write_ptr_index_event_);
+ }
+ 
+-CommandProcessor::~CommandProcessor() = default;
++CommandProcessor::~CommandProcessor() {
++  system::UnregisterThreadDumpSection(&CommandProcessor::AppendToThreadDump, this);
++}
++
++void CommandProcessor::AppendToThreadDump(void* context, std::string& out) {
++  auto* self = static_cast<CommandProcessor*>(context);
++  AppendCommandProcessorState(self->dump_state_, self->write_ptr_index_.load(),
++                              self->worker_running_.load(), self->pending_fns_,
++                              CommandProcessorDumpNowMs(), out);
++}
+ 
+ bool CommandProcessor::Initialize() {
+   // Initialize the gamma ramps to their default (linear) values - taken from
+@@ -152,11 +162,13 @@ bool CommandProcessor::Initialize() {
+       }));
+   worker_thread_->set_name("GPU Commands");
+   worker_thread_->Create();
++  system::RegisterThreadDumpSection(&CommandProcessor::AppendToThreadDump, this);
+ 
+   return true;
+ }
+ 
+ void CommandProcessor::Shutdown() {
++  system::UnregisterThreadDumpSection(&CommandProcessor::AppendToThreadDump, this);
+   worker_running_ = false;
+   write_ptr_index_event_->Set();
+   worker_thread_->Wait(0, 0, 0, nullptr);
+@@ -225,6 +237,7 @@ void CommandProcessor::WorkerThreadMain() {
+       // We've run out of commands to execute. Spin briefly, then block on the event:
+       // UpdateWritePointer and CallInThread set it, and the timeout rechecks anyway.
+       PrepareForWait();
++      dump_state_.idle_since_ms.store(CommandProcessorDumpNowMs(), std::memory_order_relaxed);
+       uint32_t loop_count = 0;
+       do {
+         if (loop_count >= kSpinYields) {
+@@ -238,6 +251,7 @@ void CommandProcessor::WorkerThreadMain() {
+         write_ptr_index = write_ptr_index_.load();
+       } while (worker_running_ && pending_fns_.Empty() &&
+                (write_ptr_index == 0xBAADF00D || read_ptr_index_ == write_ptr_index));
++      dump_state_.idle_since_ms.store(-1, std::memory_order_relaxed);
+       ReturnFromWait();
+       if (!worker_running_ || !pending_fns_.Empty()) {
+         continue;
+@@ -247,6 +261,7 @@ void CommandProcessor::WorkerThreadMain() {
+ 
+     // Execute. Note that we handle wraparound transparently.
+     read_ptr_index_ = ExecutePrimaryBuffer(read_ptr_index_, write_ptr_index);
++    dump_state_.read_ptr.store(read_ptr_index_, std::memory_order_relaxed);
+ 
+     // TODO(benvanik): use reader->Read_update_freq_ and only issue after moving
+     //     that many indices.
+@@ -1007,6 +1022,11 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+   }
+   auto poll_sleep = kMinPollSleep;
+   uint32_t poll_count = 0;
++  // For the thread dump: the wait shows there from its first unmet poll until it returns.
++  struct DumpWaitScope {
++    CommandProcessorDumpState& state;
++    ~DumpWaitScope() { state.wait_reg_mem_since_ms.store(-1, std::memory_order_relaxed); }
++  } dump_wait{dump_state_};
+   bool matched = false;
+   do {
+     uint32_t value = 0;
+@@ -1048,6 +1068,15 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+         break;
+     }
+     if (!matched) {
++      if (poll_count == 0) {
++        dump_state_.wait_reg_mem_address.store(poll_reg_addr, std::memory_order_relaxed);
++        dump_state_.wait_reg_mem_info.store(wait_info, std::memory_order_relaxed);
++        dump_state_.wait_reg_mem_reference.store(ref, std::memory_order_relaxed);
++        dump_state_.wait_reg_mem_mask.store(mask, std::memory_order_relaxed);
++        dump_state_.wait_reg_mem_since_ms.store(CommandProcessorDumpNowMs(),
++                                                std::memory_order_relaxed);
++      }
++      dump_state_.wait_reg_mem_value.store(value, std::memory_order_relaxed);
+       // Wait: a few yields, then sleeps that grow up to max_sleep.
+       const bool sleep = poll_count >= kSpinYields && max_sleep >= kMinPollSleep;
+       ++poll_count;
+diff --git a/src/system/CMakeLists.txt b/src/system/CMakeLists.txt
+index 1b70573..2f26e42 100644
+--- a/src/system/CMakeLists.txt
++++ b/src/system/CMakeLists.txt
+@@ -46,6 +46,7 @@ set(REXSYSTEM_SOURCES
+     thread.cpp
+     guest_fatal.cpp
+     thread_state.cpp
++    thread_dump.cpp
+     xex_module.cpp
+ )
+ 
+diff --git a/src/system/thread_dump.cpp b/src/system/thread_dump.cpp
+new file mode 100644
+index 0000000..78a85ed
+--- /dev/null
++++ b/src/system/thread_dump.cpp
+@@ -0,0 +1,440 @@
++/**
++ * @file        system/thread_dump.cpp
++ * @brief       A dump of every guest thread's state, read without waiting on any lock
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <rex/system/thread_dump.h>
++
++#include <algorithm>
++#include <array>
++#include <atomic>
++#include <chrono>
++#include <cstdio>
++#include <cstring>
++#include <thread>
++
++#include <fmt/format.h>
++
++#include <rex/logging.h>
++
++namespace rex::system {
++
++namespace {
++
++using thread_dump::kMaxNameLength;
++using thread_dump::kMaxRecords;
++using thread_dump::kMaxWaitObjects;
++using thread_dump::WaitKind;
++using thread_dump::WaitObject;
++
++constexpr size_t kNameWords = (kMaxNameLength + 1) / 8;
++static_assert(kNameWords * 8 == kMaxNameLength + 1);
++
++// One thread's state. Only its own thread writes the ids and the wait, under `writer` and with
++// `sequence` odd while it does; the dump reads them without any lock and keeps a read only when
++// `sequence` was even and unchanged across it. Other threads write the name (under its own
++// `name_writer` and `name_sequence`) and the suspend count (one atomic), and never wait for a
++// record's writer: the record's thread may be suspended in the middle of a write. Every field is
++// an atomic, so a read that races a write is never undefined, only discarded.
++struct Record {
++  std::atomic<bool> in_use{false};
++  std::atomic_flag writer = ATOMIC_FLAG_INIT;
++  std::atomic<uint32_t> sequence{0};
++  std::atomic<uint32_t> thread_id{0};
++  std::atomic<uint32_t> host_thread_id{0};
++  std::atomic<uint32_t> suspend_count{0};
++  std::atomic_flag name_writer = ATOMIC_FLAG_INIT;
++  std::atomic<uint32_t> name_sequence{0};
++  std::array<std::atomic<uint64_t>, kNameWords> name{};
++  std::atomic<uint32_t> wait_kind{0};
++  std::atomic<uint32_t> wait_object_count{0};
++  std::array<std::atomic<uint32_t>, kMaxWaitObjects> wait_types{};
++  std::array<std::atomic<uint32_t>, kMaxWaitObjects> wait_handles{};
++  std::atomic<int64_t> wait_timeout_ms{0};
++  std::atomic<uint64_t> wait_guest_lr{0};
++  std::atomic<int64_t> wait_start_ms{0};
++};
++
++std::array<Record, kMaxRecords> records;
++std::atomic<uint32_t> unrecorded_threads{0};
++thread_local int current_record = -1;
++
++int64_t NowMs() {
++  return std::chrono::duration_cast<std::chrono::milliseconds>(
++             std::chrono::steady_clock::now().time_since_epoch())
++      .count();
++}
++
++// A write to one of a record's two parts (`writer` and `sequence`, or the name's), only if
++// nobody else is writing it: nothing here ever waits for a writer. The record's own thread is
++// the only writer of the ids and the wait, so there it always gets the part.
++class TryWriteScope {
++ public:
++  TryWriteScope(std::atomic_flag& writer, std::atomic<uint32_t>& sequence)
++      : writer_(writer), sequence_(sequence) {
++    owns_ = !writer_.test_and_set(std::memory_order_acquire);
++    if (owns_) {
++      sequence_.fetch_add(1, std::memory_order_relaxed);
++      std::atomic_thread_fence(std::memory_order_release);
++    }
++  }
++  ~TryWriteScope() {
++    if (owns_) {
++      sequence_.fetch_add(1, std::memory_order_release);
++      writer_.clear(std::memory_order_release);
++    }
++  }
++  bool owns() const { return owns_; }
++  TryWriteScope(const TryWriteScope&) = delete;
++  TryWriteScope& operator=(const TryWriteScope&) = delete;
++
++ private:
++  std::atomic_flag& writer_;
++  std::atomic<uint32_t>& sequence_;
++  bool owns_;
++};
++
++void StoreName(Record& record, std::string_view name) {
++  TryWriteScope write(record.name_writer, record.name_sequence);
++  if (!write.owns()) {
++    return;  // another thread is naming it at this moment
++  }
++  char bytes[kNameWords * 8] = {};
++  std::memcpy(bytes, name.data(), std::min(name.size(), kMaxNameLength));
++  for (size_t i = 0; i < kNameWords; ++i) {
++    uint64_t word;
++    std::memcpy(&word, bytes + i * 8, 8);
++    record.name[i].store(word, std::memory_order_relaxed);
++  }
++}
++
++Record* RecordAt(int index) {
++  if (index < 0 || static_cast<size_t>(index) >= kMaxRecords) {
++    return nullptr;
++  }
++  return &records[index];
++}
++
++// A record as the dump read it.
++struct Snapshot {
++  uint32_t thread_id;
++  uint32_t host_thread_id;
++  uint32_t suspend_count;
++  char name[kNameWords * 8];
++  WaitKind wait_kind;
++  uint32_t wait_object_count;
++  WaitObject wait_objects[kMaxWaitObjects];
++  int64_t wait_timeout_ms;
++  uint64_t wait_guest_lr;
++  int64_t wait_start_ms;
++};
++
++// False when the record was being written in every attempt; the attempts do not wait.
++bool TryRead(const Record& record, Snapshot* out) {
++  for (int attempt = 0; attempt < 3; ++attempt) {
++    uint32_t before = record.sequence.load(std::memory_order_acquire);
++    if (before & 1) {
++      continue;
++    }
++    out->thread_id = record.thread_id.load(std::memory_order_relaxed);
++    out->host_thread_id = record.host_thread_id.load(std::memory_order_relaxed);
++    out->wait_kind = static_cast<WaitKind>(record.wait_kind.load(std::memory_order_relaxed));
++    out->wait_object_count = record.wait_object_count.load(std::memory_order_relaxed);
++    for (size_t i = 0; i < kMaxWaitObjects; ++i) {
++      out->wait_objects[i] = {record.wait_types[i].load(std::memory_order_relaxed),
++                              record.wait_handles[i].load(std::memory_order_relaxed)};
++    }
++    out->wait_timeout_ms = record.wait_timeout_ms.load(std::memory_order_relaxed);
++    out->wait_guest_lr = record.wait_guest_lr.load(std::memory_order_relaxed);
++    out->wait_start_ms = record.wait_start_ms.load(std::memory_order_relaxed);
++    std::atomic_thread_fence(std::memory_order_acquire);
++    if (record.sequence.load(std::memory_order_relaxed) == before) {
++      out->suspend_count = record.suspend_count.load(std::memory_order_relaxed);
++      return true;
++    }
++  }
++  return false;
++}
++
++// The name, or "(name being written)" when it was being written in every attempt.
++void ReadName(const Record& record, Snapshot* out) {
++  for (int attempt = 0; attempt < 3; ++attempt) {
++    uint32_t before = record.name_sequence.load(std::memory_order_acquire);
++    if (before & 1) {
++      continue;
++    }
++    for (size_t i = 0; i < kNameWords; ++i) {
++      uint64_t word = record.name[i].load(std::memory_order_relaxed);
++      std::memcpy(out->name + i * 8, &word, 8);
++    }
++    out->name[sizeof(out->name) - 1] = '\0';
++    std::atomic_thread_fence(std::memory_order_acquire);
++    if (record.name_sequence.load(std::memory_order_relaxed) == before) {
++      return;
++    }
++  }
++  std::snprintf(out->name, sizeof(out->name), "(name being written)");
++}
++
++const char* WaitKindName(WaitKind kind) {
++  switch (kind) {
++    case WaitKind::kSingle:
++      return "wait";
++    case WaitKind::kAll:
++      return "wait for all";
++    case WaitKind::kAny:
++      return "wait for any";
++    case WaitKind::kSignalAndWait:
++      return "signal and wait";
++    case WaitKind::kDelay:
++      return "delay";
++    case WaitKind::kNone:
++      break;
++  }
++  return "none";
++}
++
++// XObject::Type, in its order.
++const char* ObjectTypeName(uint32_t type) {
++  static constexpr const char* kNames[] = {
++      "Undefined", "Enumerator",     "Event",   "File",    "IOCompletion",
++      "Module",    "Mutant",         "NotifyListener",     "Semaphore",
++      "Session",   "Socket",         "SymbolicLink",       "Thread",  "Timer",
++  };
++  return type < std::size(kNames) ? kNames[type] : "?";
++}
++
++void AppendThread(const Snapshot& snapshot, int64_t now_ms, std::string& out) {
++  fmt::format_to(std::back_inserter(out), "  \"{}\" id {:08X} host tid {}: ", snapshot.name,
++                 snapshot.thread_id, snapshot.host_thread_id);
++  if (snapshot.suspend_count) {
++    fmt::format_to(std::back_inserter(out), "suspended ({}), ", snapshot.suspend_count);
++  }
++  if (snapshot.wait_kind == WaitKind::kNone) {
++    out += "running\n";
++    return;
++  }
++  fmt::format_to(std::back_inserter(out), "waiting {:.1f} s in {}",
++                 (now_ms - snapshot.wait_start_ms) / 1000.0, WaitKindName(snapshot.wait_kind));
++  uint32_t shown = std::min<uint32_t>(snapshot.wait_object_count, kMaxWaitObjects);
++  for (uint32_t i = 0; i < shown; ++i) {
++    fmt::format_to(std::back_inserter(out), "{} {} {:08X}", i ? "," : " on",
++                   ObjectTypeName(snapshot.wait_objects[i].type), snapshot.wait_objects[i].handle);
++  }
++  if (snapshot.wait_object_count > shown) {
++    fmt::format_to(std::back_inserter(out), " and {} more", snapshot.wait_object_count - shown);
++  }
++  if (snapshot.wait_timeout_ms < 0) {
++    out += ", no timeout";
++  } else {
++    fmt::format_to(std::back_inserter(out), ", timeout {} ms", snapshot.wait_timeout_ms);
++  }
++  fmt::format_to(std::back_inserter(out), ", guest LR {:08X}\n", snapshot.wait_guest_lr);
++}
++
++// Registered sections. A dump counts itself in `users` before it looks at `ready`, and
++// Unregister clears `ready` before it waits for `users` to drop, so no dump runs a section after
++// Unregister returns (both sequentially consistent).
++struct Section {
++  std::atomic<bool> claimed{false};
++  std::atomic<bool> ready{false};
++  std::atomic<ThreadDumpSection> function{nullptr};
++  std::atomic<void*> context{nullptr};
++  std::atomic<int> users{0};
++};
++
++constexpr size_t kMaxSections = 4;
++std::array<Section, kMaxSections> sections;
++
++}  // namespace
++
++bool RegisterThreadDumpSection(ThreadDumpSection function, void* context) {
++  for (Section& section : sections) {
++    bool expected = false;
++    if (section.claimed.compare_exchange_strong(expected, true)) {
++      section.function.store(function);
++      section.context.store(context);
++      section.ready.store(true);
++      return true;
++    }
++  }
++  return false;
++}
++
++void UnregisterThreadDumpSection(ThreadDumpSection function, void* context) {
++  for (Section& section : sections) {
++    if (!section.ready.load() || section.function.load() != function ||
++        section.context.load() != context) {
++      continue;
++    }
++    section.ready.store(false);
++    while (section.users.load() != 0) {
++      std::this_thread::yield();
++    }
++    section.function.store(nullptr);
++    section.context.store(nullptr);
++    section.claimed.store(false);
++    return;
++  }
++}
++
++std::string FormatThreadDump(std::string_view reason) {
++  std::string out;
++  fmt::format_to(std::back_inserter(out), "Thread dump ({}):\n", reason);
++  int64_t now_ms = NowMs();
++  size_t shown = 0;
++  size_t inconsistent = 0;
++  for (const Record& record : records) {
++    if (!record.in_use.load(std::memory_order_acquire)) {
++      continue;
++    }
++    Snapshot snapshot;
++    if (!TryRead(record, &snapshot)) {
++      ++inconsistent;
++      continue;
++    }
++    ReadName(record, &snapshot);
++    AppendThread(snapshot, now_ms, out);
++    ++shown;
++  }
++  fmt::format_to(std::back_inserter(out), "  {} threads", shown);
++  if (inconsistent) {
++    fmt::format_to(std::back_inserter(out), "; {} inconsistent (being written)", inconsistent);
++  }
++  if (uint32_t unrecorded = unrecorded_threads.load(std::memory_order_relaxed)) {
++    fmt::format_to(std::back_inserter(out), "; {} not recorded (table full)", unrecorded);
++  }
++  out += "\n";
++  for (Section& section : sections) {
++    section.users.fetch_add(1);
++    if (section.ready.load()) {
++      section.function.load()(section.context.load(), out);
++    }
++    section.users.fetch_sub(1);
++  }
++  return out;
++}
++
++void LogThreadDump(std::string_view reason) {
++  std::string text = FormatThreadDump(reason);
++  if (!text.empty() && text.back() == '\n') {
++    text.pop_back();
++  }
++  REXSYS_ERROR("{}", text);
++}
++
++namespace thread_dump {
++
++int AcquireRecord(uint32_t thread_id, uint32_t host_thread_id, std::string_view name) {
++  for (size_t i = 0; i < kMaxRecords; ++i) {
++    Record& record = records[i];
++    bool expected = false;
++    if (!record.in_use.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
++      continue;
++    }
++    {
++      TryWriteScope write(record.writer, record.sequence);
++      if (!write.owns()) {
++        // Left held by a thread that was killed while writing it: never used again.
++        continue;
++      }
++      record.thread_id.store(thread_id, std::memory_order_relaxed);
++      record.host_thread_id.store(host_thread_id, std::memory_order_relaxed);
++      record.wait_kind.store(static_cast<uint32_t>(WaitKind::kNone), std::memory_order_relaxed);
++    }
++    record.suspend_count.store(0, std::memory_order_relaxed);
++    StoreName(record, name);
++    current_record = static_cast<int>(i);
++    return current_record;
++  }
++  unrecorded_threads.fetch_add(1, std::memory_order_relaxed);
++  return -1;
++}
++
++void ReleaseRecord(int index) {
++  Record* record = RecordAt(index);
++  if (!record) {
++    return;
++  }
++  {
++    // Called by another thread too (XThread::Terminate): it does not wait for the record.
++    TryWriteScope write(record->writer, record->sequence);
++    if (write.owns()) {
++      record->wait_kind.store(static_cast<uint32_t>(WaitKind::kNone), std::memory_order_relaxed);
++    }
++  }
++  record->in_use.store(false, std::memory_order_release);
++  if (current_record == index) {
++    current_record = -1;
++  }
++}
++
++void SetName(int index, std::string_view name) {
++  if (Record* record = RecordAt(index)) {
++    StoreName(*record, name);
++  }
++}
++
++void SetSuspendCount(int index, uint32_t suspend_count) {
++  if (Record* record = RecordAt(index)) {
++    record->suspend_count.store(suspend_count, std::memory_order_relaxed);
++  }
++}
++
++int CurrentRecord() {
++  return current_record;
++}
++
++void BeginWait(WaitKind kind, std::span<const WaitObject> objects, uint32_t object_count,
++               int64_t timeout_ms, uint64_t guest_lr) {
++  Record* record = RecordAt(current_record);
++  if (!record) {
++    return;
++  }
++  TryWriteScope write(record->writer, record->sequence);
++  if (!write.owns()) {
++    return;
++  }
++  record->wait_kind.store(static_cast<uint32_t>(kind), std::memory_order_relaxed);
++  record->wait_object_count.store(object_count, std::memory_order_relaxed);
++  size_t shown = std::min(objects.size(), kMaxWaitObjects);
++  for (size_t i = 0; i < shown; ++i) {
++    record->wait_types[i].store(objects[i].type, std::memory_order_relaxed);
++    record->wait_handles[i].store(objects[i].handle, std::memory_order_relaxed);
++  }
++  record->wait_timeout_ms.store(timeout_ms, std::memory_order_relaxed);
++  record->wait_guest_lr.store(guest_lr, std::memory_order_relaxed);
++  record->wait_start_ms.store(NowMs(), std::memory_order_relaxed);
++}
++
++void EndWait() {
++  Record* record = RecordAt(current_record);
++  if (!record) {
++    return;
++  }
++  TryWriteScope write(record->writer, record->sequence);
++  if (write.owns()) {
++    record->wait_kind.store(static_cast<uint32_t>(WaitKind::kNone), std::memory_order_relaxed);
++  }
++}
++
++ScopedWriteForTesting::ScopedWriteForTesting(int record) : record_(record) {
++  Record& target = records.at(record_);
++  while (target.writer.test_and_set(std::memory_order_acquire)) {
++    std::this_thread::yield();
++  }
++  target.sequence.fetch_add(1, std::memory_order_relaxed);
++}
++
++ScopedWriteForTesting::~ScopedWriteForTesting() {
++  Record& target = records.at(record_);
++  target.sequence.fetch_add(1, std::memory_order_release);
++  target.writer.clear(std::memory_order_release);
++}
++
++}  // namespace thread_dump
++
++}  // namespace rex::system
+diff --git a/src/system/xobject.cpp b/src/system/xobject.cpp
+index d358f39..8e5cb60 100644
+--- a/src/system/xobject.cpp
++++ b/src/system/xobject.cpp
+@@ -9,11 +9,15 @@
+  * @modified    Tom Clay, 2026 - Adapted for ReXGlue runtime
+  */
+ 
++#include <algorithm>
++#include <span>
+ #include <vector>
+ 
+ #include <rex/chrono/clock.h>
+ #include <rex/stream.h>
+ #include <rex/system/kernel_state.h>
++#include <rex/system/thread_dump.h>
++#include <rex/system/thread_state.h>
+ #include <rex/system/util/string_utils.h>  // For TranslateAnsiStringAddress
+ #include <rex/system/xobject.h>
+ // #include <rex/kernel/xboxkrnl/private.h>  // TODO: JIT only
+@@ -29,6 +33,43 @@
+ 
+ namespace rex::system {
+ 
++namespace {
++
++// The guest LR of the calling thread's kernel call, for the thread dump (0 off a guest thread).
++uint64_t CurrentGuestLr() {
++  XThread* thread = XThread::GetCurrentThread();
++  if (!thread || !thread->thread_state() || !thread->thread_state()->context()) {
++    return 0;
++  }
++  return thread->thread_state()->context()->lr;
++}
++
++int64_t DumpTimeoutMs(std::chrono::milliseconds timeout) {
++  return timeout == std::chrono::milliseconds::max() ? -1 : timeout.count();
++}
++
++// Records a wait on `objects` in the thread dump while it lasts.
++class DumpedWait {
++ public:
++  DumpedWait(thread_dump::WaitKind kind, XObject* const* objects, uint32_t count,
++             std::chrono::milliseconds timeout)
++      : wait_(kind, Describe(objects, count), count, DumpTimeoutMs(timeout), CurrentGuestLr()) {}
++
++ private:
++  std::span<const thread_dump::WaitObject> Describe(XObject* const* objects, uint32_t count) {
++    uint32_t shown = std::min<uint32_t>(count, thread_dump::kMaxWaitObjects);
++    for (uint32_t i = 0; i < shown; ++i) {
++      described_[i] = {static_cast<uint32_t>(objects[i]->type()), objects[i]->handle()};
++    }
++    return {described_, shown};
++  }
++
++  thread_dump::WaitObject described_[thread_dump::kMaxWaitObjects] = {};
++  thread_dump::ScopedWait wait_;
++};
++
++}  // namespace
++
+ XObject::XObject(Type type) : kernel_state_(nullptr), pointer_ref_count_(1), type_(type) {
+   handles_.reserve(10);
+ }
+@@ -213,6 +254,8 @@ X_STATUS XObject::Wait(uint32_t wait_reason, uint32_t processor_mode, uint32_t a
+                                 : std::chrono::milliseconds::max();
+ 
+   XThread::CheckTitleTermination();
++  XObject* self = this;
++  DumpedWait dumped(thread_dump::WaitKind::kSingle, &self, 1, timeout_ms);
+   auto result = rex::thread::Wait(wait_handle, alertable ? true : false, timeout_ms);
+   XThread::CheckTitleTermination();
+   switch (result) {
+@@ -239,6 +282,8 @@ X_STATUS XObject::SignalAndWait(XObject* signal_object, XObject* wait_object, ui
+                                       TimeoutTicksToMs(*opt_timeout)))
+                                 : std::chrono::milliseconds::max();
+ 
++  XObject* dumped_objects[] = {signal_object, wait_object};
++  DumpedWait dumped(thread_dump::WaitKind::kSignalAndWait, dumped_objects, 2, timeout_ms);
+   auto result =
+       rex::thread::SignalAndWait(signal_object->GetWaitHandle(), wait_object->GetWaitHandle(),
+                                  alertable ? true : false, timeout_ms);
+@@ -273,6 +318,8 @@ X_STATUS XObject::WaitMultiple(uint32_t count, XObject** objects, uint32_t wait_
+                                 : std::chrono::milliseconds::max();
+ 
+   XThread::CheckTitleTermination();
++  DumpedWait dumped(wait_type ? thread_dump::WaitKind::kAny : thread_dump::WaitKind::kAll, objects,
++                    count, timeout_ms);
+   if (wait_type) {
+     auto result =
+         rex::thread::WaitAny(std::move(wait_handles), alertable ? true : false, timeout_ms);
+diff --git a/src/system/xthread.cpp b/src/system/xthread.cpp
+index 77bce25..1c310b7 100644
+--- a/src/system/xthread.cpp
++++ b/src/system/xthread.cpp
+@@ -28,6 +28,7 @@
+ #include <rex/stream.h>
+ #include <rex/system/kernel_state.h>
+ #include <rex/system/function_dispatcher.h>
++#include <rex/system/thread_dump.h>
+ #include <rex/system/thread_state.h>
+ #include <rex/system/user_module.h>
+ #include <rex/kernel/xboxkrnl/threading.h>
+@@ -175,6 +176,7 @@ void XThread::set_last_error(uint32_t error_code) {
+ void XThread::set_name(const std::string_view name) {
+   std::lock_guard<std::mutex> lock(thread_lock_);
+   thread_name_ = fmt::format("{} ({:08X})", name, handle());
++  thread_dump::SetName(dump_record_.load(), thread_name_);
+ 
+   if (thread_) {
+     // May be getting set before the thread is created.
+@@ -441,6 +443,11 @@ X_STATUS XThread::Create() {
+ 
+     // Set name immediately, if we have one.
+     thread_->set_name(thread_name_);
++    {
++      std::lock_guard<std::mutex> lock(thread_lock_);
++      dump_record_ = thread_dump::AcquireRecord(thread_id_, rex::thread::current_thread_system_id(),
++                                                thread_name_);
++    }
+ 
+     PROFILE_THREAD_ENTER(thread_name_.c_str());
+     PROFILE_THREAD_CREATED();
+@@ -451,6 +458,7 @@ X_STATUS XThread::Create() {
+     Execute();
+     running_ = false;
+     current_xthread_tls_ = nullptr;
++    thread_dump::ReleaseRecord(dump_record_.exchange(-1));
+ 
+     PROFILE_THREAD_EXITED();
+     PROFILE_THREAD_EXIT();
+@@ -531,6 +539,7 @@ X_STATUS XThread::Exit(int exit_code) {
+ 
+   // NOTE: unless PlatformExit fails, expect it to never return!
+   current_xthread_tls_ = nullptr;
++  thread_dump::ReleaseRecord(dump_record_.exchange(-1));
+   PROFILE_THREAD_EXIT();
+ 
+   running_ = false;
+@@ -552,6 +561,7 @@ X_STATUS XThread::Terminate(int exit_code) {
+   // TODO(tomc): do we need thread notifications (related to processor thread management)?
+ 
+   running_ = false;
++  thread_dump::ReleaseRecord(dump_record_.exchange(-1));
+   if (XThread::IsInThread(this)) {
+     // Same lifetime rule as Exit(): don't allow ReleaseHandle() to destroy
+     // the thread object before Thread::Exit() reaches pthread_exit().
+@@ -934,6 +944,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
+ #if REX_PLATFORM_WIN32
+   uint8_t previous_suspend_count =
+       reinterpret_cast<std::atomic_uint8_t*>(&guest_thread->suspend_count)->fetch_sub(1);
++  thread_dump::SetSuspendCount(dump_record_.load(), uint8_t(previous_suspend_count - 1));
+   if (out_suspend_count) {
+     *out_suspend_count = previous_suspend_count;
+   }
+@@ -950,6 +961,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
+       *out_suspend_count = previous;
+     }
+     should_resume_host = (guest_thread->suspend_count == 0);
++    thread_dump::SetSuspendCount(dump_record_.load(), guest_thread->suspend_count);
+     suspend_cv_.notify_all();
+   }
+ 
+@@ -963,6 +975,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
+   if (guest_thread->suspend_count > 0) {
+     --guest_thread->suspend_count;
+   }
++  thread_dump::SetSuspendCount(dump_record_.load(), guest_thread->suspend_count);
+   if (out_suspend_count) {
+     *out_suspend_count = previous_suspend_count;
+   }
+@@ -974,6 +987,7 @@ X_STATUS XThread::Suspend(uint32_t* out_suspend_count) {
+   auto guest_thread = guest_object<X_KTHREAD>();
+   uint8_t previous_suspend_count =
+       reinterpret_cast<std::atomic_uint8_t*>(&guest_thread->suspend_count)->fetch_add(1);
++  thread_dump::SetSuspendCount(dump_record_.load(), uint8_t(previous_suspend_count + 1));
+   if (out_suspend_count) {
+     *out_suspend_count = previous_suspend_count;
+   }
+@@ -992,6 +1006,7 @@ uint32_t XThread::SelfSuspend() {
+   std::unique_lock<std::mutex> lock(suspend_mutex_);
+   uint32_t previous = guest_thread->suspend_count;
+   guest_thread->suspend_count++;
++  thread_dump::SetSuspendCount(dump_record_.load(), guest_thread->suspend_count);
+   suspend_cv_.wait(lock, [guest_thread]() { return guest_thread->suspend_count == 0; });
+   return previous;
+ }
+@@ -1013,6 +1028,8 @@ X_STATUS XThread::Delay(uint32_t processor_mode, uint32_t alertable, uint64_t in
+   }
+   timeout_ms = chrono::Clock::ScaleGuestDurationMillis(timeout_ms);
+   CheckTitleTermination();
++  thread_dump::ScopedWait dumped(thread_dump::WaitKind::kDelay, {}, 0, timeout_ms,
++                                 thread_state_ ? thread_state_->context()->lr : 0);
+   if (alertable) {
+     auto result = rex::thread::AlertableSleep(std::chrono::milliseconds(timeout_ms));
+     CheckTitleTermination();
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index d424f20..d436f1e 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -23,6 +23,7 @@ add_executable(unit_tests
+     ppc/import_function_test.cpp
+     ppc/stack_test.cpp
+     system/guest_path_test.cpp
++    system/thread_dump_test.cpp
+     system/content_delete_backup_test.cpp
+     system/achievement_manager_test.cpp
+     system/function_dispatcher_test.cpp
+diff --git a/tests/unit/system/thread_dump_test.cpp b/tests/unit/system/thread_dump_test.cpp
+new file mode 100644
+index 0000000..de70e5b
+--- /dev/null
++++ b/tests/unit/system/thread_dump_test.cpp
+@@ -0,0 +1,200 @@
++/**
++ * @file        system/thread_dump_test.cpp
++ * @brief       The thread dump: threads' waits, and it returns while other threads hold locks
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <atomic>
++#include <chrono>
++#include <functional>
++#include <future>
++#include <string>
++#include <thread>
++
++#include <rex/graphics/command_processor_dump.h>
++#include <rex/graphics/pending_calls.h>
++#include <rex/system/thread_dump.h>
++
++namespace td = rex::system::thread_dump;
++using rex::system::FormatThreadDump;
++
++namespace {
++
++// Runs `dump` on another thread and fails if it does not return within a second: the dump must
++// never wait on a lock.
++std::string DumpWithin1s(std::function<std::string()> dump) {
++  auto result = std::async(std::launch::async, std::move(dump));
++  REQUIRE(result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
++  return result.get();
++}
++
++// A thread with a record, which does what the test asks and stays until released.
++class RecordedThread {
++ public:
++  explicit RecordedThread(std::string name) {
++    thread_ = std::thread([this, name] {
++      record_ = td::AcquireRecord(0x1234, 4321, name);
++      ready_.set_value();
++      release_.get_future().wait();
++      td::ReleaseRecord(record_);
++    });
++    ready_.get_future().wait();
++  }
++  ~RecordedThread() {
++    release_.set_value();
++    thread_.join();
++  }
++  int record() const { return record_; }
++
++ private:
++  std::thread thread_;
++  int record_ = -1;
++  std::promise<void> ready_;
++  std::promise<void> release_;
++};
++
++}  // namespace
++
++TEST_CASE("Thread dump shows a thread's wait and then that it runs", "[thread_dump]") {
++  const td::WaitObject objects[] = {{2, 0xF8000010}, {8, 0xF8000020}};  // Event, Semaphore
++  std::promise<void> waiting, done_waiting, release;
++  int record = -1;
++  std::thread thread([&] {
++    record = td::AcquireRecord(0xABCD, 777, "dump test waiter");
++    td::BeginWait(td::WaitKind::kAny, objects, 2, -1, 0x82001234);
++    waiting.set_value();
++    done_waiting.get_future().wait();
++    td::EndWait();
++    release.get_future().wait();
++    td::ReleaseRecord(record);
++  });
++  waiting.get_future().wait();
++  CHECK(record >= 0);
++  std::string dump = DumpWithin1s([] { return FormatThreadDump("test"); });
++  CHECK(dump.find("Thread dump (test)") != std::string::npos);
++  CHECK(dump.find("\"dump test waiter\" id 0000ABCD host tid 777: waiting") != std::string::npos);
++  CHECK(dump.find("wait for any on Event F8000010, Semaphore F8000020, no timeout, "
++                  "guest LR 82001234") != std::string::npos);
++
++  done_waiting.set_value();
++  // EndWait ran on the thread before it waits for `release`; give it a moment.
++  for (int i = 0; i < 100; ++i) {
++    dump = FormatThreadDump("test");
++    if (dump.find("\"dump test waiter\" id 0000ABCD host tid 777: running") != std::string::npos) {
++      break;
++    }
++    std::this_thread::sleep_for(std::chrono::milliseconds(10));
++  }
++  CHECK(dump.find("\"dump test waiter\" id 0000ABCD host tid 777: running") != std::string::npos);
++
++  release.set_value();
++  thread.join();
++  CHECK(FormatThreadDump("test").find("dump test waiter") == std::string::npos);
++}
++
++TEST_CASE("Thread dump returns with a record held by a writer on another thread",
++          "[thread_dump]") {
++  RecordedThread recorded("dump test held");
++  std::promise<void> holding, release;
++  std::thread writer([&] {
++    td::ScopedWriteForTesting write(recorded.record());
++    holding.set_value();
++    release.get_future().wait();
++  });
++  holding.get_future().wait();
++
++  std::string dump = DumpWithin1s([] { return FormatThreadDump("held"); });
++  CHECK(dump.find("dump test held") == std::string::npos);
++  CHECK(dump.find("inconsistent (being written)") != std::string::npos);
++
++  release.set_value();
++  writer.join();
++  CHECK(FormatThreadDump("held").find("\"dump test held\"") != std::string::npos);
++}
++
++TEST_CASE("Other threads' writes to a record never wait for its own thread's write",
++          "[thread_dump]") {
++  // A thread suspended in the middle of writing its record (SuspendThread on Windows) must not
++  // stop the thread that resumes it, renames it or terminates it.
++  RecordedThread recorded("dump test suspended");
++  int record = recorded.record();
++  std::promise<void> holding, release;
++  std::thread writer([&] {
++    td::ScopedWriteForTesting write(record);
++    holding.set_value();
++    release.get_future().wait();
++  });
++  holding.get_future().wait();
++  auto writes = std::async(std::launch::async, [record] {
++    td::SetSuspendCount(record, 1);
++    td::SetName(record, "dump test renamed");
++    return true;
++  });
++  CHECK(writes.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
++  release.set_value();
++  writer.join();
++  std::string dump = FormatThreadDump("renamed");
++  CHECK(dump.find("\"dump test renamed\" id 00001234 host tid 4321: suspended (1), running") !=
++        std::string::npos);
++}
++
++TEST_CASE("Thread dump's command processor section returns with its pending calls' lock held "
++          "by another thread",
++          "[thread_dump]") {
++  rex::graphics::PendingCalls calls;
++  calls.Push([] {});
++  rex::graphics::CommandProcessorDumpState state;
++  state.read_ptr = 0x40;
++  state.wait_reg_mem_since_ms = rex::graphics::CommandProcessorDumpNowMs() - 12000;
++  state.wait_reg_mem_address = 0x1234;
++  state.wait_reg_mem_info = 0x13;  // memory, equal
++  state.wait_reg_mem_reference = 5;
++  state.wait_reg_mem_mask = 0xFF;
++  state.wait_reg_mem_value = 4;
++
++  struct Context {
++    rex::graphics::CommandProcessorDumpState* state;
++    rex::graphics::PendingCalls* calls;
++  } context{&state, &calls};
++  rex::system::ThreadDumpSection section = [](void* opaque, std::string& out) {
++    auto* c = static_cast<Context*>(opaque);
++    rex::graphics::AppendCommandProcessorState(*c->state, 0x80, true, *c->calls,
++                                               rex::graphics::CommandProcessorDumpNowMs(), out);
++  };
++  REQUIRE(rex::system::RegisterThreadDumpSection(section, &context));
++
++  std::string dump = FormatThreadDump("free");
++  CHECK(dump.find("command processor: worker running, ring read 00000040 write 00000080, "
++                  "in WAIT_REG_MEM for 12.") != std::string::npos);
++  CHECK(dump.find("(memory 00001234, function 3, reference 00000005, mask 000000FF, "
++                  "last value 00000004), 1 pending calls") != std::string::npos);
++
++  std::promise<void> holding, release;
++  std::thread holder([&] {
++    auto lock = calls.LockForTesting();
++    holding.set_value();
++    release.get_future().wait();
++  });
++  holding.get_future().wait();
++  dump = DumpWithin1s([] { return FormatThreadDump("locked"); });
++  CHECK(dump.find("pending calls inconsistent (locked)") != std::string::npos);
++  release.set_value();
++  holder.join();
++
++  state.wait_reg_mem_since_ms = -1;
++  state.idle_since_ms = rex::graphics::CommandProcessorDumpNowMs() - 3000;
++  dump = FormatThreadDump("idle");
++  CHECK(dump.find("idle (ring empty) for 3.") != std::string::npos);
++
++  rex::system::UnregisterThreadDumpSection(section, &context);
++  CHECK(FormatThreadDump("gone").find("command processor") == std::string::npos);
++}
++
++TEST_CASE("LogThreadDump returns without a kernel or a GPU", "[thread_dump]") {
++  auto result = std::async(std::launch::async, [] { rex::system::LogThreadDump("no kernel"); });
++  CHECK(result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
++}

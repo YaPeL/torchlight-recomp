@@ -65,7 +65,8 @@ in number order; a branch adds its own line at its number's place.
 | 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
 | 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
-| 50 | | | Next free number |
+| 50 | `rexglue-thread-dump.patch` | `sdk/thread-dump` | In the branch (after 49) |
+| 51 | | | Next free number |
 
 ## The patches
 
@@ -717,6 +718,15 @@ in number order; a branch adds its own line at its number's place.
     `rex::graphics::PendingCalls`, with a mutex; each call runs outside the lock, in the order
     queued. Test: several threads push while one drains, every call runs in each thread's order;
     under ThreadSanitizer no report with it, 61 races and a hang with its locks removed.
+
+50. `rexglue-thread-dump.patch`: `rex::system::LogThreadDump(reason)` logs every guest thread's
+    ids, state and current kernel wait (objects, kind, timeout, how long, guest LR), and the
+    command processor's ring pointers, idle or WAIT_REG_MEM wait (and for how long) and pending
+    calls, for a watchdog that found a hang. It never waits on a lock: the threads write their
+    own state into a fixed table of atomics with sequence counters, a record being written is
+    printed as inconsistent, other threads never wait for a record's writer, and the command
+    processor's section only tries its lock. Tests, under ThreadSanitizer too, hold those locks
+    on other threads and check that every dump returns.
 
 The observation and diagnostic patches there were before remain in the git history.
 
