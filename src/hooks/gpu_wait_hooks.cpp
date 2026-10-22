@@ -12,8 +12,9 @@
 // there the word changes between consecutive steps while the target is still ahead.)
 //
 // Every step also goes to the wait watch (gpu_wait_watch.h): a wait longer than 10 s is logged
-// ("guest GPU wait: ... without reaching its target"), with the GPU's progress word, and the wait
-// goes on.
+// ("guest GPU wait: ... without reaching its target"), with the GPU's progress word, followed by
+// the SDK's dump of every guest thread and the command processor (rex::system::LogThreadDump,
+// which never waits on the runtime's locks), and the wait goes on.
 
 #include <atomic>
 #include <chrono>
@@ -22,6 +23,7 @@
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 #include <rex/logging.h>
+#include <rex/system/thread_dump.h>
 #include <rex/thread.h>
 
 #include "guest_abi/guest_functions.h"
@@ -91,6 +93,7 @@ void Watch(const uint8_t* base, uint32_t state, std::chrono::steady_clock::time_
       "0x{:08X} at its start, 0x{:08X} now, changed {} times",
       std::chrono::duration<double>(report->waited).count(), report->repeat ? " (still)" : "",
       report->steps, report->progress_at_start, report->progress_now, report->progress_changes);
+  rex::system::LogThreadDump("guest GPU wait over 10 s");
 }
 
 }  // namespace
