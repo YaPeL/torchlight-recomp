@@ -767,4 +767,5 @@ rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Andr
 - `ogre-gles2-sampler-once-per-texture.patch`: from torchlight-rekindled (its patch 0020 and the
   sampler-state resets of its 0018, commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), Switch
   guards removed. GLES2 writes a texture's sampler parameters only when they change (remembered on
-  the texture object, forgotten when its GL texture is made or freed). Android only.
+  the texture object, forgotten when its GL texture is made or freed). GLES only: Android, and
+  CI's GLES test build.

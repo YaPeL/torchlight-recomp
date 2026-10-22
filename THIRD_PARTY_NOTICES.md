@@ -1732,7 +1732,8 @@ comes unchanged from torchlight-rekindled (https://github.com/GreenSwampDweller/
 `patches/ogre-gles2-sampler-once-per-texture.patch` comes from torchlight-rekindled too (its
 `patches/ogre/0020-switch-gles2-sampler-once-per-texture.patch` and two lines of
 `patches/ogre/0018-switch-gles2-texture-max-level.patch`, same commit, GPL-3.0), with its
-Switch-only guards removed. It changes OGRE's GLES2 render system, which only the Android build has.
+Switch-only guards removed. It changes OGRE's GLES2 render system, which only the Android build
+ships (CI also compiles it for its GLES replay test).
 
 ### gl3w (OGRE)
 
