@@ -140,8 +140,9 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 - **Should be caught by:** a log line that says, at the moment it happens, where every thread is
   and what it waits for, so a single occurrence (on a player's machine too) is enough to find it.
 - **Covered now:** a guest GPU wait over 10 s is logged ("guest GPU wait: ... without reaching its
-  target", with the GPU's progress word at its start and now), followed by the SDK's dump of every
-  guest thread's wait and the command processor's state (patch 50, `LogThreadDump`), once and then
+  target", with the waiting thread's host tid and the GPU's progress word at its start and now),
+  followed by the SDK's dump of every guest thread's wait (the waiting thread shows as running
+  there: it waits in our hook, not in the kernel) and the command processor's state (patch 50, `LogThreadDump`), once and then
   once a minute; quiet while Android's surface is away (`hooks/gpu_wait_watch.h`). The desktop
   benches (local scripts) also record a perf profile when a start waits like this before the
   first menu.
