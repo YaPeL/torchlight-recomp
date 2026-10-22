@@ -65,6 +65,11 @@ not count.
   - every measurement names the commit it was built from, and that commit is reachable from
     `develop`, from a branch with an open pull request or from an `archive/` tag (a week of
     Android measurements was once built on branches nobody could find).
+  - the combat benchmark comes in two lengths that are not comparable: `fight.txt` (20 s at rest,
+    then 21 enemies and 30 s of fight) and `fight5.txt` (ten waves of the same 21, 30 s each, about
+    5 minutes; the guest's frame time grows from wave to wave). Every measurement names the one it
+    used (on the POCO X7 the same build gives ~21 ms and ~48 fps in the first, ~28 ms and ~36 fps
+    in the second).
 - **Game runs:**
   - unattended runs go through `tools/run_capped` and need no notice;
   - runs that need someone at the controller only with the owner's OK and their steps given first;
