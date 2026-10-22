@@ -61,7 +61,8 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
   --render_system gl3plus (default) or d3d11 (Windows): the OGRE render system drawn with.
   --gpu draws on the GPU with that platform id (Direct3D 11; default automatic); --list_gpus
   lists them, software ones too (WARP: for testing only, the game never offers it).
-  --window also shows the result in a window for 3 seconds (the live mode's presentation);
+  --window also shows the result in a window for 3 seconds (the live mode's presentation), and
+  writes what the window showed as window.png;
   --loop shows it until the window closes (on Android, until the app ends: the surface's
   lifecycle, the app going to the background and back, is tried with it).
   --frames_png writes each frame's output (at its Present) as frame_<index>.png, for captures
@@ -378,9 +379,19 @@ int main(int argc, char** argv) {
   if (via_live)
     for (auto key : live_content.Finish()) frontend.ReleaseContent(key);
   if (window) {
+    // What the window showed (its first present) as window.png.
+    std::vector<uint8_t> window_rgba(size_t(width) * height * 4);
+    int window_read = 0;
+    tl_backend_read_next_present(backend, window_rgba.data(), width, height, width * 4,
+                                 &window_read);
     auto until = std::chrono::steady_clock::now() + std::chrono::seconds(3);
-    while ((loop || std::chrono::steady_clock::now() < until) && tl_backend_present(backend))
+    while ((loop || std::chrono::steady_clock::now() < until) && tl_backend_present(backend)) {
+      if (window_read == 1) {
+        WritePng(out_dir + "/window.png", width, height, window_rgba);
+        window_read = 2;
+      }
       std::this_thread::sleep_for(std::chrono::milliseconds(16));
+    }
   }
   const auto& stats = frontend.stats();
   if (dump_targets) {
