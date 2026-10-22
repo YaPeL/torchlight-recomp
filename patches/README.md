@@ -708,7 +708,7 @@ order with `git apply`, leaving a checkout they are already applied to as it is;
 OGRE with LF line endings for them. Each applies to a pristine OGRE on its own: they must not
 depend on one another, so the order (which the two scripts' sorts could see differently for some
 names) never matters. `tools/deps/key.sh` hashes them with the rest of `patches/`, so a change
-rebuilds the cached OGRE in CI; a local install (`~/ogre14-install`, the Android ones
+rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Android one
 `tools/android/build_apk.sh` takes its media from) keeps the old OGRE until `build_ogre.sh` or
 `windows.ps1` is run again.
 
