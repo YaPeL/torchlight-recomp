@@ -439,6 +439,12 @@ void SetViewport(tl_backend* b, Ogre::Viewport* viewport) {
   if (viewport != b->render_system_viewport || viewport->_isUpdated()) {
     for (auto& constants : b->bound_constants) constants.clear();
   }
+  // EXPERIMENT (upper bound of the gain, not a rule): a render texture left for another target has
+  // its depth and stencil discarded (RenderTexture::swapBuffers, OGRE patched to invalidate them).
+  if (b->active && b->active != viewport->getTarget() &&
+      dynamic_cast<Ogre::RenderTexture*>(b->active)) {
+    b->active->swapBuffers();
+  }
   b->rs->_setViewport(viewport);
   b->render_system_viewport = viewport;
   b->active = viewport->getTarget();
