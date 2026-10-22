@@ -63,7 +63,7 @@ in number order; a branch adds its own line at its number's place.
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
 | 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
 | 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
-| 48 | `rexglue-command-processor-spin-backoff.patch` | `sdk/cp-spin-backoff` | In the branch (after 47) |
+| 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47) |
 | 49 | | | Next free number |
 
 ## The patches
@@ -706,6 +706,8 @@ in number order; a branch adds its own line at its number's place.
     then sleeps 20 us doubling up to the packet's poll interval or 500 us, whichever is smaller
     (with vsync on, never less than the whole milliseconds it slept before; it yielded on every
     poll otherwise). Every poll still reads its register or memory; no unit test reaches these
-    loops. Not measured yet on Torchlight (a POCO X7 A/B decides it).
+    loops. Torchlight on the POCO X7 (A B B A): the thread's share of the app's cycles in a
+    fight 9.49 -> 2.83 % with fps_cap 0 and 3.42 -> 2.24 % with fps_cap 60; frame times,
+    temperature and battery current unchanged beyond the runs' spread.
 
 The observation and diagnostic patches there were before remain in the git history.
