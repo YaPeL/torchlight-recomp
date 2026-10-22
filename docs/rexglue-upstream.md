@@ -1471,8 +1471,12 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | `bd833a2`, after 41; integrated with A6 (`docs/android-port.md`) |
 | 43 | `rexglue-android-writable-settings.patch` | withdrawn (draft D33) | `bd833a2`, after 42 |
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `develop` | `bd833a2`, after 41 |
-| 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | `bd833a2`, after 44 |
-| 46 | next free | | |
+| 45 | `rexglue-arena-reserve-before-views.patch` | `develop` | `bd833a2`, after 44 |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` (SDL's file) | `develop` | `bd833a2`, after 45 |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | `bd833a2`, after 46 |
+| 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | `bd833a2`, after 47 |
+| 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | `bd833a2`, after 48 |
+| 50 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

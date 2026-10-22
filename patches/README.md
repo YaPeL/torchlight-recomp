@@ -59,10 +59,10 @@ in number order; a branch adds its own line at its number's place.
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | In the branch (after 40) |
 | 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41), until the APK keeps its libraries inside (A6, `docs/android-port.md`) |
 | 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | Withdrawn from our series (2026-10-22); an upstream draft (`docs/rexglue-upstream.md`, D33) |
-| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
-| 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
-| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
-| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
+| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `develop` | In the series (after 41); changes desktop Linux (the owner's OK) |
+| 45 | `rexglue-arena-reserve-before-views.patch` | `develop` | In the series (after 44); changes desktop Linux (the owner's OK) |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `develop` | In the series (after 45); Android only |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 46); Android only |
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
 | 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
 | 50 | | | Next free number |
@@ -684,6 +684,14 @@ in number order; a branch adds its own line at its number's place.
     is free (all 101 desktop logs here). Test: a foreign page in the first free range survives
     and the arena goes elsewhere (without the change the page reads 0); the guard pages have no
     access.
+
+46. `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` (Android only; SDL's file): SDL 3.4.14's
+    `SDL_WaitEventTimeoutNS` waited on Android in a loop that pushed a poll sentinel each time,
+    and every pushed event sends a wakeup, so `Android_PumpEvents` returned at once and the SDL
+    thread spun about a full big core on the POCO X7 the whole game. The loop now pumps without
+    a new sentinel and waits at most 1 ms, as SDL's polling loop elsewhere. Upstream SDL (main,
+    release-3.4.x) has the same loop: worth reporting there. The first patch to a submodule's
+    file: the build scripts update submodules with `--force`.
 
 47. `rexglue-android-bsymbolic-functions.patch`: on Android the host app is a shared library, so
     every call it made to a function it defines itself went through the PLT (on Torchlight, all
