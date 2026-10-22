@@ -167,6 +167,77 @@ jobs:
             synthetic.tlcap
           retention-days: 3
 
+  # The backend on OGRE's GLES render system (the one Android uses) over Mesa: OGRE built as
+  # Android builds it, for Linux (build_ogre.sh linux-gles, static, EGL), and the replay of a
+  # synthetic capture under xvfb with llvmpipe. A program that does not build in GLSL ES draws
+  # nothing and the replay still exits 0: check_replay_output.py fails on OGRE's link and compile
+  # errors and on a black image. Without it, develop went a week black on Android
+  # (docs/regressions.md).
+  gles-replay:
+    name: Replay on GLES (Mesa)
+    needs: deps
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    steps:
+      - name: Bootstrap
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git zstd gh python3
+          # An X server in memory, Mesa's EGL and GLES (llvmpipe), and what OGRE's EGL support
+          # builds against.
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xvfb xauth libegl1 libegl-mesa0 libgles2 libgl1-mesa-dri \
+            libegl-dev libgles-dev libx11-dev libxrandr-dev zlib1g-dev
+          git config --global --add safe.directory '*'
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: sh tools/deps/ubuntu_toolchain.sh
+      - id: published
+        name: Published dependencies
+        run: |
+          key=${{ needs.deps.outputs.key }}
+          mkdir -p "$DEPS_DIR"
+          if tools/deps/store.sh fetch linux "$key" /tmp/deps; then
+            for f in /tmp/deps/sdk-*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.published.outputs.found != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.DEPS_DIR }}
+          key: deps-linux-amd64-ubuntu22.04-${{ needs.deps.outputs.key }}
+          fail-on-cache-miss: true
+      - id: ogre-gles
+        uses: actions/cache@v6
+        with:
+          path: /tmp/ogre-gles
+          key: ogre-linux-gles-ubuntu22.04-${{ hashFiles('tools/deps/build_ogre.sh', 'patches/ogre-*.patch') }}
+      - name: OGRE (GLES)
+        if: steps.ogre-gles.outputs.cache-hit != 'true'
+        run: tools/deps/build_ogre.sh /tmp/ogre-gles /tmp/ogre-gles-work Release linux-gles
+      - name: Configure
+        run: >-
+          cmake --preset linux-amd64-nogame -B out/build/gles -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk"
+          -DTORCHLIGHT_OGRE_INSTALL=/tmp/ogre-gles
+      - name: Build
+        run: cmake --build out/build/gles --parallel --target replay synthetic_capture
+      - name: Replay
+        run: |
+          out/build/gles/tools/synthetic_capture/synthetic_capture synthetic.tlcap
+          xvfb-run -a out/build/gles/tools/replay/replay synthetic.tlcap --out gles-out
+          grep -m1 -E "GL_RENDERER|OpenGL ES" tl_backend_ogre.log
+          python3 tools/replay/check_replay_output.py tl_backend_ogre.log gles-out/render.png
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gles-replay
+          path: |
+            tl_backend_ogre.log
+            gles-out/
+          retention-days: 7
+
   # Windows: the same scheme. The SDK and OGRE come from tools/build-deps/windows.ps1 with LLVM from
   # windows_toolchain.ps1, keyed by `key.sh windows` and published in the same store; zip files
   # (Windows' tar writes and reads them; it has no zstd). The Linux job prunes for both.

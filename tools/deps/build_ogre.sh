@@ -19,9 +19,14 @@
 # system (GLES 3 where the device has it) in place of GL3+. Which render system Android uses is
 # the render's decision; this only shows whether it builds.
 #
+# Linux with GLES (TARGET linux-gles): OGRE as Android builds it (static, the GLES2 render system on
+# EGL, X11 windows) for this machine, so CI replays the backend on GLES over Mesa (llvmpipe): a
+# program that builds on GL3+ but not in GLSL ES, or an image that comes out black, fails there
+# instead of on a phone (docs/regressions.md). Not for the game.
+#
 # Usage: tools/deps/build_ogre.sh PREFIX [WORK_DIR] [BUILD_TYPE] [TARGET]
 #   BUILD_TYPE  Release (default; what CI and the published game use) or RelWithDebInfo
-#   TARGET      host (default) or android-arm64
+#   TARGET      host (default), android-arm64 or linux-gles
 # Needs: git, cmake >= 3.25, ninja, clang/clang++ (CC/CXX pick others); on Linux libX11/libXrandr,
 # EGL, Wayland and zlib development packages; on macOS the Command Line Tools.
 set -eu
@@ -54,6 +59,7 @@ done
 
 case "$target-$(uname -s)" in
   android-arm64-*) host=android ;;
+  linux-gles-Linux) host=linux-gles ;;
   host-Linux) host=linux ;;
   host-Darwin) host=macos ;;
   *) echo "unsupported host: $(uname -s)" >&2; exit 2 ;;
@@ -71,6 +77,9 @@ configure() {  # BUILD_DIR [extra options...]
       -DCMAKE_SHARED_LINKER_FLAGS=-Wl,--as-needed -DCMAKE_MODULE_LINKER_FLAGS=-Wl,--as-needed \
       "$@" -DOGRE_BUILD_RENDERSYSTEM_GL3PLUS=OFF -DOGRE_BUILD_RENDERSYSTEM_GLES2=ON \
       -DOGRE_BUILD_ANDROID_JNI_SAMPLE=OFF
+  elif [ "$host" = linux-gles ]; then
+    set -- "$@" -DOGRE_STATIC=TRUE -DOGRE_GLSUPPORT_USE_EGL=ON \
+      -DOGRE_BUILD_RENDERSYSTEM_GL3PLUS=OFF -DOGRE_BUILD_RENDERSYSTEM_GLES2=ON
   elif [ "$host" = macos ]; then
     set -- -DCMAKE_OSX_SYSROOT=macosx -DCMAKE_OSX_DEPLOYMENT_TARGET=13.3 \
       -DCMAKE_OSX_ARCHITECTURES=arm64 -DOGRE_BUILD_LIBS_AS_FRAMEWORKS=OFF \
@@ -108,7 +117,7 @@ configure() {  # BUILD_DIR [extra options...]
 configure "$work/build"
 cmake --build "$work/build" --parallel
 cmake --install "$work/build"
-if [ "$host" = android ]; then
+if [ "$host" = android ] || [ "$host" = linux-gles ]; then
   echo "OGRE installed in $prefix"
   exit 0
 fi
