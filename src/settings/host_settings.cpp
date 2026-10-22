@@ -6,6 +6,8 @@
 #include <cctype>
 #include <charconv>
 #include <cmath>
+#include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -201,10 +203,41 @@ Choices<Resolution> ResolutionChoices(const Capabilities& caps) {
     if (known_display && !SameAspect(mode, caps.display)) continue;
     if (!Contains(choices.values, mode)) choices.values.push_back(mode);
   }
+  // Only the display's own size, on a platform that prefers a smaller start (Android reports no
+  // other mode): fractions of it, its aspect kept, so a slower device can draw at less than its
+  // screen (even sizes). Elsewhere the list stays the display's own.
+  const bool prefers_smaller = caps.preferred_render.width && caps.preferred_render.height;
+  if (known_display && prefers_smaller && choices.values.size() == 1) {
+    for (const auto [num, den] : {std::pair{3u, 4u}, {2u, 3u}, {1u, 2u}}) {
+      const Resolution part{caps.display.width * num / den & ~1u,
+                            caps.display.height * num / den & ~1u};
+      if (!Contains(choices.values, part)) choices.values.push_back(part);
+    }
+  }
   std::stable_sort(choices.values.begin(), choices.values.end(),
                    [](Resolution a, Resolution b) { return a.width > b.width; });
   choices.enabled = choices.values.size() > 1;
   return choices;
+}
+
+Resolution DefaultRenderResolution(const Capabilities& caps) {
+  const Resolution preferred = caps.preferred_render;
+  if (!preferred.width || !preferred.height) return caps.display;
+  Resolution best = caps.display;
+  int64_t best_distance = INT64_MAX;
+  for (const Resolution r : ResolutionChoices(caps).values) {
+    const int64_t distance = std::llabs(int64_t(r.width) - preferred.width) +
+                             std::llabs(int64_t(r.height) - preferred.height);
+    if (distance < best_distance) best = r, best_distance = distance;
+  }
+  return best;
+}
+
+Resolution EffectiveRenderResolution(Resolution setting, const Capabilities& caps) {
+  if (setting != Resolution{}) return setting;
+  // Without a preferred start "window" stays 0x0: the render follows the window's size.
+  const Resolution preferred = caps.preferred_render;
+  return preferred.width && preferred.height ? DefaultRenderResolution(caps) : Resolution{};
 }
 
 Choices<uint32_t> FpsCapChoices(const Capabilities& caps) {

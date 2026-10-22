@@ -142,7 +142,30 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 - **Covered now:** a guest GPU wait over 10 s is logged ("guest GPU wait: ... without reaching its
   target", with the waiting thread's host tid and the GPU's progress word at its start and now),
   followed by the SDK's dump of every guest thread's wait (the waiting thread shows as running
-  there: it waits in our hook, not in the kernel) and the command processor's state (patch 50, `LogThreadDump`), once and then
-  once a minute; quiet while Android's surface is away (`hooks/gpu_wait_watch.h`). The desktop
+  there: it waits in our hook, not in the kernel) and the command processor's state (patch 50,
+  `LogThreadDump`), once and then once a minute; quiet while Android's surface is away
+  (`hooks/gpu_wait_watch.h`). The desktop
   benches (local scripts) also record a perf profile when a start waits like this before the
   first menu.
+
+## `develop` never drew on Android: the A2 branch was never merged
+
+- **What happened:** the backend's GLES programs (`android/a2-gles`, b197117: the backend's
+  programs in GLSL ES, RGBA where BGRA cannot be sampled) and A2's start near 1280x800 (9485d9d)
+  stayed on their branch. Every Android APK measured from 2026-10-17 to 2026-10-22 was built from
+  branches on top of it, so they drew; `develop` itself compiled its desktop GLSL on GLES, every
+  program failed to link ("Link failed because of missing shader") and the screen stayed black,
+  at the display's full resolution (render scale 1.69 on the POCO X7 instead of ~1280x800). The
+  frame and present counters looked normal: the backend presents whether or not its programs
+  linked. Found on 2026-10-22, when a build from `develop` was run on the phone for the first time.
+- **Should have been caught by:** CI. Its Android job only builds; nothing ran the backend on a
+  GLES render system, so a program that does not link, or an image that is all black, passed.
+- **Caught by:** the owner, looking at the phone during a benchmark series.
+- **Covered now:** A2's commits are in `develop`. A CI job on OGRE's GLES2 render system over Mesa
+  (EGL, llvmpipe) runs the backend's drawing tests, which check pixels, and replays a synthetic
+  capture; it fails on a crash, a program that does not compile or link, a black image or one
+  that differs from its reference (`ci/gles-replay`). The RTSS's generated programs need the
+  game's files and are not covered there. And every measurement names the commit it was built
+  from, reachable from `develop`, from a branch with an open pull request or from an `archive/`
+  tag (`AGENTS.md`); what was measured from 2026-10-17 to 2026-10-22 is tagged
+  `archive/tl-a4-2026-10-22/*`.

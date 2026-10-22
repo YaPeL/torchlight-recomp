@@ -43,6 +43,26 @@ void TestResolution() {
         "back to the display's size stores window again");
 }
 
+void TestResolutionWithPreferredStart() {
+  Capabilities tablet;
+  tablet.render_systems = {"OpenGL ES 2.x Rendering Subsystem"};
+  tablet.display = {2560, 1600};
+  tablet.display_modes = {{2560, 1600}};
+  tablet.preferred_render = {1280, 800};
+  VideoMenuModel m(tablet, HostSettings{}, HostSettings{});
+  Check(m.Text(Row::kResolution) == "1280x800", "the default shown is the preferred start");
+  Check(!m.Step(Row::kResolution, +1), "the smallest: right does nothing");
+  Check(m.Step(Row::kResolution, -1) && m.Text(Row::kResolution) == "1706x1066", "left: larger");
+  Check(m.settings().render_resolution == Resolution{1706, 1066}, "stored as chosen");
+  m.Step(Row::kResolution, -1);
+  m.Step(Row::kResolution, -1);
+  Check(m.Text(Row::kResolution) == "2560x1600" &&
+            m.settings().render_resolution == Resolution{2560, 1600},
+        "the display's size is stored as such (window is the lower default)");
+  for (int i = 0; i < 3; ++i) m.Step(Row::kResolution, +1);
+  Check(m.settings().render_resolution == Resolution{}, "back to the default stores window");
+}
+
 void TestFpsAndVsync() {
   VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
   Check(m.Text(Row::kFpsCap) == "Auto (144)", "default cap: automatic, the display's rate");
@@ -273,6 +293,7 @@ void TestRendererUnavailable() {
 
 int main() {
   TestResolution();
+  TestResolutionWithPreferredStart();
   TestFpsAndVsync();
   TestLanguageAndRestart();
   TestDisabledRows();

@@ -5,6 +5,7 @@
 #include <cstdio>
 
 #include <imgui.h>
+#include <rex/cvar.h>
 #include <rex/logging.h>
 #include <rex/runtime.h>
 #include <rex/ui/imgui_dialog.h>
@@ -12,6 +13,9 @@
 #include <rex/ui/keybinds.h>
 
 #include "live/frame_timing.h"
+
+REXCVAR_DEFINE_BOOL(frame_counter, false, "Torchlight",
+                    "Show the frame rate counter from the start (F3 shows and hides it)");
 
 namespace torchlight::live {
 
@@ -121,6 +125,10 @@ void InstallFrameCounter(rex::Runtime* runtime) {
   // The SDK's debug overlay (Xenos) also takes F3 and has no frame times here: ours instead.
   rex::ui::UnregisterBind("bind_debug_overlay");
   rex::ui::RegisterBind("bind_frame_counter", "F3", "Toggle the frame rate counter", [] { Toggle(); });
+}
+
+void ShowFrameCounterIfAsked() {
+  if (REXCVAR_GET(frame_counter) && !g_dialog.load()) Toggle();
 }
 
 rex::ui::ImGuiDialog* FrameCounterDialog() { return g_dialog.load(); }

@@ -61,6 +61,10 @@ bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.
 bool IsSteamDeck();
+// The internal resolution the game starts at by default, where the platform wants less than the
+// display (Android: about 1280x800 on a 2560x1600 tablet, docs/android-port.md, A2); 0x0 elsewhere,
+// the display's size.
+std::pair<uint32_t, uint32_t> PreferredRenderResolution();
 // Whether the system has a Back button of its own (Android's navigation Back), which the game takes
 // as the pad's Back (live/system_back_button.h).
 bool HasSystemBackButton();

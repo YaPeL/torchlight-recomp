@@ -33,6 +33,7 @@
 #include "live/install.h"
 #include "dev/script_input.h"
 #include "game_setup/first_run.h"
+#include "live/frame_counter.h"
 #include "live/system_back_button.h"
 #include "live/touch_input.h"
 #include "platform/platform.h"
@@ -268,7 +269,9 @@ class TorchlightApp : public rex::ReXApp {
   // Override virtual hooks for customization:
   // void OnLoadXexImage(std::string& xex_image) override {}
   // void OnPostLoadXexImage() override {}
-  // void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {}
+  void OnCreateDialogs(rex::ui::ImGuiDrawer*) override {
+    torchlight::live::ShowFrameCounterIfAsked();
+  }
   // std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;
   // void OnConfigurePaths(rex::PathConfig& paths) override {}
 };

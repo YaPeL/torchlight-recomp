@@ -32,9 +32,9 @@ class FrameSeries {
   // A frame that ended at `now`, `dropped` frames skipped before it (counted, not timed). The
   // first call only starts the series. Returns the frame's time (ms), if there was one.
   std::optional<double> Add(Clock::time_point now, size_t dropped = 0);
-  // Every kSummaryPeriod: the period's summary ("N frames, mean ... ms (... fps), p95 ..., p99 ...,
-  // max ..., over 33 ms N, over 50 ms N"), and the frames dropped in it; then the period starts
-  // over.
+  // Every kSummaryPeriod: the period's summary ("N frames, mean ... ms (... fps), p50 ..., p95 ...,
+  // p99 ..., max ..., over 33 ms N, over 50 ms N"), and the frames dropped in it; then the period
+  // starts over.
   std::optional<std::string> TakeSummary(Clock::time_point now, size_t* dropped = nullptr);
   // The frame times (ms) of the last kRecent, oldest first, and the frames dropped in them.
   std::vector<float> Recent(size_t* dropped = nullptr);
