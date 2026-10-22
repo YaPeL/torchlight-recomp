@@ -99,7 +99,7 @@ index 0000000..d68b79f
 +
 +}  // namespace rex::graphics
 diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
-index 88036f1..2fceee6 100644
+index 153b9e0..72ef9a6 100644
 --- a/src/graphics/command_processor.cpp
 +++ b/src/graphics/command_processor.cpp
 @@ -167,10 +167,12 @@ void CommandProcessor::InitializeShaderStorage(const std::filesystem::path& cach
@@ -144,17 +144,17 @@ index 88036f1..2fceee6 100644
        }
      }
 diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
-index 340d61f..3795316 100644
+index 340d61f..d424f20 100644
 --- a/tests/unit/CMakeLists.txt
 +++ b/tests/unit/CMakeLists.txt
-@@ -5,6 +5,7 @@ add_executable(unit_tests
-     memory/heap_allocation_test.cpp
-     memory/alloc_fixed_test.cpp
+@@ -7,6 +7,7 @@ add_executable(unit_tests
      kernel/object_table_test.cpp
-+    graphics/pending_calls_test.cpp
      core/cvar_test.cpp
      core/fiber_test.cpp
++    graphics/pending_calls_test.cpp
      core/filesystem_test.cpp
+     core/filesystem_wildcard_test.cpp
+     core/vfs_overwrite_test.cpp
 diff --git a/tests/unit/graphics/pending_calls_test.cpp b/tests/unit/graphics/pending_calls_test.cpp
 new file mode 100644
 index 0000000..d0990a2
