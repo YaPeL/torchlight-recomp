@@ -62,11 +62,10 @@ class Frontend {
 
   void BeginFrame();
   void Execute(const commands::Command& command);
-  // Looks ahead over a frame's commands before they are executed: the SetRenderTarget commands
-  // whose pass clears the whole of its depth before it draws. Executing one of them first lets the
-  // backend discard the depth of the target being left (tl_backend_discard_depth: the guest has one
-  // depth surface for all its targets, so that clear overwrites what the left target drew). Only
-  // the commands of the last list planned are marked; without a plan nothing is discarded.
+  // Looks ahead over a frame's commands before they are executed (PlanDepthDiscards,
+  // depth_discard.h): executing a bind it marks first lets the backend discard the depth of the
+  // target being left (tl_backend_discard_depth). Only the commands of the last list planned are
+  // marked; without a plan nothing is discarded.
   void PlanTargets(const std::vector<commands::Command>& commands);
   void EndFrame();
 

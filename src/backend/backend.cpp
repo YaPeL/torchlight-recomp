@@ -364,6 +364,7 @@ struct tl_backend {
   std::unordered_map<uint64_t, Ogre::SamplerPtr> samplers;  // by packed state (GetSampler)
   uint32_t texture_serial = 0;
   uint32_t enabled_units = 0;
+  uint16_t next_depth_pool = Ogre::RBP_DEFAULT + 1;  // MakeTarget: one depth pool per target
   std::unique_ptr<Ogre::Frustum> projectors[TL_MAX_STAGES];
   // RTSS programs by structural key (ProgramKey), and what feeds their auto constants.
   struct Program {
@@ -534,6 +535,10 @@ bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, 
       Ogre::TU_RENDERTARGET);
   t.rt = t.texture->getBuffer()->getRenderTarget();
   t.rt->setAutoUpdated(false);
+  // A depth buffer of its own: OGRE's default pool shares one buffer among targets it fits (a
+  // 512x512 render texture takes the main target's), and tl_backend_discard_depth must not drop
+  // another target's depth.
+  t.rt->setDepthBufferPool(b->next_depth_pool++);
   t.viewport = t.rt->addViewport(nullptr);
   t.viewport->setClearEveryFrame(false);
   t.viewport->setOverlaysEnabled(false);

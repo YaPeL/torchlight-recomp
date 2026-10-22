@@ -568,7 +568,8 @@ inline constexpr uint32_t kManualBlendColoursUnitStride = 32;
 // One depth surface for every target. [confirmed] Runic's _setRenderTarget (0x821A7620; a Runic
 // difference from OgreD3D9RenderSystem.cpp:2700-2760, which binds the target's own depth): it
 // returns at once for the target already active (@0x821A762C..0x821A763C); a window with
-// anti-aliasing ("AA_GET", 0x820008CC) binds its "AA_GETRT" (0x8200094C) and "AA_GETDT"
+// anti-aliasing ("AA_GET", 0x820008CC), while the byte at 0x8355A2E8 is 0 (@0x821A76E4..0x821A76F0),
+// binds its "AA_GETRT" (0x8200094C) and "AA_GETDT"
 // (0x82000960) surfaces, SetRenderTarget (@0x821A7788) then SetDepthStencilSurface (0x821F9118,
 // @0x821A7794; it stores the surface at device+0x31A0); every other target binds only its colour
 // surfaces ("DDBACKBUFFER", 0x82000B10; SetRenderTarget per surface, loop @0x821A7810..0x821A7828)
