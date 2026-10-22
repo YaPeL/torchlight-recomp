@@ -66,7 +66,8 @@ in number order; a branch adds its own line at its number's place.
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
 | 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
 | 50 | `rexglue-thread-dump.patch` | `develop` | In the series (after 49); diagnostics only |
-| 51 | | | Next free number |
+| 51 | `rexglue-android-sdl-power.patch` | `sdk/android-sdl-power` | In the branch (after 50); Android only |
+| 52 | | | Next free number |
 
 ## The patches
 
@@ -737,6 +738,11 @@ in number order; a branch adds its own line at its number's place.
     still wait on the log sink's lock and the heap's. Tests, under ThreadSanitizer too, hold a
     record's writer and the pending calls' lock on other threads and check that the dump
     returns.
+
+51. `rexglue-android-sdl-power.patch` (Android only): SDL was built with its power subsystem off
+    everywhere, so on Android `SDL_GetPowerInfo` always said unknown and an app could not tell
+    it ran on battery. `SDL_POWER` is on when `ANDROID` is set (SDL reads the battery through the
+    app's Java side); the desktop platforms keep it off.
 
 The observation and diagnostic patches there were before remain in the git history.
 

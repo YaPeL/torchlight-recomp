@@ -1477,7 +1477,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | `bd833a2`, after 47 |
 | 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | `bd833a2`, after 48 |
 | 50 | `rexglue-thread-dump.patch` | `develop` | `bd833a2`, after 49 |
-| 51 | next free | | |
+| 51 | `rexglue-android-sdl-power.patch` | `sdk/android-sdl-power` | `bd833a2`, after 50 |
+| 52 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

@@ -1,0 +1,33 @@
+Patch 51. After patch 50. Android only.
+
+The SDK builds SDL with its power subsystem off on every platform (thirdparty/CMakeLists.txt,
+SDL_POWER), so on Android SDL_GetPowerInfo always answers SDL_POWERSTATE_UNKNOWN, although SDL
+has the code there (Android_JNI_GetPowerInfo, which asks the app's Java side for the battery's
+state). An app cannot tell it runs on battery. SDL_POWER is now on when ANDROID is set, which
+builds SDL_GetPowerInfo_Android into libSDL3.a; the desktop platforms keep it off, as before
+(each reads its own power sources).
+
+Test: configured for Android (NDK r30, arm64-v8a), SDL_POWER is ON in the cache and libSDL3.a
+defines SDL_GetPowerInfo_Android; configured for Linux, SDL_POWER stays OFF. The codegen id is
+unchanged (the file is not one of its inputs). On the POCO X7, Torchlight's OnBattery through
+SDL_GetPowerInfo with `dumpsys battery unplug` and `reset`: the render agent's check.
+
+diff --git a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
+index c192ac2..c830b6e 100644
+--- a/thirdparty/CMakeLists.txt
++++ b/thirdparty/CMakeLists.txt
+@@ -285,7 +285,13 @@ endif()
+ set(SDL_RENDER_VULKAN OFF CACHE BOOL "" FORCE)
+ set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
+ set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
+-set(SDL_POWER OFF CACHE BOOL "" FORCE)
++# Power: on Android only, where SDL reads the battery through the app's Java side (an app can
++# tell it runs on battery); the desktop platforms keep it off.
++if(ANDROID)
++    set(SDL_POWER ON CACHE BOOL "" FORCE)
++else()
++    set(SDL_POWER OFF CACHE BOOL "" FORCE)
++endif()
+ set(SDL_FILESYSTEM OFF CACHE BOOL "" FORCE)
+ set(SDL_LOCALE ON CACHE BOOL "" FORCE)
+ set(SDL_FILE OFF CACHE BOOL "" FORCE)
