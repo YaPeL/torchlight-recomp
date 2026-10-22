@@ -27,6 +27,6 @@ struct TargetSize {
 // (nothing is discarded at the list's first bind without it).
 std::vector<size_t> PlanDepthDiscards(const std::vector<commands::Command>& commands,
                                       std::optional<commands::SetViewport> viewport,
-                                      std::optional<TargetSize> bound);
+                                      std::optional<TargetSize> bound, bool scissor = false);
 
 }  // namespace torchlight::frontend

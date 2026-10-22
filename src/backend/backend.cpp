@@ -354,7 +354,8 @@ struct tl_backend {
   uint16_t next_depth_pool = Ogre::RBP_DEFAULT + 1;  // MakeTarget: one depth pool per target
   // Pools of released render textures, given to the next target made. OGRE keeps a detached depth
   // buffer in its pool until shutdown and reuses it for a target of that pool it fits, so a pool
-  // id must be reused, never left behind.
+  // id must be reused, never left behind. A pool still keeps one buffer per larger size it has
+  // had (a target remade larger cannot use the smaller one): bounded, not freed.
   std::vector<uint16_t> free_depth_pools;
   std::unique_ptr<Ogre::Frustum> projectors[TL_MAX_STAGES];
   // RTSS programs by structural key (ProgramKey), and what feeds their auto constants.

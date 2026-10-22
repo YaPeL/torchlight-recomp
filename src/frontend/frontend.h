@@ -128,6 +128,7 @@ class Frontend {
   std::optional<commands::SetViewport> viewport_;
   std::unordered_set<const commands::Command*> discard_depth_before_;  // PlanTargets
   bool depth_discard_ = true;
+  bool scissor_ = false;  // the last SetScissor's state, for PlanTargets across lists
   uint32_t guest_width_ = 0, guest_height_ = 0;
   uint32_t scene_clip_viewport_ = 0;  // SetSceneClip
   void ApplySceneClip();

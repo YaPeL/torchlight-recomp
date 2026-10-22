@@ -250,8 +250,10 @@ void Frontend::PlanTargets(const std::vector<Command>& commands) {
   // The frame starts on the main target (tl_backend_begin), the guest's frame size.
   std::optional<TargetSize> bound;
   if (guest_width_ && guest_height_) bound = TargetSize{guest_width_, guest_height_};
-  for (size_t i : PlanDepthDiscards(commands, viewport_, bound))
+  for (size_t i : PlanDepthDiscards(commands, viewport_, bound, scissor_))
     discard_depth_before_.insert(&commands[i]);
+  for (const auto& c : commands)
+    if (const auto* sc = std::get_if<SetScissor>(&c.payload)) scissor_ = sc->enabled;
 }
 
 void Frontend::Execute(const Command& command) {

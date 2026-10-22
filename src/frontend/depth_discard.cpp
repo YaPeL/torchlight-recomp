@@ -6,11 +6,10 @@ using namespace torchlight::commands;
 
 std::vector<size_t> PlanDepthDiscards(const std::vector<Command>& commands,
                                       std::optional<SetViewport> viewport,
-                                      std::optional<TargetSize> bound) {
+                                      std::optional<TargetSize> bound, bool scissor) {
   std::vector<size_t> out;
   // A clear with the scissor on covers only its rectangle (D3D9's Clear), so it is never whole.
-  // Off when a list starts: OGRE 1.7 turns it on only around light passes and off after them.
-  bool scissor = false;
+  // `scissor` is its state when the list starts, as the previous lists left it.
   for (size_t i = 0; i < commands.size(); ++i) {
     if (const auto* v = std::get_if<SetViewport>(&commands[i].payload)) {
       viewport = *v;
