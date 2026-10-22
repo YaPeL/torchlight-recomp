@@ -1729,6 +1729,11 @@ comes unchanged from torchlight-rekindled (https://github.com/GreenSwampDweller/
 `42e9bac358b3f260baefd6efa380e0864895c2a7`), licensed under the GNU General Public License 3.0
 (text below), as this project is. It changes the RTSS shader library file
 `RTShaderLib/SGXLib_DualQuaternion.glsl`, which every package carries in OGRE's media.
+`patches/ogre-gles2-sampler-once-per-texture.patch` comes from torchlight-rekindled too (its
+`patches/ogre/0020-switch-gles2-sampler-once-per-texture.patch` and two lines of
+`patches/ogre/0018-switch-gles2-texture-max-level.patch`, same commit, GPL-3.0), with its
+Switch-only guards removed. It changes OGRE's GLES2 render system, which only the Android build
+ships (CI also compiles it for its GLES replay test).
 
 ### gl3w (OGRE)
 
