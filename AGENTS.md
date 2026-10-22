@@ -11,6 +11,12 @@ not count.
 - Work goes to `develop` on a branch, and `develop` stays green on all three platforms' CI.
   Nothing goes to `main` except a freeze merge or a hotfix the owner approved
   (`docs/release-pipeline.md` 5.9).
+- **Branches:** a pushed branch lives only while it has an open pull request (a draft is fine)
+  that says what it is, what it waits for and in what state it is; without one it is not a
+  branch. Work that is discarded, or kept only as a record, becomes an annotated tag
+  `archive/<name>` whose message says what it is, why it is kept and what it gave, and its branch
+  is deleted (with the owner's OK, as any deletion). A merged branch is deleted on merge (the
+  repository does it).
 - **Integrated without asking (report afterwards):**
   - fixes with tests;
   - changes with no visible effect and no changed default;
@@ -55,7 +61,10 @@ not count.
   - performance integrations are decided by hand runs, blind (order A B B A) whenever possible;
   - synthetic runs and replay benches only narrow down the choice;
   - every measurement records the machine's thermal state next to its numbers
-    (`docs/performance-profile.md`).
+    (`docs/performance-profile.md`);
+  - every measurement names the commit it was built from, and that commit is reachable from
+    `develop`, from a branch with an open pull request or from an `archive/` tag (a week of
+    Android measurements was once built on branches nobody could find).
 - **Game runs:**
   - unattended runs go through `tools/run_capped` and need no notice;
   - runs that need someone at the controller only with the owner's OK and their steps given first;
