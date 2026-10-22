@@ -10,16 +10,20 @@ drew on Android". No dependencies: reads 8-bit RGB/RGBA PNGs, non-interlaced, as
 writes them.
 """
 
+import re
 import struct
 import sys
 import zlib
 
-# OGRE's GLSL and GLSL ES logs for a program that will draw nothing.
+# A program that will draw nothing, in OGRE 14.6's log: a compile failure is logged as
+# "Program '<name>' is not supported: ..." (OgreGpuProgram.cpp, from the GLSL ES program's
+# exception); a link failure as "<names>GLSL link result : " followed by the driver's log
+# (OgreGLSLESLinkProgram.cpp, logObjectInfo), which Mesa writes as "error: ..." and Mali as
+# "Link failed ...". Both drivers' wording is matched.
 LOG_FAILURES = (
-    "Link failed",
-    "compile log:",
-    "Compile error",
-    "The program object is incomplete",
+    re.compile(r"is not supported:"),
+    re.compile(r"(link|validation) result : *\n[^\n]*(error|Link failed|incomplete)", re.I),
+    re.compile(r"Link failed"),
 )
 
 
@@ -75,9 +79,11 @@ def main():
     with open(log_path, encoding="utf-8", errors="replace") as f:
         log = f.read()
     for failure in LOG_FAILURES:
-        count = log.count(failure)
-        if count:
-            print(f"error: OGRE's log reports {count} x '{failure}' ({log_path})")
+        found = failure.findall(log)
+        if found:
+            first = failure.search(log).group(0).replace("\n", " ")
+            print(f"error: OGRE's log reports {len(found)} failed program(s), first: '{first}' "
+                  f"({log_path})")
             ok = False
     try:
         rows = list(png_pixels(image_path))
