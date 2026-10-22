@@ -1405,8 +1405,14 @@ MAIN_DECLARATION
 // gamma (an identity ramp) the sampler filters (point or bilinear, PresentPass). With it the
 // sampler takes points and the shader filters the looked-up texels itself when `mode.y` is set:
 // bilinear between the four texels around the sample, as the sampler would between the output's.
+// Texel positions need more than OGRE's default precision for ES fragment shaders (mediump: 16-bit
+// floats on Mali, whole numbers only above 1024), so ES computes in highp. Fetches take level 0
+// explicitly: no gradients inside the branches (HLSL's Sample needs them).
 const char* kPresentFragmentSource = R"(OGRE_NATIVE_GLSL_VERSION_DIRECTIVE
 #include <OgreUnifiedShader.h>
+#ifdef OGRE_GLSLES
+precision highp float;
+#endif
 SAMPLER2D(scene, 0);
 SAMPLER2D(lut, 1);
 OGRE_UNIFORMS(
@@ -1416,8 +1422,8 @@ uniform vec4 mode; // x: apply the gamma lookup, y: filter between texels (bilin
 vec3 Gamma(vec3 c)
 {
   vec3 u = (floor(c * 255.0 + 0.5) + 0.5) / 256.0;
-  return vec3(texture2D(lut, vec2(u.r, 0.5)).r, texture2D(lut, vec2(u.g, 0.5)).g,
-              texture2D(lut, vec2(u.b, 0.5)).b);
+  return vec3(texture2DLod(lut, vec2(u.r, 0.5), 0.0).r, texture2DLod(lut, vec2(u.g, 0.5), 0.0).g,
+              texture2DLod(lut, vec2(u.b, 0.5), 0.0).b);
 }
 MAIN_PARAMETERS
 IN(vec2 uv, TEXCOORD0)
@@ -1425,17 +1431,17 @@ MAIN_DECLARATION
 {
   vec3 c;
   if (mode.x < 0.5) {
-    c = texture2D(scene, uv).rgb;
+    c = texture2DLod(scene, uv, 0.0).rgb;
   } else if (mode.y < 0.5) {
-    c = Gamma(texture2D(scene, uv).rgb);
+    c = Gamma(texture2DLod(scene, uv, 0.0).rgb);
   } else {
     vec2 p = uv * size.xy - 0.5;
     vec2 f = fract(p);
     vec2 t = (floor(p) + 0.5) * size.zw;
-    vec3 c00 = Gamma(texture2D(scene, t).rgb);
-    vec3 c10 = Gamma(texture2D(scene, t + vec2(size.z, 0.0)).rgb);
-    vec3 c01 = Gamma(texture2D(scene, t + vec2(0.0, size.w)).rgb);
-    vec3 c11 = Gamma(texture2D(scene, t + size.zw).rgb);
+    vec3 c00 = Gamma(texture2DLod(scene, t, 0.0).rgb);
+    vec3 c10 = Gamma(texture2DLod(scene, t + vec2(size.z, 0.0), 0.0).rgb);
+    vec3 c01 = Gamma(texture2DLod(scene, t + vec2(0.0, size.w), 0.0).rgb);
+    vec3 c11 = Gamma(texture2DLod(scene, t + size.zw, 0.0).rgb);
     c = mix(mix(c00, c10, f.x), mix(c01, c11, f.x), f.y);
   }
   gl_FragColor = vec4(c, 1.0);
@@ -2345,6 +2351,8 @@ void tl_backend_end(tl_backend* b) {
 }
 
 int tl_backend_present(tl_backend* b) {
+  // This present serves a pending read (tl_backend_read_next_present) or drops it.
+  const tl_backend::WindowRead read = std::exchange(b->window_read, {});
   if (!b->visible_window) return 0;
   // The window system taking the surface away and giving it back (Android: the app in the
   // background); this blocks while there is none. False: the app is ending.
@@ -2411,8 +2419,8 @@ int tl_backend_present(tl_backend* b) {
     EndFullScreenPass(b);
     DrawUiPass(b, b->window_viewport);
     rs->_endFrame();
-    if (b->window_read.rgba) {
-      tl_backend::WindowRead& r = b->window_read;
+    if (read.rgba) {
+      const tl_backend::WindowRead& r = read;
       if (b->window->getWidth() == r.width && b->window->getHeight() == r.height) {
         Ogre::PixelBox out(r.width, r.height, 1, Ogre::PF_BYTE_RGBA, r.rgba);
         out.rowPitch = r.stride / 4;
@@ -2421,7 +2429,6 @@ int tl_backend_present(tl_backend* b) {
                                         Ogre::RenderTarget::FB_BACK);
         *r.done = 1;
       }
-      r = {};
       ForgetActiveViewport(b);
     }
     b->window->swapBuffers();

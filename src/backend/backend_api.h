@@ -367,7 +367,8 @@ int tl_backend_read_target_rgba(tl_backend* b, uint64_t target_id, uint32_t widt
                                 uint32_t height, void* rgba, uint32_t stride);
 /* Makes the next tl_backend_present also read what it drew in the window (UI included) as RGBA8,
  * top row first, into `rgba` (diagnostics). The window must be width x height then; *done is set
- * to 1 once read, and stays 0 when the present draws nothing or the window has another size. */
+ * to 1 once read, and stays 0 when the present draws nothing or the window has another size. The
+ * request ends with that present either way: `rgba` and `done` are not used after it. */
 void tl_backend_read_next_present(tl_backend* b, void* rgba, uint32_t width, uint32_t height,
                                   uint32_t stride, int* done);
 
