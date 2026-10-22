@@ -96,6 +96,7 @@ The full inventory of the released APK is made with stage A6.
 | Component | Version | License | In the package | Linking |
 |---|---|---|---|---|
 | Kenney "Input Prompts" (the PlayStation and Nintendo Switch button icons the pad prompt styles use, converted by `tools/pad_prompts/make_icons.py`) | 1.5 (`kenney_input-prompts_1.5.zip`, SHA-256 `ac2fcf599080b0f3ba2d174c9474db6df1a0e96ff0662580e2da79a122ab78a1`, from https://kenney.nl/assets/input-prompts) | CC0-1.0 | `data/ui/prompts/` (next to the executable; `Resources/data/ui/prompts/` on macOS) | data files |
+| Kenney "Mobile Controls" (the touch controls' style C round and wide buttons, d-pad, stick, and the highlights, docs/android-port.md A4) | 1.0 (`mobile-controls-1.zip`, SHA-256 `7331c648651858fb3186a8c76e0e360e4d3ea71cfec9b502eb5cbb04a02e192b`, from https://kenney.nl/assets/mobile-controls; files copied unchanged from `Sprites/Style C/Large (2×)/` and `Sprites/Highlights A/Large (2×)/`) | CC0-1.0 | `data/ui/touch/`, with the pack's `LICENSE.txt` and `SOURCE.txt` (origin, version, URL, the zip's hash, each file's path in it) next to the icons (next to the executable; `Resources/data/ui/touch/` on macOS) | data files |
 
 ## FFmpeg, libmspack and libfuse (LGPL)
 
@@ -1720,6 +1721,14 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
 THE SOFTWARE.
 ```
+
+OGRE is built with this project's patches (`patches/ogre-*.patch`, applied by `tools/deps/build_ogre.sh`
+and `tools/build-deps/windows.ps1`). `patches/ogre-rtss-skinning-blend-without-array-copy.patch`
+comes unchanged from torchlight-rekindled (https://github.com/GreenSwampDweller/torchlight-rekindled,
+`patches/ogre/0024-rtss-skinning-blend-without-array-copy.patch` at commit
+`42e9bac358b3f260baefd6efa380e0864895c2a7`), licensed under the GNU General Public License 3.0
+(text below), as this project is. It changes the RTSS shader library file
+`RTShaderLib/SGXLib_DualQuaternion.glsl`, which every package carries in OGRE's media.
 
 ### gl3w (OGRE)
 
@@ -3453,6 +3462,39 @@ requirements of the license of GCC.
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+```
+
+### Kenney "Mobile Controls"
+
+```
+
+
+Mobile Controls (1.0)
+
+Created/distributed by Kenney (www.kenney.nl)
+Creation date: 09-08-2025
+
+------------------------------
+
+License: (Creative Commons Zero, CC0)
+http://creativecommons.org/publicdomain/zero/1.0/
+
+You can use this content for personal, educational, and commercial purposes.
+
+Support by crediting 'Kenney' or 'www.kenney.nl' (this is not a requirement)
+
+------------------------------
+
+• Website : www.kenney.nl
+• Donate  : www.kenney.nl/donate
+
+• Patreon : patreon.com/kenney
+
+Follow on social media for updates:
+
+• Twitter:	 twitter.com/KenneyNL
+• BlueSky:	 kenney.bsky.social
+• Instagram:	 instagram.com/kenney_nl
 ```
 
 ### Kenney "Input Prompts"

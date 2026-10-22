@@ -84,6 +84,8 @@ std::string ShaderCacheDir() {
   return UserDir(UserFolderKind::kCache, "ogre");
 }
 
+std::string ShaderCompilerVersion() { return {}; }
+
 std::string CacheDir(const std::string& name) {
   return UserDir(UserFolderKind::kCache, name);
 }
@@ -334,6 +336,10 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
   }
   return plugin_dir;
 }
+
+float ContentScaleDpi() { return 96.0f; }  // the desktop's nominal
+
+bool TouchControlsByDefault() { return false; }
 
 bool HasSystemBackButton() { return false; }
 

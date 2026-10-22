@@ -34,6 +34,7 @@
 #include "dev/script_input.h"
 #include "game_setup/first_run.h"
 #include "live/system_back_button.h"
+#include "live/touch_input.h"
 #include "platform/platform.h"
 #include "platform/user_folders.h"
 #include "settings/host_settings.h"
@@ -175,6 +176,10 @@ class TorchlightApp : public rex::ReXApp {
     }
     // Android: the system's Back button as the pad's Back (before live::Install, as the script).
     torchlight::live::InstallSystemBackButton(runtime());
+    // The touch controls (settings.toml "touch_controls"): a controller of their own fed by the
+    // fingers (docs/android-port.md, A4).
+    torchlight::live::InstallTouchControls(
+        runtime(), torchlight::settings::EffectiveTouchControls(host, torchlight::platform::TouchControlsByDefault()));
     // Development builds: a controller script (before live::Install sets the input's active
     // callback, which the script's controller follows too).
     torchlight::dev::InstallInputScript(runtime(), [this] {
@@ -197,7 +202,8 @@ class TorchlightApp : public rex::ReXApp {
              torchlight::game_setup::ShowRendererError(reason);
              if (window()) window()->RequestClose();
            });
-         }});
+         }},
+        TORCHLIGHT_BUILD_COMMIT);
   }
 
   void OnWindowPixelSizeChanged(uint32_t pixel_width, uint32_t pixel_height) override {

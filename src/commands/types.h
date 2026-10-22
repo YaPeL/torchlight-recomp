@@ -372,9 +372,18 @@ struct SetTextureBlend {
 // Display gamma ramp D3D writes to the GPU (DC_LUT registers) when it presents. Values as the guest
 // stored them: table form R[256], G[256], B[256]; PWL form {base, delta}[128] per channel in the
 // same R, G, B order (guest_abi d3d_gamma_ramp).
+inline constexpr size_t kGammaRampEntries = 768;
 struct SetGammaRamp {
   bool pwl = false;
-  std::array<uint16_t, 768> values{};
+#ifdef TORCHLIGHT_COMPACT_COMMANDS
+  // TORCHLIGHT_COMPACT_COMMANDS (src/commands/CMakeLists.txt, on by default): the table on the
+  // heap, always kGammaRampEntries long, so this command stops setting the size of every Command
+  // (~1.5 KB inline against ~150 bytes for the next largest payload, Draw). Each copy owns its
+  // values; the wire body is the same.
+  std::vector<uint16_t> values = std::vector<uint16_t>(kGammaRampEntries);
+#else
+  std::array<uint16_t, kGammaRampEntries> values{};
+#endif
   bool operator==(const SetGammaRamp&) const = default;
 };
 

@@ -24,7 +24,8 @@ clang-cl):
     Singleton<GLSLProgramManager>::msSingleton after its instantiation (OGRE silences it for cl.exe
     with /wd4661).
 The game's clang++ targets the same MSVC C++ ABI, and the runtime of every library is checked after
-the build, so OGRE's DLLs link with the rest unchanged and OGRE needs no patches. Every
+the build, so OGRE's DLLs link with the rest unchanged; OGRE gets only our functional patches
+(patches/ogre-*.patch, as on the other platforms), none for the compiler. Every
 configuration in -Configs is built and installed into the same prefix (OGRE names its Debug files
 with "_d", zlib with "d"). zlib is pinned by SHA-256 and OGRE by commit; nothing else is downloaded.
 OGRE finds zlib in the prefix and builds Codec_STBI with it, as on Linux with the system zlib.
@@ -232,12 +233,29 @@ if (-not (Test-Path $zlibSrc)) {
 # OGRE: the release tag, checked against its commit.
 $ogreSrc = Join-Path $WorkDir "ogre-$($OgreTag.TrimStart('v'))"
 if (-not (Test-Path $ogreSrc)) {
-    Invoke-Native 'git' @('-c', 'advice.detachedHead=false', 'clone', '--depth', '1', '--branch', $OgreTag,
-        $OgreUrl, $ogreSrc)
+    # LF line endings: our patches are LF and do not apply to a CRLF checkout.
+    Invoke-Native 'git' @('-c', 'advice.detachedHead=false', '-c', 'core.autocrlf=false', 'clone', '--depth', '1',
+        '--branch', $OgreTag, $OgreUrl, $ogreSrc)
 }
 $head = (& git -C $ogreSrc rev-parse HEAD).Trim()
 if ($head -ne $OgreCommit) {
     throw "$ogreSrc is at $head, expected $OgreCommit ($OgreTag)"
+}
+# Our patches to OGRE (patches/ogre-*.patch, patches/README.md), in name order; a checkout they are
+# already applied to (a reused -WorkDir) is left as it is.
+foreach ($patch in (Get-ChildItem (Join-Path $Root 'patches') -Filter 'ogre-*.patch' | Sort-Object Name)) {
+    # The check's stderr redirected: Windows PowerShell would turn it into an error record and stop
+    # the script (as Invoke-Native says), so errors only continue here.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    & git -C $ogreSrc apply --reverse --check $patch.FullName 2>$null
+    $applied = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = $previous
+    if ($applied) { continue }
+    & git -C $ogreSrc apply $patch.FullName
+    if ($LASTEXITCODE -ne 0) {
+        throw "$($patch.Name) does not apply to $ogreSrc (a CRLF checkout from before? delete it and run again)"
+    }
 }
 
 $common = @(

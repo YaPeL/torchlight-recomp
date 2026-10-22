@@ -85,6 +85,23 @@ void TestAchievementSet() {
 void TestPadPrompts() {
   std::vector<std::string> warnings;
   HostSettings s = Parse("", &warnings);
+  {
+    std::vector<std::string> w;
+    const HostSettings none = Parse("", &w);
+    Check(!none.touch_controls && w.empty(), "touch controls: not set by default");
+    Check(EffectiveTouchControls(none, /*touch_platform=*/true) == TouchControls::kAuto, "Android: auto by default");
+    Check(EffectiveTouchControls(none, /*touch_platform=*/false) == TouchControls::kNever,
+          "PC and the Steam Deck: never by default");
+    Check(Parse(Serialize(none), &w) == none && w.empty(), "an unset mode stays unset");
+    for (const TouchControls t : {TouchControls::kAuto, TouchControls::kAlways, TouchControls::kNever}) {
+      HostSettings one;
+      one.touch_controls = t;
+      Check(Parse(Serialize(one), &w).touch_controls == t && w.empty(), "touch controls round trip");
+      Check(EffectiveTouchControls(one, false) == t && EffectiveTouchControls(one, true) == t, "the file wins");
+    }
+    Check(!Parse("touch_controls = \"sometimes\"\n", &w).touch_controls && !w.empty(),
+          "an unknown touch mode warns and stays unset");
+  }
   Check(s.pad_prompts == PadPrompts::kAuto && !s.swap_confirm_cancel && warnings.empty(),
         "no keys: automatic prompts, no swap");
   s = Parse("pad_prompts = \"nintendo\"\nswap_confirm_cancel = true\n", &warnings);

@@ -1,5 +1,6 @@
 #include "live/install.h"
 #include "live/busy_notice.h"
+#include "live/touch_overlay.h"
 #include "live/frame_counter.h"
 
 #include <algorithm>
@@ -126,16 +127,23 @@ void RequestDialogFrame() {
     d->frame_requested = false;
     // The frame counter (frame_counter.h) and the busy notice (busy_notice.h) are drawn but are not
     // dialogs that take the input: they are left out of "a dialog is open".
+    // The touch controls (touch_overlay.h) too.
     rex::ui::ImGuiDialog* counter = FrameCounterDialog();
     rex::ui::ImGuiDialog* notice = BusyNoticeDialog();
+    rex::ui::ImGuiDialog* touch = TouchOverlayDialog(d->drawer.get(), d->overlay.get());
     if (counter) d->drawer->RemoveDialog(counter);
     if (notice) d->drawer->RemoveDialog(notice);
+    if (touch) d->drawer->RemoveDialog(touch);
     const bool open = d->drawer->HasDialogs();
+    // The touch controls stay out of the drawer while they draw nothing (hidden, or a dialog open):
+    // no ImGui frame for them then, and the drawer listens to the window only for what it shows.
+    if (touch && (open || !TouchControlsShown())) touch = nullptr;
     if (counter) d->drawer->AddDialog(counter);
     if (notice) d->drawer->AddDialog(notice);
+    if (touch) d->drawer->AddDialog(touch);
     const platform::GamepadState pad = platform::ReadGamepad();
     g_guest_input_blocked = BlockGuestInput(open, g_guest_input_blocked.load(), pad);
-    if (open || counter || notice) {
+    if (open || counter || notice || touch) {
       // Gamepad navigation (the drawer itself only takes keyboard, mouse and touch), only for the
       // dialogs.
       ImGuiIO& io = d->drawer->GetIO();
@@ -183,6 +191,8 @@ void ShutdownDialogs() {
   // As ReXApp::OnDestroy does with its own: unlinked from the immediate drawer first (its font
   // texture goes back to the overlay), then destroyed.
   g_dialogs->drawer->SetPresenterAndImmediateDrawer(nullptr, nullptr);
+  // The drawer deletes the dialogs it holds; the touch controls' is made again on a new drawer.
+  ForgetTouchOverlayDialog();
   g_dialogs->drawer.reset();
   g_dialogs->overlay.reset();
   g_dialogs.reset();
@@ -526,7 +536,8 @@ void PreSetup(rex::RuntimeConfig& config) {
   platform::AllowBackgroundGamepad();
 }
 
-void Install(const std::filesystem::path& game_data_root, const DialogHost& dialogs) {
+void Install(const std::filesystem::path& game_data_root, const DialogHost& dialogs,
+             const std::string& build) {
   // Before the guest runs, in every mode.
   ApplyLanguage(g_host_settings.values.language, game_data_root);
   InstallFrameCounter(dialogs.runtime);
@@ -542,6 +553,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   }
   LiveOptions options;
   options.game_data_root = game_data_root;
+  options.build = build;
   options.draw = !ParallelNoDraw();
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);

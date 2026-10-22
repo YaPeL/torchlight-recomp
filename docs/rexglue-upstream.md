@@ -1443,8 +1443,10 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 42-43 | (`sdk/android-apk-libs`) | | |
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `develop` | `bd833a2`, after 41 |
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | `bd833a2`, after 44 |
-| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` (SDL's file) | `sdk/android-sdl-wait` | `bd833a2`, after 45 |
-| 47 | next free | | |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` (SDL's file) | `develop` | `bd833a2`, after 45 |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | `bd833a2`, after 46 |
+| 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | `bd833a2`, after 47 |
+| 49 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

@@ -5,6 +5,10 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
+- Much faster rendering of animated characters: big fights no longer drop the frame rate,
+  especially on Android.
+- Shaders are now prepared during loading screens, removing small stutters at the title screen and
+  after loading a level; on Windows (Direct3D 11) they are also cached between sessions.
 - Linux: the game's memory is now reserved before use and moves to a free address if its usual
   one is taken, instead of silently overwriting memory already in use (a possible cause of rare
   crashes).

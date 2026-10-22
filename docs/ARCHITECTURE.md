@@ -450,13 +450,30 @@ hook is timed with `--native_producer_timing` (off by default); the live mode's 
 - Shader compilation: the program's structure does not depend on the view space or the alpha test
   function, so almost all are created during loads (in the middle of play about 5 new pairs remain).
   First use of a program (RTSS generation + compilation), town2: with the driver's shader cache warm,
-  median 1.3 ms and max 5 ms; cold, median 17 ms and max 80-115 ms. The hitch can only appear on the
-  first run (or after a driver update). OGRE's microcode cache and a local list of pairs were
-  discarded: both are empty exactly on that run and afterwards the driver's cache already covers the
-  case. The decision to have no cache of our own relies on that driver cache, guaranteed on Linux
-  with NVIDIA and Mesa (Steam Deck included) and on Windows. Pending when testing on macOS: if
-  Apple's GL does not cache well, evaluate OGRE's microcode cache there, first solving the rejected
-  binary problem.
+  median 1.3 ms and max 5 ms; cold, median 17 ms and max 80-115 ms. The driver's cache covers the
+  compilation after the first run on GL: Linux with NVIDIA and Mesa (Steam Deck included), Windows
+  with GL3+, and the POCO X7's Mali, whose cache survived updates of the game (2026-10-17: the same
+  APK installed again and one with other code; it is emptied by uninstalling the app). What no
+  driver covers is the RTSS's generation of each program (its material, pass and source), about
+  4-5 ms of CPU per program on every platform: on Windows with the program cache below in place, the
+  second session still had 9 frames of ~27 ms in a row (6 programs each) right after the first load.
+  So the backend keeps the key of every program it generates in the shader cache folder
+  (`backend/program_list.h`), and before the game's first frame (the title screen's programs) and
+  while it loads a level, when it draws next to nothing, it generates the listed ones it does not
+  have yet (`tl_backend_precompile_programs`), the whole list while the load lasts, in 50 ms slices
+  that let a frame through; on GL each is also linked with a draw that writes nothing. OGRE's
+  microcode cache stays off on GL: the driver's cache covers it there, and 14.6 keeps a rejected
+  binary forever (below). Direct3D 11 compiles HLSL in the application (`D3DCompile`), which no
+  driver caches: on Windows 154 of the 156 programs of a second session were compiled again (about
+  1.5 s per session, the worst frame 226 ms on the title screen; `perf/win-d3d11-shaders`,
+  2026-10-17). There OGRE's microcode cache is on (`tl_backend_open_program_cache`): one file in the
+  shader cache folder, named by the game's build, OGRE's version and D3DCompiler's, saved after each
+  level load and at exit through a temporary file, with a trailer of ours (length and checksum) so a
+  file cut short is removed and rebuilt; a second session then compiled nothing. The 14.6
+  bug does not reach it: Direct3D 11 compiles only what the cache does not have, and DXBC is never
+  rejected by a driver, so an entry is never replaced. Pending when testing on macOS: if Apple's GL
+  does not cache well, evaluate OGRE's microcode cache there, first solving the rejected binary
+  problem.
 - OGRE 14.6 bug (possible upstream report), confirmed by reading the code and with a test:
   `GpuProgramManager::addMicrocodeToCache` (`OgreGpuProgramManager.cpp:314-328`) marks the cache as
   modified only on insertion. When the driver rejects a binary loaded from the cache, GL3+ recompiles

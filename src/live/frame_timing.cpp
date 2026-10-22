@@ -155,7 +155,16 @@ void FrameTiming::OnPresent(size_t dropped, const PresentLatency& latency) {
   }
 }
 
+namespace {
+std::atomic<bool> g_level_loading{false};
+}  // namespace
+
+void LevelLoadStarted() { g_level_loading.store(true); }
+
+bool LevelLoading() { return g_level_loading.load(); }
+
 void LogLevelLoad(std::chrono::milliseconds duration) {
+  g_level_loading.store(false);
   REXLOG_INFO("level load: {} ms", duration.count());
   if (FrameObserver* observer = g_observer.load()) observer->OnLevelLoaded();
 }

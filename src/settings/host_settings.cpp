@@ -351,6 +351,17 @@ std::string_view AchievementSetName(AchievementSet set) {
   return set == AchievementSet::kPc ? "pc" : "xbox";
 }
 
+std::string_view TouchControlsName(TouchControls touch) {
+  switch (touch) {
+    case TouchControls::kAlways:
+      return "always";
+    case TouchControls::kNever:
+      return "never";
+    default:
+      return "auto";
+  }
+}
+
 std::string_view PadPromptsName(PadPrompts prompts) {
   switch (prompts) {
     case PadPrompts::kXbox:
@@ -430,6 +441,17 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
           }
         }
       }
+    } else if (key == "touch_controls") {
+      std::string v;
+      ok = false;
+      if (ParseString(value, v)) {
+        for (const TouchControls t : {TouchControls::kAuto, TouchControls::kAlways, TouchControls::kNever}) {
+          if (v == TouchControlsName(t)) {
+            settings.touch_controls = t;
+            ok = true;
+          }
+        }
+      }
     } else if (key == "swap_confirm_cancel") {
       ok = value == "true" || value == "false";
       if (ok) settings.swap_confirm_cancel = value == "true";
@@ -482,7 +504,15 @@ std::string Serialize(const HostSettings& settings) {
       << "pad_prompts = " << Quote(std::string(PadPromptsName(settings.pad_prompts))) << "\n"
       << "# With Nintendo prompts: the right button (A) confirms and the bottom one (B) cancels, as\n"
       << "# on a Switch; takes effect after a restart.\n"
-      << "swap_confirm_cancel = " << (settings.swap_confirm_cancel ? "true" : "false") << "\n";
+      << "swap_confirm_cancel = " << (settings.swap_confirm_cancel ? "true" : "false") << "\n"
+      << "# Touch controls: \"auto\" (hidden while a pad is used, shown again on a touch; never\n"
+      << "# without a touch screen), \"always\" or \"never\"; by default auto on Android, never\n"
+      << "# elsewhere (the Steam Deck included); takes effect after a restart.\n";
+  if (settings.touch_controls) {
+    out << "touch_controls = " << Quote(std::string(TouchControlsName(*settings.touch_controls))) << "\n";
+  } else {
+    out << "# touch_controls = \"auto\"\n";
+  }
   return out.str();
 }
 

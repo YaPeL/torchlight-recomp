@@ -39,6 +39,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <rex/input/input.h>
 #include <rex/input/input_driver.h>
 #include <rex/input/input_system.h>
+#include "live/touch_input.h"
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 #include <rex/cvar.h>
@@ -438,18 +439,15 @@ class ScriptInputDriver : public rex::input::InputDriver {
                               rex::input::X_INPUT_KEYSTROKE* out) override {
     if (id != kDevice || !connected_) return X_ERROR_DEVICE_NOT_CONNECTED;
     std::lock_guard lock(mutex_);
-    // A keystroke the game did not read soon after it happened is dropped: a screen that does not
-    // read keystrokes (the title) left its presses to the next one, which acted on them later.
-    const auto now = Clock::now();
-    while (!keys_.empty() && now - keys_.front().when > kKeystrokeLifetime) keys_.pop_front();
-    if (keys_.empty() || !is_active()) return X_ERROR_EMPTY;
+    // Not read while the input is inactive: the keystrokes wait (and expire) as they would.
+    if (!is_active()) return X_ERROR_EMPTY;
+    const auto key = keys_.Pop(input::KeystrokeQueue::Clock::now());
+    if (!key) return X_ERROR_EMPTY;
     if (out) {
       std::memset(out, 0, sizeof(*out));
-      out->virtual_key = keys_.front().key.virtual_key;
-      out->flags = keys_.front().key.down ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN
-                                          : rex::input::X_INPUT_KEYSTROKE_KEYUP;
+      out->virtual_key = key->virtual_key;
+      out->flags = key->down ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN : rex::input::X_INPUT_KEYSTROKE_KEYUP;
     }
-    keys_.pop_front();
     return X_ERROR_SUCCESS;
   }
 
@@ -457,9 +455,7 @@ class ScriptInputDriver : public rex::input::InputDriver {
   void Set(const PadState& pad) {
     std::lock_guard lock(mutex_);
     if (pad == pad_) return;
-    for (const auto& k : PadKeystrokes(pad_, pad)) {
-      if (keys_.size() < 64) keys_.push_back({k, Clock::now()});
-    }
+    keys_.Push(pad_, pad, input::KeystrokeQueue::Clock::now());
     pad_ = pad;
     ++packet_;
   }
@@ -467,15 +463,10 @@ class ScriptInputDriver : public rex::input::InputDriver {
   void Disconnect() { connected_ = false; }
 
  private:
-  static constexpr auto kKeystrokeLifetime = std::chrono::milliseconds(200);
-  struct TimedKeystroke {
-    PadKeystroke key;
-    Clock::time_point when;
-  };
   std::mutex mutex_;
   PadState pad_;
   uint32_t packet_ = 1;
-  std::deque<TimedKeystroke> keys_;
+  input::KeystrokeQueue keys_;
   std::atomic<bool> connected_{true};
 };
 
@@ -572,6 +563,23 @@ class ScriptRunner : public live::FrameObserver {
           finished_ = true;
           driver_->Disconnect();
           if (close_) close_();
+        }
+        break;
+      case ScriptAction::Kind::kTouch:
+        if (a.release) {
+          REXLOG_INFO("dev input script: finger {} lifted", a.finger);
+          live::InjectTouch(static_cast<uint64_t>(a.finger), a.x, a.y, true);
+        } else if (!a.text.empty()) {
+          float x = 0, y = 0;
+          if (live::TouchControlCentre(a.text, x, y)) {
+            REXLOG_INFO("dev input script: finger {} on {} ({:.3f}, {:.3f})", a.finger, a.text, x, y);
+            live::InjectTouch(static_cast<uint64_t>(a.finger), x, y, false);
+          } else {
+            REXLOG_WARN("dev input script: no touch control {} (touch controls off?)", a.text);
+          }
+        } else {
+          REXLOG_INFO("dev input script: finger {} at {:.3f}, {:.3f}", a.finger, a.x, a.y);
+          live::InjectTouch(static_cast<uint64_t>(a.finger), a.x, a.y, false);
         }
         break;
       case ScriptAction::Kind::kQuit:

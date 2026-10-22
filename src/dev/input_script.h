@@ -36,6 +36,13 @@
 //                                            <capture folder>/NAME.json; the script waits for it
 //                                            (at most 10 s), the controller still, and fails when
 //                                            it cannot be written
+//   touch ID X Y                             a finger (ID 1-9) on the touch controls, down at X, Y
+//                                            (window fractions 0 to 1, Y down) or moved there when
+//                                            it is down already (docs/android-port.md, A4)
+//   touch ID CONTROL                         the same at the centre of a touch control: X, Y, A,
+//                                            B, LT, RT, LB, RB, Back, Start, or the d-pad's Up,
+//                                            Down, Left, Right
+//   release ID                               that finger lifted
 //   command TEXT                             a guest developer command (dev/guest_command.h, e.g.
 //                                            ASCEND to the town), in development builds with
 //                                            TORCHLIGHT_DEV_COMMANDS too
@@ -52,22 +59,13 @@
 #include <string_view>
 #include <vector>
 
+#include "input/pad_state.h"
+
 namespace torchlight::dev {
 
-// XINPUT_GAMEPAD button bits and the controller state the game reads.
-namespace pad {
-constexpr uint16_t kUp = 0x0001, kDown = 0x0002, kLeft = 0x0004, kRight = 0x0008;
-constexpr uint16_t kStart = 0x0010, kBack = 0x0020, kLeftThumb = 0x0040, kRightThumb = 0x0080;
-constexpr uint16_t kLeftShoulder = 0x0100, kRightShoulder = 0x0200;
-constexpr uint16_t kA = 0x1000, kB = 0x2000, kX = 0x4000, kY = 0x8000;
-}  // namespace pad
-
-struct PadState {
-  uint16_t buttons = 0;
-  uint8_t left_trigger = 0, right_trigger = 0;
-  int16_t left_x = 0, left_y = 0, right_x = 0, right_y = 0;
-  bool operator==(const PadState&) const = default;
-};
+// The controller state the game reads (input/pad_state.h, shared with the touch controls).
+namespace pad = input::pad;
+using input::PadState;
 
 // What the game did, as the app sees it; counters only grow.
 struct ScriptEvents {
@@ -85,11 +83,16 @@ struct ScriptEvents {
 };
 
 struct ScriptAction {
-  enum class Kind { kMark, kCapture, kCommand, kDumpUi, kQuit, kFailed, kFinished };
+  enum class Kind { kMark, kCapture, kCommand, kDumpUi, kQuit, kTouch, kFailed, kFinished };
   Kind kind;
   // kMark: the step's name; kCapture: its name (may be empty); kCommand: the command; kDumpUi: the
   // file's name; kFailed: why
   std::string text;
+  // kTouch: the finger, where (window fractions, or the control named in `text`) and whether it
+  // lifts.
+  int finger = 0;
+  float x = 0, y = 0;
+  bool release = false;
 };
 
 // Frames the controller stays still after a capture, so the next command's press does not reach
@@ -111,7 +114,7 @@ class InputScript {
   bool ReadsUi() const;
 
  private:
-  enum class Op { kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kDumpUi, kQuit };
+  enum class Op { kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kDumpUi, kQuit, kTouch, kRelease };
   enum class Event { kNone, kLevelLoaded, kMenu, kFocus, kWindow };
   struct Duration {
     double value = 0;
@@ -125,6 +128,8 @@ class InputScript {
     Duration duration, every, timeout{120, false};
     Event event = Event::kNone;
     std::string text;  // mark text, menu name
+    int finger = 0;    // touch, release
+    float x = 0, y = 0;
   };
   struct Start {
     uint64_t frame = 0;
@@ -149,12 +154,7 @@ class InputScript {
   bool ended_ = false;    // kFinished or kFailed was reported
 };
 
-// XINPUT keystrokes (VK_PAD_*) for the buttons that changed between two frames: what
-// XamInputGetKeystroke reports to menus that read keys rather than the state.
-struct PadKeystroke {
-  uint16_t virtual_key;
-  bool down;
-};
-std::vector<PadKeystroke> PadKeystrokes(const PadState& before, const PadState& after);
+using input::PadKeystroke;
+using input::PadKeystrokes;
 
 }  // namespace torchlight::dev

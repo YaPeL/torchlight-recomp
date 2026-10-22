@@ -64,6 +64,14 @@ bool IsSteamDeck();
 // Whether the system has a Back button of its own (Android's navigation Back), which the game takes
 // as the pad's Back (live/system_back_button.h).
 bool HasSystemBackButton();
+// The game window's pixels per millimetre, for sizes meant for a finger (the touch controls,
+// live/touch_input.h): SDL's content scale times the density it is relative to (ContentScaleDpi).
+// Approximate: Android's density buckets, desktops' nominal 96 dpi. 0 without a game window.
+float GameWindowPixelsPerMm();
+// Whether the touch controls are on by default here (settings::EffectiveTouchControls): Android's
+// players have a touch screen and often no pad. Elsewhere, the Steam Deck included, they are off
+// unless settings.toml asks for them.
+bool TouchControlsByDefault();
 // Gamepad input keeps reaching the game while another window (the backend's) has the focus.
 void AllowBackgroundGamepad();
 
@@ -140,6 +148,10 @@ class ProgressWindow {
 // The backend's generated shaders (OGRE RTSS). Linux: $XDG_CACHE_HOME/TorchlightRecomp/ogre/, else
 // ~/.cache/TorchlightRecomp/ogre/. Windows: %LOCALAPPDATA%\TorchlightRecomp\ogre\.
 std::string ShaderCacheDir();
+// The version of the shader compiler the application itself runs, where the render system has
+// one outside the driver (Windows: D3DCompiler_47.dll's file version, for Direct3D 11's HLSL);
+// empty elsewhere. Part of the key of the backend's cache of compiled programs.
+std::string ShaderCompilerVersion();
 // Other files the host generates for this machine (`name` below the cache folder).
 std::string CacheDir(const std::string& name);
 // Directory of the running executable, ending in a separator; empty when unknown.

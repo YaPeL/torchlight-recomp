@@ -33,6 +33,10 @@ enum class AchievementSet { kXbox, kPc };
 // The pad prompts' style (mods/pad_prompts.h): automatic (the connected pad's) or a fixed one. Read
 // once at startup.
 enum class PadPrompts { kAuto, kXbox, kPlayStation, kNintendo };
+// The touch controls (docs/android-port.md, A4; input/touch_visibility.h): automatic (hidden while a
+// physical pad is used, shown on a touch), always shown or never. Read once at startup. Without the
+// key, the platform's default (EffectiveTouchControls; the owner's decision, 2026-10-18).
+enum class TouchControls { kAuto, kAlways, kNever };
 
 // Stored values. Empty strings and zero sizes mean "automatic".
 // HostSettings::fps_cap's automatic value, "auto" in the file.
@@ -66,6 +70,9 @@ struct HostSettings {
   // With Nintendo's style: the right button (A) confirms and the bottom one (B) cancels, as on a
   // Switch, instead of by position as on the 360.
   bool swap_confirm_cancel = false;
+  // The touch controls' visibility; empty when the file has no valid "touch_controls" key (the
+  // platform's default). Not written back while empty.
+  std::optional<TouchControls> touch_controls;
   bool operator==(const HostSettings&) const = default;
 };
 
@@ -117,6 +124,14 @@ inline AchievementSet EffectiveAchievements(const HostSettings& settings) {
 std::string_view AchievementSetName(AchievementSet set);
 // "auto" / "xbox" / "playstation" / "nintendo".
 std::string_view PadPromptsName(PadPrompts prompts);
+// "auto" / "always" / "never".
+std::string_view TouchControlsName(TouchControls touch);
+// The touch controls in effect: the setting, else Auto where the platform's player has a touch
+// screen and no pad by default (Android), else Never (Windows, Linux and macOS, the Steam Deck
+// included: its pad is always there, and a touch on its screen must not bring them up).
+inline TouchControls EffectiveTouchControls(const HostSettings& settings, bool touch_platform) {
+  return settings.touch_controls.value_or(touch_platform ? TouchControls::kAuto : TouchControls::kNever);
+}
 
 // The GPU setting for the log: "automatic" without a choice, else "NAME (ID)", the name looked up
 // in `gpus` by id, else the stored gpu_name (files written before gpu_name existed lack it), else

@@ -84,6 +84,8 @@ void SetCurrentThreadName(const char* name) {
 
 std::string ShaderCacheDir() { return UserDir(UserFolderKind::kCache, "ogre"); }
 
+std::string ShaderCompilerVersion() { return {}; }
+
 std::string CacheDir(const std::string& name) { return UserDir(UserFolderKind::kCache, name); }
 
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
@@ -295,6 +297,10 @@ bool ServeSurfaceChanges(const std::function<void()>& lost,
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
   return plugin_dir;
 }
+
+float ContentScaleDpi() { return 160.0f; }  // Android's density baseline
+
+bool TouchControlsByDefault() { return true; }
 
 bool HasSystemBackButton() { return true; }
 

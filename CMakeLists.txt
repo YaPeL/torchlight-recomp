@@ -109,6 +109,16 @@ endif()
 
 set(TORCHLIGHT_GPU_PLUGINS xenos null)
 rexglue_setup_target(torchlight GPU_PLUGINS ${TORCHLIGHT_GPU_PLUGINS})
+# On Android the game is a shared library that the SDK links with -Wl,-Bsymbolic-functions (patch
+# 47): every link checks that the generated code's calls are bound inside it and reach the hooks.
+if(ANDROID)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_custom_command(TARGET torchlight POST_BUILD
+        COMMAND ${Python3_EXECUTABLE} -I
+                ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
+                $<TARGET_FILE:torchlight> --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP}
+        VERBATIM)
+endif()
 # The default code model for the game on Linux x86-64 (docs/guest-hot-paths.md). The SDK compiles
 # its targets with -mcmodel=large ("large executable support"), which makes every call between
 # guest functions a 64-bit absolute address in a register and an indirect call; the executable's
@@ -150,6 +160,7 @@ add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR
     -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
+add_subdirectory(src/input)
 add_subdirectory(src/dev)
 add_subdirectory(src/hooks)
 add_subdirectory(src/commands)
@@ -175,6 +186,9 @@ add_subdirectory(tools/achievement_coverage)
 add_subdirectory(tools/class_skill_check)
 add_subdirectory(tools/release)
 add_subdirectory(tests/save_convert)
+if(ANDROID)
+    add_subdirectory(tests/guest_call_binding)
+endif()
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)
@@ -191,6 +205,9 @@ endif()
 option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_script" OFF)
 if(TORCHLIGHT_DEV_INPUT)
     set_source_files_properties(src/dev/script_input.cpp PROPERTIES
+        COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    # The mouse as a finger on the touch controls (--dev_touch_mouse).
+    set_source_files_properties(src/live/touch_input.cpp DIRECTORY src/live PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
 endif()
 # Our layouts for the game's UI (game_menu/video_menu.h), next to the executable; copied on every

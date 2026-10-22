@@ -61,8 +61,10 @@ in number order; a branch adds its own line at its number's place.
 | 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In that branch (after 42) |
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
-| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
-| 47 | | | Next free number |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `develop` | In the series (after 45); Android only |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 46); Android only |
+| 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
+| 49 | | | Next free number |
 
 ## The patches
 
@@ -690,4 +692,49 @@ in number order; a branch adds its own line at its number's place.
     release-3.4.x) has the same loop: worth reporting there. The first patch to a submodule's
     file: the build scripts update submodules with `--force`.
 
+47. `rexglue-android-bsymbolic-functions.patch`: on Android the host app is a shared library, so
+    every call it made to a function it defines itself went through the PLT (on Torchlight, all
+    386,595 direct calls between guest functions). `rexglue_configure_target` links Android
+    shared-library targets with `-Wl,-Bsymbolic-functions`, which binds those calls inside the
+    library. A hook over a generated function still wins (the static linker picks it first), but
+    it has to be in the app's own link: a definition in another loaded library no longer replaces
+    one of the app's functions for the app's calls. Data, executables and other platforms are
+    unchanged (the desktop Linux build's commands are identical with and without it). Every
+    Android link of the game checks that no guest call goes through the PLT and none bypasses a
+    hook (`tools/android/check_guest_call_binding.py`, itself tested on fixtures in
+    `tests/guest_call_binding` by the Android build). Torchlight on the POCO X7, the combat bench
+    (P S S P): mean guest frame time -7.6 % at rest (both runs with it below both without) and
+    -7.4 % in a fight (the two runs without it differ by 10 %); presented frame time unchanged
+    (GPU-bound there).
+
+48. `rexglue-command-processor-spin-backoff.patch`: the command processor's thread yielded in a
+    loop while it had nothing to do (about a third of a core on the POCO X7 in a fight). With an
+    empty ring buffer it yields 16 times instead of 500 before waiting on its event (which every
+    write pointer update, and now every queued call, sets). In WAIT_REG_MEM it yields 16 times,
+    then sleeps 20 us doubling up to the packet's poll interval or 500 us, whichever is smaller
+    (with vsync on, never less than the whole milliseconds it slept before; it yielded on every
+    poll otherwise). Every poll still reads its register or memory; no unit test reaches these
+    loops. Torchlight on the POCO X7 (A B B A): the thread's share of the app's cycles in a
+    fight 9.49 -> 2.83 % with fps_cap 0 and 3.42 -> 2.24 % with fps_cap 60; frame times,
+    temperature and battery current unchanged beyond the runs' spread.
+
 The observation and diagnostic patches there were before remain in the git history.
+
+## OGRE
+
+Patches to OGRE 14.6.0 are `ogre-*.patch` (not in `series`, which is the SDK's). `tools/deps/build_ogre.sh`
+(Linux, macOS, Android) and `tools/build-deps/windows.ps1` apply them to the OGRE checkout in name
+order with `git apply`, leaving a checkout they are already applied to as it is; Windows clones
+OGRE with LF line endings for them. Each applies to a pristine OGRE on its own: they must not
+depend on one another, so the order (which the two scripts' sorts could see differently for some
+names) never matters. `tools/deps/key.sh` hashes them with the rest of `patches/`, so a change
+rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Android one
+`tools/android/build_apk.sh` takes its media from) keeps the old OGRE until `build_ogre.sh` or
+`windows.ps1` is run again.
+
+- `ogre-rtss-skinning-blend-without-array-copy.patch`: from torchlight-rekindled (its patch 0024,
+  commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), unchanged. The RTSS's linear skinning blend
+  (`blendBonesMat3x4`, SGXLib_DualQuaternion.glsl) took the whole bone palette as an `in`
+  parameter; Mali's compiler copies it to the stack for every vertex. The blend becomes a macro
+  that indexes the uniform in place, the same arithmetic in the same order. The file is shared by
+  GLSL, GLSL ES and HLSL.

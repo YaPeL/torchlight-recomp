@@ -239,6 +239,7 @@ void LiveMode::Run() {
     return;
   }
   REXLOG_INFO("live: renderer {}", tl_backend_renderer(backend));
+  tl_backend_open_program_cache(backend, options_.build.c_str());
   // When the presents reach the screen, where the window system says (presentation_time.h): the
   // swap-to-screen latency, next to the swap-to-presented one.
   std::unique_ptr<platform::PresentationClock> presentation =
@@ -304,6 +305,12 @@ void LiveMode::Run() {
   Clock::time_point last_present{};
   size_t dropped_since_present = 0;  // guest frames skipped since the last present (FrameTiming)
   bool blank_output = false;  // the output cleared for the busy notice before the first frame
+  // Programs precompiled during the current level load (tl_backend_precompile_programs), for its
+  // log line; whether the list has been gone through.
+  size_t precompiled = 0;
+  double precompile_ms = 0;
+  bool precompile_done = false;
+  bool was_loading = false;
   // The window's new size, when it changed (before presenting); whether it did. A new render
   // scale remakes the targets, whose content is then lost.
   auto apply_window_size = [&] {
@@ -318,7 +325,34 @@ void LiveMode::Run() {
   };
 
   while (running_) {
-    auto frame = queue_.Pop(std::chrono::milliseconds(100));
+    // While the game loads a level, and before its first frame (the start, the busy notices), it
+    // draws next to nothing: the backend thread generates the programs this device used before, so
+    // their generation (the RTSS's, ~4 ms each on the CPU on every platform) and compilation happen
+    // there instead of in play. The title screen's programs are among them. In 50 ms slices with
+    // the queue looked at between them, so a frame that comes waits little; the list is gone
+    // through whole while the load lasts (a load is 3-5 s) instead of waiting 100 ms for a frame
+    // between slices.
+    const bool idle_start = last_present.time_since_epoch().count() == 0;
+    const bool precompiling = !precompile_done && (LevelLoading() || idle_start);
+    auto frame = queue_.Pop(std::chrono::milliseconds(precompiling ? 0 : 100));
+    if (!frame && precompiling) {
+      const size_t left = tl_backend_precompile_programs(backend, 50.0);
+      tl_backend_counters counters;
+      tl_backend_take_counters(backend, &counters);
+      precompiled += counters.programs_precompiled;
+      precompile_ms += counters.precompile_ms;
+      precompile_done = left == 0;
+    }
+    // A level load ended: what was compiled during and before it goes to the program cache.
+    const bool loading = LevelLoading();
+    if (was_loading && !loading) tl_backend_save_program_cache(backend);
+    was_loading = loading;
+    if (precompiled && (precompile_done || (!loading && !idle_start))) {
+      REXLOG_INFO("live: {} programs precompiled in {:.0f} ms{}", precompiled, precompile_ms,
+                  precompile_done ? "" : " (more at the next load)");
+      precompiled = 0;
+      precompile_ms = 0;
+    }
     if (!frame) {
       // No guest frame while the game's thread is held by work of ours (busy_notice.h): the last
       // frame shown again with the UI over it, so the notice appears and its progress moves.
