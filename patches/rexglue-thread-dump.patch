@@ -25,7 +25,8 @@ can be one of them held forever:
   only try its writer: on Windows a thread can be suspended in the middle of its own write, and
   the thread that resumes, renames or terminates it must not wait for it. Each record has a
   generation, changed when it is taken and released, so a thread whose record another thread
-  released (XThread::Terminate) no longer writes it once someone else has it.
+  released (XThread::Terminate, after the host thread is terminated) no longer writes it once
+  someone else has it.
 - The command processor is in the GPU plugin; it registers a section with the runtime
   (RegisterThreadDumpSection). Its worker writes its state into atomics; the dump only tries the
   pending calls' lock (PendingCalls::TrySize) and prints "inconsistent (locked)" when it is
@@ -46,8 +47,9 @@ another thread is counted as inconsistent and the dump still returns; renaming a
 setting its suspend count return while its writer holds it; a thread whose record was released
 for it and taken by another does not write into it; the command processor's section
 prints a WAIT_REG_MEM wait and an idle one, and prints its pending calls as inconsistent while
-another thread holds their lock; LogThreadDump returns with no kernel or GPU. Every dump in the
-tests runs on a detached thread and must return within 1 s, so a hang fails the test. The
+another thread holds their lock; LogThreadDump returns with no kernel or GPU. Every dump made
+while another thread holds a lock runs on a detached thread and must return within 1 s, so a
+hang fails the test. The
 tests built alone with ThreadSanitizer (clang 21, Linux): three runs, no report. The SDK's
 tests pass with it (Linux: 1781); built for Android.
 
@@ -439,10 +441,10 @@ index 1b70573..2f26e42 100644
  
 diff --git a/src/system/thread_dump.cpp b/src/system/thread_dump.cpp
 new file mode 100644
-index 0000000..2b0cf6d
+index 0000000..c37f6fc
 --- /dev/null
 +++ b/src/system/thread_dump.cpp
-@@ -0,0 +1,448 @@
+@@ -0,0 +1,455 @@
 +/**
 + * @file        system/thread_dump.cpp
 + * @brief       A dump of every guest thread's state, read without waiting on any lock
@@ -518,8 +520,8 @@ index 0000000..2b0cf6d
 +}
 +
 +// A write to one of a record's two parts (`writer` and `sequence`, or the name's), only if
-+// nobody else is writing it: nothing here ever waits for a writer. The record's own thread is
-+// the only writer of the ids and the wait, so there it always gets the part.
++// nobody else is writing it: nothing here ever waits for a writer. The ids and the wait are
++// written by the record's own thread, and by ReleaseRecord from a thread that terminates it.
 +class TryWriteScope {
 + public:
 +  TryWriteScope(std::atomic_flag& writer, std::atomic<uint32_t>& sequence)
@@ -847,6 +849,10 @@ index 0000000..2b0cf6d
 +  if (!record) {
 +    return;
 +  }
++  // The generation first: a thread whose record was released does not even take its writer.
++  if (record->generation.load(std::memory_order_acquire) != current_generation) {
++    return;
++  }
 +  TryWriteScope write(record->writer, record->sequence);
 +  if (!write.owns() || record->generation.load(std::memory_order_acquire) != current_generation) {
 +    return;
@@ -866,6 +872,9 @@ index 0000000..2b0cf6d
 +void EndWait() {
 +  Record* record = RecordAt(current_record);
 +  if (!record) {
++    return;
++  }
++  if (record->generation.load(std::memory_order_acquire) != current_generation) {
 +    return;
 +  }
 +  TryWriteScope write(record->writer, record->sequence);
@@ -1021,7 +1030,7 @@ index d358f39..85328d2 100644
      auto result =
          rex::thread::WaitAny(std::move(wait_handles), alertable ? true : false, timeout_ms);
 diff --git a/src/system/xthread.cpp b/src/system/xthread.cpp
-index 77bce25..1c310b7 100644
+index 77bce25..3dd3a7b 100644
 --- a/src/system/xthread.cpp
 +++ b/src/system/xthread.cpp
 @@ -28,6 +28,7 @@
@@ -1068,15 +1077,24 @@ index 77bce25..1c310b7 100644
    PROFILE_THREAD_EXIT();
  
    running_ = false;
-@@ -552,6 +561,7 @@ X_STATUS XThread::Terminate(int exit_code) {
-   // TODO(tomc): do we need thread notifications (related to processor thread management)?
+@@ -553,6 +562,7 @@ X_STATUS XThread::Terminate(int exit_code) {
  
    running_ = false;
-+  thread_dump::ReleaseRecord(dump_record_.exchange(-1));
    if (XThread::IsInThread(this)) {
++    thread_dump::ReleaseRecord(dump_record_.exchange(-1));
      // Same lifetime rule as Exit(): don't allow ReleaseHandle() to destroy
      // the thread object before Thread::Exit() reaches pthread_exit().
-@@ -934,6 +944,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
+     auto self = retain_object(this);
+@@ -561,6 +571,8 @@ X_STATUS XThread::Terminate(int exit_code) {
+     rex::thread::Thread::Exit(exit_code);
+   } else {
+     thread_->Terminate(exit_code);
++    // After the terminate, so the thread does not write the record once another has it.
++    thread_dump::ReleaseRecord(dump_record_.exchange(-1));
+     FreeStack();
+     ReleaseHandle();
+   }
+@@ -934,6 +946,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
  #if REX_PLATFORM_WIN32
    uint8_t previous_suspend_count =
        reinterpret_cast<std::atomic_uint8_t*>(&guest_thread->suspend_count)->fetch_sub(1);
@@ -1084,7 +1102,7 @@ index 77bce25..1c310b7 100644
    if (out_suspend_count) {
      *out_suspend_count = previous_suspend_count;
    }
-@@ -950,6 +961,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
+@@ -950,6 +963,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
        *out_suspend_count = previous;
      }
      should_resume_host = (guest_thread->suspend_count == 0);
@@ -1092,7 +1110,7 @@ index 77bce25..1c310b7 100644
      suspend_cv_.notify_all();
    }
  
-@@ -963,6 +975,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
+@@ -963,6 +977,7 @@ X_STATUS XThread::Resume(uint32_t* out_suspend_count) {
    if (guest_thread->suspend_count > 0) {
      --guest_thread->suspend_count;
    }
@@ -1100,7 +1118,7 @@ index 77bce25..1c310b7 100644
    if (out_suspend_count) {
      *out_suspend_count = previous_suspend_count;
    }
-@@ -974,6 +987,7 @@ X_STATUS XThread::Suspend(uint32_t* out_suspend_count) {
+@@ -974,6 +989,7 @@ X_STATUS XThread::Suspend(uint32_t* out_suspend_count) {
    auto guest_thread = guest_object<X_KTHREAD>();
    uint8_t previous_suspend_count =
        reinterpret_cast<std::atomic_uint8_t*>(&guest_thread->suspend_count)->fetch_add(1);
@@ -1108,7 +1126,7 @@ index 77bce25..1c310b7 100644
    if (out_suspend_count) {
      *out_suspend_count = previous_suspend_count;
    }
-@@ -992,6 +1006,7 @@ uint32_t XThread::SelfSuspend() {
+@@ -992,6 +1008,7 @@ uint32_t XThread::SelfSuspend() {
    std::unique_lock<std::mutex> lock(suspend_mutex_);
    uint32_t previous = guest_thread->suspend_count;
    guest_thread->suspend_count++;
@@ -1116,7 +1134,7 @@ index 77bce25..1c310b7 100644
    suspend_cv_.wait(lock, [guest_thread]() { return guest_thread->suspend_count == 0; });
    return previous;
  }
-@@ -1013,6 +1028,8 @@ X_STATUS XThread::Delay(uint32_t processor_mode, uint32_t alertable, uint64_t in
+@@ -1013,6 +1030,8 @@ X_STATUS XThread::Delay(uint32_t processor_mode, uint32_t alertable, uint64_t in
    }
    timeout_ms = chrono::Clock::ScaleGuestDurationMillis(timeout_ms);
    CheckTitleTermination();
@@ -1139,10 +1157,10 @@ index d424f20..d436f1e 100644
      system/function_dispatcher_test.cpp
 diff --git a/tests/unit/system/thread_dump_test.cpp b/tests/unit/system/thread_dump_test.cpp
 new file mode 100644
-index 0000000..d4618a6
+index 0000000..651c3b0
 --- /dev/null
 +++ b/tests/unit/system/thread_dump_test.cpp
-@@ -0,0 +1,240 @@
+@@ -0,0 +1,247 @@
 +/**
 + * @file        system/thread_dump_test.cpp
 + * @brief       The thread dump: threads' waits, and it returns while other threads hold locks
@@ -1315,6 +1333,7 @@ index 0000000..d4618a6
 +  CHECK(record >= 0);
 +  td::ReleaseRecord(record);
 +  RecordedThread successor("dump test successor");
++  CHECK(successor.record() == record);  // records are taken lowest free first
 +  released.set_value();
 +  waited.get_future().wait();
 +  stale.join();
@@ -1348,6 +1367,12 @@ index 0000000..d4618a6
 +                                               rex::graphics::CommandProcessorDumpNowMs(), out);
 +  };
 +  REQUIRE(rex::system::RegisterThreadDumpSection(section, &context));
++  // Unregistered on every way out: a failed REQUIRE must not leave `context` registered.
++  struct Unregister {
++    rex::system::ThreadDumpSection section;
++    void* context;
++    ~Unregister() { rex::system::UnregisterThreadDumpSection(section, context); }
++  } unregister{section, &context};
 +
 +  std::string dump = FormatThreadDump("free");
 +  CHECK(dump.find("command processor: worker running, ring read 00000040 write 00000080, "

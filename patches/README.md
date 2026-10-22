@@ -726,8 +726,9 @@ in number order; a branch adds its own line at its number's place.
     processor's locks: the threads write their own state into a fixed table of atomics with
     sequence counters, a record being written is printed as inconsistent, other threads never
     wait for a record's writer, and the command processor's section only tries its lock. It can
-    still wait on the log sink's lock and the heap's. Tests, under ThreadSanitizer too, hold
-    those locks on other threads and check that every dump returns.
+    still wait on the log sink's lock and the heap's. Tests, under ThreadSanitizer too, hold a
+    record's writer and the pending calls' lock on other threads and check that the dump
+    returns.
 
 The observation and diagnostic patches there were before remain in the git history.
 
