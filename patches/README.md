@@ -63,7 +63,7 @@ in number order; a branch adds its own line at its number's place.
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
 | 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
 | 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
-| 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47) |
+| 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too, needs the owner's OK |
 | 49 | | | Next free number |
 
 ## The patches

@@ -22,8 +22,10 @@ work was a few percent.
 
 Nothing the guest waits on is skipped: every poll still reads the register or memory, and the
 worker still runs every packet. What can change is latency: a condition met during a sleep is
-seen up to the cap later; with vsync on that is never later than before, with vsync off up to
-500 us (before, at once).
+seen up to the cap later; with vsync on that is never later than before (the first polls come
+sooner than the old fixed sleep), with vsync off up to 500 us (before, at once). The desktop
+platforms change too: where Sleep is a real sleep (Linux, macOS), the vsync-off polls and short
+vsync-on polls now sleep instead of yielding.
 
 Test: no unit test reaches these loops (the command processor needs a graphics system); the
 SDK's tests pass with it. Torchlight on the POCO X7 (2026-10-22, combat bench, A B B A, every
