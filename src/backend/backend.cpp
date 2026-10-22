@@ -1496,6 +1496,8 @@ void DisplayGammaPass(tl_backend* b) {
   rs->_disableTextureUnitsFrom(2);
   DrawQuad(b, b->quad);
   EndFullScreenPass(b);
+  // The output's depth is never used: not written back on tile GPUs (tl_backend_discard_depth).
+  b->output.rt->swapBuffers();
 }
 
 // ---- host UI pass ------------------------------------------------------------------------------
@@ -2303,6 +2305,10 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
   uint8_t lut[256 * 3];
   conv::GammaRampLut(pwl != 0, values, lut);
   UploadGammaLut(b, lut);
+}
+
+void tl_backend_discard_depth(tl_backend* b) {
+  if (b->current && b->current->rt) b->current->rt->swapBuffers();
 }
 
 int tl_backend_set_target(tl_backend* b, uint64_t target_id) {
