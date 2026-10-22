@@ -8,9 +8,12 @@ that wakeup queued and returned at once, so the loop never blocked: on the POCO 
 that runs the windowed app's message loop (SDL_WaitEvent) took about a full big core the whole
 time, as many cycles as the guest thread (simpleperf, 20 s in town). Upstream SDL (main and
 release-3.4.x, 2026-10-17) has the same loop. Now the loop pumps without a new sentinel (the one
-pushed before the loop stays queued), and its wait is capped at EVENT_POLL_INTERVAL_NS (1 ms), as
-the other platforms' polling loop is, so devices read by polling (joysticks through HIDAPI) keep
-being updated while it waits. Real events still wake it at once.
+pushed before the loop is taken out by the first event check, so none is queued while it waits;
+the next call pushes one), and its wait is capped at EVENT_POLL_INTERVAL_NS (1 ms), as the other
+platforms' polling loop is, so devices read by polling (joysticks through HIDAPI) keep being
+updated while it waits. The cap holds even with no device to poll: the thread wakes every 1 ms,
+far below the old spin (upstream could use the polling-interval helper, which is not built on
+Android). Real events still wake it at once.
 
 Only the Android branch changes; every other platform builds the same code. This is the first
 patch to a submodule's file: tools/deps/build_sdk.sh and tools/build-deps/windows.ps1 update
@@ -31,8 +34,8 @@ index a8ac576bc..862f789a7 100644
 -        SDL_PumpEventsInternal(true);
 +        /* No new poll sentinel here: pushing one sends a wakeup (Android_SendLifecycleEvent(WAKE)),
 +         * so Android_PumpEvents() below returned at once and this loop spun a core while waiting.
-+         * The sentinel pushed before the loop is still queued. The wait is capped as the other
-+         * platforms' polling loop is, so devices read by polling (joysticks) keep being updated.
++         * No sentinel is queued while it waits; the next call pushes one. The wait is capped as the
++         * other platforms' polling loop is, so devices read by polling (joysticks) stay updated.
 +         */
 +        SDL_PumpEventsInternal(false);
  
