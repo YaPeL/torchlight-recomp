@@ -134,6 +134,9 @@ void tl_backend_set_scene_clip(tl_backend* b, int enabled);
  * (patches/ogre-gles2-discard-depth-on-swap.patch). Call before tl_backend_set_target binds the
  * next target. */
 void tl_backend_discard_depth(tl_backend* b);
+/* 1 when tl_backend_discard_depth acts: OGRE's GLES render system (Android) only. Elsewhere the
+ * targets keep OGRE's shared depth pool and nothing is discarded. */
+int tl_backend_discards_depth(const tl_backend* b);
 /* Target 0 is the main colour target. */
 /* Binding a target (or reading one back) may reset the render system's device state: Direct3D
  * 11's target bind clears every binding (ClearState) while OGRE keeps its blend, depth and texture

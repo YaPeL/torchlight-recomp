@@ -504,6 +504,10 @@ game's code. What was ruled out:
 The lead left: the crashes fall within tens of milliseconds of the surface resizing from 2560x1438
 to 2560x1600, when SDL hides the system bars. Work goes on on the POCO X7 (owner, 2026-10-17); the
 issue comes back if the Tab S5e has to stay the floor.
+When this crash is fixed: repeat on the Tab S5e's Adreno the screenshot comparison of the depth
+discard (on and off, same build, the same scenes: menu, town, a mine fight, a level with water or
+visible projectors), done only on the POCO X7's Mali so far; a driver may treat the invalidated
+depth differently (owner, 2026-10-22).
 
 **Shader compilation on the POCO X7 (measured 2026-10-17).** The first session after installing
 an APK compiled each new GLSL ES program on the Mali in 360-680 ms (13 frames over 100 ms, 5.7 s

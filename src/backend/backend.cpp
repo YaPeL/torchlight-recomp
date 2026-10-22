@@ -241,6 +241,9 @@ struct tl_backend {
   Ogre::RenderSystem* rs = nullptr;
   // Textures in BGRA byte order cannot be sampled (SampledTextureFormat).
   bool bgra_textures_unusable = false;
+  // OGRE's GLES render system (Android): the only one whose render textures discard their depth
+  // (tl_backend_discard_depth). Elsewhere targets share OGRE's default depth pool, as before.
+  bool discards_depth = false;
   Ogre::RenderWindow* window = nullptr;
   // The native window OGRE draws in where it cannot make its own (platform.h; macOS); outlives
   // `window`.
@@ -518,10 +521,10 @@ bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, 
       Ogre::TU_RENDERTARGET);
   t.rt = t.texture->getBuffer()->getRenderTarget();
   t.rt->setAutoUpdated(false);
-  // A depth buffer of its own: OGRE's default pool shares one buffer among targets it fits (a
-  // 512x512 render texture takes the main target's), and tl_backend_discard_depth must not drop
-  // another target's depth.
-  t.rt->setDepthBufferPool(b->next_depth_pool++);
+  // On GLES a depth buffer of its own: OGRE's default pool shares one buffer among targets it fits
+  // (a 512x512 render texture takes the main target's), and tl_backend_discard_depth must not drop
+  // another target's depth. Elsewhere nothing is discarded and the shared pool stays.
+  if (b->discards_depth) t.rt->setDepthBufferPool(b->next_depth_pool++);
   t.viewport = t.rt->addViewport(nullptr);
   t.viewport->setClearEveryFrame(false);
   t.viewport->setOverlaysEnabled(false);
@@ -1501,8 +1504,8 @@ void DisplayGammaPass(tl_backend* b) {
   rs->_disableTextureUnitsFrom(2);
   DrawQuad(b, b->quad);
   EndFullScreenPass(b);
-  // The output's depth is never used: not written back on tile GPUs (tl_backend_discard_depth).
-  b->output.rt->swapBuffers();
+  // The output's depth is never used: on GLES it is not written back (tl_backend_discard_depth).
+  if (b->discards_depth) b->output.rt->swapBuffers();
 }
 
 // ---- host UI pass ------------------------------------------------------------------------------
@@ -1783,6 +1786,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     b->root->setRenderSystem(b->rs);
     // OGRE's GLES render system (the one with GLSL ES): SampledTextureFormat.
     b->bgra_textures_unusable = b->rs->getName().find("OpenGL ES") != std::string::npos;
+    b->discards_depth = b->bgra_textures_unusable;
     SelectGpu(b->rs, gpu);
     b->rs->setConfigOption("Full Screen", "No");
     b->root->initialise(false);
@@ -2313,8 +2317,10 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
 }
 
 void tl_backend_discard_depth(tl_backend* b) {
-  if (b->current && b->current->rt) b->current->rt->swapBuffers();
+  if (b->discards_depth && b->current && b->current->rt) b->current->rt->swapBuffers();
 }
+
+int tl_backend_discards_depth(const tl_backend* b) { return b->discards_depth ? 1 : 0; }
 
 int tl_backend_set_target(tl_backend* b, uint64_t target_id) {
   tl_backend::Target* t = &b->main;
