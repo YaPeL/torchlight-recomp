@@ -167,6 +167,102 @@ jobs:
             synthetic.tlcap
           retention-days: 3
 
+  # The backend on OGRE's GLES render system (the one Android uses) over Mesa: OGRE built as
+  # Android builds it, for Linux (build_ogre.sh linux-gles, static, EGL), under xvfb with llvmpipe.
+  # The backend's drawing tests (label opengl33: the UI pass, the render scale, constants across
+  # target binds; they check pixels) run there, and a synthetic capture is replayed: a program that
+  # does not build in GLSL ES draws nothing and the replay still exits 0, so
+  # check_replay_output.py fails on OGRE's link and compile errors and on a black image. Not covered:
+  # the RTSS's generated programs (the game's materials need the game's files). Without it, develop
+  # went a week black on Android (docs/regressions.md).
+  gles-replay:
+    name: Replay on GLES (Mesa)
+    needs: deps
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    steps:
+      - name: Bootstrap
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git zstd gh python3
+          # An X server in memory, Mesa's EGL and GLES (llvmpipe), and what OGRE's EGL support
+          # builds against.
+          DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+            xvfb xauth libegl1 libegl-mesa0 libgles2 libgl1-mesa-dri \
+            libegl-dev libgles-dev libx11-dev libxrandr-dev zlib1g-dev
+          git config --global --add safe.directory '*'
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: sh tools/deps/ubuntu_toolchain.sh
+      - id: published
+        name: Published dependencies
+        run: |
+          key=${{ needs.deps.outputs.key }}
+          mkdir -p "$DEPS_DIR"
+          if tools/deps/store.sh fetch linux "$key" /tmp/deps; then
+            for f in /tmp/deps/sdk-*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
+            echo "found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "found=false" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.published.outputs.found != 'true'
+        uses: actions/cache/restore@v6
+        with:
+          path: ${{ env.DEPS_DIR }}
+          key: deps-linux-amd64-ubuntu22.04-${{ needs.deps.outputs.key }}
+          fail-on-cache-miss: true
+      - id: ogre-gles
+        uses: actions/cache@v6
+        with:
+          path: /tmp/ogre-gles
+          key: ogre-linux-gles-ubuntu22.04-${{ hashFiles('tools/deps/build_ogre.sh', 'tools/deps/ubuntu_toolchain.sh', 'patches/ogre-*.patch') }}
+      - name: OGRE (GLES)
+        if: steps.ogre-gles.outputs.cache-hit != 'true'
+        run: tools/deps/build_ogre.sh /tmp/ogre-gles /tmp/ogre-gles-work Release linux-gles
+      - name: Configure
+        run: >-
+          cmake --preset linux-amd64-nogame -B out/build/gles -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk"
+          -DTORCHLIGHT_OGRE_INSTALL=/tmp/ogre-gles
+      - name: Build
+        run: >-
+          cmake --build out/build/gles --parallel --target replay synthetic_capture
+          ui_pass_test render_scale_test draw_constants_test
+      # As the GL3+ step of the test job: a skipped or not-run test fails it.
+      - name: Backend tests on GLES
+        shell: bash
+        run: |
+          xvfb-run -a ctest --test-dir out/build/gles --output-on-failure -L opengl33 \
+            -R '^(ui_pass_test|render_scale_test|draw_constants_test)$' --no-tests=error 2>&1 |
+            tee gles-tests.log
+          if grep -E '\*\*\*Skipped|Not Run' gles-tests.log; then
+            echo "::error::a backend test did not run on GLES (skipped or not run): see above"
+            exit 1
+          fi
+      # bash: -o pipefail, so the replay's own exit status counts through tee.
+      - name: Replay
+        shell: bash
+        run: |
+          out/build/gles/tools/synthetic_capture/synthetic_capture synthetic.tlcap
+          xvfb-run -a out/build/gles/tools/replay/replay synthetic.tlcap --out gles-out | tee replay.log
+          grep -m1 -E "GL_RENDERER|OpenGL ES" tl_backend_ogre.log
+          python3 tools/replay/check_replay_output.py tl_backend_ogre.log gles-out/render.png
+          # Against the capture's reference frame: a wrong colour order (BGRA/RGBA) is not black.
+          psnr=$(sed -nE 's/.*metric vs reference: PSNR ([0-9.]+|inf) dB.*/\1/p' replay.log)
+          if [ -z "$psnr" ] || { [ "$psnr" != inf ] && ! awk -v p="$psnr" 'BEGIN{exit !(p >= 40)}'; }; then
+            echo "::error::the replay's image differs from the reference (PSNR under 40 dB)"
+            exit 1
+          fi
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: gles-replay
+          path: |
+            tl_backend_ogre.log
+            replay.log
+            gles-tests.log
+            gles-out/
+          retention-days: 7
+
   # Windows: the same scheme. The SDK and OGRE come from tools/build-deps/windows.ps1 with LLVM from
   # windows_toolchain.ps1, keyed by `key.sh windows` and published in the same store; zip files
   # (Windows' tar writes and reads them; it has no zstd). The Linux job prunes for both.
