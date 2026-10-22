@@ -852,8 +852,8 @@ more gaps) was not met, so the display's clock is not pursued on other platforms
 the branch keeps the code (presentation-time measurement aside, which is in `develop`).
 
 Pending: Windows (Direct3D 11 queues up to three frames in DXGI by default; one is a candidate,
-`--native_frame_latency` on `feature/d3d11-frame-latency`, draft pull request 1, measured by the
-Windows agent) and macOS.
+`--native_frame_latency`, archived as the tag `archive/d3d11-frame-latency`: still to be measured
+on Windows by the Windows agent, from that tag) and macOS.
 
 ### The buffer bindings and OGRE 14's interface: evaluated (2026-10-13)
 
