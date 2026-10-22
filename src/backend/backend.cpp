@@ -244,6 +244,12 @@ struct tl_backend {
   // `window`.
   std::unique_ptr<torchlight::platform::OgreTopLevelWindow> top_level;
   bool visible_window = false;
+  // tl_backend_read_next_present's request, served and cleared by the next present.
+  struct WindowRead {
+    void* rgba = nullptr;
+    uint32_t width = 0, height = 0, stride = 0;
+    int* done = nullptr;
+  } window_read;
   bool child_window = false;  // inside another application's window (tl_backend_create_child)
   std::string window_title;    // OGRE's window's; its name on Cocoa (tl_backend_destroy)
   Ogre::Viewport* window_viewport = nullptr;
@@ -2141,6 +2147,19 @@ int tl_backend_present(tl_backend* b) {
     EndFullScreenPass(b);
     DrawUiPass(b, b->window_viewport);
     rs->_endFrame();
+    if (b->window_read.rgba) {
+      tl_backend::WindowRead& r = b->window_read;
+      if (b->window->getWidth() == r.width && b->window->getHeight() == r.height) {
+        Ogre::PixelBox out(r.width, r.height, 1, Ogre::PF_BYTE_RGBA, r.rgba);
+        out.rowPitch = r.stride / 4;
+        out.slicePitch = out.rowPitch * r.height;
+        b->window->copyContentsToMemory(Ogre::Box(0, 0, r.width, r.height), out,
+                                        Ogre::RenderTarget::FB_BACK);
+        *r.done = 1;
+      }
+      r = {};
+      ForgetActiveViewport(b);
+    }
     b->window->swapBuffers();
   } catch (Ogre::Exception&) {
     return 0;
@@ -2870,6 +2889,12 @@ int tl_backend_read_output_rgba(tl_backend* b, void* rgba, uint32_t stride) {
     return 1;
   }
   return 0;
+}
+
+void tl_backend_read_next_present(tl_backend* b, void* rgba, uint32_t width, uint32_t height,
+                                  uint32_t stride, int* done) {
+  *done = 0;
+  b->window_read = {rgba, width, height, stride, done};
 }
 
 int tl_backend_read_target_rgba(tl_backend* b, uint64_t target_id, uint32_t width,

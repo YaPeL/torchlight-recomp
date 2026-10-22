@@ -357,6 +357,11 @@ int tl_backend_read_output_rgba(tl_backend* b, void* rgba, uint32_t stride);
  * after tl_backend_end). */
 int tl_backend_read_target_rgba(tl_backend* b, uint64_t target_id, uint32_t width,
                                 uint32_t height, void* rgba, uint32_t stride);
+/* Makes the next tl_backend_present also read what it drew in the window (UI included) as RGBA8,
+ * top row first, into `rgba` (diagnostics). The window must be width x height then; *done is set
+ * to 1 once read, and stays 0 when the present draws nothing or the window has another size. */
+void tl_backend_read_next_present(tl_backend* b, void* rgba, uint32_t width, uint32_t height,
+                                  uint32_t stride, int* done);
 
 /* ---- host UI (the runtime's ImGui dialogs, not the guest's) ----
  * Drawn last, over the whole window (window coordinates, not the guest's frame: letterboxing does
