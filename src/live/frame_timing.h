@@ -67,6 +67,12 @@ struct LatencyMeans {
 };
 LatencyMeans MeanLatency(const std::vector<PresentLatency>& frames);
 
+// Called on the guest's render thread right after each "frame time (guest swap to swap)" summary
+// (every 10 s), for diagnostics that report on the same windows (hooks/census_hooks.cpp). One at a
+// time; null removes it.
+using SummaryHook = void (*)();
+void SetSummaryHook(SummaryHook hook);
+
 class FrameTiming {
  public:
   static FrameTiming& Get();
