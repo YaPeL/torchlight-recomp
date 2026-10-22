@@ -31,11 +31,13 @@ namespace torchlight::capture {
 
 class ConstantMirror {
  public:
-  // Whether the stage's array already holds `count` values at `physical` (host order).
-  bool Holds(bool floats, uint8_t stage, uint32_t physical, const uint32_t* values,
+  // Whether the stage's array already holds the `count` 32-bit values at `physical`. The values
+  // are compared and kept as the guest's bytes (`words`: count x 4 bytes, big-endian as in guest
+  // memory), so the common case, nothing changed, reads guest memory once and swaps nothing.
+  bool Holds(bool floats, uint8_t stage, uint32_t physical, const uint8_t* words,
              uint32_t count) const;
   // The stage's array after sending those values.
-  void Store(bool floats, uint8_t stage, uint32_t physical, const uint32_t* values,
+  void Store(bool floats, uint8_t stage, uint32_t physical, const uint8_t* words,
              uint32_t count);
   // Whether a command with these auto constants and transpose flag would leave the stage's as
   // they are (the frontend replaces them with every command).
@@ -48,8 +50,8 @@ class ConstantMirror {
 
  private:
   struct Array {
-    std::vector<uint32_t> values;
-    std::vector<uint8_t> known;
+    std::vector<uint8_t> bytes;  // 4 per value, as the guest's
+    std::vector<uint8_t> known;  // 1 per value
   };
   struct Stage {
     std::array<Array, 2> arrays;  // ints, floats

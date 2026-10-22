@@ -28,6 +28,7 @@
 #include <cstdint>
 #include <cstring>
 #include <string>
+#include <vector>
 
 #include "guest_abi/xbox_memory.h"
 
@@ -84,6 +85,33 @@ inline uint16_t ReadU16(const uint8_t* membase, uint32_t addr) {
 inline uint32_t ReadU32(const uint8_t* membase, uint32_t addr) {
   uint32_t v;
   std::memcpy(&v, xbox_memory::HostAddress(membase, addr), sizeof(v));
+  return std::endian::native == std::endian::big ? v : std::byteswap(v);
+}
+
+// `count` consecutive 32-bit words of guest memory at `addr`, left in the guest's byte order: where
+// they sit in host memory, or, for a range across the host mapping's seam (xbox_memory.h), a copy
+// made word by word, valid until the next call on this thread. For comparing and copying words
+// as they are; GuestWordToHost reads one in host order.
+inline const uint8_t* GuestWords(const uint8_t* membase, uint32_t addr, uint32_t count,
+                                 uint32_t host_offset = xbox_memory::kHostOffset) {
+  const uint64_t last = 4 * uint64_t(count) - 1;
+  if (count == 0 || xbox_memory::HostDistance(addr + uint32_t(last), host_offset) -
+                            xbox_memory::HostDistance(addr, host_offset) ==
+                        last) {
+    return membase + xbox_memory::HostDistance(addr, host_offset);
+  }
+  thread_local std::vector<uint8_t> copy;
+  copy.resize(last + 1);
+  for (uint64_t i = 0; i <= last; i += 4) {
+    std::memcpy(&copy[i], membase + xbox_memory::HostDistance(addr + uint32_t(i), host_offset), 4);
+  }
+  return copy.data();
+}
+
+// One guest word as GuestWords gives it, in host order.
+inline uint32_t GuestWordToHost(const uint8_t* word) {
+  uint32_t v;
+  std::memcpy(&v, word, sizeof(v));
   return std::endian::native == std::endian::big ? v : std::byteswap(v);
 }
 

@@ -1,29 +1,31 @@
 #include "capture/constant_mirror.h"
 
 #include <algorithm>
+#include <cstring>
 
 namespace torchlight::capture {
 
-bool ConstantMirror::Holds(bool floats, uint8_t stage, uint32_t physical, const uint32_t* values,
+bool ConstantMirror::Holds(bool floats, uint8_t stage, uint32_t physical, const uint8_t* words,
                            uint32_t count) const {
   if (stage >= kStages) return false;
   const Array& a = stages_[stage].arrays[floats];
-  if (uint64_t(physical) + count > a.values.size()) return false;
-  for (uint32_t i = 0; i < count; ++i) {
-    if (!a.known[physical + i] || a.values[physical + i] != values[i]) return false;
+  if (uint64_t(physical) + count > a.known.size()) return false;
+  if (std::find(a.known.begin() + physical, a.known.begin() + physical + count, uint8_t(0)) !=
+      a.known.begin() + physical + count) {
+    return false;
   }
-  return true;
+  return std::memcmp(a.bytes.data() + 4 * size_t(physical), words, 4 * size_t(count)) == 0;
 }
 
-void ConstantMirror::Store(bool floats, uint8_t stage, uint32_t physical, const uint32_t* values,
+void ConstantMirror::Store(bool floats, uint8_t stage, uint32_t physical, const uint8_t* words,
                            uint32_t count) {
   if (stage >= kStages) return;
   Array& a = stages_[stage].arrays[floats];
-  if (uint64_t(physical) + count > a.values.size()) {
-    a.values.resize(physical + count);
-    a.known.resize(physical + count);
+  if (uint64_t(physical) + count > a.known.size()) {
+    a.bytes.resize(4 * (size_t(physical) + count));
+    a.known.resize(size_t(physical) + count);
   }
-  std::copy(values, values + count, a.values.begin() + physical);
+  std::memcpy(a.bytes.data() + 4 * size_t(physical), words, 4 * size_t(count));
   std::fill(a.known.begin() + physical, a.known.begin() + physical + count, uint8_t(1));
 }
 

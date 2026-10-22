@@ -485,7 +485,7 @@ commands::Draw CaptureDraw(const uint8_t* m, uint32_t render_system, uint32_t op
 
 commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint32_t gptype,
                                      uint32_t mask, ConstantMirror* mirror, bool filter,
-                                     bool* unchanged) {
+                                     bool* unchanged, bool lean) {
   if (unchanged) *unchanged = false;
   namespace gpp = ogre::gpu_program_parameters;
   namespace node = ogre::gpu_logical_index_use_node;
@@ -511,16 +511,29 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
       uint32_t physical = abi::ReadU32(m, n, node::kPhysicalIndex);
       r.physical_index = physical;
       if (r.element_count > 4096) return;
-      // Read into a scratch buffer first: a range the backend already holds is left out without
-      // allocating (live commands, `filter`).
-      thread_local std::vector<uint32_t> values;
-      values.resize(r.element_count);
-      for (uint32_t i = 0; i < r.element_count; ++i) values[i] = U32(m, data + 4 * (physical + i));
+      // The range's words as the guest has them (big-endian): a range the backend already holds is
+      // left out after one compare, without copying or swapping (live commands, `filter`).
       const uint8_t stage = c.stage.value;
-      if (mirror && filter && mirror->Holds(floats, stage, physical, values.data(), r.element_count))
+      if (!lean) {
+        // The former path: every value copied and swapped first, the mirror holding host values.
+        thread_local std::vector<uint32_t> values;
+        values.resize(r.element_count);
+        for (uint32_t i = 0; i < r.element_count; ++i) values[i] = U32(m, data + 4 * (physical + i));
+        const auto* bytes = reinterpret_cast<const uint8_t*>(values.data());
+        if (mirror && filter && mirror->Holds(floats, stage, physical, bytes, r.element_count))
+          return;
+        if (mirror) mirror->Store(floats, stage, physical, bytes, r.element_count);
+        r.data.assign(values.begin(), values.end());
+        out.push_back(std::move(r));
         return;
-      if (mirror) mirror->Store(floats, stage, physical, values.data(), r.element_count);
-      r.data.assign(values.begin(), values.end());
+      }
+      const uint8_t* words = abi::GuestWords(m, data + 4 * physical, r.element_count);
+      if (mirror && filter && mirror->Holds(floats, stage, physical, words, r.element_count))
+        return;
+      if (mirror) mirror->Store(floats, stage, physical, words, r.element_count);
+      r.data.resize(r.element_count);
+      for (uint32_t i = 0; i < r.element_count; ++i)
+        r.data[i] = abi::GuestWordToHost(words + 4 * size_t(i));
       out.push_back(std::move(r));
     });
   };

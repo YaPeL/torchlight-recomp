@@ -165,6 +165,11 @@ class Session {
     measure_frame_.store(on, std::memory_order_relaxed);
   }
   bool producer_timing() const { return producer_timing_; }
+  // The leaner recording paths (on by default): constant ranges compared as the guest's bytes,
+  // state early outs through the dense stamps. Off (--diag_capture_lean=false) runs the former
+  // paths, to measure the difference in one build. Set before recording starts.
+  void SetLean(bool on) { lean_ = on; }
+  bool lean() const { return lean_; }
   // Recording, on a frame whose recording cost is timed (kMeasureEveryFrames).
   bool measuring() const {
     return recording() && measure_frame_.load(std::memory_order_relaxed);
@@ -320,20 +325,30 @@ class Session {
   std::array<uint64_t, kRenderSystemSlotCount> slot_counts_at_start_{};
 
   // Render thread only.
-  // Entries are never removed (EraseState marks them absent), so a pointer to one stays valid for
-  // the early out; `version` changes with every write.
+  // Entries are never removed (EraseState marks them absent). Each has a stamp of its own in
+  // `stamps_` (its `stamp` index, fixed): whether it is present and a version that changes with
+  // every write. The early out's memos check the stamp, in one small array, without reaching the
+  // map's nodes.
   struct ShadowEntry {
     commands::CommandPayload payload;
     uint32_t object = 0;
+    uint32_t stamp = 0;
+  };
+  struct Stamp {
     uint64_t version = 0;
     bool present = true;
   };
-  // A hash map (looked up on every state hook); its node-based entries keep their address, which
-  // the early out's memos rely on. Walked in key order where order shows (ShadowKeysInOrder).
+  // A hash map, looked up on every state hook; walked in key order where order shows
+  // (ShadowKeysInOrder).
   std::unordered_map<uint32_t, ShadowEntry> shadow_;
+  std::vector<Stamp> stamps_;
   std::vector<uint32_t> ShadowKeysInOrder() const;
+  // The entry of `key`, made (present, with a stamp of its own) when there is none.
+  ShadowEntry& ShadowAt(uint32_t key);
+  static constexpr uint32_t kNoStamp = UINT32_MAX;
   struct ArgsMemo {
-    const ShadowEntry* entry = nullptr;
+    uint32_t stamp = kNoStamp;
+    const ShadowEntry* entry = nullptr;  // the former path (SetLean(false)) reads through it
     uint64_t version = 0;
     uint32_t count = 0;
     std::array<uint32_t, kMaxRawArgs> raw{};
@@ -343,6 +358,7 @@ class Session {
   ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;
   bool producer_timing_ = true;  // SetProducerTiming
+  bool lean_ = true;             // SetLean
   std::atomic<bool> measure_frame_{true};
   bool finishing_ = false;
   commands::Capture capture_;

@@ -114,6 +114,8 @@ void LiveMode::Start(const LiveOptions& options) {
   queue_.SetCapacity(FrameQueueDepth(options.frame_queue, options.vsync));
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
+  capture::Session::Get().SetLean(options.capture_lean);
+  REXLOG_INFO("live: capture lean paths {} (--diag_capture_lean)", options.capture_lean ? "on" : "off");
   capture::Session::Get().EnableLive(&queue_, &store_);
   finished_ = false;
   thread_ = std::thread([this] {

@@ -49,6 +49,10 @@ REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
                     "Live mode: time the recording cost per hook and section and log it (live "
                     "producer, live measurements); off by default, it costs the guest's render "
                     "thread about 2 %. The frame time statistics are always on");
+REXCVAR_DEFINE_BOOL(diag_capture_lean, true, "Torchlight",
+                    "Diagnostics: the recording's leaner paths (constants compared as guest bytes, "
+                    "state early outs through dense stamps); =false runs the former ones, to "
+                    "measure the difference in the same build");
 REXCVAR_DEFINE_UINT32(live_record_max_mb, 4096, "Torchlight",
                       "Live mode: the session recording stops (well formed) at this size in MiB");
 
@@ -558,6 +562,7 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
+  options.capture_lean = REXCVAR_GET(diag_capture_lean);
   options.on_backend_failed = dialogs.renderer_failed;
   options.frame_queue = size_t(std::max(0, REXCVAR_GET(native_frame_queue)));
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.

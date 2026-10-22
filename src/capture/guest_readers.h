@@ -68,9 +68,12 @@ commands::Draw CaptureDraw(const uint8_t* m, uint32_t render_system, uint32_t op
 // are left out (capture/constant_mirror.h); when that leaves nothing to change (no range, the same
 // auto constants and transpose flag) `*unchanged` is set and the command is not to be sent, and
 // nothing was copied for it.
+// `lean` (Session::lean): ranges compared as the guest's bytes; off, as host values after copying
+// and swapping every one (the former path, kept for measuring).
 commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint32_t gptype,
                                      uint32_t mask, ConstantMirror* mirror = nullptr,
-                                     bool filter = false, bool* unchanged = nullptr);
+                                     bool filter = false, bool* unchanged = nullptr,
+                                     bool lean = true);
 
 // Program description (registered in the session).
 commands::BindProgram CaptureProgram(const uint8_t* m, uint32_t program);

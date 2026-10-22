@@ -90,7 +90,7 @@ void Session::EnableLive(live::FrameQueue* queue, live::SnapshotStore* store) {
   // baseline does, since State skips values that did not change.
   for (uint32_t key : ShadowKeysInOrder()) {
     const ShadowEntry& entry = shadow_.at(key);
-    if (entry.present) LiveAppend(entry.payload);
+    if (stamps_[entry.stamp].present) LiveAppend(entry.payload);
   }
 }
 
@@ -108,7 +108,7 @@ void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t obj
   // shadow as its baseline, the live consumer from EnableLive): not sent again. OGRE re-sets every
   // texture unit's state per pass, most of it unchanged.
   auto it = shadow_.find(key);
-  if (it != shadow_.end() && it->second.present && it->second.object == object &&
+  if (it != shadow_.end() && stamps_[it->second.stamp].present && it->second.object == object &&
       it->second.payload == payload && !AlwaysSent(payload)) {
     return;
   }
@@ -116,11 +116,21 @@ void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t obj
     capture_.frames.back().commands.push_back({0, payload});
   }
   if (live()) LiveAppend(payload);
-  ShadowEntry& entry = shadow_[key];
+  ShadowEntry& entry = it != shadow_.end() ? it->second : ShadowAt(key);
   entry.payload = std::move(payload);
   entry.object = object;
-  entry.present = true;
-  ++entry.version;
+  Stamp& stamp = stamps_[entry.stamp];
+  stamp.present = true;
+  ++stamp.version;
+}
+
+Session::ShadowEntry& Session::ShadowAt(uint32_t key) {
+  auto [it, made] = shadow_.try_emplace(key);
+  if (made) {
+    it->second.stamp = uint32_t(stamps_.size());
+    stamps_.push_back({});
+  }
+  return it->second;
 }
 
 std::vector<uint32_t> Session::ShadowKeysInOrder() const {
@@ -133,15 +143,20 @@ std::vector<uint32_t> Session::ShadowKeysInOrder() const {
 
 void Session::EraseState(uint32_t key) {
   auto it = shadow_.find(key);
-  if (it == shadow_.end() || !it->second.present) return;
-  it->second.present = false;
-  ++it->second.version;
+  if (it == shadow_.end()) return;
+  Stamp& stamp = stamps_[it->second.stamp];
+  if (!stamp.present) return;
+  stamp.present = false;
+  ++stamp.version;
 }
 
 bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> raw) const {
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return false;
   const ArgsMemo& m = memos_[slot * kMemoSubs + sub];
-  return m.entry && m.entry->present && m.entry->version == m.version &&
+  if (m.stamp == kNoStamp) return false;
+  // The former path (SetLean(false)): through the map's node, as the memos did before the stamps.
+  const Stamp& stamp = stamps_[lean_ ? m.stamp : m.entry->stamp];
+  return stamp.present && stamp.version == m.version &&
          m.count == raw.size() && std::equal(raw.begin(), raw.end(), m.raw.begin());
 }
 
@@ -150,8 +165,9 @@ void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<cons
   auto it = shadow_.find(key);
   if (it == shadow_.end()) return;
   ArgsMemo& m = memos_[slot * kMemoSubs + sub];
+  m.stamp = it->second.stamp;
   m.entry = &it->second;
-  m.version = it->second.version;
+  m.version = stamps_[it->second.stamp].version;
   m.count = uint32_t(raw.size());
   std::copy(raw.begin(), raw.end(), m.raw.begin());
 }
@@ -325,9 +341,10 @@ void Session::Start() {
   size_t baseline = 0;
   for (uint32_t key : ShadowKeysInOrder()) {
     ShadowEntry& entry = shadow_.at(key);
-    if (!entry.present) continue;
+    if (!stamps_[entry.stamp].present) continue;
     ++baseline;
-    ++entry.version;  // re-read below: early outs recorded against it no longer apply
+    // Re-read below: early outs recorded against it no longer apply.
+    ++stamps_[entry.stamp].version;
     if (entry.object != 0 && membase_ != nullptr) {
       if (auto* t = std::get_if<commands::SetTexture>(&entry.payload)) {
         t->texture = CaptureTexture(membase_, entry.object);
