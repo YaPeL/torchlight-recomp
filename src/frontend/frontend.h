@@ -62,6 +62,12 @@ class Frontend {
 
   void BeginFrame();
   void Execute(const commands::Command& command);
+  // Looks ahead over a frame's commands before they are executed: the SetRenderTarget commands
+  // whose pass clears the whole of its depth before it draws. Executing one of them first lets the
+  // backend discard the depth of the target being left (tl_backend_discard_depth: the guest has one
+  // depth surface for all its targets, so that clear overwrites what the left target drew). Only
+  // the commands of the last list planned are marked; without a plan nothing is discarded.
+  void PlanTargets(const std::vector<commands::Command>& commands);
   void EndFrame();
 
   // Diagnostics: draws for which the filter returns false are not issued (counted as excluded);
@@ -119,6 +125,7 @@ class Frontend {
   std::optional<Mat> world_, view_, projection_;
   std::optional<commands::SetVertexBuffers> streams_;
   std::optional<commands::SetViewport> viewport_;
+  std::unordered_set<const commands::Command*> discard_depth_before_;  // PlanTargets
   uint32_t guest_width_ = 0, guest_height_ = 0;
   uint32_t scene_clip_viewport_ = 0;  // SetSceneClip
   void ApplySceneClip();
