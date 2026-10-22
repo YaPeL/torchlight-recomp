@@ -1,6 +1,7 @@
 #include "capture/guest_readers.h"
 
 #include <array>
+#include <bit>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -32,6 +33,20 @@ using commands::UnresolvedReason;
 constexpr uint32_t kMaxSnapshotBytes = 64u << 20;
 
 uint32_t U32(const uint8_t* m, uint32_t a) { return abi::ReadU32(m, a); }
+
+// `count` consecutive 32-bit words of guest memory at `address`, in the guest's byte order: where
+// they sit, or (a range across the host mapping's seam, xbox_memory.h) a copy, valid until the
+// next call on this thread.
+const uint8_t* GuestWords(const uint8_t* m, uint32_t address, uint32_t count) {
+  const uint64_t last = 4 * uint64_t(count) - 1;
+  if (count == 0 || mem::HostDistance(address + uint32_t(last)) - mem::HostDistance(address) == last)
+    return mem::HostAddress(m, address);
+  thread_local std::vector<uint8_t> copy;
+  copy.resize(last + 1);
+  for (uint64_t i = 0; i <= last; i += 4)
+    std::memcpy(&copy[i], mem::HostAddress(m, address + uint32_t(i)), 4);
+  return copy.data();
+}
 
 // In-order walk of an XDK std::map/set. Leaf children point back to the head node.
 template <typename F>
@@ -512,19 +527,22 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
       uint32_t physical = abi::ReadU32(m, n, node::kPhysicalIndex);
       r.physical_index = physical;
       if (r.element_count > 4096) return;
-      // Read into a scratch buffer first: a range the backend already holds is left out without
-      // allocating (live commands, `filter`).
-      thread_local std::vector<uint32_t> values;
-      values.resize(r.element_count);
-      for (uint32_t i = 0; i < r.element_count; ++i) values[i] = U32(m, data + 4 * (physical + i));
+      // The range's words as the guest has them (big-endian): a range the backend already holds is
+      // left out after one compare, without copying or swapping (live commands, `filter`).
+      const uint8_t* words = GuestWords(m, data + 4 * physical, r.element_count);
       const uint8_t stage = c.stage.value;
-      if (mirror && filter && mirror->Holds(floats, stage, physical, values.data(), r.element_count))
+      if (mirror && filter && mirror->Holds(floats, stage, physical, words, r.element_count))
         return;
-      if (mirror) mirror->Store(floats, stage, physical, values.data(), r.element_count);
+      if (mirror) mirror->Store(floats, stage, physical, words, r.element_count);
       // Vectors the backend has finished with when there are any (live/constant_buffer_pool.h).
       auto& pool = live::ConstantBufferPool::Get();
       r.data = pool.TakeData();
-      r.data.assign(values.begin(), values.end());
+      r.data.resize(r.element_count);
+      for (uint32_t i = 0; i < r.element_count; ++i) {
+        uint32_t v;
+        std::memcpy(&v, words + 4 * size_t(i), sizeof(v));
+        r.data[i] = std::endian::native == std::endian::big ? v : std::byteswap(v);
+      }
       if (out.capacity() == 0) out = pool.TakeRanges();
       out.push_back(std::move(r));
     });
