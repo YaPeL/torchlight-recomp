@@ -238,6 +238,8 @@ void WaitServingWindowThread(const std::function<bool()>& done) {
 }
 
 // The window system never takes the backend's surface away here.
+uint64_t SurfaceAwayCount() { return 0; }
+
 bool ServeSurfaceChanges(const std::function<void()>&,
                          const std::function<bool(const NativeWindow&)>&) {
   return true;

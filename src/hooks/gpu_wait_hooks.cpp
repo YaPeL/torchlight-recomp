@@ -10,6 +10,10 @@
 // goes by the clock) stays the guest's, and a wait ends at most kWaitStepSleep after its target.
 // (Sleeping only while the progress word had not moved, the first version, never slept on Linux:
 // there the word changes between consecutive steps while the target is still ahead.)
+//
+// Every step also goes to the wait watch (gpu_wait_watch.h): a wait longer than 10 s is logged
+// ("guest GPU wait: ... without reaching its target"), with the GPU's progress word, and the wait
+// goes on.
 
 #include <atomic>
 #include <chrono>
@@ -21,10 +25,15 @@
 #include <rex/thread.h>
 
 #include "guest_abi/guest_functions.h"
+#include "guest_abi/xbox_d3d.h"
+#include "hooks/gpu_wait_watch.h"
+#include "platform/platform.h"
 
 namespace {
 
 namespace fn = torchlight::guest_abi::functions;
+namespace d3d = torchlight::guest_abi::xbox_d3d;
+using torchlight::hooks::GpuWaitWatch;
 
 #define FUNCTION_ADDRESS_CHECK(entry, addr) \
   static_assert(fn::entry.address == 0x##addr##u, "guest_functions mismatch")
@@ -60,6 +69,30 @@ void CountWait(std::chrono::steady_clock::time_point start, std::chrono::steady_
               steps, double(ns) / 1e6 / seconds, seconds);
 }
 
+// The GPU's progress word the step compares (functions::kGpuProgressWaitStep): the device's
+// pointer to it, read the way the step reads it. 0 when there is no device or pointer.
+uint32_t GpuProgress(const uint8_t* base, uint32_t state) {
+  using torchlight::guest_abi::ReadU32;
+  const uint32_t device = ReadU32(base, state, d3d::gpu_wait::kDevice);
+  if (!device) return 0;
+  const uint32_t word = ReadU32(base, device, d3d::device::kGpuProgressAddress);
+  return word ? ReadU32(base, word) : 0;
+}
+
+void Watch(const uint8_t* base, uint32_t state, std::chrono::steady_clock::time_point start,
+           std::chrono::steady_clock::time_point end) {
+  thread_local GpuWaitWatch watch;  // a wait is one guest thread's
+  const uint32_t wait = torchlight::guest_abi::ReadU32(base, state, d3d::gpu_wait::kBeganTimeBase);
+  const auto report = watch.Step(start, end, wait, GpuProgress(base, state),
+                                 torchlight::platform::SurfaceAwayCount());
+  if (!report) return;
+  REXLOG_WARN(
+      "guest GPU wait: {:.1f} s without reaching its target{} | {} steps; progress word "
+      "0x{:08X} at its start, 0x{:08X} now, changed {} times",
+      std::chrono::duration<double>(report->waited).count(), report->repeat ? " (still)" : "",
+      report->steps, report->progress_at_start, report->progress_now, report->progress_changes);
+}
+
 }  // namespace
 
 extern "C" {
@@ -68,9 +101,12 @@ FUNCTION_ADDRESS_CHECK(kGpuProgressWaitStep, 82774170);
 REX_EXTERN(__imp__sub_82774170);
 REX_FUNC(sub_82774170) {
   const auto start = std::chrono::steady_clock::now();
+  const uint32_t state = ctx.r3.u32;  // r3 is the step's result once it returns
   rex::thread::Sleep(kWaitStepSleep);
   __imp__sub_82774170(ctx, base);
-  CountWait(start, std::chrono::steady_clock::now());
+  const auto end = std::chrono::steady_clock::now();
+  CountWait(start, end);
+  Watch(base, state, start, end);
 }
 
 }  // extern "C"

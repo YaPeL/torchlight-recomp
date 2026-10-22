@@ -26,6 +26,7 @@
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <cstring>
@@ -242,7 +243,16 @@ struct Surface {
   SurfaceState state = SurfaceState::kPresent;
   bool released = false;
   ANativeWindow* new_window = nullptr;
+  // Each change between present and not (SurfaceAwayCount): odd while there is none.
+  std::atomic<uint64_t> away_changes{0};
 };
+// Under the surface's mutex.
+void SetState(Surface& s, SurfaceState next) {
+  if ((s.state == SurfaceState::kPresent) != (next == SurfaceState::kPresent)) {
+    s.away_changes.fetch_add(1, std::memory_order_release);
+  }
+  s.state = next;
+}
 Surface& TheSurface() {
   static Surface surface;
   return surface;
@@ -255,6 +265,10 @@ Surface& TheSurface() {
 constexpr auto kSurfaceReleaseWait = std::chrono::seconds(2);
 
 }  // namespace
+
+uint64_t SurfaceAwayCount() {
+  return TheSurface().away_changes.load(std::memory_order_acquire);
+}
 
 bool ServeSurfaceChanges(const std::function<void()>& lost,
                          const std::function<bool(const NativeWindow&)>& restored) {
@@ -275,7 +289,7 @@ bool ServeSurfaceChanges(const std::function<void()>& lost,
     if (s.state == SurfaceState::kEnding) return false;
     ANativeWindow* window = s.new_window;
     s.new_window = nullptr;
-    s.state = SurfaceState::kPresent;
+    SetState(s, SurfaceState::kPresent);
     lock.unlock();
     NativeWindow native;
     native.system = NativeWindow::kAndroid;
@@ -288,7 +302,7 @@ bool ServeSurfaceChanges(const std::function<void()>& lost,
     SDL_Log("surface: nothing could be made on it; waiting for the next one");
     lock.lock();
     // Back to no surface, unless Android has already taken this one and given another.
-    if (s.state == SurfaceState::kPresent) s.state = SurfaceState::kGone;
+    if (s.state == SurfaceState::kPresent) SetState(s, SurfaceState::kGone);
     s.released = true;
     s.changed.notify_all();  // a UI thread waiting in nativeSurfaceDestroying goes on
   }
@@ -432,17 +446,17 @@ JNIEXPORT void JNICALL Java_io_github_yapel_tlrecomp_TorchlightSurface_nativeSur
     // A surface that came back and goes again before the backend took it: drop it.
     if (s.new_window) ANativeWindow_release(s.new_window);
     s.new_window = nullptr;
-    s.state = SurfaceState::kGone;
+    SetState(s, SurfaceState::kGone);
     return;
   }
   if (s.state != SurfaceState::kPresent) return;
-  s.state = SurfaceState::kGoing;
+  SetState(s, SurfaceState::kGoing);
   s.released = false;
   s.changed.notify_all();
   if (!s.changed.wait_for(lock, kSurfaceReleaseWait, [&] { return s.released; })) {
     SDL_Log("surface: destroyed before the backend let go of it (not presenting)");
   }
-  if (s.state == SurfaceState::kGoing) s.state = SurfaceState::kGone;
+  if (s.state == SurfaceState::kGoing) SetState(s, SurfaceState::kGone);
 }
 
 JNIEXPORT void JNICALL Java_io_github_yapel_tlrecomp_TorchlightSurface_nativeSurfaceReady(
@@ -465,7 +479,7 @@ JNIEXPORT void JNICALL Java_io_github_yapel_tlrecomp_TorchlightActivity_nativeAp
   using namespace torchlight::platform;
   Surface& s = TheSurface();
   std::lock_guard lock(s.mutex);
-  s.state = SurfaceState::kEnding;
+  SetState(s, SurfaceState::kEnding);
   s.changed.notify_all();
 }
 
