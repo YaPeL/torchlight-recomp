@@ -243,6 +243,43 @@ void Frontend::ApplySceneClip() {
                                           viewport_->guest_address == scene_clip_viewport_);
 }
 
+void Frontend::PlanTargets(const std::vector<Command>& commands) {
+  discard_depth_before_.clear();
+  std::optional<SetViewport> viewport = viewport_;
+  for (size_t i = 0; i < commands.size(); ++i) {
+    if (const auto* v = std::get_if<SetViewport>(&commands[i].payload)) {
+      viewport = *v;
+      continue;
+    }
+    const auto* target = std::get_if<SetRenderTarget>(&commands[i].payload);
+    if (!target) continue;
+    // The pass this command starts: its viewport is the one set before it (the guest's
+    // _setViewport binds the viewport's target from inside) or after it, until something draws,
+    // binds another target or clears the whole depth.
+    std::optional<SetViewport> pass_viewport = viewport;
+    for (size_t j = i + 1; j < commands.size(); ++j) {
+      const auto& payload = commands[j].payload;
+      if (const auto* v = std::get_if<SetViewport>(&payload)) {
+        pass_viewport = *v;
+      } else if (const auto* c = std::get_if<Clear>(&payload)) {
+        const bool whole = pass_viewport &&
+                           pass_viewport->target_guest_address == target->guest_address &&
+                           pass_viewport->left == 0 && pass_viewport->top == 0 &&
+                           uint32_t(pass_viewport->width) >= target->width &&
+                           uint32_t(pass_viewport->height) >= target->height;
+        if ((c->buffers & 2) && whole) {
+          discard_depth_before_.insert(&commands[i]);
+          break;
+        }
+      } else if (std::holds_alternative<commands::Draw>(payload) ||
+                 std::holds_alternative<SetRenderTarget>(payload) ||
+                 std::holds_alternative<Present>(payload)) {
+        break;
+      }
+    }
+  }
+}
+
 void Frontend::Execute(const Command& command) {
   std::visit(
       [&](const auto& p) {
@@ -263,6 +300,7 @@ void Frontend::Execute(const Command& command) {
               guest_height_ = p.height;
             }
           }
+          if (discard_depth_before_.count(&command)) tl_backend_discard_depth(backend_);
           tl_backend_set_target(backend_, target);
           // A viewport belongs to its target. The guest D3D9 _setViewport binds the
           // viewport's target from inside (OgreD3D9RenderSystem.cpp:2778), so that
