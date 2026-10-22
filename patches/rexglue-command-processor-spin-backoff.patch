@@ -14,18 +14,18 @@ work was a few percent.
   slept wait / 0x100 whole milliseconds per poll (yielding when that was 0). It now yields
   kSpinYields times, then sleeps 20 us, doubling up to a cap: the packet's poll interval
   (wait * 1000 / 0x100 us) or 500 us, whichever is smaller, and with vsync on at least the whole
-  milliseconds it slept before (Windows' rex::thread::Sleep turns anything under 1 ms into a
-  yield, so a smaller cap would spin there). A cap under 20 us (wait under 6) keeps yielding.
-  PrepareForWait and ReturnFromWait are called as before. On Windows the sleeps under 1 ms are
-  ::Sleep(0) or SwitchToThread, so there only the vsync-on sleeps of 1 ms or more remain real
-  sleeps, as before.
+  milliseconds it slept before, so once the sleeps reach them a vsync-on wait polls no more
+  often than it did. A cap under 20 us (wait under 6) keeps yielding. PrepareForWait and
+  ReturnFromWait are called as before. On Windows, rex::thread::Sleep yields under 100 us and
+  sleeps on a high resolution timer from 100 us (patch 17), so there the first sleeps (20 to
+  80 us) are yields and the rest real sleeps.
 
 Nothing the guest waits on is skipped: every poll still reads the register or memory, and the
 worker still runs every packet. What can change is latency: a condition met during a sleep is
 seen up to the cap later; with vsync on that is never later than before (the first polls come
 sooner than the old fixed sleep), with vsync off up to 500 us (before, at once). The desktop
-platforms change too: where Sleep is a real sleep (Linux, macOS), the vsync-off polls and short
-vsync-on polls now sleep instead of yielding.
+platforms change too: on Linux, macOS and Windows the vsync-off polls and the short vsync-on
+polls now sleep instead of yielding.
 
 Test: no unit test reaches these loops (the command processor needs a graphics system); the
 SDK's tests pass with it. Torchlight on the POCO X7 (2026-10-22, combat bench, A B B A, every
@@ -37,7 +37,7 @@ presented frame rate and CPU temperature did not change beyond the runs' spread 
 with it against -445 mA without, inside the spread of the runs (-375 to -474 mA).
 
 diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
-index a744375..88036f1 100644
+index a744375..153b9e0 100644
 --- a/src/graphics/command_processor.cpp
 +++ b/src/graphics/command_processor.cpp
 @@ -99,6 +99,15 @@ ReadbackResolveMode ParseReadbackResolveMode(std::string_view value) {
@@ -88,8 +88,8 @@ index a744375..88036f1 100644
    bool is_memory = (wait_info & 0x10) != 0;
  
 +  // The longest sleep between polls: the poll interval up to kFastPollSleep. With vsync on, at
-+  // least the whole milliseconds the poll used to sleep (Windows' Sleep turns less than 1 ms into
-+  // a yield, so a shorter cap would spin there).
++  // least the whole milliseconds the poll used to sleep, so once the sleeps reach them a wait polls
++  // no more often than it did before.
 +  std::chrono::microseconds max_sleep =
 +      std::min(kFastPollSleep, std::chrono::microseconds(uint64_t(wait) * 1000 / 0x100));
 +  if (REXCVAR_GET(vsync)) {

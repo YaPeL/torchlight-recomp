@@ -251,6 +251,8 @@ void RunOnWindowThread(const std::function<void()>& work) { work(); }
 void WaitServingWindowThread(const std::function<bool()>&) {}
 
 // The window system never takes the backend's surface away here.
+uint64_t SurfaceAwayCount() { return 0; }
+
 bool ServeSurfaceChanges(const std::function<void()>&,
                          const std::function<bool(const NativeWindow&)>&) {
   return true;
@@ -295,6 +297,8 @@ bool IsSteamDeck() {
 float ContentScaleDpi() { return 96.0f; }  // Windows' nominal
 
 bool TouchControlsByDefault() { return false; }
+
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
 
 bool HasSystemBackButton() { return false; }
 

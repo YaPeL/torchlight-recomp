@@ -79,14 +79,15 @@ bool VideoMenuModel::Step(Row row, int direction) {
   if (!Enabled(row)) return false;
   switch (row) {
     case Row::kResolution: {
-      // "window" (0x0) is the display's size, the first choice; choosing that size again stores
-      // "window", so the default keeps following the display.
+      // "window" (0x0) is the default (the display's size, or where the platform starts lower the
+      // choice near its preferred size); choosing that again stores "window", so the default keeps
+      // following the display.
       const auto values = settings::ResolutionChoices(caps_).values;
+      const settings::Resolution default_shown = settings::DefaultRenderResolution(caps_);
       settings::Resolution shown =
-          current_.render_resolution == settings::Resolution{} ? caps_.display
-                                                               : current_.render_resolution;
+          settings::EffectiveRenderResolution(current_.render_resolution, caps_);
       if (!StepIn(values, shown, direction)) return false;
-      current_.render_resolution = shown == caps_.display ? settings::Resolution{} : shown;
+      current_.render_resolution = shown == default_shown ? settings::Resolution{} : shown;
       return true;
     }
     case Row::kAspect:
@@ -170,8 +171,7 @@ std::string VideoMenuModel::Text(Row row) const {
   switch (row) {
     case Row::kResolution: {
       const settings::Resolution r =
-          current_.render_resolution == settings::Resolution{} ? caps_.display
-                                                               : current_.render_resolution;
+          settings::EffectiveRenderResolution(current_.render_resolution, caps_);
       if (!r.width || !r.height) return "Window";
       return std::to_string(r.width) + "x" + std::to_string(r.height);
     }

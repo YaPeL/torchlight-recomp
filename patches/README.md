@@ -57,14 +57,16 @@ in number order; a branch adds its own line at its number's place.
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | In the branch (after 38) |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` | `sdk/known-test-failures` | In the branch (after 39) |
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | In the branch (after 40) |
-| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41) |
-| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In that branch (after 42) |
-| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
-| 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
-| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
-| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
+| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41), until the APK keeps its libraries inside (A6, `docs/android-port.md`) |
+| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | Withdrawn from our series (2026-10-22); an upstream draft (`docs/rexglue-upstream.md`, D33) |
+| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `develop` | In the series (after 41); changes desktop Linux (the owner's OK) |
+| 45 | `rexglue-arena-reserve-before-views.patch` | `develop` | In the series (after 44); changes desktop Linux (the owner's OK) |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `develop` | In the series (after 45); Android only |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 46); Android only |
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
-| 49 | | | Next free number |
+| 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
+| 50 | `rexglue-thread-dump.patch` | `develop` | In the series (after 49); diagnostics only |
+| 51 | | | Next free number |
 
 ## The patches
 
@@ -684,6 +686,14 @@ in number order; a branch adds its own line at its number's place.
     and the arena goes elsewhere (without the change the page reads 0); the guard pages have no
     access.
 
+46. `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` (Android only; SDL's file): SDL 3.4.14's
+    `SDL_WaitEventTimeoutNS` waited on Android in a loop that pushed a poll sentinel each time,
+    and every pushed event sends a wakeup, so `Android_PumpEvents` returned at once and the SDL
+    thread spun about a full big core on the POCO X7 the whole game. The loop now pumps without
+    a new sentinel and waits at most 1 ms, as SDL's polling loop elsewhere. Upstream SDL (main,
+    release-3.4.x) has the same loop: worth reporting there. The first patch to a submodule's
+    file: the build scripts update submodules with `--force`.
+
 47. `rexglue-android-bsymbolic-functions.patch`: on Android the host app is a shared library, so
     every call it made to a function it defines itself went through the PLT (on Torchlight, all
     386,595 direct calls between guest functions). `rexglue_configure_target` links Android
@@ -709,6 +719,24 @@ in number order; a branch adds its own line at its number's place.
     loops. Torchlight on the POCO X7 (A B B A): the thread's share of the app's cycles in a
     fight 9.49 -> 2.83 % with fps_cap 0 and 3.42 -> 2.24 % with fps_cap 60; frame times,
     temperature and battery current unchanged beyond the runs' spread.
+
+49. `rexglue-command-processor-pending-calls-lock.patch`: the command processor's queue of calls
+    from other threads (`CallInThread`) was a `std::queue` without a lock, pushed from other
+    threads while the command processor's thread took calls from it. It is now
+    `rex::graphics::PendingCalls`, with a mutex; each call runs outside the lock, in the order
+    queued. Test: several threads push while one drains, every call runs in each thread's order;
+    under ThreadSanitizer no report with it, 61 races and a hang with its locks removed.
+
+50. `rexglue-thread-dump.patch`: `rex::system::LogThreadDump(reason)` logs every guest thread's
+    ids, state and current kernel wait (objects, kind, timeout, how long, guest LR), and the
+    command processor's ring pointers, idle or WAIT_REG_MEM wait (and for how long) and pending
+    calls, for a watchdog that found a hang. It takes none of the runtime's or the command
+    processor's locks: the threads write their own state into a fixed table of atomics with
+    sequence counters, a record being written is printed as inconsistent, other threads never
+    wait for a record's writer, and the command processor's section only tries its lock. It can
+    still wait on the log sink's lock and the heap's. Tests, under ThreadSanitizer too, hold a
+    record's writer and the pending calls' lock on other threads and check that the dump
+    returns.
 
 The observation and diagnostic patches there were before remain in the git history.
 

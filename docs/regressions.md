@@ -121,3 +121,41 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   scripts change: one at a time (in parallel they collided on macOS), and a skip fails it unless
   `tools/deps/sdk_test_skips.txt` lists it for that platform with its reason (two case-variant
   tests on the case-insensitive hosts).
+
+## Known, open: a hang at startup on the Intel laptop, the guest waiting for the GPU forever
+
+- **What happened:** one start in five of a desktop bench series (2026-10-22, i7-8750H's UHD 630,
+  Mesa, Linux; `develop` at the time with rekindled's OGRE patch 0024 in the RTShaderLib) never
+  left the first screens. The backend precompiled its 118 programs and processed swap 2; from
+  then on the guest's main thread waited for the GPU's progress without end: `guest GPU waits:`
+  logged ~35 000 steps and 999.8 ms of waiting per second, every 10 s, for four minutes, until
+  the run was closed. Frame 3 never came.
+- **What it is not:** the SDK of that run did not carry patch 48 (the command processor's spin
+  backoff, integrated later), so 48 is not the cause. 0024 is not likely either: it changes
+  skinning shaders on the backend, and the backend had finished its precompilation and its last
+  frame. The guest's wait is on the command processor's progress, which the backend does not
+  feed. So the hang comes before both: the SDK's GPU sync at startup.
+- **Not reproduced:** 42 starts in a row of the same two builds on the same machine (22 under gdb,
+  20 without it and with perf ready to record) all reached the menu and quit normally.
+- **Should be caught by:** a log line that says, at the moment it happens, where every thread is
+  and what it waits for, so a single occurrence (on a player's machine too) is enough to find it.
+- **Covered now:** nothing in the repository yet. The desktop benches (local scripts) record a perf
+  profile and every thread's state when a start waits like this before the first menu.
+
+## `develop` never drew on Android: the A2 branch was never merged
+
+- **What happened:** the backend's GLES programs (`android/a2-gles`, b197117: the backend's
+  programs in GLSL ES, RGBA where BGRA cannot be sampled) and A2's start near 1280x800 (9485d9d)
+  stayed on their branch. Every Android APK measured from 2026-10-17 to 2026-10-22 was built from
+  branches on top of it, so they drew; `develop` itself compiled its desktop GLSL on GLES, every
+  program failed to link ("Link failed because of missing shader") and the screen stayed black,
+  at the display's full resolution (render scale 1.69 on the POCO X7 instead of ~1280x800). The
+  frame and present counters looked normal: the backend presents whether or not its programs
+  linked. Found on 2026-10-22, when a build from `develop` was run on the phone for the first time.
+- **Should have been caught by:** CI. Its Android job only builds; nothing ran the backend on a
+  GLES render system, so a program that does not link, or an image that is all black, passed.
+- **Caught by:** the owner, looking at the phone during a benchmark series.
+- **Covered now:** A2's commits are in `develop`; a CI replay on OGRE's GLES2 render system over
+  Mesa (EGL, llvmpipe) fails when a program does not link or the image is black (`ci/gles-replay`,
+  pending the owner's OK). And every measurement names the commit it was built from, which must
+  be in `develop` or on a pushed branch.

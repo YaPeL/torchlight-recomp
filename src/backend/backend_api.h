@@ -322,7 +322,10 @@ uint32_t tl_backend_probe_samples(tl_backend* b);
  * programs generated and the time of the draws that generated them (generation, compilation and
  * the driver's work on first use, as far as it happens inside the draw), of which the RTSS
  * generation itself (its material, pass and shader source; program_generate_ms), GPU buffers and
- * vertex layouts created. Resets the counts. */
+ * vertex layouts created; textures uploaded (file and linear ones), by the format they have on the
+ * GPU, with their GPU bytes, and of them the DXT files decoded on the CPU because the render system
+ * has no DXT (OGRE's DDS codec, inside the image load), with the time of those loads. Resets the
+ * counts. */
 typedef struct tl_backend_counters {
   uint32_t programs_generated;
   double program_ms;
@@ -331,6 +334,11 @@ typedef struct tl_backend_counters {
   uint32_t vertex_layouts_created;
   uint32_t programs_precompiled;  /* by tl_backend_precompile_programs */
   double precompile_ms;
+  uint32_t textures_uploaded;
+  uint32_t textures_rgba8, textures_rgb8, textures_compressed, textures_other;
+  uint64_t texture_bytes;
+  uint32_t dxt_decoded;
+  double dxt_decode_ms;
 } tl_backend_counters;
 void tl_backend_take_counters(tl_backend* b, tl_backend_counters* out);
 

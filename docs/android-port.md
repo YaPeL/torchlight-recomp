@@ -489,6 +489,34 @@ The Tab S5e is the floor (owner's decision, 2026-10-12): Android 11 and 4 GB. So
 or lower** (API 30, Android 11), and the memory budget, the frame-rate levers and the converted
 textures have to fit 4 GB.
 
+**Known issue (2026-10-17): the Tab S5e crashes at startup about one start in three.** A SIGSEGV
+inside the Adreno driver (`libGLESv2_adreno.so` +0x198d8c) on the SDL thread, at OGRE's first
+texture upload (`glTexSubImage2D` of the backend's gamma LUT). The driver reads an object of its own
+from freed memory. It happens with the replay as well (no guest, no SDK runtime), so it is not the
+game's code. What was ruled out:
+- ASan and UBSan on Linux, OGRE's GLES2 on Mesa: no report with the synthetic capture or four game
+  captures.
+- HWASan on the POCO X7 (Mali): 3 of 3 clean, and 10 of 10 replays without HWASan without a crash.
+- Probing only the FBO format the backend uses (RGBA8, packed D24S8): 6 of 15 crashed.
+- Fullscreen flags set in `onCreate`: 7 of 15. The window still opened at 2560x1438, so this did
+  not test the lead below.
+- 15 s between starts: 5 of 15.
+The lead left: the crashes fall within tens of milliseconds of the surface resizing from 2560x1438
+to 2560x1600, when SDL hides the system bars. Work goes on on the POCO X7 (owner, 2026-10-17); the
+issue comes back if the Tab S5e has to stay the floor.
+
+**Shader compilation on the POCO X7 (measured 2026-10-17).** The first session after installing
+an APK compiled each new GLSL ES program on the Mali in 360-680 ms (13 frames over 100 ms, 5.7 s
+in five minutes of town and mine). The next session had none: the Mali driver keeps its own cache
+of program binaries between sessions. Nothing in the backend precompiled programs then (the
+precompilation below came after: `perf/shader-cache`); the only
+cache of ours is RTSS's GLSL sources (`CacheDir`/ogre). Decided (owner, 2026-10-17):
+- (a) OGRE's program binary cache (`GL_OES_get_program_binary`, keyed by the driver and the game's
+  version, with a forced rewrite to work around 14.6's rejected-binary bug) is on hold; it comes
+  back if the Tab S5e's Adreno driver turns out to have no cache of its own.
+- (b) precompiling the programs this device has used before during the loading screens goes
+  ahead, measured on the first session after an install.
+
 A Bluetooth pad for stages A3-A4 (any Xbox or PlayStation pad), and the Auto mode of the touch
 controls is tested with it connected at start and connected later.
 
@@ -894,6 +922,17 @@ ImGui's foreground draw list.
 | A4.5 | The settings and the Options rows | Unit tests; the setting takes effect on the device |
 | A4.6 | The layout editor | Moved, resized and reset by hand; saved across starts |
 | A4.7 | The hand pass | The owner plays a dungeon by touch on the POCO and the Tab S5e |
+
+**A6, the native libraries inside the APK** (owner's decision, 2026-10-22). The manifest has
+`extractNativeLibs="true"` now, so Android copies every library out of the APK at install and
+the phone keeps them twice (about 60 MB more). The release APK keeps them inside
+(`extractNativeLibs="false"`, stored uncompressed and page-aligned). The runtime then needs the
+SDK's patch 42 (`rexglue-android-gpu-plugin-by-name.patch`, branch `sdk/android-apk-libs`): the
+GPU plugin is no longer a file next to the executable, and the patch loads it by name. Checked on
+the POCO X7 on 2026-10-17: an APK built that way (checked with `pm dump`) started and drew, with no
+"GPU plugin ... not found".
+At A6 the patch joins the series alone, with the manifest change. Patch 43 from the same branch
+is withdrawn (an upstream draft): the game sets its own settings and log paths.
 
 **A6, the signing key** (owner's decision, 2026-10-10). The owner generates and keeps the key; the
 agents never generate, see or copy it. The CI uses it only as secrets of the `release`

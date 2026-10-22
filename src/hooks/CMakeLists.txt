@@ -10,6 +10,18 @@ target_link_libraries(video_mode_test PRIVATE torchlight_video_mode)
 target_compile_options(video_mode_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME video_mode_test COMMAND video_mode_test)
 
+# The watch on the guest's waits for the GPU (gpu_wait_watch.h): no guest or SDK dependency, tested
+# on its own; the hook that uses it (gpu_wait_hooks.cpp) is part of the executable.
+add_library(torchlight_gpu_wait_watch STATIC gpu_wait_watch.cpp)
+target_include_directories(torchlight_gpu_wait_watch PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_gpu_wait_watch PUBLIC cxx_std_23)
+target_compile_options(torchlight_gpu_wait_watch PRIVATE -Wall -Wextra)
+
+add_executable(gpu_wait_watch_test gpu_wait_watch_test.cpp)
+target_link_libraries(gpu_wait_watch_test PRIVATE torchlight_gpu_wait_watch)
+target_compile_options(gpu_wait_watch_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME gpu_wait_watch_test COMMAND gpu_wait_watch_test)
+
 # Windows path separators for the guest's file code (guest_path.h); the hook that uses them
 # (find_file_hooks.cpp) is part of the executable.
 add_library(torchlight_guest_path STATIC guest_path.cpp)

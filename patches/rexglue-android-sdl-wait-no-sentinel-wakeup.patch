@@ -1,0 +1,58 @@
+Patch 46 (written 2026-10-17). In the series after patch 45.
+
+SDL 3.4.14's SDL_WaitEventTimeoutNS (thirdparty/sdl3/src/events/SDL_events.c) waits on Android in
+a loop that calls SDL_PumpEventsInternal(true) and then Android_PumpEvents(delay). Pumping with
+true pushes a new poll sentinel each time, and every pushed event sends a wakeup, which on Android
+is Android_SendLifecycleEvent(SDL_ANDROID_LIFECYCLE_WAKE). Android_PumpEvents then always found
+that wakeup queued and returned at once, so the loop never blocked: on the POCO X7 the SDL thread
+that runs the windowed app's message loop (SDL_WaitEvent) took about a full big core the whole
+time, as many cycles as the guest thread (simpleperf, 20 s in town). Upstream SDL (main and
+release-3.4.x, 2026-10-17) has the same loop. Now the loop pumps without a new sentinel (the one
+pushed before the loop is taken out by the first event check, so none is queued while it waits;
+the next call pushes one), and its wait is capped at EVENT_POLL_INTERVAL_NS (1 ms), as the other
+platforms' polling loop is, so devices read by polling (joysticks through HIDAPI) keep being
+updated while it waits. The cap holds even with no device to poll: the thread wakes every 1 ms,
+far below the old spin (upstream could use the polling-interval helper, which is not built on
+Android). Real events still wake it at once.
+
+Only the Android branch changes; every other platform builds the same code. This is the first
+patch to a submodule's file: tools/deps/build_sdk.sh and tools/build-deps/windows.ps1 update
+submodules with --force, so a reused work folder starts from SDL's own sources again.
+
+Test: the SDK builds for Android and Linux (the installed libSDL3.a's SDL_WaitEventTimeoutNS has
+the 1 ms wait). On the POCO X7, the SDL thread's CPU in town and the guest thread's frame times,
+before and after (the render agent's simpleperf and thread sampler).
+
+diff --git a/thirdparty/sdl3/src/events/SDL_events.c b/thirdparty/sdl3/src/events/SDL_events.c
+index a8ac576bc..862f789a7 100644
+--- a/thirdparty/sdl3/src/events/SDL_events.c
++++ b/thirdparty/sdl3/src/events/SDL_events.c
+@@ -1733,20 +1733,25 @@ bool SDL_WaitEventTimeoutNS(SDL_Event *event, Sint64 timeoutNS)
+ 
+ #ifdef SDL_PLATFORM_ANDROID
+     for (;;) {
+-        SDL_PumpEventsInternal(true);
++        /* No new poll sentinel here: pushing one sends a wakeup (Android_SendLifecycleEvent(WAKE)),
++         * so Android_PumpEvents() below returned at once and this loop spun a core while waiting.
++         * No sentinel is queued while it waits; the next call pushes one. The wait is capped as the
++         * other platforms' polling loop is, so devices read by polling (joysticks) stay updated.
++         */
++        SDL_PumpEventsInternal(false);
+ 
+         if (SDL_PeepEvents(event, 1, SDL_GETEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST) > 0) {
+             return true;
+         }
+ 
+-        Uint64 delay = -1;
++        Sint64 delay = EVENT_POLL_INTERVAL_NS;
+         if (timeoutNS > 0) {
+             Uint64 now = SDL_GetTicksNS();
+             if (now >= expiration) {
+                 // Timeout expired and no events
+                 return false;
+             }
+-            delay = (expiration - now);
++            delay = (Sint64)SDL_min((expiration - now), (Uint64)delay);
+         }
+         Android_PumpEvents(delay);
+     }

@@ -45,6 +45,36 @@ Capabilities SteamDeck() {
   return caps;
 }
 
+// Android's Galaxy Tab S5e: one display mode, a lower preferred start.
+Capabilities Tablet() {
+  Capabilities caps;
+  caps.render_systems = {"OpenGL ES 2.x Rendering Subsystem"};
+  caps.display = {2560, 1600};
+  caps.display_modes = {{2560, 1600}};
+  caps.preferred_render = {1280, 800};
+  return caps;
+}
+
+void TestSingleModeResolutions() {
+  const Capabilities tablet = Tablet();
+  const auto res = ResolutionChoices(tablet);
+  Check(res.enabled, "one mode: fractions offered");
+  Check(res.values == std::vector<Resolution>{{2560, 1600}, {1920, 1200}, {1706, 1066}, {1280, 800}},
+        "the display, then 3/4, 2/3 and 1/2 of it, even sizes");
+  Check(DefaultRenderResolution(tablet) == Resolution{1280, 800}, "default near the preferred");
+  Check(EffectiveRenderResolution(Resolution{}, tablet) == Resolution{1280, 800},
+        "window stands for the default");
+  Check(EffectiveRenderResolution(Resolution{2560, 1600}, tablet) == Resolution{2560, 1600},
+        "a chosen size stays");
+  Capabilities desktop = Desktop();
+  Check(ResolutionChoices(desktop).values.size() == 4, "several modes: no fractions added");
+  Check(DefaultRenderResolution(desktop) == desktop.display, "no preference: the display");
+  Capabilities one_mode_desktop = desktop;
+  one_mode_desktop.display_modes = {desktop.display};
+  Check(DefaultRenderResolution(one_mode_desktop) == desktop.display,
+        "one mode without a preference: the display");
+}
+
 void TestRoundTrip() {
   HostSettings s;
   s.render_system = "OpenGL 3+ Rendering Subsystem";
@@ -447,6 +477,7 @@ int main() {
   TestTolerantParse();
   TestFiles();
   TestChoices();
+  TestSingleModeResolutions();
   TestEffectiveFpsCap();
   TestAutoFpsCapFile();
   TestNormalize();

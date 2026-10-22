@@ -238,6 +238,8 @@ void WaitServingWindowThread(const std::function<bool()>& done) {
 }
 
 // The window system never takes the backend's surface away here.
+uint64_t SurfaceAwayCount() { return 0; }
+
 bool ServeSurfaceChanges(const std::function<void()>&,
                          const std::function<bool(const NativeWindow&)>&) {
   return true;
@@ -291,6 +293,8 @@ void SetCurrentThreadName(const char* name) { pthread_setname_np(name); }
 float ContentScaleDpi() { return 72.0f; }  // points
 
 bool TouchControlsByDefault() { return false; }
+
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
 
 bool HasSystemBackButton() { return false; }
 
