@@ -1,0 +1,57 @@
+Patch 47. After patch 45 (and 46, which touches other files).
+
+On Android the host app is a shared library that SDLActivity loads, so its exported functions
+could be preempted and every call it made to a function it defines itself went through the
+PLT (on Torchlight, all 386,595 direct calls between guest functions). rexglue_configure_target
+now links Android shared-library targets with -Wl,-Bsymbolic-functions, which binds those calls
+inside the library. Only the link changes; the objects are the same.
+
+What keeps its behaviour: a strong definition overriding a weak one in the same link (a hook
+over a generated function) is chosen by the static linker before binding, so calls still reach
+the hook; data keeps its usual binding (only functions are bound); calls into the app from other
+libraries (SDL's dlsym of SDL_main) and the app's calls into librexruntime, libc and the GPU
+plugins still go through their PLT entries. What changes besides the PLT: a definition in
+another loaded object (a separate library, an LD_PRELOAD) no longer replaces one of the app's
+functions for the app's own calls, so hooks have to be in the app's link, as the codegen's are.
+Executables and other platforms are untouched: the option is added only when ANDROID is set and
+the target is a SHARED_LIBRARY (ld64 has no such option either).
+
+Test: a minimal project through rexglue_configure_target, configured for Android (NDK r30,
+arm64-v8a) and for Linux: only the Android shared library links with the option. Torchlight's
+desktop Linux build (Release) configured with and without the patch: all 619 build commands,
+the game's link included, are identical. Torchlight's libtorchlight.so (POCO X7, Release,
+2026-10-21): no branch to a guest sub_*@plt with it (391,037 without, tail calls included), and
+no generated code reaches a hooked function past its hook (202 hooked); Torchlight checks both
+on every Android link (tools/android/check_guest_call_binding.py). The combat bench, runs
+alternated without and with it (P S S P, thermal status 0, CPU 34-39 C), mean guest frame time:
+at rest 15.15 and 14.82 ms without, 13.99 and 13.69 ms with (-7.6 %, both runs with it below both
+without); in a fight 29.46 and 26.39 ms without, 25.84 and 25.90 ms with (-7.4 %, but the two
+runs without it differ by 10 %); guest frames over 33 ms in the fight 167 and 83 without, 60 and
+44 with. The presented frame time in the fight did not change (36.5-39.4 ms either way):
+presentation there is bound by the GPU.
+
+diff --git a/cmake/rexglue_helpers.cmake b/cmake/rexglue_helpers.cmake
+index 41e6dce..67e8f4b 100644
+--- a/cmake/rexglue_helpers.cmake
++++ b/cmake/rexglue_helpers.cmake
+@@ -101,6 +101,20 @@ function(rexglue_configure_target target_name)
+ 
+     rexglue_apply_target_settings(${target_name})
+ 
++    # On Android the host app is a shared library (SDLActivity loads it), so every call it made to
++    # a function it defines itself, guest functions included, went through the PLT: its exported
++    # functions could be preempted. Bind those calls inside the library. A strong definition that
++    # overrides a weak one in the same link (a hook over a generated function) is chosen by the
++    # static linker first, so it still wins. Hooks must therefore be in the app's own link: a
++    # definition in another loaded library no longer replaces one of the app's functions for the
++    # app's calls. Data keeps its usual binding, and other libraries' calls into the app (SDL's
++    # dlsym of SDL_main) are unchanged.
++    get_target_property(_rexglue_target_type ${target_name} TYPE)
++    if(ANDROID AND _rexglue_target_type STREQUAL "SHARED_LIBRARY")
++        target_link_options(${target_name} PRIVATE -Wl,-Bsymbolic-functions)
++    endif()
++    unset(_rexglue_target_type)
++
+     if(WIN32)
+         # Stage runtime DLLs (rexruntime, TracyClient, etc.) next to the host
+         # binary on every link. copy_if_different is a no-op when up to date.

@@ -61,7 +61,9 @@ in number order; a branch adds its own line at its number's place.
 | 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In that branch (after 42) |
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
-| 46 | | | Next free number |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
+| 48 | | | Next free number |
 
 ## The patches
 
@@ -680,5 +682,20 @@ in number order; a branch adds its own line at its number's place.
     is free (all 101 desktop logs here). Test: a foreign page in the first free range survives
     and the arena goes elsewhere (without the change the page reads 0); the guard pages have no
     access.
+
+47. `rexglue-android-bsymbolic-functions.patch`: on Android the host app is a shared library, so
+    every call it made to a function it defines itself went through the PLT (on Torchlight, all
+    386,595 direct calls between guest functions). `rexglue_configure_target` links Android
+    shared-library targets with `-Wl,-Bsymbolic-functions`, which binds those calls inside the
+    library. A hook over a generated function still wins (the static linker picks it first), but
+    it has to be in the app's own link: a definition in another loaded library no longer replaces
+    one of the app's functions for the app's calls. Data, executables and other platforms are
+    unchanged (the desktop Linux build's commands are identical with and without it). Every
+    Android link of the game checks that no guest call goes through the PLT and none bypasses a
+    hook (`tools/android/check_guest_call_binding.py`, itself tested on fixtures in
+    `tests/guest_call_binding` by the Android build). Torchlight on the POCO X7, the combat bench
+    (P S S P): mean guest frame time -7.6 % at rest (both runs with it below both without) and
+    -7.4 % in a fight (the two runs without it differ by 10 %); presented frame time unchanged
+    (GPU-bound there).
 
 The observation and diagnostic patches there were before remain in the git history.

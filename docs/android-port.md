@@ -978,6 +978,12 @@ MAC.10) after the first Android release.
   (section 6). On the Linux machine (2026-10-17): Temurin 21 and the command-line tools unpacked
   under `~/android-sdk` (no installer), the NDK r30 in `~/android-sdk/ndk/30.0.16248370`; no
   emulator (arm64 images need an arm64 host), the Tab S5e plugged in by USB instead.
+- The game's link (2026-10-21): the SDK links `libtorchlight.so` with `-Wl,-Bsymbolic-functions`
+  (patch 47), so the generated code's calls no longer go through the PLT (guest frame time about
+  7 % lower on the POCO X7). Every Android link of the game then runs
+  `tools/android/check_guest_call_binding.py`, which fails the build if a guest call still goes
+  through the PLT or skips a hook. It needs Python 3 on the build machine (an Android configure
+  requires it) and adds about half a minute to each link.
 - The host offset (2026-10-17): a fixed 0x1000 on every Android aarch64 device, so one APK runs on
   4 KB and 16 KB pages; the ReXGlue agent's patch 37, with the line in `guest_host_offset.cmake`.
 - Stage A1's plan (2026-10-17, section 7): OGRE's media and `data/ui` copied to internal storage on
