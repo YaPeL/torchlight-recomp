@@ -57,8 +57,8 @@ in number order; a branch adds its own line at its number's place.
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | In the branch (after 38) |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` | `sdk/known-test-failures` | In the branch (after 39) |
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | In the branch (after 40) |
-| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41) |
-| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In that branch (after 42) |
+| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41), until the APK keeps its libraries inside (A6, `docs/android-port.md`) |
+| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | Withdrawn from our series (2026-10-22); an upstream draft (`docs/rexglue-upstream.md`, D33) |
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
 | 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
