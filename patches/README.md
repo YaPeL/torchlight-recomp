@@ -764,3 +764,7 @@ rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Andr
   parameter; Mali's compiler copies it to the stack for every vertex. The blend becomes a macro
   that indexes the uniform in place, the same arithmetic in the same order. The file is shared by
   GLSL, GLSL ES and HLSL.
+- `ogre-gles2-sampler-once-per-texture.patch`: from torchlight-rekindled (its patch 0020 and the
+  sampler-state resets of its 0018, commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), Switch
+  guards removed. GLES2 writes a texture's sampler parameters only when they change (remembered on
+  the texture object, forgotten when its GL texture is made or freed). Android only.
