@@ -247,7 +247,7 @@ index 0000000..7bc7ec6
 +
 +  CHECK(once.load() == 1);
 +  CHECK(fired_after_us.load() >= 20000);
-+  CHECK(fired_after_us.load() < 250000);  // loose: a loaded runner can be late, never early
++  CHECK(fired_after_us.load() < 1000000);  // loose: a loaded runner can be late, never early
 +  CHECK(after_disarm >= 50);              // about 300 at 1 ms; loose for loaded runners
 +  CHECK(ticks.load() == after_disarm);
 +
@@ -318,7 +318,7 @@ index 0000000..7bc7ec6
 +  if (auto locked = item.lock())
 +    locked->Disarm();  // so a timer that never fired cannot outlive the variables it writes
 +  CHECK(fired_after_us.load() >= 20000);
-+  CHECK(fired_after_us.load() < 250000);  // loose, as above
++  CHECK(fired_after_us.load() < 1000000);  // loose, as above (336 ms seen on a macOS runner)
 +}
 diff --git a/thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp b/thirdparty/disruptorplus/include/disruptorplus/blocking_wait_strategy.hpp
 index 32d427d..23fd3e1 100644
