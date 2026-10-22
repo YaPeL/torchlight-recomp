@@ -1057,7 +1057,7 @@ void GenerateProgram(tl_backend* b, const ProgramInputs& f, const UnitDesc* unit
 // What was bound stays bound while the stage's program does (the render system's contract: OGRE's
 // own scene manager binds only GPV_PER_OBJECT between objects of one pass). The last values are
 // kept per stage, and forgotten when another program is bound (ApplyProgram): Direct3D 11 keeps one
-// constant buffer per stage, not per program.
+// constant buffer per stage, not per program. Also forgotten when a target is bound (SetViewport).
 void BindChangedParameters(tl_backend* b, Ogre::GpuProgramType type,
                            const Ogre::GpuProgramParametersSharedPtr& params) {
   std::optional<std::vector<Ogre::uchar>>& bound = b->bound_constants[type];
@@ -1071,11 +1071,13 @@ void BindChangedParameters(tl_backend* b, Ogre::GpuProgramType type,
       // uniforms, with an index into another buffer).
       if (def.isSampler()) continue;
       const size_t bytes = size_t(def.elementSize) * def.arraySize * (def.isDouble() ? 8 : 4);
+      if (bytes == 0) continue;
       if (def.physicalIndex + bytes > now.size()) {
         mask = Ogre::GPV_ALL;
         break;
       }
-      if (std::memcmp(&now[def.physicalIndex], &(*bound)[def.physicalIndex], bytes) != 0) {
+      if (std::memcmp(now.data() + def.physicalIndex, bound->data() + def.physicalIndex, bytes) !=
+          0) {
         mask |= def.variability;
       }
     }
