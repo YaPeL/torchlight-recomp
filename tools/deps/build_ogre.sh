@@ -5,7 +5,8 @@
 # each other through RUNPATH $ORIGIN, so the install can move; linked --as-needed, so a library
 # is a dependency only if its symbols are used (OGRE links all of X11_LIBRARIES: without it the
 # GL3+ plugin asked for libSM, libICE and libXext and used none). One recipe for CI and developers
-# (docs/BUILDING.md; docs/release-pipeline.md, REL.5).
+# (docs/BUILDING.md; docs/release-pipeline.md, REL.5). Our patches to OGRE (patches/ogre-*.patch,
+# patches/README.md) are applied to the checkout before it builds.
 #
 # On macOS (arm64, deployment target 13.3, the SDK's): GL3+ on Cocoa (OpenGL.framework), no Wayland
 # build; plain dylibs, not frameworks; the libraries find each other through @loader_path (the
@@ -43,6 +44,13 @@ src="$work/ogre"
 if [ ! -d "$src/.git" ]; then
   git clone --quiet --depth 1 --branch "$OGRE_TAG" "$OGRE_REPOSITORY" "$src"
 fi
+# Our patches to OGRE (patches/ogre-*.patch, patches/README.md), in name order; a checkout they are
+# already applied to (a reused WORK_DIR) is left as it is.
+for patch in "$root"/patches/ogre-*.patch; do
+  [ -e "$patch" ] || continue
+  if git -C "$src" apply --reverse --check "$patch" 2> /dev/null; then continue; fi
+  git -C "$src" apply "$patch"
+done
 
 case "$target-$(uname -s)" in
   android-arm64-*) host=android ;;

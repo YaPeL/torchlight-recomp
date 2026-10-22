@@ -699,3 +699,22 @@ in number order; a branch adds its own line at its number's place.
     (GPU-bound there).
 
 The observation and diagnostic patches there were before remain in the git history.
+
+## OGRE
+
+Patches to OGRE 14.6.0 are `ogre-*.patch` (not in `series`, which is the SDK's). `tools/deps/build_ogre.sh`
+(Linux, macOS, Android) and `tools/build-deps/windows.ps1` apply them to the OGRE checkout in name
+order with `git apply`, leaving a checkout they are already applied to as it is; Windows clones
+OGRE with LF line endings for them. Each applies to a pristine OGRE on its own: they must not
+depend on one another, so the order (which the two scripts' sorts could see differently for some
+names) never matters. `tools/deps/key.sh` hashes them with the rest of `patches/`, so a change
+rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Android one
+`tools/android/build_apk.sh` takes its media from) keeps the old OGRE until `build_ogre.sh` or
+`windows.ps1` is run again.
+
+- `ogre-rtss-skinning-blend-without-array-copy.patch`: from torchlight-rekindled (its patch 0024,
+  commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), unchanged. The RTSS's linear skinning blend
+  (`blendBonesMat3x4`, SGXLib_DualQuaternion.glsl) took the whole bone palette as an `in`
+  parameter; Mali's compiler copies it to the stack for every vertex. The blend becomes a macro
+  that indexes the uniform in place, the same arithmetic in the same order. The file is shared by
+  GLSL, GLSL ES and HLSL.
