@@ -277,6 +277,8 @@ void LiveMode::Run() {
   }
   LiveContentSource content(pak);
   frontend::Frontend frontend(backend, content);
+  frontend.SetDepthDiscard(options_.depth_discard);
+  REXLOG_INFO("live: depth discard {} (--diag_depth_discard)", options_.depth_discard ? "on" : "off");
 
   // Session recording (--live_record): every consumed frame, before it is run.
   SessionWriter recorder;

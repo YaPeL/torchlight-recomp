@@ -67,6 +67,8 @@ class Frontend {
   // target being left (tl_backend_discard_depth). Only the commands of the last list planned are
   // marked; without a plan nothing is discarded.
   void PlanTargets(const std::vector<commands::Command>& commands);
+  // Whether PlanTargets marks anything (on by default; off measures without the discards).
+  void SetDepthDiscard(bool enabled) { depth_discard_ = enabled; }
   void EndFrame();
 
   // Diagnostics: draws for which the filter returns false are not issued (counted as excluded);
@@ -125,6 +127,7 @@ class Frontend {
   std::optional<commands::SetVertexBuffers> streams_;
   std::optional<commands::SetViewport> viewport_;
   std::unordered_set<const commands::Command*> discard_depth_before_;  // PlanTargets
+  bool depth_discard_ = true;
   uint32_t guest_width_ = 0, guest_height_ = 0;
   uint32_t scene_clip_viewport_ = 0;  // SetSceneClip
   void ApplySceneClip();
