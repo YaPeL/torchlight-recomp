@@ -320,20 +320,29 @@ class Session {
   std::array<uint64_t, kRenderSystemSlotCount> slot_counts_at_start_{};
 
   // Render thread only.
-  // Entries are never removed (EraseState marks them absent), so a pointer to one stays valid for
-  // the early out; `version` changes with every write.
+  // Entries are never removed (EraseState marks them absent). Each has a stamp of its own in
+  // `stamps_` (its `stamp` index, fixed): whether it is present and a version that changes with
+  // every write. The early out's memos check the stamp, in one small array, without reaching the
+  // map's nodes.
   struct ShadowEntry {
     commands::CommandPayload payload;
     uint32_t object = 0;
+    uint32_t stamp = 0;
+  };
+  struct Stamp {
     uint64_t version = 0;
     bool present = true;
   };
-  // A hash map (looked up on every state hook); its node-based entries keep their address, which
-  // the early out's memos rely on. Walked in key order where order shows (ShadowKeysInOrder).
+  // A hash map, looked up on every state hook; walked in key order where order shows
+  // (ShadowKeysInOrder).
   std::unordered_map<uint32_t, ShadowEntry> shadow_;
+  std::vector<Stamp> stamps_;
   std::vector<uint32_t> ShadowKeysInOrder() const;
+  // The entry of `key`, made (present, with a stamp of its own) when there is none.
+  ShadowEntry& ShadowAt(uint32_t key);
+  static constexpr uint32_t kNoStamp = UINT32_MAX;
   struct ArgsMemo {
-    const ShadowEntry* entry = nullptr;
+    uint32_t stamp = kNoStamp;
     uint64_t version = 0;
     uint32_t count = 0;
     std::array<uint32_t, kMaxRawArgs> raw{};
