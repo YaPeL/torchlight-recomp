@@ -121,3 +121,23 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   scripts change: one at a time (in parallel they collided on macOS), and a skip fails it unless
   `tools/deps/sdk_test_skips.txt` lists it for that platform with its reason (two case-variant
   tests on the case-insensitive hosts).
+
+## Known, open: a hang at startup on the Intel laptop, the guest waiting for the GPU forever
+
+- **What happened:** one start in five of a desktop bench series (2026-10-22, i7-8750H's UHD 630,
+  Mesa, Linux; `develop` at the time with rekindled's OGRE patch 0024 in the RTShaderLib) never
+  left the first screens. The backend precompiled its 118 programs and processed swap 2; from
+  then on the guest's main thread waited for the GPU's progress without end: `guest GPU waits:`
+  logged ~35 000 steps and 999.8 ms of waiting per second, every 10 s, for four minutes, until
+  the run was closed. Frame 3 never came.
+- **What it is not:** the SDK of that run did not carry patch 48 (the command processor's spin
+  backoff, integrated later), so 48 is not the cause. 0024 is not likely either: it changes
+  skinning shaders on the backend, and the backend had finished its precompilation and its last
+  frame. The guest's wait is on the command processor's progress, which the backend does not
+  feed. So the hang comes before both: the SDK's GPU sync at startup.
+- **Not reproduced:** 42 starts in a row of the same two builds on the same machine (22 under gdb,
+  20 without it and with perf ready to record) all reached the menu and quit normally.
+- **Should be caught by:** a log line that says, at the moment it happens, where every thread is
+  and what it waits for, so a single occurrence (on a player's machine too) is enough to find it.
+- **Covered now:** nothing in the repository yet. The desktop benches (local scripts) record a perf
+  profile and every thread's state when a start waits like this before the first menu.
