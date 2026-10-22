@@ -241,6 +241,9 @@ struct tl_backend {
   Ogre::RenderSystem* rs = nullptr;
   // Textures in BGRA byte order cannot be sampled (SampledTextureFormat).
   bool bgra_textures_unusable = false;
+  // OGRE's GLES render system (Android): the only one whose render textures discard their depth
+  // (tl_backend_discard_depth). Elsewhere targets share OGRE's default depth pool, as before.
+  bool discards_depth = false;
   Ogre::RenderWindow* window = nullptr;
   // The native window OGRE draws in where it cannot make its own (platform.h; macOS); outlives
   // `window`.
@@ -262,6 +265,7 @@ struct tl_backend {
     uint32_t guest_width = 0, guest_height = 0;  // as the guest created it
     bool scaled = false;  // drawn at the render scale (RenderScale): the main target and output
     int32_t viewport_width = 0, viewport_height = 0;  // the current viewport, guest pixels
+    uint16_t depth_pool = 0;  // its own depth pool on GLES (MakeTarget), kept when it is remade
   };
   Target main;
   Target output;  // main after the display gamma (DisplayGammaPass)
@@ -347,6 +351,12 @@ struct tl_backend {
   std::unordered_map<uint64_t, Ogre::SamplerPtr> samplers;  // by packed state (GetSampler)
   uint32_t texture_serial = 0;
   uint32_t enabled_units = 0;
+  uint16_t next_depth_pool = Ogre::RBP_DEFAULT + 1;  // MakeTarget: one depth pool per target
+  // Pools of released render textures, given to the next target made. OGRE keeps a detached depth
+  // buffer in its pool until shutdown and reuses it for a target of that pool it fits, so a pool
+  // id must be reused, never left behind. A pool still keeps one buffer per larger size it has
+  // had (a target remade larger cannot use the smaller one): bounded, not freed.
+  std::vector<uint16_t> free_depth_pools;
   std::unique_ptr<Ogre::Frustum> projectors[TL_MAX_STAGES];
   // RTSS programs by structural key (ProgramKey), and what feeds their auto constants.
   struct Program {
@@ -517,6 +527,20 @@ bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, 
       Ogre::TU_RENDERTARGET);
   t.rt = t.texture->getBuffer()->getRenderTarget();
   t.rt->setAutoUpdated(false);
+  // On GLES a depth buffer of its own: OGRE's default pool shares one buffer among targets it fits
+  // (a 512x512 render texture takes the main target's), and tl_backend_discard_depth must not drop
+  // another target's depth. Elsewhere nothing is discarded and the shared pool stays.
+  if (b->discards_depth) {
+    if (!t.depth_pool) {  // a remade target keeps its pool, and so its detached depth buffer
+      if (b->free_depth_pools.empty()) {
+        t.depth_pool = b->next_depth_pool++;
+      } else {
+        t.depth_pool = b->free_depth_pools.back();
+        b->free_depth_pools.pop_back();
+      }
+    }
+    t.rt->setDepthBufferPool(t.depth_pool);
+  }
   t.viewport = t.rt->addViewport(nullptr);
   t.viewport->setClearEveryFrame(false);
   t.viewport->setOverlaysEnabled(false);
@@ -1496,6 +1520,8 @@ void DisplayGammaPass(tl_backend* b) {
   rs->_disableTextureUnitsFrom(2);
   DrawQuad(b, b->quad);
   EndFullScreenPass(b);
+  // The output's depth is never used: on GLES it is not written back (tl_backend_discard_depth).
+  if (b->discards_depth) b->output.rt->swapBuffers();
 }
 
 // ---- host UI pass ------------------------------------------------------------------------------
@@ -1776,6 +1802,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     b->root->setRenderSystem(b->rs);
     // OGRE's GLES render system (the one with GLSL ES): SampledTextureFormat.
     b->bgra_textures_unusable = b->rs->getName().find("OpenGL ES") != std::string::npos;
+    b->discards_depth = b->bgra_textures_unusable;
     SelectGpu(b->rs, gpu);
     b->rs->setConfigOption("Full Screen", "No");
     b->root->initialise(false);
@@ -2293,6 +2320,7 @@ void tl_backend_release_texture(tl_backend* b, uint64_t id) {
   auto t = b->targets.find(id);
   if (t != b->targets.end()) {
     if (b->current == &t->second) b->current = &b->main;
+    if (t->second.depth_pool) b->free_depth_pools.push_back(t->second.depth_pool);
     b->targets.erase(t);
   }
   Ogre::TextureManager::getSingleton().remove(
@@ -2303,6 +2331,18 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
   uint8_t lut[256 * 3];
   conv::GammaRampLut(pwl != 0, values, lut);
   UploadGammaLut(b, lut);
+}
+
+void tl_backend_discard_depth(tl_backend* b) {
+  if (b->discards_depth && b->current && b->current->rt) b->current->rt->swapBuffers();
+}
+
+int tl_backend_discards_depth(const tl_backend* b) { return b->discards_depth ? 1 : 0; }
+
+void tl_backend_current_target_size(const tl_backend* b, uint32_t* width, uint32_t* height) {
+  const tl_backend::Target* t = b->current ? b->current : &b->main;
+  *width = t->guest_width;
+  *height = t->guest_height;
 }
 
 int tl_backend_set_target(tl_backend* b, uint64_t target_id) {

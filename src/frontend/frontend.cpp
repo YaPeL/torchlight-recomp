@@ -9,6 +9,7 @@
 #include <sstream>
 #include <variant>
 
+#include "frontend/depth_discard.h"
 #include "frontend/detile.h"
 
 namespace torchlight::frontend {
@@ -243,6 +244,18 @@ void Frontend::ApplySceneClip() {
                                           viewport_->guest_address == scene_clip_viewport_);
 }
 
+void Frontend::PlanTargets(const std::vector<Command>& commands) {
+  discard_depth_before_.clear();
+  if (!depth_discard_ || !tl_backend_discards_depth(backend_)) return;
+  // The frame starts on the main target (tl_backend_begin), the guest's frame size.
+  std::optional<TargetSize> bound;
+  if (guest_width_ && guest_height_) bound = TargetSize{guest_width_, guest_height_};
+  for (size_t i : PlanDepthDiscards(commands, viewport_, bound, scissor_))
+    discard_depth_before_.insert(&commands[i]);
+  for (const auto& c : commands)
+    if (const auto* sc = std::get_if<SetScissor>(&c.payload)) scissor_ = sc->enabled;
+}
+
 void Frontend::Execute(const Command& command) {
   std::visit(
       [&](const auto& p) {
@@ -262,6 +275,17 @@ void Frontend::Execute(const Command& command) {
               guest_width_ = p.width;
               guest_height_ = p.height;
             }
+          }
+          // Only when the target the plan saw is the one bound (a render texture not ready yet is
+          // replaced by the main target).
+          const bool planned_target = target != 0 || p.name.rfind("rtt/", 0) != 0;
+          // And only when the new target covers the one actually bound: the plan follows the
+          // guest's binds, and a render texture replaced by the main target leaves the host on a
+          // larger target than the plan saw.
+          if (planned_target && discard_depth_before_.count(&command)) {
+            uint32_t bound_w = 0, bound_h = 0;
+            tl_backend_current_target_size(backend_, &bound_w, &bound_h);
+            if (p.width >= bound_w && p.height >= bound_h) tl_backend_discard_depth(backend_);
           }
           tl_backend_set_target(backend_, target);
           // A viewport belongs to its target. The guest D3D9 _setViewport binds the

@@ -60,6 +60,8 @@ struct LiveOptions {
   std::function<void(const std::string& reason)> on_backend_failed;
   // The producer's cost per hook and section, timed and logged (--native_producer_timing).
   bool producer_timing = false;
+  // Render textures' depth dropped on GLES when the next pass clears it (--diag_depth_discard).
+  bool depth_discard = true;
   // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue); 0:
   // one with vsync, two without (frame_queue.h FrameQueueDepth).
   size_t frame_queue = 0;
