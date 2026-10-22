@@ -203,9 +203,11 @@ Choices<Resolution> ResolutionChoices(const Capabilities& caps) {
     if (known_display && !SameAspect(mode, caps.display)) continue;
     if (!Contains(choices.values, mode)) choices.values.push_back(mode);
   }
-  // Only the display's own size (Android reports no other mode): fractions of it, its aspect kept,
-  // so a slower device can draw at less than its screen (even sizes).
-  if (known_display && choices.values.size() == 1) {
+  // Only the display's own size, on a platform that prefers a smaller start (Android reports no
+  // other mode): fractions of it, its aspect kept, so a slower device can draw at less than its
+  // screen (even sizes). Elsewhere the list stays the display's own.
+  const bool prefers_smaller = caps.preferred_render.width && caps.preferred_render.height;
+  if (known_display && prefers_smaller && choices.values.size() == 1) {
     for (const auto [num, den] : {std::pair{3u, 4u}, {2u, 3u}, {1u, 2u}}) {
       const Resolution part{caps.display.width * num / den & ~1u,
                             caps.display.height * num / den & ~1u};
@@ -232,7 +234,10 @@ Resolution DefaultRenderResolution(const Capabilities& caps) {
 }
 
 Resolution EffectiveRenderResolution(Resolution setting, const Capabilities& caps) {
-  return setting == Resolution{} ? DefaultRenderResolution(caps) : setting;
+  if (setting != Resolution{}) return setting;
+  // Without a preferred start "window" stays 0x0: the render follows the window's size.
+  const Resolution preferred = caps.preferred_render;
+  return preferred.width && preferred.height ? DefaultRenderResolution(caps) : Resolution{};
 }
 
 Choices<uint32_t> FpsCapChoices(const Capabilities& caps) {

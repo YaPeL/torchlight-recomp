@@ -84,8 +84,9 @@ bool VideoMenuModel::Step(Row row, int direction) {
       // following the display.
       const auto values = settings::ResolutionChoices(caps_).values;
       const settings::Resolution default_shown = settings::DefaultRenderResolution(caps_);
-      settings::Resolution shown =
-          settings::EffectiveRenderResolution(current_.render_resolution, caps_);
+      settings::Resolution shown = current_.render_resolution == settings::Resolution{}
+                                       ? default_shown
+                                       : current_.render_resolution;
       if (!StepIn(values, shown, direction)) return false;
       current_.render_resolution = shown == default_shown ? settings::Resolution{} : shown;
       return true;
@@ -170,8 +171,9 @@ bool VideoMenuModel::Reset() {
 std::string VideoMenuModel::Text(Row row) const {
   switch (row) {
     case Row::kResolution: {
-      const settings::Resolution r =
-          settings::EffectiveRenderResolution(current_.render_resolution, caps_);
+      const settings::Resolution r = current_.render_resolution == settings::Resolution{}
+                                         ? settings::DefaultRenderResolution(caps_)
+                                         : current_.render_resolution;
       if (!r.width || !r.height) return "Window";
       return std::to_string(r.width) + "x" + std::to_string(r.height);
     }

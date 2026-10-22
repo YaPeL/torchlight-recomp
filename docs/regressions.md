@@ -155,7 +155,9 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 - **Should have been caught by:** CI. Its Android job only builds; nothing ran the backend on a
   GLES render system, so a program that does not link, or an image that is all black, passed.
 - **Caught by:** the owner, looking at the phone during a benchmark series.
-- **Covered now:** A2's commits are in `develop`; a CI replay on OGRE's GLES2 render system over
-  Mesa (EGL, llvmpipe) fails when a program does not link or the image is black (`ci/gles-replay`,
-  pending the owner's OK). And every measurement names the commit it was built from, which must
-  be in `develop` or on a pushed branch.
+- **Covered now:** A2's commits are in `develop`. A CI job on OGRE's GLES2 render system over Mesa
+  (EGL, llvmpipe) runs the backend's drawing tests, which check pixels, and replays a synthetic
+  capture; it fails on a crash, a program that does not compile or link, a black image or one
+  that differs from its reference (`ci/gles-replay`). The RTSS's generated programs need the
+  game's files and are not covered there. And every measurement names the commit it was built
+  from, which must be in `develop` or on a pushed branch.

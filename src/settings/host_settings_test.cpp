@@ -69,10 +69,14 @@ void TestSingleModeResolutions() {
   Capabilities desktop = Desktop();
   Check(ResolutionChoices(desktop).values.size() == 4, "several modes: no fractions added");
   Check(DefaultRenderResolution(desktop) == desktop.display, "no preference: the display");
+  Check(EffectiveRenderResolution(Resolution{}, desktop) == Resolution{},
+        "no preference: window stays 0x0 and follows the window");
   Capabilities one_mode_desktop = desktop;
   one_mode_desktop.display_modes = {desktop.display};
   Check(DefaultRenderResolution(one_mode_desktop) == desktop.display,
         "one mode without a preference: the display");
+  Check(!ResolutionChoices(one_mode_desktop).enabled,
+        "one mode without a preference: no fractions, as before");
 }
 
 void TestRoundTrip() {
