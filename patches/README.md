@@ -722,11 +722,12 @@ in number order; a branch adds its own line at its number's place.
 50. `rexglue-thread-dump.patch`: `rex::system::LogThreadDump(reason)` logs every guest thread's
     ids, state and current kernel wait (objects, kind, timeout, how long, guest LR), and the
     command processor's ring pointers, idle or WAIT_REG_MEM wait (and for how long) and pending
-    calls, for a watchdog that found a hang. It never waits on a lock: the threads write their
-    own state into a fixed table of atomics with sequence counters, a record being written is
-    printed as inconsistent, other threads never wait for a record's writer, and the command
-    processor's section only tries its lock. Tests, under ThreadSanitizer too, hold those locks
-    on other threads and check that every dump returns.
+    calls, for a watchdog that found a hang. It takes none of the runtime's or the command
+    processor's locks: the threads write their own state into a fixed table of atomics with
+    sequence counters, a record being written is printed as inconsistent, other threads never
+    wait for a record's writer, and the command processor's section only tries its lock. It can
+    still wait on the log sink's lock and the heap's. Tests, under ThreadSanitizer too, hold
+    those locks on other threads and check that every dump returns.
 
 The observation and diagnostic patches there were before remain in the git history.
 

@@ -10,22 +10,31 @@ processor: ring read and write pointers, whether its worker runs, whether it is 
 ring or in WAIT_REG_MEM and for how long (with the register or memory address, function,
 reference, mask and the last value read), and its pending calls.
 
-It never waits on a lock, because the hang it is called for can be a lock held forever:
+It takes no lock of the runtime's or the command processor's, because the hang it is called for
+can be one of them held forever:
 - Every XThread writes its own state into a fixed table (256 records, never freed): its ids,
-  its current wait (XObject::Wait, WaitMultiple, SignalAndWait and XThread::Delay, which every
-  Ke/Nt wait and blocking critical section goes through). Every field is an atomic, each part
+  its current wait (XObject::Wait, WaitMultiple, SignalAndWait, XThread::Delay and the I/O
+  completion wait: every Ke/Nt wait and blocking critical section goes through them). Only
+  XThreads with a record write it: host threads also wait through XObject::Wait (the shutdown
+  joins) and are left out. A thread appears once it starts running, so one created suspended
+  and never resumed does not. Every field is an atomic, each part
   of a record has a sequence counter that is odd while it is written, and the dump keeps a read
   only when the counter was even and unchanged across it. A record being written at that moment
   is counted as "inconsistent".
 - Other threads write a record's name (its own counter) and suspend count (one atomic), and
   only try its writer: on Windows a thread can be suspended in the middle of its own write, and
-  the thread that resumes, renames or terminates it must not wait for it.
+  the thread that resumes, renames or terminates it must not wait for it. Each record has a
+  generation, changed when it is taken and released, so a thread whose record another thread
+  released (XThread::Terminate) no longer writes it once someone else has it.
 - The command processor is in the GPU plugin; it registers a section with the runtime
   (RegisterThreadDumpSection). Its worker writes its state into atomics; the dump only tries the
   pending calls' lock (PendingCalls::TrySize) and prints "inconsistent (locked)" when it is
   taken. Unregister waits until no dump runs the section, so the command processor can be
   destroyed after it.
-- The one lock left is the log sink's, for the single call that writes the block.
+- What it can still wait on: the log sink's lock, for the single call that writes the block,
+  and the heap's, since it builds the text in a std::string. Both are outside what it reads.
+- The command processor's times are stored after the fields they go with (release, read with
+  acquire); a dump that overlaps the start of the next wait can still mix two waits' fields.
 
 Cost: each kernel wait on a guest thread stores a dozen atomics and reads the steady clock
 once; the command processor stores a few relaxed atomics per packet loop, idle wait and
@@ -34,11 +43,13 @@ WAIT_REG_MEM wait.
 Test: tests/unit/system/thread_dump_test.cpp. A thread's wait on two objects shows with its
 kind, objects, timeout and LR, then as running once it ends; a record held by a writer on
 another thread is counted as inconsistent and the dump still returns; renaming a record and
-setting its suspend count return while its writer holds it; the command processor's section
+setting its suspend count return while its writer holds it; a thread whose record was released
+for it and taken by another does not write into it; the command processor's section
 prints a WAIT_REG_MEM wait and an idle one, and prints its pending calls as inconsistent while
 another thread holds their lock; LogThreadDump returns with no kernel or GPU. Every dump in the
-tests must return within 1 s. The tests built alone with ThreadSanitizer (clang 21, Linux):
-three runs, no report. The SDK's tests pass with it (Linux: 1780); built for Android.
+tests runs on a detached thread and must return within 1 s, so a hang fails the test. The
+tests built alone with ThreadSanitizer (clang 21, Linux): three runs, no report. The SDK's
+tests pass with it (Linux: 1781); built for Android.
 
 diff --git a/include/rex/graphics/command_processor.h b/include/rex/graphics/command_processor.h
 index d6f6c6a..4dc61e3 100644
@@ -64,10 +75,10 @@ index d6f6c6a..4dc61e3 100644
    std::vector<uint32_t> me_bin_;
 diff --git a/include/rex/graphics/command_processor_dump.h b/include/rex/graphics/command_processor_dump.h
 new file mode 100644
-index 0000000..3c092f3
+index 0000000..7b57e15
 --- /dev/null
 +++ b/include/rex/graphics/command_processor_dump.h
-@@ -0,0 +1,78 @@
+@@ -0,0 +1,81 @@
 +/**
 + * @file        rex/graphics/command_processor_dump.h
 + * @brief       The command processor's part of the thread dump, read without waiting on a lock
@@ -92,7 +103,9 @@ index 0000000..3c092f3
 +namespace rex::graphics {
 +
 +// What the command processor's worker is doing, written by the worker with atomics for the
-+// thread dump (rex/system/thread_dump.h). A time of -1 means "not in that wait".
++// thread dump (rex/system/thread_dump.h). A time of -1 means "not in that wait". Each time is
++// stored after the fields it goes with; a dump that overlaps the start of the next wait can
++// still print that wait's time with a field of the next one.
 +struct CommandProcessorDumpState {
 +  std::atomic<uint32_t> read_ptr{0};
 +  std::atomic<int64_t> idle_since_ms{-1};
@@ -120,8 +133,9 @@ index 0000000..3c092f3
 +  fmt::format_to(it, "  command processor: worker {}, ring read {:08X} write {:08X}, ",
 +                 worker_running ? "running" : "stopped",
 +                 state.read_ptr.load(std::memory_order_relaxed), write_ptr);
-+  int64_t idle_since = state.idle_since_ms.load(std::memory_order_relaxed);
-+  int64_t wait_since = state.wait_reg_mem_since_ms.load(std::memory_order_relaxed);
++  // Acquire: the worker stores each time after the fields it goes with.
++  int64_t idle_since = state.idle_since_ms.load(std::memory_order_acquire);
++  int64_t wait_since = state.wait_reg_mem_since_ms.load(std::memory_order_acquire);
 +  if (wait_since >= 0) {
 +    uint32_t info = state.wait_reg_mem_info.load(std::memory_order_relaxed);
 +    fmt::format_to(it,
@@ -181,7 +195,7 @@ index d68b79f..5ae473c 100644
        std::function<void()> fn;
 diff --git a/include/rex/system/thread_dump.h b/include/rex/system/thread_dump.h
 new file mode 100644
-index 0000000..51b7bea
+index 0000000..66af0d1
 --- /dev/null
 +++ b/include/rex/system/thread_dump.h
 @@ -0,0 +1,116 @@
@@ -207,10 +221,10 @@ index 0000000..51b7bea
 +// (running, waiting, suspended), the kernel objects a waiting thread waits on and for how long,
 +// and the guest LR of that wait's kernel call; then each registered section (the command
 +// processor's). It can be called from any thread, before or after the kernel and the GPU exist.
-+// It never waits on a lock: the threads write their own state into a fixed table with atomics,
-+// a record being written at that moment is printed as "inconsistent", and the sections only try
-+// their locks. The one lock it can wait on is the log sink's, for the single call that writes
-+// the block.
++// It takes none of the runtime's locks: the threads write their own state into a fixed table of
++// atomics, a record being written at that moment is printed as "inconsistent", and the sections
++// only try their locks. What it can still wait on: the log sink's lock, for the single call
++// that writes the block, and the heap's, since it builds the text in a std::string.
 +void LogThreadDump(std::string_view reason);
 +
 +// The text LogThreadDump logs.
@@ -315,7 +329,7 @@ index a72911e..1dad77b 100644
    int32_t priority_ = 0;
  
 diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
-index 72ef9a6..0f0179b 100644
+index 72ef9a6..4dcf995 100644
 --- a/src/graphics/command_processor.cpp
 +++ b/src/graphics/command_processor.cpp
 @@ -33,6 +33,7 @@
@@ -362,7 +376,7 @@ index 72ef9a6..0f0179b 100644
        // We've run out of commands to execute. Spin briefly, then block on the event:
        // UpdateWritePointer and CallInThread set it, and the timeout rechecks anyway.
        PrepareForWait();
-+      dump_state_.idle_since_ms.store(CommandProcessorDumpNowMs(), std::memory_order_relaxed);
++      dump_state_.idle_since_ms.store(CommandProcessorDumpNowMs(), std::memory_order_release);
        uint32_t loop_count = 0;
        do {
          if (loop_count >= kSpinYields) {
@@ -394,7 +408,7 @@ index 72ef9a6..0f0179b 100644
    bool matched = false;
    do {
      uint32_t value = 0;
-@@ -1048,6 +1068,15 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+@@ -1048,6 +1068,16 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
          break;
      }
      if (!matched) {
@@ -403,8 +417,9 @@ index 72ef9a6..0f0179b 100644
 +        dump_state_.wait_reg_mem_info.store(wait_info, std::memory_order_relaxed);
 +        dump_state_.wait_reg_mem_reference.store(ref, std::memory_order_relaxed);
 +        dump_state_.wait_reg_mem_mask.store(mask, std::memory_order_relaxed);
++        // Release: a dump that reads this time also reads the fields above.
 +        dump_state_.wait_reg_mem_since_ms.store(CommandProcessorDumpNowMs(),
-+                                                std::memory_order_relaxed);
++                                                std::memory_order_release);
 +      }
 +      dump_state_.wait_reg_mem_value.store(value, std::memory_order_relaxed);
        // Wait: a few yields, then sleeps that grow up to max_sleep.
@@ -424,10 +439,10 @@ index 1b70573..2f26e42 100644
  
 diff --git a/src/system/thread_dump.cpp b/src/system/thread_dump.cpp
 new file mode 100644
-index 0000000..78a85ed
+index 0000000..2b0cf6d
 --- /dev/null
 +++ b/src/system/thread_dump.cpp
-@@ -0,0 +1,440 @@
+@@ -0,0 +1,448 @@
 +/**
 + * @file        system/thread_dump.cpp
 + * @brief       A dump of every guest thread's state, read without waiting on any lock
@@ -471,6 +486,9 @@ index 0000000..78a85ed
 +// an atomic, so a read that races a write is never undefined, only discarded.
 +struct Record {
 +  std::atomic<bool> in_use{false};
++  // Changes on every acquire and release: a thread whose record another thread released
++  // (XThread::Terminate) and someone else took meanwhile no longer writes it.
++  std::atomic<uint32_t> generation{0};
 +  std::atomic_flag writer = ATOMIC_FLAG_INIT;
 +  std::atomic<uint32_t> sequence{0};
 +  std::atomic<uint32_t> thread_id{0};
@@ -491,6 +509,7 @@ index 0000000..78a85ed
 +std::array<Record, kMaxRecords> records;
 +std::atomic<uint32_t> unrecorded_threads{0};
 +thread_local int current_record = -1;
++thread_local uint32_t current_generation = 0;
 +
 +int64_t NowMs() {
 +  return std::chrono::duration_cast<std::chrono::milliseconds>(
@@ -768,7 +787,9 @@ index 0000000..78a85ed
 +    {
 +      TryWriteScope write(record.writer, record.sequence);
 +      if (!write.owns()) {
-+        // Left held by a thread that was killed while writing it: never used again.
++        // Still held by a thread whose record was released for it (or that was killed while
++        // writing it): try the next one.
++        record.in_use.store(false, std::memory_order_release);
 +        continue;
 +      }
 +      record.thread_id.store(thread_id, std::memory_order_relaxed);
@@ -778,6 +799,7 @@ index 0000000..78a85ed
 +    record.suspend_count.store(0, std::memory_order_relaxed);
 +    StoreName(record, name);
 +    current_record = static_cast<int>(i);
++    current_generation = record.generation.fetch_add(1, std::memory_order_acq_rel) + 1;
 +    return current_record;
 +  }
 +  unrecorded_threads.fetch_add(1, std::memory_order_relaxed);
@@ -796,6 +818,7 @@ index 0000000..78a85ed
 +      record->wait_kind.store(static_cast<uint32_t>(WaitKind::kNone), std::memory_order_relaxed);
 +    }
 +  }
++  record->generation.fetch_add(1, std::memory_order_acq_rel);
 +  record->in_use.store(false, std::memory_order_release);
 +  if (current_record == index) {
 +    current_record = -1;
@@ -825,7 +848,7 @@ index 0000000..78a85ed
 +    return;
 +  }
 +  TryWriteScope write(record->writer, record->sequence);
-+  if (!write.owns()) {
++  if (!write.owns() || record->generation.load(std::memory_order_acquire) != current_generation) {
 +    return;
 +  }
 +  record->wait_kind.store(static_cast<uint32_t>(kind), std::memory_order_relaxed);
@@ -846,7 +869,7 @@ index 0000000..78a85ed
 +    return;
 +  }
 +  TryWriteScope write(record->writer, record->sequence);
-+  if (write.owns()) {
++  if (write.owns() && record->generation.load(std::memory_order_acquire) == current_generation) {
 +    record->wait_kind.store(static_cast<uint32_t>(WaitKind::kNone), std::memory_order_relaxed);
 +  }
 +}
@@ -868,8 +891,40 @@ index 0000000..78a85ed
 +}  // namespace thread_dump
 +
 +}  // namespace rex::system
+diff --git a/src/system/xiocompletion.cpp b/src/system/xiocompletion.cpp
+index 0a48dc9..b623b78 100644
+--- a/src/system/xiocompletion.cpp
++++ b/src/system/xiocompletion.cpp
+@@ -11,6 +11,11 @@
+ 
+ #include <rex/system/xiocompletion.h>
+ 
++#include <rex/ppc/context.h>
++#include <rex/system/thread_dump.h>
++#include <rex/system/thread_state.h>
++#include <rex/system/xthread.h>
++
+ namespace rex::system {
+ 
+ XIOCompletion::XIOCompletion(KernelState* kernel_state) : XObject(kernel_state, kObjectType) {
+@@ -29,6 +34,15 @@ void XIOCompletion::QueueNotification(IONotification& notification) {
+ 
+ bool XIOCompletion::WaitForNotification(uint64_t wait_ticks, IONotification* notify) {
+   auto ms = std::chrono::milliseconds(TimeoutTicksToMs(wait_ticks));
++  // For the thread dump, as XObject::Wait records its waits.
++  const thread_dump::WaitObject dumped_object[] = {{static_cast<uint32_t>(type()), handle()}};
++  uint64_t guest_lr = 0;
++  if (thread_dump::CurrentRecord() >= 0 && XThread::IsInThread()) {
++    auto* thread_state = XThread::GetCurrentThread()->thread_state();
++    guest_lr = thread_state && thread_state->context() ? thread_state->context()->lr : 0;
++  }
++  thread_dump::ScopedWait dumped(thread_dump::WaitKind::kSingle, dumped_object, 1, ms.count(),
++                                 guest_lr);
+   auto res = rex::thread::Wait(notification_semaphore_.get(), false, ms);
+   if (res == rex::thread::WaitResult::kSuccess) {
+     std::unique_lock<std::mutex> lock(notification_lock_);
 diff --git a/src/system/xobject.cpp b/src/system/xobject.cpp
-index d358f39..8e5cb60 100644
+index d358f39..85328d2 100644
 --- a/src/system/xobject.cpp
 +++ b/src/system/xobject.cpp
 @@ -9,11 +9,15 @@
@@ -888,43 +943,49 @@ index d358f39..8e5cb60 100644
  #include <rex/system/util/string_utils.h>  // For TranslateAnsiStringAddress
  #include <rex/system/xobject.h>
  // #include <rex/kernel/xboxkrnl/private.h>  // TODO: JIT only
-@@ -29,6 +33,43 @@
+@@ -29,6 +33,49 @@
  
  namespace rex::system {
  
 +namespace {
 +
-+// The guest LR of the calling thread's kernel call, for the thread dump (0 off a guest thread).
-+uint64_t CurrentGuestLr() {
-+  XThread* thread = XThread::GetCurrentThread();
-+  if (!thread || !thread->thread_state() || !thread->thread_state()->context()) {
-+    return 0;
-+  }
-+  return thread->thread_state()->context()->lr;
-+}
-+
 +int64_t DumpTimeoutMs(std::chrono::milliseconds timeout) {
 +  return timeout == std::chrono::milliseconds::max() ? -1 : timeout.count();
 +}
 +
-+// Records a wait on `objects` in the thread dump while it lasts.
++// Records a wait on `objects` in the thread dump while it lasts. Only on a thread with a record,
++// which is a bound XThread: host threads wait through here too (shutdown joins), and
++// XThread::GetCurrentThread asserts on them.
 +class DumpedWait {
 + public:
 +  DumpedWait(thread_dump::WaitKind kind, XObject* const* objects, uint32_t count,
-+             std::chrono::milliseconds timeout)
-+      : wait_(kind, Describe(objects, count), count, DumpTimeoutMs(timeout), CurrentGuestLr()) {}
-+
-+ private:
-+  std::span<const thread_dump::WaitObject> Describe(XObject* const* objects, uint32_t count) {
++             std::chrono::milliseconds timeout) {
++    if (thread_dump::CurrentRecord() < 0 || !XThread::IsInThread()) {
++      return;
++    }
++    thread_dump::WaitObject described[thread_dump::kMaxWaitObjects] = {};
 +    uint32_t shown = std::min<uint32_t>(count, thread_dump::kMaxWaitObjects);
 +    for (uint32_t i = 0; i < shown; ++i) {
-+      described_[i] = {static_cast<uint32_t>(objects[i]->type()), objects[i]->handle()};
++      described[i] = {static_cast<uint32_t>(objects[i]->type()), objects[i]->handle()};
 +    }
-+    return {described_, shown};
++    uint64_t guest_lr = 0;
++    auto* thread_state = XThread::GetCurrentThread()->thread_state();
++    if (thread_state && thread_state->context()) {
++      guest_lr = thread_state->context()->lr;
++    }
++    thread_dump::BeginWait(kind, {described, shown}, count, DumpTimeoutMs(timeout), guest_lr);
++    active_ = true;
 +  }
++  ~DumpedWait() {
++    if (active_) {
++      thread_dump::EndWait();
++    }
++  }
++  DumpedWait(const DumpedWait&) = delete;
++  DumpedWait& operator=(const DumpedWait&) = delete;
 +
-+  thread_dump::WaitObject described_[thread_dump::kMaxWaitObjects] = {};
-+  thread_dump::ScopedWait wait_;
++ private:
++  bool active_ = false;
 +};
 +
 +}  // namespace
@@ -932,7 +993,7 @@ index d358f39..8e5cb60 100644
  XObject::XObject(Type type) : kernel_state_(nullptr), pointer_ref_count_(1), type_(type) {
    handles_.reserve(10);
  }
-@@ -213,6 +254,8 @@ X_STATUS XObject::Wait(uint32_t wait_reason, uint32_t processor_mode, uint32_t a
+@@ -213,6 +260,8 @@ X_STATUS XObject::Wait(uint32_t wait_reason, uint32_t processor_mode, uint32_t a
                                  : std::chrono::milliseconds::max();
  
    XThread::CheckTitleTermination();
@@ -941,7 +1002,7 @@ index d358f39..8e5cb60 100644
    auto result = rex::thread::Wait(wait_handle, alertable ? true : false, timeout_ms);
    XThread::CheckTitleTermination();
    switch (result) {
-@@ -239,6 +282,8 @@ X_STATUS XObject::SignalAndWait(XObject* signal_object, XObject* wait_object, ui
+@@ -239,6 +288,8 @@ X_STATUS XObject::SignalAndWait(XObject* signal_object, XObject* wait_object, ui
                                        TimeoutTicksToMs(*opt_timeout)))
                                  : std::chrono::milliseconds::max();
  
@@ -950,7 +1011,7 @@ index d358f39..8e5cb60 100644
    auto result =
        rex::thread::SignalAndWait(signal_object->GetWaitHandle(), wait_object->GetWaitHandle(),
                                   alertable ? true : false, timeout_ms);
-@@ -273,6 +318,8 @@ X_STATUS XObject::WaitMultiple(uint32_t count, XObject** objects, uint32_t wait_
+@@ -273,6 +324,8 @@ X_STATUS XObject::WaitMultiple(uint32_t count, XObject** objects, uint32_t wait_
                                  : std::chrono::milliseconds::max();
  
    XThread::CheckTitleTermination();
@@ -1078,10 +1139,10 @@ index d424f20..d436f1e 100644
      system/function_dispatcher_test.cpp
 diff --git a/tests/unit/system/thread_dump_test.cpp b/tests/unit/system/thread_dump_test.cpp
 new file mode 100644
-index 0000000..de70e5b
+index 0000000..d4618a6
 --- /dev/null
 +++ b/tests/unit/system/thread_dump_test.cpp
-@@ -0,0 +1,200 @@
+@@ -0,0 +1,240 @@
 +/**
 + * @file        system/thread_dump_test.cpp
 + * @brief       The thread dump: threads' waits, and it returns while other threads hold locks
@@ -1096,6 +1157,8 @@ index 0000000..de70e5b
 +#include <chrono>
 +#include <functional>
 +#include <future>
++#include <memory>
++#include <optional>
 +#include <string>
 +#include <thread>
 +
@@ -1108,12 +1171,22 @@ index 0000000..de70e5b
 +
 +namespace {
 +
-+// Runs `dump` on another thread and fails if it does not return within a second: the dump must
-+// never wait on a lock.
-+std::string DumpWithin1s(std::function<std::string()> dump) {
-+  auto result = std::async(std::launch::async, std::move(dump));
-+  REQUIRE(result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
++// Runs `work` on a detached thread and returns its result if it finishes within a second, so a
++// dump that hangs fails the test instead of hanging it: the dump must never wait on a lock. The
++// callers release what they hold before they check the result.
++template <typename T>
++std::optional<T> Within1s(std::function<T()> work) {
++  auto promise = std::make_shared<std::promise<T>>();
++  auto result = promise->get_future();
++  std::thread([promise, work = std::move(work)] { promise->set_value(work()); }).detach();
++  if (result.wait_for(std::chrono::seconds(1)) != std::future_status::ready) {
++    return std::nullopt;
++  }
 +  return result.get();
++}
++
++std::optional<std::string> DumpWithin1s(const char* reason) {
++  return Within1s<std::string>([reason] { return FormatThreadDump(reason); });
 +}
 +
 +// A thread with a record, which does what the test asks and stays until released.
@@ -1158,7 +1231,7 @@ index 0000000..de70e5b
 +  });
 +  waiting.get_future().wait();
 +  CHECK(record >= 0);
-+  std::string dump = DumpWithin1s([] { return FormatThreadDump("test"); });
++  std::string dump = DumpWithin1s("test").value_or("(the dump did not return)");
 +  CHECK(dump.find("Thread dump (test)") != std::string::npos);
 +  CHECK(dump.find("\"dump test waiter\" id 0000ABCD host tid 777: waiting") != std::string::npos);
 +  CHECK(dump.find("wait for any on Event F8000010, Semaphore F8000020, no timeout, "
@@ -1191,12 +1264,12 @@ index 0000000..de70e5b
 +  });
 +  holding.get_future().wait();
 +
-+  std::string dump = DumpWithin1s([] { return FormatThreadDump("held"); });
-+  CHECK(dump.find("dump test held") == std::string::npos);
-+  CHECK(dump.find("inconsistent (being written)") != std::string::npos);
-+
++  std::optional<std::string> held = DumpWithin1s("held");
 +  release.set_value();
 +  writer.join();
++  REQUIRE(held.has_value());
++  CHECK(held->find("dump test held") == std::string::npos);
++  CHECK(held->find("inconsistent (being written)") != std::string::npos);
 +  CHECK(FormatThreadDump("held").find("\"dump test held\"") != std::string::npos);
 +}
 +
@@ -1213,16 +1286,41 @@ index 0000000..de70e5b
 +    release.get_future().wait();
 +  });
 +  holding.get_future().wait();
-+  auto writes = std::async(std::launch::async, [record] {
++  std::optional<bool> writes = Within1s<bool>([record] {
 +    td::SetSuspendCount(record, 1);
 +    td::SetName(record, "dump test renamed");
 +    return true;
 +  });
-+  CHECK(writes.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
 +  release.set_value();
 +  writer.join();
++  REQUIRE(writes.has_value());
 +  std::string dump = FormatThreadDump("renamed");
 +  CHECK(dump.find("\"dump test renamed\" id 00001234 host tid 4321: suspended (1), running") !=
++        std::string::npos);
++}
++
++TEST_CASE("A thread whose record was released for it no longer writes it", "[thread_dump]") {
++  // XThread::Terminate releases another thread's record; that thread may still run a little
++  // and must not write into the record once someone else has it.
++  std::promise<int> acquired;
++  std::promise<void> released, waited;
++  std::thread stale([&] {
++    acquired.set_value(td::AcquireRecord(0x5555, 555, "dump test terminated"));
++    released.get_future().wait();
++    const td::WaitObject object[] = {{2, 0xF8000099}};
++    td::BeginWait(td::WaitKind::kSingle, object, 1, -1, 0x82009999);
++    waited.set_value();
++  });
++  int record = acquired.get_future().get();
++  CHECK(record >= 0);
++  td::ReleaseRecord(record);
++  RecordedThread successor("dump test successor");
++  released.set_value();
++  waited.get_future().wait();
++  stale.join();
++  std::string dump = FormatThreadDump("reused");
++  CHECK(dump.find("F8000099") == std::string::npos);
++  CHECK(dump.find("\"dump test successor\" id 00001234 host tid 4321: running") !=
 +        std::string::npos);
 +}
 +
@@ -1264,10 +1362,11 @@ index 0000000..de70e5b
 +    release.get_future().wait();
 +  });
 +  holding.get_future().wait();
-+  dump = DumpWithin1s([] { return FormatThreadDump("locked"); });
-+  CHECK(dump.find("pending calls inconsistent (locked)") != std::string::npos);
++  std::optional<std::string> locked = DumpWithin1s("locked");
 +  release.set_value();
 +  holder.join();
++  REQUIRE(locked.has_value());
++  CHECK(locked->find("pending calls inconsistent (locked)") != std::string::npos);
 +
 +  state.wait_reg_mem_since_ms = -1;
 +  state.idle_since_ms = rex::graphics::CommandProcessorDumpNowMs() - 3000;
@@ -1279,6 +1378,8 @@ index 0000000..de70e5b
 +}
 +
 +TEST_CASE("LogThreadDump returns without a kernel or a GPU", "[thread_dump]") {
-+  auto result = std::async(std::launch::async, [] { rex::system::LogThreadDump("no kernel"); });
-+  CHECK(result.wait_for(std::chrono::seconds(1)) == std::future_status::ready);
++  CHECK(Within1s<bool>([] {
++          rex::system::LogThreadDump("no kernel");
++          return true;
++        }).has_value());
 +}
