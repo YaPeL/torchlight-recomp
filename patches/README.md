@@ -63,7 +63,8 @@ in number order; a branch adds its own line at its number's place.
 | 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
 | 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
 | 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
-| 48 | | | Next free number |
+| 48 | `rexglue-command-processor-spin-backoff.patch` | `sdk/cp-spin-backoff` | In the branch (after 47) |
+| 49 | | | Next free number |
 
 ## The patches
 
@@ -697,5 +698,13 @@ in number order; a branch adds its own line at its number's place.
     (P S S P): mean guest frame time -7.6 % at rest (both runs with it below both without) and
     -7.4 % in a fight (the two runs without it differ by 10 %); presented frame time unchanged
     (GPU-bound there).
+
+48. `rexglue-command-processor-spin-backoff.patch`: the command processor's thread yielded in a
+    loop while it had nothing to do (about a third of a core on the POCO X7 in a fight). With an
+    empty ring buffer it yields 16 times instead of 500 before waiting on its event (which every
+    write pointer update, and now every queued call, sets). In WAIT_REG_MEM it yields 16 times,
+    then sleeps 20 us doubling up to the packet's poll interval: whole milliseconds as before
+    with vsync on, at most 500 us with vsync off (where it used to only yield). Every poll still
+    reads its register or memory; no unit test reaches these loops.
 
 The observation and diagnostic patches there were before remain in the git history.
