@@ -703,8 +703,9 @@ in number order; a branch adds its own line at its number's place.
     loop while it had nothing to do (about a third of a core on the POCO X7 in a fight). With an
     empty ring buffer it yields 16 times instead of 500 before waiting on its event (which every
     write pointer update, and now every queued call, sets). In WAIT_REG_MEM it yields 16 times,
-    then sleeps 20 us doubling up to the packet's poll interval: whole milliseconds as before
-    with vsync on, at most 500 us with vsync off (where it used to only yield). Every poll still
-    reads its register or memory; no unit test reaches these loops.
+    then sleeps 20 us doubling up to the packet's poll interval or 500 us, whichever is smaller
+    (with vsync on, never less than the whole milliseconds it slept before; it yielded on every
+    poll otherwise). Every poll still reads its register or memory; no unit test reaches these
+    loops. Not measured yet on Torchlight (a POCO X7 A/B decides it).
 
 The observation and diagnostic patches there were before remain in the git history.

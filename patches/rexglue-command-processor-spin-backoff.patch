@@ -12,22 +12,24 @@ work was a few percent.
   function, which before waited for the spin or the 5 ms timeout.
 - WAIT_REG_MEM, the condition not met: with vsync off it yielded on every poll; with vsync on it
   slept wait / 0x100 whole milliseconds per poll (yielding when that was 0). It now yields
-  kSpinYields times, then sleeps 20 us, doubling up to a cap: with vsync on, the same whole
-  milliseconds as before (Windows' rex::thread::Sleep turns anything under 1 ms into a yield,
-  so a smaller cap would spin there); with vsync off, the packet's poll interval
-  (wait * 1000 / 0x100 us) or 500 us, whichever is smaller. A cap under 20 us keeps yielding.
-  PrepareForWait and ReturnFromWait are called as before.
+  kSpinYields times, then sleeps 20 us, doubling up to a cap: the packet's poll interval
+  (wait * 1000 / 0x100 us) or 500 us, whichever is smaller, and with vsync on at least the whole
+  milliseconds it slept before (Windows' rex::thread::Sleep turns anything under 1 ms into a
+  yield, so a smaller cap would spin there). A cap under 20 us (wait under 6) keeps yielding.
+  PrepareForWait and ReturnFromWait are called as before. On Windows the sleeps under 1 ms are
+  ::Sleep(0) or SwitchToThread, so there only the vsync-on sleeps of 1 ms or more remain real
+  sleeps, as before.
 
 Nothing the guest waits on is skipped: every poll still reads the register or memory, and the
 worker still runs every packet. What can change is latency: a condition met during a sleep is
-seen up to the cap later: 500 us with vsync off (before, at once), and with vsync on no later
-than before.
+seen up to the cap later; with vsync on that is never later than before, with vsync off up to
+500 us (before, at once).
 
 Test: no unit test reaches these loops (the command processor needs a graphics system); the
-SDK's tests pass on Linux, Windows and macOS (CI). Torchlight on the POCO X7: see the README.
+SDK's tests pass with it. Not measured yet on Torchlight: an A/B on the POCO X7 decides it.
 
 diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
-index a744375..3733b69 100644
+index a744375..88036f1 100644
 --- a/src/graphics/command_processor.cpp
 +++ b/src/graphics/command_processor.cpp
 @@ -99,6 +99,15 @@ ReadbackResolveMode ParseReadbackResolveMode(std::string_view value) {
@@ -39,7 +41,7 @@ index a744375..3733b69 100644
 +// yields only a few times and then blocks. kSpinYields yields take tens of microseconds.
 +constexpr uint32_t kSpinYields = 16;
 +// WAIT_REG_MEM sleeps start here and double up to the packet's poll interval (0x100 units are
-+// 1 ms); with vsync off, where the poll used to only yield, up to kFastPollSleep at most.
++// 1 ms), at most kFastPollSleep; with vsync on, at least the whole milliseconds it used to sleep.
 +constexpr std::chrono::microseconds kMinPollSleep{20};
 +constexpr std::chrono::microseconds kFastPollSleep{500};
 +
@@ -73,23 +75,25 @@ index a744375..3733b69 100644
            const int wait_time_ms = 5;
            rex::thread::Wait(write_ptr_index_event_.get(), true,
                              std::chrono::milliseconds(wait_time_ms));
-@@ -989,6 +998,15 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+@@ -989,6 +998,17 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
  
    bool is_memory = (wait_info & 0x10) != 0;
  
-+  // The longest sleep between polls. With vsync on, the whole milliseconds the poll used to sleep
-+  // (Windows' Sleep turns less than 1 ms into a yield, so less would spin there); with vsync off,
-+  // the poll interval up to kFastPollSleep.
-+  std::chrono::microseconds max_sleep = std::chrono::milliseconds(wait / 0x100);
-+  if (!REXCVAR_GET(vsync)) {
-+    max_sleep = std::min(kFastPollSleep, std::chrono::microseconds(uint64_t(wait) * 1000 / 0x100));
++  // The longest sleep between polls: the poll interval up to kFastPollSleep. With vsync on, at
++  // least the whole milliseconds the poll used to sleep (Windows' Sleep turns less than 1 ms into
++  // a yield, so a shorter cap would spin there).
++  std::chrono::microseconds max_sleep =
++      std::min(kFastPollSleep, std::chrono::microseconds(uint64_t(wait) * 1000 / 0x100));
++  if (REXCVAR_GET(vsync)) {
++    const std::chrono::microseconds old_sleep = std::chrono::milliseconds(wait / 0x100);
++    max_sleep = std::max(max_sleep, old_sleep);
 +  }
 +  auto poll_sleep = kMinPollSleep;
 +  uint32_t poll_count = 0;
    bool matched = false;
    do {
      uint32_t value = 0;
-@@ -1030,14 +1048,16 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+@@ -1030,14 +1050,16 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
          break;
      }
      if (!matched) {
@@ -111,7 +115,7 @@ index a744375..3733b69 100644
          }
          rex::thread::SyncMemory();
          ReturnFromWait();
-@@ -1046,6 +1066,9 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
+@@ -1046,6 +1068,9 @@ bool CommandProcessor::ExecutePacketType3_WAIT_REG_MEM(memory::RingBuffer* reade
            // Short-circuited exit.
            return false;
          }
