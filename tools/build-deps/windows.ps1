@@ -242,8 +242,14 @@ if ($head -ne $OgreCommit) {
 # Our patches to OGRE (patches/ogre-*.patch, patches/README.md), in name order; a checkout they are
 # already applied to (a reused -WorkDir) is left as it is.
 foreach ($patch in (Get-ChildItem (Join-Path $Root 'patches') -Filter 'ogre-*.patch' | Sort-Object Name)) {
+    # The check's stderr redirected: Windows PowerShell would turn it into an error record and stop
+    # the script (as Invoke-Native says), so errors only continue here.
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
     & git -C $ogreSrc apply --reverse --check $patch.FullName 2>$null
-    if ($LASTEXITCODE -eq 0) { continue }
+    $applied = $LASTEXITCODE -eq 0
+    $ErrorActionPreference = $previous
+    if ($applied) { continue }
     & git -C $ogreSrc apply $patch.FullName
     if ($LASTEXITCODE -ne 0) {
         throw "$($patch.Name) does not apply to $ogreSrc (a CRLF checkout from before? delete it and run again)"
