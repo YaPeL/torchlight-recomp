@@ -588,6 +588,19 @@ inline constexpr Field kDeriveDepthBiasSlopeScale{0x2AC, Confidence::kConfirmed}
 // Runic's build has no device call in that function (docs/native-skip-guest-d3d.md, step a).
 inline constexpr Field kManualBlendColours{0x90, Confidence::kConfirmed};
 inline constexpr uint32_t kManualBlendColoursUnitStride = 32;
+// One depth surface for every target. [confirmed] Runic's _setRenderTarget (0x821A7620; a Runic
+// difference from OgreD3D9RenderSystem.cpp:2700-2760, which binds the target's own depth): it
+// returns at once for the target already active (@0x821A762C..0x821A763C); a window with
+// anti-aliasing ("AA_GET", 0x820008CC), while the byte at 0x8355A2E8 is 0 (@0x821A76E4..0x821A76F0),
+// binds its "AA_GETRT" (0x8200094C) and "AA_GETDT"
+// (0x82000960) surfaces, SetRenderTarget (@0x821A7788) then SetDepthStencilSurface (0x821F9118,
+// @0x821A7794; it stores the surface at device+0x31A0); every other target binds only its colour
+// surfaces ("DDBACKBUFFER", 0x82000B10; SetRenderTarget per surface, loop @0x821A7810..0x821A7828)
+// and keeps whatever depth surface the device has. The window's attribute handler (0x821BF180)
+// answers AA_GET from window+0x120, AA_GETRT from +0x114 and AA_GETDT from +0x118. Every pass starts with its
+// viewport's clear (SceneManager::_renderScene 0x821B07F0: clearFrameBuffer when the viewport's
+// clear-every-frame byte (+0x54) is set, with its buffers (+0x58), @0x821B0DF8..0x821B0E24): so a
+// target's depth is not seen again once another pass has cleared the shared one.
 }  // namespace render_system
 
 namespace matrix4 {
