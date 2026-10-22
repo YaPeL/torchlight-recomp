@@ -160,4 +160,6 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   capture; it fails on a crash, a program that does not compile or link, a black image or one
   that differs from its reference (`ci/gles-replay`). The RTSS's generated programs need the
   game's files and are not covered there. And every measurement names the commit it was built
-  from, which must be in `develop` or on a pushed branch.
+  from, reachable from `develop`, from a branch with an open pull request or from an `archive/`
+  tag (`AGENTS.md`); what was measured from 2026-10-17 to 2026-10-22 is tagged
+  `archive/tl-a4-2026-10-22/*`.
