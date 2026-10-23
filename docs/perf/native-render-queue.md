@@ -96,56 +96,60 @@ Everything except the per-object work stays the guest's, unchanged:
   sorts, `renderObjects`, `acceptVisitor`, Runic's grouped walk, the visitor and its validations,
   and every `_setPass` (below, "The walk the guest keeps").
 
-### The cut point: `renderSingleObject`
+### The cut point: inside `renderSingleObject`, one part at a time
 
 `SceneManager::renderSingleObject(renderable, pass, scissoring, autoLights, manualLightList)`
 (slot 21, `0x821C5FA0`) is called by the visitor for each object, after the guest's `_setPass` for
-its pass. The native path takes over that call for each object it handles and leaves every other
-object to the guest's function, so the fallback is **per object**: the pass state is the guest's
-either way, so a native object and a guest object of the same pass see the same pass state. (Stage
-0's census found no pass group mixing objects the native path would handle with objects it would
-not, so in practice whole groups go one way or the other.)
+its pass. For an object it handles, the native path runs that function's sequence itself, and the
+rule that keeps the boundary empty is: **every step that changes guest state is the guest's own
+function, called as the guest calls it; the native path replaces only parts whose effect on guest
+state it reproduces exactly**, and those parts are taken over one per stage (section 2). So after a
+native object the guest's SceneManager, AutoParamDataSource, render system and buffers are as they
+would be after the guest's own `renderSingleObject`, whatever comes next (another native object, a
+guest object, a pass visit, the GUI), and an object can fall back per object without a boundary in
+either direction.
 
-For a native object the native path does what `renderSingleObject` and the functions it calls do
-for that object, and emits the same per-object commands through the same recording functions:
-- the RTSS per-object listener (`fireRenderSingleObject`, slot 13, `0x821C4EE0`, and
-  `notifyRenderSingleObject` 0x821C4F50), for the sub-render states it supports, computing their
-  per-object values without writing the guest's GpuProgramParameters buffers;
-- the light list and the light-dependent constants (`useLightsGpuProgram`, slot 39, `0x821C12C0`);
-- the automatic constants of the per-object (and, when the lights changed, light) ranges, as
-  `updateGpuProgramParameters` (slot 41, `0x821C26D0`) and `_updateAutoParams` 0x82201EB0 compute
-  them;
-- the per-object render system calls the guest makes unconditionally on this path (pass iteration
-  count, derived depth bias, polygon mode with the camera's override);
-- the vertex declaration, buffer bindings and draw of the `_render` guard 0x821C4058, and the
-  renderable's `preRender`/`postRender`;
-- the counters `_render` adds to (RS +0x84/+0x88/+0x8C).
+The parts, in the order the stages take them, with what each must leave exactly as the guest does
+(read from the recompiled functions):
+- **The constants** (`updateGpuProgramParameters`, slot 41, `0x821C26D0`: `_updateAutoParams`
+  0x82201EB0 and the upload through render system slot 91 for the ranges `mGpuParamsDirty`
+  (+0x43B4, u16) selects, then the mask cleared @0x821C2858). The native path computes the same
+  automatic constants for the same mask, the global and manual ranges included when the mask has
+  them (the first object after a pass visit, or after `resetViewProjMode` marks them), sends them
+  through the session and the constant mirror as the hook's `bindGpuProgramParameters` would, and
+  clears the mask. It does not write the guest's GpuProgramParameters buffers: every later guest
+  upload is preceded by `_updateAutoParams` for its own mask, which recomputes what it uploads.
+- **The RTSS per-object listener** (`fireRenderSingleObject`, slot 13, `0x821C4EE0`, and the
+  sub-render states' `updateGpuProgramsParams`): stage 0 reads each supported state for "last
+  value" caches and for the guest buffers it writes; the native version writes the same values to
+  the same guest parameters, so those caches stay true.
+- **The draw and its capture** (the `_render` guard 0x821C4058 and the base `_render` 0x821CEA60):
+  the declaration and buffer bindings with the uploads behind slots 84 and 85 (vertex buffers to
+  their device copy, 0x821A71E8) and the index buffer uploads (0x82581D98, 0x82582520, 0x82582668)
+  that the capture's snapshots read, the dirty clip planes (RS +0x2F4, flushed through slot 124 and
+  cleared), the counters (RS +0x84/+0x88/+0x8C), the pass iteration loop (RS +0x298). Until this
+  part is native, the native path calls the guest's guard, through our hook, for each draw.
+- **The rest of `renderSingleObject`**: the light list and its hash (the guest's
+  `useLightsGpuProgram`, slot 39, `0x821C12C0`, which sets the AutoParamDataSource's light list,
+  the hash +0x43B0 and the lights dirty bit; an empty list hashes to 0, so the hash is never just
+  reset), the per-object render system calls (cull mode restored when the pass's flip flag +0x419F
+  is set, against RS +0x74; the pass iteration count, slot 112; the derived depth bias, slot 113;
+  the polygon mode with the camera's override, slot 81; `_setTextureUnitSettings` again for units
+  with view-relative texture coordinate generation), the camera-relative offset (+0x4358, +0x439C),
+  the identity view or projection and `resetViewProjMode` (slot 8), the renderable's
+  `preRender`/`postRender`. Until this part is native, the native path calls these guest functions
+  and render system setters itself, through our hooks, in the guest's order. `setNormaliseNormals`
+  (slot 86) is an empty function in this guest and `useLights` (slot 37, fixed function) is not
+  recorded.
 
 ### The boundary with the guest
 
-The guest's per-object state that a native object leaves stale is small, read from
-`renderSingleObject`:
-- the light hash `mLastLightHashGpuProgram` (SceneManager +0x43B0), which `useLightsGpuProgram`
-  compares to skip the light constants: after a native object it is set to 0, so the next guest
-  object uploads its light constants (a native object's lights may differ from those the guest
-  last uploaded);
-- `mGpuParamsDirty` (+0x43B4): the next guest object marks its own per-object ranges dirty at its
-  start (`sth` @0x821C6168), and its pass visit marks everything dirty, so nothing to write;
-- the AutoParamDataSource's per-object fields (current renderable, world matrices and their
-  derived caches): the next guest object sets them before it reads them;
-- the render system's per-object members (pass iteration count +0x298, derived depth bias
-  +0x2A0.., cull mode +0x74): the next guest object sends the iteration count and the depth bias
-  itself; the cull mode only changes for negatively scaled objects, which stage 1 leaves to the
-  guest; multi-iteration passes, which read +0x298 inside the guard, are left to the guest too.
-
-What a native object changes in the backend is only per-object state (per-object and light
-constant ranges, the declaration and buffers, the draw); the next guest object re-sends all of it
-(the guard binds the declaration and buffers every draw, the object's ranges are dirty, the light
-ranges are re-sent because of the hash), and a pass visit re-sends everything. Guest code after the
-walk (the GUI's renderer, the listeners) sets its own state and does not read constants; the
-projector passes and the next frame start with pass visits. Native constants are stored in the
-same constant mirror as the hooks' (`capture/constant_mirror.h`), and the native path makes the
-same resource announcements (textures, declarations, programs, buffer snapshots).
+With that rule there is no state to write back and nothing to invalidate: each step that changes
+guest state is the guest's function, and each part the native path takes over leaves the same
+guest words the guest's part would (the constant mask cleared, the RTSS parameters written, the
+buffers uploaded, the counters added). What the native path changes in the backend is what the
+guest's object would have changed, in the same order. Comparison mode checks it (section 3),
+including the guest words each part must leave.
 
 ### The walk the guest keeps (facts the native path relies on)
 
@@ -222,9 +226,10 @@ comes after this plan, as does native culling (section 2).
 The ceiling of this design, from stage 0's census and the profile (POCO X7, 2026-10-23): the
 per-object work is 70.6 % of the walk in `fight.txt` (autoparams 0.86, constants upload 1.13, the
 draw guard and its capture 1.40, RTSS per object 0.61, vertex buffers 0.53, the rest of
-`renderSingleObject` 1.25 of 8.19 ms) and 73.3 % in wave 10 of `fight5`. Split by draw type with
-the census's draw shares (270 queue draws and 8.1 ms of walk a frame in `fight.txt`, 531 and
-12.0 ms in wave 10), less 3-5 us a native draw (a guess until stage 1 measures it):
+`renderSingleObject` 1.25 of 8.19 ms) and 73.3 % in wave 10 of `fight5`. Split by draw type with the
+census's draw shares and walk (commit 79baf91: 270 queue draws and 8.1 ms of walk a frame in
+`fight.txt`, 531 and 12.0 ms in wave 10; the profile's 8.2 / 13.2 ms were other runs), less 3-5 us a
+native draw (a guess until stage 1 measures it):
 
 | Draw type | `fight.txt`: per-object ms / gain | wave 10: per-object ms / gain | What it needs reproduced |
 | --- | --- | --- | --- |
@@ -242,19 +247,27 @@ second front is needed besides this plan: native culling (the octree walk, 2.9 m
 
 Each stage is behind the runtime switch, falls back per object to the guest's
 `renderSingleObject`, and is integrated only after comparison mode shows no difference on the
-replays and on the device. Ordered by gain over risk:
+replays and on the device. The stages take the per-object parts one at a time (the boundary rule,
+section 1), first for the static opaque objects of the main scene, then widen to the other draw
+types. The parts' share of the walk in `fight.txt` / wave 10 (table 1): constants (automatic
+parameters and upload) 1.99 / 3.05 ms; RTSS per object 0.61 / 1.03; the draw and its capture 1.93 /
+3.19 (the guard, `_render` and vertex buffers); the rest of `renderSingleObject` 1.25 / 2.37.
 
-| Stage | What | Gain, `fight.txt` / wave 10 | Risk |
+| Stage | What | Gain, `fight.txt` / wave 10 (upper bound) | Risk |
 | --- | --- | --- | --- |
-| 0 | `guest_abi` entries and the queue census (done, PR #47); a census of the automatic constants, RTSS sub-render states and texture unit kinds the qualifying objects use, to fix stage 1's lists; the comparison harness with an empty native path | 0 | Low |
-| 1 | Static opaque objects of the main scene: objects whose pass and renderable qualify, each criterion read from guest data: the render target is the window; solids basic; vertex and fragment programs, no geometry program, programs that do not ask for transform states; one pass iteration, no iterate-per-light, no run-only-for-one-light-type, no light scissoring or clip planes, no depth bias; automatic constants all in a supported list and RTSS sub-render states all in a supported list keyed by their vtables; a renderable of a known class by vtable (SubEntity, StaticGeometry's GeometryBucket), a SubEntity's entity with no bone matrices and no vertex animation; no render object listener other than RTSS's; the illumination stage none and render state changes not suppressed; no negative scale, no identity view or projection | 1.3-1.5 / 2.6-3.1 ms | Medium |
-| 2 | Projector passes: the same objects in render textures, with the texture projector constants | +1.3-1.4 / +1.0-1.2 ms | Medium (stage 1's machinery, another camera) |
-| 3 | Transparents: billboards, particle renderers and the rest of the sorted walks' objects | +1.1-1.25 / +2.2-2.5 ms | Medium-high |
-| 4 | Skinned objects: several world matrices, the hardware skinning state | +0.7-0.8 / +0.35-0.4 ms | Medium |
+| 0 | `guest_abi` entries and the queue census (done, PR #47); a census of the automatic constants, RTSS sub-render states and texture unit kinds the stage 1 objects use, to fix its lists; the reading of `renderSingleObject` and the functions it calls, part by part; the comparison harness with an empty native path | 0 | Low |
+| 1 | The constants, natively, for the static opaque objects of the main scene: objects whose pass and renderable qualify, each criterion read from guest data: the render target is the window; solids basic; vertex and fragment programs, no geometry program; automatic constants all in a supported list; one pass iteration, no iterate-per-light, no run-only-for-one-light-type, automatic lights and no manual light list; a renderable of a known class by vtable (SubEntity, StaticGeometry's GeometryBucket), a SubEntity's entity with no bone matrices and no vertex animation; the illumination stage none and render state changes not suppressed | about 0.5 / 0.8-0.95 ms (the constants' share of those objects' walk, 30.4 % / 42.5 % of the draws, less 1-1.5 us a native object) | Low-medium: one part, a pure computation, every other step the guest's |
+| 2 | The constants for the other draw types (projectors, transparents, skinned: several world matrices) | +1.1-1.2 / +1.1-1.3 ms | Low-medium |
+| 3 | RTSS per object natively, for the supported sub-render states | +0.5 / +0.7-0.8 ms | Medium |
+| 4 | The draw and its capture natively | +1.4-1.65 / +1.9-2.4 ms | Medium-high (buffer uploads and snapshots, clip planes, iteration loop) |
+| 5 | The rest of `renderSingleObject` natively | +1.0-1.05 / +1.6-1.8 ms | Medium |
 
-Stage 3 comes before stage 4 although its risk is higher: it is worth much more in the long fight,
-where the transparents grow and the skinned draws do not. None of the stages touches the game's
-behaviour: the dead, the loot and every object keep being updated and drawn as now.
+The gains assume the census's draw shares apply to every part alike and split the guessed 3-5 us of
+native cost per draw among the parts (constants 1-1.5, RTSS 0.3-0.5, the draw 1-2, the rest 0.7-1);
+together they reach the ceiling of the table above (4.4-4.9 / 6.2-7.2 ms). Stage 1 is small on
+purpose: it builds the machinery (the per-object hook, the comparison mode, the native automatic
+constants with bit identity) on the part with the least guest state. None of the stages touches the
+game's behaviour: the dead, the loot and every object keep being updated and drawn as now.
 
 ## 3. Verification and the A/B switch
 
@@ -268,17 +281,15 @@ behaviour: the dead, the loot and every object keep being updated and drawn as n
 - The first difference of a frame is logged with the pass, the renderable's class and address,
   and the field that differs. A per-run counter reports how many draws matched, differed or fell
   back, by reason.
-- Side effects: the native path records the ones it performs per object (`preRender`/`postRender`,
-  listener calls, the counters' increments) and so does the guest's call; they must be equal.
+- Guest words: after the guest's call, the words the native parts must leave (SceneManager
+  +0x43B0 and +0x43B4, the AutoParamDataSource's light list, RS +0x74, +0x298, +0x2A0..+0x2AC and
+  +0x2F4, the counters) are compared with what the native path computed it would leave; the
+  native path predicts the guest calls it would make (`preRender`/`postRender`, the listener)
+  without making them in this mode.
 - A texture first used in a frame is loaded by `touch` inside the guest's pass visit, before the
   object, so it is loaded for both paths.
 - Comparison mode runs both, so its frame times say nothing about the gain. It runs on the desktop
   and on the POCO (bit identity).
-- **Boundary check** ("on" mode, diagnostics build): after each native object, the session marks
-  the state slots the object wrote (its constant ranges, the declaration and buffers); the next
-  guest draw must have re-sent every marked slot (a guest call clears a mark at hook entry, before
-  any memo or mirror filter); a marked slot left at a guest draw is logged. Per the boundary
-  section, the guest re-sends all of them, so any report is a hole.
 - A stage becomes the default only after fights, the town and a few levels show no difference,
   over a whole session.
 
@@ -325,10 +336,9 @@ To find in stage 0, by reading the code, not by assuming OGRE 1.7:
 - **A difference the comparison does not see:** for example a state that only matters on some
   driver. The comparison checks every field of every command, and replays and device screenshots
   cover the images.
-- **Hidden reads of the guest's per-object state:** guest code that reads what
-  `renderSingleObject` leaves (section 1, the boundary). The list is short and comes from reading
-  that function; the boundary check in the "on" mode reports any slot a guest draw inherits from a
-  native object.
+- **A part that leaves guest state differently:** each native part must leave the guest words
+  its guest part leaves (section 1). Comparison mode compares those words after every object, so
+  a difference shows in the same frame.
 - **Bit identity:** a derived constant computed in another order differs in its last bits. The
   native code copies the guest's order; a type that cannot be made identical stays unsupported
   (section 1).
