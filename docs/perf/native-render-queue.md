@@ -2,8 +2,8 @@
 
 Status: closed as a project on 2026-10-23; the native render queue is paused. This records what
 was measured and learned, and the owner's decision: the next work on the guest thread's cost is
-(2) a cheaper capture and cheaper hooks (our side of each D3D9 call) and (3) the culling, with
-only its pure visibility test native. The native render queue (option B below) may be resumed
+a cheaper capture and cheaper hooks (our side of each D3D9 call), then the culling with only its
+pure visibility test native (section 5). The native render queue (option B below) may be resumed
 later, one part at a time, on the terms of section 4.
 
 ## What was measured
@@ -24,9 +24,11 @@ constants, texture units, the per-object work) and 10 in our hooks and capture o
 5-minute fight (`fight5.txt`, 11 s profiled in the middle of wave 1 and at the end of wave 10) the
 same walk is 9.3 ms of a 25.2 ms frame in wave 1 and 13.2 ms of 39.5 ms in wave 10. The dead and the
 loot are never removed in that fight, so the draws grow from about 300 to about 689 a frame by wave
-10: about 19 us a draw there. (The draws a frame are the frame counter's, from the twelve `fight5`
-runs of 2026-10-22 on binary 03ab9ae, tag `archive/diag-combined`; their wave 10 averaged 34.8 ms a
-frame, without the census, which these profiles had on.)
+10: about 19 us a draw there (frame-counter draws, the GUI's included; over the 531 queue draws the
+census counts, about 25 us, and about 30 us in `fight.txt` over its 270). (The draws a frame are the
+frame counter's, from the twelve `fight5` runs of 2026-10-22 on binary 03ab9ae, tag
+`archive/diag-combined`; their wave 10 averaged 34.8 ms a frame, without the census, which these
+profiles had on.)
 
 | Inside the walk (ms a frame) | Guest | Ours | `fight.txt` | `fight5` wave 1 | `fight5` wave 10 |
 | --- | --- | --- | --- | --- | --- |
@@ -73,7 +75,8 @@ walk too).
 ## 1. The walk, as Runic's build does it
 
 From the disassembly, against OgreSceneManager.cpp and OgreRenderQueueSortingGrouping.cpp 1.7.0
-(`guest_abi/render_queue.h`, with evidence for each entry):
+(`src/guest_abi/render_queue.h` on branch `perf/native-render-queue`, PR #47, with evidence for
+each entry):
 - `0x821DD098` (OctreeSceneManager vtable 0x82005B9C slot 26) is `renderBasicQueueGroupObjects`.
   For each priority group it sorts the six collections (`QueuedRenderableCollection::sort`
   0x821DCFC8: radix sort above 2000 entries, stable sort below, only with the descending bit) and
@@ -89,14 +92,15 @@ From the disassembly, against OgreSceneManager.cpp and OgreRenderQueueSortingGro
   static vector (0x83582B5C), sorts them with MSVC's `std::sort` (not stable) by a float at
   Renderable +0x1C, and visits the pass again (`_setPass`) every time that float changes, starting
   from -1.0 (0x820AA334); a head run at -1.0 is drawn with the visitor's `mUsedPass`.
-- The visitor: slot 1 `0x821CCB88` validates the renderable and calls `renderSingleObject` (slot
-  21, `0x821C5FA0`); slot 2 `0x821D27F8` validates the pass and calls `_setPass` (slot 230,
-  `0x821C5730`); slot 3 `0x821C0A50` does both. In this guest `validateRenderableForRendering`
-  (slot 4) returns true and `validatePassForRendering` (slot 3) only checks late material
-  resolving.
-- **Runic difference:** `SceneManager::bindGpuProgram` (slot 40, `0x821C14B8`), which `_setPass`
-  calls for each program, resets the light hash (+0x43B0), sets the AutoParamDataSource's light
-  list to null and marks every GPU parameter dirty (+0x43B4, a u16) before binding.
+- The visitor: its slot 1 `0x821CCB88` validates the renderable and calls `renderSingleObject`
+  (SceneManager slot 21, `0x821C5FA0`); its slot 2 `0x821D27F8` validates the pass and calls
+  `_setPass` (SceneManager slot 230, `0x821C5730`); its slot 3 `0x821C0A50` validates the
+  renderable only (as upstream) and calls both. In this guest the SceneManager's
+  `validateRenderableForRendering` (its slot 4) returns true and `validatePassForRendering` (its
+  slot 3) only checks late material resolving.
+- `SceneManager::bindGpuProgram` (slot 40, `0x821C14B8`), which `_setPass` calls for each
+  program: like upstream it resets the light hash (+0x43B0) and marks every GPU parameter dirty
+  (+0x43B4, a u16); **Runic difference:** it also sets the AutoParamDataSource's light list to null.
 - **Runic difference:** `SubEntity::getRenderOperation` 0x821A3DE8 copies the submesh's own index
   data and never reads the entity's LOD index.
 - The render queue listeners (`fireRenderQueueStarted`/`Ended`, the GUI's included) are fired by
@@ -104,12 +108,14 @@ From the disassembly, against OgreSceneManager.cpp and OgreRenderQueueSortingGro
 
 ## 2. Stage 0: how much a native path could take
 
-A diagnostic (`--diag_queue_census`, only in builds with `TORCHLIGHT_DIAGNOSTICS`, PR #47)
-classifies every collection `renderObjects` draws, per pass group and per entry, against the
-criteria guest data decides (main scene, solids basic, vertex and fragment programs, one
-iteration, no per-light iteration, no light scissoring or clip planes, no depth bias, SubEntity or
-StaticGeometry GeometryBucket, not skinned), and times the guest's walk of each collection. POCO
-X7, 2026-10-23, commit 79baf91:
+A diagnostic (`--diag_queue_census`, only in builds with `TORCHLIGHT_DIAGNOSTICS`; PR #47, branch
+`perf/native-render-queue`) classifies every collection `renderObjects` draws, per pass group and
+per entry, against the criteria guest data decides (main scene, solids basic, vertex and fragment
+programs, one iteration, no per-light iteration, no light scissoring or clip planes, no depth bias,
+SubEntity or StaticGeometry GeometryBucket, not skinned), and times the guest's walk of each
+collection (`renderObjects` only, so its walk excludes the sorts and the rest of
+`renderBasicQueueGroupObjects`, and it is lower than the profile's). POCO X7, 2026-10-23, commit
+79baf91 (the review fixes of c64cf94 change neither the modes these runs met nor the counts):
 
 | Window | Queue draws a frame | Walk a frame | Native, fallback by whole collection | Native, fallback by pass group |
 | --- | --- | --- | --- | --- |
@@ -119,10 +125,11 @@ X7, 2026-10-23, commit 79baf91:
 
 No pass group ever mixed objects a native path would handle with objects it would not (a pass
 belongs to one material, and static and skinned objects never share one); the collections that mix
-(1.4 %) are the large ones of the main scene. No group started its walk at -1.0. The rest of the
-draws in `fight.txt`: projector passes 28.7 %, transparents 25.4 %, skinned 15.5 %. The shares are
-upper bounds for the criteria checked (the supported automatic constants, RTSS states and texture
-unit kinds are not decided), and the walk's time is prorated by draws inside each collection.
+(1.4 % of the collections) are the large ones of the main scene. No group started its walk at -1.0.
+The rest of the draws: projector passes 28.7 %, transparents 25.4 %, skinned 15.5 % in `fight.txt`;
+16.8 %, 35.1 % and 5.7 % in wave 10. The shares are upper bounds for the criteria checked (the
+supported automatic constants, RTSS states and texture unit kinds are not decided), and the walk's
+time is prorated by draws inside each collection.
 
 ## 3. Option B and its ceiling
 
@@ -131,8 +138,9 @@ object it handles, the native path does the per-object work of `renderSingleObje
 constants and their upload, the RTSS per-object listener, the draw and its capture). The per-object
 work is 70.6 % of the walk in `fight.txt` (automatic parameters 0.86, constants upload 1.13, the
 draw guard and its capture 1.40, RTSS per object 0.61, vertex buffers 0.53, the rest of
-`renderSingleObject` 1.25 of 8.19 ms) and 73.3 % in wave 10 of `fight5`. Split by draw type with the
-census's shares, less a guessed 3-5 us a native draw:
+`renderSingleObject` 1.25 of 8.19 ms) and 73.3 % in wave 10 of `fight5`. Applied to the census's
+walk (8.1 / 12.0 ms a frame, its 270 / 531 queue draws) and split by draw type with its shares, less
+a guessed 3-5 us a native draw:
 
 | Draw type | `fight.txt`: per-object ms / gain | wave 10: per-object ms / gain | What it needs reproduced |
 | --- | --- | --- | --- |
@@ -142,8 +150,10 @@ census's shares, less a guessed 3-5 us a native draw:
 | Skinned | 0.89 / 0.7-0.8 | 0.50 / 0.35-0.4 | the bone palette, hardware skinning's RTSS state |
 | **All** | **5.74 / 4.4-4.9** | **8.82 / 6.2-7.2** | |
 
-`fight.txt`'s guest frame is about 22 ms: all four types together would leave about 17 ms, short of
-16.6 ms (60 fps), so even complete, option B would need a second front.
+`fight.txt`'s guest frame is about 22 ms: all four types together would leave 17.2-17.7 ms, short
+of 16.6 ms (60 fps), so even complete, option B would need a second front. (On the profile's walk,
+8.19 / 13.15 ms, the per-object work would be 5.78 / 9.64 ms; the census's walk is the base here
+because the shares come from it.)
 
 ## 4. Why it was paused: the guest's hidden state writes
 
@@ -154,8 +164,9 @@ that later guest code reads. What they found, by design:
   (light hash, dirty parameter mask, bound-program flags, RS +0x294 first disabled texture unit, RS
   +0x74 cull mode, `mPassCullingMode`, the pass number, the texture projectors) describe the last
   guest pass, not the native one; restoring the guest-believed state, invalidating caches and
-  writing back fields each left a case uncovered, and the same-frame comparison mode cannot see
-  any of them because the guest walks everything there.
+  writing back fields each left a case uncovered, and the verification the designs relied on (a
+  comparison mode that, in the same frame, records what the native path would emit and then runs
+  the guest's path) cannot see any of them, because the guest walks everything there.
 - **Native `renderSingleObject`:** the dirty mask decides which ranges the first object after a
   pass visit uploads (global and manual included); the light hash of an empty list is 0; the cull
   flip restore, view-relative texture coordinate generation, camera-relative rendering, dirty clip
@@ -169,17 +180,19 @@ that later guest code reads. What they found, by design:
 Each hole is fixable by reading the replaced function completely and calling the guest's own code
 for every state write, but the reading has to be exhaustive per part, and each review round found
 more. The owner paused option B on 2026-10-23. To resume it: one part at a time, each preceded by
-a complete reading of the function it replaces, with the guest's functions doing every state
-write and only a computation replaced.
+a complete reading of the function it replaces and of everything it calls, virtual calls
+included, with the guest's functions doing every state write and only a computation replaced;
+each part checked in the same frame both ways and, for what that cannot see, by comparing the
+guest's words the part must leave (listed from the reading) after the guest's own part.
 
 ## 5. The decision: our side first, then the culling's pure test
 
-**(2) A cheaper capture and cheaper hooks.** Our side of the walk is 2.96 ms in `fight.txt` and
-4.65 ms in wave 10 (table above): it replaces no guest code, so no guest state is involved, and it
-is checked by replays and by comparing the commands it produces. Its own plan is written
+**First: a cheaper capture and cheaper hooks.** Our side of the walk is 2.96 ms in `fight.txt`
+and 4.65 ms in wave 10 (table above): it replaces no guest code, so no guest state is involved, and
+it is checked by replays and by comparing the commands it produces. Its plan will be written
 separately, measure by measure.
 
-**(3) The culling, with only the visibility test native.** The octree walk under
+**Then: the culling, with only the visibility test native.** The octree walk under
 `_findVisibleObjects` (0x821A6070 -> 0x821C7158), by direct child (inclusive ms a frame):
 
 | Part | `fight.txt` | wave 1 | wave 10 | Writes guest state |
@@ -189,15 +202,19 @@ separately, measure by measure.
 | The walk's own loop | 0.52 | 0.52 | 1.04 | reads the octree, queues nodes |
 | Box against frustum (`Frustum::isVisible` 0x821C74A0), already host code | 0.44 | 0.41 | 0.75 | no |
 | StaticGeometry::Region `_updateRenderQueue` 0x821CCE90 | 0.24 | 0.21 | 0.24 | yes |
-| Octant test (`OctreeCamera::getVisibility` 0x821C0E78) | 0.15 | 0.19 | 0.12 | no |
+| Octant test (`OctreeCamera::getVisibility` 0x821C0E78) | 0.15 | 0.19 | 0.12 | lazily: the frustum planes |
 | Other per-object virtuals | 0.21 | 0.24 | 0.37 | yes |
-| **Total** (the 2.9 ms of the "where the walk sits" table, with the particles) | **3.80** | **3.98** | **6.32** | |
+| **Total** (in `fight.txt`, the 2.9 ms culling row of the "where the walk sits" table plus the ParticleUniverse row) | **3.80** | **3.98** | **6.32** | |
 
-The pure visibility tests are about 0.6 ms in `fight.txt`, and the box test, the larger one, has
-run as host code since the 2026-10-13 study (`--native_frustum_test`, on by default,
-`hooks/frustum_test.h`, bit for bit). What is left of the pure part is the octant test (0.15 ms);
-the rest of the culling writes guest state (the render queue, the animation, the particle
-renderers' buffers, the per-object camera and LOD notifications) and stays the guest's.
+The visibility tests are about 0.6 ms in `fight.txt`, and the box test, the larger one, has run
+as host code since section 12 of the game-thread study (2026-10-14; `--native_frustum_test`, on by
+default, `hooks/frustum_test.h`, bit for bit; it makes no calls). What is left is the octant test
+(0.15 ms), and it is not quite pure: it reads each plane through the camera's `getFrustumPlane`
+(OctreeCamera slot 91, 0x821C0E50 -> 0x821C4570), which recomputes the frustum's plane cache first
+when it is out of date (`updateFrustumPlanes`, vt+224; OgreFrustum.cpp:215-220). A native version
+reads the planes directly only when the cache is up to date and calls the guest's getter
+otherwise. The rest of the culling writes guest state (the render queue, the animation, the
+particle renderers' buffers, the per-object camera and LOD notifications) and stays the guest's.
 
 ## 6. Outside the cut, for later
 
