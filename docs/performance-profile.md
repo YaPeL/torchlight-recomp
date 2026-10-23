@@ -336,8 +336,10 @@ reads and `XMemAlloc` calls in that frame, and the rest of it. In the native mod
 `slow frame` line has the backend's side (textures, RTSS programs, now with the generation time
 apart, buffers, present).
 Since 2026-10-23 the threshold is `--long_frame_ms` (30 by default) and the line ends with the
-files the guest's checks found in that frame (`files found N: '...'`, the first 16): the resources
-the game loaded then.
+paths the guest's checks asked for in that frame, each once (`looked up N: '...'`, the first 16,
+`(found)` when found loose): the game looks every resource up as a loose file before it reads it
+from its pak, so these are the resources it loaded then. A resource already loaded is not looked
+up again. The 10 s summary still counts frames over 33 and 50 ms.
 
 What they showed, native and Xenos, on the fixed-floor saved game:
 
