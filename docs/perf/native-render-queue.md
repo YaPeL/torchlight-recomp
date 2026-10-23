@@ -6,6 +6,11 @@ replaces.
 
 ## Why
 
+> **Pending.** The profile behind the milliseconds of this section and of the stages was taken
+> partly at rest, not in the fight (docs/regressions.md, "Profiles of the fight taken on the rest
+> mark"). It is being taken again with the fixed scripts; until then every millisecond estimate
+> here is provisional.
+
 On the POCO X7 the game's thread is the limit. Walking OGRE's render queue costs 8.2 ms of its
 frame in the 30-second fight (`fight.txt`, about 300 draws, simpleperf with our symbols): about
 27 us a draw, 17 of them in the guest's embedded OGRE (passes, automatic parameters, constants,
@@ -125,7 +130,7 @@ device. The gains are estimates from the profile above, to be measured per stage
 measures the share of draws each stage covers. The ranges assume the covered draws lose all of
 their guest and capture cost except the native walk's own, which is guessed at 3-5 us per draw.
 
-| Stage | What | Covers (to measure) | Estimated gain, `fight.txt` / `fight5` wave 10 | Risk |
+| Stage | What | Covers (to measure) | Estimated gain, `fight.txt` / `fight5` wave 10 (pending) | Risk |
 | --- | --- | --- | --- | --- |
 | 0 | Confirm the cut and the layouts; count draws per renderable class, pass kind and program; build the comparison harness (section 3) with an empty native path (everything falls back) | - | 0 (the harness's cost, off by default) | Low |
 | 1 | Opaque passes, objects without skinning (static level geometry, props, items, StaticGeometry buckets), programs whose automatic constants are all in the supported set, no per-object RTSS listener work | likely most of the level and the loot | 2-4 ms / 3-6 ms | Medium |
