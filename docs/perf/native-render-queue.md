@@ -9,7 +9,8 @@ later, one part at a time, on the terms of section 4.
 ## What was measured
 
 Measured on the POCO X7 on 2026-10-23 with simpleperf and our symbols, binary 47a1d12 (in
-`develop`; the object census in the build, off in `fight.txt`, on in `fight5`), fps cap 0. Each
+`develop`; the object census, `--diag_object_census`, in the build, off in `fight.txt`, on in
+`fight5`), fps cap 0. Each
 profile's window was checked against the fight in the run's log (`tools/profile_window`): the
 profiles of 2026-10-22 had been taken partly at rest (docs/regressions.md, "Profiles of the fight
 taken on the rest mark") and are replaced by these. Milliseconds are the share of the guest thread's
@@ -68,15 +69,14 @@ render queue listeners (the vector at +0x42B8/+0x42BC) and calls each one's slot
 window tree (`0x821AFEA0`, recursive; the windows' own drawing `0x821AFF88` and `0x821B01B8`) and
 the GUI renderer's draws (`0x821D2F80`, straight to `_render`). Its draws do not go through the
 render queue, so none of the designs below touches them; why the GUI grows with the dead and the
-loot is still open. The report of 2026-10-22 had named this row "firePreFindVisibleObjects" and "the
-scene graph update"; both were wrong (`0x821BC5A0`, which it was named after, holds the render queue
-walk too).
+loot is still open. The report of 2026-10-22 had named this row "firePreFindVisibleObjects (game
+listeners)": the listeners part held, the name did not (`0x821BC5A0`, the slot it was named after by
+position, is `renderVisibleObjectsDefaultSequence` and holds the render queue walk too).
 
 ## 1. The walk, as Runic's build does it
 
 From the disassembly, against OgreSceneManager.cpp and OgreRenderQueueSortingGrouping.cpp 1.7.0
-(`src/guest_abi/render_queue.h` on branch `perf/native-render-queue`, PR #47, with evidence for
-each entry):
+(`src/guest_abi/render_queue.h`, PR #47 at c64cf94, with evidence for each entry):
 - `0x821DD098` (OctreeSceneManager vtable 0x82005B9C slot 26) is `renderBasicQueueGroupObjects`.
   For each priority group it sorts the six collections (`QueuedRenderableCollection::sort`
   0x821DCFC8: radix sort above 2000 entries, stable sort below, only with the descending bit) and
@@ -108,13 +108,13 @@ each entry):
 
 ## 2. Stage 0: how much a native path could take
 
-A diagnostic (`--diag_queue_census`, only in builds with `TORCHLIGHT_DIAGNOSTICS`; PR #47, branch
-`perf/native-render-queue`) classifies every collection `renderObjects` draws, per pass group and
-per entry, against the criteria guest data decides (main scene, solids basic, vertex and fragment
-programs, one iteration, no per-light iteration, no light scissoring or clip planes, no depth bias,
-SubEntity or StaticGeometry GeometryBucket, not skinned), and times the guest's walk of each
-collection (`renderObjects` only, so its walk excludes the sorts and the rest of
-`renderBasicQueueGroupObjects`, and it is lower than the profile's). POCO X7, 2026-10-23, commit
+A diagnostic, the queue census (`--diag_queue_census`, only in builds with `TORCHLIGHT_DIAGNOSTICS`;
+`src/hooks/queue_census*`, PR #47 at c64cf94), classifies every collection `renderObjects` draws,
+per pass group and per entry, against the criteria guest data decides (main scene, solids basic,
+vertex and fragment programs, one iteration, no per-light iteration, no light scissoring or clip
+planes, no depth bias, SubEntity or StaticGeometry GeometryBucket, not skinned), and times the
+guest's walk of each collection (`renderObjects` only, so its walk excludes the sorts and the rest
+of `renderBasicQueueGroupObjects`, and it is lower than the profile's). POCO X7, 2026-10-23, commit
 79baf91 (the review fixes of c64cf94 change neither the modes these runs met nor the counts):
 
 | Window | Queue draws a frame | Walk a frame | Native, fallback by whole collection | Native, fallback by pass group |
@@ -136,24 +136,23 @@ time is prorated by draws inside each collection.
 The design the review rounds converged on: the guest keeps the walk and every `_setPass`; for each
 object it handles, the native path does the per-object work of `renderSingleObject` (the automatic
 constants and their upload, the RTSS per-object listener, the draw and its capture). The per-object
-work is 70.6 % of the walk in `fight.txt` (automatic parameters 0.86, constants upload 1.13, the
+work, from the profile (table 1, `fight.txt`): automatic parameters 0.86, constants upload 1.13, the
 draw guard and its capture 1.40, RTSS per object 0.61, vertex buffers 0.53, the rest of
-`renderSingleObject` 1.25 of 8.19 ms) and 73.3 % in wave 10 of `fight5`. Applied to the census's
-walk (8.1 / 12.0 ms a frame, its 270 / 531 queue draws) and split by draw type with its shares, less
-a guessed 3-5 us a native draw:
+`renderSingleObject` 1.25: 5.78 of the walk's 8.19 ms (70.6 %); in wave 10 of `fight5`, 9.64 of
+13.15 ms (73.3 %). Split by draw type with the queue census's shares of the draws (not of the time;
+the census's own walk excludes part of the profile's, so it is not used as the base), less a
+guessed 3-5 us a native draw over its 270 / 531 queue draws:
 
 | Draw type | `fight.txt`: per-object ms / gain | wave 10: per-object ms / gain | What it needs reproduced |
 | --- | --- | --- | --- |
-| Static opaque, main scene | 1.75 / 1.3-1.5 | 3.74 / 2.6-3.1 | the automatic constants, RTSS per-object states, the draw |
-| Projector passes | 1.65 / 1.3-1.4 | 1.48 / 1.0-1.2 | the same, with the projector's camera and target |
-| Transparents | 1.46 / 1.1-1.25 | 3.09 / 2.2-2.5 | billboard and particle renderers (dynamic buffers the guest fills) |
-| Skinned | 0.89 / 0.7-0.8 | 0.50 / 0.35-0.4 | the bone palette, hardware skinning's RTSS state |
-| **All** | **5.74 / 4.4-4.9** | **8.82 / 6.2-7.2** | |
+| Static opaque, main scene | 1.76 / 1.35-1.5 | 4.10 / 3.0-3.4 | the automatic constants, RTSS per-object states, the draw |
+| Projector passes | 1.66 / 1.25-1.45 | 1.62 / 1.15-1.35 | the same, with the projector's camera and target |
+| Transparents | 1.47 / 1.15-1.25 | 3.38 / 2.45-2.8 | billboard and particle renderers (dynamic buffers the guest fills) |
+| Skinned | 0.90 / 0.7-0.75 | 0.55 / 0.4-0.45 | the bone palette, hardware skinning's RTSS state |
+| **All** | **5.78 / 4.4-5.0** | **9.64 / 7.0-8.05** | |
 
-`fight.txt`'s guest frame is about 22 ms: all four types together would leave 17.2-17.7 ms, short
-of 16.6 ms (60 fps), so even complete, option B would need a second front. (On the profile's walk,
-8.19 / 13.15 ms, the per-object work would be 5.78 / 9.64 ms; the census's walk is the base here
-because the shares come from it.)
+`fight.txt`'s guest frame is 22.1 ms: all four types together would leave 17.1-17.7 ms, short of
+16.6 ms (60 fps), so even complete, option B would need a second front.
 
 ## 4. Why it was paused: the guest's hidden state writes
 
@@ -187,10 +186,10 @@ guest's words the part must leave (listed from the reading) after the guest's ow
 
 ## 5. The decision: our side first, then the culling's pure test
 
-**First: a cheaper capture and cheaper hooks.** Our side of the walk is 2.96 ms in `fight.txt`
-and 4.65 ms in wave 10 (table above): it replaces no guest code, so no guest state is involved, and
-it is checked by replays and by comparing the commands it produces. Its plan will be written
-separately, measure by measure.
+**First: a cheaper capture and cheaper hooks.** Our side of the walk is 2.96 ms in `fight.txt` and
+4.65 ms in wave 10 (table above): it changes none of the guest code that runs, so no guest state is
+involved, and it is checked by replays and by comparing the commands it produces. Its plan will be
+written separately, measure by measure.
 
 **Then: the culling, with only the visibility test native.** The octree walk under
 `_findVisibleObjects` (0x821A6070 -> 0x821C7158), by direct child (inclusive ms a frame):
@@ -206,15 +205,19 @@ separately, measure by measure.
 | Other per-object virtuals | 0.21 | 0.24 | 0.37 | yes |
 | **Total** (in `fight.txt`, the 2.9 ms culling row of the "where the walk sits" table plus the ParticleUniverse row) | **3.80** | **3.98** | **6.32** | |
 
-The visibility tests are about 0.6 ms in `fight.txt`, and the box test, the larger one, has run
-as host code since section 12 of the game-thread study (2026-10-14; `--native_frustum_test`, on by
-default, `hooks/frustum_test.h`, bit for bit; it makes no calls). What is left is the octant test
-(0.15 ms), and it is not quite pure: it reads each plane through the camera's `getFrustumPlane`
-(OctreeCamera slot 91, 0x821C0E50 -> 0x821C4570), which recomputes the frustum's plane cache first
-when it is out of date (`updateFrustumPlanes`, vt+224; OgreFrustum.cpp:215-220). A native version
-reads the planes directly only when the cache is up to date and calls the guest's getter
-otherwise. The rest of the culling writes guest state (the render queue, the animation, the
-particle renderers' buffers, the per-object camera and LOD notifications) and stays the guest's.
+The visibility tests are about 0.6 ms in `fight.txt`, and the box test, the larger one, has run as
+host code since docs/game-thread-parallelism.md section 12 (2026-10-14; `--native_frustum_test`, on
+by default, `src/hooks/frustum_test.h`, bit for bit; it makes no calls). What is left is the octant
+test (0.15 ms in `fight.txt`, 0.12 ms in wave 10: the most a native version could save, less its own
+cost), and it is not quite pure: it reads each plane through the camera's `getFrustumPlane`
+(OctreeCamera slot 91, 0x821C0E50), which hands off to the cull frustum when one is set (+1224) and
+otherwise (0x821C4570) runs `updateFrustumPlanes` first (vt+224; OgreFrustum.cpp:215-220), which
+updates the view and the frustum when they are out of date (OgreFrustum.cpp:843-852;
+`Camera::isViewOutOfDate` reads the parent node's derived transform and writes the camera's cached
+copies, OgreCamera.cpp:329-354). A native version calls the guest's getter for the planes and
+replaces only the arithmetic of the test. The rest of the culling writes guest state (the render
+queue, the animation, the particle renderers' buffers, the per-object camera and LOD notifications)
+and stays the guest's.
 
 ## 6. Outside the cut, for later
 
