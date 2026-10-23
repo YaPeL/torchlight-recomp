@@ -18,16 +18,23 @@
 
 namespace torchlight::live {
 
-// The paths looked up that a long frame line lists; the rest are only counted.
+// The resources looked up that a long frame line lists; the rest are only counted.
 inline constexpr size_t kMaxLookedUpPaths = 16;
+
+// The resource a looked-up path names. The game looks each one up in every resource location
+// (`game:\music\MEDIA\...`, `tlhost:\MEDIA\...`, ...), both compiled (`.ADM`, `.CMP`) and as
+// written, so the name is the path from its `MEDIA\` on (the whole path when it has none), in
+// upper case, `/` as `\`, without a compiled suffix.
+std::string ResourceName(std::string_view path);
 
 struct GuestFrameEvents {
   uint32_t file_checks = 0, files_missing = 0;
   double file_check_ms = 0;
   std::string slowest_check_path;
   double slowest_check_ms = 0;
-  // The paths the checks asked for, in order, each once, up to kMaxLookedUpPaths: files, found or
-  // not (directories and wildcard searches left out); `found` marks the ones found loose.
+  // The resources the checks asked for (ResourceName), in order, each once, up to
+  // kMaxLookedUpPaths: files, found or not (directories and wildcard searches left out); `found`
+  // marks the ones found loose in some location.
   struct LookedUp {
     std::string path;
     bool found = false;

@@ -6,6 +6,19 @@
 
 namespace torchlight::live {
 
+std::string ResourceName(std::string_view path) {
+  std::string upper(path);
+  for (char& c : upper) c = (c >= 'a' && c <= 'z') ? char(c - 'a' + 'A') : (c == '/' ? '\\' : c);
+  std::string_view name = upper;
+  if (const size_t media = name.find("MEDIA\\"); media != std::string_view::npos)
+    name.remove_prefix(media);
+  for (std::string_view compiled : {".ADM", ".CMP"}) {
+    if (name.size() > compiled.size() && name.ends_with(compiled))
+      name.remove_suffix(compiled.size());
+  }
+  return std::string(name);
+}
+
 GuestEvents& GuestEvents::Get() {
   static GuestEvents events;
   return events;
@@ -20,12 +33,13 @@ void GuestEvents::FileCheck(std::string_view path, bool found, double ms) {
   const bool resource = !path.empty() && path.back() != '\\' && path.back() != '/' &&
                         path.find_first_of("*?") == std::string_view::npos;
   if (resource) {
+    const std::string name = ResourceName(path);
     auto it = std::find_if(frame_.looked_up.begin(), frame_.looked_up.end(),
-                           [&](const GuestFrameEvents::LookedUp& l) { return l.path == path; });
+                           [&](const GuestFrameEvents::LookedUp& l) { return l.path == name; });
     if (it != frame_.looked_up.end())
       it->found = it->found || found;
     else if (frame_.looked_up.size() < kMaxLookedUpPaths)
-      frame_.looked_up.push_back({std::string(path), found});
+      frame_.looked_up.push_back({name, found});
     else
       ++frame_.looked_up_unlisted;
   }
