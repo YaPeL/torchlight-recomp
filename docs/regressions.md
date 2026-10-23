@@ -169,3 +169,23 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   from, reachable from `develop`, from a branch with an open pull request or from an `archive/`
   tag (`AGENTS.md`); what was measured from 2026-10-17 to 2026-10-22 is tagged
   `archive/tl-a4-2026-10-22/*`.
+
+## Profiles of the fight taken on the rest mark (2026-10-21/22)
+
+- **What happened:** the POCO X7 profiling scripts (local, `profile-poco*.sh` and the fight5
+  census runs) waited for the fight with `adb shell grep -q "perf step 1" LOG`. adb joins its
+  arguments into one command line, so the quotes were lost on the device: `grep -q perf step 1 LOG`
+  looked for "perf" alone (in the files "step", "1" and the log) and matched the input script's
+  rest mark, 20 s before the fight. The 25-second "fight" profiles held about 18 s of rest. That
+  affected the render queue split of 2026-10-22, the fight5 wave 1 against wave 10 profile and its
+  spawn windows, and three parts of docs/perf/2026-10-22-overnight.md (noted there). The frame
+  A/Bs, read from each run's log, were not affected.
+- **Should have been caught by:** a check that the profile's window lies inside the step it is
+  meant to measure, made by the script itself; and reading the scripts' error output ("grep: step:
+  No such file or directory" was printed on every run).
+- **Caught by:** the agent, reading a run's output while waiting for a series.
+- **Covered now:** the scripts quote the remote command whole (`adb shell "grep -q 'perf step 1:
+  fight' LOG"`), record the device's time before and after each profile, and check the window with
+  `tools/profile_window/profile_window.py` (`profile_window_test`), which fails the run and renames
+  the data `.invalid` unless the profile lies entirely inside the fight. Checked on the run's real
+  log: the old window comes out 17.7 s before the mark and fails.
