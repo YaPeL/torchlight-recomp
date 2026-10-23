@@ -17,6 +17,11 @@
 // _findnext sub_828630B0), the game's own folder walks (sub_823A0D08, sub_823A1010) and its
 // existence checks (the other callers of FindFirstFileA). OGRE opens a file through the archive its
 // index names, so a name the replacements' listing leaves out is opened from the pak.
+//
+// The native search under FindFirstFileA (guest_abi xapi_files.h kNativeSearch) remembers the
+// game's files that do not exist (missing_file_cache.h): asked again for one, it gives back the
+// kernel's status from the first time without opening anything, and FindFirstFileA turns it into
+// the same last error and -1 as before.
 
 #include <chrono>
 #include <cstdint>
@@ -35,6 +40,7 @@
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
 #include "hooks/find_file_filter.h"
+#include "hooks/missing_file_cache.h"
 #include "hooks/guest_path.h"
 #include "live/guest_events.h"
 #include "mods/replacements_guest_view.h"
@@ -97,6 +103,31 @@ bool HiddenEntry(const uint8_t* base, uint32_t data, const std::string& folder,
 REX_EXTERN(__imp__sub_8287E0C8);
 REX_EXTERN(__imp__sub_8287E158);
 REX_EXTERN(__imp__sub_8287DC98);
+REX_EXTERN(__imp__sub_82883A68);
+
+namespace {
+
+static_assert(find::kNativeSearch.address == 0x82883A68);
+
+torchlight::hooks::MissingFileCache g_missing;
+
+// The path of the native search's OBJECT_ATTRIBUTES (kNativeSearch: ObjectName at +4, an
+// ANSI_STRING {Length, MaximumLength, Buffer}).
+std::string SearchPath(const uint8_t* base, uint32_t object_attributes) {
+  using torchlight::guest_abi::ReadU16;
+  using torchlight::guest_abi::ReadU32;
+  const uint32_t name = ReadU32(base, object_attributes + 4);
+  if (!name) return {};
+  const uint16_t length = ReadU16(base, name);
+  const uint32_t buffer = ReadU32(base, name + 4);
+  if (!buffer) return {};
+  std::string path;
+  path.reserve(length);
+  for (uint16_t i = 0; i < length && i < kMaxPath; ++i) path += char(base[buffer + i]);
+  return path;
+}
+
+}  // namespace
 
 namespace torchlight::hooks {
 
@@ -108,6 +139,18 @@ void SetHiddenReplacements(std::unordered_set<std::string> keys) {
 }  // namespace torchlight::hooks
 
 extern "C" {
+
+REX_FUNC(sub_82883A68) {
+  const auto key = torchlight::hooks::MissingFileCache::Key(SearchPath(base, ctx.r3.u32));
+  if (key) {
+    if (const auto status = g_missing.Find(*key)) {
+      ctx.r3.u64 = *status;  // the first answer; nothing opened, nothing filled
+      return;
+    }
+  }
+  __imp__sub_82883A68(ctx, base);
+  if (key) g_missing.Remember(*key, ctx.r3.u32);
+}
 
 REX_FUNC(sub_8287E0C8) {
   const std::string path = ReadCString(base, ctx.r3.u32, kMaxPath);

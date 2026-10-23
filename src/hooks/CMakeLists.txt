@@ -22,6 +22,18 @@ target_link_libraries(gpu_wait_watch_test PRIVATE torchlight_gpu_wait_watch)
 target_compile_options(gpu_wait_watch_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME gpu_wait_watch_test COMMAND gpu_wait_watch_test)
 
+# The game's files that do not exist, remembered (missing_file_cache.h); the hook that uses it
+# (find_file_hooks.cpp) is part of the executable.
+add_library(torchlight_missing_file_cache STATIC missing_file_cache.cpp)
+target_include_directories(torchlight_missing_file_cache PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_missing_file_cache PUBLIC cxx_std_23)
+target_compile_options(torchlight_missing_file_cache PRIVATE -Wall -Wextra)
+
+add_executable(missing_file_cache_test missing_file_cache_test.cpp)
+target_link_libraries(missing_file_cache_test PRIVATE torchlight_missing_file_cache)
+target_compile_options(missing_file_cache_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME missing_file_cache_test COMMAND missing_file_cache_test)
+
 # Windows path separators for the guest's file code (guest_path.h); the hook that uses them
 # (find_file_hooks.cpp) is part of the executable.
 add_library(torchlight_guest_path STATIC guest_path.cpp)
