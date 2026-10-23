@@ -71,6 +71,12 @@ std::atomic<FrameObserver*> g_observer{nullptr};
 
 void SetFrameObserver(FrameObserver* observer) { g_observer.store(observer); }
 
+namespace {
+std::atomic<SummaryHook> g_summary_hook{nullptr};
+}  // namespace
+
+void SetSummaryHook(SummaryHook hook) { g_summary_hook.store(hook); }
+
 FrameTiming& FrameTiming::Get() {
   static FrameTiming timing;
   return timing;
@@ -83,8 +89,10 @@ void FrameTiming::OnSwap() {
   const auto ms = guest_.Add(now);
   if (ms && *ms > kLongFrameMs) REXLOG_INFO("long frame: {}", DescribeLongFrame(*ms, events));
   if (FrameObserver* observer = g_observer.load()) observer->OnGuestFrame(ms.value_or(0.0));
-  if (auto summary = guest_.TakeSummary(now))
+  if (auto summary = guest_.TakeSummary(now)) {
     REXLOG_INFO("frame time (guest swap to swap): {}", *summary);
+    if (SummaryHook hook = g_summary_hook.load()) hook();
+  }
 }
 
 LatencyMeans MeanLatency(const std::vector<PresentLatency>& frames) {

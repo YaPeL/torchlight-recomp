@@ -273,4 +273,46 @@ inline constexpr GuestFunction kFileAttributes{0x8287E0C8, Confidence::kConfirme
 // Every buffer and texture the guest D3D creates allocates here (0x8276AF40, 0x8276AE78).
 inline constexpr GuestFunction kXMemAlloc{0x8287D640, Confidence::kConfirmed};
 
+// Constructors and destructors of some game and OGRE classes, for the object census
+// (hooks/census_hooks.cpp, diagnostics). [confirmed] Each class's vtable comes from its MSVC RTTI
+// (tools/guest_re/rtti_vtable.py; type descriptor names below); a constructor calls its base's
+// constructor and then stores the vtable; a destructor stores it before any call. For the game's
+// classes it is also what the vtable's slot 0 (the deleting destructor) calls before operator
+// delete 0x821CD9A8; the OGRE vtables' slot 0 is not their deleting destructor.
+// One constructor per class unless two are listed (OGRE's named and unnamed ones).
+namespace census {
+// .?AVCCharacter@@, vtable 0x820C060C (slot 0 0x82283940 calls the destructor). The constructor
+// calls CBaseUnit's (@0x822833AC) and stores the secondary vtable +400 @0x822833FC.
+inline constexpr GuestFunction kCharacterCtor{0x82283398, Confidence::kConfirmed};
+inline constexpr GuestFunction kCharacterDtor{0x82284290, Confidence::kConfirmed};
+// .?AVCBaseUnit@@, vtable 0x820BE414 (slot 0 0x8227FD60).
+inline constexpr GuestFunction kBaseUnitCtor{0x8227FB98, Confidence::kConfirmed};
+inline constexpr GuestFunction kBaseUnitDtor{0x8227FDB8, Confidence::kConfirmed};
+// .?AVCItem@@, vtable 0x820C1A7C (slot 0 0x822C7AF0).
+inline constexpr GuestFunction kItemCtor{0x822C7A48, Confidence::kConfirmed};
+inline constexpr GuestFunction kItemDtor{0x822C7B48, Confidence::kConfirmed};
+// .?AVCLevel@@, vtable 0x820C35F8 (slot 0 0x822E9220).
+inline constexpr GuestFunction kLevelCtor{0x822E8E30, Confidence::kConfirmed};
+inline constexpr GuestFunction kLevelDtor{0x822E9278, Confidence::kConfirmed};
+// .?AVSceneNode@Ogre@@, vtable 0x820DD494: two constructors (@0x82450A6C, @0x82450BB0, each after a
+// base constructor's call), the destructor stores it @0x82450C84 before any call.
+inline constexpr GuestFunction kSceneNodeCtor{0x82450A40, Confidence::kConfirmed};
+inline constexpr GuestFunction kSceneNodeCtorNamed{0x82450B80, Confidence::kConfirmed};
+inline constexpr GuestFunction kSceneNodeDtor{0x82450C68, Confidence::kConfirmed};
+// .?AVEntity@Ogre@@, vtable 0x82002EBC.
+inline constexpr GuestFunction kEntityCtor{0x82458400, Confidence::kConfirmed};
+inline constexpr GuestFunction kEntityDtor{0x82458AC0, Confidence::kConfirmed};
+// .?AVParticleSystem@Ogre@@, vtable 0x820EDFAC (slot 0 0x824F99D0 calls the destructor).
+inline constexpr GuestFunction kParticleSystemCtor{0x824F9A28, Confidence::kConfirmed};
+inline constexpr GuestFunction kParticleSystemDtor{0x824F9D68, Confidence::kConfirmed};
+// .?AVLight@Ogre@@, vtable 0x8200313C: two constructors (each after a base constructor's call),
+// the destructor stores it @0x82456230 before any call.
+inline constexpr GuestFunction kLightCtor{0x82455E68, Confidence::kConfirmed};
+inline constexpr GuestFunction kLightCtorNamed{0x82456078, Confidence::kConfirmed};
+inline constexpr GuestFunction kLightDtor{0x82456210, Confidence::kConfirmed};
+// .?AVBillboardSet@Ogre@@, vtable 0x82004B6C.
+inline constexpr GuestFunction kBillboardSetCtor{0x824798C0, Confidence::kConfirmed};
+inline constexpr GuestFunction kBillboardSetDtor{0x82479B08, Confidence::kConfirmed};
+}  // namespace census
+
 }  // namespace torchlight::guest_abi::functions
