@@ -40,6 +40,14 @@ separate that from the build's layout.
 
 ## 1. Our capture (2.9 ms between scene and projectors)
 
+> **Correction (2026-10-22, later the same day).** The POCO X7 profiles of this report were taken
+> from the input script's rest mark, 20 s before the fight, not from the fight: the scripts' `adb
+> shell grep -q "perf step 1"` lost its quotes on the device and matched "perf" alone, so each
+> 25-second "fight" profile held about 18 s of rest (docs/regressions.md, "Profiles of the fight
+> taken on the rest mark"). The milliseconds and shares of our capture below do not hold; the
+> decision on `perf/capture-cost` came from the same-binary A/B of frames (archived as
+> `archive/capture-lean`), which the error did not touch. Not repeated (the owner's decision).
+
 Profile (POCO X7, fight, simpleperf 25 s, per sample: the first frame of ours from the leaf, so a
 hook that runs the game's code inside it is not counted as ours): our code is **4.15 ms a frame**
 (18.5 % of the guest thread), of which capture 2.9 ms, the native culling hooks (`BoxExtentDecides`,
@@ -71,6 +79,14 @@ in the idle loop (500 yields before each event wait).
 
 The SDK is the ReXGlue agent's: patch 48 (CP spin backoff) is its change, PR #14, built into
 a separate Android SDK install; the A/B is against the current install, same game commit.
+
+> **Correction (2026-10-22, later the same day).** The POCO X7 profiles of this report were taken
+> from the input script's rest mark, 20 s before the fight, not from the fight: the scripts' `adb
+> shell grep -q "perf step 1"` lost its quotes on the device and matched "perf" alone, so each
+> 25-second "fight" profile held about 18 s of rest (docs/regressions.md, "Profiles of the fight
+> taken on the rest mark"). The "GPU Commands" shares below are rest and fight mixed; the frame
+> times, presented rates and battery currents come from the runs' logs and hold. Not repeated (the
+> owner's decision: patch 48 was decided on the frames).
 
 | fps cap 0 | guest p50 / p95 | presented | GPU Commands, share of the app's CPU cycles |
 | --- | --- | --- | --- |
@@ -111,6 +127,17 @@ discard and the sampler patch, one run each, fall inside the base's spread too: 
 power or frame effect.
 
 ## 3. The projector passes and the scene: plan
+
+> **Correction (2026-10-22, later the same day).** The POCO X7 profiles of this report were taken
+> from the input script's rest mark, 20 s before the fight, not from the fight: the scripts' `adb
+> shell grep -q "perf step 1"` lost its quotes on the device and matched "perf" alone, so each
+> 25-second "fight" profile held about 18 s of rest (docs/regressions.md, "Profiles of the fight
+> taken on the rest mark"). The table below (projector passes and the main scene) does not hold.
+> Taken again with the fixed scripts on 2026-10-23, for `fight.txt` and `fight5`'s waves 1 and 10:
+> docs/perf/native-render-queue.md, "Why". Its "firePreFindVisibleObjects" row was also misnamed:
+> `0x821BC5A0` holds the render queue walk too, and the part of it that grows is the game's
+> render queue listener drawing the GUI (`fireRenderQueueStarted` 0x821BC468), not a scene graph
+> update; the estimates below that rest on these rows (the walk, pass setup) are superseded there.
 
 Measured (POCO X7, combat bench, the skinning patch in, simpleperf 25 s, guest thread 22.4 ms a
 frame; ms per frame, each sample counted once, particles first):
@@ -192,6 +219,14 @@ GPU wait (1.6-1.7 ms either way: with the skinning fixed the GPU is not the limi
 
 ## 5. The framebuffer changes' CPU cost on the backend thread (~1.45 ms)
 
+> **Correction (2026-10-22, later the same day).** The POCO X7 profiles of this report were taken
+> from the input script's rest mark, 20 s before the fight, not from the fight: the scripts' `adb
+> shell grep -q "perf step 1"` lost its quotes on the device and matched "perf" alone, so each
+> 25-second "fight" profile held about 18 s of rest (docs/regressions.md, "Profiles of the fight
+> taken on the rest mark"). The backend thread's CPU figure in this section (~1.45 ms) came from
+> those profiles and does not hold; the counts of binds and changes come from the GLES layer's
+> counters and hold. Not repeated.
+
 Per fight frame (GLES layer, live): ~17 binds, ~9.5 changes. OGRE 14's GLES2 `_setViewport` calls
 `_setRenderTarget`, which binds the FBO again every time (no cache), with a `dynamic_cast` and a
 depth buffer check, for any viewport marked updated, even on the same target. Of the changes, five
@@ -203,6 +238,14 @@ another FBO: read-backs, uploads, our discard), or deferring `_beginFrame`. Esti
 the backend thread, which is not the limit (~7 ms against the guest's ~22). Not prototyped.
 
 ## 6. Texture binds per draw (3-4 against rekindled's ~1)
+
+> **Correction (2026-10-22, later the same day).** The POCO X7 profiles of this report were taken
+> from the input script's rest mark, 20 s before the fight, not from the fight: the scripts' `adb
+> shell grep -q "perf step 1"` lost its quotes on the device and matched "perf" alone, so each
+> 25-second "fight" profile held about 18 s of rest (docs/regressions.md, "Profiles of the fight
+> taken on the rest mark"). The share of `_setSampler` below (2.3 % of the backend thread) came from
+> those profiles and does not hold. The patch was decided later on a same-binary A/B (backend render
+> about -0.7 ms on the POCO X7) and is in `develop`.
 
 Why: OGRE 14's GLES2 `_setTexture` calls `glBindTexture` every time (no per-unit cache), our
 backend's `_disableTextureUnitsFrom` per draw unbinds the units above the draw's (which another
