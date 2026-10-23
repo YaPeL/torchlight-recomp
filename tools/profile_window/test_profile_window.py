@@ -3,7 +3,9 @@
 
 import datetime
 import pathlib
+import subprocess
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -50,6 +52,28 @@ class ProfileWindowTest(unittest.TestCase):
         self.assertTrue(ok)
         ok, _ = profile_window.check(stopped, t("22:48:31.000"), t("22:48:55.000"), open_end=True)
         self.assertFalse(ok)
+
+    def test_ends_before_it_starts(self):
+        ok, msg = profile_window.check(LOG, t("22:48:40.000"), t("22:48:35.000"))
+        self.assertFalse(ok)
+        self.assertIn("ends before it starts", msg)
+
+    def test_command_line_exit_codes(self):
+        script = pathlib.Path(profile_window.__file__)
+        with tempfile.TemporaryDirectory() as d:
+            log = pathlib.Path(d) / "run.log"
+            log.write_text("".join(LOG), encoding="utf-8")
+            run = lambda *a: subprocess.run([sys.executable, "-I", str(script), *a],
+                                            capture_output=True, text=True)
+            inside = run(str(log), str(t("22:48:31.000")), str(t("22:48:56.000")))
+            self.assertEqual(inside.returncode, 0)
+            self.assertTrue(inside.stdout.startswith("ok: "))
+            on_rest = run(str(log), str(t("22:48:10.900")), str(t("22:48:35.900")))
+            self.assertEqual(on_rest.returncode, 1)
+            self.assertTrue(on_rest.stdout.startswith("error: "))
+            missing = run(str(pathlib.Path(d) / "none.log"), "0", "1")
+            self.assertEqual(missing.returncode, 1)
+            self.assertTrue(missing.stdout.startswith("error: "))
 
     def test_the_rest_step_by_name(self):
         ok, _ = profile_window.check(LOG, t("22:48:10.000"), t("22:48:20.000"), step="rest")

@@ -4,11 +4,13 @@
 Usage: profile_window.py LOG START END [--step fight] [--open-end]
 
 LOG is the game's log of the run; START and END are when the profile began and ended, as the
-device's clock gives them (`date +%s.%N` on the device, seconds since the epoch, local time as
-the log writes it). The fight is the time between the input script's "perf step N: fight" mark
-and its "perf step 'fight':" summary (with --open-end, for a run stopped before the summary,
-the log's last line). Prints the mark, the end and the profile's window, and
-fails (exit 1) unless the window lies entirely inside the fight.
+device's clock gives them (`date +%s.%N` on the device, seconds since the epoch). The log writes the
+device's local time without a zone, read here in this machine's zone: the two must match. A mismatch
+shifts every window by whole half hours, so it fails (never passes by mistake) with a large offset
+"from the mark". The fight is the time between the input script's "perf step N: fight" mark and its
+"perf step 'fight':" summary (with --open-end, for a run stopped before the summary, the log's last
+line). Prints the mark, the end and the profile's window, and fails (exit 1) unless the window lies
+entirely inside the fight.
 
 Written after profiles of 2026-10-21/22 started on the rest mark, 20 s before the fight, because
 the run scripts' `adb shell grep -q "perf step 1" LOG` lost its quotes on the device and matched
@@ -75,8 +77,13 @@ def main():
     ap.add_argument("--open-end", action="store_true",
                     help="the run was stopped before the step's summary: end at the last line")
     a = ap.parse_args()
-    with open(a.log, encoding="utf-8", errors="replace") as f:
-        ok, msg = check(f.readlines(), a.start, a.end, a.step, a.open_end)
+    try:
+        with open(a.log, encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except OSError as e:
+        print(f"error: {e}")
+        return 1
+    ok, msg = check(lines, a.start, a.end, a.step, a.open_end)
     print(("ok: " if ok else "error: ") + msg)
     return 0 if ok else 1
 
