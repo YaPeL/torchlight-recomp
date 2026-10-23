@@ -105,14 +105,13 @@ From the disassembly, against OgreSceneManager.cpp and OgreRenderQueueSortingGro
   and stable-sorts below, on the collections at +0x08, +0x58, +0x30, +0x80, +0xA8, +0xD0, 0x28
   apart), then draws three of them through `renderObjects` (slot 27, `0x821DD1C0`): solids basic
   (+0x08), transparents unsorted (+0xA8) and transparents (+0xD0, always descending), as upstream.
-- `renderObjects` 0x821DD1C0 sets the active visitor's fields (at SceneManager +0x433C:
-  `autoLights` +0x0C, `manualLightList` +0x10, `scissoring` +0x14; upstream's
-  `transparentShadowCastersMode` sits at +0x0C with `autoLights` after it: the field is gone in
-  Runic's build, a Runic difference) and tail-calls
-  `QueuedRenderableCollection::acceptVisitor` 0x821C08B8. That function is upstream's, with the
-  descending and ascending walks inlined over the sorted `std::vector<RenderablePass>` at
-  +0x18/+0x1C (8 bytes an entry) and the pass-grouped walk in `0x821CC700`. The sort above only
-  acts on collections whose organisation mode has the descending bit (0x2).
+- `renderObjects` 0x821DD1C0 sets the active visitor's fields (at SceneManager +0x433C: `autoLights`
+  +0x0C, `manualLightList` +0x10, `scissoring` +0x14; upstream's `transparentShadowCastersMode` sits
+  at +0x0C with `autoLights` after it: the field is gone in Runic's build, a Runic difference) and
+  tail-calls `QueuedRenderableCollection::acceptVisitor` 0x821C08B8. That function is upstream's,
+  with the descending and ascending walks inlined over the sorted `std::vector<RenderablePass>` at
+  +0x18/+0x1C (8 bytes an entry) and the pass-grouped walk in `0x821CC700`. The sort above only acts
+  on collections whose organisation mode has the descending bit (0x2).
 - **Runic's pass-grouped walk** (`0x821CC700`; in wave 1 of `fight5` the samples under it come to
   5.2 ms a frame of the 9.1 ms under `acceptVisitor`, counted inclusively, not by table 1's rule) is
   not upstream's. For each pass of the map (node key +0x0C, the RenderableList* at +0x10) it copies
@@ -131,7 +130,7 @@ From the disassembly, against OgreSceneManager.cpp and OgreRenderQueueSortingGro
   visit(const Pass*): `validatePassForRendering` (vt+0x0C), then `_setPass` (vt+0x398); slot 3
   `0x821C0A50` = visit(RenderablePass*): `validateRenderableForRendering`, `_setPass`,
   `renderSingleObject` (as upstream, which never validates the pass there; Runic drops upstream's
-  `transparentShadowCastersMode` test, the field `renderObjects` no longer writes). In this guest
+  `transparentShadowCastersMode` test, with the field itself, gone from the visitor). In this guest
   `validateRenderableForRendering` (slot 4, `0x828AD7C0`) returns true and
   `validatePassForRendering` (slot 3, `0x821D2880`) only checks late material resolving
   (vt+0x2FC); the native path reproduces both from those bodies.
@@ -152,20 +151,14 @@ From the disassembly, against OgreSceneManager.cpp and OgreRenderQueueSortingGro
   QueuedRenderableCollection (pass-grouped `std::map<Pass*, RenderableList*, PassGroupLess>`,
   ordered by `Pass::getHash`; sorted `std::vector<RenderablePass>`). The MSVC `std::map` and
   `std::vector` layouts are already confirmed in `guest_abi/ogre_layout.h`.
-- **The pass:**
-  - the scene blend, depth check/write/function, cull mode, alpha rejection, colour write and
-    polygon mode;
-  - the TextureUnitState list: texture, addressing, filtering, the texture matrix where used;
-  - the vertex and fragment program usages and their GpuProgramParameters, i.e. the constant
-    buffers and the automatic constant list (`ogre_layout.h` already reads these for the capture:
-    `_updateAutoParams` and `bindGpuProgramParameters`).
-- **The renderable:**
-  - its RenderOperation: the VertexData (declaration, buffer bindings), the IndexData and the
-    operation type. The capture reads these today in `ReadVertexBufferBinding` and the `_render`
-    guard;
-  - its world matrices;
-  - its custom parameters;
-  - its light list.
+- **The pass:** - the scene blend, depth check/write/function, cull mode, alpha rejection, colour
+  write and polygon mode; - the TextureUnitState list: texture, addressing, filtering, the texture
+  matrix where used; - the vertex and fragment program usages and their GpuProgramParameters, i.e.
+  the constant buffers and the automatic constant list (`ogre_layout.h` already reads these for the
+  capture: `_updateAutoParams` and `bindGpuProgramParameters`).
+- **The renderable:** - its RenderOperation: the VertexData (declaration, buffer bindings), the
+  IndexData and the operation type. The capture reads these today in `ReadVertexBufferBinding` and
+  the `_render` guard; - its world matrices; - its custom parameters; - its light list.
 
   These four come from virtuals of the guest's objects (`getRenderOperation`,
   `getWorldTransforms`, `getCustomParameter`, `getLights`). The native path reads the data behind
@@ -175,8 +168,8 @@ From the disassembly, against OgreSceneManager.cpp and OgreRenderQueueSortingGro
   matrices, the current lights, the fog, the ambient colour and the time, as `_setPass` and
   `renderSingleObject` would set the guest's `AutoParamDataSource` up. It reads that object only
   for what `_renderScene` sets before the walk (the camera, the viewport, the scene-wide values);
-  the per-pass and per-object fields hold the previous pass's values in comparison mode (the
-  native path runs before the guest's walk) and are not set at all when it is on.
+    its per-pass and per-object fields hold the previous pass's values when the native path runs
+  (the native path sets them only by the write-back below, at a switch to the guest).
 
 ### The boundary with the guest's state
 
@@ -193,19 +186,26 @@ pass went through it:
   negatively scaled objects, the re-issue of view-dependent texture coordinate generation, and the
   camera's polygon mode override.
 
-When native work is followed by guest work, two things are restored:
-- **The backend's state, by the session.** The session keeps the state the guest believes the
-  backend holds, built only from what the hooks record. At each switch from native to guest, it
-  sends the difference between that state and the backend's actual state (render states,
-  textures and samplers, declaration and buffers, constant registers), so whatever the guest's
-  caches make it skip is already right in the backend. This does not depend on a list of the
-  guest's caches. A diagnostics check asserts, at each guest draw, that the guest-believed state
-  and the backend's actual state are equal.
-- **The guest's internal fields, by write-back:** the visitor's `mUsedPass`, the
-  AutoParamDataSource's current pass and object, the last light hash, the GPU parameters' dirty
-  flags, the render system's bound programs: the values the guest's walk would have left. Stage 0
-  lists them by reading the code; comparison mode compares each written-back value with what the
-  guest's walk leaves in the same frame.
+When native work is followed by guest work:
+- **The backend's state is restored by the session.** The session keeps the state the guest
+  believes the backend holds, built only from what the hooks record (the guest-believed constants
+  in their own per-stage arrays in every mode, with the automatic constant list and transpose
+  flag each upload replaces; unbinds and disabled texture units included; updated before the
+  session's own deduplication). At each switch from native to guest it sends the difference
+  between that state and the backend's actual state (render states, textures and samplers,
+  declaration and buffers, constant registers). Three draw fields the capture reads from the
+  render system's memory at each draw (inverted winding, pass iteration count, active target)
+  are carried the same way by native draws.
+- **Why that is sound:** the guest's skip caches (the render system's bound programs and texture
+  units, the scene manager's light hash, the GPU parameters' dirty flags, the D3D9 state caches)
+  are written only by guest code, never by the native path, so after a native stretch they still
+  describe exactly the guest-believed state that the session has just put back in the backend.
+  Whatever the guest skips is therefore already right. No field the guest uses to decide what to
+  skip is written back.
+- **Write-back only of what the guest reads without setting it first:** the visitor's `mUsedPass`
+  and the AutoParamDataSource fields the next guest work reads before its own `_setPass` (and
+  the render system's face, batch and vertex counters at +0x84/+0x88/+0x8C, which the native
+  draws add to). Stage 0 lists them by reading the code.
 
 ### Bit identity
 
@@ -217,9 +217,11 @@ be matched is what ReXGlue emitted for those instructions, not the PowerPC seman
 not reproduce, and VMX code flushes denormals. The native code copies, for each automatic constant
 it supports, the operations the recompiled `_updateAutoParams` 0x82201EB0 and the
 AutoParamDataSource getters perform, in their order, in a translation unit built without floating
-point contraction, setting the flush-to-zero mode for each operation as the emitted code does (it
-toggles it per function), with no tolerance. The generated code's own floating point flags are
-pinned the same way, so neither side contracts across statements. It must give the same bits on
+point contraction, setting the flush-to-zero mode for each block as the emitted code does (it
+toggles it per block), with no tolerance. The repository sets no floating point contraction flag
+today: the generated code is one operation per statement with explicit fused multiply-adds, which
+clang keeps as written, but GCC and MSVC may contract across statements, so pinning the generated
+code's flags is a separate build change with its own validation. It must give the same bits on
 x86-64 (with and without hardware FMA), arm64 and MSVC, so comparison mode runs on the desktop and
 on the POCO. A constant type that cannot be made identical stays unsupported, and passes that use it
 fall back.
@@ -263,40 +265,44 @@ stage 1 measures it). The upper ends need full coverage and about 3 us a draw.
 | Stage | What | Covers (to measure) | Estimated gain, `fight.txt` / `fight5` wave 10 | Risk |
 | --- | --- | --- | --- | --- |
 | 0 | `guest_abi` entries for the queue, the collection and the visitor, with evidence; the boundary list (the guest's internal fields to write back, the side effects); the session's guest-believed state and its restore at each switch; count draws per collection and pass group, renderable class, pass kind and program, and how each collection's pass groups split into qualifying and not; build the comparison harness (section 3) with an empty native path (every collection falls back) | - | 0 (the harness's cost, off by default) | Low |
-| 1 | Solids-basic work of the main scene (the render target is the window, not a render texture), falling back by pass group inside Runic's grouped walk (each switch restores the state as in section 1), where the group's pass and every object qualify, each criterion read from guest data: one pass iteration and no iterate-per-light, light scissoring and light clip planes off on the pass; texture units of plain content (no shadow or compositor content, no animated or effect units, no vertex texture binding); vertex and fragment programs whose automatic constants are all in a supported list (fixed in stage 0 from the census); an RTSS SGPass whose sub-render states are all in a supported list, keyed by their vtables (every pass of this guest has one, `docs/game-thread-parallelism.md` step 4), done natively for those states; renderables whose vtable is one of the known classes listed in `guest_abi` (SubEntity, StaticGeometry's GeometryBucket); for a SubEntity, an entity with no skeleton, no vertex (morph or pose) animation, mesh LOD 0 and no manual LOD, so its render operation is the submesh's own data; no render object listener other than RTSS's; a pass depth bias of zero; no identity view or projection; no negative scale (no culling flip), no view-dependent texture coordinate generation, no camera polygon mode override; a group whose first renderable has +0x1C equal to -1.0 falls back (it would use a pass from outside it); the guest's sort and the +0x1C re-visit reproduced | measured in stage 0: the census reports, per collection, how its pass groups split into qualifying and not | 2-2.5 ms / 3.5-4.5 ms, if the census shows that coverage | Medium-high |
+| 1 | Solids-basic work of the main scene (the render target is the window, not a render texture), falling back by pass group inside Runic's grouped walk (each switch restores the state as in section 1), where the group's pass and every object qualify, each criterion read from guest data: one pass iteration and no iterate-per-light, light scissoring and light clip planes off on the pass; texture units of plain content (no shadow or compositor content, no animated or effect units, no vertex texture binding); vertex and fragment programs whose automatic constants are all in a supported list (fixed in stage 0 from the census); an RTSS SGPass whose sub-render states are all in a supported list, keyed by their vtables (every pass of this guest has one, `docs/game-thread-parallelism.md` step 4), done natively for those states; renderables whose vtable is one of the known classes listed in `guest_abi` (SubEntity, StaticGeometry's GeometryBucket); for a SubEntity, an entity with no skeleton, no vertex (morph or pose) animation, mesh LOD 0 and no manual LOD, so its render operation is the submesh's own data; no render object listener other than RTSS's; a pass depth bias of zero; no identity view or projection; no negative scale (no culling flip), no view-dependent texture coordinate generation, no camera polygon mode override; the SceneManager's illumination stage is none and render state changes are not suppressed; camera-relative rendering off; a run of renderables at the head of a group whose +0x1C is -1.0 (drawn with the previous group's pass, no pass visit) goes with the previous group's decision, so every switch between native and guest happens at a pass visit; the guest's sort and the +0x1C re-visit reproduced; a solids-basic collection walked sorted is decided per entry, as in section 1 | measured in stage 0: the census reports, per collection, how its pass groups split into qualifying and not | 2-2.5 ms / 3.5-4.5 ms, if the census shows that coverage | Medium-high |
 | 2 | Skinned entities: bone matrices as `cacheBoneMatrices` left them, the same palette upload | the characters, the dead included | +1-1.5 ms / +2-3 ms | Medium |
 | 3 | Transparent passes in their sorted order, the RTSS sub-render states not supported in stage 1, billboards and particle renderers | effects, decals, UI in the world | +0.5-1 ms / +1-1.5 ms | Medium-high |
 | 4 | The projector passes (shadow and light textures, their own render targets and cameras) | the 2 projector passes | +1.5 ms / +1.4 ms (their walk: 2.2 / 2.1 ms, less a native walk taken as 0.7 ms, more than the other rows assume) | Medium-high |
 | 5 | Culling and the scene graph update natively (the octree walk, `_updateSceneGraph`), feeding the native walk directly | culling, graph | up to the culling, 2.9 ms / 4.5 ms, less the native culling's cost; the graph update not measured apart | High |
 
 Stages 1 to 4 together aim at the 8.2 ms of the walk: around 5-6.5 ms of it back in `fight.txt`, and
-8-10.5 ms of the 13.2 ms in wave 10 of `fight5`. Stage 5 is a separate decision after them (it is
-the culling candidate C of the 2026-10-13 study). None of them touches the game's behaviour: the
+about 8-10.5 ms of the 13.2 ms in wave 10 of `fight5`. Stage 5 is a separate decision after them (it
+is the culling candidate C of the 2026-10-13 study). None of them touches the game's behaviour: the
 dead, the loot and every object keep being updated and drawn as now. Only the cost of drawing each
 one goes down.
 
 ## 3. Verification and the A/B switch
 
 **Comparison mode** (a `--diag_` option, off by default, in the diagnostics build):
-- In the same frame, the native path runs first and records what it would emit for each pass and
-  object, without emitting it. Then the guest path runs as today and the capture records what it
-  emits.
+- The native walker drives, group by group (entry by entry in the sorted walks). For each group
+  it would handle, it records what it would emit, without emitting it, and then hands that same
+  group to the guest's visitor, whose commands the capture records and sends as today. At every
+  place where the "on" mode would switch from native to guest, it also computes what the session
+  would restore and what it would write back, and compares them with the state the guest's walk
+  actually leaves there.
 - The two streams are compared per draw: target, viewport, every render state, every texture
   binding with its sampler state, the vertex declaration and bindings, the index range, every
   constant range bit for bit, and the draw parameters.
 - The first difference of a frame is logged with the pass, the renderable's class and address,
   and the field that differs. A per-run counter reports how many draws matched, differed or fell
   back, by reason.
-- The write-back check (section 1, "The boundary with the guest's state") runs in the same mode.
 - Comparison mode runs both walks and the diff, so its frame times say nothing about the gain.
 - A texture first used in a frame is loaded by `touch` inside the guest's walk, after the native
   path ran: the comparison counts those draws apart (a texture not yet loaded), not as
   differences.
 - It runs on the desktop and on the POCO (bit identity across compilers and CPUs, section 1).
 - Comparison mode records, so it does not check the side effects the "on" mode must perform
-  (`touch`, `preRender`/`postRender`, the face and batch counts, listeners). The native path
-  counts each of them per frame, and so does the guest path; in comparison mode the two counts of
-  the same frame must be equal.
+  (`touch`, `preRender`/`postRender`, the face, batch and vertex counts, listeners). The native
+  path records each of them per kind and per renderable, and so does the guest path; in
+  comparison mode the two records of the same group must be equal. In the "on" mode, the guest
+  render system's own face and batch counters are compared with the off mode's on the same
+  scripted fight.
 - A stage becomes the default only after fights, the town and a few levels show no difference,
   over a whole session.
 
@@ -350,11 +356,11 @@ To find in stage 0, by reading the code, not by assuming OGRE 1.7:
   driver. The comparison checks every field of every command, and replays and device screenshots
   cover the images.
 - **Hidden reads of the guest's state:** code that reads the RenderSystem's, the
-  AutoParamDataSource's or the pass's state after a native collection, expecting what the guest's
-  walk left there: the next guest collection inside the same frame as much as code after the walk.
-  Stage 0 lists the readers; the session restores the backend's state the guest believes in and
-  the native path writes back the guest's internal fields (section 1); comparison mode checks the
-  write-back and a diagnostics check the restored state.
+  AutoParamDataSource's or the pass's state after native work, expecting what the guest's walk
+  left there: the next guest group inside the same frame as much as code after the walk. Stage 0
+  lists the readers; the session restores the backend's state the guest believes in, the native
+  path writes back only what the guest reads without setting it (section 1), and comparison mode
+  checks both at every would-be switch.
 - **Bit identity:** a derived constant computed in another order differs in its last bits. The
   native code copies the guest's order; a type that cannot be made identical stays unsupported
   (section 1).
@@ -365,7 +371,7 @@ To find in stage 0, by reading the code, not by assuming OGRE 1.7:
   back, counted by class in the comparison mode, so the coverage is measured, not assumed.
 - **Mid-frame changes:** objects or passes changed by a listener during the walk. Listeners on the
   render queue (`fireRenderQueueStarted`/`Ended`, fired in 0x821BC5A0 outside the cut) keep running
-  in place, and a collection whose objects have a listener that does something unknown falls
+  in place, and a group or entry whose objects have a listener that does something unknown falls
   back. The game's own listener draws the GUI from `renderQueueStarted` (above); its draws reach
   our capture as today.
 - **Maintenance:** a second implementation of OGRE 1.7's draw path, kept equal by the comparison
@@ -378,9 +384,11 @@ To find in stage 0, by reading the code, not by assuming OGRE 1.7:
 - The disassembly of `renderObjects` 0x821DD1C0, `acceptVisitor` 0x821C08B8 and its grouped
   walk 0x821CC700, the visitor's three slots and `_setPass`/`renderSingleObject`, read against
   OgreSceneManager.cpp 1.7.0; `guest_abi` entries for the queue's structures, with evidence.
-- The boundary list of section 1: what the guest's walk leaves that later code reads, and its
-  caches.
+- The boundary list of section 1: what the guest's walk leaves that later guest code reads
+  without setting it first.
 - The comparison harness, with the native path empty (everything falls back, every draw counted
   as "not handled"), measured with the option off to show it costs nothing.
-- A draw census per frame, by renderable class, pass kind and program, from a diagnostics build
-  on the POCO in `fight.txt` and `fight5.txt`, to size stages 1 to 4 before writing them.
+- A draw census per frame, by renderable class, pass kind and program, and how each collection's
+  pass groups split into qualifying and not, from a diagnostics build on the POCO in `fight.txt`
+  and `fight5.txt`, to size stages 1 to 4 before writing them.
+
