@@ -72,7 +72,6 @@ set(TORCHLIGHT_SOURCES
     src/capture/session.cpp
     src/hooks/bucket_cull_hooks.cpp
     src/hooks/frustum_hooks.cpp
-    src/hooks/census_hooks.cpp
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
     src/hooks/guest_io_hooks.cpp
@@ -193,6 +192,13 @@ endif()
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)
+# Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census). Off by
+# default and in every release workflow: without it nothing of them is compiled, no guest function
+# is wrapped and nothing runs, so they cost nothing. The one build flag for such diagnostics.
+option(TORCHLIGHT_DIAGNOSTICS "Compile the diagnostics that wrap guest functions" OFF)
+if(TORCHLIGHT_DIAGNOSTICS)
+    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp)
+endif()
 # Guest developer commands for validation runs (dev/guest_command.h). Off by default; the release
 # workflows never set it, so release builds ignore --dev_guest_command.
 option(TORCHLIGHT_DEV_COMMANDS "Run guest developer commands from --dev_guest_command" OFF)
