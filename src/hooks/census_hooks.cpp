@@ -4,9 +4,8 @@
 //
 // Counted by wrapping each class's constructor and destructor (guest_abi/guest_functions.h,
 // census): +1 when a constructor returns, -1 when a destructor starts. A derived class's
-// constructor runs its base's, so a CCharacter counts as a CBaseUnit too. The counts start at the
-// first object made after the option was on, so objects made before (the town loaded at start)
-// show only as their destructions: the numbers are differences from that start. Compiled only
+// constructor runs its base's, so "units" (CBaseUnit) counts the characters and the items both.
+// The option is read once, before the guest runs, so the counts cover the whole process. Compiled only
 // with the build flag TORCHLIGHT_DIAGNOSTICS (CMakeLists.txt; off in releases, where no guest
 // function is wrapped); then off by default (--diag_object_census), each wrapper only calls the
 // guest function.

@@ -276,8 +276,9 @@ inline constexpr GuestFunction kXMemAlloc{0x8287D640, Confidence::kConfirmed};
 // Constructors and destructors of some game and OGRE classes, for the object census
 // (hooks/census_hooks.cpp, diagnostics). [confirmed] Each class's vtable comes from its MSVC RTTI
 // (tools/guest_re/rtti_vtable.py; type descriptor names below); a constructor calls its base's
-// constructor and then stores the vtable; a destructor stores it before any call and is the
-// function the vtable's slot 0 (the deleting destructor) calls before operator delete 0x821CD9A8.
+// constructor and then stores the vtable; a destructor stores it before any call. For the game's
+// classes it is also what the vtable's slot 0 (the deleting destructor) calls before operator
+// delete 0x821CD9A8; the OGRE vtables' slot 0 is not their deleting destructor.
 // One constructor per class unless two are listed (OGRE's named and unnamed ones).
 namespace census {
 // .?AVCCharacter@@, vtable 0x820C060C (slot 0 0x82283940 calls the destructor). The constructor
