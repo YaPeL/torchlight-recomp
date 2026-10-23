@@ -193,12 +193,14 @@ endif()
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)
-# Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census). Off by
-# default and in every release workflow: without it nothing of them is compiled, no guest function
-# is wrapped and nothing runs, so they cost nothing. The one build flag for such diagnostics.
+# Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
+# hooks/queue_census_hooks.cpp, --diag_queue_census). Off by default and in every release workflow:
+# without it nothing of them is compiled, no guest function is wrapped and nothing runs, so they
+# cost nothing. The one build flag for such diagnostics.
 option(TORCHLIGHT_DIAGNOSTICS "Compile the diagnostics that wrap guest functions" OFF)
 if(TORCHLIGHT_DIAGNOSTICS)
-    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp)
+    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp)
+    target_link_libraries(torchlight PRIVATE torchlight_queue_census)
 endif()
 # Guest developer commands for validation runs (dev/guest_command.h). Off by default; the release
 # workflows never set it, so release builds ignore --dev_guest_command.

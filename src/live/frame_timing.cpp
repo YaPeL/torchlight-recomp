@@ -72,10 +72,18 @@ std::atomic<FrameObserver*> g_observer{nullptr};
 void SetFrameObserver(FrameObserver* observer) { g_observer.store(observer); }
 
 namespace {
-std::atomic<SummaryHook> g_summary_hook{nullptr};
+// Added at static initialisation (before the guest runs), read on the guest's render thread.
+constexpr int kMaxSummaryHooks = 4;
+std::atomic<SummaryHook> g_summary_hooks[kMaxSummaryHooks];
 }  // namespace
 
-void SetSummaryHook(SummaryHook hook) { g_summary_hook.store(hook); }
+bool AddSummaryHook(SummaryHook hook) {
+  for (auto& slot : g_summary_hooks) {
+    SummaryHook empty = nullptr;
+    if (slot.compare_exchange_strong(empty, hook)) return true;
+  }
+  return false;
+}
 
 FrameTiming& FrameTiming::Get() {
   static FrameTiming timing;
@@ -91,7 +99,8 @@ void FrameTiming::OnSwap() {
   if (FrameObserver* observer = g_observer.load()) observer->OnGuestFrame(ms.value_or(0.0));
   if (auto summary = guest_.TakeSummary(now)) {
     REXLOG_INFO("frame time (guest swap to swap): {}", *summary);
-    if (SummaryHook hook = g_summary_hook.load()) hook();
+    for (auto& slot : g_summary_hooks)
+      if (SummaryHook hook = slot.load()) hook();
   }
 }
 
