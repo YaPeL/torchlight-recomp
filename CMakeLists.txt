@@ -200,6 +200,7 @@ target_include_directories(torchlight PRIVATE src)
 option(TORCHLIGHT_DIAGNOSTICS "Compile the diagnostics that wrap guest functions" OFF)
 if(TORCHLIGHT_DIAGNOSTICS)
     target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp)
+    target_link_libraries(torchlight PRIVATE torchlight_queue_census)
 endif()
 # Guest developer commands for validation runs (dev/guest_command.h). Off by default; the release
 # workflows never set it, so release builds ignore --dev_guest_command.
@@ -229,8 +230,7 @@ add_dependencies(torchlight torchlight_data)
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods torchlight_texture_files
     torchlight_save_mod_list torchlight_video_mode torchlight_guest_path torchlight_gpu_wait_watch torchlight_missing_file_cache
     torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull
-    torchlight_native_render_system torchlight_frustum_test torchlight_dev_input_script
-    torchlight_queue_census)
+    torchlight_native_render_system torchlight_frustum_test torchlight_dev_input_script)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)

@@ -7,8 +7,11 @@
 //
 // Upper bounds: the supported lists of automatic constants and RTSS sub-render states, the texture
 // unit kinds and the per-object criteria (negative scale, texture coordinate generation, identity
-// view or projection) are not decided here; every pass and object that passes the rest counts as
-// native. Pure over a guest memory base, so it is tested on a fake memory.
+// view or projection) are not decided here, and a group is counted whole even when the guest's
+// pass visit would end it early; every pass and object that passes the rest counts as native. In
+// the per-reason counts, "qualifying" is every draw that passes the criteria (including those of a
+// group the per-group fallback leaves to the guest because it starts at -1.0), and a unit's
+// failing draws all go to its first failing object's reason. Pure over a guest memory base, so it is tested on a fake memory.
 
 #pragma once
 

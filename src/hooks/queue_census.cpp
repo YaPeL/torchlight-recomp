@@ -12,7 +12,7 @@ namespace rq = abi::render_queue;
 
 const char* QueueReasonName(QueueReason r) {
   switch (r) {
-    case QueueReason::kNative: return "native";
+    case QueueReason::kNative: return "qualifying";
     case QueueReason::kNotMainScene: return "projector";
     case QueueReason::kNotSolidsBasic: return "transparent";
     case QueueReason::kNoPrograms: return "no_programs";
@@ -92,16 +92,20 @@ void ForEachNode(const uint8_t* m, uint32_t map, F&& f) {
   namespace t = abi::ogre::stl_tree;
   const uint32_t head = abi::ReadU32(m, map, t::kHead);
   if (!head) return;
+  // Every loop is bounded, so a map read while it changes cannot hang the guest's thread.
+  constexpr int kGuard = 1 << 20;
+  int steps = 0;
   uint32_t node = abi::ReadU32(m, head, t::kNodeLeft);  // the leftmost node, or head when empty
-  for (int guard = 0; node != head && guard < 1 << 20; ++guard) {
+  while (node != head && ++steps < kGuard) {
     f(node);
     const uint32_t right = abi::ReadU32(m, node, t::kNodeRight);
     if (right != head) {
       node = right;
-      for (uint32_t left; (left = abi::ReadU32(m, node, t::kNodeLeft)) != head;) node = left;
+      for (uint32_t left; (left = abi::ReadU32(m, node, t::kNodeLeft)) != head && ++steps < kGuard;)
+        node = left;
     } else {
       uint32_t parent = abi::ReadU32(m, node, t::kNodeParent);
-      while (parent != head && node == abi::ReadU32(m, parent, t::kNodeRight)) {
+      while (parent != head && node == abi::ReadU32(m, parent, t::kNodeRight) && ++steps < kGuard) {
         node = parent;
         parent = abi::ReadU32(m, node, t::kNodeParent);
       }
@@ -115,15 +119,18 @@ void ForEachNode(const uint8_t* m, uint32_t map, F&& f) {
 void ClassifyCollection(const uint8_t* m, uint32_t collection, uint32_t om, bool main_scene,
                         QueueCollection kind, double ms, QueueCensusTotals& totals) {
   namespace qc = rq::queued_renderable_collection;
-  // acceptVisitor's choice (OgreRenderQueueSortingGrouping.cpp:399-413).
+  // acceptVisitor's choice as the guest compiles it (0x821C08B8): a mode not notified falls back to
+  // the grouped walk (bit 1), else to the backward walk for either sort bit (mask 6, @0x821C08E4);
+  // then 1, 2 and 6 walk, any other mode walks nothing.
   const uint32_t mode = abi::ReadU8(m, collection, qc::kOrganisationMode);
   if ((om & mode) == 0) {
     if (mode & rq::kOrganisationPassGroup) om = rq::kOrganisationPassGroup;
-    else if ((mode & rq::kOrganisationSortAscending) == rq::kOrganisationSortAscending)
-      om = rq::kOrganisationSortAscending;
-    else if (mode & rq::kOrganisationSortDescending) om = rq::kOrganisationSortDescending;
+    else if (mode & rq::kOrganisationSortAscending) om = rq::kOrganisationSortAscending;
     else return;  // the guest throws here
   }
+  if (om != rq::kOrganisationPassGroup && om != rq::kOrganisationSortDescending &&
+      om != rq::kOrganisationSortAscending)
+    return;
   const QueueReason scope = !main_scene ? QueueReason::kNotMainScene
                             : kind != QueueCollection::kSolidsBasic ? QueueReason::kNotSolidsBasic
                                                                     : QueueReason::kNative;

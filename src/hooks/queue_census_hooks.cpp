@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <mutex>
 #include <string>
 
@@ -44,7 +45,9 @@ QueueCensusTotals g_totals;
 uint64_t g_other_calls = 0;  // renderObjects called from outside renderBasicQueueGroupObjects
 
 // renderBasicQueueGroupObjects calls renderObjects three times per priority group, in this order.
-int g_call_in_group = -1;  // -1: not inside renderBasicQueueGroupObjects (guest's game thread only)
+// -1: not inside renderBasicQueueGroupObjects. Per thread, saved and restored around each call, so
+// a nested walk (a render to texture inside a walk) does not disturb the outer one.
+thread_local int g_call_in_group = -1;
 
 double Pct(double part, double whole) { return whole > 0 ? 100.0 * part / whole : 0.0; }
 
@@ -79,7 +82,10 @@ void LogTotals() {
 }
 
 struct Install {
-  Install() { torchlight::live::AddSummaryHook([] { if (Enabled()) LogTotals(); }); }
+  Install() {
+    if (!torchlight::live::AddSummaryHook([] { if (Enabled()) LogTotals(); }))
+      std::fprintf(stderr, "queue census: no room for its frame summary hook\n");
+  }
 } g_install;
 
 // Whether the scene manager's current viewport draws to the window (the main scene) rather than a
@@ -103,9 +109,10 @@ REX_FUNC(sub_821DD098) {
     __imp__sub_821DD098(ctx, base);
     return;
   }
+  const int outer = g_call_in_group;
   g_call_in_group = 0;
   __imp__sub_821DD098(ctx, base);
-  g_call_in_group = -1;
+  g_call_in_group = outer;
 }
 
 REX_EXTERN(__imp__sub_821DD1C0);

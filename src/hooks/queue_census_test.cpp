@@ -132,6 +132,41 @@ int main() {
   Check(c.draws_native_whole == 3 && c.ms_native_whole == 3.0 && c.mixed_collections == 0,
         "a clean collection is native whole");
 
+  // A balanced tree of three nodes (root with a left and a right child): the walk climbs from the
+  // left child to the root, then goes right; each group visited once (1 + 2 + 4 draws).
+  {
+    namespace qc = rq::queued_renderable_collection;
+    namespace t = abi::ogre::stl_tree;
+    const uint32_t bal = g.Alloc(qc::kSize.bytes), head = g.Alloc(0x18);
+    g.U8(bal + qc::kOrganisationMode.offset, rq::kOrganisationPassGroup);
+    g.U32(bal + qc::kGrouped.offset + t::kHead.offset, head);
+    auto make_node = [&](uint32_t count) {
+      const uint32_t list = g.Alloc(0x10), items = g.Alloc(4 * count);
+      for (uint32_t i = 0; i < count; ++i) g.U32(items + 4 * i, still);
+      g.U32(list + abi::ogre::stl_vector::kFirst.offset, items);
+      g.U32(list + abi::ogre::stl_vector::kLast.offset, items + 4 * count);
+      const uint32_t node = g.Alloc(0x18);
+      g.U32(node + t::kNodeKey.offset, good);
+      g.U32(node + t::kNodeValue.offset, list);
+      g.U32(node + t::kNodeLeft.offset, head);
+      g.U32(node + t::kNodeRight.offset, head);
+      return node;
+    };
+    const uint32_t a = make_node(1), root = make_node(2), c = make_node(4);
+    g.U32(root + t::kNodeLeft.offset, a);
+    g.U32(root + t::kNodeRight.offset, c);
+    g.U32(root + t::kNodeParent.offset, head);
+    g.U32(a + t::kNodeParent.offset, root);
+    g.U32(c + t::kNodeParent.offset, root);
+    g.U32(head + t::kNodeLeft.offset, a);  // MSVC: head's left is the leftmost node
+    g.U32(head + t::kNodeParent.offset, root);
+    g.U32(head + t::kNodeRight.offset, c);
+    QueueCensusTotals b;
+    ClassifyCollection(g.m.data(), bal, rq::kOrganisationPassGroup, true,
+                       QueueCollection::kSolidsBasic, 7.0, b);
+    Check(b.groups == 3 && b.draws == 7 && b.draws_native_whole == 7, "a balanced tree walked once");
+  }
+
   // A sorted (descending) collection of transparents: entries, none native.
   namespace qc = rq::queued_renderable_collection;
   const uint32_t sorted = g.Alloc(qc::kSize.bytes), entries = g.Alloc(16);

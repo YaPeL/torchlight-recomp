@@ -12,6 +12,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -55,7 +56,10 @@ void LogCensus() {
 }
 
 struct Install {
-  Install() { torchlight::live::AddSummaryHook([] { if (Enabled()) LogCensus(); }); }
+  Install() {
+    if (!torchlight::live::AddSummaryHook([] { if (Enabled()) LogCensus(); }))
+      std::fprintf(stderr, "object census: no room for its frame summary hook\n");
+  }
 } g_install;
 
 void Made(Kind k) {
