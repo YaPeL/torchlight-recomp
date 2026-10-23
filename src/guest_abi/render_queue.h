@@ -108,4 +108,63 @@ inline constexpr VtableSlot kVisitPass{2, Confidence::kConfirmed};
 inline constexpr VtableSlot kVisitRenderablePass{3, Confidence::kConfirmed};
 }  // namespace visitor
 
+namespace pass {
+// Ogre::Pass (OgrePass.h, member order). [confirmed] from the reads of _setPass 0x821C5730 (pass in
+// r29) and renderSingleObject 0x821C5FA0 (pass in r24): the programs as _setPass binds them in
+// upstream's order, vertex (@0x821C57D0), geometry (@0x821C5870), fragment (@0x821C5940); a zero
+// usage pointer is no program.
+inline constexpr Field kVertexProgramUsage{0x11C, Confidence::kConfirmed};
+inline constexpr Field kFragmentProgramUsage{0x128, Confidence::kConfirmed};
+inline constexpr Field kGeometryProgramUsage{0x130, Confidence::kConfirmed};
+// [confirmed] _setDepthBias(constant, slope) from +0xAC/+0xB0 (@0x821C5DF4..); renderSingleObject
+// derives a per-iteration bias when the float at +0xB4 is not zero (@0x821C6804..0x821C6844,
+// setDeriveDepthBias, render system slot 113).
+inline constexpr Field kDepthBiasConstant{0xAC, Confidence::kConfirmed};
+inline constexpr Field kDepthBiasSlopeScale{0xB0, Confidence::kConfirmed};
+inline constexpr Field kDepthBiasPerIteration{0xB4, Confidence::kConfirmed};
+// [inferred] renderSingleObject's light loop reads, in upstream's order, a byte at +0xD2
+// (mIteratePerLight, @0x821C64F0), then +0xD0/+0xCE (start light, max simultaneous lights) and
+// +0xD4 (lights per iteration) as u16, +0xD6 (run only for one light type) as a byte.
+inline constexpr Field kIteratePerLight{0xD2, Confidence::kInferred};
+// [confirmed] renderSingleObject passes the word at +0x138 to setCurrentPassIterationCount
+// (render system slot 112, @0x821C67F0).
+inline constexpr Field kPassIterationCount{0x138, Confidence::kConfirmed};
+// [confirmed] renderSingleObject calls buildAndSetScissor (SceneManager vt+0x78) when the byte at
+// +0x169 is set (@0x821C6764..0x821C67AC) and buildAndSetLightClip (vt+0x84) for +0x16A
+// (@0x821C67B4..0x821C67D4): mLightScissoring and mLightClipPlanes.
+inline constexpr Field kLightScissoring{0x169, Confidence::kConfirmed};
+inline constexpr Field kLightClipPlanes{0x16A, Confidence::kConfirmed};
+// [confirmed] The TextureUnitState* vector: _setPass walks +0x10C..+0x110 (@0x821C5B8C/0x821C5B94).
+inline constexpr Field kTextureUnitStates{0x10C, Confidence::kConfirmed};
+}  // namespace pass
+
+namespace renderable_class {
+// Vtables from MSVC RTTI (tools/guest_re/rtti_vtable.py): the renderable classes the native path
+// may read directly. Ogre::SubEntity (.?AVSubEntity@Ogre@@, installed in 0x8246CCB0) and
+// Ogre::StaticGeometry::GeometryBucket (installed in 0x8247F528).
+inline constexpr uint32_t kSubEntityVtable = 0x82001B0C;
+inline constexpr uint32_t kGeometryBucketVtable = 0x820016B4;
+}  // namespace renderable_class
+
+namespace sub_entity {
+// [confirmed] SubEntity::getNumWorldTransforms 0x821A7C98 reads the parent entity at +0x34
+// (@0x821A7CAC) and the submesh at +0x64 (@0x821A7CCC). [Runic difference] Its
+// getRenderOperation 0x821A3DE8 copies the submesh's own index data and operation type and never
+// reads the entity's LOD index (upstream passes mMeshLodIndex, OgreSubEntity.cpp:153).
+inline constexpr Field kParentEntity{0x34, Confidence::kConfirmed};
+inline constexpr Field kSubMesh{0x64, Confidence::kConfirmed};
+}  // namespace sub_entity
+
+namespace entity {
+// [confirmed] getNumWorldTransforms returns 1 when the u16 at +0x184 is zero (@0x821A7CB0): the
+// entity's mNumBoneMatrices, non-zero for a skinned entity.
+inline constexpr Field kNumBoneMatrices{0x184, Confidence::kConfirmed};
+}  // namespace entity
+
+namespace viewport_target {
+// Ogre::D3D9RenderWindow's vtable (RTTI, installed in 0x82570E40): a viewport whose target has it
+// draws to the window; the projector passes draw to render textures.
+inline constexpr uint32_t kRenderWindowVtable = 0x82003FDC;
+}  // namespace viewport_target
+
 }  // namespace torchlight::guest_abi::render_queue

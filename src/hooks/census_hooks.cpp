@@ -55,7 +55,7 @@ void LogCensus() {
 }
 
 struct Install {
-  Install() { torchlight::live::SetSummaryHook([] { if (Enabled()) LogCensus(); }); }
+  Install() { torchlight::live::AddSummaryHook([] { if (Enabled()) LogCensus(); }); }
 } g_install;
 
 void Made(Kind k) {

@@ -90,6 +90,19 @@ target_link_libraries(native_render_system_test PRIVATE torchlight_native_render
 target_compile_options(native_render_system_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME native_render_system_test COMMAND native_render_system_test)
 
+# Stage 0 of the native render queue (queue_census.h): the classification, pure over a guest memory
+# base; the diagnostic that calls it (queue_census_hooks.cpp) is part of the executable, built
+# only with TORCHLIGHT_DIAGNOSTICS.
+add_library(torchlight_queue_census STATIC queue_census.cpp)
+target_include_directories(torchlight_queue_census PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_queue_census PUBLIC cxx_std_23)
+target_compile_options(torchlight_queue_census PRIVATE -Wall -Wextra -Werror)
+
+add_executable(queue_census_test queue_census_test.cpp)
+target_link_libraries(queue_census_test PRIVATE torchlight_queue_census)
+target_compile_options(queue_census_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME queue_census_test COMMAND queue_census_test)
+
 # The fields a SetTextureBlend record keeps (texture_blend_record.h, header only).
 add_executable(texture_blend_record_test texture_blend_record_test.cpp)
 target_include_directories(texture_blend_record_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
