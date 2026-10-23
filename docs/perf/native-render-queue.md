@@ -8,13 +8,12 @@ later, one part at a time, on the terms of section 4.
 
 ## What was measured
 
-Measured on the POCO X7 on 2026-10-23 with simpleperf and our symbols, binary 47a1d12 (in
-`develop`; the object census, `--diag_object_census`, in the build, off in `fight.txt`, on in
-`fight5`), fps cap 0. Each
-profile's window was checked against the fight in the run's log (`tools/profile_window`): the
-profiles of 2026-10-22 had been taken partly at rest (docs/regressions.md, "Profiles of the fight
-taken on the rest mark") and are replaced by these. Milliseconds are the share of the guest thread's
-samples times its mean frame in the window.
+Measured on the POCO X7 on 2026-10-23 with simpleperf and our symbols, binary 47a1d12 (in `develop`;
+the object census, `--diag_object_census`, in the build, off in `fight.txt`, on in `fight5`), fps
+cap 0. Each profile's window was checked against the fight in the run's log
+(`tools/profile_window`): the profiles of 2026-10-22 had been taken partly at rest
+(docs/regressions.md, "Profiles of the fight taken on the rest mark") and are replaced by these.
+Milliseconds are the share of the guest thread's samples times its mean frame in the window.
 
 On the POCO X7 the game's thread is the limit. Walking OGRE's render queue costs 8.2 ms of its 22.1
 ms frame in the 30-second fight (`fight.txt`, 25 s profiled from 2.6 s after the mark, about 300
@@ -69,9 +68,10 @@ render queue listeners (the vector at +0x42B8/+0x42BC) and calls each one's slot
 window tree (`0x821AFEA0`, recursive; the windows' own drawing `0x821AFF88` and `0x821B01B8`) and
 the GUI renderer's draws (`0x821D2F80`, straight to `_render`). Its draws do not go through the
 render queue, so none of the designs below touches them; why the GUI grows with the dead and the
-loot is still open. The report of 2026-10-22 had named this row "firePreFindVisibleObjects (game
-listeners)": the listeners part held, the name did not (`0x821BC5A0`, the slot it was named after by
-position, is `renderVisibleObjectsDefaultSequence` and holds the render queue walk too).
+loot is still open. The report of 2026-10-22 had named this row `firePreFindVisibleObjects` (its
+item 3: "game listeners"): the listeners part held, the name did not (`0x821BC5A0`, the slot it was
+named after by position, is `renderVisibleObjectsDefaultSequence` and holds the render queue walk
+too).
 
 ## 1. The walk, as Runic's build does it
 
@@ -187,7 +187,7 @@ guest's words the part must leave (listed from the reading) after the guest's ow
 ## 5. The decision: our side first, then the culling's pure test
 
 **First: a cheaper capture and cheaper hooks.** Our side of the walk is 2.96 ms in `fight.txt` and
-4.65 ms in wave 10 (table above): it changes none of the guest code that runs, so no guest state is
+4.65 ms in wave 10 (table 1): it changes none of the guest code that runs, so no guest state is
 involved, and it is checked by replays and by comparing the commands it produces. Its plan will be
 written separately, measure by measure.
 
@@ -201,23 +201,24 @@ written separately, measure by measure.
 | The walk's own loop | 0.52 | 0.52 | 1.04 | reads the octree, queues nodes |
 | Box against frustum (`Frustum::isVisible` 0x821C74A0), already host code | 0.44 | 0.41 | 0.75 | no |
 | StaticGeometry::Region `_updateRenderQueue` 0x821CCE90 | 0.24 | 0.21 | 0.24 | yes |
-| Octant test (`OctreeCamera::getVisibility` 0x821C0E78) | 0.15 | 0.19 | 0.12 | lazily: the frustum planes |
+| Octant test (`OctreeCamera::getVisibility` 0x821C0E78) | 0.15 | 0.19 | 0.12 | lazily: the view, the frustum and its planes |
 | Other per-object virtuals | 0.21 | 0.24 | 0.37 | yes |
 | **Total** (in `fight.txt`, the 2.9 ms culling row of the "where the walk sits" table plus the ParticleUniverse row) | **3.80** | **3.98** | **6.32** | |
 
 The visibility tests are about 0.6 ms in `fight.txt`, and the box test, the larger one, has run as
 host code since docs/game-thread-parallelism.md section 12 (2026-10-14; `--native_frustum_test`, on
 by default, `src/hooks/frustum_test.h`, bit for bit; it makes no calls). What is left is the octant
-test (0.15 ms in `fight.txt`, 0.12 ms in wave 10: the most a native version could save, less its own
-cost), and it is not quite pure: it reads each plane through the camera's `getFrustumPlane`
+test (0.15 ms in `fight.txt`, 0.12 ms in wave 10, inclusive), and it is not quite pure: it reads
+each plane it tests (the far plane only with a far distance) through the camera's `getFrustumPlane`
 (OctreeCamera slot 91, 0x821C0E50), which hands off to the cull frustum when one is set (+1224) and
 otherwise (0x821C4570) runs `updateFrustumPlanes` first (vt+224; OgreFrustum.cpp:215-220), which
 updates the view and the frustum when they are out of date (OgreFrustum.cpp:843-852;
 `Camera::isViewOutOfDate` reads the parent node's derived transform and writes the camera's cached
 copies, OgreCamera.cpp:329-354). A native version calls the guest's getter for the planes and
-replaces only the arithmetic of the test. The rest of the culling writes guest state (the render
-queue, the animation, the particle renderers' buffers, the per-object camera and LOD notifications)
-and stays the guest's.
+replaces only the arithmetic of the test, so its gain is the 0.15 / 0.12 ms less the getters' cost
+(six virtual calls a test, each with its own update checks) and its own: a small fraction. The rest
+of the culling writes guest state (the render queue, the animation, the particle renderers' buffers,
+the per-object camera and LOD notifications) and stays the guest's.
 
 ## 6. Outside the cut, for later
 
