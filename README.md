@@ -196,6 +196,8 @@ Other languages can be added as language packs, including translations made for 
 - **Mods**: new affixes and new level pieces from mods are not loaded yet, mods must be unpacked
   folders, and the first start with a new set of mods takes longer (a "Preparing mods" notice shows
   its progress). The details are in [docs/mods-guide.md](docs/mods-guide.md).
+- **Game files**: restart the game after adding files to the game's own folder (the installed
+  game, not the `mods` folder): files added while it runs are not seen until it starts again.
 - **Languages**: language packs for scripts written right to left (Arabic) are not supported, and
   Chinese and Japanese not yet.
 - The Windows zip is not code-signed (see SmartScreen, above).
