@@ -6,32 +6,62 @@ replaces.
 
 ## Why
 
-> **Pending.** The profile behind the milliseconds of this section and of the stages was taken
-> partly at rest, not in the fight (docs/regressions.md, "Profiles of the fight taken on the rest
-> mark"). It is being taken again with the fixed scripts; until then every millisecond estimate
-> here is provisional.
+Measured on the POCO X7 on 2026-10-23 with simpleperf and our symbols, binary 47a1d12 (in
+`develop`; the object census in the build, off in `fight.txt`, on in `fight5`), fps cap 0. Each
+profile's window was checked against the fight in the run's log (`tools/profile_window`): the
+profiles of 2026-10-22 had been taken partly at rest (docs/regressions.md, "Profiles of the fight
+taken on the rest mark") and are replaced by these. Milliseconds are the share of the guest thread's
+samples times its mean frame in the window.
 
-On the POCO X7 the game's thread is the limit. Walking OGRE's render queue costs 8.2 ms of its
-frame in the 30-second fight (`fight.txt`, about 300 draws, simpleperf with our symbols): about
-27 us a draw, 17 of them in the guest's embedded OGRE (passes, automatic parameters, constants,
-texture units, the per-object work) and 10 in our hooks and capture of each D3D9 call
+On the POCO X7 the game's thread is the limit. Walking OGRE's render queue costs 8.2 ms of its 22.1
+ms frame in the 30-second fight (`fight.txt`, 25 s profiled from 2.6 s after the mark, about 300
+draws): about 27 us a draw, 17 of them in the guest's embedded OGRE (passes, automatic parameters,
+constants, texture units, the per-object work) and 10 in our hooks and capture of each D3D9 call
 (`ReadConstants`, the session's state checks, the resource registry, vertex buffer reads). In the
-last wave of the 5-minute fight (`fight5.txt`) the same walk is 11.8 ms with about 689 draws: the
-cost grows with every object drawn, the dead and the loot included (docs/perf, the fight5
-analysis of 2026-10-22).
+5-minute fight (`fight5.txt`, 11 s profiled in the middle of wave 1 and at the end of wave 10) the
+same walk is 9.3 ms of a 25.2 ms frame in wave 1 and 13.2 ms of 39.5 ms in wave 10, with about 689
+draws (the 12-run series' mean; that series' wave 10 averaged 34.8 ms, without the census on): the
+cost grows with every object drawn, the dead and the loot included (docs/perf, the fight5 analysis
+of 2026-10-22), at about 19 us a draw.
 
-| Inside the walk (`fight.txt`, ms a frame) | Guest | Ours | Total |
+| Inside the walk (ms a frame) | Guest | Ours | `fight.txt` | `fight5` wave 1 | `fight5` wave 10 |
+| --- | --- | --- | --- | --- | --- |
+| Automatic parameters (`_updateAutoParams` 0x82201EB0) | 0.81 | 0.05 | 0.86 | 0.99 | 1.33 |
+| Constants upload (`bindGpuProgramParameters` 0x821C2118) | 0.36 | 0.77 | 1.13 | 1.42 | 1.72 |
+| Texture units (`_setTextureUnitSettings` 0x821C93A0) | 0.63 | 0.35 | 0.97 | 1.00 | 1.34 |
+| Vertex buffers (`setVertexBufferBinding` 0x821C3E78) | 0.23 | 0.30 | 0.53 | 0.56 | 0.85 |
+| Before the draw (`_render` guard 0x821C4058 and `_render` 0x821CEA60: our draw capture) | 0.50 | 0.89 | 1.40 | 1.66 | 2.34 |
+| RTSS per object (`notifyRenderSingleObject` 0x821C4F50) | 0.40 | 0.21 | 0.61 | 0.79 | 1.03 |
+| Rest of the pass (`_setPass` 0x821C5730) | 0.69 | 0.28 | 0.98 | 1.10 | 1.36 |
+| Rest per object (`renderSingleObject` 0x821C5FA0) | 1.14 | 0.11 | 1.25 | 1.37 | 2.37 |
+| Rest of the walk (0x821DD098) | 0.47 | 0 | 0.47 | 0.46 | 0.80 |
+| **Total** | **5.23** | **2.96** | **8.19** | **9.33** (5.90 / 3.43) | **13.15** (8.50 / 4.65) |
+
+(Guest and Ours are `fight.txt`'s; the waves' split is in brackets on the total row.)
+
+Where the walk sits in the frame (ms a frame, the projector passes apart from the main scene;
+each sample counted once, in this order: controllers, GUI, particles, culling, draw path):
+
+| Part | `fight.txt` projectors / main | `fight5` wave 1 | `fight5` wave 10 |
 | --- | --- | --- | --- |
-| Automatic parameters (`_updateAutoParams` 0x82201EB0) | 0.81 | 0.04 | 0.85 |
-| Constants upload (`bindGpuProgramParameters` 0x821C2118) | 0.35 | 0.72 | 1.07 |
-| Texture units (`_setTextureUnitSettings` 0x821C93A0) | 0.63 | 0.34 | 0.97 |
-| Vertex buffers (`setVertexBufferBinding` 0x821C3E78) | 0.21 | 0.30 | 0.51 |
-| Before the draw (`_render` guard 0x821C4058: our draw capture) | 0.49 | 0.87 | 1.36 |
-| RTSS per object (`notifyRenderSingleObject` 0x821C4F50) | 0.45 | 0.24 | 0.69 |
-| Rest of the pass (`_setPass` 0x821C5730) | 0.73 | 0.30 | 1.03 |
-| Rest per object (`renderSingleObject` 0x821C5FA0) | 1.14 | 0.10 | 1.23 |
-| Rest of the walk (0x821DD098) | 0.43 | 0 | 0.43 |
-| **Total** | **5.25** | **2.91** | **8.18** |
+| Culling: the octree walk (`0x821A6070` -> `0x821C7158`) | 1.09 / 1.84 | 1.13 / 1.83 | 1.57 / 2.94 |
+| OGRE's draw path (`0x821DD098`, `0x821C5FA0`, `0x821C5730`), guest code | 1.13 / 2.93 | 1.20 / 3.34 | 1.14 / 5.42 |
+| Our capture under it | 1.03 / 3.05 | 1.28 / 3.44 | 0.93 / 5.55 |
+| Pass setup inside `_renderScene` 0x821B07F0, other | 0.67 / 0.37 | 0.76 / 0.34 | 0.93 / 0.41 |
+| GUI: the game's render queue listener (below) | - / 1.56 | - / 1.81 | - / 6.01 |
+| Particles under the passes | 0.41 / 0.57 | 0.44 / 0.71 | 0.35 / 1.59 |
+| Controllers (`0x821C8C00`, paid in the first pass, the shadow projector) | 1.62 / - | 2.05 / - | 3.69 / - |
+
+**Outside the cut: the GUI.** The part that grows most from wave 1 to wave 10 is not the walk but
+the GUI, 1.8 -> 6.0 ms. `0x821BC468` is `fireRenderQueueStarted`: it loops over the scene
+manager's render queue listeners (the vector at +0x42B8/+0x42BC) and calls each one's slot 3,
+`renderQueueStarted(id, invocation, skip)`. The game's listener `0x821FBC60` draws CEGUI there:
+the window tree (`0x821AFEA0`, recursive; the windows' own drawing `0x821AFF88` and
+`0x821B01B8`) and the GUI renderer's draws (`0x821D2F80`, straight to `_render`). Its draws do not
+go through the render queue, so this plan does not touch them; why the GUI grows with the dead
+and the loot is still open. The report of 2026-10-22 had named this row "firePreFindVisibleObjects"
+and "the scene graph update"; both were wrong (`0x821BC5A0`, which it was named after, holds the
+render queue walk too).
 
 The idea: read the guest's render queue after culling and emit our commands for it directly,
 instead of letting the guest's OGRE turn each object into D3D9 calls that our hooks then turn
@@ -126,21 +156,23 @@ create any of its own.
 
 Each stage is behind a runtime option (below), falls back to the guest for everything it does
 not handle, and is integrated only after its verification passes on the replays and on the
-device. The gains are estimates from the profile above, to be measured per stage. Stage 0
-measures the share of draws each stage covers. The ranges assume the covered draws lose all of
+device. The gains are estimates from the profiles above, to be measured per stage. Stage 0
+measures the share of draws each stage covers; until then the split between stages 1 to 3 is a
+guess, and their sum is bounded by the main scene's walk (draw path plus capture: 6.0 ms in
+`fight.txt`, 11.0 ms in wave 10 of `fight5`). The ranges assume the covered draws lose all of
 their guest and capture cost except the native walk's own, which is guessed at 3-5 us per draw.
 
-| Stage | What | Covers (to measure) | Estimated gain, `fight.txt` / `fight5` wave 10 (pending) | Risk |
+| Stage | What | Covers (to measure) | Estimated gain, `fight.txt` / `fight5` wave 10 | Risk |
 | --- | --- | --- | --- | --- |
 | 0 | Confirm the cut and the layouts; count draws per renderable class, pass kind and program; build the comparison harness (section 3) with an empty native path (everything falls back) | - | 0 (the harness's cost, off by default) | Low |
-| 1 | Opaque passes, objects without skinning (static level geometry, props, items, StaticGeometry buckets), programs whose automatic constants are all in the supported set, no per-object RTSS listener work | likely most of the level and the loot | 2-4 ms / 3-6 ms | Medium |
-| 2 | Skinned entities: bone matrices as `cacheBoneMatrices` left them, the same palette upload | the characters, the dead included | +1-2 ms / +2-3 ms | Medium |
-| 3 | Transparent passes in their sorted order, the RTSS per-object listener (lighting, fog, texturing updates) done natively, billboards and particle renderers | effects, decals, UI in the world | +0.5-1 ms / +1 ms | Medium-high |
-| 4 | The projector passes (shadow and light textures, their own render targets and cameras) | the 2 projector passes | +1-1.5 ms (their walk) | Medium-high |
-| 5 | Culling and the scene graph update natively (the octree walk, `_updateSceneGraph`), feeding the native walk directly | culling, graph | +2-3 ms / +5-6 ms (fight5 wave 10: graph 4.9, octree 5.9 ms) | High |
+| 1 | Opaque passes, objects without skinning (static level geometry, props, items, StaticGeometry buckets), programs whose automatic constants are all in the supported set, no per-object RTSS listener work | likely most of the level and the loot | 2-2.5 ms / 3.5-4.5 ms | Medium |
+| 2 | Skinned entities: bone matrices as `cacheBoneMatrices` left them, the same palette upload | the characters, the dead included | +1-1.5 ms / +2-3 ms | Medium |
+| 3 | Transparent passes in their sorted order, the RTSS per-object listener (lighting, fog, texturing updates) done natively, billboards and particle renderers | effects, decals, UI in the world | +0.5-1 ms / +1-1.5 ms | Medium-high |
+| 4 | The projector passes (shadow and light textures, their own render targets and cameras) | the 2 projector passes | +1.5 ms / +1.5 ms (their walk: 2.2 / 2.1 ms, less the native walk) | Medium-high |
+| 5 | Culling and the scene graph update natively (the octree walk, `_updateSceneGraph`), feeding the native walk directly | culling, graph | up to the culling, 2.9 ms / 4.5 ms, less the native walk; the graph update not measured apart | High |
 
-Stages 1 to 4 together aim at the 8.2 ms of the walk: around 5-6 ms of it back in `fight.txt`,
-and 8-9 ms of the 11.8 ms in wave 10 of `fight5`. Stage 5 is a separate decision after them (it is
+Stages 1 to 4 together aim at the 8.2 ms of the walk: around 5-6.5 ms of it back in `fight.txt`, and
+8-10.5 ms of the 13.2 ms in wave 10 of `fight5`. Stage 5 is a separate decision after them (it is
 the culling candidate C of the 2026-10-13 study). None of them touches the game's behaviour: the
 dead, the loot and every object keep being updated and drawn as now. Only the cost of drawing each
 one goes down.
@@ -213,7 +245,8 @@ To find in stage 0, by reading the code, not by assuming OGRE 1.7:
   back, counted by class in the comparison mode, so the coverage is measured, not assumed.
 - **Mid-frame changes:** objects or passes changed by a listener during the walk. Listeners on the
   render queue (`fireRenderQueueStarted`/`Ended`, the three virtual calls in 0x821DD098) keep
-  running in place, and a pass whose listener does something unknown falls back.
+  running in place, and a pass whose listener does something unknown falls back. The game's own
+  listener draws the GUI from `renderQueueStarted` (above); its draws reach our capture as today.
 - **Maintenance:** a second implementation of OGRE 1.7's draw path, kept equal by the comparison
   mode, which stays in the diagnostics build for as long as the native path exists.
 - **The previous attempt:** the legacy port tried a detached OGRE. This plan does not reuse its
