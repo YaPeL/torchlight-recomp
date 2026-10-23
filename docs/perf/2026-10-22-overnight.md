@@ -134,10 +134,11 @@ power or frame effect.
 > 25-second "fight" profile held about 18 s of rest (docs/regressions.md, "Profiles of the fight
 > taken on the rest mark"). The table below (projector passes and the main scene) does not hold.
 > Taken again with the fixed scripts on 2026-10-23, for `fight.txt` and `fight5`'s waves 1 and 10:
-> docs/perf/native-render-queue.md, "What was measured". Its "firePreFindVisibleObjects" row was also misnamed:
-> `0x821BC5A0` holds the render queue walk too, and the part of it that grows is the game's
-> render queue listener drawing the GUI (`fireRenderQueueStarted` 0x821BC468), not a scene graph
-> update; the estimates below that rest on these rows (the walk, pass setup) are superseded there.
+> docs/perf/native-render-queue.md, "What was measured". Its "firePreFindVisibleObjects" row was
+> also misnamed: `0x821BC5A0` holds the render queue walk too, and the part of it that grows is the
+> game's render queue listener drawing the GUI (`fireRenderQueueStarted` 0x821BC468), not a scene
+> graph update; the estimates below that rest on these rows (the walk, pass setup) are superseded
+> there.
 
 Measured (POCO X7, combat bench, the skinning patch in, simpleperf 25 s, guest thread 22.4 ms a
 frame; ms per frame, each sample counted once, particles first):
