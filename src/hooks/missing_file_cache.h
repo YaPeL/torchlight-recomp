@@ -1,8 +1,8 @@
 // The game's files that do not exist, remembered so the guest's existence checks do not ask the
 // kernel again for them. When the game creates a monster it tests about ten optional files that
 // are not there (sound variants such as ...SPAWN1_2.WAV.CMP), the same ones for every monster of a
-// wave and every wave: 210 checks and about 22 ms in each wave of the combat benchmark on the POCO
-// X7 (docs/performance-profile.md).
+// wave and every wave: 210 checks and about 22 ms in each wave of fight5.txt on the POCO X7
+// (measured 2026-10-22 from the long-frame lines of 12 runs).
 //
 // Only the game's own files (the GAME: device, read only during a session): never the user's data
 // (SAVE:), the mods' devices, the texture replacements (tlrepl:) or our files (tlhost:), whose
@@ -27,8 +27,10 @@ namespace torchlight::hooks {
 
 class MissingFileCache {
  public:
-  // The key of a guest path the cache may remember: upper case, '\' separators, on the GAME:
-  // device, no wildcard. None for any other path.
+  // The key of a guest path the cache may remember: upper case (the SDK matches names without
+  // case), on the GAME: device, no wildcard. None for any other path. '/' is kept as it is: the
+  // native search splits the path only at its last '\' (guest_abi xapi_files.h kNativeSearch),
+  // so "a/b" and "a\b" are different searches with possibly different answers.
   static std::optional<std::string> Key(std::string_view guest_path);
   // Whether a status means the file or its folder does not exist.
   static bool IsNotFound(uint32_t status);

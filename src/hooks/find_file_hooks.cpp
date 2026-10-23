@@ -120,7 +120,7 @@ std::string SearchPath(const uint8_t* base, uint32_t object_attributes) {
   if (!name) return {};
   const uint16_t length = ReadU16(base, name);
   const uint32_t buffer = ReadU32(base, name + 4);
-  if (!buffer) return {};
+  if (!buffer || length > kMaxPath) return {};  // no key: never cut a path short
   std::string path;
   path.reserve(length);
   for (uint16_t i = 0; i < length && i < kMaxPath; ++i) path += char(base[buffer + i]);

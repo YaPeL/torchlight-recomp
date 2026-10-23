@@ -18,7 +18,6 @@ std::optional<std::string> MissingFileCache::Key(std::string_view guest_path) {
   key.reserve(guest_path.size());
   for (char c : guest_path) {
     if (c == '*' || c == '?') return std::nullopt;
-    if (c == '/') c = '\\';
     if (c >= 'a' && c <= 'z') c = char(c - 'a' + 'A');
     key += c;
   }

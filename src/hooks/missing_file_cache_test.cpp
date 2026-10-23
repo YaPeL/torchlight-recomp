@@ -17,13 +17,17 @@ void Check(bool ok, const char* what) {
 }  // namespace
 
 int main() {
-  // Normalization: case and separators do not matter.
-  Check(MissingFileCache::Key("game:/Media/Sounds/a.wav.cmp") ==
+  // Normalization: case does not matter; '/' and '\\' stay different (the native search splits
+  // only at '\\', so the two spellings are different searches).
+  Check(MissingFileCache::Key("game:\\Media\\Sounds\\a.wav.cmp") ==
             std::optional<std::string>("GAME:\\MEDIA\\SOUNDS\\A.WAV.CMP"),
-        "lower case and '/' normalized");
+        "lower case normalized");
   Check(MissingFileCache::Key("GAME:\\MEDIA\\SOUNDS\\A.WAV.CMP") ==
-            MissingFileCache::Key("Game:\\media/sounds\\a.WAV.cmp"),
-        "the same file written two ways gives one key");
+            MissingFileCache::Key("Game:\\media\\sounds\\a.WAV.cmp"),
+        "the same file in another case gives one key");
+  Check(MissingFileCache::Key("game:\\media\\sounds/a.wav") !=
+            MissingFileCache::Key("game:\\media\\sounds\\a.wav"),
+        "'/' and '\\' give different keys");
   // Only the game's device.
   Check(!MissingFileCache::Key("SAVE:\\backup.tmp"), "the user's data");
   Check(!MissingFileCache::Key("tlmod0:\\media\\a.dds"), "a mod's device");

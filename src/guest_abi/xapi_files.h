@@ -36,8 +36,8 @@ inline constexpr GuestFunction kFindFirstFile{0x8287E0C8, Confidence::kConfirmed
 // [confirmed] FindFirstFileA's native search, called only from it (@0x8287E118): r3 = the
 // OBJECT_ATTRIBUTES FindFirstFileA builds on its stack (RootDirectory -3 at +0, @0x8287E0FC;
 // ObjectName at +4, an ANSI_STRING {u16 Length, u16 MaximumLength, char* Buffer} made from the
-// path by RtlInitAnsiString @0x8287E0EC; Attributes 0x40 at +8), r4 the native entry (0x148
-// bytes), r6 the handle. Returns the NTSTATUS; on a negative one FindFirstFileA passes it to
+// path by RtlInitAnsiString @0x8287E0EC; Attributes 0x40 at +8), r4 the native entry, r5 its size
+// (0x148), r6 the handle. Returns the NTSTATUS; on a negative one FindFirstFileA passes it to
 // kSetLastNtError (@0x8287E124), fills nothing and returns -1 (@0x8287E128), so the status alone
 // decides what the caller sees.
 inline constexpr GuestFunction kNativeSearch{0x82883A68, Confidence::kConfirmed};
