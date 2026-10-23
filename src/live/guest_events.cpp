@@ -15,6 +15,13 @@ void GuestEvents::FileCheck(std::string_view path, bool found, double ms) {
   ++frame_.file_checks;
   if (!found) ++frame_.files_missing;
   frame_.file_check_ms += ms;
+  // A search for a directory (the path ends with a separator) is not a file loaded.
+  if (found && !path.empty() && path.back() != '\\' && path.back() != '/') {
+    if (frame_.found_files.size() < kMaxFoundFiles)
+      frame_.found_files.emplace_back(path);
+    else
+      ++frame_.found_files_unlisted;
+  }
   if (ms > frame_.slowest_check_ms) {
     frame_.slowest_check_ms = ms;
     frame_.slowest_check_path.assign(path);
@@ -68,6 +75,11 @@ std::string DescribeLongFrame(double frame_ms, const GuestFrameEvents& e) {
   s += ")";
   const double accounted = e.file_check_ms + e.read_ms + e.allocation_ms;
   s += std::format(", the rest {:.1f} ms", frame_ms > accounted ? frame_ms - accounted : 0.0);
+  if (!e.found_files.empty()) {
+    s += std::format(" | files found {}:", e.found_files.size() + e.found_files_unlisted);
+    for (const std::string& path : e.found_files) s += std::format(" '{}'", path);
+    if (e.found_files_unlisted) s += std::format(" (+{} more)", e.found_files_unlisted);
+  }
   return s;
 }
 

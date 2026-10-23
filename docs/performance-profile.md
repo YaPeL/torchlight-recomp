@@ -335,6 +335,9 @@ mode (`live/guest_events.h`): the guest's file existence checks (missing ones, t
 reads and `XMemAlloc` calls in that frame, and the rest of it. In the native mode the live mode's
 `slow frame` line has the backend's side (textures, RTSS programs, now with the generation time
 apart, buffers, present).
+Since 2026-10-23 the threshold is `--long_frame_ms` (30 by default) and the line ends with the
+files the guest's checks found in that frame (`files found N: '...'`, the first 16): the resources
+the game loaded then.
 
 What they showed, native and Xenos, on the fixed-floor saved game:
 

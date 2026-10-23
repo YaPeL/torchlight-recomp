@@ -4,9 +4,14 @@
 #include <atomic>
 
 #include <fmt/format.h>
+#include <rex/cvar.h>
 #include <rex/logging.h>
 
 #include "live/guest_events.h"
+
+REXCVAR_DEFINE_DOUBLE(long_frame_ms, 30.0, "Torchlight",
+                      "A guest frame (swap to swap) longer than this many ms gets a 'long frame:' "
+                      "line in the log with what the guest did in it");
 
 namespace torchlight::live {
 
@@ -87,7 +92,8 @@ void FrameTiming::OnSwap() {
   // The guest's events of the frame ending now (guest_events.h), logged when it was long.
   const GuestFrameEvents events = GuestEvents::Get().Take();
   const auto ms = guest_.Add(now);
-  if (ms && *ms > kLongFrameMs) REXLOG_INFO("long frame: {}", DescribeLongFrame(*ms, events));
+  if (ms && *ms > REXCVAR_GET(long_frame_ms))
+    REXLOG_INFO("long frame: {}", DescribeLongFrame(*ms, events));
   if (FrameObserver* observer = g_observer.load()) observer->OnGuestFrame(ms.value_or(0.0));
   if (auto summary = guest_.TakeSummary(now)) {
     REXLOG_INFO("frame time (guest swap to swap): {}", *summary);
