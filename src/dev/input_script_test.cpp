@@ -248,9 +248,74 @@ void TestTouch() {
   Check(r.pads.back() == PadState{}, "the script's own pad stays still");
 }
 
+// A recording of 4 s with a sample every 4 ms, far finer than a frame: lx is the sample's t_ms.
+std::string FineRecording() {
+  std::string text = "# x360ui pad replay v1\n# start_ms 500\n";
+  for (int t = 0; t <= 4000; t += 4) text += std::to_string(t) + " " + std::to_string(t) + " 0 0 0 0\n";
+  return text;
+}
+
+void TestReplay() {
+  const std::string recording = FineRecording();
+  const ScriptFileReader read = [&](std::string_view name) -> std::optional<std::string> {
+    if (name == "route.txt") return recording;
+    return std::nullopt;
+  };
+  std::string error;
+  Check(!InputScript::Parse("replay missing.txt\n", error, read) && error.find("cannot read missing.txt") != std::string::npos,
+        "replay of a file that cannot be read");
+  Check(!InputScript::Parse("replay route.txt\n", error) && error.find("cannot read") != std::string::npos,
+        "replay without a file reader");
+  Check(!InputScript::Parse("replay route.txt trace\n", error, read), "replay FILE trace without its file");
+  const ScriptFileReader bad = [](std::string_view) -> std::optional<std::string> { return "nonsense\n"; };
+  Check(!InputScript::Parse("replay x.txt\n", error, bad) && error.find("x.txt: line 1") != std::string::npos,
+        "a bad recording names its line");
+
+  auto parsed = InputScript::Parse("replay route.txt trace out.csv\nquit\n", error, read);
+  if (!parsed) return Check(false, "parse replay");
+  InputScript script = std::move(*parsed);
+  ScriptEvents e;
+  std::vector<ScriptAction> actions;
+  // 60 frames a second, starting off the 4 ms grid.
+  const double frame_s = 1.0 / 60;
+  e.seconds = 10.003;
+  const double begin = e.seconds;
+  bool drifted = false, rest_before = true, traced_before_t0 = false;
+  int frames = 0, traced = 0;
+  int64_t last_t_us = -1;
+  while (!script.done() && frames < 2000) {
+    const PadState p = script.Step(e, actions);
+    const double t_ms = (e.seconds - begin) * 1000.0 - 500.0;
+    const auto& f = script.replay_frame();
+    if (t_ms < 0) {
+      if (p.left_x != 0) rest_before = false;
+      if (f) traced_before_t0 = true;
+    } else if (f) {
+      ++traced;
+      // The sample due at this frame's time: the last one at or before it, on the 4 ms grid.
+      const int expected = std::min(4000, int(t_ms) / 4 * 4);
+      if (p.left_x != expected || f->pad.left_x != expected) drifted = true;
+      if (f->trace != "out.csv" || f->t_us <= last_t_us) drifted = true;
+      last_t_us = f->t_us;
+    }
+    ++e.frame;
+    e.seconds += frame_s;
+    ++frames;
+  }
+  Check(rest_before, "at rest during start_ms");
+  Check(!traced_before_t0, "no trace frame before t=0");
+  Check(!drifted, "every frame gets the sample due at its time (no drift), in time order");
+  // From t=0 to 2 s after the last sample: 6 s at 60 frames a second, one frame either way.
+  Check(traced >= 359 && traced <= 361, "traced frames: from t=0 to 2 s after the last sample");
+  bool quit = false;
+  for (const auto& a : actions) quit = quit || a.kind == Kind::kQuit;
+  Check(script.done() && quit, "the next command follows the replay");
+}
+
 }  // namespace
 
 int main() {
+  TestReplay();
   TestTouch();
   TestUiCommandsParse();
   TestFocusPressesUntilFocused();

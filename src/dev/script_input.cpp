@@ -34,6 +34,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <rex/input/input.h>
@@ -52,6 +53,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include "game_menu/guest_call.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/game_ui_sheet.h"
+#include "guest_abi/hero_motion.h"
 #include "guest_abi/ogre_layout.h"
 #include "guest_abi/xbox_memory.h"
 #include "live/frame_timing.h"
@@ -486,6 +488,13 @@ class ScriptRunner : public live::FrameObserver {
     std::vector<ScriptAction> actions;
     const PadState pad = script_.Step(events_, actions);
     driver_->Set(pad);
+    // A replay's frame, for the trace OnUiFrame writes at the next swap, once this pad was read.
+    if (const auto& f = script_.replay_frame()) {
+      trace_ = TraceFrame{*f, events_.frame};
+      replaying_ = true;
+    } else {
+      replaying_ = false;
+    }
     for (const auto& a : actions) Run(a);
   }
   void OnPresentedFrame(double ms, size_t dropped, const live::PresentLatency& latency) override {
@@ -531,6 +540,17 @@ class ScriptRunner : public live::FrameObserver {
   uint64_t frame() {
     std::lock_guard lock(mutex_);
     return events_.frame;
+  }
+  // The game's thread (OnUiFrame): the replay frame given to the game since the last call, and
+  // whether a replay is still playing.
+  struct TraceFrame {
+    ReplayFrame replay;
+    uint64_t frame = 0;
+  };
+  std::optional<TraceFrame> TakeTraceFrame(bool& replaying) {
+    std::lock_guard lock(mutex_);
+    replaying = replaying_;
+    return std::exchange(trace_, std::nullopt);
   }
 
  private:
@@ -608,6 +628,8 @@ class ScriptRunner : public live::FrameObserver {
 
   std::mutex mutex_;
   std::deque<std::string> dumps_;  // dump_ui names, for OnUiFrame
+  std::optional<TraceFrame> trace_;  // for OnUiFrame
+  bool replaying_ = false;
   InputScript script_;
   ScriptInputDriver* driver_;
   std::function<void()> close_;
@@ -620,6 +642,72 @@ class ScriptRunner : public live::FrameObserver {
 };
 
 std::unique_ptr<ScriptRunner> g_runner;
+std::filesystem::path g_script_folder;  // the script's relative paths start here
+
+// A name the script gives a file, from the script's folder when relative.
+std::filesystem::path ScriptPath(std::string_view name) {
+  const std::filesystem::path path{std::string(name)};
+  return path.is_absolute() ? path : g_script_folder / path;
+}
+
+// The replay's hero trace (dev/pad_replay.h), written on the game's thread at each swap: the hero
+// as the frame that ends now left it, and the stick the game read in it.
+class HeroTrace {
+ public:
+  void Write(const uint8_t* base, const ScriptRunner::TraceFrame& f) {
+    if (!out_.is_open() || f.replay.trace != name_) {
+      Close();
+      if (f.replay.trace.empty()) return;
+      name_ = f.replay.trace;
+      path_ = ScriptPath(name_);
+      out_.open(path_, std::ios::binary | std::ios::trunc);
+      if (!out_) {
+        REXLOG_ERROR("dev input script: cannot write the trace {}", path_.string());
+        return;
+      }
+      out_ << HeroTraceHeader();
+      REXLOG_INFO("dev input script: trace to {}", path_.string());
+    }
+    namespace hm = abi::hero_motion;
+    const uint32_t client = hm::Client(base);
+    const uint32_t hero = client ? abi::ReadU32(base, client + hm::kClientHero.offset) : 0;
+    const uint32_t node = InGuestHeap(hero) ? abi::ReadU32(base, hero + hm::kUnitNode.offset) : 0;
+    if (!InGuestHeap(node) || !abi::ReadU32(base, hero + hm::kUnitInScene.offset)) {
+      ++missing_;
+      return;
+    }
+    if (abi::ReadU8(base, node + abi::static_geometry::node::kCachedTransformOutOfDate.offset)) ++stale_;
+    HeroTraceRow row;
+    row.t_us = f.replay.t_us;
+    row.frame = f.frame;
+    row.x = abi::ReadF32(base, node + hm::MatrixEntry(0, 3));
+    row.z = abi::ReadF32(base, node + hm::MatrixEntry(2, 3));
+    row.fx = abi::ReadF32(base, node + hm::MatrixEntry(0, 2));
+    row.fz = abi::ReadF32(base, node + hm::MatrixEntry(2, 2));
+    row.scale = abi::ReadF32(base, hero + hm::kSpeedScale.offset);
+    row.speed = abi::ReadF32(base, hero + hm::kSpeed.offset);
+    row.lx = f.replay.pad.left_x;
+    row.ly = f.replay.pad.left_y;
+    out_ << HeroTraceLine(row);
+    if (++lines_ % 64 == 0) out_.flush();
+  }
+  void Close() {
+    if (!out_.is_open()) return;
+    out_.close();
+    REXLOG_INFO("dev input script: trace {}: {} frames, {} with the transform out of date, {} frames "
+                "without the hero (not written)",
+                path_.string(), lines_, stale_, missing_);
+    lines_ = stale_ = missing_ = 0;
+    name_.clear();
+  }
+
+ private:
+  std::ofstream out_;
+  std::string name_;
+  std::filesystem::path path_;
+  uint64_t lines_ = 0, stale_ = 0, missing_ = 0;
+};
+HeroTrace g_hero_trace;
 
 uint64_t g_swaps = 0;  // swaps seen by OnUiFrame: a dump's frame
 
@@ -710,6 +798,9 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
     REXLOG_ERROR("dev input script: capture {} never started; no UI dump for it", captures_seen);
   }
   if (!g_runner) return;
+  bool replaying = false;
+  if (const auto trace = g_runner->TakeTraceFrame(replaying)) g_hero_trace.Write(base, *trace);
+  if (!replaying) g_hero_trace.Close();
   const uint32_t game_ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
   if (!InGuestHeap(game_ui)) {
     while (auto name = g_runner->TakeDump()) {
@@ -751,8 +842,16 @@ void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_clo
   }
   std::stringstream text;
   text << file.rdbuf();
+  g_script_folder = std::filesystem::path(path).parent_path();
+  const ScriptFileReader read = [](std::string_view name) -> std::optional<std::string> {
+    std::ifstream in(ScriptPath(name), std::ios::binary);
+    if (!in) return std::nullopt;
+    std::stringstream content;
+    content << in.rdbuf();
+    return content.str();
+  };
   std::string error;
-  auto script = InputScript::Parse(text.str(), error);
+  auto script = InputScript::Parse(text.str(), error, read);
   if (!script) {
     REXLOG_ERROR("dev input script {}: {}", path, error);
     return;
