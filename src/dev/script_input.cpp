@@ -651,6 +651,12 @@ std::filesystem::path ScriptPath(std::string_view name) {
   return path.is_absolute() ? path : g_script_folder / path;
 }
 
+// While a trace is written: the last stick vector the hero's input handler read
+// (hm::kReadStick's result, the hook below), and how many times it read one. Game's thread only.
+bool g_watch_stick = false;
+float g_stick_x = 0, g_stick_y = 0;
+uint64_t g_stick_reads = 0;
+
 // The replay's hero trace (dev/pad_replay.h), written on the game's thread at each swap: the hero
 // as the frame that ends now left it, and the stick the game read in it.
 class HeroTrace {
@@ -668,6 +674,14 @@ class HeroTrace {
       }
       out_ << HeroTraceHeader();
       REXLOG_INFO("dev input script: trace to {}", path_.string());
+      // Next to it, the stick the game read in each frame against the one given.
+      stick_path_ = path_;
+      stick_path_ += ".stick.csv";
+      stick_.open(stick_path_, std::ios::binary | std::ios::trunc);
+      stick_ << "# the stick the hero's input handler read (sub_82191018), x1000, against the one given\n"
+                "t_us,frame,lx,ly,read_x_mu,read_y_mu,reads\n";
+      g_watch_stick = true;
+      g_stick_reads = 0;
     }
     namespace hm = abi::hero_motion;
     const uint32_t client = hm::Client(base);
@@ -714,6 +728,7 @@ class HeroTrace {
       camera_logged_ = true;
       LogStickTurn(base, client, row);
     }
+    WriteStick(row);
     out_ << HeroTraceLine(row);
     if (++lines_ % 64 == 0) out_.flush();
   }
@@ -744,8 +759,34 @@ class HeroTrace {
                 fz, f32(p), f32(p + 4), f32(p + 8), row.x, row.z);
   }
 
+  // The stick read in this frame (the last read before this swap) and the given one; and, for the
+  // summary, the given lengths the game read as zero and the ones it did not.
+  void WriteStick(const HeroTraceRow& row) {
+    const int64_t x = std::llround(double(g_stick_x) * 1000.0), y = std::llround(double(g_stick_y) * 1000.0);
+    stick_ << row.t_us << ',' << row.frame << ',' << row.lx << ',' << row.ly << ',' << x << ',' << y << ','
+           << g_stick_reads << '\n';
+    g_stick_reads = 0;
+    const double given = std::hypot(double(row.lx), double(row.ly)) / 32767.0;
+    if (given == 0) return;
+    if (g_stick_x == 0 && g_stick_y == 0) {
+      largest_zeroed_ = std::max(largest_zeroed_, given);
+    } else {
+      smallest_read_ = std::min(smallest_read_, given);
+      const double read = std::hypot(double(g_stick_x), double(g_stick_y));
+      max_ratio_error_ = std::max(max_ratio_error_, std::abs(read - given));
+    }
+  }
+
   void Close() {
     if (!out_.is_open()) return;
+    g_watch_stick = false;
+    stick_.close();
+    REXLOG_INFO("dev input script: trace: stick read to {}: given lengths read as zero up to {:.4f}, read as "
+                "nonzero from {:.4f}, largest |read - given| length {:.4f}",
+                stick_path_.string(), largest_zeroed_, smallest_read_, max_ratio_error_);
+    largest_zeroed_ = 0;
+    smallest_read_ = 2;
+    max_ratio_error_ = 0;
     out_.close();
     REXLOG_INFO("dev input script: trace {}: {} frames, {} waiting for the parent's update, {} frames "
                 "without the hero (not written)",
@@ -761,6 +802,9 @@ class HeroTrace {
   std::filesystem::path path_;
   uint64_t lines_ = 0, stale_ = 0, missing_ = 0;
   bool camera_logged_ = false;
+  std::ofstream stick_;
+  std::filesystem::path stick_path_;
+  double largest_zeroed_ = 0, smallest_read_ = 2, max_ratio_error_ = 0;
 };
 HeroTrace g_hero_trace;
 
@@ -933,6 +977,21 @@ extern "C" {
 // The base CDropdownMenu::SetOpen (guest_abi game_ui dropdown_menu::kSetOpen, 0x82351FF0), which
 // every menu's own SetOpen ends in: a menu that opens is an event the script can wait for, named
 // by its class. Development builds only.
+// The stick getter (guest_abi hero_motion::kReadStick): only while a replay writes its trace, the
+// vector it gave the hero's input handler, for the trace's side file. It does not change what the
+// game reads. Development builds only.
+REX_EXTERN(__imp__sub_82191018);
+REX_FUNC(sub_82191018) {
+  const uint32_t out = ctx.r3.u32;
+  const uint32_t from = static_cast<uint32_t>(ctx.lr);
+  __imp__sub_82191018(ctx, base);
+  namespace hm = torchlight::guest_abi::hero_motion;
+  if (!torchlight::dev::g_watch_stick || from != hm::kHeroInputReadStickReturn) return;
+  torchlight::dev::g_stick_x = torchlight::guest_abi::ReadF32(base, out);
+  torchlight::dev::g_stick_y = torchlight::guest_abi::ReadF32(base, out + 4);
+  ++torchlight::dev::g_stick_reads;
+}
+
 REX_EXTERN(__imp__sub_82351FF0);
 REX_FUNC(sub_82351FF0) {
   namespace abi = torchlight::guest_abi;

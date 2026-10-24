@@ -74,4 +74,12 @@ inline constexpr uint32_t kUnitZ = 0x8349D4EC;
 inline constexpr uint32_t kStickTurnScale = 0x820AA2C0 + 0x27C;
 inline constexpr uint32_t kStickTurnOffset = 0x820AA2C0 + 0xB4;
 
+// [confirmed] The stick the hero's input handler moves by: sub_82191018 (r3 = a float[2] it fills)
+// reads the pad's left stick (int16 at +8, +10 of the game's XINPUT_STATE copy, 0x83557E80 + 16 *
+// user) times pool +0x1E0 (1/32767) into x, y (@0x82191090..@0x8219109C), and returns with r3
+// unchanged. sub_82199E08 calls it first (@0x82199E28, return address 0x82199E2C) and takes the
+// vector's length against 0.1 (@0x82199E54).
+inline constexpr functions::GuestFunction kReadStick{0x82191018, Confidence::kConfirmed};
+inline constexpr uint32_t kHeroInputReadStickReturn = 0x82199E2C;
+
 }  // namespace torchlight::guest_abi::hero_motion
