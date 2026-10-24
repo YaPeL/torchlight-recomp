@@ -8,7 +8,6 @@
 #include "guest_abi/game_ui.h"
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
-#include "guest_abi/static_geometry.h"
 
 namespace torchlight::guest_abi::hero_motion {
 
@@ -29,12 +28,14 @@ inline uint32_t Client(const uint8_t* base) {
 // own updates (@0x821EC288).
 inline constexpr Field kClientHero{0x2C, Confidence::kConfirmed};
 
-// [confirmed] A unit's scene node and whether it is in the scene: the unit position getter
-// sub_821D3F38 (r4 = unit, r5 = world) asks the node at +0x58 for its derived position (vtable
-// +0xC0, slot 48, Node::_getDerivedPosition in the 1.7.0 header order) when +0x58 is set and +0x50
-// is not 0 (@0x821D3F58..@0x821D3F80); otherwise it returns the unit's own position (+0x70).
+// [confirmed] A unit's scene node and its own position: the unit position getter sub_821D3F38
+// (r4 = unit, r5 = world) asks the node at +0x58 for its derived position (vtable +0xC0, slot 48,
+// Node::_getDerivedPosition in the 1.7.0 header order) when +0x58 is set and +0x50 is not 0
+// (@0x821D3F58..@0x821D3F80); otherwise it returns the unit's own Vector3 at +0x70
+// (@0x821D3FA4). The hero's +0x50 is 0 (a trace run in town), so the getter gives its +0x70; the
+// trace takes the node's world transform anyway, as the PC trace does, and logs both once.
 inline constexpr Field kUnitNode{0x58, Confidence::kConfirmed};
-inline constexpr Field kUnitInScene{0x50, Confidence::kConfirmed};
+inline constexpr Field kUnitPosition{0x70, Confidence::kConfirmed};
 
 // [confirmed] The unit update sub_821D5410 stores both at its end (@0x821D79BC +0x1F8, @0x821D79C0
 // +0x1F4). Named as the PC trace names them (the speed scale, the speed); their meaning is not
@@ -42,10 +43,17 @@ inline constexpr Field kUnitInScene{0x50, Confidence::kConfirmed};
 inline constexpr Field kSpeedScale{0x1F4, Confidence::kConfirmed};
 inline constexpr Field kSpeed{0x1F8, Confidence::kConfirmed};
 
-// The node's world transform: static_geometry::node::kCachedTransform (Matrix4, row-major, float
-// [4][4]), valid while kCachedTransformOutOfDate is 0. Entry (row, col) at row * 16 + col * 4.
-inline constexpr uint32_t MatrixEntry(int row, int col) {
-  return static_geometry::node::kCachedTransform.offset + uint32_t(row * 16 + col * 4);
-}
+// [confirmed] The guest Node's own and derived (world) transform, as its getters return them:
+// getOrientation (vtable slot 7, 0x821FD860) returns +0x68; _getDerivedOrientation (slot 47,
+// 0x821C9BB0) and _getDerivedPosition (slot 48, 0x821C8518) first update from the parent when
+// +0x48 (mNeedParentUpdate) is set, through slot 1, then return +0x94 and +0xA4. _getFullTransform
+// (slot 50, 0x821D3AF8) calls slots 47, 49 and 48 for its matrix; slot 49 (_getDerivedScale) is
+// taken as the Vector3 after the derived position, +0xB0, in the 1.7.0 header order. Slots read in
+// the node vtables at 0x82003A44 and 0x82003B5C. Quaternions are w, x, y, z.
+inline constexpr Field kNodeOrientation{0x68, Confidence::kConfirmed};
+inline constexpr Field kNodeNeedParentUpdate{0x48, Confidence::kConfirmed};
+inline constexpr Field kNodeDerivedOrientation{0x94, Confidence::kConfirmed};
+inline constexpr Field kNodeDerivedPosition{0xA4, Confidence::kConfirmed};
+inline constexpr Field kNodeDerivedScale{0xB0, Confidence::kInferred};
 
 }  // namespace torchlight::guest_abi::hero_motion

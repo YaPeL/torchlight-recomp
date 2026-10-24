@@ -672,29 +672,50 @@ class HeroTrace {
     const uint32_t client = hm::Client(base);
     const uint32_t hero = client ? abi::ReadU32(base, client + hm::kClientHero.offset) : 0;
     const uint32_t node = InGuestHeap(hero) ? abi::ReadU32(base, hero + hm::kUnitNode.offset) : 0;
-    if (!InGuestHeap(node) || !abi::ReadU32(base, hero + hm::kUnitInScene.offset)) {
-      ++missing_;
+    if (!InGuestHeap(node)) {
+      // Once per trace, what the chain gave: the first link that is 0 or outside the heap failed.
+      if (!missing_++) {
+        REXLOG_WARN("dev input script: trace: no hero at frame {}: client {:08X}, hero {:08X}, node {:08X}",
+                    f.frame, client, hero, node);
+      }
       return;
     }
-    if (abi::ReadU8(base, node + abi::static_geometry::node::kCachedTransformOutOfDate.offset)) ++stale_;
+    // The node's world transform as _getFullTransform would build it, read without updating it:
+    // stale while the node waits for its parent's update.
+    if (abi::ReadU8(base, node + hm::kNodeNeedParentUpdate.offset)) ++stale_;
+    const auto f32 = [&](uint32_t at) { return abi::ReadF32(base, at); };
+    const uint32_t q = node + hm::kNodeDerivedOrientation.offset;
+    const float w = f32(q), qx = f32(q + 4), qy = f32(q + 8), qz = f32(q + 12);
+    const float scale_z = f32(node + hm::kNodeDerivedScale.offset + 8);
     HeroTraceRow row;
     row.t_us = f.replay.t_us;
     row.frame = f.frame;
-    row.x = abi::ReadF32(base, node + hm::MatrixEntry(0, 3));
-    row.z = abi::ReadF32(base, node + hm::MatrixEntry(2, 3));
-    row.fx = abi::ReadF32(base, node + hm::MatrixEntry(0, 2));
-    row.fz = abi::ReadF32(base, node + hm::MatrixEntry(2, 2));
-    row.scale = abi::ReadF32(base, hero + hm::kSpeedScale.offset);
-    row.speed = abi::ReadF32(base, hero + hm::kSpeed.offset);
+    row.x = f32(node + hm::kNodeDerivedPosition.offset);
+    row.z = f32(node + hm::kNodeDerivedPosition.offset + 8);
+    // The rotation matrix's third column, rows 0 and 2, times the scale (Matrix4 = R * S).
+    row.fx = 2 * (qx * qz + w * qy) * scale_z;
+    row.fz = (1 - 2 * (qx * qx + qy * qy)) * scale_z;
+    row.scale = f32(hero + hm::kSpeedScale.offset);
+    row.speed = f32(hero + hm::kSpeed.offset);
     row.lx = f.replay.pad.left_x;
     row.ly = f.replay.pad.left_y;
+    if (!lines_) {
+      // The node against the unit's own place (hm::kUnitPosition) and orientation, once.
+      const uint32_t o = node + hm::kNodeOrientation.offset;
+      REXLOG_INFO("dev input script: trace: hero {:08X}, node {:08X}: node at ({:.3f}, {:.3f}), unit at "
+                  "({:.3f}, {:.3f}); orientation derived ({:.3f}, {:.3f}, {:.3f}, {:.3f}), own ({:.3f}, "
+                  "{:.3f}, {:.3f}, {:.3f}), scale z {:.3f}",
+                  hero, node, row.x, row.z, f32(hero + hm::kUnitPosition.offset),
+                  f32(hero + hm::kUnitPosition.offset + 8), w, qx, qy, qz, f32(o), f32(o + 4), f32(o + 8),
+                  f32(o + 12), scale_z);
+    }
     out_ << HeroTraceLine(row);
     if (++lines_ % 64 == 0) out_.flush();
   }
   void Close() {
     if (!out_.is_open()) return;
     out_.close();
-    REXLOG_INFO("dev input script: trace {}: {} frames, {} with the transform out of date, {} frames "
+    REXLOG_INFO("dev input script: trace {}: {} frames, {} waiting for the parent's update, {} frames "
                 "without the hero (not written)",
                 path_.string(), lines_, stale_, missing_);
     lines_ = stale_ = missing_ = 0;
