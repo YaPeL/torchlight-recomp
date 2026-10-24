@@ -56,4 +56,22 @@ inline constexpr Field kNodeDerivedOrientation{0x94, Confidence::kConfirmed};
 inline constexpr Field kNodeDerivedPosition{0xA4, Confidence::kConfirmed};
 inline constexpr Field kNodeDerivedScale{0xB0, Confidence::kInferred};
 
+// The stick's turn by the camera, in the hero's input handler sub_82199E08 (r31 = the client, r30 =
+// the constant pool 0x820AA2C0):
+// - [confirmed] the camera: client +0x10, then +8 (@0x82199EC8, @0x82199EE0); its orientation
+//   (w, x, y, z) at +0x410 (@0x82199EF0), taken as Camera::mOrientation (the 1.7.0 header's first
+//   Quaternion member; the Vector3 after it, mPosition, at +0x420 is [inferred]);
+// - [confirmed] the camera's forward: sub_821C9BF8 (Quaternion * Vector3) of that orientation and
+//   minus the Vector3 at 0x8349D4EC (0, 0, 1 in the image) (@0x82199ED0..@0x82199F10);
+// - [confirmed] the angle: sub_821BEBE8 (atan2) of the forward's x and z (@0x82199F14..@0x82199F1C),
+//   then x pool +0x27C (57.2958) - pool +0xB4 (90) (@0x82199F54) in degrees, x 0x8356C9DC (pi/180)
+//   (@0x82199F58) into the stick's rotation.
+inline constexpr Field kClientCameraHolder{0x10, Confidence::kConfirmed};
+inline constexpr Field kCameraHolderCamera{0x8, Confidence::kConfirmed};
+inline constexpr Field kCameraOrientation{0x410, Confidence::kConfirmed};
+inline constexpr Field kCameraPosition{0x420, Confidence::kInferred};
+inline constexpr uint32_t kUnitZ = 0x8349D4EC;
+inline constexpr uint32_t kStickTurnScale = 0x820AA2C0 + 0x27C;
+inline constexpr uint32_t kStickTurnOffset = 0x820AA2C0 + 0xB4;
+
 }  // namespace torchlight::guest_abi::hero_motion

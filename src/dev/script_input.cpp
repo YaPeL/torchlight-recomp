@@ -24,6 +24,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <ctime>
 #include <deque>
@@ -709,9 +710,40 @@ class HeroTrace {
                   f32(hero + hm::kUnitPosition.offset + 8), w, qx, qy, qz, f32(o), f32(o + 4), f32(o + 8),
                   f32(o + 12), scale_z);
     }
+    if (!camera_logged_ && row.t_us >= 1000000) {
+      camera_logged_ = true;
+      LogStickTurn(base, client, row);
+    }
     out_ << HeroTraceLine(row);
     if (++lines_ % 64 == 0) out_.flush();
   }
+  // Once, 1 s after t=0: the angle the hero's input handler turns the stick by this frame, as it
+  // computes it from the camera (hm::kCameraOrientation), with the camera's and the hero's place.
+  static void LogStickTurn(const uint8_t* base, uint32_t client, const HeroTraceRow& row) {
+    namespace hm = abi::hero_motion;
+    const uint32_t holder = abi::ReadU32(base, client + hm::kClientCameraHolder.offset);
+    const uint32_t camera = InGuestHeap(holder) ? abi::ReadU32(base, holder + hm::kCameraHolderCamera.offset) : 0;
+    if (!InGuestHeap(camera)) {
+      REXLOG_WARN("dev input script: trace: no camera (holder {:08X}, camera {:08X})", holder, camera);
+      return;
+    }
+    const auto f32 = [&](uint32_t at) { return abi::ReadF32(base, at); };
+    const uint32_t q = camera + hm::kCameraOrientation.offset;
+    const float w = f32(q), qx = f32(q + 4), qy = f32(q + 8), qz = f32(q + 12);
+    // Quaternion * Vector3 (OGRE's: v + 2w (q x v) + 2 q x (q x v)) of minus kUnitZ.
+    const float vx = -f32(hm::kUnitZ), vy = -f32(hm::kUnitZ + 4), vz = -f32(hm::kUnitZ + 8);
+    const float ux = qy * vz - qz * vy, uy = qz * vx - qx * vz, uz = qx * vy - qy * vx;
+    const float uux = qy * uz - qz * uy, uuy = qz * ux - qx * uz, uuz = qx * uy - qy * ux;
+    const float fx = vx + 2 * w * ux + 2 * uux, fy = vy + 2 * w * uy + 2 * uuy, fz = vz + 2 * w * uz + 2 * uuz;
+    const float degrees = float(std::atan2(fx, fz)) * f32(hm::kStickTurnScale) - f32(hm::kStickTurnOffset);
+    const uint32_t p = camera + hm::kCameraPosition.offset;
+    REXLOG_INFO("dev input script: trace: stick turn at t={} us, frame {}: {:.4f} degrees ({:.6f} rad); "
+                "camera {:08X} orientation ({:.5f}, {:.5f}, {:.5f}, {:.5f}), forward ({:.5f}, {:.5f}, "
+                "{:.5f}), position ({:.3f}, {:.3f}, {:.3f}); hero at ({:.3f}, {:.3f})",
+                row.t_us, row.frame, degrees, degrees * 0.017453292519943295, camera, w, qx, qy, qz, fx, fy,
+                fz, f32(p), f32(p + 4), f32(p + 8), row.x, row.z);
+  }
+
   void Close() {
     if (!out_.is_open()) return;
     out_.close();
@@ -719,6 +751,7 @@ class HeroTrace {
                 "without the hero (not written)",
                 path_.string(), lines_, stale_, missing_);
     lines_ = stale_ = missing_ = 0;
+    camera_logged_ = false;
     name_.clear();
   }
 
@@ -727,6 +760,7 @@ class HeroTrace {
   std::string name_;
   std::filesystem::path path_;
   uint64_t lines_ = 0, stale_ = 0, missing_ = 0;
+  bool camera_logged_ = false;
 };
 HeroTrace g_hero_trace;
 
