@@ -28,4 +28,10 @@ void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_clo
 // scripts.
 void OnUiFrame(PPCContext& ctx, uint8_t* base);
 
+// The game's thread, after each of its pad state reads returns (game_menu/mods_install.cpp's hook
+// on guest_abi xinput::kGetState): while a replay writes its trace, the left stick the recomp's
+// XamInputGetState gave the game, for the trace's stick file. Nothing in builds without input
+// scripts.
+void OnPadStateRead(const uint8_t* base, uint32_t user, uint32_t state, uint32_t result);
+
 }  // namespace torchlight::dev

@@ -19,6 +19,7 @@
 #include <rex/ppc/func.h>
 #include <rex/runtime.h>
 
+#include "dev/script_input.h"
 #include "game_menu/guest_call.h"
 #include "game_menu/mod_scripts.h"
 #include "game_menu/save_mod_list.h"
@@ -781,8 +782,11 @@ namespace xi = torchlight::guest_abi::xinput;
 // The game's pad state read (guest_abi/xinput.h kGetState): with confirm and cancel swapped
 // (InstallPadPrompts), the A and B buttons trade places in what the game gets.
 void HookGetState(PPCContext& ctx, uint8_t* base) {
+  const uint32_t user = ctx.r3.u32;
   const uint32_t state = ctx.r4.u32;
   __imp__sub_821FEA58(ctx, base);
+  // Development builds, while a replay writes its trace: the stick as the recomp gave it.
+  dev::OnPadStateRead(base, user, state, ctx.r3.u32);
   if (!g_swap_confirm_cancel || !state || ctx.r3.u32 != xi::kSuccess) return;
   const uint32_t at = state + xi::kStateButtons;
   abi::WriteU16(base, at, mods::SwapButtonBits(abi::ReadU16(base, at), xi::kButtonA, xi::kButtonB));

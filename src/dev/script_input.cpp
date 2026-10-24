@@ -11,6 +11,7 @@ REXCVAR_DEFINE_STRING(dev_input_script, "", "Torchlight",
 
 namespace torchlight::dev {
 void OnUiFrame(PPCContext&, uint8_t*) {}
+void OnPadStateRead(const uint8_t*, uint32_t, uint32_t, uint32_t) {}
 void InstallInputScript(rex::Runtime*, std::function<void()>) {
   if (!REXCVAR_GET(dev_input_script).empty()) {
     REXLOG_WARN("dev: --dev_input_script ignored: this build has no input scripts "
@@ -57,6 +58,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include "guest_abi/hero_motion.h"
 #include "guest_abi/ogre_layout.h"
 #include "guest_abi/xbox_memory.h"
+#include "guest_abi/xinput.h"
 #include "live/frame_timing.h"
 
 namespace torchlight::dev {
@@ -656,6 +658,10 @@ std::filesystem::path ScriptPath(std::string_view name) {
 bool g_watch_stick = false;
 float g_stick_x = 0, g_stick_y = 0;
 uint64_t g_stick_reads = 0;
+// The same frame's last pad state the recomp's XamInputGetState gave the game (OnPadStateRead).
+int16_t g_xam_lx = 0, g_xam_ly = 0;
+uint32_t g_xam_user = 0;
+uint64_t g_xam_reads = 0;
 
 // The replay's hero trace (dev/pad_replay.h), written on the game's thread at each swap: the hero
 // as the frame that ends now left it, and the stick the game read in it.
@@ -678,8 +684,10 @@ class HeroTrace {
       stick_path_ = path_;
       stick_path_ += ".stick.csv";
       stick_.open(stick_path_, std::ios::binary | std::ios::trunc);
-      stick_ << "# the stick the hero's input handler read (sub_82191018), x1000, against the one given\n"
-                "t_us,frame,lx,ly,read_x_mu,read_y_mu,reads\n";
+      stick_ << "# the stick given, as XamInputGetState gave it to the game, and as the hero's input handler "
+                "read it (sub_82191018, x1000)\n"
+                "t_us,frame,lx,ly,xam_lx,xam_ly,xam_user,xam_reads,read_x_mu,read_y_mu,reads\n";
+      g_xam_reads = 0;
       g_watch_stick = true;
       g_stick_reads = 0;
     }
@@ -763,9 +771,14 @@ class HeroTrace {
   // summary, the given lengths the game read as zero and the ones it did not.
   void WriteStick(const HeroTraceRow& row) {
     const int64_t x = std::llround(double(g_stick_x) * 1000.0), y = std::llround(double(g_stick_y) * 1000.0);
-    stick_ << row.t_us << ',' << row.frame << ',' << row.lx << ',' << row.ly << ',' << x << ',' << y << ','
-           << g_stick_reads << '\n';
+    stick_ << row.t_us << ',' << row.frame << ',' << row.lx << ',' << row.ly << ',' << g_xam_lx << ',' << g_xam_ly
+           << ',' << g_xam_user << ',' << g_xam_reads << ',' << x << ',' << y << ',' << g_stick_reads << '\n';
     g_stick_reads = 0;
+    if (g_xam_reads) {
+      if (g_xam_lx == row.lx && g_xam_ly == row.ly) ++xam_same_;
+      else ++xam_differs_;
+    }
+    g_xam_reads = 0;
     const double given = std::hypot(double(row.lx), double(row.ly)) / 32767.0;
     if (given == 0) return;
     if (g_stick_x == 0 && g_stick_y == 0) {
@@ -784,6 +797,10 @@ class HeroTrace {
     REXLOG_INFO("dev input script: trace: stick read to {}: given lengths read as zero up to {:.4f}, read as "
                 "nonzero from {:.4f}, largest |read - given| length {:.4f}",
                 stick_path_.string(), largest_zeroed_, smallest_read_, max_ratio_error_);
+    REXLOG_INFO("dev input script: trace: XamInputGetState gave the game the given stick in {} frames, "
+                "another one in {}",
+                xam_same_, xam_differs_);
+    xam_same_ = xam_differs_ = 0;
     largest_zeroed_ = 0;
     smallest_read_ = 2;
     max_ratio_error_ = 0;
@@ -805,6 +822,7 @@ class HeroTrace {
   std::ofstream stick_;
   std::filesystem::path stick_path_;
   double largest_zeroed_ = 0, smallest_read_ = 2, max_ratio_error_ = 0;
+  uint64_t xam_same_ = 0, xam_differs_ = 0;
 };
 HeroTrace g_hero_trace;
 
@@ -929,6 +947,15 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
     g_runner->OnUiState(std::move(focused), std::move(shown));
   }
   while (auto name = g_runner->TakeDump()) g_runner->OnDumpDone(WriteDump(ctx, base, game_ui, *name));
+}
+
+void OnPadStateRead(const uint8_t* base, uint32_t user, uint32_t state, uint32_t result) {
+  namespace xi = abi::xinput;
+  if (!g_watch_stick || !state || result != xi::kSuccess) return;
+  g_xam_lx = int16_t(abi::ReadU16(base, state + xi::kStateLeftX));
+  g_xam_ly = int16_t(abi::ReadU16(base, state + xi::kStateLeftY));
+  g_xam_user = user;
+  ++g_xam_reads;
 }
 
 void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_close) {

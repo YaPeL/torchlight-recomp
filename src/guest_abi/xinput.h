@@ -24,6 +24,10 @@ inline constexpr GuestFunction kGetKeystroke{0x821FEA68, Confidence::kConfirmed}
 
 // XINPUT_STATE: dwPacketNumber (u32), then XINPUT_GAMEPAD whose first field is wButtons (u16).
 inline constexpr uint32_t kStateButtons = 4;
+// XINPUT_GAMEPAD: wButtons, bLeftTrigger, bRightTrigger, then sThumbLX, sThumbLY (int16), so +8
+// and +10 of the state (sub_82191018 reads them there, @0x8219105C..@0x82191060).
+inline constexpr uint32_t kStateLeftX = 8;
+inline constexpr uint32_t kStateLeftY = 10;
 inline constexpr uint16_t kButtonA = 0x1000;
 inline constexpr uint16_t kButtonB = 0x2000;
 // XINPUT_KEYSTROKE: VirtualKey (u16) first.
