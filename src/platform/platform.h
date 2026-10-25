@@ -54,9 +54,9 @@ struct DisplayInfo {
 };
 DisplayInfo GameDisplay();
 // Whether the machine runs on battery now (unplugged); false when plugged in, without a battery
-// or when it cannot tell. Each platform asks its own system (SDL's SDL_GetPowerInfo is not built
-// in the SDK's SDL, SDL_POWER OFF): Linux the kernel's power supplies (power_supply_linux.h),
-// Windows GetSystemPowerStatus, macOS IOKit's power sources.
+// or when it cannot tell. Each platform asks its own system: Linux the kernel's power supplies
+// (power_supply_linux.h), Windows GetSystemPowerStatus, macOS IOKit's power sources, Android
+// SDL_GetPowerInfo (the SDK builds SDL's power subsystem only there).
 bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.
