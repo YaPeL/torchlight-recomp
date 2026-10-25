@@ -681,7 +681,38 @@ std::string ReadGuestWString(const uint8_t* base, uint32_t str) {
 
 float ReadGuestF32(const uint8_t* base, uint32_t a) { return std::bit_cast<float>(abi::ReadU32(base, a)); }
 
+// The A-target picker's per-unit checks (sub_821B58C0, @0x821B593C / @0x821B5C84), for the units
+// within 3 m of the hero, every 2 s: the bytes +109, +353 and +1297, the state +632 and the
+// alignment +640 the relation (sub_8219D080) reads.
+void LogNearbyUnitFlags(const uint8_t* base) {
+  static uint64_t calls = 0;
+  if (++calls % 240 != 1) return;
+  namespace hm = abi::hero_motion;
+  const uint32_t client = hm::Client(base);
+  if (!InGuestHeap(client)) return;
+  const uint32_t hero = abi::ReadU32(base, client + hm::kClientHero.offset);
+  const uint32_t world = abi::ReadU32(base, client + 56);
+  if (!InGuestHeap(hero) || !InGuestHeap(world)) return;
+  const uint32_t list = abi::ReadU32(base, world + 84);
+  if (!InGuestHeap(list)) return;
+  const float hx = ReadGuestF32(base, hero + 0x70), hz = ReadGuestF32(base, hero + 0x78);
+  int guard = 0;
+  for (uint32_t node = abi::ReadU32(base, list); InGuestHeap(node) && guard < 4096;
+       node = abi::ReadU32(base, node + 4), ++guard) {
+    const uint32_t u = abi::ReadU32(base, node);
+    if (!InGuestHeap(u) || u == hero) continue;
+    const float dx = ReadGuestF32(base, u + 0x70) - hx, dz = ReadGuestF32(base, u + 0x78) - hz;
+    const float d = std::sqrt(dx * dx + dz * dz);
+    if (!(d <= 3.0f)) continue;
+    REXLOG_INFO("dev nearby unit: {:08X} \"{}\" at {:.2f} m: +109={} +353={} +1297={} state +632={} align +640={}", u,
+                ReadGuestWString(base, u + 1028), d, abi::ReadU8(base, u + 109), abi::ReadU8(base, u + 353),
+                abi::ReadU8(base, u + 1297), static_cast<int32_t>(abi::ReadU32(base, u + 632)),
+                static_cast<int32_t>(abi::ReadU32(base, u + 640)));
+  }
+}
+
 void WatchInteractTarget(const uint8_t* base) {
+  LogNearbyUnitFlags(base);
   static uint32_t last = 0;
   const uint32_t ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
   if (!InGuestHeap(ui)) return;
