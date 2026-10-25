@@ -698,6 +698,20 @@ void WatchInteractTarget(const uint8_t* base) {
               ReadGuestF32(base, target + 340), ReadGuestF32(base, target + 344), ReadGuestF32(base, target + 348),
               ReadGuestF32(base, target + 0x70), ReadGuestF32(base, target + 0x74),
               ReadGuestF32(base, target + 0x78), 1.0f - ReadGuestF32(base, target + 348));
+  // The projection's screen size (+5284, +5288) and x scale (+5280), and the camera's up axis the
+  // anchor adds (the camera [ui+32], orientation w x y z at +1040; sub_821A83C8 @0x821AA620).
+  const uint32_t camera = abi::ReadU32(base, ui + 32);
+  float up_x = 0, up_y = 0, up_z = 0;
+  if (InGuestHeap(camera)) {
+    const float w = ReadGuestF32(base, camera + 1040), x = ReadGuestF32(base, camera + 1044),
+                y = ReadGuestF32(base, camera + 1048), z = ReadGuestF32(base, camera + 1052);
+    up_x = 2 * x * y - 2 * w * z;
+    up_y = 1 - (2 * x * x + 2 * z * z);
+    up_z = 2 * w * x + 2 * y * z;
+  }
+  REXLOG_INFO("dev interact target: screen {:.1f} x {:.1f}, x scale {:.4f}, camera up {:.4f} {:.4f} {:.4f}",
+              ReadGuestF32(base, ui + 5284), ReadGuestF32(base, ui + 5288), ReadGuestF32(base, ui + 5280), up_x,
+              up_y, up_z);
 }
 float g_stick_x = 0, g_stick_y = 0;
 uint64_t g_stick_reads = 0;
