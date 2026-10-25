@@ -231,3 +231,28 @@ drawn; shown labels (items within a radius of the player, when the item names se
 for them) are repositioned every frame, and a shown label outside the screen is clamped to its edge
 rather than dropped. How many labels are shown per wave is not measured. Work on the loot labels
 and the GUI comes later.
+
+## 7. Ideas from Rekindled 1.0.2 (2026-10-24)
+
+Rekindled 1.0.2 (GPL-3, `GreenSwampDweller/torchlight-rekindled`, tag `1.0.2`, commit b9973bf)
+made its crowd fights faster with three OGRE patches (0025 skeleton poses before the frame on
+worker threads, 0026 the visibility mask tested before the camera is announced, 0027 whole
+subtrees skipped by visibility flags) and, in its own reimplementation of the game, a worker pool
+for those poses, a faster `createPath` (an open list in blocks, a node table kept between
+searches), per-face boxes in the collision quadtree and reused particle systems. Its patches
+0028-0030 make the draw and update order deterministic; 0031-0032 are iOS's.
+
+None of the OGRE patches applies to our backend: it draws with `RenderSystem::_render` and has no
+scene graph, render queue or entities, which is where they act. What has an equivalent here is in
+the guest, measured on the profiles of section 2 (POCO X7, `fight.txt` / wave 10 of `fight5`, ms
+a frame):
+
+| Rekindled's idea | Equivalent in the guest | Measured | Cost and risk | Decision |
+| --- | --- | --- | --- | --- |
+| Skeleton poses on worker threads (0025, its job pool) | `cacheBoneMatrices` 0x821B93B0, under `Entity::_updateRenderQueue` 0x821E0D18 in the culling | `Entity::_updateRenderQueue`, main scene: 1.19 / 1.86 (queueing included) | Recompiled guest code on several host threads at once (own contexts and stacks); shared skeleton instances, tag points and the guest's allocator: the hidden-state problem of section 4 plus concurrency | Discarded (the owner, 2026-10-24): too risky |
+| Visibility mask before the camera, subtree skip (0026, 0027) | The octree walk 0x821C7158 (Runic inlined `_addToRenderQueue`) in the projector passes | Projector passes' walk 1.43 / 1.89, of which ParticleUniverse's `_updateRenderQueue` 0.38 / 0.32 and the rejected objects' virtuals hundredths | A hook in the walk; skipping `_notifyCurrentCamera` leaves an object's LOD and camera stale | Not worth it: the light map pass draws the particles (a fight capture of 2026-10-18: 22 particle draws, glows and sparkles, into the light map's render target), so at most the shadow pass's share is saved, about 0.2 ms or less |
+| A faster `createPath` and collision | `CAstarPathfinder` (constructed at 0x8221F060) and `CPathController` code, 0x8221E000-0x82224000; the collision list (0x82223F90 on) and `CQuadtreeCollision` (0x822E8000 on) | Pathfinding 0.066 / 0.064; collision list 0.26 / 0.10; quadtree 0.05 / 0.15 | Native replacement of a mostly pure function whose path is allocated in the guest's heap | Not worth it: far under 1 ms. The fight scripts do not walk with the stick, so the hero's `setDestination` every frame is not in these profiles; it adds at most one search a frame |
+| Reused particle systems | ParticleUniverse system creation in the guest | Weighs on the creation frame, not in the steady fight | High | Not taken |
+
+The determinism patches (0028-0030) do not apply: our draw order is the captured order, and replays
+are already byte-identical.
