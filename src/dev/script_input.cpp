@@ -23,6 +23,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #else
 
 #include <algorithm>
+#include <bit>
 #include <atomic>
 #include <chrono>
 #include <cmath>
@@ -100,6 +101,9 @@ constexpr size_t kMaxWindows = 6000;
 constexpr int kMaxDepth = 40;
 
 bool InGuestHeap(uint32_t a) { return a >= 0x40000000u && a < 0xA0000000u; }
+
+// Set by a script's `mark watch interact target` (WatchInteractTarget, below).
+bool g_watch_target = false;
 
 // A CEGUI String (UTF-32): length +0, reserve +4, inline code points at +0x14 or the heap buffer at
 // +0x94 past 0x20 (game_ui.h cegui_string).
@@ -564,6 +568,7 @@ class ScriptRunner : public live::FrameObserver {
         segment_.Log();
         segment_ = Segment{a.text};
         REXLOG_INFO("perf step {}: {}", step_++, a.text);
+        if (a.text == "watch interact target") g_watch_target = true;
         break;
       case ScriptAction::Kind::kCapture:
         if (a.text.empty()) {
@@ -656,6 +661,44 @@ std::filesystem::path ScriptPath(std::string_view name) {
 // While a trace is written: the last stick vector the hero's input handler read
 // (hm::kReadStick's result, the hook below), and how many times it read one. Game's thread only.
 bool g_watch_stick = false;
+
+// Diagnostic (branch diag/interact-height, not for merging): the HUD's "A Interact" prompt sits at
+// the hover target's position + 0.4 on x and z and + 1.0 - target+348 on y (sub_821A83C8
+// @0x821AB3F0). A script's `mark watch interact target` starts logging, at each change of the target
+// (the game UI's +72; its +56 is the player), the target's name (+1028), its +336..+348 and position.
+std::string ReadGuestWString(const uint8_t* base, uint32_t str) {
+  // The guest's std::wstring: the characters inline at +0 while the capacity (+20) is below 8, else
+  // a pointer at +0; the length at +16 (sub_822D32C8 @0x822D3314).
+  const uint32_t length = abi::ReadU32(base, str + 16);
+  const uint32_t capacity = abi::ReadU32(base, str + 20);
+  if (length > 256) return {};
+  const uint32_t data = capacity >= 8 ? abi::ReadU32(base, str) : str;
+  if (length && !InGuestHeap(data)) return {};
+  std::vector<uint32_t> points(length);
+  for (uint32_t i = 0; i < length; ++i) points[i] = abi::ReadU16(base, data + 2 * i);
+  return Utf32ToUtf8(points);
+}
+
+float ReadGuestF32(const uint8_t* base, uint32_t a) { return std::bit_cast<float>(abi::ReadU32(base, a)); }
+
+void WatchInteractTarget(const uint8_t* base) {
+  static uint32_t last = 0;
+  const uint32_t ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
+  if (!InGuestHeap(ui)) return;
+  const uint32_t target = abi::ReadU32(base, ui + 72);
+  if (target == last) return;
+  last = target;
+  if (!InGuestHeap(target)) {
+    REXLOG_INFO("dev interact target: none");
+    return;
+  }
+  REXLOG_INFO("dev interact target: {:08X} \"{}\" +336..+348 = {:.4f} {:.4f} {:.4f} {:.4f}, position {:.3f} {:.3f} "
+              "{:.3f}, y lift 1.0 - +348 = {:.4f}",
+              target, ReadGuestWString(base, target + 1028), ReadGuestF32(base, target + 336),
+              ReadGuestF32(base, target + 340), ReadGuestF32(base, target + 344), ReadGuestF32(base, target + 348),
+              ReadGuestF32(base, target + 0x70), ReadGuestF32(base, target + 0x74),
+              ReadGuestF32(base, target + 0x78), 1.0f - ReadGuestF32(base, target + 348));
+}
 float g_stick_x = 0, g_stick_y = 0;
 uint64_t g_stick_reads = 0;
 // The same frame's last pad state the recomp's XamInputGetState gave the game (OnPadStateRead).
@@ -915,6 +958,7 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
     REXLOG_ERROR("dev input script: capture {} never started; no UI dump for it", captures_seen);
   }
   if (!g_runner) return;
+  if (g_watch_target) WatchInteractTarget(base);
   bool replaying = false;
   if (const auto trace = g_runner->TakeTraceFrame(replaying)) g_hero_trace.Write(base, *trace);
   if (!replaying) g_hero_trace.Close();
