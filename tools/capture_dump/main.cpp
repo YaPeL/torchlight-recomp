@@ -483,8 +483,10 @@ int main(int argc, char** argv) {
               named, dynamic, dumped, render_targets);
   for (const auto& t : c.textures) {
     if (!t.render_target && !t.name.empty() && !t.manual) continue;
-    std::printf("  %#x '%s' %ux%u usage=%#x%s%s\n", t.id.guest_address, t.name.c_str(), t.width,
+    std::printf("  %#x '%s' %ux%u usage=%#x%s%s", t.id.guest_address, t.name.c_str(), t.width,
                 t.height, t.usage, t.render_target ? " RT" : "", t.manual ? " manual" : "");
+    if (t.content) std::printf(" content=%016llx", static_cast<unsigned long long>(t.content));
+    std::printf("\n");
   }
 
   std::map<std::string, const ProgramSource*> sources;
