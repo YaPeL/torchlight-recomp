@@ -360,6 +360,8 @@ bool HasDirect3D11(const std::string&) { return false; }
 
 bool OnBattery() { return OnBatteryFromPowerSupplies("/sys/class/power_supply"); }
 
+uint32_t DefaultHostCacheMB() { return 64; }
+
 bool IsSteamDeck() {
   auto read = [](const char* name) {
     std::ifstream in(std::string("/sys/devices/virtual/dmi/id/") + name);

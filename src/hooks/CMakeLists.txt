@@ -140,3 +140,16 @@ add_executable(pixel_util_test pixel_util_test.cpp)
 target_link_libraries(pixel_util_test PRIVATE torchlight_pixel_util)
 target_compile_options(pixel_util_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME pixel_util_test COMMAND pixel_util_test)
+
+# The decoded item texture images of the equipment texture build (image_cache.h): no guest or SDK
+# dependency, tested on its own; the hook that uses it (image_cache_hooks.cpp) is part of the
+# executable.
+add_library(torchlight_image_cache STATIC image_cache.cpp)
+target_include_directories(torchlight_image_cache PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_image_cache PUBLIC cxx_std_23)
+target_compile_options(torchlight_image_cache PRIVATE -Wall -Wextra)
+
+add_executable(image_cache_test image_cache_test.cpp)
+target_link_libraries(image_cache_test PRIVATE torchlight_image_cache)
+target_compile_options(image_cache_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME image_cache_test COMMAND image_cache_test)

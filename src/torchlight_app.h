@@ -25,6 +25,7 @@
 #include "mods/unit_index_install.h"
 #include "game_menu/video_menu.h"
 #include "hooks/guest_copy_hooks.h"
+#include "hooks/image_cache_hooks.h"
 #include "hooks/pixel_util_hooks.h"
 #include "hooks/guest_d3d_skip.h"
 #include "hooks/bucket_cull_hooks.h"
@@ -125,6 +126,7 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::hooks::InstallVideoMode();
     torchlight::hooks::LogGuestCopyMode();
     torchlight::hooks::LogPixelUtilMode();
+    torchlight::hooks::InstallWardrobeImageCache();
     torchlight::hooks::InstallFrustumTest();
     torchlight::hooks::InstallGuestD3DSkip(torchlight::live::OnlyMode());
     torchlight::hooks::InstallBucketCull(torchlight::live::OnlyMode());

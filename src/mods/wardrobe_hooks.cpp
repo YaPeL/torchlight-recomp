@@ -4,6 +4,7 @@
 // 0xB4 and the game repeats it forever. The build returns as it does when there is nothing to build,
 // and the log says which model and, when the wardrobe is built while a unit is made, which unit.
 
+#include <chrono>
 #include <cstdint>
 #include <mutex>
 #include <string>
@@ -97,8 +98,10 @@ REX_FUNC(sub_822DC6B0) {
     }
     return;
   }
+  const auto start = std::chrono::steady_clock::now();
   __imp__sub_822DC6B0(ctx, base);
-  torchlight::hooks::LogWardrobeComposite();
+  torchlight::hooks::LogWardrobeComposite(
+      std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - start).count());
 }
 
 }  // extern "C"

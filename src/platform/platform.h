@@ -61,6 +61,9 @@ bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.
 bool IsSteamDeck();
+// The default size, in MB, of the caches the host keeps of guest data it can rebuild (the equipment
+// texture images, hooks/image_cache.h): smaller where memory is tight (Android).
+uint32_t DefaultHostCacheMB();
 // The internal resolution the game starts at by default, where the platform wants less than the
 // display (Android: about 1280x800 on a 2560x1600 tablet, docs/android-port.md, A2); 0x0 elsewhere,
 // the display's size.

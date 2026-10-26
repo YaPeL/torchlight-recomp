@@ -308,6 +308,8 @@ bool CanPickFolder() { return true; }
 void ForgetPickedFiles() {}
 
 bool HasDirect3D11(const std::string&) { return false; }
+uint32_t DefaultHostCacheMB() { return 64; }
+
 bool IsSteamDeck() { return false; }
 
 bool OnBattery() {

@@ -398,6 +398,9 @@ bool HasDirect3D11(const std::string&) { return false; }
 // Stage A1 (the auto fps cap reads it): unknown, so false.
 bool OnBattery() { return false; }
 
+// Phones and tablets: a small cache (the game itself needs most of the memory).
+uint32_t DefaultHostCacheMB() { return 16; }
+
 bool IsSteamDeck() { return false; }
 
 // GLES, OGRE's only render system here: nothing to probe or fall back to.

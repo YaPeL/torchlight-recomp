@@ -173,5 +173,5 @@ REX_FUNC(sub_82473FA0) {
 #if TORCHLIGHT_PIXEL_UTIL_DIAGNOSTICS
 #include "hooks/pixel_util_check.inl"
 #else
-void torchlight::hooks::LogWardrobeComposite() {}
+void torchlight::hooks::LogWardrobeComposite(double) {}
 #endif

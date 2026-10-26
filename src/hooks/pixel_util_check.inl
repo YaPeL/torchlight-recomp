@@ -187,12 +187,12 @@ void RecordComposite(uint8_t* base, uint32_t lr, uint32_t format, uint32_t dest)
 
 }  // namespace
 
-void torchlight::hooks::LogWardrobeComposite() {
+void torchlight::hooks::LogWardrobeComposite(double build_ms) {
   if (!REXCVAR_GET(diag_wardrobe_composite)) return;
   std::lock_guard lock(g_composite_mutex);
   if (!g_composite_pixels) return;
-  REXLOG_INFO("diag wardrobe composite: {} pixels, digest {:016X} (native_pixel_util={})", g_composite_pixels,
-              g_composite_digest, REXCVAR_GET(native_pixel_util));
+  REXLOG_INFO("diag wardrobe composite: {} pixels, digest {:016X}, build {:.2f} ms (native_pixel_util={})",
+              g_composite_pixels, g_composite_digest, build_ms, REXCVAR_GET(native_pixel_util));
   g_composite_digest = 0xCBF29CE484222325ull;
   g_composite_pixels = 0;
 }

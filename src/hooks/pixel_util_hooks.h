@@ -11,7 +11,8 @@ void LogPixelUtilMode();
 // Diagnostics builds (TORCHLIGHT_DIAGNOSTICS) with --diag_wardrobe_composite: logs the digest of
 // the pixels the wardrobe build just packed into the character's texture (its packColour call
 // @0x822DD380), for comparing the same equipment with and without the host versions. Called by the
-// wardrobe build's hook after the guest's build; nothing in other builds.
-void LogWardrobeComposite();
+// wardrobe build's hook after the guest's build, with how long the build took; nothing in other
+// builds.
+void LogWardrobeComposite(double build_ms);
 
 }  // namespace torchlight::hooks

@@ -278,6 +278,8 @@ bool OnBattery() {
   return GetSystemPowerStatus(&status) && status.ACLineStatus == 0;
 }
 
+uint32_t DefaultHostCacheMB() { return 64; }
+
 bool IsSteamDeck() {
   // The firmware's system information (SMBIOS), as Windows keeps it.
   auto read = [](const wchar_t* name) {

@@ -61,4 +61,32 @@ inline constexpr Field kMeshName{248, Confidence::kConfirmed};
 // @0x823DE97C); the title screen's Destroyer is made here, and its wardrobe built inside that call.
 inline constexpr GuestFunction kMakeUnit{0x823DE8F0, Confidence::kConfirmed};
 
+// [confirmed] Ogre::Image::load(const String& filename, const String& group): r3 the image, r4 and
+// r5 the two guest std::strings. Opens the file through the ResourceGroupManager (@0x82471428),
+// decodes it (sub_824717B8, Image::load(stream, type)), frees the old buffer first when the image
+// owns one (+36, +40; @0x824717EC) and copies the codec's result into the image's fields
+// (@0x8247183C..@0x8247188C), taking the codec's buffer (+36, autodelete +40 = 1). Returns the
+// image in r3. The wardrobe build loads each item texture with it (bl @0x822DD0EC, return
+// kItemImageLoadReturn) into a 44-byte image it deletes after blending (@0x822DD39C).
+inline constexpr GuestFunction kImageLoad{0x82471380, Confidence::kConfirmed};
+inline constexpr uint32_t kItemImageLoadReturn = 0x822DD0F0;
+
+// [confirmed] Ogre::Image (OGRE 1.7 OgreImage.h members, the offsets the load writes):
+// +4 width, +8 height, +12 depth, +16 size in bytes, +20 mipmaps, +24 flags, +28 format,
+// +32 pixel size (u8), +36 buffer, +40 autodelete (u8).
+namespace image {
+inline constexpr Field kFirstField{4, Confidence::kConfirmed};
+inline constexpr uint32_t kFieldBytes = 32;  // +4 to +35
+inline constexpr Field kSize{16, Confidence::kConfirmed};
+inline constexpr Field kBuffer{36, Confidence::kConfirmed};
+inline constexpr Field kAutoDelete{40, Confidence::kConfirmed};
+}  // namespace image
+
+// [confirmed] The guest heap's allocate (r3 = 0, r4 = size; r3 = the block) and free (r3 = the
+// block): the wardrobe build allocates its base image's buffer with the first (the width x height x
+// bytes-per-pixel block before loadDynamicImage), and Image::load releases an image's old buffer
+// with the second (@0x824717EC).
+inline constexpr GuestFunction kGuestAlloc{0x821CD7F8, Confidence::kConfirmed};
+inline constexpr GuestFunction kGuestFree{0x821CD9A8, Confidence::kConfirmed};
+
 }  // namespace torchlight::guest_abi::wardrobe
