@@ -14,8 +14,8 @@ new Destroyer on the mine's first floor picking up pieces of armour that equip t
 - 47-58 ms of it under the pickup handler (`sub_822960D0` -> `sub_8221B3A8` -> `sub_82295D20` ->
   `sub_822E1D98` -> `sub_822A0B28`), and about 44 ms of that in one function, the wardrobe build
   `sub_822DC6B0` (`guest_abi/wardrobe.h` `kBuild`);
-- inside it, per build (four builds per run, two runs each way, `perf` at 999 Hz, `wb.py`-style
-  inclusive samples of the guest functions): about 13 ms in `PixelUtil::unpackColour` and 6 ms in
+- inside it, per build (four builds per run, two runs each way, `perf` at 999 Hz, the samples
+  inclusive in each guest function): about 13 ms in `PixelUtil::unpackColour` and 6 ms in
   `packColour` (called for every pixel of each item's texture, below), about 15 ms decoding the
   item's texture file into an image (`sub_82471380`), the rest the loop itself, meshes, materials
   and entities;
