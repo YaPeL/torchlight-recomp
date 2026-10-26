@@ -5,8 +5,8 @@
 // conversion. --native_pixel_util=false keeps the recompiled guest functions everywhere.
 //
 // Diagnostics builds (TORCHLIGHT_DIAGNOSTICS) add two checks that compare with the guest's own code:
-//  - --diag_pixel_util_check: at the first call, every format through both functions against the
-//    recompiled originals (all values of each channel alone, then random pixels and colours), and
+//  - --diag_pixel_util_check: at the first call, every integer format through both functions
+//    against the recompiled originals (all values of each channel alone, then random pixels and colours), and
 //    the differences logged;
 //  - --diag_wardrobe_composite: the digest of the pixels each wardrobe build packs into the
 //    character's texture (hooks/pixel_util_hooks.h LogWardrobeComposite).
@@ -171,7 +171,7 @@ REX_FUNC(sub_82473FA0) {
 }  // extern "C"
 
 #if TORCHLIGHT_PIXEL_UTIL_DIAGNOSTICS
-#include "hooks/pixel_util_check.inc"
+#include "hooks/pixel_util_check.inl"
 #else
 void torchlight::hooks::LogWardrobeComposite() {}
 #endif

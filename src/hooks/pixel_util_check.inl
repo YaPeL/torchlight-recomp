@@ -31,7 +31,7 @@ struct CheckStats {
 };
 
 // One unpack of the pixel at `pixel` through the guest's function and through the hook entry
-// (sub_82474560, as callers reach it); the eight output bytes compared.
+// (sub_82474560, as callers reach it); the four output bytes compared.
 void CompareUnpack(PPCContext& ctx, uint8_t* base, uint32_t scratch, uint32_t format, CheckStats& s,
                    std::string& first) {
   const uint32_t pixel = scratch, guest_out = scratch + 16, host_out = scratch + 32;
@@ -171,7 +171,9 @@ void Mix(uint64_t value) {
 }
 
 void RecordComposite(uint8_t* base, uint32_t lr, uint32_t format, uint32_t dest) {
-  if (!REXCVAR_GET(diag_wardrobe_composite) || lr != kWardrobeCompositePackReturn) return;
+  if (!REXCVAR_GET(diag_wardrobe_composite) || lr != kWardrobeCompositePackReturn ||
+      g_checking.load(std::memory_order_relaxed))
+    return;
   PixelFormatDesc desc;
   const uint32_t bytes = Format(base, format, desc) && desc.elem_bytes <= 4 ? desc.elem_bytes : 4;
   uint32_t value = 0;

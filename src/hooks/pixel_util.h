@@ -11,6 +11,8 @@
 #include <cstdint>
 #include <span>
 
+#include "guest_abi/pixel_util.h"
+
 namespace torchlight::hooks {
 
 // One entry of the guest's pixel format table (guest_abi pixel_util::format).
@@ -26,12 +28,13 @@ struct PixelFormatDesc {
 PixelFormatDesc ParsePixelFormat(std::span<const uint8_t, 44> entry);
 
 namespace pixel_detail {
-inline constexpr uint32_t kHasAlpha = 0x01;      // PFF_HASALPHA
-inline constexpr uint32_t kNativeEndian = 0x10;  // PFF_NATIVEENDIAN
-inline constexpr uint32_t kLuminance = 0x20;     // PFF_LUMINANCE
-// PowerPC slw and srw: a shift by 32 or more gives 0 (C++ leaves it undefined).
-inline uint32_t Slw(uint32_t value, uint32_t shift) { return shift >= 32 ? 0 : value << shift; }
-inline uint32_t Srw(uint32_t value, uint32_t shift) { return shift >= 32 ? 0 : value >> shift; }
+inline constexpr uint32_t kHasAlpha = guest_abi::pixel_util::kHasAlpha;
+inline constexpr uint32_t kNativeEndian = guest_abi::pixel_util::kNativeEndian;
+inline constexpr uint32_t kLuminance = guest_abi::pixel_util::kLuminance;
+// PowerPC slw and srw as the recompiled code does them: the amount's low 6 bits; with bit 5 set the
+// result is 0, else a shift by the low 5 bits.
+inline uint32_t Slw(uint32_t value, uint32_t shift) { return (shift & 0x20) ? 0 : value << (shift & 0x1F); }
+inline uint32_t Srw(uint32_t value, uint32_t shift) { return (shift & 0x20) ? 0 : value >> (shift & 0x1F); }
 }  // namespace pixel_detail
 
 // Bitwise::fixedToFixed as the guest runs it (sub_824732C8), including its unsigned 32-bit

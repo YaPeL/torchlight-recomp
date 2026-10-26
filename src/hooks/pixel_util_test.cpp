@@ -4,7 +4,7 @@
 // guest's table holds, guest_abi pixel_util kFormatTable). For each format: every value of each
 // channel alone and a large random sample of whole pixels and colours, both directions; any
 // difference fails. The comparison with the guest's own recompiled functions runs in the game
-// (diagnostics builds, --diag_pixel_util_check: hooks/pixel_util_check.inc).
+// (diagnostics builds, --diag_pixel_util_check: hooks/pixel_util_check.inl).
 
 #include "hooks/pixel_util.h"
 
