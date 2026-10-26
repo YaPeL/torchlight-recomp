@@ -16,6 +16,7 @@
 #include "guest_abi/mods.h"
 #include "guest_abi/ogre_layout.h"
 #include "guest_abi/wardrobe.h"
+#include "hooks/pixel_util_hooks.h"
 #include "mods/wardrobe_guard.h"
 
 namespace {
@@ -97,6 +98,7 @@ REX_FUNC(sub_822DC6B0) {
     return;
   }
   __imp__sub_822DC6B0(ctx, base);
+  torchlight::hooks::LogWardrobeComposite();
 }
 
 }  // extern "C"

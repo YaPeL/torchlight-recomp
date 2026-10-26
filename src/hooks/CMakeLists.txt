@@ -127,3 +127,16 @@ add_executable(frustum_test_test frustum_test_test.cpp)
 target_link_libraries(frustum_test_test PRIVATE torchlight_frustum_test)
 target_compile_options(frustum_test_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME frustum_test_test COMMAND frustum_test_test)
+
+# The guest OGRE's 8-bit colour pack and unpack on the host (pixel_util.h): no guest or SDK
+# dependency, tested against OGRE 1.7's own algorithm; the hooks that use it (pixel_util_hooks.cpp)
+# are part of the executable.
+add_library(torchlight_pixel_util STATIC pixel_util.cpp)
+target_include_directories(torchlight_pixel_util PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_pixel_util PUBLIC cxx_std_23)
+target_compile_options(torchlight_pixel_util PRIVATE -Wall -Wextra)
+
+add_executable(pixel_util_test pixel_util_test.cpp)
+target_link_libraries(pixel_util_test PRIVATE torchlight_pixel_util)
+target_compile_options(pixel_util_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME pixel_util_test COMMAND pixel_util_test)
