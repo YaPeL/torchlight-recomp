@@ -75,6 +75,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
     src/hooks/pixel_util_hooks.cpp
+    src/hooks/wardrobe_blend_hooks.cpp
     src/hooks/guest_io_hooks.cpp
     src/hooks/render_system_hooks.cpp
     src/hooks/rtss_listener_hooks.cpp
@@ -110,6 +111,21 @@ endif()
 
 set(TORCHLIGHT_GPU_PLUGINS xenos null)
 rexglue_setup_target(torchlight GPU_PLUGINS ${TORCHLIGHT_GPU_PLUGINS})
+# The host wardrobe blend loop (hooks/wardrobe_blend_hooks.cpp) relies on the generated sub_822DC6B0
+# being the one it was checked on: every codegen is checked again before the game builds, and a
+# change fails the build (tools/wardrobe_blend/check_generated.py says what to review).
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(_wardrobe_blend_stamp "${CMAKE_CURRENT_BINARY_DIR}/wardrobe_blend_check.stamp")
+add_custom_command(OUTPUT "${_wardrobe_blend_stamp}"
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py
+            ${CMAKE_SOURCE_DIR}/generated/default
+    COMMAND ${CMAKE_COMMAND} -E touch "${_wardrobe_blend_stamp}"
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py
+            ${CMAKE_SOURCE_DIR}/generated/default/codegen.build.stamp
+    COMMENT "Checking the generated wardrobe build against the host blend loop"
+    VERBATIM)
+add_custom_target(torchlight_wardrobe_blend_check DEPENDS "${_wardrobe_blend_stamp}")
+add_dependencies(torchlight torchlight_wardrobe_blend_check)
 # On Android the game is a shared library that the SDK links with -Wl,-Bsymbolic-functions (patch
 # 47): every link checks that the generated code's calls are bound inside it and reach the hooks.
 if(ANDROID)
@@ -194,6 +210,9 @@ endif()
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)
+# The wardrobe blend loop's arithmetic must stay the recompiled code's: no contraction of
+# floating-point operations (hooks/wardrobe_blend.h).
+set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 # Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
 # hooks/queue_census_hooks.cpp, --diag_queue_census). Off by default and in every release workflow:
 # without it nothing of them is compiled, no guest function is wrapped and nothing runs, so they
@@ -203,7 +222,8 @@ if(TORCHLIGHT_DIAGNOSTICS)
     target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp)
     target_link_libraries(torchlight PRIVATE torchlight_queue_census)
     # The colour pack/unpack checks against the guest's own functions (pixel_util_check.inc).
-    set_source_files_properties(src/hooks/pixel_util_hooks.cpp PROPERTIES
+    # The wardrobe blend loop's check against the recompiled loop (wardrobe_blend_check.inl).
+    set_source_files_properties(src/hooks/pixel_util_hooks.cpp src/hooks/wardrobe_blend_hooks.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_PIXEL_UTIL_DIAGNOSTICS=1)
 endif()
 # Guest developer commands for validation runs (dev/guest_command.h). Off by default; the release

@@ -158,8 +158,9 @@ void RunCheck(PPCContext& ctx, uint8_t* base) {
 }
 
 // The pixels the wardrobe build's texture loop packed (its packColour call returns to
-// 0x822DD384), digested in order with their destinations, per build.
-constexpr uint32_t kWardrobeCompositePackReturn = 0x822DD384;
+// guest_abi wardrobe::blend::kPackReturn), or the host loop wrote (RecordWardrobeCompositePixel),
+// digested in order with their destinations, per build.
+constexpr uint32_t kWardrobeCompositePackReturn = torchlight::guest_abi::wardrobe::blend::kPackReturn;
 std::mutex g_composite_mutex;
 uint64_t g_composite_digest = 0xCBF29CE484222325ull;
 uint64_t g_composite_pixels = 0;
@@ -187,12 +188,17 @@ void RecordComposite(uint8_t* base, uint32_t lr, uint32_t format, uint32_t dest)
 
 }  // namespace
 
+void torchlight::hooks::RecordWardrobeCompositePixel(uint8_t* base, uint32_t format, uint32_t dest) {
+  RecordComposite(base, kWardrobeCompositePackReturn, format, dest);
+}
+
 void torchlight::hooks::LogWardrobeComposite() {
   if (!REXCVAR_GET(diag_wardrobe_composite)) return;
   std::lock_guard lock(g_composite_mutex);
   if (!g_composite_pixels) return;
-  REXLOG_INFO("diag wardrobe composite: {} pixels, digest {:016X} (native_pixel_util={})", g_composite_pixels,
-              g_composite_digest, REXCVAR_GET(native_pixel_util));
+  REXLOG_INFO("diag wardrobe composite: {} pixels, digest {:016X} (native_pixel_util={}, native_wardrobe_blend={})",
+              g_composite_pixels, g_composite_digest, REXCVAR_GET(native_pixel_util),
+              torchlight::hooks::NativeWardrobeBlendEnabled());
   g_composite_digest = 0xCBF29CE484222325ull;
   g_composite_pixels = 0;
 }

@@ -74,8 +74,11 @@ for each row, for each column:
 ```
 
 - Every product and sum is single precision (`fmuls`, `fsubs`); the three blends are fused
-  multiply-adds (`fmadds`), so a port must use `fmaf` (or the same fused operation) to give the
-  same bytes.
+  multiply-adds (`fmadds`). The recompiled code computes each in double and rounds it to single
+  (`double(float(std::fma(...)))`), which the host loop repeats; a port to hardware with a
+  single-precision fused multiply-add (`fmaf`) does what the console does. Both products are of
+  floats, exact in double, so the two differ only in rare double roundings; the checks below are
+  what proves a port.
 - `trunc` is `fctidz` (towards zero, to a 64-bit integer) and `byte` its lowest byte
   (`lbz +199`): the value modulo 256, not a clamp (the blend stays in 0..255 anyway).
 - The blended pixel's alpha is always 255; an opaque item pixel keeps its own alpha (255).
@@ -110,10 +113,37 @@ Checks:
   packs into the base (the pack call returning to `0x822DD384`), to compare the same equipment with
   and without the host path.
 
+## The host blend loop
+
+`src/hooks/wardrobe_blend_hooks.cpp` runs the whole loop above on the host, one call per item
+image (`--native_wardrobe_blend`, default on; off, or with `--native_pixel_util=false`, the
+recompiled loop runs). It is a ReXGlue mid-function hook (`config/torchlight_hooks.toml`): the
+codegen inserts, after `rotlwi r26,r10,0` (`0x822DD21C`), `if (WardrobeBlendLoop(ctx.r1, r19,
+r26, ctx.fpscr)) goto loc_822DD39C;` and changes nothing else in the generated C++.
+
+- Only two of the build's locals go to the hook (r19, the base's format, and r26, the rows, which
+  it leaves 0 as the loop does): a local passed by reference has to live in memory around every
+  other call of the function. Passing the fifteen registers the loop uses made the host code of
+  the whole function 8 % larger and doubled its stack accesses; with these two it is 0.4 % (39
+  instructions) larger.
+- The other inputs come from where the loop's registers came from (`guest_abi/wardrobe.h`
+  `blend`), and the state the rest of the function can read is left as the loop leaves it: r26,
+  the stack temporaries (written as the last iteration writes them), the floating-point mode.
+- `tools/wardrobe_blend/check_generated.py` runs before every game build: it fails when the
+  generated function differs from the one checked, or when what the hook relies on no longer
+  holds (the hook's place, the inputs' only definitions, what the loop writes, what the rest of the
+  function reads after it).
+
+Checks: `wardrobe_blend_test` (the host loop against the recompiled loop written out instruction by
+instruction, ten formats each way, random images), and in the game `--diag_wardrobe_blend_check`
+(diagnostics builds): each image's loop computed on the host into a copy, then the recompiled loop
+run, every pack it makes compared with the host's pixel and the stack temporaries after the last.
+
 ## For a port to another build
 
 On a build of the game with the same functions (OGRE 1.7 and this wardrobe code), the same two
-replacements give the same saving; the blend loop above can also be written natively in full
-(reading A and B, blending, writing B) with the same single-precision fused arithmetic, which would
-also save the loop's own share. The checks above are the way to prove a port: identical bytes
+replacements give the same saving, and the whole loop can be replaced as here
+(`hooks/wardrobe_blend.h` has no guest or SDK dependency: it takes its memory as an argument),
+which also saves the loop's own share; on a build without a recompiler's mid-function hook, by
+replacing the loop's code where it starts and returning to where it ends. The checks above are the way to prove a port: identical bytes
 against the original functions for every input, and identical base pixels for the same equipment.

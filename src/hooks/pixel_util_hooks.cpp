@@ -26,7 +26,9 @@
 #include <rex/system/xmemory.h>
 
 #include "guest_abi/pixel_util.h"
+#include "guest_abi/wardrobe.h"
 #include "hooks/pixel_util.h"
+#include "hooks/wardrobe_blend_hooks.h"
 
 REXCVAR_DEFINE_BOOL(native_pixel_util, true, "Torchlight",
                     "Run the guest OGRE's 8-bit colour pack and unpack on the host for the integer "
@@ -138,6 +140,10 @@ void RecordComposite(uint8_t* base, uint32_t lr, uint32_t format, uint32_t dest)
 
 namespace torchlight::hooks {
 
+bool NativePixelUtilEnabled() { return REXCVAR_GET(native_pixel_util); }
+
+bool GuestPixelFormat(uint8_t* base, uint32_t format, PixelFormatDesc& desc) { return Format(base, format, desc); }
+
 void LogPixelUtilMode() {
   REXLOG_INFO("pixel colour pack/unpack: {} (--native_pixel_util={})",
               REXCVAR_GET(native_pixel_util) ? "host for the integer formats" : "the recompiled guest code",
@@ -165,6 +171,7 @@ REX_FUNC(sub_82473FA0) {
   if (!REXCVAR_GET(native_pixel_util) || !HostPack(ctx, base)) __imp__sub_82473FA0(ctx, base);
 #if TORCHLIGHT_PIXEL_UTIL_DIAGNOSTICS
   RecordComposite(base, lr, format, dest);
+  if (lr == torchlight::guest_abi::wardrobe::blend::kPackReturn) torchlight::hooks::WardrobeBlendCheckPacked(base, dest);
 #endif
 }
 
@@ -174,4 +181,5 @@ REX_FUNC(sub_82473FA0) {
 #include "hooks/pixel_util_check.inl"
 #else
 void torchlight::hooks::LogWardrobeComposite() {}
+void torchlight::hooks::RecordWardrobeCompositePixel(uint8_t*, uint32_t, uint32_t) {}
 #endif
