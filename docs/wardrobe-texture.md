@@ -138,8 +138,27 @@ r26, ctx.fpscr)) goto loc_822DD39C;` and changes nothing else in the generated C
 
 Measured on the desktop like the colour pack/unpack above (A B B A runs, four builds each, perf at
 999 Hz, the build's samples inclusive): 156 and 148 samples without, 88 and 78 with, the build
-from about 38 ms to about 21 ms, of which the host loop is about 8 ms (31 and 33 samples: each
-byte still goes through the guest-to-host address translation).
+from about 38 ms to about 21 ms, of which the host loop is about 8 ms (31 and 33 samples).
+
+What the remaining 8 ms are, measured before trying to shorten them (the host loop alone over the
+same three 256 x 256 layers, outside the game, on the same notebook):
+
+- The scalar work each pixel needs for the bytes to stay the recompiled code's: the float/double
+  conversions, the three `std::fma`, the truncation with its edge cases, the unpack and pack byte by
+  byte. About 5.5 ms of it.
+- The guest-to-host address translation of every byte: about 0.5 ms (5.8-6.3 ms translated against
+  5.4-5.5 ms with a flat memory). Translating once per row would save at most that, some 2 % of the
+  build; not done.
+- `-mfma` (the hardware fused multiply-add instead of the C library's `fma`): no change.
+
+A possible later step, not planned: four pixels at a time with SIMD (SSE/AVX on x86, NEON on arm64),
+each lane doing the same IEEE operations in the same order. It could take most of the 5.5 ms. The
+risk is the exactness: every vector operation has to give the scalar one's result for every input
+(the double rounding of each `fma` to single, `fctidz` on NaN and out-of-range values, the mixed
+opaque and blended pixels of one group, the generic formats left to the scalar loop), on each
+instruction set separately. It would need the same proof as this loop: the test against the
+recompiled loop written out, `--diag_wardrobe_blend_check` on the desktop and on arm64, and the
+measurements.
 
 Checks: `wardrobe_blend_test` (the host loop against the recompiled loop written out instruction by
 instruction, ten formats each way, random images), and in the game `--diag_wardrobe_blend_check`
