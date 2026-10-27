@@ -246,7 +246,6 @@ void LiveMode::Run() {
   std::unique_ptr<platform::PresentationClock> presentation =
       parent.system != platform::NativeWindow::kNone ? platform::CreatePresentationClock(parent)
                                                      : nullptr;
-  if (presentation) REXLOG_INFO("live: presentation times from the window system");
   // Where the swap interval does not pace the presents (macOS, display_refresh.h): the display's
   // refresh does, waited for before each present while vsync is on, with the swap interval left off
   // so the two never wait together.
@@ -256,6 +255,7 @@ void LiveMode::Run() {
   std::deque<std::pair<uint64_t, Clock::time_point>> cuts;  // presented frames awaiting the screen
   Clock::time_point last_shown{};  // the screen's previous frame
   PacingCounter pacing;            // refreshes each shown frame stayed, for the 10 s summary
+  bool presentation_logged = false;  // the first frame the window system said it showed
   // Internal render scale for the current window size (LiveOptions::render_resolution).
   settings::Resolution window_size{options_.window_width, options_.window_height};
   auto apply_render_scale = [&] {
@@ -445,14 +445,22 @@ void LiveMode::Run() {
         if (presentation) {
           cuts.emplace_back(frame->swap, frame->cut);
           for (const auto& shown : presentation->TakeShown()) {
+            if (!presentation_logged) {
+              REXLOG_INFO("live: presentation times from the window system");
+              presentation_logged = true;
+            }
             while (!cuts.empty() && cuts.front().first < shown.id) cuts.pop_front();
+            // After frames the measurement lost, the time since the previous frame shown is not
+            // this one's time on screen.
+            const Clock::duration since = last_shown.time_since_epoch().count() && !shown.after_loss
+                                              ? shown.time - last_shown
+                                              : Clock::duration{};
+            last_shown = shown.time;
+            pacing.AddShown(since, shown.refresh);
             if (cuts.empty() || cuts.front().first != shown.id) continue;
             const double ms = Ms(shown.time - cuts.front().second);
             screen_ms.Add(ms);
-            const double gap =
-                last_shown.time_since_epoch().count() ? Ms(shown.time - last_shown) : 0.0;
-            if (gap > 0) pacing.AddShown(shown.time - last_shown, shown.refresh);
-            last_shown = shown.time;
+            const double gap = Ms(since);
             FrameTiming::Get().OnScreen(ms, gap, Ms(shown.refresh));
           }
           while (cuts.size() > 64) cuts.pop_front();

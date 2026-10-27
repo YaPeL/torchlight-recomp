@@ -58,9 +58,28 @@ int main() {
   counter.AddShown(0ns, hz120);
   s = counter.Take();
   Check(s.frames == 3, "unknown refresh or gap not counted");
+  Check(s.unknown_refresh == 1, "a frame with no refresh period is told apart");
   Check(s.held[1] == 1, "short gap is one refresh");
   Check(s.held[PacingCounter::kBuckets - 1] == 2, "hitches in the last bucket");
   Check(PacingCounter::Describe(s).find("7x66.7%+") != std::string::npos, "last bucket marked +");
+
+  // A negative gap is not counted; half a refresh over rounds up (2.5 is 3).
+  counter.AddShown(-hz120, hz120);
+  counter.AddShown(20ms, 8ms);
+  s = counter.Take();
+  Check(s.frames == 1 && s.held[3] == 1, "negative gap skipped, 2.5 refreshes is 3");
+
+  // A tie takes the smaller count; Peek leaves the count as it is.
+  counter.AddShown(hz120, hz120);
+  counter.AddShown(hz120 * 2, hz120);
+  s = counter.Peek();
+  Check(s.mode == 1 && s.even_percent == 50.0, "a tie takes the smaller count");
+  Check(counter.Peek().frames == 2 && counter.Take().frames == 2, "Peek does not start again");
+
+  // Frames shown without a refresh period only (variable refresh).
+  counter.AddShown(hz120, 0ns);
+  Check(PacingCounter::Describe(counter.Take()) == "no display refresh period (1 frames)",
+        "described without a refresh period");
 
   if (g_failures) return 1;
   std::puts("frame_pacing_test: ok");

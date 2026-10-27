@@ -3,6 +3,9 @@
 # The user's folders and their migration (user_folders.h): no SDL or runtime, tested on their own.
 # Writes that survive a power cut (durable_file.h), the same.
 include(durable_file.cmake)
+# When each present reached the screen (presentation_time.h): a development measurement, on
+# Wayland and Android; elsewhere, and off, presentation_time_none.cpp.
+option(TORCHLIGHT_PRESENTATION_TIME "Measure when presents reach the screen (Wayland, Android)" OFF)
 if(ANDROID)
     # Android (arm64-v8a, SDLActivity): its own platform, no X11 or Wayland; the window, folders,
     # lifecycle and input are stage A1 of docs/android-port.md (platform_android.cpp).
@@ -16,7 +19,6 @@ if(ANDROID)
                           PRIVATE android)
     # When each present reached the screen (presentation_time.h): a development measurement, on
     # EGL_ANDROID_get_frame_timestamps; off in releases, which then ask the compositor for nothing.
-    option(TORCHLIGHT_PRESENTATION_TIME "Measure when presents reach the screen (EGL timestamps)" OFF)
     if(TORCHLIGHT_PRESENTATION_TIME)
         target_sources(torchlight_platform PRIVATE presentation_time_android.cpp)
         target_link_libraries(torchlight_platform PRIVATE EGL)
@@ -25,13 +27,12 @@ if(ANDROID)
     endif()
 elseif(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
-    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp power_supply_linux.cpp
-                text_wrap.cpp display_refresh_none.cpp)
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp
+                power_supply_linux.cpp text_wrap.cpp display_refresh_none.cpp)
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE X11)
     # When each present reached the screen (presentation_time.h): a development measurement, on
     # Wayland's presentation-time protocol; off in releases, which then need no Wayland libraries.
-    option(TORCHLIGHT_PRESENTATION_TIME "Measure when presents reach the screen (Wayland)" OFF)
     if(TORCHLIGHT_PRESENTATION_TIME)
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)

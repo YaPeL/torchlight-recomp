@@ -6,7 +6,11 @@
 namespace torchlight::live {
 
 void PacingCounter::AddShown(std::chrono::nanoseconds gap, std::chrono::nanoseconds refresh) {
-  if (refresh.count() <= 0 || gap.count() <= 0) return;
+  if (gap.count() <= 0) return;
+  if (refresh.count() <= 0) {
+    ++current_.unknown_refresh;
+    return;
+  }
   const double refreshes = double(gap.count()) / double(refresh.count());
   size_t held = refreshes >= double(kBuckets - 1) ? kBuckets - 1 : size_t(std::llround(refreshes));
   if (held < 1) held = 1;
@@ -15,8 +19,13 @@ void PacingCounter::AddShown(std::chrono::nanoseconds gap, std::chrono::nanoseco
 }
 
 PacingCounter::Summary PacingCounter::Take() {
-  Summary s = current_;
+  const Summary s = Peek();
   current_ = {};
+  return s;
+}
+
+PacingCounter::Summary PacingCounter::Peek() const {
+  Summary s = current_;
   size_t best = 0;
   for (size_t n = 1; n < kBuckets; ++n) {
     if (s.held[n] > best) {
@@ -29,6 +38,9 @@ PacingCounter::Summary PacingCounter::Take() {
 }
 
 std::string PacingCounter::Describe(const Summary& s) {
+  if (!s.frames && s.unknown_refresh) {
+    return "no display refresh period (" + std::to_string(s.unknown_refresh) + " frames)";
+  }
   if (!s.frames) return "no presentation times";
   std::string out;
   char buf[48];

@@ -2,7 +2,9 @@
 // window system's presentation times (platform/presentation_time.h). At 60 frames a second on a
 // 144 Hz display a frame stays 2 or 3 refreshes (2.4 on average), however evenly the game makes the
 // frames: the eye reads the mix as judder. The measure is the share of frames held the most common
-// number of refreshes ("even"), with the histogram, in the 10 s summaries and the perf steps.
+// number of refreshes ("even"; a tie takes the smaller count), with the histogram, in the 10 s
+// summaries and the perf steps. Where the frame rate does not divide the refresh rate, even the
+// best pacing stays under 100 %, so only runs with the same cap and display compare.
 // Pure, tested in frame_pacing_test.
 
 #pragma once
@@ -22,6 +24,7 @@ class PacingCounter {
 
   struct Summary {
     size_t frames = 0;                    // frames counted (a known refresh, a previous frame)
+    size_t unknown_refresh = 0;           // frames shown with no refresh period (VRR)
     std::array<size_t, kBuckets> held{};  // held[n]: frames shown n refreshes (0 unused)
     uint32_t mode = 0;                    // the most common number of refreshes (0: no frames)
     double even_percent = 0;              // the share of frames held `mode` refreshes
@@ -31,9 +34,11 @@ class PacingCounter {
   // A gap rounds to the nearest whole number of refreshes, at least one; frames with an unknown
   // refresh (zero) are not counted.
   void AddShown(std::chrono::nanoseconds gap, std::chrono::nanoseconds refresh);
-  // What was counted since the last Take, and starts again.
+  // What was counted so far; Take also starts again.
+  Summary Peek() const;
   Summary Take();
-  // "2x97.3% 3x2.7% (even 97.3% of 1234)", or "no presentation times" with no frames.
+  // "2x97.3% 3x2.7% (even 97.3% of 1234)"; with no frames, "no presentation times" or "no display
+  // refresh period (N frames)".
   static std::string Describe(const Summary& s);
 
  private:

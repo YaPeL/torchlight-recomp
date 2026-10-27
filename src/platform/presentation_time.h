@@ -26,6 +26,9 @@ class PresentationClock {
     uint64_t id;
     std::chrono::steady_clock::time_point time;  // the refresh that showed it (its vblank)
     std::chrono::nanoseconds refresh{0};         // the display's refresh period; 0 if unknown
+    // Frames presented before it were lost to the measurement (not the compositor's own drops):
+    // the time since the previous frame shown is not its time on screen.
+    bool after_loss = false;
   };
   virtual std::vector<Shown> TakeShown() = 0;
 };

@@ -91,10 +91,11 @@ class FrameTiming {
   // mode.
   LatencyMeans RecentLatency(std::chrono::milliseconds window);
   // Backend thread: a frame reached the screen `ms` after the guest's swap that cut it (the window
-  // system's presentation time, platform/presentation_time.h; development builds on Wayland).
-  // `gap_ms`: since the screen's previous frame (0 for the first); past one refresh and a half, a
-  // refresh showed the previous frame again (a stutter). `refresh_ms`: the display's refresh period
-  // (0 if unknown), for the even-frames count (live/frame_pacing.h).
+  // system's presentation time, platform/presentation_time.h; development builds on Wayland and
+  // Android). `gap_ms`: since the screen's previous frame (0 for the first, or after frames not
+  // measured); past one refresh and a half, a refresh showed the previous frame again (a stutter).
+  // `refresh_ms`: the display's refresh period (0 if unknown), for the even-frames count
+  // (live/frame_pacing.h).
   void OnScreen(double ms, double gap_ms = 0, double refresh_ms = 0);
   // The mean swap-to-screen latency over the last `window` and how many frames; 0 when unknown.
   double RecentScreenLatency(std::chrono::milliseconds window, size_t* frames = nullptr);

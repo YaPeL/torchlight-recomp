@@ -374,9 +374,8 @@ struct Segment {
     REXLOG_INFO("perf step '{}' on screen: {} frames, latency mean {:.2f} ms, p99 {:.2f}, max {:.2f}, "
                 "{} gaps over 25 ms",
                 name, sc.size(), sum / sc.size(), p99, sc.back(), screen_gaps);
-    live::PacingCounter counted = pacing;
     REXLOG_INFO("perf step '{}' refreshes each frame stayed on screen: {}", name,
-                live::PacingCounter::Describe(counted.Take()));
+                live::PacingCounter::Describe(pacing.Peek()));
   }
 };
 
