@@ -89,7 +89,7 @@ jobs:
           # The backend tests' GL3+ runs (label opengl33) need a display: here they would only be
           # skipped. CI's Linux job runs them on Mesa's llvmpipe (ci.yml, "Test, GL3+") on every
           # push to develop and main, which the tagged commit has passed.
-          ctest --test-dir out/build/linux-amd64-release --output-on-failure -LE opengl33
+          ctest --test-dir out/build/linux-amd64-release --output-on-failure -LE "opengl33|development"
       - name: AppImage
         run: |
           cmake --install out/build/linux-amd64-release --prefix /tmp/install
@@ -244,7 +244,7 @@ jobs:
           # Tests labeled opengl33 are the GL3+ runs of the backend tests, which need OpenGL 3.3 and
           # the runner (no GPU) lacks; their Direct3D 11 runs (WARP) run here. The label and the
           # reason are with the tests (src/backend/CMakeLists.txt), as in ci.yml's test-windows.
-          ctest --test-dir out/build/win-amd64-release --output-on-failure -LE opengl33
+          ctest --test-dir out/build/win-amd64-release --output-on-failure -LE "opengl33|development"
       - name: Zip
         shell: pwsh
         run: |
@@ -344,7 +344,7 @@ jobs:
           cmake --build --preset mac-arm64-release --parallel
           # The GL3+ runs (label opengl33) need OpenGL 3.3, which the runner's virtual GPU lacks, as
           # in ci.yml's test-macos.
-          ctest --test-dir out/build/mac-arm64-release --output-on-failure -LE opengl33
+          ctest --test-dir out/build/mac-arm64-release --output-on-failure -LE "opengl33|development"
       # Symbols split before make_app.sh signs; the version is the tag's numbers (v0.2.0-beta: 0.2.0),
       # what Info.plist's version strings hold.
       - name: App and disk image

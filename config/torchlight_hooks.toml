@@ -1,0 +1,14 @@
+# Mid-function hooks (ReXGlue [[midasm_hook]]): a call the codegen inserts at an instruction, with
+# the listed registers by reference; returning true jumps where the entry says.
+
+# The wardrobe build's blend loop on the host (src/hooks/wardrobe_blend_hooks.cpp, guest_abi
+# wardrobe::blend): after `rotlwi r26,r10,0`, true skips the recompiled loop to its exit. Only
+# r19 and r26 of the build's locals: every local passed by reference has to live in memory across
+# the function's other calls (docs/wardrobe-texture.md). tools/wardrobe_blend/check_generated.py
+# checks the generated function on every build.
+[[midasm_hook]]
+address = 0x822DD21C
+name = "WardrobeBlendLoop"
+registers = ["r1", "r19", "r26", "fpscr"]
+after_instruction = true
+jump_address_on_true = 0x822DD39C
