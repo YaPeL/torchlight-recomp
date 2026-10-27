@@ -17,8 +17,10 @@ namespace torchlight::settings {
 
 namespace {
 
-// Frame rate caps offered when the guest's vblank can run at any rate: common display rates.
-constexpr uint32_t kStandardFpsCaps[] = {30, 60, 90, 120, 144, 165, 240};
+// Frame rate caps offered when the guest's vblank can run at any rate: common display rates, and 40
+// (every third refresh at 120 Hz), for a game that cannot hold 60 on a 120 Hz panel: each frame
+// then stays the same number of refreshes (live/frame_pacing.h measures it).
+constexpr uint32_t kStandardFpsCaps[] = {30, 40, 60, 90, 120, 144, 165, 240};
 
 // Console language ids (XLanguage, rex/system/xcontent.h) by code, in id order.
 struct ConsoleLanguage {
