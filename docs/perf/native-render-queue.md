@@ -220,6 +220,10 @@ replaces only the arithmetic of the test, so its gain is the 0.15 / 0.12 ms less
 of the culling writes guest state (the render queue, the animation, the particle renderers' buffers,
 the per-object camera and LOD notifications) and stays the guest's.
 
+Decided on 2026-10-27 (the owner): the native octant test is dropped. Its measured ceiling, 0.15 ms
+in `fight.txt` and 0.12 ms in wave 10 before the getters' cost, is too small for a hook on code that
+updates guest state lazily.
+
 ## 6. Outside the cut, for later
 
 The GUI is drawn by the game's render queue listener (`fireRenderQueueStarted` 0x821BC468 ->
