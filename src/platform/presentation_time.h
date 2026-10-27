@@ -1,7 +1,8 @@
 // When each present reached the screen, as the window system reports it: the measurement of the
-// vsync latency (docs/performance-profile.md). Development builds with TORCHLIGHT_PRESENTATION_TIME
-// on Wayland (the presentation-time protocol); null elsewhere. Without it the live mode measures up
-// to the present's return, which is not the screen when the driver queues frames.
+// vsync latency (docs/performance-profile.md) and the even frames (live/frame_pacing.h).
+// Development builds with TORCHLIGHT_PRESENTATION_TIME on Wayland (the presentation-time protocol)
+// and Android (EGL_ANDROID_get_frame_timestamps); null elsewhere. Without it the live mode measures
+// up to the present's return, which is not the screen when the driver queues frames.
 
 #pragma once
 

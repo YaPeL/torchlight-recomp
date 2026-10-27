@@ -10,10 +10,19 @@ if(ANDROID)
     # The app's storage comes from the activity, through SDL (user_folders_android.cpp).
     target_link_libraries(torchlight_user_folders PRIVATE SDL3::SDL3)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_android.cpp text_wrap.cpp
-                presentation_time_none.cpp display_refresh_none.cpp)
+                display_refresh_none.cpp)
     # android: ANativeWindow from the Java surface (the surface's lifecycle).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE android)
+    # When each present reached the screen (presentation_time.h): a development measurement, on
+    # EGL_ANDROID_get_frame_timestamps; off in releases, which then ask the compositor for nothing.
+    option(TORCHLIGHT_PRESENTATION_TIME "Measure when presents reach the screen (EGL timestamps)" OFF)
+    if(TORCHLIGHT_PRESENTATION_TIME)
+        target_sources(torchlight_platform PRIVATE presentation_time_android.cpp)
+        target_link_libraries(torchlight_platform PRIVATE EGL)
+    else()
+        target_sources(torchlight_platform PRIVATE presentation_time_none.cpp)
+    endif()
 elseif(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp power_supply_linux.cpp
