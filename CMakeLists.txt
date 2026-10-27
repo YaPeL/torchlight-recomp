@@ -180,10 +180,13 @@ add_test(NAME no_direct_spdlog COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOU
 add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
 # With the game's generated code: fails when the generated sub_822DC6B0 is not the one the host
-# wardrobe blend loop was checked on (the game build then keeps the recompiled loop).
+# wardrobe blend loop was checked on (the game build then keeps the recompiled loop). Labelled
+# "development": the release workflow leaves it out (-LE), so a changed function there is a warning
+# in the game's log, not a failed release.
 if(TORCHLIGHT_GAME)
     add_test(NAME wardrobe_blend_generated COMMAND ${Python3_EXECUTABLE} -I
         ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py ${CMAKE_SOURCE_DIR}/generated/default)
+    set_tests_properties(wardrobe_blend_generated PROPERTIES LABELS development)
 endif()
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)

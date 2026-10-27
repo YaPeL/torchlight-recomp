@@ -60,52 +60,75 @@ ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)
 
 
 def guest_abi_blend():
-    """The integer constants of src/guest_abi/wardrobe.h's namespace blend, by name."""
-    with open(os.path.join(ROOT, "src", "guest_abi", "wardrobe.h"), encoding="utf-8") as f:
-        text = f.read()
-    text = text[text.index("namespace blend {"):text.index("}  // namespace blend")]
-    values = {}
-    for m in re.finditer(r"inline constexpr uint(?:8|32)_t ([^;]+);", text):
-        for part in m.group(1).split(","):
-            name, expr = (x.strip() for x in part.split("="))
-            values[name] = eval(re.sub(r"\bk\w+", lambda k: str(values[k.group(0)]), expr), {"__builtins__": {}})
+    """The integer constants of src/guest_abi/wardrobe.h's namespace blend, by name. Accepted form,
+    one or more per declaration: `inline constexpr uint8_t|uint16_t|uint32_t kName = <integer or
+    kOther [+ ...]>[, kName = ...];`, decimal or hex, an optional u suffix."""
+    path = os.path.join(ROOT, "src", "guest_abi", "wardrobe.h")
+    try:
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        text = text[text.index("namespace blend {"):text.index("}  // namespace blend")]
+        text = re.sub(r"//[^\n]*", "", text)
+        values = {}
+        for m in re.finditer(r"inline constexpr uint(?:8|16|32)_t ([^;]+);", text):
+            for part in m.group(1).split(","):
+                name, expr = (x.strip() for x in part.split("="))
+                expr = re.sub(r"\b(0[xX][0-9A-Fa-f]+|\d+)[uU]\b", r"\1", expr)
+                expr = re.sub(r"\bk\w+", lambda k: str(values[k.group(0)]), expr)
+                if not re.fullmatch(r"[0-9A-Fa-fxX +\-]+", expr):
+                    raise ValueError("%s = %s" % (name, expr))
+                values[name] = eval(expr, {"__builtins__": {}})
+    except (OSError, ValueError, KeyError) as e:
+        fail("src/guest_abi/wardrobe.h's namespace blend could not be read (%s): see guest_abi_blend()'s "
+             "accepted form" % e)
     return values
 
 
-ABI = guest_abi_blend()
+def constants():
+    """What the checks compare with, from guest_abi wardrobe::blend (and the evidence addresses)."""
+    global ABI, HOOK, LOOP_START, LOOP_EXIT, UNPACK_OUTPUTS, SLOTS, REACHING, POOL, LOADS
+    ABI = guest_abi_blend()
+    a = ABI
+    HOOK = ("\tif (WardrobeBlendLoop(ctx.r1, r19, r26, ctx.fpscr)) {\n"
+            "\t\tgoto loc_%X;\n"
+            "\t}\n"
+            "\telse {\n"
+            "\t}\n") % a["kLoopExit"]
+    LOOP_START, LOOP_EXIT = "loc_%X" % (a["kHookAddress"] + 4), "loc_%X" % a["kLoopExit"]
+    # The loop's stack bytes (offsets from r1), as hooks/wardrobe_blend.h writes them.
+    UNPACK_OUTPUTS = tuple(a[k] for k in ("kItemR", "kItemG", "kItemB", "kItemA",
+                                           "kBaseR", "kBaseG", "kBaseB", "kBaseA"))
+    SLOTS = set(UNPACK_OUTPUTS)
+    for name in ("kItemGDouble", "kItemADouble", "kItemBDouble", "kItemRDouble",
+                 "kBaseGDouble", "kBaseRDouble", "kBaseBDouble", "kTruncated"):
+        SLOTS |= set(range(a[name], a[name] + 8))
+    # The definitions guest_abi wardrobe::blend cites, by address and instruction.
+    REACHING = {
+        "f31": (0x822DCAF8, "lfs f31,%d(r5)" % (a["kAlphaScale"] - a["kConstantPool"])),
+        "f30": (0x822DCB00, "lfs f30,%d(r5)" % (a["kOne"] - a["kConstantPool"])),
+        "r17": (0x822DCB44, "li r17,%d" % a["kBlendedItemAlpha"]),
+    }
+    # r5 = kConstantPool at both loads: (register, at, its only definition there, that instruction).
+    high = (a["kConstantPool"] + 0x8000) >> 16
+    low = a["kConstantPool"] - (high << 16)
+    high = high - 0x10000 if high >= 0x8000 else high
+    POOL = [
+        ("ctx.r5", 0x822DCAF8, 0x822DCAE0, "addi r5,r10,%d" % low),
+        ("ctx.r5", 0x822DCB00, 0x822DCAE0, "addi r5,r10,%d" % low),
+        ("ctx.r10", 0x822DCAE0, 0x822DCAD8, "lis r10,%d" % high),
+    ]
+    # The loads of the loop's inputs the host repeats, by address.
+    LOADS = [
+        (0x822DD1EC, "lwz r11,%d(r1)" % a["kBasePixelBox"]),
+        (0x822DD200, "lwz r31,%d(r11)" % a["kPixelBoxData"]),
+        (0x822DD204, "bl 0x82472280"),  # the item's getPixelBox, writing only its box at r1+432
+        (0x822DD208, "lwz r10,%d(r1)" % a["kRows"]),
+        (0x822DD214, "lwz r29,%d(r1)" % a["kItemData"]),
+        (a["kHookAddress"] + 4, "lwz r11,%d(r1)" % a["kColumns"]),
+    ]
+
+
 HOOK_AFTER = "\tr26.u64 = __builtin_rotateleft32(ctx.r10.u32, 0);\n"  # rotlwi r26,r10,0 @kHookAddress
-HOOK = ("\tif (WardrobeBlendLoop(ctx.r1, r19, r26, ctx.fpscr)) {\n"
-        "\t\tgoto loc_%X;\n"
-        "\t}\n"
-        "\telse {\n"
-        "\t}\n") % ABI["kLoopExit"]
-LOOP_START, LOOP_EXIT = "loc_%X" % (ABI["kHookAddress"] + 4), "loc_%X" % ABI["kLoopExit"]
-
-# The loop's stack bytes (offsets from r1), as hooks/wardrobe_blend.h writes them.
-UNPACK_OUTPUTS = tuple(ABI[k] for k in ("kItemR", "kItemG", "kItemB", "kItemA",
-                                         "kBaseR", "kBaseG", "kBaseB", "kBaseA"))
-SLOTS = set(UNPACK_OUTPUTS)
-for name in ("kItemGDouble", "kItemADouble", "kItemBDouble", "kItemRDouble",
-             "kBaseGDouble", "kBaseRDouble", "kBaseBDouble", "kTruncated"):
-    SLOTS |= set(range(ABI[name], ABI[name] + 8))
-
-# The definitions guest_abi wardrobe::blend cites, by address and instruction.
-REACHING = {
-    "f31": (0x822DCAF8, "lfs f31,92(r5)"),
-    "f30": (0x822DCB00, "lfs f30,64(r5)"),
-    "r17": (0x822DCB44, "li r17,255"),
-}
-# r5 = 0x820AA2C0 at both loads: (register, at, its only definition there, that instruction).
-POOL = [
-    ("ctx.r5", 0x822DCAF8, 0x822DCAE0, "addi r5,r10,-23872"),
-    ("ctx.r5", 0x822DCB00, 0x822DCAE0, "addi r5,r10,-23872"),
-    ("ctx.r10", 0x822DCAE0, 0x822DCAD8, "lis r10,-32245"),  # 0x820B0000 - 23872 = 0x820AA2C0
-]
-BASE_DATA_LOADS = [
-    (0x822DD1EC, "lwz r11,164(r1)"),
-    (0x822DD200, "lwz r31,24(r11)"),
-    (0x822DD204, "bl 0x82472280"),
-]
 
 VOLATILE = {"ctx.r0"} | {"ctx.r%d" % i for i in range(3, 13)} | {"ctx.f%d" % i for i in range(0, 14)}
 ARGUMENTS = {"ctx.r%d" % i for i in range(3, 11)} | {"ctx.f%d" % i for i in range(1, 14)}
@@ -135,7 +158,7 @@ def find_function(directory):
             continue
         end = text.find("\n}\n", start)
         return text[start:end + 3]
-    fail("%s not found in %s" % (FUNCTION, directory))
+    fail("%s not found in the generated code (%s)" % (FUNCTION, os.path.basename(os.path.normpath(directory))))
 
 
 class Function:
@@ -210,13 +233,10 @@ class Function:
 
 def check(directory):
     """The digest's first 16 hex digits; raises Failed with what does not hold."""
+    constants()
     text = find_function(directory)
 
-    f0 = Function(text)
-    if f0.instruction(ABI["kHookAddress"]) != "rotlwi r26,r10,0":
-        fail("@%08X is `%s`, not the hook's `rotlwi r26,r10,0`" % (ABI["kHookAddress"], f0.instruction(ABI["kHookAddress"])))
-
-    # 2. The hook.
+    # 2. The hook (text only: nothing parsed before the digest).
     if text.count(HOOK_AFTER + HOOK) != 1:
         fail("the WardrobeBlendLoop hook is not right after `rotlwi r26,r10,0` as "
              "src/hooks/wardrobe_blend_hooks.cpp expects (config/torchlight_hooks.toml)")
@@ -230,6 +250,8 @@ def check(directory):
              % (FUNCTION, digest, EXPECTED_SHA256))
 
     f = Function(plain)
+    if f.instruction(ABI["kHookAddress"]) != "rotlwi r26,r10,0":
+        fail("@%08X is `%s`, not the hook's `rotlwi r26,r10,0`" % (ABI["kHookAddress"], f.instruction(ABI["kHookAddress"])))
     start, exit_line = f.labels[LOOP_START], f.labels[LOOP_EXIT]
     loop = range(start, exit_line)
 
@@ -269,9 +291,9 @@ def check(directory):
             fail("%s @%08X: definitions %s, expected only `%s` @%08X"
                  % (reg, f.address[line], sorted(d if isinstance(d, str) else "%08X" % d for d in definitions),
                     instruction, address))
-    # The base's pixel data: the guest loads it just before the item's getPixelBox call, the host
-    # just after it (that call writes only the item's pixel box at r1+432).
-    for address, instruction in BASE_DATA_LOADS:
+    # The loads of the loop's inputs: the host reads the same memory (the base's pixel data just
+    # after the item's getPixelBox call, which writes only the item's box).
+    for address, instruction in LOADS:
         if f.instruction(address) != instruction:
             fail("@%08X: `%s`, expected `%s`" % (address, f.instruction(address), instruction))
 
@@ -351,6 +373,7 @@ def header(path, problem):
             "inline constexpr const char* kProblem = %s;\n"
             "}  // namespace torchlight::hooks::wardrobe_blend_generated\n"
             % (FUNCTION, "false" if problem else "true", json.dumps(problem or "")))
+    os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
     old = open(path, encoding="utf-8").read() if os.path.exists(path) else None
     if old != text:
         with open(path, "w", encoding="utf-8") as f:
@@ -368,6 +391,9 @@ def main():
         print("check_generated: %s as checked (%s); the host blend loop's assumptions hold" % (FUNCTION, digest))
     except Failed as e:
         problem = str(e)
+        print("check_generated: " + problem, file=sys.stderr)
+    except Exception as e:  # noqa: BLE001 -- any other failure of the check is a failed check too
+        problem = "the check itself failed: %s: %s" % (type(e).__name__, e)
         print("check_generated: " + problem, file=sys.stderr)
     if len(args) == 3:
         header(args[2], problem)
