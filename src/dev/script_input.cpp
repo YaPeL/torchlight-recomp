@@ -24,6 +24,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <ctime>
 #include <deque>
@@ -34,6 +35,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <rex/input/input.h>
@@ -52,6 +54,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include "game_menu/guest_call.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/game_ui_sheet.h"
+#include "guest_abi/hero_motion.h"
 #include "guest_abi/ogre_layout.h"
 #include "guest_abi/xbox_memory.h"
 #include "live/frame_timing.h"
@@ -471,6 +474,10 @@ class ScriptInputDriver : public rex::input::InputDriver {
 };
 
 // Steps the script once per guest frame and runs its actions.
+// Closes the replay's hero trace (below): when the script quits or ends, so the trace is complete
+// even when no swap follows. The game's thread, as the trace's writes.
+void CloseHeroTrace();
+
 class ScriptRunner : public live::FrameObserver {
  public:
   ScriptRunner(InputScript script, ScriptInputDriver* driver, std::function<void()> close)
@@ -486,6 +493,13 @@ class ScriptRunner : public live::FrameObserver {
     std::vector<ScriptAction> actions;
     const PadState pad = script_.Step(events_, actions);
     driver_->Set(pad);
+    // A replay's frame, for the trace OnUiFrame writes at the next swap, once this pad was read.
+    if (const auto& f = script_.replay_frame()) {
+      trace_ = TraceFrame{*f, events_.frame};
+      replaying_ = true;
+    } else {
+      replaying_ = false;
+    }
     for (const auto& a : actions) Run(a);
   }
   void OnPresentedFrame(double ms, size_t dropped, const live::PresentLatency& latency) override {
@@ -531,6 +545,17 @@ class ScriptRunner : public live::FrameObserver {
   uint64_t frame() {
     std::lock_guard lock(mutex_);
     return events_.frame;
+  }
+  // The game's thread (OnUiFrame): the replay frame given to the game since the last call, and
+  // whether a replay is still playing.
+  struct TraceFrame {
+    ReplayFrame replay;
+    uint64_t frame = 0;
+  };
+  std::optional<TraceFrame> TakeTraceFrame(bool& replaying) {
+    std::lock_guard lock(mutex_);
+    replaying = replaying_;
+    return std::exchange(trace_, std::nullopt);
   }
 
  private:
@@ -585,12 +610,14 @@ class ScriptRunner : public live::FrameObserver {
       case ScriptAction::Kind::kQuit:
         segment_.Log();
         segment_ = {};
+        CloseHeroTrace();
         REXLOG_INFO("dev input script: quit");
         if (close_) close_();
         break;
       case ScriptAction::Kind::kFailed:
         segment_.Log();
         segment_ = {};
+        CloseHeroTrace();
         REXLOG_ERROR("dev input script FAILED: {}; closing the game", a.text);
         finished_ = true;
         driver_->Disconnect();
@@ -599,6 +626,7 @@ class ScriptRunner : public live::FrameObserver {
       case ScriptAction::Kind::kFinished:
         segment_.Log();
         segment_ = {};
+        CloseHeroTrace();
         REXLOG_INFO("dev input script: finished");
         finished_ = true;
         driver_->Disconnect();
@@ -608,6 +636,8 @@ class ScriptRunner : public live::FrameObserver {
 
   std::mutex mutex_;
   std::deque<std::string> dumps_;  // dump_ui names, for OnUiFrame
+  std::optional<TraceFrame> trace_;  // for OnUiFrame
+  bool replaying_ = false;
   InputScript script_;
   ScriptInputDriver* driver_;
   std::function<void()> close_;
@@ -620,6 +650,138 @@ class ScriptRunner : public live::FrameObserver {
 };
 
 std::unique_ptr<ScriptRunner> g_runner;
+std::filesystem::path g_script_folder;  // the script's relative paths start here
+
+// A name the script gives a file, from the script's folder when relative.
+std::filesystem::path ScriptPath(std::string_view name) {
+  const std::filesystem::path path{std::string(name)};
+  return path.is_absolute() ? path : g_script_folder / path;
+}
+
+// The replay's hero trace (dev/pad_replay.h), written on the game's thread at each swap: the hero
+// as the frame that ends now left it, and the stick the game read in it.
+class HeroTrace {
+ public:
+  void Write(const uint8_t* base, const ScriptRunner::TraceFrame& f) {
+    if (!out_.is_open() || f.replay.trace != name_ || f.replay.command != command_) {
+      Close();
+      if (f.replay.trace.empty()) return;
+      // A file that could not be opened is not tried again for the same replay command.
+      if (failed_ && failed_command_ == f.replay.command) return;
+      failed_ = false;
+      name_ = f.replay.trace;
+      command_ = f.replay.command;
+      path_ = ScriptPath(name_);
+      out_.open(path_, std::ios::binary | std::ios::trunc);
+      if (!out_) {
+        REXLOG_ERROR("dev input script: cannot write the trace {}; this replay is not traced", path_.string());
+        failed_ = true;
+        failed_command_ = f.replay.command;
+        name_.clear();
+        return;
+      }
+      out_ << HeroTraceHeader();
+      REXLOG_INFO("dev input script: trace to {}", path_.string());
+    }
+    namespace hm = abi::hero_motion;
+    const uint32_t client = hm::Client(base);
+    const uint32_t hero = client ? abi::ReadU32(base, client + hm::kClientHero.offset) : 0;
+    const uint32_t node = InGuestHeap(hero) ? abi::ReadU32(base, hero + hm::kUnitNode.offset) : 0;
+    if (!InGuestHeap(node)) {
+      // Once per trace, what the chain gave: the first link that is 0 or outside the heap failed.
+      if (!missing_++) {
+        REXLOG_WARN("dev input script: trace: no hero at frame {}: client {:08X}, hero {:08X}, node {:08X}",
+                    f.frame, client, hero, node);
+      }
+      return;
+    }
+    // The node's world transform as _getFullTransform would build it, read without updating it:
+    // stale while the node waits for its parent's update.
+    if (abi::ReadU8(base, node + hm::kNodeNeedParentUpdate.offset)) ++stale_;
+    const auto f32 = [&](uint32_t at) { return abi::ReadF32(base, at); };
+    const uint32_t q = node + hm::kNodeDerivedOrientation.offset;
+    const float w = f32(q), qx = f32(q + 4), qy = f32(q + 8), qz = f32(q + 12);
+    const float scale_z = f32(node + hm::kNodeDerivedScale.offset + 8);
+    HeroTraceRow row;
+    row.t_us = f.replay.t_us;
+    row.frame = f.frame;
+    row.x = f32(node + hm::kNodeDerivedPosition.offset);
+    row.z = f32(node + hm::kNodeDerivedPosition.offset + 8);
+    // The rotation matrix's third column, rows 0 and 2, times the scale (Matrix4 = R * S).
+    row.fx = 2 * (qx * qz + w * qy) * scale_z;
+    row.fz = (1 - 2 * (qx * qx + qy * qy)) * scale_z;
+    row.scale = f32(hero + hm::kSpeedScale.offset);
+    row.speed = f32(hero + hm::kSpeed.offset);
+    row.lx = f.replay.pad.left_x;
+    row.ly = f.replay.pad.left_y;
+    if (!lines_) {
+      // The node against the unit's own place (hm::kUnitPosition) and orientation, once.
+      const uint32_t o = node + hm::kNodeOrientation.offset;
+      REXLOG_INFO("dev input script: trace: hero {:08X}, node {:08X}: node at ({:.3f}, {:.3f}), unit at "
+                  "({:.3f}, {:.3f}); orientation derived ({:.3f}, {:.3f}, {:.3f}, {:.3f}), own ({:.3f}, "
+                  "{:.3f}, {:.3f}, {:.3f}), scale z {:.3f}",
+                  hero, node, row.x, row.z, f32(hero + hm::kUnitPosition.offset),
+                  f32(hero + hm::kUnitPosition.offset + 8), w, qx, qy, qz, f32(o), f32(o + 4), f32(o + 8),
+                  f32(o + 12), scale_z);
+    }
+    if (!camera_logged_ && row.t_us >= 1000000) {
+      camera_logged_ = true;
+      LogStickTurn(base, client, row);
+    }
+    out_ << HeroTraceLine(row);
+    if (++lines_ % 64 == 0) out_.flush();
+  }
+  // Once, 1 s after t=0: the angle the hero's input handler turns the stick by this frame, as it
+  // computes it from the camera (hm::kCameraOrientation), with the camera's and the hero's place.
+  static void LogStickTurn(const uint8_t* base, uint32_t client, const HeroTraceRow& row) {
+    namespace hm = abi::hero_motion;
+    const uint32_t holder = abi::ReadU32(base, client + hm::kClientCameraHolder.offset);
+    const uint32_t camera = InGuestHeap(holder) ? abi::ReadU32(base, holder + hm::kCameraHolderCamera.offset) : 0;
+    if (!InGuestHeap(camera)) {
+      REXLOG_WARN("dev input script: trace: no camera (holder {:08X}, camera {:08X})", holder, camera);
+      return;
+    }
+    const auto f32 = [&](uint32_t at) { return abi::ReadF32(base, at); };
+    const uint32_t q = camera + hm::kCameraOrientation.offset;
+    const float w = f32(q), qx = f32(q + 4), qy = f32(q + 8), qz = f32(q + 12);
+    // Quaternion * Vector3 (OGRE's: v + 2w (q x v) + 2 q x (q x v)) of minus kUnitZ.
+    const float vx = -f32(hm::kUnitZ), vy = -f32(hm::kUnitZ + 4), vz = -f32(hm::kUnitZ + 8);
+    const float ux = qy * vz - qz * vy, uy = qz * vx - qx * vz, uz = qx * vy - qy * vx;
+    const float uux = qy * uz - qz * uy, uuy = qz * ux - qx * uz, uuz = qx * uy - qy * ux;
+    const float fx = vx + 2 * w * ux + 2 * uux, fy = vy + 2 * w * uy + 2 * uuy, fz = vz + 2 * w * uz + 2 * uuz;
+    const float degrees = float(std::atan2(fx, fz)) * f32(hm::kStickTurnScale) - f32(hm::kStickTurnOffset);
+    const uint32_t p = camera + hm::kCameraPosition.offset;
+    REXLOG_INFO("dev input script: trace: stick turn at t={} us, frame {}: {:.4f} degrees ({:.6f} rad); "
+                "camera {:08X} orientation ({:.5f}, {:.5f}, {:.5f}, {:.5f}), forward ({:.5f}, {:.5f}, "
+                "{:.5f}), position ({:.3f}, {:.3f}, {:.3f}); hero at ({:.3f}, {:.3f})",
+                row.t_us, row.frame, degrees, degrees * 0.017453292519943295, camera, w, qx, qy, qz, fx, fy,
+                fz, f32(p), f32(p + 4), f32(p + 8), row.x, row.z);
+  }
+
+  void Close() {
+    if (!out_.is_open()) return;
+    out_.close();
+    REXLOG_INFO("dev input script: trace {}: {} frames, {} waiting for the parent's update, {} frames "
+                "without the hero (not written)",
+                path_.string(), lines_, stale_, missing_);
+    lines_ = stale_ = missing_ = 0;
+    camera_logged_ = false;
+    name_.clear();
+  }
+
+ private:
+  std::ofstream out_;
+  std::string name_;
+  size_t command_ = 0;
+  bool failed_ = false;
+  size_t failed_command_ = 0;
+  std::filesystem::path path_;
+  uint64_t lines_ = 0, stale_ = 0, missing_ = 0;
+  bool camera_logged_ = false;
+};
+HeroTrace g_hero_trace;
+
+void CloseHeroTrace() { g_hero_trace.Close(); }
 
 uint64_t g_swaps = 0;  // swaps seen by OnUiFrame: a dump's frame
 
@@ -710,6 +872,9 @@ void OnUiFrame(PPCContext& ctx, uint8_t* base) {
     REXLOG_ERROR("dev input script: capture {} never started; no UI dump for it", captures_seen);
   }
   if (!g_runner) return;
+  bool replaying = false;
+  if (const auto trace = g_runner->TakeTraceFrame(replaying)) g_hero_trace.Write(base, *trace);
+  if (!replaying) g_hero_trace.Close();
   const uint32_t game_ui = abi::ReadU32(base, ui_abi::kGameUiGlobal);
   if (!InGuestHeap(game_ui)) {
     while (auto name = g_runner->TakeDump()) {
@@ -751,8 +916,16 @@ void InstallInputScript(rex::Runtime* runtime, std::function<void()> request_clo
   }
   std::stringstream text;
   text << file.rdbuf();
+  g_script_folder = std::filesystem::path(path).parent_path();
+  const ScriptFileReader read = [](std::string_view name) -> std::optional<std::string> {
+    std::ifstream in(ScriptPath(name), std::ios::binary);
+    if (!in) return std::nullopt;
+    std::stringstream content;
+    content << in.rdbuf();
+    return content.str();
+  };
   std::string error;
-  auto script = InputScript::Parse(text.str(), error);
+  auto script = InputScript::Parse(text.str(), error, read);
   if (!script) {
     REXLOG_ERROR("dev input script {}: {}", path, error);
     return;

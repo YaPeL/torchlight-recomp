@@ -43,6 +43,12 @@
 //                                            B, LT, RT, LB, RB, Back, Start, or the d-pad's Up,
 //                                            Down, Left, Right
 //   release ID                               that finger lifted
+//   replay FILE [trace FILE]                 a recorded controller (pad_replay.h) played by time
+//                                            from this command's start: its start_ms at rest,
+//                                            then each sample at its t_ms, the last one held
+//                                            until kTraceTailMs after it; with "trace", the
+//                                            hero's trace of every frame from t=0 to the end.
+//                                            Relative paths are the script's folder's
 //   command TEXT                             a guest developer command (dev/guest_command.h, e.g.
 //                                            ASCEND to the town), in development builds with
 //                                            TORCHLIGHT_DEV_COMMANDS too
@@ -54,11 +60,14 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
 
+#include "dev/pad_replay.h"
 #include "input/pad_state.h"
 
 namespace torchlight::dev {
@@ -99,14 +108,31 @@ struct ScriptAction {
 // the captured frame.
 inline constexpr uint64_t kCaptureFrames = 4;
 
+// A file's text by the name a script gives it (replay's recording); nullopt when it cannot be read.
+using ScriptFileReader = std::function<std::optional<std::string>(std::string_view name)>;
+
+// A frame of a replay: its time since t=0, the controller given to the game and the trace's file
+// (empty: none).
+struct ReplayFrame {
+  int64_t t_us = 0;
+  PadState pad;
+  std::string trace;
+  size_t command = 0;  // the replay command's index in the script: each one writes its own trace
+};
+
 class InputScript {
  public:
-  // Nullopt with `error` ("line N: ...") when the text is not a script.
-  static std::optional<InputScript> Parse(std::string_view text, std::string& error);
+  // Nullopt with `error` ("line N: ...") when the text is not a script. `read` gives the files
+  // the script names (replay); without it a replay is an error.
+  static std::optional<InputScript> Parse(std::string_view text, std::string& error,
+                                          const ScriptFileReader& read = {});
 
   // Once per guest frame: runs the commands that complete now, appends their actions (and
   // kFinished or kFailed once at the end), and returns the controller state for this frame.
   PadState Step(const ScriptEvents& events, std::vector<ScriptAction>& actions);
+
+  // Set by the last Step when it played a replay's frame (from t=0 to the end of its trace).
+  const std::optional<ReplayFrame>& replay_frame() const { return replay_frame_; }
 
   bool done() const { return next_ >= commands_.size(); }
   size_t size() const { return commands_.size(); }
@@ -114,7 +140,7 @@ class InputScript {
   bool ReadsUi() const;
 
  private:
-  enum class Op { kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kDumpUi, kQuit, kTouch, kRelease };
+  enum class Op { kPress, kPressUntil, kPressFor, kHold, kStick, kIdle, kWait, kMark, kCapture, kCommand, kDumpUi, kQuit, kTouch, kRelease, kReplay };
   enum class Event { kNone, kLevelLoaded, kMenu, kFocus, kWindow };
   struct Duration {
     double value = 0;
@@ -130,6 +156,8 @@ class InputScript {
     std::string text;  // mark text, menu name
     int finger = 0;    // touch, release
     float x = 0, y = 0;
+    std::shared_ptr<const PadReplay> replay;  // kReplay
+    std::string trace;                        // kReplay: the trace's file, empty for none
   };
   struct Start {
     uint64_t frame = 0;
@@ -152,6 +180,7 @@ class InputScript {
   Start start_;           // when it began
   Start press_;           // kPressUntil: when the current press began
   bool ended_ = false;    // kFinished or kFailed was reported
+  std::optional<ReplayFrame> replay_frame_;
 };
 
 using input::PadKeystroke;

@@ -96,7 +96,8 @@ bool FileName(std::string_view name) {
 
 }  // namespace
 
-std::optional<InputScript> InputScript::Parse(std::string_view text, std::string& error) {
+std::optional<InputScript> InputScript::Parse(std::string_view text, std::string& error,
+                                              const ScriptFileReader& read) {
   InputScript script;
   int number = 0;
   size_t start = 0;
@@ -264,6 +265,16 @@ std::optional<InputScript> InputScript::Parse(std::string_view text, std::string
       if (w.size() > 2 || (w.size() == 2 && !FileName(w[1]))) return fail("capture [NAME]");
       if (w.size() == 2) c.text = std::string(w[1]);
       c.op = Op::kCapture;
+    } else if (verb == "replay") {
+      if (w.size() != 2 && !(w.size() == 4 && w[2] == "trace")) return fail("replay FILE [trace FILE]");
+      const auto recording = read ? read(w[1]) : std::nullopt;
+      if (!recording) return fail("cannot read " + std::string(w[1]));
+      std::string why;
+      auto replay = PadReplay::Parse(*recording, why);
+      if (!replay) return fail(std::string(w[1]) + ": " + why);
+      c.replay = std::make_shared<const PadReplay>(std::move(*replay));
+      if (w.size() == 4) c.trace = std::string(w[3]);
+      c.op = Op::kReplay;
     } else if (verb == "quit") {
       if (w.size() != 1) return fail("quit takes nothing");
       c.op = Op::kQuit;
@@ -317,6 +328,7 @@ void InputScript::Begin(const ScriptEvents& e) {
 }
 
 PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& actions) {
+  replay_frame_.reset();
   while (next_ < commands_.size()) {
     const Command& c = commands_[next_];
     if (!started_) Begin(e);
@@ -383,6 +395,18 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         if (!Elapsed(c.duration, e, start_)) return {};
         advance();
         continue;
+      case Op::kReplay: {
+        // By the time since the command began, not per sample: a frame gives the sample due then.
+        const double t_ms = (e.seconds - start_.seconds) * 1000.0 - double(c.replay->start_ms);
+        if (t_ms > double(c.replay->last_ms() + kTraceTailMs)) {
+          advance();
+          continue;
+        }
+        if (t_ms < 0) return {};
+        const PadState p = c.replay->At(t_ms);
+        replay_frame_ = ReplayFrame{std::llround(t_ms * 1000.0), p, c.trace, next_};
+        return p;
+      }
       case Op::kPressFor:
         if (Elapsed(c.duration, e, start_)) {
           advance();
