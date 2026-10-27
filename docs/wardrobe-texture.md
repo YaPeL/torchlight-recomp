@@ -134,6 +134,11 @@ r26, ctx.fpscr)) goto loc_822DD39C;` and changes nothing else in the generated C
   holds (the hook's place, the inputs' only definitions, what the loop writes, what the rest of the
   function reads after it).
 
+Measured on the desktop like the colour pack/unpack above (A B B A runs, four builds each, perf at
+999 Hz, the build's samples inclusive): 156 and 148 samples without, 88 and 78 with, the build
+from about 38 ms to about 21 ms, of which the host loop is about 8 ms (31 and 33 samples: each
+byte still goes through the guest-to-host address translation).
+
 Checks: `wardrobe_blend_test` (the host loop against the recompiled loop written out instruction by
 instruction, ten formats each way, random images), and in the game `--diag_wardrobe_blend_check`
 (diagnostics builds): each image's loop computed on the host into a copy, then the recompiled loop
