@@ -254,7 +254,6 @@ double FloatAt(float v) { return static_cast<double>(v); }
 
 constexpr uint32_t kSp = 0x100;        // the frame: sp .. sp + 2064
 constexpr uint32_t kItem = 0x1000;
-constexpr uint32_t kMemorySize = 0x100000;
 
 uint64_t checks = 0;
 
@@ -264,7 +263,8 @@ void Case(const Row& item_row, const Row& base_row, uint32_t rows, uint32_t colu
   formats[base_row.index] = Desc(base_row);
   const uint32_t base_at = kItem + rows * columns * 4 + 64;
   TestMemory start;
-  start.bytes.resize(kMemorySize);
+  const uint32_t memory_size = base_at + rows * columns * 4 + 64;  // the frame, both images, a margin
+  start.bytes.resize(memory_size);
   for (auto& b : start.bytes) b = static_cast<uint8_t>(Random());
   // rows/columns where the build keeps them, big-endian
   for (int i = 0; i < 4; ++i) start.bytes[kSp + 140 + i] = static_cast<uint8_t>(columns >> (24 - 8 * i));
@@ -310,7 +310,7 @@ void Case(const Row& item_row, const Row& base_row, uint32_t rows, uint32_t colu
                            " " + std::to_string(rows) + "x" + std::to_string(columns) + " mode " +
                            std::to_string(alpha_mode);
   if (x.r[26].u64 != 0) Fail(name + ": guest r26 not 0");
-  for (uint32_t a = 0; a < kMemorySize; ++a)
+  for (uint32_t a = 0; a < memory_size; ++a)
     if (guest.bytes[a] != host.bytes[a]) {
       Fail(name + ": byte " + std::to_string(a) + " " + std::to_string(guest.bytes[a]) + " vs " +
            std::to_string(host.bytes[a]));

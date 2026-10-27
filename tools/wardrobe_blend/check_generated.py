@@ -32,32 +32,62 @@ addresses, r1+192 and others, are passed to calls after the loop: every temporar
 guest leaves it, so such a call reads the same bytes), and calls that keep a
 volatile register (the register save/restore helpers, which the codegen inlines as no calls).
 
-Usage: check_generated.py <generated dir>   (e.g. generated/default)
+Usage:
+  check_generated.py <generated dir>                 exit 1 on any failure (the development test,
+                                                     ctest wardrobe_blend_generated)
+  check_generated.py <generated dir> --header <file>  writes the result as a C++ header for
+                                                     src/hooks/wardrobe_blend_hooks.cpp and exits
+                                                     0 (the game build): when the check fails, the
+                                                     game keeps the recompiled loop and logs why
+
+The stack offsets and the hook's addresses come from src/guest_abi/wardrobe.h (wardrobe::blend),
+the only place they are written.
 """
 
 import glob
 import hashlib
+import json
 import os
 import re
 import sys
 
 FUNCTION = "sub_822DC6B0"
-# The function's text without the hook's lines, as checked (2026-10-26, ReXGlue host-install-d50).
+# The function's text without the hook's lines, as checked (2026-10-26). The same with the SDK CI
+# builds (tools/deps, key 20f9f9ec2fa17ada, Linux) and with the development one.
 EXPECTED_SHA256 = "95b0136086adef50dcf629cae6cf263df8f2303c3cd966211c90eccf20a40efd"
 
-HOOK_AFTER = "\tr26.u64 = __builtin_rotateleft32(ctx.r10.u32, 0);\n"
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+
+def guest_abi_blend():
+    """The integer constants of src/guest_abi/wardrobe.h's namespace blend, by name."""
+    with open(os.path.join(ROOT, "src", "guest_abi", "wardrobe.h"), encoding="utf-8") as f:
+        text = f.read()
+    text = text[text.index("namespace blend {"):text.index("}  // namespace blend")]
+    values = {}
+    for m in re.finditer(r"inline constexpr uint(?:8|32)_t ([^;]+);", text):
+        for part in m.group(1).split(","):
+            name, expr = (x.strip() for x in part.split("="))
+            values[name] = eval(re.sub(r"\bk\w+", lambda k: str(values[k.group(0)]), expr), {"__builtins__": {}})
+    return values
+
+
+ABI = guest_abi_blend()
+HOOK_AFTER = "\tr26.u64 = __builtin_rotateleft32(ctx.r10.u32, 0);\n"  # rotlwi r26,r10,0 @kHookAddress
 HOOK = ("\tif (WardrobeBlendLoop(ctx.r1, r19, r26, ctx.fpscr)) {\n"
-        "\t\tgoto loc_822DD39C;\n"
+        "\t\tgoto loc_%X;\n"
         "\t}\n"
         "\telse {\n"
-        "\t}\n")
-LOOP_START, LOOP_EXIT = "loc_822DD220", "loc_822DD39C"
+        "\t}\n") % ABI["kLoopExit"]
+LOOP_START, LOOP_EXIT = "loc_%X" % (ABI["kHookAddress"] + 4), "loc_%X" % ABI["kLoopExit"]
 
 # The loop's stack bytes (offsets from r1), as hooks/wardrobe_blend.h writes them.
-SLOTS = {129, 130, 128, 131, 152, 145, 144, 288}
-for doubles in (384, 336, 592, 304, 600, 296, 528, 192):
-    SLOTS |= set(range(doubles, doubles + 8))
-UNPACK_OUTPUTS = (129, 130, 128, 131, 152, 145, 144, 288)
+UNPACK_OUTPUTS = tuple(ABI[k] for k in ("kItemR", "kItemG", "kItemB", "kItemA",
+                                         "kBaseR", "kBaseG", "kBaseB", "kBaseA"))
+SLOTS = set(UNPACK_OUTPUTS)
+for name in ("kItemGDouble", "kItemADouble", "kItemBDouble", "kItemRDouble",
+             "kBaseGDouble", "kBaseRDouble", "kBaseBDouble", "kTruncated"):
+    SLOTS |= set(range(ABI[name], ABI[name] + 8))
 
 # The definitions guest_abi wardrobe::blend cites, by address and instruction.
 REACHING = {
@@ -88,9 +118,12 @@ ASSIGN = re.compile(r"^(ctx\.(?:r|f)\d+|r\d+|f\d+|cr\d|xer|ctr|temp|ea)\.(\w+)(\
 CALL = re.compile(r"^(sub_[0-9A-F]+\(ctx, base\)|REX_CALL_INDIRECT_FUNC\(.*\));")
 
 
+class Failed(Exception):
+    pass
+
+
 def fail(message):
-    print("check_generated: " + message, file=sys.stderr)
-    sys.exit(1)
+    raise Failed(message)
 
 
 def find_function(directory):
@@ -175,10 +208,13 @@ class Function:
         return reads | tokens, writes, nxt
 
 
-def main():
-    if len(sys.argv) != 2:
-        fail("usage: check_generated.py <generated dir>")
-    text = find_function(sys.argv[1])
+def check(directory):
+    """The digest's first 16 hex digits; raises Failed with what does not hold."""
+    text = find_function(directory)
+
+    f0 = Function(text)
+    if f0.instruction(ABI["kHookAddress"]) != "rotlwi r26,r10,0":
+        fail("@%08X is `%s`, not the hook's `rotlwi r26,r10,0`" % (ABI["kHookAddress"], f0.instruction(ABI["kHookAddress"])))
 
     # 2. The hook.
     if text.count(HOOK_AFTER + HOOK) != 1:
@@ -304,7 +340,41 @@ def main():
         problems.append("xer.ca is read in the function")
     if problems:
         fail("after the loop: " + "; ".join(problems))
-    print("check_generated: %s as checked (%s); the host blend loop's assumptions hold" % (FUNCTION, digest[:16]))
+    return digest[:16]
+
+
+def header(path, problem):
+    text = ("// Written by tools/wardrobe_blend/check_generated.py at build time: whether the generated %s is\n"
+            "// the one the host blend loop was checked on.\n#pragma once\n"
+            "namespace torchlight::hooks::wardrobe_blend_generated {\n"
+            "inline constexpr bool kChecked = %s;\n"
+            "inline constexpr const char* kProblem = %s;\n"
+            "}  // namespace torchlight::hooks::wardrobe_blend_generated\n"
+            % (FUNCTION, "false" if problem else "true", json.dumps(problem or "")))
+    old = open(path, encoding="utf-8").read() if os.path.exists(path) else None
+    if old != text:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+
+
+def main():
+    args = sys.argv[1:]
+    if len(args) not in (1, 3) or (len(args) == 3 and args[1] != "--header"):
+        print("usage: check_generated.py <generated dir> [--header <file>]", file=sys.stderr)
+        sys.exit(2)
+    try:
+        digest = check(args[0])
+        problem = None
+        print("check_generated: %s as checked (%s); the host blend loop's assumptions hold" % (FUNCTION, digest))
+    except Failed as e:
+        problem = str(e)
+        print("check_generated: " + problem, file=sys.stderr)
+    if len(args) == 3:
+        header(args[2], problem)
+        if problem:
+            print("check_generated: WARNING: the game keeps the recompiled wardrobe blend loop", file=sys.stderr)
+        sys.exit(0)
+    sys.exit(1 if problem else 0)
 
 
 if __name__ == "__main__":

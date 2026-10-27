@@ -66,7 +66,9 @@ inline constexpr GuestFunction kMakeUnit{0x823DE8F0, Confidence::kConfirmed};
 // stack are from its r1.
 namespace blend {
 // [confirmed] The midasm hook (config/torchlight_hooks.toml): after `rotlwi r26,r10,0` @0x822DD21C,
-// the rows known non-zero (beq @0x822DD218); true jumps to kLoopExit, past the loop.
+// the rows known non-zero (beq @0x822DD218); true jumps to kLoopExit, past the loop. The two must
+// match config/torchlight_hooks.toml's address and jump_address_on_true;
+// tools/wardrobe_blend/check_generated.py reads them from here and checks the generated hook.
 inline constexpr uint32_t kHookAddress = 0x822DD21C;
 // [confirmed] The loop's exit (loc_822DD39C, clrlwi r11,r14,24): reached from both loop ends
 // (bne @0x822DD390 falls through to 0x822DD394, bne @0x822DD398 to the exit) and from the tests for

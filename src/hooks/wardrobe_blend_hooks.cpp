@@ -5,7 +5,9 @@
 // it; false: the recompiled loop runs.
 //
 // What the rest of sub_822DC6B0 reads of the loop's state, and so what this must leave as the guest
-// would (checked on every build of the game by tools/wardrobe_blend/check_generated.py):
+// would (checked on every build of the game by tools/wardrobe_blend/check_generated.py; when the
+// generated function is not the one checked, the hook always returns false and the startup log says
+// why):
 //  - r26, read on a path to 0x822DDF48 (lwz r3,26516(r26)) the analysis cannot rule out: set to 0;
 //  - r28..r31, cr0, cr6, xer: never read before written again; left as they are;
 //  - the stack temporaries: written as the last iteration leaves them (BlendWardrobeLayer);
@@ -32,6 +34,7 @@
 #include "guest_abi/wardrobe.h"
 #include "hooks/pixel_util_hooks.h"
 #include "hooks/wardrobe_blend.h"
+#include "wardrobe_blend_generated.h"  // written at build time by tools/wardrobe_blend/check_generated.py
 
 REXCVAR_DEFINE_BOOL(native_wardrobe_blend, true, "Torchlight",
                     "Run the equipment texture build's blend loop on the host (false: the recompiled "
@@ -104,7 +107,21 @@ bool CheckLayer(uint8_t* base, const WardrobeBlendLayer* layer, PPCFPSCRRegister
 
 namespace torchlight::hooks {
 
-bool NativeWardrobeBlendEnabled() { return REXCVAR_GET(native_wardrobe_blend) && NativePixelUtilEnabled(); }
+bool NativeWardrobeBlendEnabled() {
+  return wardrobe_blend_generated::kChecked && REXCVAR_GET(native_wardrobe_blend) && NativePixelUtilEnabled();
+}
+
+void LogWardrobeBlendMode() {
+  if (!wardrobe_blend_generated::kChecked) {
+    REXLOG_WARN("wardrobe blend: the recompiled loop (the generated sub_822DC6B0 is not the one the host loop was "
+                "checked on: {}; run tools/wardrobe_blend/check_generated.py)",
+                wardrobe_blend_generated::kProblem);
+    return;
+  }
+  REXLOG_INFO("wardrobe blend: {} (--native_wardrobe_blend={}, --native_pixel_util={})",
+              NativeWardrobeBlendEnabled() ? "host" : "the recompiled loop", REXCVAR_GET(native_wardrobe_blend),
+              NativePixelUtilEnabled());
+}
 
 }  // namespace torchlight::hooks
 

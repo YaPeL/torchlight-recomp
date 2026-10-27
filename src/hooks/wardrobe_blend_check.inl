@@ -8,9 +8,12 @@
 #include <algorithm>
 #include <array>
 #include <mutex>
+#include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
+
+#include <fmt/format.h>
 
 namespace {
 
@@ -100,12 +103,15 @@ void torchlight::hooks::WardrobeBlendCheckPacked(uint8_t* base, uint32_t dest) {
   for (uint8_t i = 0; same && i < want.size; ++i) same = *Guest(base, dest + i) == want.bytes[i];
   std::lock_guard lock(g_counts_mutex);
   ++g_counts.pixels;
-  if (!same && g_counts.pixel_differences++ < kLoggedDifferences)
-    REXLOG_ERROR("diag wardrobe blend check: pixel {} at {:08X} (host {:08X}): {:02X}{:02X}{:02X}{:02X} vs host "
-                 "{:02X}{:02X}{:02X}{:02X}",
-                 g_pending.next - 1, dest, want.dest, *Guest(base, dest), *Guest(base, dest + 1),
-                 *Guest(base, dest + 2), *Guest(base, dest + 3), want.bytes[0], want.bytes[1], want.bytes[2],
-                 want.bytes[3]);
+  if (!same && g_counts.pixel_differences++ < kLoggedDifferences) {
+    std::string got, host;
+    for (uint8_t i = 0; i < want.size; ++i) {
+      got += fmt::format("{:02X}", *Guest(base, dest + i));
+      host += fmt::format("{:02X}", want.bytes[i]);
+    }
+    REXLOG_ERROR("diag wardrobe blend check: pixel {} at {:08X} (host {:08X}): {} vs host {}", g_pending.next - 1,
+                 dest, want.dest, got, host);
+  }
   if (g_pending.next < g_pending.packs.size()) return;
   for (const auto& [address, value] : g_pending.temporaries)
     if (*Guest(base, address) != value && g_counts.temporary_differences++ < kLoggedDifferences)

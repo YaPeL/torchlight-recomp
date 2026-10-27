@@ -112,24 +112,28 @@ endif()
 set(TORCHLIGHT_GPU_PLUGINS xenos null)
 rexglue_setup_target(torchlight GPU_PLUGINS ${TORCHLIGHT_GPU_PLUGINS})
 # The host wardrobe blend loop (hooks/wardrobe_blend_hooks.cpp) relies on the generated sub_822DC6B0
-# being the one it was checked on: every codegen is checked again before the game builds, and a
-# change fails the build (tools/wardrobe_blend/check_generated.py says what to review).
+# being the one it was checked on: every codegen is checked again, and the result is a header the
+# hook reads. A changed function does not fail the build: the game keeps the recompiled loop and
+# logs why; the wardrobe_blend_generated test fails instead (tools/wardrobe_blend/check_generated.py).
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
-set(_wardrobe_blend_stamp "${CMAKE_CURRENT_BINARY_DIR}/wardrobe_blend_check.stamp")
-add_custom_command(OUTPUT "${_wardrobe_blend_stamp}"
+set(_wardrobe_blend_header "${CMAKE_CURRENT_BINARY_DIR}/generated_include/wardrobe_blend_generated.h")
+add_custom_command(OUTPUT "${_wardrobe_blend_header}"
     COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py
-            ${CMAKE_SOURCE_DIR}/generated/default
-    COMMAND ${CMAKE_COMMAND} -E touch "${_wardrobe_blend_stamp}"
+            ${CMAKE_SOURCE_DIR}/generated/default --header "${_wardrobe_blend_header}"
     DEPENDS ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py
+            ${CMAKE_SOURCE_DIR}/src/guest_abi/wardrobe.h
             ${CMAKE_SOURCE_DIR}/generated/default/codegen.build.stamp
     COMMENT "Checking the generated wardrobe build against the host blend loop"
     VERBATIM)
-add_custom_target(torchlight_wardrobe_blend_check DEPENDS "${_wardrobe_blend_stamp}")
+add_custom_target(torchlight_wardrobe_blend_check DEPENDS "${_wardrobe_blend_header}")
+add_dependencies(torchlight_wardrobe_blend_check torchlight_codegen)
 add_dependencies(torchlight torchlight_wardrobe_blend_check)
+set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES
+    OBJECT_DEPENDS "${_wardrobe_blend_header}")
+target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated_include")
 # On Android the game is a shared library that the SDK links with -Wl,-Bsymbolic-functions (patch
 # 47): every link checks that the generated code's calls are bound inside it and reach the hooks.
 if(ANDROID)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_custom_command(TARGET torchlight POST_BUILD
         COMMAND ${Python3_EXECUTABLE} -I
                 ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
@@ -175,6 +179,12 @@ add_test(NAME no_direct_spdlog COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOU
 # v14 and up): cmake/check_guest_registers.cmake.
 add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
+# With the game's generated code: fails when the generated sub_822DC6B0 is not the one the host
+# wardrobe blend loop was checked on (the game build then keeps the recompiled loop).
+if(TORCHLIGHT_GAME)
+    add_test(NAME wardrobe_blend_generated COMMAND ${Python3_EXECUTABLE} -I
+        ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py ${CMAKE_SOURCE_DIR}/generated/default)
+endif()
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
 add_subdirectory(src/input)

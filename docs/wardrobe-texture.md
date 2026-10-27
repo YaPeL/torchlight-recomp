@@ -129,10 +129,12 @@ r26, ctx.fpscr)) goto loc_822DD39C;` and changes nothing else in the generated C
 - The other inputs come from where the loop's registers came from (`guest_abi/wardrobe.h`
   `blend`), and the state the rest of the function can read is left as the loop leaves it: r26,
   the stack temporaries (written as the last iteration writes them), the floating-point mode.
-- `tools/wardrobe_blend/check_generated.py` runs before every game build: it fails when the
-  generated function differs from the one checked, or when what the hook relies on no longer
-  holds (the hook's place, the inputs' only definitions, what the loop writes, what the rest of the
-  function reads after it).
+- `tools/wardrobe_blend/check_generated.py` runs in every game build and checks the generated
+  function against the one the hook was checked on (its digest, the same with the SDK CI builds)
+  and what the hook relies on (the hook's place, the inputs' only definitions, what the loop
+  writes, what the rest of the function reads after it). When something differs the build does not
+  fail: the hook keeps the recompiled loop and the startup log says why; the development test
+  `wardrobe_blend_generated` fails instead.
 
 Measured on the desktop like the colour pack/unpack above (A B B A runs, four builds each, perf at
 999 Hz, the build's samples inclusive): 156 and 148 samples without, 88 and 78 with, the build
@@ -150,5 +152,6 @@ On a build of the game with the same functions (OGRE 1.7 and this wardrobe code)
 replacements give the same saving, and the whole loop can be replaced as here
 (`hooks/wardrobe_blend.h` has no guest or SDK dependency: it takes its memory as an argument),
 which also saves the loop's own share; on a build without a recompiler's mid-function hook, by
-replacing the loop's code where it starts and returning to where it ends. The checks above are the way to prove a port: identical bytes
-against the original functions for every input, and identical base pixels for the same equipment.
+replacing the loop's code where it starts and returning to where it ends. The checks above are the
+way to prove a port: identical bytes against the original functions for every input, and identical
+base pixels for the same equipment.

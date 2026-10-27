@@ -9,8 +9,12 @@
 
 namespace torchlight::hooks {
 
-// --native_wardrobe_blend and --native_pixel_util both on.
+// --native_wardrobe_blend and --native_pixel_util both on, and the generated sub_822DC6B0 the one
+// the host loop was checked on (wardrobe_blend_generated.h, written at build time).
 bool NativeWardrobeBlendEnabled();
+
+// Logs which loop runs, and why when the generated function failed the check; once at startup.
+void LogWardrobeBlendMode();
 
 // Diagnostics builds (TORCHLIGHT_DIAGNOSTICS) with --diag_wardrobe_blend_check: each item image's
 // loop is computed on the host into a copy and the recompiled loop runs; each of its packs
