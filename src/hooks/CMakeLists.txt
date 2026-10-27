@@ -140,3 +140,12 @@ add_executable(pixel_util_test pixel_util_test.cpp)
 target_link_libraries(pixel_util_test PRIVATE torchlight_pixel_util)
 target_compile_options(pixel_util_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME pixel_util_test COMMAND pixel_util_test)
+
+# The wardrobe build's blend loop on the host (wardrobe_blend.h, header only): tested against the
+# recompiled loop written out instruction by instruction. No contraction of floating-point
+# operations, in the test as in the hooks that use it (wardrobe_blend_hooks.cpp): the recompiled
+# code fuses only its fmadds.
+add_executable(wardrobe_blend_test wardrobe_blend_test.cpp)
+target_link_libraries(wardrobe_blend_test PRIVATE torchlight_pixel_util)
+target_compile_options(wardrobe_blend_test PRIVATE -Wall -Wextra -Werror -ffp-contract=off)
+add_test(NAME wardrobe_blend_test COMMAND wardrobe_blend_test)

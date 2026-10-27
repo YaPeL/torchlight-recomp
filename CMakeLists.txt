@@ -75,6 +75,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
     src/hooks/pixel_util_hooks.cpp
+    src/hooks/wardrobe_blend_hooks.cpp
     src/hooks/guest_io_hooks.cpp
     src/hooks/render_system_hooks.cpp
     src/hooks/rtss_listener_hooks.cpp
@@ -110,10 +111,29 @@ endif()
 
 set(TORCHLIGHT_GPU_PLUGINS xenos null)
 rexglue_setup_target(torchlight GPU_PLUGINS ${TORCHLIGHT_GPU_PLUGINS})
+# The host wardrobe blend loop (hooks/wardrobe_blend_hooks.cpp) relies on the generated sub_822DC6B0
+# being the one it was checked on: every codegen is checked again, and the result is a header the
+# hook reads. A changed function does not fail the build: the game keeps the recompiled loop and
+# logs why; the wardrobe_blend_generated test fails instead (tools/wardrobe_blend/check_generated.py).
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(_wardrobe_blend_header "${CMAKE_CURRENT_BINARY_DIR}/generated_include/wardrobe_blend_generated.h")
+add_custom_command(OUTPUT "${_wardrobe_blend_header}"
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py
+            ${CMAKE_SOURCE_DIR}/generated/default --header "${_wardrobe_blend_header}"
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py
+            ${CMAKE_SOURCE_DIR}/src/guest_abi/wardrobe.h
+            ${CMAKE_SOURCE_DIR}/generated/default/codegen.build.stamp
+    COMMENT "Checking the generated wardrobe build against the host blend loop"
+    VERBATIM)
+add_custom_target(torchlight_wardrobe_blend_check DEPENDS "${_wardrobe_blend_header}")
+add_dependencies(torchlight_wardrobe_blend_check torchlight_codegen)
+add_dependencies(torchlight torchlight_wardrobe_blend_check)
+set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES
+    OBJECT_DEPENDS "${_wardrobe_blend_header}")
+target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated_include")
 # On Android the game is a shared library that the SDK links with -Wl,-Bsymbolic-functions (patch
 # 47): every link checks that the generated code's calls are bound inside it and reach the hooks.
 if(ANDROID)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_custom_command(TARGET torchlight POST_BUILD
         COMMAND ${Python3_EXECUTABLE} -I
                 ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
@@ -159,6 +179,15 @@ add_test(NAME no_direct_spdlog COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOU
 # v14 and up): cmake/check_guest_registers.cmake.
 add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
+# With the game's generated code: fails when the generated sub_822DC6B0 is not the one the host
+# wardrobe blend loop was checked on (the game build then keeps the recompiled loop). Labelled
+# "development": the release workflow leaves it out (-LE), so a changed function there is a warning
+# in the game's log, not a failed release.
+if(TORCHLIGHT_GAME)
+    add_test(NAME wardrobe_blend_generated COMMAND ${Python3_EXECUTABLE} -I
+        ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py ${CMAKE_SOURCE_DIR}/generated/default)
+    set_tests_properties(wardrobe_blend_generated PROPERTIES LABELS development)
+endif()
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
 add_subdirectory(src/input)
@@ -194,6 +223,9 @@ endif()
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)
+# The wardrobe blend loop's arithmetic must stay the recompiled code's: no contraction of
+# floating-point operations (hooks/wardrobe_blend.h).
+set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 # Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
 # hooks/queue_census_hooks.cpp, --diag_queue_census). Off by default and in every release workflow:
 # without it nothing of them is compiled, no guest function is wrapped and nothing runs, so they
@@ -203,7 +235,8 @@ if(TORCHLIGHT_DIAGNOSTICS)
     target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp)
     target_link_libraries(torchlight PRIVATE torchlight_queue_census)
     # The colour pack/unpack checks against the guest's own functions (pixel_util_check.inc).
-    set_source_files_properties(src/hooks/pixel_util_hooks.cpp PROPERTIES
+    # The wardrobe blend loop's check against the recompiled loop (wardrobe_blend_check.inl).
+    set_source_files_properties(src/hooks/pixel_util_hooks.cpp src/hooks/wardrobe_blend_hooks.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_PIXEL_UTIL_DIAGNOSTICS=1)
 endif()
 # Guest developer commands for validation runs (dev/guest_command.h). Off by default; the release

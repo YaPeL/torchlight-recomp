@@ -1,9 +1,10 @@
 # Building and running from source
 
 Requirements: the ReXGlue SDK with the patches from `patches/` (in the order of `patches/series`),
-OGRE 14.6.0, and the game's files (the first start installs them from your package, see below; for
-development they can also be passed with `--game_data_root`). All commands are run from
-the repository's root.
+OGRE 14.6.0, Python 3 for any build of the game (every platform: it checks the generated code the
+host wardrobe blend loop relies on, `tools/wardrobe_blend/check_generated.py`), and the game's
+files (the first start installs them from your package, see below; for development they can also
+be passed with `--game_data_root`). All commands are run from the repository's root.
 
 The SDK and OGRE are built with the same scripts CI uses (`tools/deps/`; Release; CI publishes them
 as `deps-<key>` downloads, `tools/deps/key.sh`). On Ubuntu 22.04, `tools/deps/ubuntu_toolchain.sh`
