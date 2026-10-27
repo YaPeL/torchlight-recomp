@@ -61,6 +61,8 @@ class WaylandPresentationClock final : public PresentationClock {
     wl_display_dispatch_queue_pending(display_, queue_);
     // A compositor that never answers (the window hidden): no unbounded growth.
     if (pending_.size() > 64) {
+      // Only the last skip is kept: two skips with a frame shown in between (a queue that hovers
+      // at the cap) leave that frame's gap counted. A development measurement; rare enough.
       lost_after_ = id;
       return;
     }
