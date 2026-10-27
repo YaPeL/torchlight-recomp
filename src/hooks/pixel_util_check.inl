@@ -188,6 +188,8 @@ void RecordComposite(uint8_t* base, uint32_t lr, uint32_t format, uint32_t dest)
 
 }  // namespace
 
+bool torchlight::hooks::WardrobeCompositeRecording() { return REXCVAR_GET(diag_wardrobe_composite); }
+
 void torchlight::hooks::RecordWardrobeCompositePixel(uint8_t* base, uint32_t format, uint32_t dest) {
   RecordComposite(base, kWardrobeCompositePackReturn, format, dest);
 }

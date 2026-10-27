@@ -182,4 +182,5 @@ REX_FUNC(sub_82473FA0) {
 #else
 void torchlight::hooks::LogWardrobeComposite() {}
 void torchlight::hooks::RecordWardrobeCompositePixel(uint8_t*, uint32_t, uint32_t) {}
+bool torchlight::hooks::WardrobeCompositeRecording() { return false; }
 #endif

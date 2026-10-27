@@ -87,10 +87,13 @@ struct GuestMemory {
   uint8_t* base;
   PPCFPSCRRegister& fpscr;
   uint32_t base_format;
+  bool record;  // --diag_wardrobe_composite, read once per image
   uint8_t Load8(uint32_t a) const { return *Guest(base, a); }
   void Store8(uint32_t a, uint8_t v) { *Guest(base, a) = v; }
   void BeforeBlend() { fpscr.disableFlushMode(); }
-  void Packed(uint32_t dest) { torchlight::hooks::RecordWardrobeCompositePixel(base, base_format, dest); }
+  void Packed(uint32_t dest) {
+    if (record) torchlight::hooks::RecordWardrobeCompositePixel(base, base_format, dest);
+  }
 };
 
 #if TORCHLIGHT_PIXEL_UTIL_DIAGNOSTICS
@@ -122,7 +125,7 @@ bool WardrobeBlendLoop(PPCRegister& r1, PPCRegister& r19, PPCRegister& r26, PPCF
   }
 #endif
   if (!handled) return false;
-  GuestMemory memory{base, fpscr, r19.u32};
+  GuestMemory memory{base, fpscr, r19.u32, torchlight::hooks::WardrobeCompositeRecording()};
   torchlight::hooks::BlendWardrobeLayer(memory, layer);
   r26.u64 = 0;
   return true;

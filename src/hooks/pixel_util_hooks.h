@@ -20,6 +20,8 @@ bool GuestPixelFormat(uint8_t* base, uint32_t format, PixelFormatDesc& desc);
 // the base at dest, by the host loop (hooks/wardrobe_blend_hooks.cpp), counted as the guest's pack
 // at 0x822DD380 would be. Nothing in other builds.
 void RecordWardrobeCompositePixel(uint8_t* base, uint32_t format, uint32_t dest);
+// Whether --diag_wardrobe_composite records (false in other builds).
+bool WardrobeCompositeRecording();
 
 // Logs which one runs, once at startup.
 void LogPixelUtilMode();

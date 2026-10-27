@@ -53,19 +53,57 @@ void Store64(Memory& m, uint32_t address, uint64_t value) {
   for (int i = 0; i < 8; ++i) m.Store8(address + i, static_cast<uint8_t>(value >> (56 - 8 * i)));
 }
 
+// One format's pack and unpack. The formats the game's textures use here (4-byte pixels, 8-bit
+// red, green and blue, alpha of 8 or no bits) take the direct path: for them fixedToFixed(x, 8, 8)
+// is x and fixedToFixed(a, 8, 0) is 0, so the generic steps reduce to masks and shifts
+// (hooks/pixel_util.h, every input the same bytes); the others the generic code.
+struct LayerFormat {
+  const PixelFormatDesc* desc = nullptr;
+  bool direct = false;
+  explicit LayerFormat(const PixelFormatDesc& d) : desc(&d) {
+    using namespace pixel_detail;
+    const bool alpha8 = (d.flags & kHasAlpha) && d.bits[3] == 8;
+    const bool no_alpha = !(d.flags & kHasAlpha) && d.bits[3] == 0;
+    direct = d.elem_bytes == 4 && !(d.flags & kLuminance) && d.bits[0] == 8 && d.bits[1] == 8 && d.bits[2] == 8 &&
+             (alpha8 || no_alpha);
+  }
+};
+
 template <class Memory>
-std::array<uint8_t, 4> Unpack(Memory& m, const PixelFormatDesc& format, uint32_t src) {
+uint32_t Load32(Memory& m, uint32_t a) {
+  return uint32_t{m.Load8(a)} << 24 | uint32_t{m.Load8(a + 1)} << 16 | uint32_t{m.Load8(a + 2)} << 8 | m.Load8(a + 3);
+}
+
+template <class Memory>
+std::array<uint8_t, 4> Unpack(Memory& m, const LayerFormat& format, uint32_t src) {
+  using namespace pixel_detail;
+  const PixelFormatDesc& d = *format.desc;
+  if (format.direct) {
+    const uint32_t value = Load32(m, src);
+    auto channel = [&](int c) { return static_cast<uint8_t>(Srw(value & d.masks[c], d.shifts[c])); };
+    return {channel(0), channel(1), channel(2), (d.flags & kHasAlpha) ? channel(3) : uint8_t{255}};
+  }
   std::array<uint8_t, 4> pixel{};
-  for (uint32_t i = 0; i < format.elem_bytes && i < 4; ++i) pixel[i] = m.Load8(src + i);
+  for (uint32_t i = 0; i < d.elem_bytes && i < 4; ++i) pixel[i] = m.Load8(src + i);
   std::array<uint8_t, 4> rgba{};
-  UnpackColour8(format, pixel, rgba);
+  UnpackColour8(d, pixel, rgba);
   return rgba;
 }
 
 template <class Memory>
-void Pack(Memory& m, const PixelFormatDesc& format, std::array<uint8_t, 4> rgba, uint32_t dest) {
+void Pack(Memory& m, const LayerFormat& format, std::array<uint8_t, 4> rgba, uint32_t dest) {
+  using namespace pixel_detail;
+  const PixelFormatDesc& d = *format.desc;
+  if (format.direct) {
+    uint32_t value = 0;
+    for (int c = 0; c < 3; ++c) value |= Slw(rgba[c], d.shifts[c]) & d.masks[c];
+    if (d.bits[3] == 8) value |= Slw(rgba[3], d.shifts[3]) & d.masks[3];
+    for (int i = 0; i < 4; ++i) m.Store8(dest + i, static_cast<uint8_t>(value >> (24 - 8 * i)));
+    m.Packed(dest);
+    return;
+  }
   std::array<uint8_t, 4> out{};
-  const int n = PackColour8(format, rgba, out);
+  const int n = PackColour8(d, rgba, out);
   for (int i = 0; i < n; ++i) m.Store8(dest + i, out[i]);
   m.Packed(dest);
 }
@@ -85,18 +123,19 @@ void BlendWardrobeLayer(Memory& m, const WardrobeBlendLayer& layer) {
   std::array<uint8_t, 4> base_rgba{};
   uint64_t item_d[4]{}, base_d[3]{};  // r, g, b, a; r, g, b
   int64_t truncated = 0;
+  const LayerFormat item_format(layer.item_format), base_format(layer.base_format);
   uint32_t item = layer.item, base = layer.base;
   for (uint32_t row = 0; row < layer.rows; ++row) {
     for (uint32_t column = 0; column < layer.columns; ++column, item += 4, base += 4) {
-      const std::array<uint8_t, 4> a = Unpack(m, layer.item_format, item);
+      const std::array<uint8_t, 4> a = Unpack(m, item_format, item);
       if (a[3] >= 255) {
         item_slots = a;
-        Pack(m, layer.base_format, a, base);
+        Pack(m, base_format, a, base);
         continue;
       }
       if (!blended) m.BeforeBlend();
       blended = true;
-      base_rgba = Unpack(m, layer.base_format, base);
+      base_rgba = Unpack(m, base_format, base);
       const std::array<uint8_t, 4> b = base_rgba;
       // The recompiled code's order of operations (@0x822DD288..0x822DD36C).
       const double alpha_in = Single(static_cast<double>(static_cast<int64_t>(a[3])));  // fcfid, frsp
@@ -117,7 +156,7 @@ void BlendWardrobeLayer(Memory& m, const WardrobeBlendLayer& layer) {
       item_d[0] = a[0], item_d[1] = a[1], item_d[2] = a[2], item_d[3] = a[3];
       base_d[0] = b[0], base_d[1] = b[1], base_d[2] = b[2];
       item_slots = {r8, g8, b8, guest_abi::wardrobe::blend::kBlendedItemAlpha};
-      Pack(m, layer.base_format, {r8, g8, b8, 255}, base);
+      Pack(m, base_format, {r8, g8, b8, 255}, base);
     }
   }
   const uint32_t sp = layer.sp;
