@@ -11,9 +11,10 @@ and fails (exit 1) when any of it changed:
      docs/wardrobe-texture.md's evidence checked again before the digest is updated here.
   2. The hook is there, right after `rotlwi r26,r10,0` (0x822DD21C), with the arguments and the jump
      the host side expects.
-  3. Reaching definitions at the loop: f30, f31 and r17 each have a single definition, the
-     constant-pool loads and `li r17,255` guest_abi wardrobe::blend cites; the only store to the
-     base's pixel box pointer (r1+164) that reaches the loop is the one cited.
+  3. Reaching definitions at the loop: f30, f31 and r17 each have a single definition on every
+     path from the function's entry, the constant-pool loads and `li r17,255` guest_abi
+     wardrobe::blend cites (and r5, r10 at those loads); the base's pixel data is loaded from
+     [r1+164]+24 right before the item's getPixelBox call, where the host reads it.
   4. What the loop writes: the registers and the stack bytes, against the host loop's list
      (guest_abi wardrobe::blend::stack).
   5. Liveness from the loop's exit (0x822DD39C): which of those the rest of the function may read
@@ -22,10 +23,14 @@ and fails (exit 1) when any of it changed:
      loop's exit follows a call; the PowerPC ABI), and xer only for its never-set summary
      overflow bit.
 
-The analysis is a forward search over the generated C++'s statements and gotos (labels give each
-instruction's address; every instruction comment is 4 bytes), conservative: a call reads every
-argument register and writes every volatile one; unpackColour's calls in the loop write their four
-output bytes through their pointer arguments.
+The analysis is a search over the generated C++'s statements and gotos (labels give each
+instruction's address; every instruction comment is 4 bytes): a call reads every argument register
+and writes every volatile one; unpackColour's calls in the loop write their four output bytes
+through their pointer arguments. Outside the model: lr (read only by the prologue's mflr here),
+the vector registers (the loop uses none), memory reached through pointers passed to calls (some temporaries'
+addresses, r1+192 and others, are passed to calls after the loop: every temporary is left as the
+guest leaves it, so such a call reads the same bytes), and calls that keep a
+volatile register (the register save/restore helpers, which the codegen inlines as no calls).
 
 Usage: check_generated.py <generated dir>   (e.g. generated/default)
 """
@@ -66,7 +71,11 @@ POOL = [
     ("ctx.r5", 0x822DCB00, 0x822DCAE0, "addi r5,r10,-23872"),
     ("ctx.r10", 0x822DCAE0, 0x822DCAD8, "lis r10,-32245"),  # 0x820B0000 - 23872 = 0x820AA2C0
 ]
-BASE_BOX_STORE = (0x822DCAD4, "stw r11,164(r1)")
+BASE_DATA_LOADS = [
+    (0x822DD1EC, "lwz r11,164(r1)"),
+    (0x822DD200, "lwz r31,24(r11)"),
+    (0x822DD204, "bl 0x82472280"),
+]
 
 VOLATILE = {"ctx.r0"} | {"ctx.r%d" % i for i in range(3, 13)} | {"ctx.f%d" % i for i in range(0, 14)}
 ARGUMENTS = {"ctx.r%d" % i for i in range(3, 11)} | {"ctx.f%d" % i for i in range(1, 14)}
@@ -174,7 +183,7 @@ def main():
     # 2. The hook.
     if text.count(HOOK_AFTER + HOOK) != 1:
         fail("the WardrobeBlendLoop hook is not right after `rotlwi r26,r10,0` as "
-             "src/hooks/wardrobe_blend_hooks.cpp expects (torchlight_manifest.toml [[midasm_hook]])")
+             "src/hooks/wardrobe_blend_hooks.cpp expects (config/torchlight_hooks.toml)")
     plain = text.replace(HOOK_AFTER + HOOK, HOOK_AFTER)
 
     # 1. The code checked.
@@ -202,6 +211,9 @@ def main():
             if i in seen:
                 continue
             seen.add(i)
+            if i == 0:
+                definitions.add("entry")  # a path with no definition at all
+                continue
             if reg in f.info[i][1]:
                 definitions.add(f.address[i])
                 continue
@@ -219,12 +231,13 @@ def main():
         definitions = reaching(reg, line)
         if definitions != {address} or f.instruction(address) != instruction:
             fail("%s @%08X: definitions %s, expected only `%s` @%08X"
-                 % (reg, f.address[line], sorted("%08X" % d for d in definitions), instruction, address))
-    for byte in range(164, 168):
-        definitions = reaching(("S", byte), hook_line)
-        if definitions != {BASE_BOX_STORE[0]} or f.instruction(BASE_BOX_STORE[0]) != BASE_BOX_STORE[1]:
-            fail("r1+%d at the loop: stores %s, expected only `%s` @%08X"
-                 % (byte, sorted("%08X" % d for d in definitions), BASE_BOX_STORE[1], BASE_BOX_STORE[0]))
+                 % (reg, f.address[line], sorted(d if isinstance(d, str) else "%08X" % d for d in definitions),
+                    instruction, address))
+    # The base's pixel data: the guest loads it just before the item's getPixelBox call, the host
+    # just after it (that call writes only the item's pixel box at r1+432).
+    for address, instruction in BASE_DATA_LOADS:
+        if f.instruction(address) != instruction:
+            fail("@%08X: `%s`, expected `%s`" % (address, f.instruction(address), instruction))
 
     # 4. What the loop writes.
     written = set()
@@ -247,7 +260,9 @@ def main():
     item_unpack, base_unpack = unpack_lines
     kills = {item_unpack: {("S", o) for o in UNPACK_OUTPUTS[:4]},
              base_unpack: {("S", o) for o in UNPACK_OUTPUTS[4:]}}
-    live = {}
+    # Every reader on every path, each judged on its own (a path stops where the resource is
+    # written again, not at a reader).
+    readers = {}
     for resource in written:
         seen, stack = set(), [exit_line]
         while stack:
@@ -257,28 +272,32 @@ def main():
             seen.add(i)
             reads, writes, successors = f.info[i]
             if resource in reads:
-                live[resource] = f.address[i]
-                break
+                readers.setdefault(resource, set()).add(i)
             if resource in writes or resource in kills.get(i, ()):
                 continue
             stack += successors
-    problems = []
-    for resource, address in sorted(live.items(), key=str):
+
+    def allowed(resource, i):
+        line = f.lines[i].strip()
         if isinstance(resource, tuple):
-            if resource[1] in SLOTS:
-                continue
-        elif resource == "r26":
-            continue
-        elif resource == "xer":
-            if all("compare" in f.lines[i] for i in range(len(f.lines))
-                   if f.address[i] == address and "xer" in f.lines[i]):
-                continue  # compare<...>(..., xer): reads only xer.so, never set in this function
-        elif resource in VOLATILE:
-            reader = [i for i in range(len(f.lines)) if f.address[i] == address]
-            if any(CALL.match(f.lines[i].strip()) for i in reader) and resource in ARGUMENTS:
-                continue  # a call's argument registers: by the ABI none carries the loop's values
-        problems.append("%s read @%08X" % (resource if isinstance(resource, str) else "r1+%d" % resource[1],
-                                           address))
+            return resource[1] in SLOTS  # written by the host loop as the guest leaves it
+        if resource == "r26":
+            return True  # set to 0 by the host loop
+        if resource == "xer":
+            # compare<...>(..., xer) reads only xer.so, never set here; `xer.ca = ...` sets the
+            # carry (a partial write, so counted as a read too) and reads nothing of xer.
+            return "compare" in line or bool(re.match(r"^xer\.ca\s*=", line))
+        if resource in VOLATILE:
+            # A call's argument registers: by the ABI none carries the loop's values.
+            return bool(CALL.match(line)) and resource in ARGUMENTS
+        return False
+
+    problems = []
+    for resource, lines in sorted(readers.items(), key=str):
+        for i in sorted(lines):
+            if not allowed(resource, i):
+                problems.append("%s read @%08X" % (resource if isinstance(resource, str) else "r1+%d" % resource[1],
+                                                   f.address[i]))
     if any(re.search(r"xer\.so\s*=", line) for line in f.lines):
         problems.append("xer.so is set in the function")
     if any("xer.ca" in line and not re.match(r"^\s*xer\.ca\s*=", line) for line in f.lines):

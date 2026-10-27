@@ -1,6 +1,6 @@
 // The wardrobe build's blend loop on the host (hooks/wardrobe_blend.h): the midasm hook
-// WardrobeBlendLoop (torchlight_manifest.toml, guest_abi wardrobe::blend kHookAddress) runs one item
-// image's whole loop and skips the recompiled one. --native_wardrobe_blend=false, or
+// WardrobeBlendLoop (config/torchlight_hooks.toml, guest_abi wardrobe::blend kHookAddress) runs one
+// item image's whole loop and skips the recompiled one. --native_wardrobe_blend=false, or
 // --native_pixel_util=false (the pack/unpack code is shared), keeps the recompiled loop.
 
 #pragma once

@@ -65,7 +65,7 @@ inline constexpr GuestFunction kMakeUnit{0x823DE8F0, Confidence::kConfirmed};
 // exactly"), for the host version of the loop (hooks/wardrobe_blend.h). Offsets on the build's
 // stack are from its r1.
 namespace blend {
-// [confirmed] The midasm hook (torchlight_manifest.toml): after `rotlwi r26,r10,0` @0x822DD21C,
+// [confirmed] The midasm hook (config/torchlight_hooks.toml): after `rotlwi r26,r10,0` @0x822DD21C,
 // the rows known non-zero (beq @0x822DD218); true jumps to kLoopExit, past the loop.
 inline constexpr uint32_t kHookAddress = 0x822DD21C;
 // [confirmed] The loop's exit (loc_822DD39C, clrlwi r11,r14,24): reached from both loop ends
@@ -88,8 +88,11 @@ inline constexpr uint32_t kFrameSize = 2064;
 // (lwz r11,140); stored @0x822DC9C0, @0x822DC9BC.
 inline constexpr uint32_t kRows = 136;
 inline constexpr uint32_t kColumns = 140;
-// [confirmed] The base's pixel box: a pointer to the copy at r1+1552 (stw @0x822DCAD4, the only
-// store to +164 that reaches the loop), whose data the loop's r31 is (lwz r31,24(r11) @0x822DD200).
+// [confirmed] The base's pixel box: a pointer to the copy at r1+1552 (stw @0x822DCAD4; the path
+// that skips the copy, beq @0x822DC994, leaves it unset, and the guest then loads whatever is
+// there). The loop's r31 is its data (lwz r11,164(r1) @0x822DD1EC, lwz r31,24(r11) @0x822DD200), loaded just before
+// the item's getPixelBox (bl @0x822DD204), which writes only its own box at r1+432; the host reads
+// the same memory after it.
 inline constexpr uint32_t kBasePixelBox = 164;
 // [confirmed] The item image's pixel box (getPixelBox sub_82472280 into r1+432, bl @0x822DD204): data
 // +24, read as r29 @0x822DD214; format +28, the image's +28 (lwz r10,28(r30) @0x824723A4,

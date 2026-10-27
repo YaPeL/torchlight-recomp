@@ -36,8 +36,9 @@ struct Counts {
   uint64_t incomplete = 0;
 };
 
-std::mutex g_check_mutex;
-Pending g_pending;
+// The layer being checked, per thread: a build's loop and its packs run on one thread.
+thread_local Pending g_pending;
+std::mutex g_counts_mutex;
 Counts g_counts;
 
 constexpr int kLoggedDifferences = 10;
@@ -64,9 +65,9 @@ struct CheckMemory {
   }
 };
 
-// Under g_check_mutex.
 void FinishPending() {
   if (g_pending.active && g_pending.next < g_pending.packs.size()) {
+    std::lock_guard lock(g_counts_mutex);
     ++g_counts.incomplete;
     REXLOG_ERROR("diag wardrobe blend check: the recompiled loop packed {} pixels, the host {}", g_pending.next,
                  g_pending.packs.size());
@@ -75,13 +76,12 @@ void FinishPending() {
 }
 
 bool CheckLayer(uint8_t* base, const WardrobeBlendLayer* layer, PPCFPSCRRegister& fpscr) {
-  std::lock_guard lock(g_check_mutex);
   FinishPending();
-  if (!layer) {
-    ++g_counts.fallbacks;
-    return false;
+  {
+    std::lock_guard lock(g_counts_mutex);
+    ++(layer ? g_counts.layers : g_counts.fallbacks);
   }
-  ++g_counts.layers;
+  if (!layer) return false;
   CheckMemory memory{base, fpscr, static_cast<uint8_t>(std::min<uint32_t>(layer->base_format.elem_bytes, 4)),
                      g_pending.packs, {}};
   torchlight::hooks::BlendWardrobeLayer(memory, *layer);
@@ -94,13 +94,12 @@ bool CheckLayer(uint8_t* base, const WardrobeBlendLayer* layer, PPCFPSCRRegister
 }  // namespace
 
 void torchlight::hooks::WardrobeBlendCheckPacked(uint8_t* base, uint32_t dest) {
-  if (!REXCVAR_GET(diag_wardrobe_blend_check)) return;
-  std::lock_guard lock(g_check_mutex);
-  if (!g_pending.active) return;
+  if (!REXCVAR_GET(diag_wardrobe_blend_check) || !g_pending.active) return;
   const ExpectedPack& want = g_pending.packs[g_pending.next++];
-  ++g_counts.pixels;
   bool same = want.dest == dest;
   for (uint8_t i = 0; same && i < want.size; ++i) same = *Guest(base, dest + i) == want.bytes[i];
+  std::lock_guard lock(g_counts_mutex);
+  ++g_counts.pixels;
   if (!same && g_counts.pixel_differences++ < kLoggedDifferences)
     REXLOG_ERROR("diag wardrobe blend check: pixel {} at {:08X} (host {:08X}): {:02X}{:02X}{:02X}{:02X} vs host "
                  "{:02X}{:02X}{:02X}{:02X}",
@@ -117,8 +116,8 @@ void torchlight::hooks::WardrobeBlendCheckPacked(uint8_t* base, uint32_t dest) {
 
 void torchlight::hooks::LogWardrobeBlendCheck() {
   if (!REXCVAR_GET(diag_wardrobe_blend_check)) return;
-  std::lock_guard lock(g_check_mutex);
   FinishPending();
+  std::lock_guard lock(g_counts_mutex);
   if (!g_counts.layers && !g_counts.fallbacks) return;
   REXLOG_INFO("diag wardrobe blend check: {} layers ({} left to the recompiled loop), {} pixels, {} pixel "
               "differences, {} stack temporary differences, {} incomplete (native_pixel_util={})",
