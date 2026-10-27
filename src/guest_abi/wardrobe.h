@@ -61,4 +61,66 @@ inline constexpr Field kMeshName{248, Confidence::kConfirmed};
 // @0x823DE97C); the title screen's Destroyer is made here, and its wardrobe built inside that call.
 inline constexpr GuestFunction kMakeUnit{0x823DE8F0, Confidence::kConfirmed};
 
+// The texture build's blend of an item's image into the base (docs/wardrobe-texture.md, "The blend,
+// exactly"), for the host version of the loop (hooks/wardrobe_blend.h). Offsets on the build's
+// stack are from its r1.
+namespace blend {
+// [confirmed] The midasm hook (torchlight_manifest.toml): after `rotlwi r26,r10,0` @0x822DD21C,
+// the rows known non-zero (beq @0x822DD218); true jumps to kLoopExit, past the loop.
+inline constexpr uint32_t kHookAddress = 0x822DD21C;
+// [confirmed] The loop's exit (loc_822DD39C, clrlwi r11,r14,24): reached from both loop ends
+// (bne @0x822DD390 falls through to 0x822DD394, bne @0x822DD398 to the exit) and from the tests for
+// no image (beq @0x822DD1E8) and no rows (beq @0x822DD218).
+inline constexpr uint32_t kLoopExit = 0x822DD39C;
+// [confirmed] The return address of the loop's packColour (bl @0x822DD380).
+inline constexpr uint32_t kPackReturn = 0x822DD384;
+
+// [confirmed] Ogre::PixelBox (OgrePixelFormat.h: Box's six uint32 then data, format): getPixelBox
+// (sub_82472280) stores the data at +24 (stw r11,24(r31) @0x824723DC) and the format at +28
+// (stw r10,28(r31) @0x824723B8).
+inline constexpr uint32_t kPixelBoxData = 24;
+inline constexpr uint32_t kPixelBoxFormat = 28;
+
+namespace stack {
+// [confirmed] The frame's size (stwu r1,-2064(r1) @0x822DC6C0).
+inline constexpr uint32_t kFrameSize = 2064;
+// [confirmed] Rows and columns, read @0x822DD208 (lwz r10,136) and at each row @0x822DD220
+// (lwz r11,140); stored @0x822DC9C0, @0x822DC9BC.
+inline constexpr uint32_t kRows = 136;
+inline constexpr uint32_t kColumns = 140;
+// [confirmed] The base's pixel box: a pointer to the copy at r1+1552 (stw @0x822DCAD4, the only
+// store to +164 that reaches the loop), whose data the loop's r31 is (lwz r31,24(r11) @0x822DD200).
+inline constexpr uint32_t kBasePixelBox = 164;
+// [confirmed] The item image's pixel box (getPixelBox sub_82472280 into r1+432, bl @0x822DD204): data
+// +24, read as r29 @0x822DD214; format +28, the image's +28 (lwz r10,28(r30) @0x824723A4,
+// stw r10,28(r31) @0x824723B8), equal to the loop's r27 (lwz r27,28(r21) @0x822DD210).
+inline constexpr uint32_t kItemData = 432 + kPixelBoxData;
+inline constexpr uint32_t kItemFormat = 432 + kPixelBoxFormat;
+
+// [confirmed] The loop's temporaries, each with the instruction that writes it last in an
+// iteration. unpackColour's outputs for the item's pixel (r3..r6 @0x822DD238..0x822DD244):
+inline constexpr uint32_t kItemR = 129, kItemG = 130, kItemB = 128, kItemA = 131;
+// for the base's pixel (r3..r6 @0x822DD274..0x822DD280):
+inline constexpr uint32_t kBaseR = 152, kBaseG = 145, kBaseB = 144, kBaseA = 288;
+// the blended channels, over the item's (stb @0x822DD374..0x822DD37C), and the item's alpha slot
+// set to r17 (stb r17,131 @0x822DD2EC);
+// the integer-to-float doubles (std @0x822DD2A0..0x822DD2F8, the byte zero-extended; the alpha
+// extsw'd):
+inline constexpr uint32_t kItemGDouble = 384, kItemADouble = 336, kItemBDouble = 592, kItemRDouble = 304;
+inline constexpr uint32_t kBaseGDouble = 600, kBaseRDouble = 296, kBaseBDouble = 528;
+// the fctidz results (stfd f13/f11/f10,192 @0x822DD354..0x822DD36C; the last is red's), whose
+// lowest byte (+199) is the channel.
+inline constexpr uint32_t kTruncated = 192;
+}  // namespace stack
+
+// [confirmed] The only definitions that reach the loop (a reaching-definitions pass over the
+// generated function, tools/wardrobe_blend/check_generated.py): f31 = 1/255 (lfs f31,92(r5)
+// @0x822DCAF8) and f30 = 1.0 (lfs f30,64(r5) @0x822DCB00), r5 = 0x820AA2C0; r17 = 255
+// (li r17,255 @0x822DCB44).
+inline constexpr uint32_t kConstantPool = 0x820AA2C0;
+inline constexpr uint32_t kAlphaScale = kConstantPool + 92;
+inline constexpr uint32_t kOne = kConstantPool + 64;
+inline constexpr uint8_t kBlendedItemAlpha = 255;
+}  // namespace blend
+
 }  // namespace torchlight::guest_abi::wardrobe
