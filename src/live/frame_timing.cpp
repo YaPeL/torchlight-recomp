@@ -131,14 +131,14 @@ LatencyMeans FrameTiming::RecentLatency(std::chrono::milliseconds window) {
   return MeanLatency(frames);
 }
 
-void FrameTiming::OnScreen(double ms, double gap_ms) {
+void FrameTiming::OnScreen(double ms, double gap_ms, double refresh_ms) {
   const auto now = FrameSeries::Clock::now();
   {
     std::lock_guard lock(latency_mutex_);
     screen_.emplace_back(now, ms);
     while (!screen_.empty() && now - screen_.front().first > kRecent) screen_.pop_front();
   }
-  if (FrameObserver* observer = g_observer.load()) observer->OnScreenFrame(ms, gap_ms);
+  if (FrameObserver* observer = g_observer.load()) observer->OnScreenFrame(ms, gap_ms, refresh_ms);
 }
 
 double FrameTiming::RecentScreenLatency(std::chrono::milliseconds window, size_t* frames) {

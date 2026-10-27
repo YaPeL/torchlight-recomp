@@ -19,6 +19,7 @@
 #include "live/busy_notice.h"
 #include "platform/display_refresh.h"
 #include "live/frame_reclaimer.h"
+#include "live/frame_pacing.h"
 #include "live/frame_step.h"
 #include "live/frame_timing.h"
 #include "live/live_content_source.h"
@@ -254,6 +255,7 @@ void LiveMode::Run() {
   if (refresh) tl_backend_set_vsync(backend, 0);
   std::deque<std::pair<uint64_t, Clock::time_point>> cuts;  // presented frames awaiting the screen
   Clock::time_point last_shown{};  // the screen's previous frame
+  PacingCounter pacing;            // refreshes each shown frame stayed, for the 10 s summary
   // Internal render scale for the current window size (LiveOptions::render_resolution).
   settings::Resolution window_size{options_.window_width, options_.window_height};
   auto apply_render_scale = [&] {
@@ -449,8 +451,9 @@ void LiveMode::Run() {
             screen_ms.Add(ms);
             const double gap =
                 last_shown.time_since_epoch().count() ? Ms(shown.time - last_shown) : 0.0;
+            if (gap > 0) pacing.AddShown(shown.time - last_shown, shown.refresh);
             last_shown = shown.time;
-            FrameTiming::Get().OnScreen(ms, gap);
+            FrameTiming::Get().OnScreen(ms, gap, Ms(shown.refresh));
           }
           while (cuts.size() > 64) cuts.pop_front();
         }
@@ -522,13 +525,14 @@ void LiveMode::Run() {
           "\n  backend frame: {}\n  present (vsync wait included): {}"
           "\n  swap-to-presented latency: {}\n    of it waiting in the frame queue: {}"
           "\n  swap-to-screen latency (window system's presentation times): {}"
+          "\n  refreshes each frame stayed on screen: {}"
           "\n  texture preparation per "
           "frame: {}\n  live content held: {:.1f} MiB (store {:.1f} MiB)"
           "\n  skipped:{}\n  degraded:{}\n  texture problems:{}",
           frames, frames_dropped, s.draws_total - draws_before, s.draws_drawn - drawn_before,
           s.textures_not_ready - not_ready_before, textures_created, slow_texture_frames,
           backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(), queue_ms.Summary(),
-          screen_ms.Summary(),
+          screen_ms.Summary(), PacingCounter::Describe(pacing.Take()),
           texture_ms.Summary(),
           content.content_bytes() / 1048576.0, store_.bytes() / 1048576.0,
           Delta(s.skipped, skipped_before), Delta(s.degraded, degraded_before),

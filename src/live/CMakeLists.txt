@@ -70,7 +70,7 @@ add_test(NAME deferred_check_test COMMAND deferred_check_test)
 
 # The consumer side (backend thread): links the frontend and the OGRE backend, so it is a library
 # of its own; the queue and the store above stay testable without OGRE.
-add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp frame_timing.cpp frame_counter.cpp
+add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp frame_timing.cpp frame_pacing.cpp frame_counter.cpp
     busy_notice.cpp frame_step.cpp install.cpp ui_overlay.cpp ui_gamepad.cpp named_texture_refresh.cpp
     system_back_button.cpp touch_input.cpp touch_overlay.cpp)
 target_link_libraries(torchlight_live_mode PUBLIC torchlight_live torchlight_frontend torchlight_texture_files rex::runtime
@@ -115,3 +115,8 @@ target_link_libraries(frame_series_test PRIVATE torchlight_live_mode)
 target_include_directories(frame_series_test PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_options(frame_series_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME frame_series_test COMMAND frame_series_test)
+
+add_executable(frame_pacing_test frame_pacing_test.cpp frame_pacing.cpp)
+target_include_directories(frame_pacing_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_options(frame_pacing_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME frame_pacing_test COMMAND frame_pacing_test)
