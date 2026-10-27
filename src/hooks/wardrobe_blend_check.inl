@@ -126,7 +126,8 @@ void torchlight::hooks::LogWardrobeBlendCheck() {
   std::lock_guard lock(g_counts_mutex);
   if (!g_counts.layers && !g_counts.fallbacks) return;
   REXLOG_INFO("diag wardrobe blend check: {} layers ({} left to the recompiled loop), {} pixels, {} pixel "
-              "differences, {} stack temporary differences, {} incomplete (native_pixel_util={}, generated function {})",
+              "differences, {} stack temporary differences, {} incomplete (native_pixel_util={}, "
+              "generated function {})",
               g_counts.layers, g_counts.fallbacks, g_counts.pixels, g_counts.pixel_differences,
               g_counts.temporary_differences, g_counts.incomplete, NativePixelUtilEnabled(),
               wardrobe_blend_generated::kChecked ? "checked" : "NOT the one checked");

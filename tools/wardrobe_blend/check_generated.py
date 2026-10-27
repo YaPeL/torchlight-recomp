@@ -251,7 +251,8 @@ def check(directory):
 
     f = Function(plain)
     if f.instruction(ABI["kHookAddress"]) != "rotlwi r26,r10,0":
-        fail("@%08X is `%s`, not the hook's `rotlwi r26,r10,0`" % (ABI["kHookAddress"], f.instruction(ABI["kHookAddress"])))
+        fail("@%08X is `%s`, not the hook's `rotlwi r26,r10,0`"
+             % (ABI["kHookAddress"], f.instruction(ABI["kHookAddress"])))
     start, exit_line = f.labels[LOOP_START], f.labels[LOOP_EXIT]
     loop = range(start, exit_line)
 

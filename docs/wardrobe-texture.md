@@ -146,6 +146,60 @@ instruction, ten formats each way, random images), and in the game `--diag_wardr
 (diagnostics builds): each image's loop computed on the host into a copy, then the recompiled loop
 run, every pack it makes compared with the host's pixel and the stack temporaries after the last.
 
+## PC
+
+Torchlight PC (`Torchlight.exe`, x86, with OGRE 1.6.1 in `OgreMain.dll` on Direct3D 9) builds the
+equipment texture with the same function and the same blend. What follows is read from the
+binaries (no source exists) and estimated; nothing of it is measured on PC.
+
+Where it is:
+
+- The function at `0x4E13D0` (to about `0x4E3E34`, 10.8 KB) is the only caller of
+  `PixelUtil::unpackColour` (import slot `0xA5C8E4`, at `0x4E2200` and `0x4E225A`) and
+  `PixelUtil::packColour` (slot `0xA5C8E8`, at `0x4E2230` and `0x4E2372`) in the executable. It
+  also calls `Image::getPixelBox` (`0x4E1BB0`, `0x4E219A`) and `Image::load` (`0x4E14CA`,
+  `0x4E2133`), and it reads the unit data's `WARDROBE` (`0x4E1D70`), `CLASS` (`0x4E1DF5`),
+  `TEXTURE` (`0x4E1E99`) and `MESH` (`0x4E1EE7`) keys (UTF-16 strings at `0xA70888`, `0xA71554`,
+  `0xA6EF80`, `0xA70DD0`). `rimlight.dds` is not used by it: it comes from the materials.
+- In `OgreMain.dll` (base `0x10000000`) the two are `unpackColour` at RVA `0x11C9E0` and the 8-bit
+  `packColour` at RVA `0x11C8A0`.
+
+The blend, `0x4E21E0` .. `0x4E2384`: the same loop as above (rows by columns, both images
+stepped 4 bytes; unpack the item's pixel; alpha of 255 or more packs it as it is; else unpack the
+base's, alpha = a x 1/255 (the float at `0xA68E6C`), 1 - alpha, each channel item x alpha + base x
+(1 - alpha), truncated (`fistp` with the rounding control set to chop, its low byte), packed with
+alpha 255). The arithmetic is x87: no fused multiply-add, and the precision is the FPU's precision
+control (single under Direct3D 9 without `D3DCREATE_FPU_PRESERVE`, OGRE's default), so a channel
+can differ by one from the console's; that matters only for comparing the two versions, not on PC.
+
+What the console port's numbers say for PC:
+
+- The recompiled loop and its calls were about 18 ms of a 37 ms build (with the host
+  pack/unpack, desktop notebook). The same loop compiled for x86-64, with the pack and unpack out
+  of line as OGRE's DLL calls are and the x87 truncation the game does, takes about 4.1 ms for the
+  same three layers of 65 536 pixels on the same i7-8750H (21 ns a pixel, warm caches). About
+  14 ms of the 18 were the recompilation's: every byte through the guest-to-host address
+  translation, big-endian loads and stores, the calls through the guest's ABI and the stack
+  temporaries in guest memory.
+- The rest of the build (meshes, materials, entity, the image decode, allocations) was about 13 ms
+  recompiled; natively it should be a few times less, a few milliseconds.
+- So on PC the blend is likely about half of the equip's work, and the whole build well under a
+  60 fps frame (some 6 to 10 ms on this CPU). An equip hitch on PC, if there is one, would come as
+  much from the rest (the file loads, the Direct3D 9 texture upload) as from the blend.
+- C1 has nothing to replace on PC (OGRE's pack and unpack are native there); a C2-style
+  replacement of the loop (a detour at `0x4E21E0` to the exit) could save most of the ~4 ms.
+
+To confirm on PC (under Proton/Wine on Linux `perf` samples the game's threads; `Torchlight.exe`
+loads at its base `0x400000`, `OgreMain.dll` at `0x10000000`):
+
+1. The equip frame's time against the frames around it, picking up armour as in the console runs
+   (one piece, then several).
+2. Samples inside `0x4E13D0` .. `0x4E3E34` and its callees, inclusive: the whole build.
+3. Of those, the loop `0x4E21E0` .. `0x4E2384` plus `unpackColour`/`packColour` in `OgreMain.dll`:
+   the blend's share.
+4. The rest: `Image::load`, the mesh and entity creation, the texture's update, and any frame
+   spent waiting on files.
+
 ## For a port to another build
 
 On a build of the game with the same functions (OGRE 1.7 and this wardrobe code), the same two
