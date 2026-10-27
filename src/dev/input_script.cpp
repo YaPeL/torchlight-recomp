@@ -404,7 +404,7 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
         }
         if (t_ms < 0) return {};
         const PadState p = c.replay->At(t_ms);
-        replay_frame_ = ReplayFrame{std::llround(t_ms * 1000.0), p, c.trace};
+        replay_frame_ = ReplayFrame{std::llround(t_ms * 1000.0), p, c.trace, next_};
         return p;
       }
       case Op::kPressFor:

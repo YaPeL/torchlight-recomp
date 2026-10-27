@@ -310,6 +310,22 @@ void TestReplay() {
   bool quit = false;
   for (const auto& a : actions) quit = quit || a.kind == Kind::kQuit;
   Check(script.done() && quit, "the next command follows the replay");
+
+  // Two replays in a row to the same trace file: each frame says which replay command it is, so the
+  // trace is closed and written anew for the second one.
+  auto twice = InputScript::Parse("replay route.txt trace out.csv\nreplay route.txt trace out.csv\n", error, read);
+  if (!twice) return Check(false, "parse two replays");
+  ScriptEvents e2;
+  e2.seconds = 1.0;
+  std::vector<size_t> commands;
+  for (int i = 0; i < 2000 && !twice->done(); ++i) {
+    twice->Step(e2, actions);
+    if (const auto& f = twice->replay_frame(); f && (commands.empty() || commands.back() != f->command))
+      commands.push_back(f->command);
+    ++e2.frame;
+    e2.seconds += frame_s;
+  }
+  Check(commands.size() == 2 && commands[0] != commands[1], "each replay command traces as its own");
 }
 
 }  // namespace

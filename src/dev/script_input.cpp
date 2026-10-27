@@ -474,6 +474,10 @@ class ScriptInputDriver : public rex::input::InputDriver {
 };
 
 // Steps the script once per guest frame and runs its actions.
+// Closes the replay's hero trace (below): when the script quits or ends, so the trace is complete
+// even when no swap follows. The game's thread, as the trace's writes.
+void CloseHeroTrace();
+
 class ScriptRunner : public live::FrameObserver {
  public:
   ScriptRunner(InputScript script, ScriptInputDriver* driver, std::function<void()> close)
@@ -606,12 +610,14 @@ class ScriptRunner : public live::FrameObserver {
       case ScriptAction::Kind::kQuit:
         segment_.Log();
         segment_ = {};
+        CloseHeroTrace();
         REXLOG_INFO("dev input script: quit");
         if (close_) close_();
         break;
       case ScriptAction::Kind::kFailed:
         segment_.Log();
         segment_ = {};
+        CloseHeroTrace();
         REXLOG_ERROR("dev input script FAILED: {}; closing the game", a.text);
         finished_ = true;
         driver_->Disconnect();
@@ -620,6 +626,7 @@ class ScriptRunner : public live::FrameObserver {
       case ScriptAction::Kind::kFinished:
         segment_.Log();
         segment_ = {};
+        CloseHeroTrace();
         REXLOG_INFO("dev input script: finished");
         finished_ = true;
         driver_->Disconnect();
@@ -656,14 +663,21 @@ std::filesystem::path ScriptPath(std::string_view name) {
 class HeroTrace {
  public:
   void Write(const uint8_t* base, const ScriptRunner::TraceFrame& f) {
-    if (!out_.is_open() || f.replay.trace != name_) {
+    if (!out_.is_open() || f.replay.trace != name_ || f.replay.command != command_) {
       Close();
       if (f.replay.trace.empty()) return;
+      // A file that could not be opened is not tried again for the same replay command.
+      if (failed_ && failed_command_ == f.replay.command) return;
+      failed_ = false;
       name_ = f.replay.trace;
+      command_ = f.replay.command;
       path_ = ScriptPath(name_);
       out_.open(path_, std::ios::binary | std::ios::trunc);
       if (!out_) {
-        REXLOG_ERROR("dev input script: cannot write the trace {}", path_.string());
+        REXLOG_ERROR("dev input script: cannot write the trace {}; this replay is not traced", path_.string());
+        failed_ = true;
+        failed_command_ = f.replay.command;
+        name_.clear();
         return;
       }
       out_ << HeroTraceHeader();
@@ -758,11 +772,16 @@ class HeroTrace {
  private:
   std::ofstream out_;
   std::string name_;
+  size_t command_ = 0;
+  bool failed_ = false;
+  size_t failed_command_ = 0;
   std::filesystem::path path_;
   uint64_t lines_ = 0, stale_ = 0, missing_ = 0;
   bool camera_logged_ = false;
 };
 HeroTrace g_hero_trace;
+
+void CloseHeroTrace() { g_hero_trace.Close(); }
 
 uint64_t g_swaps = 0;  // swaps seen by OnUiFrame: a dump's frame
 

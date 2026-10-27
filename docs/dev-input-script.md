@@ -132,10 +132,12 @@ stick on this build and on the PC game. Relative paths are the script's folder's
   `t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly`. `t_us` is the frame's time since t=0
   when its stick was chosen; x, z and the facing (fx, fz) are the hero node's world transform
   (translation, and the third column's rows 0 and 2), x1000; scale and speed are the hero's +0x1F4
-  and +0x1F8 (`src/guest_abi/hero_motion.h`), x1000; lx, ly are the stick the game read in that
+  and +0x1F8 (`src/guest_abi/hero_motion.h`), x1000; lx, ly are the stick given to the game in that
   frame. It is written at the frame's swap, on the game's thread, by reading guest memory only.
 - At the end the log has `dev input script: trace FILE: N frames, ...`, with the frames whose
-  transform was out of date when read and the ones without a hero (not written).
+  transform was out of date when read and the ones without a hero (not written). Each `replay`
+  writes its trace file anew; the trace is also closed when the script quits, fails or ends. A file
+  that cannot be written is logged once and that replay is not traced.
 
 ## The game, as the scripts see it
 

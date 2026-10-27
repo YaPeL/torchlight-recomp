@@ -117,6 +117,7 @@ struct ReplayFrame {
   int64_t t_us = 0;
   PadState pad;
   std::string trace;
+  size_t command = 0;  // the replay command's index in the script: each one writes its own trace
 };
 
 class InputScript {
