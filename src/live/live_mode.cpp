@@ -457,6 +457,7 @@ void LiveMode::Run() {
                                               : Clock::duration{};
             last_shown = shown.time;
             pacing.AddShown(since, shown.refresh);
+            // The perf steps (OnScreen) see only the frames still followed from their cut.
             if (cuts.empty() || cuts.front().first != shown.id) continue;
             const double ms = Ms(shown.time - cuts.front().second);
             screen_ms.Add(ms);

@@ -78,7 +78,7 @@ int main() {
 
   // Frames shown without a refresh period only (variable refresh).
   counter.AddShown(hz120, 0ns);
-  Check(PacingCounter::Describe(counter.Take()) == "no display refresh period (1 frames)",
+  Check(PacingCounter::Describe(counter.Take()) == "no display refresh period (1 frame)",
         "described without a refresh period");
 
   if (g_failures) return 1;

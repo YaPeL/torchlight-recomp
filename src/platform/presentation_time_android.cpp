@@ -48,19 +48,19 @@ class AndroidPresentationClock final : public PresentationClock {
     while (!pending_.empty()) {
       const Pending& p = pending_.front();
       EGLnsecsANDROID present = EGL_TIMESTAMP_INVALID_ANDROID;
-      // Fails for a frame older than the surface's history (a few frames): never known. A frame
-      // still pending holds back the later ones, so a frame the compositor skipped delays the
-      // results until it leaves that history.
-      if (get_frame_timestamps_(display_, surface_, p.frame, 1, &present_name, &present) &&
-          present == EGL_TIMESTAMP_PENDING_ANDROID) {
-        break;
-      }
+      // Fails for a frame older than the surface's history (a few frames): never known, a loss.
+      // INVALID is a frame the compositor never showed: the previous one stayed, not a loss. A
+      // frame still pending holds back the later ones; one the compositor skipped may stay
+      // pending until it leaves the history, and is then counted as a loss.
+      const bool known =
+          get_frame_timestamps_(display_, surface_, p.frame, 1, &present_name, &present);
+      if (known && present == EGL_TIMESTAMP_PENDING_ANDROID) break;
       if (present > 0) {
         const std::chrono::steady_clock::time_point time{std::chrono::nanoseconds(present)};
         shown.push_back(
             {p.id, time, std::chrono::nanoseconds(interval), p.after_loss || lost_after_});
         lost_after_ = false;
-      } else {
+      } else if (!known) {
         lost_after_ = true;
       }
       pending_.pop_front();

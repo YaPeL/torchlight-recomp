@@ -61,7 +61,7 @@ class WaylandPresentationClock final : public PresentationClock {
     wl_display_dispatch_queue_pending(display_, queue_);
     // A compositor that never answers (the window hidden): no unbounded growth.
     if (pending_.size() > 64) {
-      lost_ = true;
+      lost_after_ = id;
       return;
     }
     struct wp_presentation_feedback* feedback = wp_presentation_feedback(presentation_, surface_);
@@ -98,8 +98,11 @@ class WaylandPresentationClock final : public PresentationClock {
     auto it = pending_.find(feedback);
     if (it != pending_.end()) {
       if (time) {
-        shown_.push_back({it->second, *time, refresh, lost_});
-        lost_ = false;
+        // Frames in flight from before the one skipped keep their gaps; the next one after it
+        // does not.
+        const bool after_loss = lost_after_ && it->second > *lost_after_;
+        shown_.push_back({it->second, *time, refresh, after_loss});
+        if (after_loss) lost_after_.reset();
       }
       pending_.erase(it);
     }
@@ -114,7 +117,7 @@ class WaylandPresentationClock final : public PresentationClock {
   clockid_t clock_ = -1;
   std::unordered_map<struct wp_presentation_feedback*, uint64_t> pending_;
   std::vector<Shown> shown_;
-  bool lost_ = false;  // a present went unmeasured since the last frame shown
+  std::optional<uint64_t> lost_after_;  // the last present left unmeasured, until a later one shows
 };
 
 }  // namespace

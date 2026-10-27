@@ -39,7 +39,8 @@ PacingCounter::Summary PacingCounter::Peek() const {
 
 std::string PacingCounter::Describe(const Summary& s) {
   if (!s.frames && s.unknown_refresh) {
-    return "no display refresh period (" + std::to_string(s.unknown_refresh) + " frames)";
+    return "no display refresh period (" + std::to_string(s.unknown_refresh) +
+           (s.unknown_refresh == 1 ? " frame)" : " frames)");
   }
   if (!s.frames) return "no presentation times";
   std::string out;
