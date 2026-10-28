@@ -52,6 +52,12 @@ REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
 REXCVAR_DEFINE_BOOL(diag_depth_discard, true, "Torchlight",
                     "Diagnostics: on GLES, drop a render texture's depth when the next pass clears "
                     "it (frontend/depth_discard.h); =false to measure without it in the same build");
+REXCVAR_DEFINE_BOOL(native_shadow_index, true, "Torchlight",
+                    "Live mode: find the session's last value of each state by direct index, not "
+                    "through its map; =false to measure without it in the same build");
+REXCVAR_DEFINE_BOOL(diag_shadow_index, false, "Torchlight",
+                    "Diagnostics: check every state hook's lookup in the session's shadow index "
+                    "against the shadow map, and log the mismatches in the live summary");
 REXCVAR_DEFINE_UINT32(live_record_max_mb, 4096, "Torchlight",
                       "Live mode: the session recording stops (well formed) at this size in MiB");
 
@@ -565,6 +571,8 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
   options.depth_discard = REXCVAR_GET(diag_depth_discard);
+  options.shadow_index = REXCVAR_GET(native_shadow_index);
+  options.shadow_index_check = REXCVAR_GET(diag_shadow_index);
   options.on_backend_failed = dialogs.renderer_failed;
   options.frame_queue = size_t(std::max(0, REXCVAR_GET(native_frame_queue)));
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.

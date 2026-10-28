@@ -39,6 +39,7 @@ int main() {
   live::FrameQueue queue(4);
   live::SnapshotStore store;
   capture::Session& s = capture::Session::Get();
+  s.SetShadowIndex(true, true);  // every lookup below also checked against the shadow map
   s.EnableLive(&queue, &store);
 
   SetConstants constants;
@@ -284,6 +285,26 @@ int main() {
     s.RequestCapture();
     s.OnSwapBegin();  // the capture starts: baseline from the shadow
     Check(!s.Unchanged(61, 0, raw), "after a capture's baseline: built again");
+  }
+
+  // Keys past the direct index (a sub of 512 or more) go through the map, deduplicated the same.
+  {
+    queue.Pop(std::chrono::milliseconds(0));
+    const uint32_t indexed = capture::ShadowKey(SetCull{}, 3);
+    const uint32_t mapped = capture::ShadowKey(SetCull{}, 0x1234);
+    s.State(indexed, SetCull{{1, 0}});
+    s.State(mapped, SetCull{{1, 0}});
+    s.State(indexed, SetCull{{1, 0}});
+    s.State(mapped, SetCull{{1, 0}});
+    s.EraseState(mapped);
+    s.State(mapped, SetCull{{1, 0}});
+    s.OnSwapBegin();
+    auto culls = queue.Pop(std::chrono::milliseconds(100));
+    size_t sent = 0;
+    for (const auto& cmd : culls->commands) sent += As<SetCull>(cmd) != nullptr;
+    Check(sent == 3, "indexed and mapped keys each sent once, the erased one again");
+    const auto [lookups, mismatches] = s.ShadowIndexChecks();
+    Check(lookups > 0 && mismatches == 0, "the direct index agrees with the shadow map");
   }
 
   // Interned names compare by value and keep their storage.

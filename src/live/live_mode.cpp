@@ -114,6 +114,7 @@ void LiveMode::Start(const LiveOptions& options) {
   queue_.SetCapacity(FrameQueueDepth(options.frame_queue, options.vsync));
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
+  capture::Session::Get().SetShadowIndex(options.shadow_index, options.shadow_index_check);
   capture::Session::Get().EnableLive(&queue_, &store_);
   finished_ = false;
   thread_ = std::thread([this] {
@@ -533,6 +534,10 @@ void LiveMode::Run() {
           content.content_bytes() / 1048576.0, store_.bytes() / 1048576.0,
           Delta(s.skipped, skipped_before), Delta(s.degraded, degraded_before),
           Delta(s.texture_problems, problems_before));
+      if (options_.shadow_index_check) {
+        const auto [lookups, mismatches] = capture::Session::Get().ShadowIndexChecks();
+        REXLOG_INFO("diag shadow index: {} lookups checked, {} mismatches", lookups, mismatches);
+      }
       const double per = double(std::max<size_t>(frames, 1));
       REXLOG_INFO("live consumer (backend thread, ms per frame): content and textures {:.2f}, "
                   "commands {:.2f} (frontend {:.2f}, backend draws {:.2f}), frame end {:.2f}, "

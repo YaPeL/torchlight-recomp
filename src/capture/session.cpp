@@ -103,20 +103,50 @@ bool AlwaysSent(const commands::CommandPayload& p) {
 }
 }  // namespace
 
+Session::ShadowEntry* Session::FindShadow(uint32_t key) {
+  const uint32_t opcode = key >> 16, sub = key & 0xFFFF;
+  ShadowEntry* found = nullptr;
+  const bool indexed =
+      use_shadow_index_ && opcode <= commands::kOpcodeCount && sub < kShadowIndexSubs;
+  if (indexed) {
+    found = shadow_index_[opcode * kShadowIndexSubs + sub];
+  } else {
+    auto it = shadow_.find(key);
+    found = it == shadow_.end() ? nullptr : &it->second;
+  }
+  if (check_shadow_index_ && indexed) {
+    auto it = shadow_.find(key);
+    shadow_index_lookups_.fetch_add(1, std::memory_order_relaxed);
+    if ((it == shadow_.end() ? nullptr : &it->second) != found) {
+      shadow_index_mismatches_.fetch_add(1, std::memory_order_relaxed);
+    }
+  }
+  return found;
+}
+
+Session::ShadowEntry& Session::AddShadow(uint32_t key) {
+  ShadowEntry& entry = shadow_[key];
+  const uint32_t opcode = key >> 16, sub = key & 0xFFFF;
+  if (opcode <= commands::kOpcodeCount && sub < kShadowIndexSubs) {
+    shadow_index_[opcode * kShadowIndexSubs + sub] = &entry;
+  }
+  return entry;
+}
+
 void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t object) {
   // A value equal to the shadow's is what every consumer already has (a capture starts from the
   // shadow as its baseline, the live consumer from EnableLive): not sent again. OGRE re-sets every
   // texture unit's state per pass, most of it unchanged.
-  auto it = shadow_.find(key);
-  if (it != shadow_.end() && it->second.present && it->second.object == object &&
-      it->second.payload == payload && !AlwaysSent(payload)) {
+  ShadowEntry* found = FindShadow(key);
+  if (found && found->present && found->object == object && found->payload == payload &&
+      !AlwaysSent(payload)) {
     return;
   }
   if (armed()) {
     capture_.frames.back().commands.push_back({0, payload});
   }
   if (live()) LiveAppend(payload);
-  ShadowEntry& entry = shadow_[key];
+  ShadowEntry& entry = found ? *found : AddShadow(key);
   entry.payload = std::move(payload);
   entry.object = object;
   entry.present = true;
@@ -132,10 +162,10 @@ std::vector<uint32_t> Session::ShadowKeysInOrder() const {
 }
 
 void Session::EraseState(uint32_t key) {
-  auto it = shadow_.find(key);
-  if (it == shadow_.end() || !it->second.present) return;
-  it->second.present = false;
-  ++it->second.version;
+  ShadowEntry* entry = FindShadow(key);
+  if (!entry || !entry->present) return;
+  entry->present = false;
+  ++entry->version;
 }
 
 bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> raw) const {
@@ -147,11 +177,11 @@ bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> r
 
 void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<const uint32_t> raw) {
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return;
-  auto it = shadow_.find(key);
-  if (it == shadow_.end()) return;
+  const ShadowEntry* entry = FindShadow(key);
+  if (!entry) return;
   ArgsMemo& m = memos_[slot * kMemoSubs + sub];
-  m.entry = &it->second;
-  m.version = it->second.version;
+  m.entry = entry;
+  m.version = entry->version;
   m.count = uint32_t(raw.size());
   std::copy(raw.begin(), raw.end(), m.raw.begin());
 }

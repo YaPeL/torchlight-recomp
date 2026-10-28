@@ -165,6 +165,17 @@ class Session {
     measure_frame_.store(on, std::memory_order_relaxed);
   }
   bool producer_timing() const { return producer_timing_; }
+  // Before the guest runs: the shadow's direct index used (--native_shadow_index; off, the map
+  // alone, to measure it) and every lookup checked against the map (--diag_shadow_index).
+  void SetShadowIndex(bool use, bool check) {
+    use_shadow_index_ = use;
+    check_shadow_index_ = check;
+  }
+  // Lookups checked and mismatches found since the start.
+  std::pair<uint64_t, uint64_t> ShadowIndexChecks() const {
+    return {shadow_index_lookups_.load(std::memory_order_relaxed),
+            shadow_index_mismatches_.load(std::memory_order_relaxed)};
+  }
   // Recording, on a frame whose recording cost is timed (kMeasureEveryFrames).
   bool measuring() const {
     return recording() && measure_frame_.load(std::memory_order_relaxed);
@@ -331,6 +342,18 @@ class Session {
   // A hash map (looked up on every state hook); its node-based entries keep their address, which
   // the early out's memos rely on. Walked in key order where order shows (ShadowKeysInOrder).
   std::unordered_map<uint32_t, ShadowEntry> shadow_;
+  // The same entries by direct index for the keys the hooks use (an opcode, a sub under
+  // kShadowIndexSubs): one array read per state hook instead of a hash lookup. Other keys, and the
+  // walks, go through shadow_.
+  static constexpr uint32_t kShadowIndexSubs = 512;
+  std::vector<ShadowEntry*> shadow_index_ =
+      std::vector<ShadowEntry*>((commands::kOpcodeCount + 1) * kShadowIndexSubs);
+  ShadowEntry* FindShadow(uint32_t key);
+  ShadowEntry& AddShadow(uint32_t key);
+  bool use_shadow_index_ = true;  // --native_shadow_index; off, every lookup goes through shadow_
+  // --diag_shadow_index: every lookup checked against shadow_ (ShadowIndexChecks).
+  bool check_shadow_index_ = false;
+  std::atomic<uint64_t> shadow_index_lookups_{0}, shadow_index_mismatches_{0};
   std::vector<uint32_t> ShadowKeysInOrder() const;
   struct ArgsMemo {
     const ShadowEntry* entry = nullptr;
