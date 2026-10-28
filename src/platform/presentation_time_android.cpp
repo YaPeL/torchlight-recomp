@@ -2,7 +2,9 @@
 // EGL surface OGRE draws in. The backend thread holds that surface's context, so the display and
 // surface are the current ones (OGRE's window gives no surface handle); the surface changes when
 // the activity gives a new one back, and the frames of the old one are dropped. A new surface can
-// reuse the old one's handle, so timestamps are checked on every frame, not only on a new handle.
+// reuse the old one's handle, so a surface change is told by the activity's lifecycle
+// (SurfaceAwayCount), not by the handle alone: EGL_TIMESTAMPS_ANDROID is set in the EGL loader
+// and cannot be queried back.
 // Timestamps are CLOCK_MONOTONIC nanoseconds, steady_clock's clock with bionic's libc++.
 
 #include "platform/presentation_time.h"
@@ -81,14 +83,11 @@ class AndroidPresentationClock final : public PresentationClock {
     const EGLDisplay display = eglGetCurrentDisplay();
     const EGLSurface surface = eglGetCurrentSurface(EGL_DRAW);
     if (display == EGL_NO_DISPLAY || surface == EGL_NO_SURFACE) return false;
-    if (display == display_ && surface == surface_) {
-      if (!enabled_) return false;
-      EGLint on = EGL_FALSE;
-      if (eglQuerySurface(display, surface, EGL_TIMESTAMPS_ANDROID, &on) && on) return true;
-      // A new surface with the old handle: its frames start over.
-    }
+    const uint64_t away = SurfaceAwayCount();
+    if (display == display_ && surface == surface_ && away == away_) return enabled_;
     display_ = display;
     surface_ = surface;
+    away_ = away;
     pending_.clear();
     lost_ = true;
     enabled_ = Enable();
@@ -124,6 +123,7 @@ class AndroidPresentationClock final : public PresentationClock {
 
   EGLDisplay display_ = EGL_NO_DISPLAY;
   EGLSurface surface_ = EGL_NO_SURFACE;
+  uint64_t away_ = 0;  // SurfaceAwayCount when the surface was set up
   bool enabled_ = false;
   bool lost_ = false;        // a present went unmeasured before the next one asked for
   bool lost_after_ = false;  // a frame asked for was never known, since the last one shown
