@@ -37,11 +37,17 @@ struct PadReplay {
   static std::optional<PadReplay> Parse(std::string_view text, std::string& error);
   // The controller at `t_ms` since t=0: the last sample at or before it (at rest before the first).
   input::PadState At(double t_ms) const;
+  // The same, for a frame whose previous frame was at `since_ms`: the buttons of every sample after
+  // `since_ms` and up to `t_ms` held as well, so a press shorter than a frame still reaches the game
+  // (for one frame); the sticks and triggers are the last sample's.
+  input::PadState Between(double since_ms, double t_ms) const;
   int64_t last_ms() const { return samples.back().t_ms; }
 };
 
 // The trace runs this long after the recording's last sample (the hero's slide after the release).
 inline constexpr int64_t kTraceTailMs = 2000;
+// The longest time a recording may name (t_ms and start_ms): a day.
+inline constexpr int64_t kMaxReplayMs = 24 * 3600 * 1000;
 
 struct HeroTraceRow {
   int64_t t_us = 0;

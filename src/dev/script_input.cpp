@@ -653,9 +653,16 @@ std::unique_ptr<ScriptRunner> g_runner;
 std::filesystem::path g_script_folder;  // the script's relative paths start here
 
 // A name the script gives a file, from the script's folder when relative.
+// The script is UTF-8: the name is read as UTF-8 on every platform (not the Windows code page).
 std::filesystem::path ScriptPath(std::string_view name) {
-  const std::filesystem::path path{std::string(name)};
+  const std::filesystem::path path{std::u8string(name.begin(), name.end())};
   return path.is_absolute() ? path : g_script_folder / path;
+}
+
+// A path for the log, as UTF-8 (path::string() can throw on Windows).
+std::string LogPath(const std::filesystem::path& path) {
+  const std::u8string u8 = path.u8string();
+  return std::string(u8.begin(), u8.end());
 }
 
 // The replay's hero trace (dev/pad_replay.h), written on the game's thread at each swap: the hero
@@ -674,14 +681,14 @@ class HeroTrace {
       path_ = ScriptPath(name_);
       out_.open(path_, std::ios::binary | std::ios::trunc);
       if (!out_) {
-        REXLOG_ERROR("dev input script: cannot write the trace {}; this replay is not traced", path_.string());
+        REXLOG_ERROR("dev input script: cannot write the trace {}; this replay is not traced", LogPath(path_));
         failed_ = true;
         failed_command_ = f.replay.command;
         name_.clear();
         return;
       }
       out_ << HeroTraceHeader();
-      REXLOG_INFO("dev input script: trace to {}", path_.string());
+      REXLOG_INFO("dev input script: trace to {}", LogPath(path_));
     }
     namespace hm = abi::hero_motion;
     const uint32_t client = hm::Client(base);
@@ -728,8 +735,24 @@ class HeroTrace {
       camera_logged_ = true;
       LogStickTurn(base, client, row);
     }
-    out_ << HeroTraceLine(row);
-    if (++lines_ % 64 == 0) out_.flush();
+    // A row from a hero being freed or loaded can hold anything: one that is not finite is counted,
+    // not written.
+    if (!std::isfinite(row.x) || !std::isfinite(row.z) || !std::isfinite(row.fx) || !std::isfinite(row.fz) ||
+        !std::isfinite(row.scale) || !std::isfinite(row.speed)) {
+      ++not_finite_;
+      return;
+    }
+    // Every line flushed: a crash keeps the trace up to its last frame (some 60 lines a second).
+    out_ << HeroTraceLine(row) << std::flush;
+    if (!out_) {
+      REXLOG_ERROR("dev input script: writing the trace {} failed after {} frames; the trace stops", LogPath(path_),
+                   lines_);
+      Close();
+      failed_ = true;
+      failed_command_ = f.replay.command;
+      return;
+    }
+    ++lines_;
   }
   // Once, 1 s after t=0: the angle the hero's input handler turns the stick by this frame, as it
   // computes it from the camera (hm::kCameraOrientation), with the camera's and the hero's place.
@@ -762,9 +785,9 @@ class HeroTrace {
     if (!out_.is_open()) return;
     out_.close();
     REXLOG_INFO("dev input script: trace {}: {} frames, {} waiting for the parent's update, {} frames "
-                "without the hero (not written)",
-                path_.string(), lines_, stale_, missing_);
-    lines_ = stale_ = missing_ = 0;
+                "without the hero and {} with values that are not finite (not written)",
+                LogPath(path_), lines_, stale_, missing_, not_finite_);
+    lines_ = stale_ = missing_ = not_finite_ = 0;
     camera_logged_ = false;
     name_.clear();
   }
@@ -776,7 +799,7 @@ class HeroTrace {
   bool failed_ = false;
   size_t failed_command_ = 0;
   std::filesystem::path path_;
-  uint64_t lines_ = 0, stale_ = 0, missing_ = 0;
+  uint64_t lines_ = 0, stale_ = 0, missing_ = 0, not_finite_ = 0;
   bool camera_logged_ = false;
 };
 HeroTrace g_hero_trace;

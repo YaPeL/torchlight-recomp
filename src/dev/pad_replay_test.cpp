@@ -5,6 +5,7 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <limits>
 #include <string>
 
 namespace {
@@ -53,6 +54,15 @@ void TestParseErrors() {
   refused("0 0 0.5 0 0 0\n", "line 2", "not an integer");
   refused("-1 0 0 0 0 0\n", "line 2", "negative t_ms");
   refused("# start_ms x\n0 0 0 0 0 0\n", "line 2", "bad start_ms");
+  refused("0 0 0 0 0 0\n# start_ms 5\n", "line 3", "start_ms after the samples");
+  refused("86400001 0 0 0 0 0\n", "line 2", "t_ms over a day");
+  refused("# start_ms 86400001\n0 0 0 0 0 0\n", "line 2", "start_ms over a day");
+  {
+    const auto tab = PadReplay::Parse("# x360ui pad replay v1\n# start_ms\t5\n0 0 0 0 0 0\n", error);
+    Check(tab && tab->start_ms == 5, "start_ms after a tab");
+    const auto bom = PadReplay::Parse("\xEF\xBB\xBF# x360ui pad replay v1\n0 0 0 0 0 0\n", error);
+    Check(bom.has_value(), "a UTF-8 byte order mark before the header");
+  }
   Check(!PadReplay::Parse("", error), "empty text");
 }
 
@@ -66,6 +76,19 @@ void TestAt() {
   Check(r->At(199.9).left_x == 10, "held until the next");
   Check(r->At(200).left_x == 25, "two samples at one time: the later wins");
   Check(r->At(1e9).left_x == 25, "the last one holds to the end");
+}
+
+void TestBetween() {
+  std::string error;
+  // A down at 1000 ms, up at 1010: frames at 994 and 1011 ms miss it with At alone.
+  const auto r =
+      PadReplay::Parse("# x360ui pad replay v1\n0 5 0 0 0 0\n1000 6 0 0 0 4096\n1010 7 0 0 0 0\n", error);
+  if (!r) return Check(false, "parse for Between");
+  Check(r->At(1011).buttons == 0, "At: the tap is over at the next frame");
+  const auto pad = r->Between(994, 1011);
+  Check(pad.buttons == 4096 && pad.left_x == 7, "Between: the tap is held for the frame, the stick is the last one");
+  Check(r->Between(1011, 1028).buttons == 0, "and only for that frame");
+  Check(r->Between(-1e300, 0).left_x == 5 && r->Between(-1e300, 0).buttons == 0, "the first frame");
 }
 
 void TestTrace() {
@@ -85,6 +108,9 @@ void TestTrace() {
   row.ly = 120;
   const std::string line = HeroTraceLine(row);
   Check(line == "16667,42,-31981,17154,545,-839,1000,4500,-32767,120\n", "a line: x1000, rounded, integers");
+  row.x = std::numeric_limits<float>::quiet_NaN();
+  row.z = std::numeric_limits<float>::infinity();
+  Check(HeroTraceLine(row).starts_with("16667,42,0,0,"), "a value that is not finite is 0, not undefined");
 }
 
 }  // namespace
@@ -93,6 +119,7 @@ int main() {
   TestParse();
   TestParseErrors();
   TestAt();
+  TestBetween();
   TestTrace();
   if (failures) {
     std::printf("%d failure(s)\n", failures);
