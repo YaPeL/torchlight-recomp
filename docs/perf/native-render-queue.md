@@ -206,6 +206,14 @@ binding map seen (`setBinding`, `unsetBinding`, `unsetAllBindings` and any write
 the map directly); one missed change draws with the wrong buffers, and the backend may fault on
 them.
 
+M1 is dropped too (2026-10-28): the guest has no version signal for a parameter object's values.
+Its classes are stock OGRE 1.7 with no counter of Runic's, and every write of constant values is a
+plain copy (`sub_821C28D8`). The variability mask `bindGpuProgramParameters` gets is the
+SceneManager's (+0x43B4), set to per-object for every renderable and to everything after each
+pass or program bind; and `getFloatPointer` lets any code store into the buffer with no call. Only
+the layout (buffer size, the vectors' ends, the automatic constants' list) shows changes, which is
+not enough to skip reading the values.
+
 **Then: the culling, with only the visibility test native.** The octree walk under
 `_findVisibleObjects` (0x821A6070 -> 0x821C7158), by direct child (inclusive ms a frame):
 
