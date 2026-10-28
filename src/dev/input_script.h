@@ -178,6 +178,7 @@ class InputScript {
   size_t next_ = 0;
   bool started_ = false;  // commands_[next_] has begun
   Start start_;           // when it began
+  double replay_prev_ms_ = 0;  // kReplay: the previous frame's time (Between)
   Start press_;           // kPressUntil: when the current press began
   bool ended_ = false;    // kFinished or kFailed was reported
   std::optional<ReplayFrame> replay_frame_;

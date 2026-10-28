@@ -137,7 +137,13 @@ stick on this build and on the PC game. Relative paths are the script's folder's
 - At the end the log has `dev input script: trace FILE: N frames, ...`, with the frames whose
   transform was out of date when read and the ones without a hero (not written). Each `replay`
   writes its trace file anew; the trace is also closed when the script quits, fails or ends. A file
-  that cannot be written is logged once and that replay is not traced.
+  that cannot be opened or written is logged once and that replay's trace stops there; frames whose
+  values are not finite (a hero being freed or loaded) are counted, not written.
+- File names in a script are UTF-8 and cannot contain spaces or `#` (the script's words and
+  comments).
+- A button press shorter than a frame still reaches the game: each frame holds the buttons of every
+  sample since the previous frame (the sticks and triggers are the last sample's). A recording's
+  times, and its `start_ms` (before the samples), go up to a day.
 
 ## The game, as the scripts see it
 

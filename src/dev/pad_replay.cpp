@@ -10,7 +10,7 @@ namespace torchlight::dev {
 namespace {
 
 constexpr std::string_view kReplayHeader = "# x360ui pad replay v1";
-constexpr std::string_view kStartMs = "# start_ms ";
+constexpr std::string_view kStartMs = "# start_ms";
 
 std::string_view Trimmed(std::string_view line) {
   while (!line.empty() && (line.back() == '\r' || line.back() == ' ' || line.back() == '\t')) line.remove_suffix(1);
@@ -34,13 +34,16 @@ std::optional<std::vector<int64_t>> Integers(std::string_view line) {
   return values;
 }
 
-int64_t Micro(float value) { return std::llround(double(value) * 1000.0); }
+// x1000, rounded; 0 for a value that is not finite (callers skip such rows; llround's result would
+// be unspecified).
+int64_t Micro(float value) { return std::isfinite(value) ? std::llround(double(value) * 1000.0) : 0; }
 
 }  // namespace
 
 std::optional<PadReplay> PadReplay::Parse(std::string_view text, std::string& error) {
   PadReplay replay;
   bool header = false;
+  if (text.starts_with("\xEF\xBB\xBF")) text.remove_prefix(3);  // a UTF-8 byte order mark
   int number = 0;
   size_t start = 0;
   while (start < text.size()) {
@@ -59,9 +62,12 @@ std::optional<PadReplay> PadReplay::Parse(std::string_view text, std::string& er
       header = true;
       continue;
     }
-    if (line.starts_with(kStartMs)) {
+    if (line.starts_with(kStartMs) && line.size() > kStartMs.size() &&
+        (line[kStartMs.size()] == ' ' || line[kStartMs.size()] == '\t')) {
+      if (!replay.samples.empty()) return fail("start_ms goes before the samples");
       const auto value = Integers(line.substr(kStartMs.size()));
-      if (!value || value->size() != 1 || (*value)[0] < 0) return fail("start_ms takes one count of ms, 0 or more");
+      if (!value || value->size() != 1 || (*value)[0] < 0 || (*value)[0] > kMaxReplayMs)
+        return fail("start_ms takes one count of ms, 0 to a day");
       replay.start_ms = (*value)[0];
       continue;
     }
@@ -69,7 +75,7 @@ std::optional<PadReplay> PadReplay::Parse(std::string_view text, std::string& er
     const auto v = Integers(line);
     if (!v || v->size() != 6) return fail("expected t_ms lx ly lt rt buttons, integers");
     const int64_t t = (*v)[0], lx = (*v)[1], ly = (*v)[2], lt = (*v)[3], rt = (*v)[4], buttons = (*v)[5];
-    if (t < 0) return fail("t_ms below 0");
+    if (t < 0 || t > kMaxReplayMs) return fail("t_ms goes from 0 to a day");
     if (!replay.samples.empty() && t < replay.samples.back().t_ms) return fail("t_ms goes back");
     if (lx < -32768 || lx > 32767 || ly < -32768 || ly > 32767) return fail("lx and ly go from -32768 to 32767");
     if (lt < 0 || lt > 255 || rt < 0 || rt > 255) return fail("lt and rt go from 0 to 255");
@@ -99,6 +105,15 @@ input::PadState PadReplay::At(double t_ms) const {
   const auto after = std::upper_bound(samples.begin(), samples.end(), t_ms,
                                       [](double t, const Sample& s) { return t < double(s.t_ms); });
   return after == samples.begin() ? input::PadState{} : std::prev(after)->pad;
+}
+
+input::PadState PadReplay::Between(double since_ms, double t_ms) const {
+  input::PadState pad = At(t_ms);
+  // The samples after since_ms and up to t_ms (the last one is At's).
+  auto it = std::upper_bound(samples.begin(), samples.end(), since_ms,
+                             [](double t, const Sample& s) { return t < double(s.t_ms); });
+  for (; it != samples.end() && double(it->t_ms) <= t_ms; ++it) pad.buttons |= it->pad.buttons;
+  return pad;
 }
 
 std::string HeroTraceHeader() {

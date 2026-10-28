@@ -325,6 +325,7 @@ void InputScript::Begin(const ScriptEvents& e) {
   start_ = {e.frame, e.seconds, e.level_loads, e.menus_opened.size(), e.ui_reads, e.dumps_written, e.dumps_failed};
   press_ = start_;
   started_ = true;
+  replay_prev_ms_ = -1e300;
 }
 
 PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& actions) {
@@ -403,7 +404,8 @@ PadState InputScript::Step(const ScriptEvents& e, std::vector<ScriptAction>& act
           continue;
         }
         if (t_ms < 0) return {};
-        const PadState p = c.replay->At(t_ms);
+        const PadState p = c.replay->Between(replay_prev_ms_, t_ms);
+        replay_prev_ms_ = t_ms;
         replay_frame_ = ReplayFrame{std::llround(t_ms * 1000.0), p, c.trace, next_};
         return p;
       }
