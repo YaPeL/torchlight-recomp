@@ -214,6 +214,15 @@ pass or program bind; and `getFloatPointer` lets any code store into the buffer 
 the layout (buffer size, the vectors' ends, the automatic constants' list) shows changes, which is
 not enough to skip reading the values.
 
+M3 is dropped as well (2026-10-28), the narrower version for programs only included. Estimated
+again by counting the calls and what a cache would remove from each: about 0.05 ms a frame in
+`fight.txt` (0.03-0.10) and 0.10 ms in wave 10 (0.05-0.20). The plan's 0.2-0.3 / 0.3-0.4 ms
+assumed a full capture on every call, but textures and vertex declarations are already cached by
+pointer and generation (`LiveTextureDescribed`, `LiveDeclarationBytesSent`; the declaration's byte
+compare stays, it is what catches `addElement` on a declaration in use), and most of each call is
+the hook's framing and `State`, which a cache keeps. Only the program capture (its name read and
+the registry insert on every bind) had a real remainder, 70-80 % of the savable amount.
+
 **Then: the culling, with only the visibility test native.** The octree walk under
 `_findVisibleObjects` (0x821A6070 -> 0x821C7158), by direct child (inclusive ms a frame):
 
