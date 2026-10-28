@@ -188,8 +188,23 @@ guest's words the part must leave (listed from the reading) after the guest's ow
 
 **First: a cheaper capture and cheaper hooks.** Our side of the walk is 2.96 ms in `fight.txt` and
 4.65 ms in wave 10 (table 1): it changes none of the guest code that runs, so no guest state is
-involved, and it is checked by replays and by comparing the commands it produces. Its plan will be
-written separately, measure by measure.
+involved, and it is checked by replays and by comparing the commands it produces. The measures
+proposed (savings estimated, not measured, in `fight.txt` / wave 10) and the owner's decisions of
+2026-10-28:
+
+| Measure | What it caches | Estimate (ms) | Decision |
+| --- | --- | --- | --- |
+| M4 | the session's memo by direct index; no command built when the arguments did not change | 0.15-0.25 / 0.25-0.35 | first |
+| M3 | the captures of vertex declarations, programs and textures, by pointer and generation | 0.2-0.3 / 0.3-0.4 | second |
+| M1 | each parameter object's flattened ranges and automatic constants, compared without byteswap | 0.35-0.45 / 0.55-0.7 | only with a reliable version signal of the guest's parameters |
+| M2 | `CaptureDraw`'s binding map read, registry lookup and target flip, per object and version | 0.25-0.35 / 0.45-0.6 | dropped |
+
+Each one in its own change, with a diagnostic that runs the old and the new capture on the same
+call and compares the commands byte by byte, and an A B B A on the POCO. M2 is dropped for its
+risk: OGRE 1.7's `VertexBufferBinding` has no version counter, so a cache needs every change to the
+binding map seen (`setBinding`, `unsetBinding`, `unsetAllBindings` and any write the game makes to
+the map directly); one missed change draws with the wrong buffers, and the backend may fault on
+them.
 
 **Then: the culling, with only the visibility test native.** The octree walk under
 `_findVisibleObjects` (0x821A6070 -> 0x821C7158), by direct child (inclusive ms a frame):
