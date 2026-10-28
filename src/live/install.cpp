@@ -56,8 +56,9 @@ REXCVAR_DEFINE_BOOL(native_shadow_index, true, "Torchlight",
                     "Live mode: find the session's last value of each state by direct index, not "
                     "through its map; =false to measure without it in the same build");
 REXCVAR_DEFINE_BOOL(diag_shadow_index, false, "Torchlight",
-                    "Diagnostics: check every state hook's lookup in the session's shadow index "
-                    "against the shadow map, and log the mismatches in the live summary");
+                    "Diagnostics, live mode: check each lookup of the session's direct shadow "
+                    "index against the shadow map (an entry added or moved past the index) and "
+                    "log the mismatches in the live summary; it does not compare commands");
 REXCVAR_DEFINE_UINT32(live_record_max_mb, 4096, "Torchlight",
                       "Live mode: the session recording stops (well formed) at this size in MiB");
 

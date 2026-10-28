@@ -332,26 +332,29 @@ class Session {
 
   // Render thread only.
   // Entries are never removed (EraseState marks them absent), so a pointer to one stays valid for
-  // the early out; `version` changes with every write.
+  // the early out and the direct index; `version` changes with every write.
   struct ShadowEntry {
     commands::CommandPayload payload;
     uint32_t object = 0;
     uint64_t version = 0;
     bool present = true;
   };
-  // A hash map (looked up on every state hook); its node-based entries keep their address, which
-  // the early out's memos rely on. Walked in key order where order shows (ShadowKeysInOrder).
+  // A hash map whose node-based entries keep their address, which the early out's memos and the
+  // direct index rely on. Walked in key order where order shows (ShadowKeysInOrder).
   std::unordered_map<uint32_t, ShadowEntry> shadow_;
   // The same entries by direct index for the keys the hooks use (an opcode, a sub under
   // kShadowIndexSubs): one array read per state hook instead of a hash lookup. Other keys, and the
-  // walks, go through shadow_.
+  // walks, go through shadow_. Only AddShadow inserts into shadow_, and fills the index.
   static constexpr uint32_t kShadowIndexSubs = 512;
   std::vector<ShadowEntry*> shadow_index_ =
-      std::vector<ShadowEntry*>((commands::kOpcodeCount + 1) * kShadowIndexSubs);
+      std::vector<ShadowEntry*>(commands::kOpcodeCount * kShadowIndexSubs);
   ShadowEntry* FindShadow(uint32_t key);
   ShadowEntry& AddShadow(uint32_t key);
-  bool use_shadow_index_ = true;  // --native_shadow_index; off, every lookup goes through shadow_
-  // --diag_shadow_index: every lookup checked against shadow_ (ShadowIndexChecks).
+  // --native_shadow_index; off, State and the rest look up shadow_ as before the index (to measure
+  // it in the same build).
+  bool use_shadow_index_ = true;
+  // --diag_shadow_index: every indexed lookup checked against shadow_ (ShadowIndexChecks). Render
+  // thread writes, the backend thread reads the counts.
   bool check_shadow_index_ = false;
   std::atomic<uint64_t> shadow_index_lookups_{0}, shadow_index_mismatches_{0};
   std::vector<uint32_t> ShadowKeysInOrder() const;
