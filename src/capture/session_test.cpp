@@ -3,10 +3,10 @@
 // content keys) and the frame cut at the swap, compared with what the hooks handed in.
 
 #include <algorithm>
-#include <vector>
 #include <cstdio>
 #include <cstdlib>
 #include <variant>
+#include <vector>
 
 #include "capture/session.h"
 #include "hooks/hooks.h"
@@ -314,7 +314,8 @@ int main() {
     auto run = [&](bool use, uint32_t salt) {
       queue.Pop(std::chrono::milliseconds(0));
       s.SetShadowIndex(use, true);
-      for (uint32_t sub : {0u, 511u, 512u}) {
+      // A sub of the run's own (a new key each run) next to the edge keys every run shares.
+      for (uint32_t sub : {100u + salt, 511u, 512u}) {
         const uint32_t key = capture::ShadowKey(SetCull{}, sub);
         s.State(key, SetCull{{uint8_t(1 + salt), 0}});
         s.State(key, SetCull{{uint8_t(1 + salt), 0}});
