@@ -21,6 +21,7 @@
 #include <rex/logging.h>
 #include <rex/ui/presenter.h>
 
+#include "hooks/adaptive_vsync.h"
 #include "hooks/video_mode.h"
 #include "live/deferred_check.h"
 #include "live/live_mode.h"
@@ -332,9 +333,12 @@ void ApplyFpsCap(uint32_t fps_cap, rex::Runtime* runtime) {
   if (flag->source == rex::cvar::Source::kCommandLine) {
     REXLOG_INFO("settings: fps cap left to --vsync={} from the command line",
                 rex::cvar::Query<bool>("vsync"));
+    hooks::SetAdaptiveVsyncCap(0);
     return;
   }
   graphics->SetGuestVblankRate(fps_cap);
+  // The game's own adaptive vsync would drop the vsync at a cap of 30 (hooks/adaptive_vsync.h).
+  hooks::SetAdaptiveVsyncCap(fps_cap);
   rex::cvar::SetFlagByName("vsync", fps_cap == 0 ? "false" : "true");
 }
 
