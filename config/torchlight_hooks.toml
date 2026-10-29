@@ -6,6 +6,14 @@
 # r19 and r26 of the build's locals: every local passed by reference has to live in memory across
 # the function's other calls (docs/wardrobe-texture.md). tools/wardrobe_blend/check_generated.py
 # checks the generated function on every build.
+# The GUI's bouncing arrows of panels that are not drawn (src/hooks/gui_animator_hooks.cpp,
+# guest_abi gui_animator): true skips Window::setPosition, which asks for a redraw of the whole GUI.
+[[midasm_hook]]
+address = 0x821A4234
+name = "GuiAnimatorSetPosition"
+registers = ["r3"]
+jump_address_on_true = 0x821A4238
+
 [[midasm_hook]]
 address = 0x822DD21C
 name = "WardrobeBlendLoop"

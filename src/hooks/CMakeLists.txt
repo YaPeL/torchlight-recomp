@@ -10,6 +10,13 @@ target_link_libraries(video_mode_test PRIVATE torchlight_video_mode)
 target_compile_options(video_mode_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME video_mode_test COMMAND video_mode_test)
 
+# Whether CEGUI draws a window (gui_window_drawn.h, header only): tested on its own over a made-up
+# window tree; the hook that uses it (gui_animator_hooks.cpp) is part of the executable.
+add_executable(gui_window_drawn_test gui_window_drawn_test.cpp)
+target_link_libraries(gui_window_drawn_test PRIVATE guest_abi)
+target_compile_options(gui_window_drawn_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME gui_window_drawn_test COMMAND gui_window_drawn_test)
+
 # The watch on the guest's waits for the GPU (gpu_wait_watch.h): no guest or SDK dependency, tested
 # on its own; the hook that uses it (gpu_wait_hooks.cpp) is part of the executable.
 add_library(torchlight_gpu_wait_watch STATIC gpu_wait_watch.cpp)

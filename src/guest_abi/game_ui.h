@@ -426,6 +426,14 @@ inline constexpr GuestFunction kFindDescendant{0x825AE360, Confidence::kConfirme
 inline constexpr GuestFunction kWindowSetVisible{0x821A56C0, Confidence::kConfirmed};
 inline constexpr Field kWindowVisible{0x161, Confidence::kConfirmed};
 
+// [confirmed] CEGUI::System (the singleton at kCeguiSystemGlobal): System::renderGUI
+// (sub_821FBC60) re-queues the whole window tree when the redraw flag (+40, `lbz r11,40(r3)`) is
+// set, rendering the active sheet (+48, `lwz r3,48(r31)` before `bl 0x821afea0`), and clears it
+// after (`stb` +40).
+inline constexpr uint32_t kCeguiSystemGlobal = 0x835067CC;
+inline constexpr Field kSystemGuiRedraw{40, Confidence::kConfirmed};
+inline constexpr Field kSystemActiveSheet{48, Confidence::kConfirmed};
+
 // ---------------------------------------------------------------------------------------------
 // What the development UI dump reads of a window (dev/script_input.cpp).
 // [confirmed] Window type (CEGUI String, "ceguiWidget/StaticImage" and the like): the ctor
