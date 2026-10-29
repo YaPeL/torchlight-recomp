@@ -24,7 +24,9 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   (`rtss_listener_hooks.cpp`, `--native_rtss_listener`). The culling's `Frustum::isVisible(box)`
   runs as host code in every mode (`frustum_test.h`, `--native_frustum_test`: the same SIMDe
   operations as the recompiled function, the guest's result bit for bit; section 12 of the same
-  document). `TORCHLIGHT_FRAME_POINTERS` (off; profiling
+  document). The game's GUI moves no bouncing arrow of a panel CEGUI does not draw, which made the
+  whole GUI redraw every frame (`gui_animator_hooks.cpp`, `--native_gui_hidden_arrows`, every mode).
+  `TORCHLIGHT_FRAME_POINTERS` (off; profiling
   builds only) keeps frame pointers in every target for `perf --call-graph fp`.
   The game is built with the default code model on Linux x86-64 and the generated code keeps the
   non-volatile registers in locals, so no hook touches r12, r14-r31, f14-f31 or v14 and up through

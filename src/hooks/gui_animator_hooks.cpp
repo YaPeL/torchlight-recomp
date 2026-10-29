@@ -2,9 +2,14 @@
 // @0x821A4234 (guest_abi gui_animator), declared by the generated sub_821A41A0 as
 // `if (GuiAnimatorSetPosition(ctx.r3)) goto loc_821A4238;`: true skips the call. Skipped only for
 // a window CEGUI does not draw (hooks/gui_window_drawn.h): the arrows of panels that are not open,
-// which otherwise ask for a redraw of the whole GUI every frame. The entry's phase still steps
-// (it is written before the call), and the game resets every entry's phase and position when it
-// shows the panel again (sub_82376A20), so what is drawn is the same.
+// which otherwise ask for a redraw of the whole GUI every frame. The entry's phase still steps (it
+// is written before the call). What the skip leaves out for such a window: its new area and rect
+// caches, onMoved (the System's redraw flag, the children's notification, EventMoved, to which no
+// game code subscribes) and the System's update of the window under the mouse. When the panel is
+// shown again through its own show (sub_82376A20), the game resets every entry's phase and
+// position first; shown any other way (an ancestor made visible, the active sheet back), the arrow
+// can be drawn for one frame where it last moved, at most 10 px from where it would be, until the
+// next step moves it.
 
 #include <chrono>
 #include <cstdint>
