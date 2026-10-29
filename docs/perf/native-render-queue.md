@@ -289,6 +289,51 @@ consecutive draws already change texture (frame, text, frame...), so batching me
 across labels, which overlap with the depth test always passing, so it would change which label
 covers which; and it saves nothing of our capture, which is paid in the hooks on the guest thread.
 
+**Why the GUI is re-queued every frame (2026-10-29).** CEGUI 0.6 re-queues the whole window tree
+(0x821AFEA0, 2.69 ms a frame in wave 10) on any frame something set the System's redraw flag
+(System singleton 0x835067CC, +40); the area, visibility and enabled setters compare with the old
+value, `setText` does not (the HUD compares before calling it). A census of the writers
+(`--diag_gui_redraw_census`, `hooks/gui_redraw_census_hooks.cpp`, only with
+`TORCHLIGHT_DIAGNOSTICS`: the 108 guest functions that set the flag, each call recorded with three
+return addresses) found, in `fight5`:
+
+| Re-queued frames, by the writers seen in them | Wave 1 | Wave 5 | Wave 10 |
+| --- | --- | --- | --- |
+| All re-queued frames | 65.8 % | 93.4 % | 92.3 % |
+| Only a moving and fading window (sub_821FF5B0 -> sub_82335110: likely the floating combat text, a real change) | 41.6 % | 43.2 % | 36.1 % |
+| Only the hovered unit's label disabled and enabled again (below) | 1.1 % | 27.2 % | 28.9 % |
+| A text set and a child added (sub_8233D130), never alone | 0 | 0 | 0 |
+
+- **The bouncing arrows** of panels that are not open (0x821A41A0 moves about 14 a frame, all of
+  windows not drawn) set the flag every frame too. Skipping their moves (branch
+  `fix/gui-hidden-arrows`, draft PR, `--native_gui_hidden_arrows`) removes them from the census, but
+  in a fight the other writers keep the GUI re-queued: the GUI pass measured 1.71 / 3.79 / 5.73 ms
+  without it and 1.61 / 3.16 / 5.69 ms with it (one run each, within the noise). Kept on its branch
+  to be measured with whatever comes next.
+- **The hovered unit's label (not fixed; the owner's decision to stop here).** Once per game update
+  (sub_821E5910, called by sub_821F5CA0 @0x821F5FF0 in the gameplay state), the player's two
+  targets (player+72 and player+80; items, gold, breakables and trigger units, whose virtual slot 64
+  is sub_822C8010, "set highlighted") are un-highlighted (`slot64(false)` @0x821E66AC and
+  @0x821E67AC) and, after the new targets are written (@0x821E6880, @0x821E6890), highlighted again
+  (@0x821E68B4, @0x821E68D8). sub_822C8010 compares with unit+368 and calls sub_822C8088, which
+  refreshes the unit's label window (unit+408): `setEnabled` (sub_825AE860; onEnabled 0x825B0928 and
+  onDisabled 0x825B0A00 each set the flag), the "TextColour" property (white, then grey, then white
+  again, through `setProperty` sub_825AB6F8 and the Falagard property 0x825E3648, which does not
+  compare) and, when enabling, the window's vt+264 with 0 (sub_825AECF0, likely `moveToFront`). With
+  the target unchanged the label ends every update as it started, before anything is rendered, but
+  the GUI is re-queued: alone in 28.9 % of wave 10's frames, about 0.9 ms a frame at 3.2 ms a
+  re-queue (about 0.8 ms in wave 5).
+  The fix designed: midasm hooks at @0x821E66AC and @0x821E67AC (r3; true jumps to @0x821E66B0 and
+  @0x821E67B0) record the unit and skip the un-highlight; one before @0x821E6948, where both
+  branches meet (r31; the player at r31+60), calls slot 64 with false for each recorded unit that is
+  no longer player+72 or player+80. Risks: (1) that hook calls a guest virtual from the host in the
+  middle of the game update (`game_menu/guest_call` does it elsewhere; not checked there); (2) the
+  hovered label is no longer brought to the front every update, only when first highlighted, so a
+  label created later (new loot) could cover it, a visible change, unless the hook also calls
+  sub_825AECF0 and that does not set the flag when the label is already in front (not checked);
+  (3) between the skipped call and the deferred one, sub_822A48D0 and sub_822801D0 see the old
+  target still highlighted (neither reads unit+368 directly; their callees not checked).
+
 ## 7. Ideas from Rekindled 1.0.2 (2026-10-24)
 
 Rekindled 1.0.2 (GPL-3, `GreenSwampDweller/torchlight-rekindled`, tag `1.0.2`, commit b9973bf)
