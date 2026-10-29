@@ -27,8 +27,8 @@ guest's 25 ms vblank waits for the next).
 
 The cap of 30 did not limit at all (47.7 fps at rest): the game's own adaptive vsync sets the
 presentation interval to IMMEDIATE whenever its lastFPS is under 31 (`guest_abi/adaptive_vsync.h`),
-which a cap of 30 always is. `hooks/adaptive_vsync.h` keeps the vsync under a host cap unless the
-game is under the cap less one.
+which a cap of 30 always is. Under a host cap of 31 or less, `hooks/adaptive_vsync.h` keeps the
+presents waiting for the vblank; over 31 the game decides as before.
 
 ## 2. The plan: the guest's vblank from the display's refreshes
 
