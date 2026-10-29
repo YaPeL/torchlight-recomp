@@ -2,9 +2,11 @@
 // auto constants), state (sent once while unchanged), draws (buffer snapshots carrying the live
 // content keys) and the frame cut at the swap, compared with what the hooks handed in.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <variant>
+#include <vector>
 
 #include "capture/session.h"
 #include "hooks/hooks.h"
@@ -39,6 +41,7 @@ int main() {
   live::FrameQueue queue(4);
   live::SnapshotStore store;
   capture::Session& s = capture::Session::Get();
+  s.SetShadowIndex(true, true);  // every lookup below also checked against the shadow map
   s.EnableLive(&queue, &store);
 
   SetConstants constants;
@@ -284,6 +287,56 @@ int main() {
     s.RequestCapture();
     s.OnSwapBegin();  // the capture starts: baseline from the shadow
     Check(!s.Unchanged(61, 0, raw), "after a capture's baseline: built again");
+  }
+
+  // Keys past the direct index (a sub of 512 or more) go through the map, deduplicated the same.
+  {
+    queue.Pop(std::chrono::milliseconds(0));
+    const uint32_t indexed = capture::ShadowKey(SetCull{}, 3);
+    const uint32_t mapped = capture::ShadowKey(SetCull{}, 0x1234);
+    s.State(indexed, SetCull{{1, 0}});
+    s.State(mapped, SetCull{{1, 0}});
+    s.State(indexed, SetCull{{1, 0}});
+    s.State(mapped, SetCull{{1, 0}});
+    s.EraseState(mapped);
+    s.State(mapped, SetCull{{1, 0}});
+    s.OnSwapBegin();
+    auto culls = queue.Pop(std::chrono::milliseconds(100));
+    size_t sent = 0;
+    for (const auto& cmd : culls->commands) sent += As<SetCull>(cmd) != nullptr;
+    Check(sent == 3, "indexed and mapped keys each sent once, the erased one again");
+    const auto [lookups, mismatches] = s.ShadowIndexChecks();
+    Check(lookups > 0 && mismatches == 0, "the direct index agrees with the shadow map");
+  }
+  // The same calls give the same stream with the index and without it, at the index's edges too
+  // (the last sub inside and the first outside, the last opcode).
+  {
+    auto run = [&](bool use, uint32_t salt) {
+      queue.Pop(std::chrono::milliseconds(0));
+      s.SetShadowIndex(use, true);
+      // A sub of the run's own (a new key each run) next to the edge keys every run shares.
+      for (uint32_t sub : {100u + salt, 511u, 512u}) {
+        const uint32_t key = capture::ShadowKey(SetCull{}, sub);
+        s.State(key, SetCull{{uint8_t(1 + salt), 0}});
+        s.State(key, SetCull{{uint8_t(1 + salt), 0}});
+        s.EraseState(key);
+        s.State(key, SetCull{{uint8_t(1 + salt), 0}});
+      }
+      const uint32_t last = capture::ShadowKey(SetSceneClip{});
+      s.State(last, SetSceneClip{salt});
+      s.State(last, SetSceneClip{salt});
+      s.OnSwapBegin();
+      auto frame = queue.Pop(std::chrono::milliseconds(100));
+      std::vector<uint16_t> opcodes;
+      for (const auto& cmd : frame->commands) opcodes.push_back(OpcodeOf(cmd.payload));
+      return opcodes;
+    };
+    // Each run's values differ from the last one's, so both start from the same shadow state.
+    const auto with_index = run(true, 10), without = run(false, 20), again = run(true, 30);
+    Check(with_index == without && without == again, "same stream with and without the index");
+    Check(std::count(with_index.begin(), with_index.end(), OpcodeOf(SetCull{})) == 6,
+          "each edge key sent, erased and sent again");
+    Check(s.ShadowIndexChecks().second == 0, "no mismatch at the edges");
   }
 
   // Interned names compare by value and keep their storage.

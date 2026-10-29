@@ -103,20 +103,57 @@ bool AlwaysSent(const commands::CommandPayload& p) {
 }
 }  // namespace
 
+namespace {
+// The direct index's slot for a key, or -1 past it (opcodes start at 1).
+int64_t ShadowIndexSlot(uint32_t key, uint32_t subs) {
+  const uint32_t opcode = key >> 16, sub = key & 0xFFFF;
+  if (opcode == 0 || opcode > commands::kOpcodeCount || sub >= subs) return -1;
+  return int64_t(opcode - 1) * subs + sub;
+}
+
+void Increment(std::atomic<uint64_t>& count) {
+  count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+}
+}  // namespace
+
+Session::ShadowEntry* Session::FindShadow(uint32_t key) {
+  const int64_t slot = use_shadow_index_ ? ShadowIndexSlot(key, kShadowIndexSubs) : -1;
+  if (slot < 0) {
+    auto it = shadow_.find(key);
+    return it == shadow_.end() ? nullptr : &it->second;
+  }
+  ShadowEntry* found = shadow_index_[size_t(slot)];
+  if (check_shadow_index_) {
+    auto it = shadow_.find(key);
+    Increment(shadow_index_lookups_);
+    if ((it == shadow_.end() ? nullptr : &it->second) != found) Increment(shadow_index_mismatches_);
+  }
+  return found;
+}
+
+Session::ShadowEntry& Session::AddShadow(uint32_t key) {
+  ShadowEntry& entry = shadow_[key];
+  const int64_t slot = ShadowIndexSlot(key, kShadowIndexSubs);
+  if (slot >= 0) shadow_index_[size_t(slot)] = &entry;
+  return entry;
+}
+
 void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t object) {
   // A value equal to the shadow's is what every consumer already has (a capture starts from the
   // shadow as its baseline, the live consumer from EnableLive): not sent again. OGRE re-sets every
   // texture unit's state per pass, most of it unchanged.
-  auto it = shadow_.find(key);
-  if (it != shadow_.end() && it->second.present && it->second.object == object &&
-      it->second.payload == payload && !AlwaysSent(payload)) {
+  ShadowEntry* found = FindShadow(key);
+  if (found && found->present && found->object == object && found->payload == payload &&
+      !AlwaysSent(payload)) {
     return;
   }
   if (armed()) {
     capture_.frames.back().commands.push_back({0, payload});
   }
   if (live()) LiveAppend(payload);
-  ShadowEntry& entry = shadow_[key];
+  // Without the index, a second lookup as before it (--native_shadow_index=false measures the
+  // whole change).
+  ShadowEntry& entry = found && use_shadow_index_ ? *found : AddShadow(key);
   entry.payload = std::move(payload);
   entry.object = object;
   entry.present = true;
@@ -132,10 +169,10 @@ std::vector<uint32_t> Session::ShadowKeysInOrder() const {
 }
 
 void Session::EraseState(uint32_t key) {
-  auto it = shadow_.find(key);
-  if (it == shadow_.end() || !it->second.present) return;
-  it->second.present = false;
-  ++it->second.version;
+  ShadowEntry* entry = FindShadow(key);
+  if (!entry || !entry->present) return;
+  entry->present = false;
+  ++entry->version;
 }
 
 bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> raw) const {
@@ -147,11 +184,11 @@ bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> r
 
 void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<const uint32_t> raw) {
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return;
-  auto it = shadow_.find(key);
-  if (it == shadow_.end()) return;
+  const ShadowEntry* entry = FindShadow(key);
+  if (!entry) return;
   ArgsMemo& m = memos_[slot * kMemoSubs + sub];
-  m.entry = &it->second;
-  m.version = it->second.version;
+  m.entry = entry;
+  m.version = entry->version;
   m.count = uint32_t(raw.size());
   std::copy(raw.begin(), raw.end(), m.raw.begin());
 }
