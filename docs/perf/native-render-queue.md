@@ -295,7 +295,7 @@ covers which; and it saves nothing of our capture, which is paid in the hooks on
 value, `setText` does not (the HUD compares before calling it). A census of the writers
 (`--diag_gui_redraw_census`, `hooks/gui_redraw_census_hooks.cpp`, only with
 `TORCHLIGHT_DIAGNOSTICS`: the 108 guest functions that set the flag, each call recorded with three
-return addresses) found, in `fight5`:
+return addresses) found, in `fight5` (the caveat below applies to these numbers):
 
 | Re-queued frames, by the writers seen in them | Wave 1 | Wave 5 | Wave 10 |
 | --- | --- | --- | --- |
@@ -333,6 +333,15 @@ return addresses) found, in `fight5`:
   sub_825AECF0 and that does not set the flag when the label is already in front (not checked);
   (3) between the skipped call and the deferred one, sub_822A48D0 and sub_822801D0 see the old
   target still highlighted (neither reads unit+368 directly; their callees not checked).
+- **Caveat on the census (its review, 2026-10-29).** Only the first return address of each call
+  chain is reliable: ReXGlue drops the `bl __savegprlr_N` prologue calls, so a frame's LR slot (-8
+  from its stack pointer) can hold a stale address of an earlier frame, and the groups above were
+  told apart by the second and third addresses. The census also counts calls of the writers, not
+  flag sets (a few set the flag only on some paths; the label's `setEnabled` notifications are not
+  among them). The hovered label's pattern itself was confirmed by reading the code, but its 28.9 %
+  and ~0.9 ms are not firm: whoever picks this up should fix both points (trust a frame's LR slot
+  only when its function stored LR there; record a call only when the flag goes to 1) and measure
+  again first. The probe is on the branch `diag/gui-redraw-census` (#65, closed).
 
 ## 7. Ideas from Rekindled 1.0.2 (2026-10-24)
 
@@ -358,3 +367,28 @@ a frame):
 
 The determinism patches (0028-0030) do not apply: our draw order is the captured order, and replays
 are already byte-identical.
+
+## 8. Ideas from Torchlight II Stutter Fixes (2026-10-29)
+
+`Fancy-Raptor/Torchlight-II-Stutter-Fixes` (MIT per its README; the repository has no licence
+file) fixes three Torchlight II stutters in the same engine. Read against our build:
+
+- **The paperdoll's seam weld** (vertex against vertex, replaced by a proximity search): Torchlight
+  1 on the 360 has none. The wardrobe build (sub_822DC6B0) and its mesh extractor (sub_823A4078)
+  and filler (sub_823A4720) make single per-vertex passes (transform, normals, UVs, bone
+  assignments) with no position compare; the PC executable has the same structure. Of the build's
+  ~13 ms of meshes and materials, the likeliest super-linear part is the bone assignments: a
+  multimap insert per vertex and bone, each node allocated (sub_823A4720), then an equal_range per
+  vertex (sub_8245CB50). A possible improvement, not measured (a probe would need the owner's OK).
+- **The PAK decompression** (zlib replaced by libdeflate): the game reads `pak.zip` through OGRE's
+  ZipArchive, zziplib and zlib 1.2.3 (inflate sub_823E1590), in chunks on a raw-deflate z_stream,
+  streaming on demand; a backward seek inflates the entry again from its start. About 0.2 % of the
+  main thread in play, but an estimated 10-25 % of a level load's longest frame on the POCO and 30-45
+  ms of a 120-160 ms first-use hitch. Whole-entry decompression with libdeflate behind zziplib's
+  read, seek, rewind and close (sub_8258A068, sub_8258A368, sub_8258A258, sub_82589B88) is being
+  planned (the owner's OK to the plan, not yet to code).
+- **The clock** (OGRE's Win32 timer pinning the thread to one core on every read): does not apply.
+  The guest's OGRE Timer (sub_82423668, sub_824236C8) reads the time base (`mftb`, sub_821F8FE0)
+  with no affinity call, which ReXGlue turns into the host's `clock_gettime` or
+  `QueryPerformanceCounter` (sdk `src/core/clock.cpp`); the game sets a thread's processor only when
+  it creates four of its threads (XSetThreadProcessor).
