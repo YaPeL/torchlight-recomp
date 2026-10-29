@@ -265,8 +265,29 @@ CEGUI label window (`ceguiWidget/ItemTextButton`, created the first time it is s
 item at +0x198); hidden labels are removed from the window tree, so they are neither walked nor
 drawn; shown labels (items within a radius of the player, when the item names setting or key ask
 for them) are repositioned every frame, and a shown label outside the screen is clamped to its edge
-rather than dropped. How many labels are shown per wave is not measured. Work on the loot labels
-and the GUI comes later.
+rather than dropped.
+
+Measured on 2026-10-29 (POCO X7, `fight5`, 25 s profiles in waves 1, 5 and 10; the hero attacks
+standing still, the loot around them):
+
+| | Wave 1 | Wave 5 | Wave 10 |
+| --- | --- | --- | --- |
+| Labels shown (glyphs) | 13 (84) | 40 (315) | 79 (658) |
+| GUI pass a frame (renderGUI 0x821FBC60) | 1.63 ms | 3.29 ms | 5.32 ms |
+| of it, guest code / our hooks | 1.30 / 0.33 | 2.67 / 0.62 | 4.29 / 1.03 |
+| Label update (0x821A83C8) | 0.59 ms | 0.62 ms | 0.64 ms |
+| GUI draws / all draws | 44 / 270 | 106 / 428 | 184 / 609 |
+
+About 56 us a label, linear (45 in guest code, 11 in our hooks); two draws a label (its frame and
+its text alternate textures). In wave 10, the window tree re-queued every frame (0x821AFEA0) is
+2.49 ms and the draw pass (`doRender` 0x821D2F80) 2.56 ms, of which `initRenderStates` (about 25
+render system calls before each draw) is 0.75 ms.
+
+Batching the GUI's quads in the backend is dropped (the owner's decision, 2026-10-29): it would
+save time only on the backend thread, which is not the frame's bottleneck (the guest thread is);
+consecutive draws already change texture (frame, text, frame...), so batching means reordering
+across labels, which overlap with the depth test always passing, so it would change which label
+covers which; and it saves nothing of our capture, which is paid in the hooks on the guest thread.
 
 ## 7. Ideas from Rekindled 1.0.2 (2026-10-24)
 
