@@ -258,6 +258,8 @@ void TestChoices() {
   Check(fps.values.front() == kFpsCapAuto, "automatic first");
   Check(fps.values.back() == 0, "unlimited last");
   Check(std::count(fps.values.begin(), fps.values.end(), 144u) == 1, "display rate not duplicated");
+  Check(std::count(fps.values.begin(), fps.values.end(), 40u) == 1, "40 offered");
+  Check(std::is_sorted(fps.values.begin() + 1, fps.values.end() - 1), "rates in order");
   Check(GpuChoices(desktop).enabled, "two GPUs selectable");
 
   const Capabilities deck = SteamDeck();
