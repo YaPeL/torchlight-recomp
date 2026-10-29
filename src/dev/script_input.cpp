@@ -51,6 +51,7 @@ void InstallInputScript(rex::Runtime*, std::function<void()>) {
 #include "dev/guest_command.h"
 #include "dev/input_script.h"
 #include "dev/ui_tree.h"
+#include "live/frame_pacing.h"
 #include "game_menu/guest_call.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/game_ui_sheet.h"
@@ -339,6 +340,7 @@ struct Segment {
   std::vector<live::PresentLatency> latency;
   std::vector<double> screen;  // swap to screen, where the window system tells (OnScreenFrame)
   size_t screen_gaps = 0;      // screen frames more than 25 ms after the previous one
+  live::PacingCounter pacing;  // refreshes each screen frame stayed (live/frame_pacing.h)
   size_t dropped = 0;
 
   void Log() const {
@@ -375,6 +377,8 @@ struct Segment {
     REXLOG_INFO("perf step '{}' on screen: {} frames, latency mean {:.2f} ms, p99 {:.2f}, max {:.2f}, "
                 "{} gaps over 25 ms",
                 name, sc.size(), sum / sc.size(), p99, sc.back(), screen_gaps);
+    REXLOG_INFO("perf step '{}' refreshes each frame stayed on screen: {}", name,
+                live::PacingCounter::Describe(pacing.Peek()));
   }
 };
 
@@ -508,10 +512,13 @@ class ScriptRunner : public live::FrameObserver {
     segment_.latency.push_back(latency);
     segment_.dropped += dropped;
   }
-  void OnScreenFrame(double ms, double gap_ms) override {
+  void OnScreenFrame(double ms, double gap_ms, double refresh_ms) override {
     std::lock_guard lock(mutex_);
     segment_.screen.push_back(ms);
     if (gap_ms > 25.0) ++segment_.screen_gaps;
+    using Ms = std::chrono::duration<double, std::milli>;
+    segment_.pacing.AddShown(std::chrono::duration_cast<std::chrono::nanoseconds>(Ms(gap_ms)),
+                             std::chrono::duration_cast<std::chrono::nanoseconds>(Ms(refresh_ms)));
   }
   void OnLevelLoaded() override {
     std::lock_guard lock(mutex_);

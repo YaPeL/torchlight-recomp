@@ -1,7 +1,8 @@
 // When each present reached the screen, as the window system reports it: the measurement of the
-// vsync latency (docs/performance-profile.md). Development builds with TORCHLIGHT_PRESENTATION_TIME
-// on Wayland (the presentation-time protocol); null elsewhere. Without it the live mode measures up
-// to the present's return, which is not the screen when the driver queues frames.
+// vsync latency (docs/performance-profile.md) and the even frames (live/frame_pacing.h).
+// Development builds with TORCHLIGHT_PRESENTATION_TIME on Wayland (the presentation-time protocol)
+// and Android (EGL_ANDROID_get_frame_timestamps); null elsewhere. Without it the live mode measures
+// up to the present's return, which is not the screen when the driver queues frames.
 
 #pragma once
 
@@ -25,6 +26,9 @@ class PresentationClock {
     uint64_t id;
     std::chrono::steady_clock::time_point time;  // the refresh that showed it (its vblank)
     std::chrono::nanoseconds refresh{0};         // the display's refresh period; 0 if unknown
+    // Frames presented before it were lost to the measurement (not the compositor's own drops):
+    // the time since the previous frame shown is not its time on screen.
+    bool after_loss = false;
   };
   virtual std::vector<Shown> TakeShown() = 0;
 };
