@@ -35,4 +35,18 @@ namespace torchlight::guest_abi::gui_redraw {
 // re-queue the tree (sub_821FBC60); the census's frame boundary.
 inline constexpr uint32_t kRenderGui = 0x821FBC60;
 
+// The census's groups of writers by where they are called from: a return address of the call's
+// chain inside one of these functions (each from its start to the next function's, in the
+// generated code). [inferred] what they are, from the census of 2026-10-29: the first group moves
+// and fades a window every frame (likely the floating combat text), the second disables and enables
+// a window in the same frame, the third sets a text and adds a child.
+struct CodeRange {
+  uint32_t begin, end;
+};
+inline constexpr CodeRange kGroupMovingText[] = {{0x82335110, 0x823352C0},
+                                                  {0x821FF5B0, 0x821FF708}};
+inline constexpr CodeRange kGroupEnableToggle[] = {{0x822C8088, 0x822C8440},
+                                                    {0x821FB950, 0x821FB9C0}};
+inline constexpr CodeRange kGroupTextAndChild[] = {{0x8233D130, 0x8233D310}};
+
 }  // namespace torchlight::guest_abi::gui_redraw

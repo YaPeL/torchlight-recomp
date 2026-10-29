@@ -48,6 +48,27 @@ std::mutex g_mutex;
 std::set<Key> g_frame;               // seen since the last renderGUI
 std::map<Key, uint64_t> g_frames_with;  // frames each key was seen in
 uint64_t g_frames = 0, g_dirty = 0, g_dirty_unattributed = 0;
+// Re-queued frames by the set of writer groups seen in them (bit 0 moving text, 1 enable toggle,
+// 2 text and child, 3 any other writer).
+std::array<uint64_t, 16> g_dirty_by_groups{};
+
+template <size_t N>
+bool InRange(uint32_t address, const abi::gui_redraw::CodeRange (&ranges)[N]) {
+  for (const auto& r : ranges) {
+    if (address >= r.begin && address < r.end) return true;
+  }
+  return false;
+}
+
+unsigned Group(const Key& key) {
+  namespace gr = abi::gui_redraw;
+  for (size_t i = 1; i < key.size(); ++i) {
+    if (InRange(key[i], gr::kGroupMovingText)) return 1u << 0;
+    if (InRange(key[i], gr::kGroupEnableToggle)) return 1u << 1;
+    if (InRange(key[i], gr::kGroupTextAndChild)) return 1u << 2;
+  }
+  return 1u << 3;
+}
 
 // The saved return address of the frame whose stack pointer is `sp`: the generated prologues store
 // LR at -8 from the caller's stack pointer before `stwu r1` (e.g. sub_821A41A0), so the caller's
@@ -78,6 +99,9 @@ void Frame(const uint8_t* base) {
   if (dirty) {
     ++g_dirty;
     if (g_frame.empty()) ++g_dirty_unattributed;
+    unsigned groups = 0;
+    for (const Key& key : g_frame) groups |= Group(key);
+    ++g_dirty_by_groups[groups];
   }
   for (const Key& key : g_frame) ++g_frames_with[key];
   g_frame.clear();
@@ -86,8 +110,11 @@ void Frame(const uint8_t* base) {
 void LogTotals() {
   std::map<Key, uint64_t> with;
   uint64_t frames, dirty, unattributed;
+  std::array<uint64_t, 16> by_groups;
   {
     std::lock_guard<std::mutex> lock(g_mutex);
+    by_groups = g_dirty_by_groups;
+    g_dirty_by_groups = {};
     with.swap(g_frames_with);
     frames = g_frames;
     dirty = g_dirty;
@@ -107,6 +134,19 @@ void LogTotals() {
                 "writer seen)",
                 (unsigned long long)frames, pct(dirty), pct(unattributed));
   line = buf;
+  // M moving text, E enable toggle, T text and child, O other; "-" none seen.
+  line += "\n  re-queued frames by writer groups:";
+  for (unsigned g = 0; g < by_groups.size(); ++g) {
+    if (!by_groups[g]) continue;
+    std::string name;
+    if (g & 1) name += 'M';
+    if (g & 2) name += 'E';
+    if (g & 4) name += 'T';
+    if (g & 8) name += 'O';
+    if (name.empty()) name = "-";
+    std::snprintf(buf, sizeof buf, " %s %.1f%%", name.c_str(), pct(by_groups[g]));
+    line += buf;
+  }
   for (size_t i = 0; i < chains.size() && i < 16; ++i) {
     const Key& k = chains[i].second;
     std::snprintf(buf, sizeof buf, "\n  %5.1f%% of frames: writer %08X from %08X < %08X < %08X",
