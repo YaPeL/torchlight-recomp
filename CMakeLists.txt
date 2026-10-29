@@ -228,12 +228,14 @@ target_include_directories(torchlight PRIVATE src)
 # floating-point operations (hooks/wardrobe_blend.h).
 set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 # Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
-# hooks/queue_census_hooks.cpp, --diag_queue_census). Off by default and in every release workflow:
+# hooks/queue_census_hooks.cpp, --diag_queue_census; hooks/gui_redraw_census_hooks.cpp,
+# --diag_gui_redraw_census). Off by default and in every release workflow:
 # without it nothing of them is compiled, no guest function is wrapped and nothing runs, so they
 # cost nothing. The one build flag for such diagnostics.
 option(TORCHLIGHT_DIAGNOSTICS "Compile the diagnostics that wrap guest functions" OFF)
 if(TORCHLIGHT_DIAGNOSTICS)
-    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp)
+    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp
+                   src/hooks/gui_redraw_census_hooks.cpp)
     target_link_libraries(torchlight PRIVATE torchlight_queue_census)
     # The colour pack/unpack checks against the guest's own functions (pixel_util_check.inc).
     # The wardrobe blend loop's check against the recompiled loop (wardrobe_blend_check.inl).
