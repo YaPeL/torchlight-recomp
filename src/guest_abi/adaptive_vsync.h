@@ -1,9 +1,9 @@
-// The game's own adaptive vsync: once a second, a frame listener of the game (sub_821FB108, its
-// frameStarted) reads the render window's FrameStats::lastFPS and, under 31 frames a second, sets
-// the D3D device's presentation interval to IMMEDIATE (presents stop waiting for the vblank),
-// otherwise DEFAULT. On a 360 it keeps a game under 31 fps from being held to 20; with the host's
-// fps cap at 30 (the guest's vblank at 30 Hz) lastFPS is always about 30, so the game runs
-// unthrottled every other second (hooks/adaptive_vsync.h).
+// The game's own adaptive vsync: every frame, a frame listener of the game (sub_821FB108, its
+// frameStarted) reads the render window's FrameStats::lastFPS (OGRE updates it once a second) and,
+// under 31 frames a second, sets the D3D device's presentation interval to IMMEDIATE (presents stop
+// waiting for the vblank), otherwise DEFAULT. On a 360 it keeps a game under 31 fps from being held
+// to 20; with the host's fps cap at 30 (the guest's vblank at 30 Hz) lastFPS is always about 30, so
+// the game runs unthrottled every other second (hooks/adaptive_vsync.h).
 
 #pragma once
 

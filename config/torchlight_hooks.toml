@@ -6,17 +6,17 @@
 # r19 and r26 of the build's locals: every local passed by reference has to live in memory across
 # the function's other calls (docs/wardrobe-texture.md). tools/wardrobe_blend/check_generated.py
 # checks the generated function on every build.
-# The game's adaptive vsync under the host's fps cap (src/hooks/adaptive_vsync_hooks.cpp,
-# guest_abi adaptive_vsync): before the presentation interval setter's call, reached from both
-# branches of the game's lastFPS test; r4 (the interval) rewritten, f13 (lastFPS) read.
-[[midasm_hook]]
-address = 0x821FB1CC
-name = "AdaptiveVsync"
-registers = ["r4", "f13"]
-
 [[midasm_hook]]
 address = 0x822DD21C
 name = "WardrobeBlendLoop"
 registers = ["r1", "r19", "r26", "fpscr"]
 after_instruction = true
 jump_address_on_true = 0x822DD39C
+
+# The game's adaptive vsync under the host's fps cap (src/hooks/adaptive_vsync_hooks.cpp,
+# guest_abi adaptive_vsync): before the presentation interval setter's call, reached from both
+# branches of the game's lastFPS test; r4 (the interval) rewritten.
+[[midasm_hook]]
+address = 0x821FB1CC
+name = "AdaptiveVsync"
+registers = ["r4"]
