@@ -10,6 +10,19 @@ target_link_libraries(video_mode_test PRIVATE torchlight_video_mode)
 target_compile_options(video_mode_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME video_mode_test COMMAND video_mode_test)
 
+# The game's adaptive vsync under the host's fps cap (adaptive_vsync.h): no guest or SDK
+# dependency, tested on its own; the hook (adaptive_vsync_hooks.cpp) is part of the executable and
+# the settings (live/install.cpp) set the cap.
+add_library(torchlight_adaptive_vsync STATIC adaptive_vsync.cpp)
+target_include_directories(torchlight_adaptive_vsync PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_adaptive_vsync PUBLIC cxx_std_23)
+target_compile_options(torchlight_adaptive_vsync PRIVATE -Wall -Wextra)
+
+add_executable(adaptive_vsync_test adaptive_vsync_test.cpp)
+target_link_libraries(adaptive_vsync_test PRIVATE torchlight_adaptive_vsync)
+target_compile_options(adaptive_vsync_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME adaptive_vsync_test COMMAND adaptive_vsync_test)
+
 # The watch on the guest's waits for the GPU (gpu_wait_watch.h): no guest or SDK dependency, tested
 # on its own; the hook that uses it (gpu_wait_hooks.cpp) is part of the executable.
 add_library(torchlight_gpu_wait_watch STATIC gpu_wait_watch.cpp)

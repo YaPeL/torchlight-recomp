@@ -75,7 +75,7 @@ add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp fr
     ui_gamepad.cpp named_texture_refresh.cpp
     system_back_button.cpp touch_input.cpp touch_overlay.cpp)
 target_link_libraries(torchlight_live_mode PUBLIC torchlight_live torchlight_frontend torchlight_texture_files rex::runtime
-    torchlight_platform torchlight_settings torchlight_input)
+    torchlight_platform torchlight_settings torchlight_input torchlight_adaptive_vsync)
 target_include_directories(torchlight_live_mode PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_options(torchlight_live_mode PRIVATE -Wall -Wextra)
 # The OGRE plugin directory; the backend objects themselves are linked by the executable.
