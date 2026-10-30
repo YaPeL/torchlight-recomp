@@ -87,6 +87,32 @@ reliable on every platform.
    presentation times today; the others get them first).
 6. The settings: "Even frames" and "VRR".
 
+**Order (the owner's decision, 2026-10-30).** Steps 1-3 go ahead, in parallel with option B
+(docs/perf/native-render-queue.md section 4), with Even frames off by default until the p95 of
+wave 10 of `fight5` is under 33.3 ms: a frame of 37 ms of work would be held 5 refreshes every time
+(24 fps) instead of today's mix of 4 and 5 (about 27). B is measured with Even frames off, since
+Even frames rounds frame times to whole refreshes and hides sub-millisecond gains.
+
+**Step 2's design (2026-10-30).** In the SDK's vblank thread (`src/graphics/graphics_system.cpp`
+149-185, patch 10 `rexglue-guest-vblank-rate.patch`, ours), extended in place:
+`SetGuestVblankExternal(bool)` and `SignalGuestVblank()`, from any thread (a pending count under a
+mutex and a condition variable); the vblank itself is still marked on the vblank thread, so the
+guest's counter and interrupt are unchanged; with the external mode off the loop is today's.
+- *A burst of signals* (the vblank thread late, several refreshes pending) marks one vblank, the
+  most recent; the others are dropped. The rule (the owner's): if the game measured time by
+  counting vblanks, none could be lost; if it only synchronizes with them, the latest is enough. It
+  only synchronizes: the vblank count (device +16824) and its time (+16828) are read only by the
+  D3D flip callback (sub_82774C48) to schedule flips, the flips retired (+16848) only by the swap
+  (sub_821F31C8) to throttle the CPU's run-ahead, and no game callback is registered for vblanks;
+  the game's and OGRE's time comes from the time base (OGRE's Timer, sub_82423668 and sub_824236C8,
+  through sub_821F8FE0).
+- *The watchdog* falls back to the timer when no signal comes within 2.5 periods of the rate (the
+  display asleep, the app away) and back to the signals with the first one, a vblank never marked
+  twice (a signal within half a period of a timer vblank is dropped). The rate stays the cap and
+  sets the watchdog's period; the app sets it again when the display's period changes.
+- *Coordination:* the change alters GraphicsSystem, so every SDK build (desktop and Android)
+  rebuilds both GPU plugins with the app; the ReXGlue and Android owners are told before it lands.
+
 **Risks.** The game's adaptive vsync and its fixed 60 Hz in the flip scheduling; refresh rate
 changes and monitor moves; display sleep (the watchdog); the compositor's extra refresh in a
 window; Choreographer's looper thread; NVIDIA without OML on X11; the SDK patch coordinated with
