@@ -35,7 +35,7 @@ until the codegen makes `sub_X` a weak function calling `__imp__sub_X` instead o
    minute (`src/pgo/pgo_writer.cpp`: the game ends by a hard exit), so a run must last more than a
    minute.
 3. Merge with that compiler's `llvm-profdata merge --sparse -o PLATFORM.profdata DIR/*.profraw`.
-4. Build with `-DTORCHLIGHT_LTO=ON -DTORCHLIGHT_PGO_USE=PLATFORM.profdata` and check the build log
+4. Build with `-DTORCHLIGHT_PGO_USE=PLATFORM.profdata` and check the build log
    with `tools/pgo/check_profile_match.py LOG --build-dir BUILD` (it fails over 5 % of functions
    with mismatched profile data, or when the profile was not used).
 
