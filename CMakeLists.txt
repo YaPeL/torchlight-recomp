@@ -150,6 +150,36 @@ if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     target_compile_options(torchlight_recomp PRIVATE -mcmodel=small)
     target_compile_options(torchlight PRIVATE -mcmodel=small)
 endif()
+# Whole-program optimisation of the generated code and the game's own (docs/perf/pgo.md): ThinLTO,
+# and clang's instrumented profile-guided optimisation, generated (an instrumented build writes the
+# counters, src/pgo/pgo_writer.cpp) and used (a merged .profdata). Off by default; the SDK's
+# libraries get neither.
+option(TORCHLIGHT_LTO "ThinLTO for the generated code and the game's own" OFF)
+option(TORCHLIGHT_PGO_GENERATE "Instrument the generated code and the game's own for PGO" OFF)
+set(TORCHLIGHT_PGO_USE "" CACHE FILEPATH "Merged clang profile (.profdata) to optimise with")
+if(TORCHLIGHT_LTO)
+    target_compile_options(torchlight_recomp PRIVATE -flto=thin)
+    target_compile_options(torchlight PRIVATE -flto=thin)
+    target_link_options(torchlight PRIVATE -flto=thin -fuse-ld=lld)
+endif()
+if(TORCHLIGHT_PGO_GENERATE AND TORCHLIGHT_PGO_USE)
+    message(FATAL_ERROR "TORCHLIGHT_PGO_GENERATE and TORCHLIGHT_PGO_USE exclude each other")
+endif()
+if(TORCHLIGHT_PGO_GENERATE)
+    target_compile_options(torchlight_recomp PRIVATE -fprofile-instr-generate)
+    target_compile_options(torchlight PRIVATE -fprofile-instr-generate)
+    target_link_options(torchlight PRIVATE -fprofile-instr-generate)
+    target_sources(torchlight PRIVATE src/pgo/pgo_writer.cpp)
+    target_compile_definitions(torchlight PRIVATE TORCHLIGHT_PGO_GENERATE=1)
+elseif(TORCHLIGHT_PGO_USE)
+    # A function whose code changed since the profile keeps no profile; clang says how many of
+    # each translation unit's functions did (-Wprofile-instr-out-of-date), and
+    # tools/pgo/check_profile_match.py turns the build log's counts into a pass or fail.
+    target_compile_options(torchlight_recomp PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
+                           -Wno-profile-instr-unprofiled)
+    target_compile_options(torchlight PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
+                           -Wno-profile-instr-unprofiled)
+endif()
 # The SDK copies the GPU plugins next to the executable in a POST_BUILD step, which only runs when
 # the executable relinks: after reinstalling the SDK the game kept loading the old plugins. This copy
 # depends on the installed plugin files instead (a stamp per plugin: OUTPUT takes no target-dependent
