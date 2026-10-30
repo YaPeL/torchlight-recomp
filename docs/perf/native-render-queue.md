@@ -184,6 +184,31 @@ included, with the guest's functions doing every state write and only a computat
 each part checked in the same frame both ways and, for what that cannot see, by comparing the
 guest's words the part must leave (listed from the reading) after the guest's own part.
 
+**Resumed on 2026-10-30 (the owner's decision), with the hidden state attacked at the root.** The
+goal: with the fps cap at 30, wave 10 of `fight5` is about 37 ms a frame on the POCO and must come
+under 33.3 ms at its p95, about 5 ms.
+- *A store trace.* Every scalar guest store of the generated code goes through
+  `REX_STORE_U8/16/32/64` (`generated/default/torchlight_pch.h:146-149`), the vector, `dcbz` and
+  atomic ones through `REX_RAW_ADDR`. A diagnostics build (`TORCHLIGHT_DIAGNOSTICS`) adds a header
+  to the generated code's target that redefines them (nothing generated or in the SDK edited):
+  outside a traced call one load and a predicted branch per store; inside the call tree of a traced
+  entry (wrappers on renderSingleObject, `_setPass`, `_updateAutoParams`,
+  `bindGpuProgramParameters`) each write is recorded with its address, size, old and new value;
+  `REX_RAW_ADDR` lines are snapshot on first touch and diffed; our own `abi::Write*` record too;
+  kernel exports are logged as events.
+- *The criterion per call.* Run the native path with its writes recorded and its commands set
+  aside, undo them, run the original; the net writes (address to final value), the returned
+  registers and the commands must be equal. Each call is checked against all the memory it touches,
+  so the hidden caches (the light hash, the dirty mask +0x43B4, the pass iteration index, the auto
+  parameters' lazy caches) are compared too.
+- *Stages*, by gain over risk (realistic ms, `fight.txt` / wave 10): 1 static opaque of the main
+  scene (1.0 / 2.0-2.8), 2 projector passes (0.9 / 0.8-1.1), 3 transparents (0.7 / 1.5-2.2), 4
+  skinned (0.3, last or never); `_updateAutoParams` and `bindGpuProgramParameters` within stage 1,
+  `_setPass` last. Stages 1-3 probably reach the goal, with little margin.
+- *Before each stage is integrated:* no difference in the comparison over runs of `fight.txt` and
+  `fight5`, and an A B B A of the guest's work per frame with Even frames off and the thermal state
+  logged. After stage 1, with its real numbers, the owner decides on stage 2.
+
 ## 5. The decision: our side first, then the culling's pure test
 
 **First: a cheaper capture and cheaper hooks.** Our side of the walk is 2.96 ms in `fight.txt` and
@@ -384,9 +409,32 @@ file) fixes three Torchlight II stutters in the same engine. Read against our bu
   ZipArchive, zziplib and zlib 1.2.3 (inflate sub_823E1590), in chunks on a raw-deflate z_stream,
   streaming on demand; a backward seek inflates the entry again from its start. About 0.2 % of the
   main thread in play, but an estimated 10-25 % of a level load's longest frame on the POCO and 30-45
-  ms of a 120-160 ms first-use hitch. Whole-entry decompression with libdeflate behind zziplib's
-  read, seek, rewind and close (sub_8258A068, sub_8258A368, sub_8258A258, sub_82589B88) is being
-  planned (the owner's OK to the plan, not yet to code).
+  ms of a 120-160 ms first-use hitch. A level load is about 8.5 s on the POCO, so the gain there is
+  2-4 %, about the spread between runs. **Not done (the owner's decision, 2026-10-30)**; the plan
+  stays here:
+  - The pak (`pak.zip`, Xbox): 20,045 deflated entries, 380 MB (136 MB compressed); p50 2.8 KB, p99
+    313 KB, the largest 2.98 MB (`MASSFILE.DAT.ADM`), 12 over 1 MB. Sound is in it (WAV, OGG up to
+    532 KB).
+  - Hooks on zziplib's read, seek, rewind and close (sub_8258A068, sub_8258A368, sub_8258A258,
+    sub_82589B88): on the first read of a deflated entry, its compressed bytes are read through the
+    guest's own io (as zzip_file_read does: saveoffset sub_82589C98 on the directory's current fp,
+    seek to the data offset, csize bytes through the 32 KB buffer) and the whole entry decoded with
+    libdeflate into a host buffer, which serves every read and seek; zziplib's restlen (ZZIP_FILE
+    +0xC, usize +0x14, csize +0x18, data offset +0x1C, verified in zzip_file_open sub_82589D10)
+    stays the one source of truth (OGRE's tell is usize - restlen). A buffer is freed at
+    zzip_file_close, not at the end of the data (FMOD seeks back after reading the end).
+  - Memory: resources open, read whole and close one entry at a time (meshes and textures copy the
+    stream to memory; skeletons read to the end); FMOD's sounds may stay open while they play.
+    Peak under 8 MB typical, about 35 MB worst case (64 open sounds of the largest size). Caps: 16
+    MB an entry, 32 MB in all (least recently used evicted and decoded again on demand); over the
+    cap, or on any libdeflate result other than the exact size, the guest's own path for that file.
+  - Partial reads: none found for meshes, DDS or skeletons; sounds are inflated twice today (FMOD's
+    tag probe seeks to the end and back, and zzip_seek inflates again from 0 on a backward seek),
+    which whole-entry decoding removes.
+  - Verification: all 20,045 entries against the central directory's CRC32 and zlib's output (plus
+    truncated and corrupted copies for the fallback); a diag running the guest's path and comparing
+    every read and seek; a level-load A B B A on the POCO, which would need a decompression time
+    counter to tell 150-300 ms from the run-to-run spread.
 - **The clock** (OGRE's Win32 timer pinning the thread to one core on every read): does not apply.
   The guest's OGRE Timer (sub_82423668, sub_824236C8) reads the time base (`mftb`, sub_821F8FE0)
   with no affinity call, which ReXGlue turns into the host's `clock_gettime` or
