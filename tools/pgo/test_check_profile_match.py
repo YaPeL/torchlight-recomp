@@ -30,6 +30,10 @@ def main():
     assert run(used) == 0, "no mismatch reported: everything matched"
     assert run("clang++ -c a.cpp\n") == 1, "the profile was not used"
     assert run(used + W.format(n=10, m=5, v="have"), "--functions", "1000") == 0, "measured on all"
+    d = tempfile.mkdtemp()
+    with open(os.path.join(d, "build.ninja"), "w") as f:
+        f.write("FLAGS = -O3 -fprofile-instr-use=/p.profdata\n")
+    assert run("[1/2] Building CXX object a.o\n", "--build-dir", d) == 0, "used per build.ninja"
     print("check_profile_match: ok")
 
 

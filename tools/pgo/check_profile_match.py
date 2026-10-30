@@ -12,12 +12,16 @@ This sums those counts over a build log and exits 1 when the mismatched share pa
 again), 0 otherwise; it also fails when the log has no such line at all, which means the profile
 was not used.
 
-Usage: check_profile_match.py BUILD_LOG [--max-mismatch-percent P] [--functions N]
+Usage: check_profile_match.py BUILD_LOG [--build-dir DIR] [--max-mismatch-percent P]
+                               [--functions N]
+  --build-dir  the build folder: its build.ninja proves the profile was passed to the compiler
+               (ninja does not print the commands in the log).
   --functions  the number of profiled functions to measure against when clang reports none out of
                date (it says nothing for a unit whose functions all match).
 """
 
 import argparse
+import os
 import re
 import sys
 
@@ -40,12 +44,16 @@ def main(argv=None):
     ap.add_argument("log")
     ap.add_argument("--max-mismatch-percent", type=float, default=5.0)
     ap.add_argument("--functions", type=int, default=0)
-    ap.add_argument("--used-marker", default="-fprofile-instr-use=",
-                    help="text that proves the profile was passed to the compiler")
+    ap.add_argument("--build-dir", default="")
     args = ap.parse_args(argv)
+    marker = "-fprofile-instr-use="
     text = open(args.log, encoding="utf-8", errors="replace").read()
+    used = marker in text
+    if args.build_dir:
+        ninja = os.path.join(args.build_dir, "build.ninja")
+        used = used or (os.path.exists(ninja) and marker in open(ninja, errors="replace").read())
     total, bad, lines = mismatch(text)
-    if lines == 0 and args.used_marker not in text:
+    if lines == 0 and not used:
         print("pgo check: no -fprofile-instr-use in the log: the profile was not used")
         return 1
     denominator = max(total, args.functions)
