@@ -3,9 +3,9 @@
 The generated code and the game's own, compiled with clang's instrumented profile-guided
 optimisation (PGO) and ThinLTO (`CMakeLists.txt`: `TORCHLIGHT_LTO`, `TORCHLIGHT_PGO_GENERATE`,
 `TORCHLIGHT_PGO_USE`); the SDK's libraries get neither. Started after the comparison with
-torchlight-nx (docs/perf/native-render-queue.md section 8): same cut, about twice our speed per draw,
-most of it from the build pipeline. The owner's decision (2026-10-30): PGO on Linux and Android
-first, trained by us; Windows and macOS later, as below.
+torchlight-nx (docs/perf/native-render-queue.md section 8): same cut, about twice our speed per
+draw, most of it from the build pipeline. The owner's decision (2026-10-30): PGO on Linux and
+Android first, trained by us; Windows and macOS later, as below.
 
 ## Measured
 
@@ -20,8 +20,8 @@ guest frame ms, A B B A each):
 | Base (four runs) against PGO + ThinLTO (two) | 10.70 -> 9.31 (-13 %) | 6.36 -> 5.82 (-8.5 %) |
 
 Each alone is within the runs' spread (base fights 10.2-11.1 ms); together the gain is clear: with
-ThinLTO the profile can inline and order across the generated code's 220 translation units. The
-CPU ran at 2.4-3.2 GHz and 55-62 C before each run. Android: below, when measured.
+ThinLTO the profile can inline and order across the generated code's 220 translation units. The CPU
+ran at 2.4-3.2 GHz and 55-62 C before each run. Android: below, when measured.
 
 ## Making a profile
 
@@ -51,16 +51,17 @@ training again is part of every freeze.
 
 ## In the release
 
-The profiles live in the private assets repository (the owner's decision), next to `default.xex`,
-as `pgo/<platform>.profdata`; every Game job of `release.yml` already checks it out. The job moves
-its platform's profile out before the checkout is removed, configures with `TORCHLIGHT_LTO=ON` and
-`TORCHLIGHT_PGO_USE`, keeps the build's output in a file (the warnings name generated files) and runs
-the match check right after the build, before the tests and packaging.
+The profiles live in the private assets repository (the owner's decision), next to `default.xex`, as
+`pgo/<platform>.profdata`; every Game job of `release.yml` already checks it out. The job moves its
+platform's profile out before the checkout is removed, configures with `TORCHLIGHT_LTO=ON` and
+`TORCHLIGHT_PGO_USE`, keeps the build's output in a file (the warnings name generated files) and
+runs the match check right after the build, before the tests and packaging.
 
-ThinLTO moves code generation from the compile to the link's parallel backends: about the same
-total time (360 s against about 450 s locally), a link of minutes. Its memory grows with the
-backends: 4 jobs on the Linux and Windows runners (16 GB), 2 on macOS (7 GB):
-`-Wl,--thinlto-jobs=N`, `-Wl,/opt:lldltojobs=N`, `-Wl,-mllvm,-threads=N`. Windows links with
-lld-link instead of link.exe (which cannot read bitcode; the symbols' collection step is to be
-checked again with lld-link's PDB); Apple keeps ld64, which does ThinLTO itself. The ThinLTO cache
-does not help the release, which starts from nothing and uses no caches.
+ThinLTO moves code generation from the compile to the link's parallel backends: about the same total
+time (360 s against about 450 s locally), a link of minutes. Its memory grows with the backends: 4
+jobs on the Linux and Windows runners (16 GB), 2 on macOS (7 GB): `-Wl,--thinlto-jobs=N`,
+`-Wl,/opt:lldltojobs=N`, `-Wl,-mllvm,-threads=N`. Windows links with lld-link instead of link.exe
+(which cannot read bitcode; the symbols' collection step is to be checked again with lld-link's
+PDB); Apple keeps ld64, which does ThinLTO itself. The ThinLTO cache does not help the release,
+which starts from nothing and uses no caches.
+
