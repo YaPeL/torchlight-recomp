@@ -132,15 +132,30 @@ add_dependencies(torchlight torchlight_wardrobe_blend_check)
 set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES
     OBJECT_DEPENDS "${_wardrobe_blend_header}")
 target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated_include")
-# On Android the game is a shared library that the SDK links with -Wl,-Bsymbolic-functions (patch
-# 47): every link checks that the generated code's calls are bound inside it and reach the hooks.
+# Every link checks that the generated code's calls reach the hooks
+# (tools/android/check_guest_call_binding.py): on Android the game is a shared library the SDK links
+# with -Wl,-Bsymbolic-functions (patch 47); everywhere, nothing (ThinLTO did, docs/regressions.md)
+# may bind a generated call to a hooked function's __imp__ body past its hook. Windows' executable
+# has no symbol table: the linker writes a map the check reads.
+get_filename_component(_toolchain_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+find_program(TORCHLIGHT_LLVM_NM NAMES llvm-nm llvm-nm-21 nm HINTS "${_toolchain_bin}")
+find_program(TORCHLIGHT_LLVM_OBJDUMP NAMES llvm-objdump llvm-objdump-21 objdump
+             HINTS "${_toolchain_bin}")
 if(ANDROID)
-    add_custom_command(TARGET torchlight POST_BUILD
-        COMMAND ${Python3_EXECUTABLE} -I
-                ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
-                $<TARGET_FILE:torchlight> --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP}
-        VERBATIM)
+    set(_binding_tools --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP})
+else()
+    set(_binding_tools --nm ${TORCHLIGHT_LLVM_NM} --objdump ${TORCHLIGHT_LLVM_OBJDUMP})
 endif()
+if(WIN32)
+    set(_binding_map "${CMAKE_CURRENT_BINARY_DIR}/torchlight.map")
+    target_link_options(torchlight PRIVATE "LINKER:/MAP:${_binding_map}")
+    list(APPEND _binding_tools --map ${_binding_map})
+endif()
+add_custom_command(TARGET torchlight POST_BUILD
+    COMMAND ${Python3_EXECUTABLE} -I
+            ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
+            $<TARGET_FILE:torchlight> ${_binding_tools}
+    VERBATIM)
 # The default code model for the game on Linux x86-64 (docs/guest-hot-paths.md). The SDK compiles
 # its targets with -mcmodel=large ("large executable support"), which makes every call between
 # guest functions a 64-bit absolute address in a register and an indirect call; the executable's

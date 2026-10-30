@@ -15,13 +15,15 @@ guest frame ms, A B B A each):
 | Comparison | Fight | Rest |
 | --- | --- | --- |
 | Base against PGO | 10.47 -> 10.08 (-3.7 %) | 6.38 -> 6.18 (-3.1 %) |
-| Base against ThinLTO alone | 10.94 -> 10.45 (-4.5 %) | 6.34 -> 6.26 (-1.3 %) |
-| PGO against PGO + ThinLTO | 10.21 -> 9.31 (-8.8 %) | 6.08 -> 5.82 (-4.3 %) |
-| Base (four runs) against PGO + ThinLTO (two) | 10.70 -> 9.31 (-13 %) | 6.36 -> 5.82 (-8.5 %) |
+| ~~Base against ThinLTO alone~~ (void) | ~~10.94 -> 10.45 (-4.5 %)~~ | ~~6.34 -> 6.26~~ |
+| ~~PGO against PGO + ThinLTO~~ (void) | ~~10.21 -> 9.31 (-8.8 %)~~ | ~~6.08 -> 5.82~~ |
+| ~~Base against PGO + ThinLTO~~ (void) | ~~10.70 -> 9.31 (-13 %)~~ | ~~6.36 -> 5.82~~ |
 
-Each alone is within the runs' spread (base fights 10.2-11.1 ms); together the gain is clear: with
-ThinLTO the profile can inline and order across the generated code's 220 translation units. The CPU
-ran at 2.4-3.2 GHz and 55-62 C before each run. Android: below, when measured.
+PGO alone is within the runs' spread (base fights 10.2-11.1 ms). The ThinLTO rows are void: those
+builds bound 1454 of the generated code's calls past the hooks (docs/regressions.md), so they did
+not run the same code. ThinLTO is out, in measurements and in the release (the owner's decision),
+until the codegen makes `sub_X` a weak function calling `__imp__sub_X` instead of an alias; then PGO
++ ThinLTO is measured again from the start. The CPU ran at 2.4-3.2 GHz and 55-62 C before each run.
 
 ## Making a profile
 
@@ -53,15 +55,16 @@ training again is part of every freeze.
 
 The profiles live in the private assets repository (the owner's decision), next to `default.xex`, as
 `pgo/<platform>.profdata`; every Game job of `release.yml` already checks it out. The job moves its
-platform's profile out before the checkout is removed, configures with `TORCHLIGHT_LTO=ON` and
-`TORCHLIGHT_PGO_USE`, keeps the build's output in a file (the warnings name generated files) and
-runs the match check right after the build, before the tests and packaging.
+platform's profile out before the checkout is removed, configures with `TORCHLIGHT_PGO_USE`, keeps
+the build's output in a file (the warnings name generated files) and runs the match check right
+after the build, before the tests and packaging.
 
-ThinLTO moves code generation from the compile to the link's parallel backends: about the same total
-time (360 s against about 450 s locally), a link of minutes. Its memory grows with the backends: 4
-jobs on the Linux and Windows runners (16 GB), 2 on macOS (7 GB): `-Wl,--thinlto-jobs=N`,
-`-Wl,/opt:lldltojobs=N`, `-Wl,-mllvm,-threads=N`. Windows links with lld-link instead of link.exe
-(which cannot read bitcode; the symbols' collection step is to be checked again with lld-link's
-PDB); Apple keeps ld64, which does ThinLTO itself. The ThinLTO cache does not help the release,
-which starts from nothing and uses no caches.
+For when ThinLTO comes back (it is out for now, above): it moves code generation from the compile to
+the link's parallel backends: about the same total time (360 s against about 450 s locally), a link
+of minutes. Its memory grows with the backends: 4 jobs on the Linux and Windows runners (16 GB), 2
+on macOS (7 GB): `-Wl,--thinlto-jobs=N`, `-Wl,/opt:lldltojobs=N`, `-Wl,-mllvm,-threads=N`. Windows
+links with lld-link instead of link.exe (which cannot read bitcode; the symbols' collection step is
+to be checked again with lld-link's PDB); Apple keeps ld64, which does ThinLTO itself. The ThinLTO
+cache does not help the release, which starts from nothing and uses no caches.
+
 

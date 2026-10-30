@@ -21,12 +21,21 @@ function to its own start is not a bypass (a loop or a recursive call made by th
 the hooks' (host code's) calls to __imp__X are what they are for. Indirect guest calls go through
 the function table, whose entries the static linker resolves to X too.
 
-Usage: tools/android/check_guest_call_binding.py LIBRARY [--nm LLVM_NM] [--objdump LLVM_OBJDUMP]
+On the desktop the game is an executable, whose direct calls the static linker binds: the same
+bypass check runs on Linux (ELF x86-64), macOS (Mach-O arm64: symbols carry a leading underscore,
+and a weak X may be a thunk of its own rather than at its __imp__'s address) and Windows (PE
+x86-64: the executable has no symbol table, so the names and addresses come from the linker's map,
+--map, and a hooked X is one at another address than its __imp__X). ThinLTO bypassed 1492 hooks
+this way on Android and some on the desktop before it was taken out (docs/regressions.md).
+
+Usage: tools/android/check_guest_call_binding.py BINARY [--nm LLVM_NM] [--objdump LLVM_OBJDUMP]
+                                                 [--map LINKER_MAP]
 Exit status: 0 when every call is bound as expected, 1 when not (problems printed, at most 20
 of each kind), 2 on bad input.
 """
 
 import argparse
+import bisect
 import re
 import subprocess
 import sys
@@ -35,6 +44,9 @@ LABEL = re.compile(r"^([0-9a-f]+) <(.+)>:$")
 # "  39e6770:      \tbl\t0x3acef18 <_Unwind_Resume>": every direct branch (bl, b, b.cond,
 # cbz/cbnz, tbz/tbnz) names its target this way.
 BRANCH = re.compile(r"^\s*([0-9a-f]+):\s+(bl|b|b\.\w+|cbn?z|tbn?z)\t(?:.*, )?0x([0-9a-f]+) <(.+)>$")
+# x86-64: "  4a1b2c: \tcall\t0x4a2000 <sub_82100000>" (jmp and jcc for tail calls); on Windows,
+# with no symbols, the target has no name: "call\t0x140001010".
+BRANCH_X86 = re.compile(r"^\s*([0-9a-f]+):\s+(call\w*|jmp\w*|j[a-z]{1,3})\s+0x([0-9a-f]+)(?: <(.+)>)?$")
 # lld's range extension thunks: __AArch64ADRPThunk_<target>, __AArch64AbsLongThunk_<target>.
 THUNK = re.compile(r"__AArch64\w*Thunk_(.+)$")
 # Code the compiler or linker split off or made, which may belong to a generated function.
@@ -42,15 +54,42 @@ PIECE = re.compile(r"OUTLINED_FUNCTION_|\.cold|\.llvm\.|__AArch64\w*Thunk_")
 SHOWN = 20
 
 
-def symbols(nm, library):
-    """{name: (type, address)} of the library's guest functions: each __imp__X and its X."""
-    out = subprocess.run([nm, "--defined-only", library], check=True, capture_output=True,
+def file_format(objdump, binary):
+    """objdump's name for the binary's format, e.g. "elf64-littleaarch64", "mach-o arm64"."""
+    out = subprocess.run([objdump, "-f", binary], check=True, capture_output=True,
                          text=True).stdout
-    defined = {}
     for line in out.splitlines():
-        fields = line.split()
-        if len(fields) == 3:
-            defined[fields[2]] = (fields[1], int(fields[0], 16))
+        if "file format" in line:
+            return line.split("file format", 1)[1].strip()
+    return ""
+
+
+def map_symbols(map_path):
+    """{name: ("T", address)} from an MSVC / lld-link map ("0001:00000010  sub_82100000
+    0000000140001010 f  obj"): the publics' Rva+Base."""
+    defined = {}
+    line_re = re.compile(r"^\s*[0-9a-f]{4}:[0-9a-f]{8}\s+(\S+)\s+([0-9a-f]{16})\b", re.I)
+    with open(map_path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            m = line_re.match(line)
+            if m:
+                defined[m.group(1)] = ("T", int(m.group(2), 16))
+    return defined
+
+
+def symbols(nm, library, macho=False, map_path=None):
+    """{name: (type, address)} of the library's guest functions: each __imp__X and its X."""
+    defined = {}
+    if map_path:
+        defined = map_symbols(map_path)
+    else:
+        out = subprocess.run([nm, "--defined-only", library], check=True, capture_output=True,
+                             text=True).stdout
+        for line in out.splitlines():
+            fields = line.split()
+            if len(fields) == 3:
+                name = fields[2][1:] if macho and fields[2].startswith("_") else fields[2]
+                defined[name] = (fields[1], int(fields[0], 16))
     found = {}
     for name, value in defined.items():
         if name.startswith("__imp__"):
@@ -61,8 +100,14 @@ def symbols(nm, library):
     return found
 
 
-def check(library, nm, objdump):
-    syms = symbols(nm, library)
+def check(library, nm, objdump, map_path=None):
+    fmt = file_format(objdump, library)
+    macho = fmt.startswith("mach-o")
+    x86 = "x86-64" in fmt or "x86_64" in fmt
+    syms = symbols(nm, library, macho, map_path)
+    by_address = {address: name for name, (_, address) in syms.items()}
+    # With a map (no symbols in the disassembly), each branch's function by the nearest symbol.
+    starts = sorted(by_address) if map_path else []
     problems = {}
 
     def problem(kind, text):
@@ -79,8 +124,12 @@ def check(library, nm, objdump):
             problem("missing", f"{guest}: __imp__{guest} has no {guest}")
             continue
         alias_kind, alias_address = syms[guest]
-        if alias_kind == "W":
+        if map_path:
+            # A map tells no binding: a hook is an X at another address than its __imp__X.
             if alias_address != address:
+                hooked[address] = guest
+        elif alias_kind in ("W", "w"):
+            if alias_address != address and not macho:
                 problem("alias", f"{guest}: weak, at {alias_address:#x}, not at its __imp__ "
                         f"({address:#x})")
         elif alias_address == address:
@@ -97,11 +146,21 @@ def check(library, nm, objdump):
                 label = LABEL.match(line)
                 if label:
                     function_start, function_name = int(label.group(1), 16), label.group(2)
+                    if macho and function_name.startswith("_"):
+                        function_name = function_name[1:]
                 continue
-            branch = BRANCH.match(line)
+            branch = (BRANCH_X86 if x86 else BRANCH).match(line)
             if not branch:
                 continue
-            target_name, target = branch.group(4), int(branch.group(3), 16)
+            target = int(branch.group(3), 16)
+            if starts:
+                site = int(branch.group(1), 16)
+                k = bisect.bisect_right(starts, site) - 1
+                if k >= 0:
+                    function_start, function_name = starts[k], by_address[starts[k]]
+            target_name = branch.group(4) or by_address.get(target, "")
+            if macho and target_name.startswith("_"):
+                target_name = target_name[1:]
             if target_name.endswith("@plt"):
                 if target_name[:-len("@plt")] in syms:
                     problem("plt", f"{function_name} at {branch.group(1)}: "
@@ -139,9 +198,10 @@ def main():
     parser.add_argument("library")
     parser.add_argument("--nm", default="llvm-nm")
     parser.add_argument("--objdump", default="llvm-objdump")
+    parser.add_argument("--map", default=None)
     args = parser.parse_args()
     try:
-        return check(args.library, args.nm, args.objdump)
+        return check(args.library, args.nm, args.objdump, args.map)
     except (OSError, subprocess.CalledProcessError) as error:
         print(f"check_guest_call_binding: {error}", file=sys.stderr)
         return 2
