@@ -228,12 +228,20 @@ target_include_directories(torchlight PRIVATE src)
 # floating-point operations (hooks/wardrobe_blend.h).
 set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 # Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
-# hooks/queue_census_hooks.cpp, --diag_queue_census). Off by default and in every release workflow:
-# without it nothing of them is compiled, no guest function is wrapped and nothing runs, so they
-# cost nothing. The one build flag for such diagnostics.
+# hooks/queue_census_hooks.cpp, --diag_queue_census; diag/store_trace.cpp, --diag_store_trace).
+# Off by default and in every release workflow: without it nothing of them is compiled, no guest
+# function is wrapped and nothing runs, so they cost nothing. The one build flag for such
+# diagnostics.
 option(TORCHLIGHT_DIAGNOSTICS "Compile the diagnostics that wrap guest functions" OFF)
 if(TORCHLIGHT_DIAGNOSTICS)
-    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp)
+    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp
+                   src/diag/store_trace.cpp)
+    # The store trace (diag/store_trace.h, --diag_store_trace): precompiled after the generated
+    # code's own header, it redefines its guest stores; the whole generated code is rebuilt.
+    if(TARGET torchlight_recomp)
+        target_precompile_headers(torchlight_recomp PRIVATE
+                                  "${CMAKE_SOURCE_DIR}/src/diag/store_trace.h")
+    endif()
     target_link_libraries(torchlight PRIVATE torchlight_queue_census)
     # The colour pack/unpack checks against the guest's own functions (pixel_util_check.inc).
     # The wardrobe blend loop's check against the recompiled loop (wardrobe_blend_check.inl).
