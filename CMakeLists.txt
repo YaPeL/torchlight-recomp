@@ -160,7 +160,13 @@ set(TORCHLIGHT_PGO_USE "" CACHE FILEPATH "Merged clang profile (.profdata) to op
 if(TORCHLIGHT_LTO)
     target_compile_options(torchlight_recomp PRIVATE -flto=thin)
     target_compile_options(torchlight PRIVATE -flto=thin)
-    target_link_options(torchlight PRIVATE -flto=thin -fuse-ld=lld)
+    # lld reads the bitcode (Windows' link.exe cannot); Apple's ld64 does ThinLTO itself and Xcode
+    # has no lld.
+    if(APPLE)
+        target_link_options(torchlight PRIVATE -flto=thin)
+    else()
+        target_link_options(torchlight PRIVATE -flto=thin -fuse-ld=lld)
+    endif()
 endif()
 if(TORCHLIGHT_PGO_GENERATE AND TORCHLIGHT_PGO_USE)
     message(FATAL_ERROR "TORCHLIGHT_PGO_GENERATE and TORCHLIGHT_PGO_USE exclude each other")
