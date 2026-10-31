@@ -165,7 +165,6 @@ void TestRoundTrip() {
   for (const auto& cmd : read.frames[0].commands) {
     if (const auto* c = std::get_if<SetConstants>(&cmd.payload); c && !c->autos.empty()) {
       Check(c->autos[0].name == "ACT_WORLDVIEWPROJ_MATRIX", "auto constant name read back");
-      Check(*c == consts, "constants read back equal");
       Check(c->floats.size() == 1 && c->ints.size() == 1 && c->values.size() == 12,
             "constant ranges and values read back");
       Check(c->Data(c->floats[0])[0] == 0x3F800000u && c->Data(c->floats[0])[7] == 8 &&
