@@ -393,7 +393,6 @@ void MmioStore(uint32_t, const char*) {
 
 namespace {
 
-using GuestFunction = void (*)(PPCContext&, uint8_t*);
 namespace cap = torchlight::capture;
 namespace commands = torchlight::commands;
 
@@ -708,9 +707,6 @@ void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& ca
               entry, memory, registers, commands_differ, sp, text);
 }
 
-// The candidate for each compared function: the guest's own until a native path is plugged in.
-GuestFunction g_candidate_821C5FA0 = nullptr;
-
 void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
                  GuestFunction original) {
   cap::Session& session = cap::Session::Get();
@@ -765,6 +761,19 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
 
 }  // namespace
 
+bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
+                        GuestFunction original) {
+  if (CompareEnabled() && t_call.depth == 0) {
+    CompareCall(ctx, base, 0x821C5FA0, candidate, original);
+    return true;
+  }
+  if (!Enabled()) return false;
+  Begin(0x821C5FA0, ctx.r1.u32);
+  original(ctx, base);
+  End(base);
+  return true;
+}
+
 }  // namespace torchlight::diag::store_trace
 
 extern "C" {
@@ -782,20 +791,5 @@ extern "C" {
 TORCHLIGHT_STORE_TRACE_ENTRY(821C5730)
 #undef TORCHLIGHT_STORE_TRACE_ENTRY
 
-// SceneManager::renderSingleObject (guest_abi render_queue): traced, or compared.
-REX_EXTERN(__imp__sub_821C5FA0);
-REX_FUNC(sub_821C5FA0) {
-  namespace st = torchlight::diag::store_trace;
-  if (st::CompareEnabled() && st::t_call.depth == 0) {
-    st::CompareCall(ctx, base, 0x821C5FA0,
-                    st::g_candidate_821C5FA0 ? st::g_candidate_821C5FA0 : __imp__sub_821C5FA0,
-                    __imp__sub_821C5FA0);
-    return;
-  }
-  if (!st::Enabled()) return __imp__sub_821C5FA0(ctx, base);
-  st::Begin(0x821C5FA0, ctx.r1.u32);
-  __imp__sub_821C5FA0(ctx, base);
-  st::End(base);
-}
 
 }  // extern "C"

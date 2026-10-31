@@ -79,6 +79,8 @@ set(TORCHLIGHT_SOURCES
     src/hooks/adaptive_vsync_hooks.cpp
     src/hooks/guest_io_hooks.cpp
     src/hooks/render_system_hooks.cpp
+    # Option B stage 1: renderSingleObject on the host (--native_render_object, off by default).
+    src/hooks/native_render_object.cpp
     src/hooks/rtss_listener_hooks.cpp
     src/hooks/resource_hooks.cpp
     src/hooks/video_mode_hooks.cpp
@@ -239,7 +241,7 @@ if(TORCHLIGHT_DIAGNOSTICS)
     # The store trace's comparison reaches into the capture session and the constants hook
     # (capture::Session::CompareLog).
     set_property(SOURCE src/capture/session.cpp src/hooks/render_system_hooks.cpp
-                 src/diag/store_trace.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+                 src/hooks/native_render_object.cpp src/diag/store_trace.cpp APPEND PROPERTY COMPILE_DEFINITIONS
                  TORCHLIGHT_DIAGNOSTICS=1)
     # The store trace (diag/store_trace.h, --diag_store_trace): precompiled after the generated
     # code's own header, it redefines its guest stores; the whole generated code is rebuilt.
