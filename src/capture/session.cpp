@@ -138,7 +138,78 @@ Session::ShadowEntry& Session::AddShadow(uint32_t key) {
   return entry;
 }
 
+#if TORCHLIGHT_DIAGNOSTICS
+void Session::CompareState(uint32_t key, CompareValue value) {
+  auto [it, inserted] = compare_->keys.try_emplace(key);
+  if (inserted) {
+    const ShadowEntry* entry = FindShadow(key);
+    if (entry && entry->present) it->second.before = {entry->payload, entry->object};
+  }
+  it->second.now = std::move(value);
+}
+#endif
+
+#if TORCHLIGHT_DIAGNOSTICS
+void Session::ReplayDiverted(const CompareLog& log) {
+  for (const CompareLog::Op& op : log.ops) {
+    switch (op.kind) {
+      case CompareLog::Op::kState:
+        State(op.key, *op.payload, op.object);
+        break;
+      case CompareLog::Op::kErase:
+        EraseState(op.key);
+        break;
+      case CompareLog::Op::kEvent:
+        Event(*op.payload);
+        break;
+      case CompareLog::Op::kDraw:
+        DrawEvent(std::get<commands::Draw>(*op.payload), op.live_keys);
+        break;
+      case CompareLog::Op::kConstants: {
+        // The whole upload, filtered through the mirror as ReadConstants does for the hook.
+        commands::SetConstants c = std::get<commands::SetConstants>(*op.payload);
+        if (!recording()) break;
+        ConstantMirror* mirror = live() ? &constant_mirror_ : nullptr;
+        const bool filter = mirror && !armed();
+        auto pass_ranges = [&](std::vector<commands::ConstantRange>& ranges, bool floats) {
+          std::vector<commands::ConstantRange> kept;
+          for (commands::ConstantRange& r : ranges) {
+            const uint8_t stage = c.stage.value;
+            if (mirror && filter &&
+                mirror->Holds(floats, stage, r.physical_index, r.data.data(), r.element_count))
+              continue;
+            if (mirror) mirror->Store(floats, stage, r.physical_index, r.data.data(), r.element_count);
+            kept.push_back(std::move(r));
+          }
+          ranges = std::move(kept);
+        };
+        pass_ranges(c.floats, true);
+        pass_ranges(c.ints, false);
+        if (mirror) {
+          if (filter && c.floats.empty() && c.ints.empty() &&
+              mirror->SameTail(c.stage.value, c.autos, c.transpose_matrices)) {
+            break;
+          }
+          mirror->StoreTail(c.stage.value, c.autos, c.transpose_matrices);
+        }
+        Event(std::move(c));
+        break;
+      }
+    }
+  }
+}
+#endif
+
 void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t object) {
+#if TORCHLIGHT_DIAGNOSTICS
+  if (compare_) [[unlikely]] {
+    CompareState(key, {payload, object});
+    if (compare_->divert) {
+      compare_->ops.push_back({CompareLog::Op::kState, key, object, payload, {}});
+      return;
+    }
+  }
+#endif
   // A value equal to the shadow's is what every consumer already has (a capture starts from the
   // shadow as its baseline, the live consumer from EnableLive): not sent again. OGRE re-sets every
   // texture unit's state per pass, most of it unchanged.
@@ -169,6 +240,15 @@ std::vector<uint32_t> Session::ShadowKeysInOrder() const {
 }
 
 void Session::EraseState(uint32_t key) {
+#if TORCHLIGHT_DIAGNOSTICS
+  if (compare_) [[unlikely]] {
+    CompareState(key, {});
+    if (compare_->divert) {
+      compare_->ops.push_back({CompareLog::Op::kErase, key, 0, std::nullopt, {}});
+      return;
+    }
+  }
+#endif
   ShadowEntry* entry = FindShadow(key);
   if (!entry || !entry->present) return;
   entry->present = false;
@@ -176,6 +256,9 @@ void Session::EraseState(uint32_t key) {
 }
 
 bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> raw) const {
+#if TORCHLIGHT_DIAGNOSTICS
+  if (compare_ && compare_->divert) [[unlikely]] return false;
+#endif
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return false;
   const ArgsMemo& m = memos_[slot * kMemoSubs + sub];
   return m.entry && m.entry->present && m.entry->version == m.version &&
@@ -183,6 +266,9 @@ bool Session::Unchanged(uint32_t slot, uint32_t sub, std::span<const uint32_t> r
 }
 
 void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<const uint32_t> raw) {
+#if TORCHLIGHT_DIAGNOSTICS
+  if (compare_ && compare_->divert) [[unlikely]] return;
+#endif
   if (slot >= kRenderSystemSlotCount || sub >= kMemoSubs || raw.size() > kMaxRawArgs) return;
   const ShadowEntry* entry = FindShadow(key);
   if (!entry) return;
@@ -194,6 +280,18 @@ void Session::Remember(uint32_t slot, uint32_t sub, uint32_t key, std::span<cons
 }
 
 void Session::Event(commands::CommandPayload payload) {
+#if TORCHLIGHT_DIAGNOSTICS
+  if (compare_) [[unlikely]] {
+    if (!std::holds_alternative<commands::SetConstants>(payload)) {
+      compare_->items.push_back({payload, {}, {}});
+    }
+    if (compare_->divert) {
+      if (!std::holds_alternative<commands::SetConstants>(payload))
+        compare_->ops.push_back({CompareLog::Op::kEvent, 0, 0, payload, {}});
+      return;
+    }
+  }
+#endif
   if (!armed()) {
     if (live()) LiveAppend(std::move(payload));
     return;
@@ -203,6 +301,17 @@ void Session::Event(commands::CommandPayload payload) {
 }
 
 void Session::DrawEvent(commands::Draw draw, const std::vector<commands::Hash>& live_keys) {
+#if TORCHLIGHT_DIAGNOSTICS
+  if (compare_) [[unlikely]] {
+    CompareLog::Item item{draw, live_keys, {}};
+    for (const auto& [key, values] : compare_->keys) item.state.emplace(key, values.now);
+    compare_->items.push_back(std::move(item));
+    if (compare_->divert) {
+      compare_->ops.push_back({CompareLog::Op::kDraw, 0, 0, std::move(draw), live_keys});
+      return;
+    }
+  }
+#endif
   if (live()) {
     // Copied only when a capture also keeps it.
     commands::Draw d = armed() ? draw : std::move(draw);

@@ -4,6 +4,7 @@
 
 #include <rex/system/xmemory.h>
 
+#include "guest_abi/ogre_layout.h"
 #include "guest_abi/xbox_memory.h"
 
 namespace torchlight::hooks {
@@ -43,6 +44,11 @@ bool HostGuestCopy(uint8_t* base, uint32_t dst, uint32_t src, uint32_t size) {
     case GuestCopyRoute::kNothing:
       return true;
     case GuestCopyRoute::kHost:
+      // The store trace sees the copy as our own guest write (abi::g_guest_write_observer).
+      if (guest_abi::GuestWriteObserver observer =
+              guest_abi::g_guest_write_observer.load(std::memory_order_relaxed)) {
+        observer(base, dst, rex::memory::GuestPtr(base, src), size);
+      }
       std::memcpy(rex::memory::GuestPtr(base, dst), rex::memory::GuestPtr(base, src), size);
       return true;
     case GuestCopyRoute::kGuest:

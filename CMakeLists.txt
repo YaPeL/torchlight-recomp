@@ -303,12 +303,42 @@ target_include_directories(torchlight PRIVATE src)
 # floating-point operations (hooks/wardrobe_blend.h).
 set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 # Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
-# hooks/queue_census_hooks.cpp, --diag_queue_census). Off by default and in every release workflow:
-# without it nothing of them is compiled, no guest function is wrapped and nothing runs, so they
-# cost nothing. The one build flag for such diagnostics.
+# hooks/queue_census_hooks.cpp, --diag_queue_census; diag/store_trace.cpp, --diag_store_trace).
+# Off by default and in every release workflow: without it nothing of them is compiled, no guest
+# function is wrapped and nothing runs, so they cost nothing. The one build flag for such
+# diagnostics.
 option(TORCHLIGHT_DIAGNOSTICS "Compile the diagnostics that wrap guest functions" OFF)
 if(TORCHLIGHT_DIAGNOSTICS)
-    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp)
+    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp
+                   src/diag/store_trace.cpp)
+    # The store trace's comparison reaches into the capture session and the constants hook
+    # (capture::Session::CompareLog).
+    set_property(SOURCE src/capture/session.cpp src/hooks/render_system_hooks.cpp
+                 src/diag/store_trace.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+                 TORCHLIGHT_DIAGNOSTICS=1)
+    # The store trace (diag/store_trace.h, --diag_store_trace): precompiled after the generated
+    # code's own header, it redefines its guest stores; the whole generated code is rebuilt.
+    if(TARGET torchlight_recomp)
+        target_precompile_headers(torchlight_recomp PRIVATE
+                                  "${CMAKE_SOURCE_DIR}/src/diag/store_trace.h")
+        # The kernel exports the generated code calls, wrapped by the link (GNU ld and lld:
+        # Linux and Android), recorded by the store trace too.
+        if(NOT WIN32 AND NOT APPLE)
+            set(_st_imports_cpp "${CMAKE_CURRENT_BINARY_DIR}/store_trace_imports.cpp")
+            set(_st_imports_rsp "${CMAKE_CURRENT_BINARY_DIR}/store_trace_imports.rsp")
+            add_custom_command(OUTPUT "${_st_imports_cpp}" "${_st_imports_rsp}"
+                COMMAND ${Python3_EXECUTABLE} -I
+                        ${CMAKE_SOURCE_DIR}/tools/diag/gen_store_trace_imports.py
+                        ${CMAKE_SOURCE_DIR}/generated/default "${_st_imports_cpp}"
+                        "${_st_imports_rsp}"
+                DEPENDS ${CMAKE_SOURCE_DIR}/tools/diag/gen_store_trace_imports.py
+                        ${CMAKE_SOURCE_DIR}/generated/default/codegen.build.stamp
+                VERBATIM)
+            target_sources(torchlight PRIVATE "${_st_imports_cpp}")
+            target_link_options(torchlight PRIVATE "@${_st_imports_rsp}")
+            set_property(TARGET torchlight APPEND PROPERTY LINK_DEPENDS "${_st_imports_rsp}")
+        endif()
+    endif()
     target_link_libraries(torchlight PRIVATE torchlight_queue_census)
     # The colour pack/unpack checks against the guest's own functions (pixel_util_check.inc).
     # The wardrobe blend loop's check against the recompiled loop (wardrobe_blend_check.inl).

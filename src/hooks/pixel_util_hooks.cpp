@@ -25,6 +25,7 @@
 #include <rex/ppc/func.h>
 #include <rex/system/xmemory.h>
 
+#include "guest_abi/ogre_layout.h"
 #include "guest_abi/pixel_util.h"
 #include "guest_abi/wardrobe.h"
 #include "hooks/pixel_util.h"
@@ -45,6 +46,7 @@ REXCVAR_DEFINE_BOOL(diag_wardrobe_composite, false, "Torchlight",
 
 namespace {
 
+namespace abi = torchlight::guest_abi;
 namespace pu = torchlight::guest_abi::pixel_util;
 using torchlight::hooks::PixelFormatDesc;
 
@@ -103,16 +105,17 @@ bool HostUnpack(PPCContext& ctx, uint8_t* base) {
   // The guest's store order, for outputs that share an address: b, g, r for luminance
   // (@0x824745D0..@0x824745D8), else r, g, b; then a.
   const uint32_t r = ctx.r3.u32, g = ctx.r4.u32, b = ctx.r5.u32, a = ctx.r6.u32;
+  // Through abi::WriteBytes, so the store trace sees them (diag/store_trace.cpp).
   if (desc.flags & pu::kLuminance) {
-    *Guest(base, b) = rgba[2];
-    *Guest(base, g) = rgba[1];
-    *Guest(base, r) = rgba[0];
+    abi::WriteBytes(base, b, &rgba[2], 1);
+    abi::WriteBytes(base, g, &rgba[1], 1);
+    abi::WriteBytes(base, r, &rgba[0], 1);
   } else {
-    *Guest(base, r) = rgba[0];
-    *Guest(base, g) = rgba[1];
-    *Guest(base, b) = rgba[2];
+    abi::WriteBytes(base, r, &rgba[0], 1);
+    abi::WriteBytes(base, g, &rgba[1], 1);
+    abi::WriteBytes(base, b, &rgba[2], 1);
   }
-  *Guest(base, a) = rgba[3];
+  abi::WriteBytes(base, a, &rgba[3], 1);
   return true;
 }
 
@@ -126,7 +129,7 @@ bool HostPack(PPCContext& ctx, uint8_t* base) {
   const int n = torchlight::hooks::PackColour8(desc, rgba, out);
   if (n < 0) return false;
   const uint32_t dest = ctx.r8.u32;
-  for (int i = 0; i < n; ++i) *Guest(base, dest + i) = out[i];
+  abi::WriteBytes(base, dest, out.data(), size_t(n));  // seen by the store trace
   return true;
 }
 
