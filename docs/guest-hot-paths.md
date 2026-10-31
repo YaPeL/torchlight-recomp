@@ -54,6 +54,15 @@ Classified by instruction mix (from `generated/default`):
 - **`volatile` guest memory accesses are not the cause.** The same generated file compiled without
   `volatile` in `REX_LOAD_*`/`REX_STORE_*` (offline, nothing changed in the repository): 55,232
   against 55,241 instructions.
+  Measured on Android too (POCO X7, `fight.txt`, fps cap 0, vsync off, A B B A, CPU 2.4-2.5 GHz,
+  battery 31-33 C, 2026-10-31; local builds of the generated code edited with sed, never
+  published): without `volatile` on any guest access the build crashed at start until it was
+  compiled with `-fno-strict-aliasing` (the u32 and u64 views of the same guest bytes alias);
+  with it, the fight's mean guest frame went from 20.85 to 21.33 ms; without `volatile` on stack
+  accesses only, from 22.16 to 22.81 ms. No gain: closed (the owner's decision). The same series
+  measured the physical address offset computed without its comparison (Android's 0x1000 above
+  0xE0000000, as a mask instead of a branch): 22.30 against 21.20 ms, a signal for the ReXGlue
+  request (docs/rexglue-upstream.md), to be measured again on the PGO build.
 - **The large code model.** The SDK compiles every Linux x86-64 target with `-mcmodel=large`
   ("large executable support", `rexglue_apply_target_settings`): every call between guest
   functions is a `movabs` and an indirect call. The same generated file with the default code
