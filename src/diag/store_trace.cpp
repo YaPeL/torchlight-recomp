@@ -712,10 +712,10 @@ void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& ca
 #define TL_REG(r) reg(#r, x.r.u64, y.r.u64)
   TL_REG(r1);
   TL_REG(r3);
-  // f1 is not compared: renderSingleObject returns nothing, and its only callers, the queue
-  // visitors (0x821C0A50, 0x821CCB88, which return right after it) and acceptVisitor(Grouped)
-  // (0x821C08B8, 0x821CC700), never read f1. The guest's _updateAutoParams leaves an intermediate
-  // float there that a transcription need not reproduce.
+  // f1 is not compared: renderSingleObject returns nothing and f1 is volatile in the PPC ABI, so
+  // no compiled caller reads it (checked: the queue visitors 0x821C0A50 and 0x821CCB88 return
+  // right after it, acceptVisitor(Grouped) 0x821C08B8 / 0x821CC700 never touch f1). The guest's
+  // _updateAutoParams leaves an intermediate float there that a transcription need not reproduce.
 #undef TL_REG
 
   // Commands: the same events, constants and draws in order; at each draw, and at the end, the
@@ -862,9 +862,10 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
   Run original_run;
   session.SetCompareLog(&original_log);
   StartRun(entry, sp);
-  t_reference_run = true;
-  original(ctx, base);
-  t_reference_run = false;
+  {
+    ReferenceRun reference;
+    original(ctx, base);
+  }
   StopRun(base, original_run);
   session.SetCompareLog(nullptr);
   original_run.out = ctx;
@@ -892,14 +893,16 @@ bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
   if (!Enabled()) return false;
   if (candidate != original) {
     static const bool logged = [] {
-      REXLOG_INFO("store trace: tracing renderSingleObject runs the guest's function, not the "
-                  "native path");
+      REXLOG_INFO("store trace: tracing renderSingleObject runs the guest's code, not stage 1's");
       return true;
     }();
     (void)logged;
   }
   Begin(0x821C5FA0, ctx.r1.u32);
-  original(ctx, base);
+  {
+    ReferenceRun reference;
+    original(ctx, base);
+  }
   End(base);
   return true;
 }

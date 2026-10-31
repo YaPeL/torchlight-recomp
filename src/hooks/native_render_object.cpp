@@ -448,6 +448,7 @@ REX_FUNC(sub_821C5FA0) {
   static_assert(rso::kRenderSingleObject == 0x821C5FA0u);
 #if TORCHLIGHT_DIAGNOSTICS
   namespace st = torchlight::diag::store_trace;
+  if (st::t_reference_run) return __imp__sub_821C5FA0(ctx, base);  // inside a reference run
   if (st::RenderSingleObject(ctx, base, Enabled() ? &NativeOrGuest : &__imp__sub_821C5FA0,
                              &__imp__sub_821C5FA0)) {
     return;
@@ -586,8 +587,8 @@ REX_FUNC(sub_82201EB0) {
 
 // The XDK vector copy the constant writers use (guest_abi functions::kVectorCopy), as a host
 // memcpy where that is the same copy (hooks/guest_copy.h), behind its own switch: it is global (every
-// caller, every thread), so the per-call comparison of renderSingleObject cannot check it;
-// --diag_vector_copy_check does, copy by copy.
+// caller, every thread), so the per-call comparison of renderSingleObject checks it only inside
+// renderSingleObject; --diag_vector_copy_check checks every copy.
 namespace {
 // Read once, at the first copy: the step word is the guest's static data.
 bool VectorCopyEnabled(const uint8_t* base) {
