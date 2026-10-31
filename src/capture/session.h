@@ -339,12 +339,26 @@ class Session {
     bool divert = false;
     std::map<uint32_t, Key> keys;
     std::vector<Item> items;
+    // With `divert`, every call in order, to replay into the session when the run is kept
+    // (ReplayDiverted).
+    struct Op {
+      enum Kind : uint8_t { kState, kErase, kEvent, kDraw, kConstants } kind;
+      uint32_t key = 0, object = 0;
+      std::optional<commands::CommandPayload> payload;
+      std::vector<commands::Hash> live_keys;
+    };
+    std::vector<Op> ops;
   };
   void SetCompareLog(CompareLog* log) { compare_ = log; }
   CompareLog* compare_log() const { return compare_; }
   void CompareConstants(commands::SetConstants constants) {
+    if (compare_->divert) compare_->ops.push_back({CompareLog::Op::kConstants, 0, 0, constants, {}});
     compare_->items.push_back({std::move(constants), {}, {}});
   }
+  // A diverted run that is kept after all (its effects could not be undone): its calls, as if
+  // they had not been diverted. No log may be set. The constants go through the live stream's
+  // mirror as the hook would have sent them.
+  void ReplayDiverted(const CompareLog& log);
   // (Declared in every build so the class has one layout; only TORCHLIGHT_DIAGNOSTICS builds
   // compile the code that reads compare_ in session.cpp.)
 
