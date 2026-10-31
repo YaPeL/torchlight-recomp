@@ -213,13 +213,21 @@ under 33.3 ms at its p95, about 5 ms.
   memory it touches, the hidden caches included (the light hash, the dirty mask +0x43B4, the pass
   iteration index, the auto parameters' lazy caches). Each difference is logged as byte runs with
   the function that last wrote them in each run ("none" in a run that did not write them points to
-  another thread). A call is not compared, and counted apart, when the candidate does what the undo
-  cannot take back (a kernel call other than the critical sections and a few that only read, a
-  store to a device register), or when another thread writes what either run touched: other
-  threads' writes during a compared call are logged, and the undo leaves them in place. The host
-  side of the capture outside the commands (content versions, unresolved counts) is not undone.
+  another thread). Raw lines (vector stores, atomics, dcbz) are undone and compared only in the
+  bytes the call wrote: the 16-byte granules it accessed, and from a line's start (dcbz) the bytes
+  that turned to zero. A call is not verified, and counted apart by reason and site, when the
+  candidate does what the undo cannot take back (a kernel call other than the critical sections
+  and a few that only read, a store to a device register), or when another thread touches what
+  either run touched (the render thread enters every granule its runs touch into a table tagged
+  with the call; every other thread looks its stores, raw accesses and critical sections up
+  there). A candidate in either case is not undone: its memory and context stay and its diverted
+  commands are replayed into the session (the owner's decision, 2026-10-31: past 0.1 % of the
+  calls, or all at one site, the line stops). A write of another thread between the last check
+  and the undo is not seen (the residual race). The host side of the capture outside the commands
+  (content versions, unresolved counts) is not undone.
   Checked on the desktop, offscreen: with the guest's function as the candidate,
-  `fight.txt` compares 243965 calls and the ten waves of `fight5` 1542306, with no difference; a candidate that flips one bit of the
+  `fight.txt` compares 243965 calls and the ten waves of `fight5` 1542306, with no difference
+  (127916 in `fight.txt` with the final race detection, none unverified); a candidate that flips one bit of the
   SceneManager, changes r31 and adds a command every 1000 calls is caught on exactly those calls
   (41 of 41151). The guest frame is 3-4x slower while comparing (44 ms at rest, 68 ms in the
   fight).

@@ -14,7 +14,7 @@
 //
 // The comparison (--diag_store_compare, for option B's native paths, docs/perf/native-render-
 // queue.md section 4): each renderSingleObject runs twice from the same state. First the
-// candidate (g_candidate: the guest's own function until a native path takes its place), with
+// candidate (the guest's own function until a native path takes its place), with
 // every write it makes recorded with the bytes it replaced and its commands kept apart
 // (capture::Session::CompareLog, diverted); its writes are then undone in reverse and the context
 // put back, and the guest's function runs as usual, recorded the same way. The two runs must leave
@@ -908,5 +908,6 @@ extern "C" {
 TORCHLIGHT_STORE_TRACE_ENTRY(821C5730)
 #undef TORCHLIGHT_STORE_TRACE_ENTRY
 
+// renderSingleObject's entry is hooks/native_render_object.cpp, which calls RenderSingleObject.
 
 }  // extern "C"
