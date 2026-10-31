@@ -1,12 +1,19 @@
 // The PGO instrumented build's counters (TORCHLIGHT_PGO_GENERATE, docs/perf/pgo.md), written every
 // minute to --pgo_profile_dir as torchlight-<pid>.profraw: the game ends by a hard exit, which
 // skips the runtime's own write at exit, and a run can be stopped at any point. Each write holds
-// the counts since the start, so the last one of a run is the whole run. Only in the instrumented
-// build.
+// the counts since the start, so the last one of a run is the whole run. The runtime appends to
+// its file when it does not merge, so every write goes to a truncated temporary file that then
+// replaces the profile: a run killed in the middle of a write keeps the previous one. Only in the
+// instrumented build.
 
 #include <chrono>
+#include <filesystem>
+#include <fstream>
 #include <string>
+#include <system_error>
 #include <thread>
+
+#include <unistd.h>
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -27,13 +34,22 @@ struct Writer {
     std::thread([] {
       using namespace std::chrono_literals;
       std::this_thread::sleep_for(60s);  // the command line is parsed by then
-      const std::string dir = REXCVAR_GET(pgo_profile_dir);
-      static const std::string name =
-          (dir.empty() ? std::string() : dir + "/") + "torchlight-%p.profraw";
-      __llvm_profile_set_filename(name.c_str());
-      REXLOG_INFO("pgo: profile counters written every minute to {}", name);
+      const std::filesystem::path dir = REXCVAR_GET(pgo_profile_dir);
+      std::error_code error;
+      if (!dir.empty()) std::filesystem::create_directories(dir, error);
+      const std::filesystem::path name =
+          dir / ("torchlight-" + std::to_string(getpid()) + ".profraw");
+      static const std::string temporary = name.string() + ".tmp";
+      __llvm_profile_set_filename(temporary.c_str());
+      REXLOG_INFO("pgo: profile counters written every minute to {}", name.string());
       for (;;) {
-        if (__llvm_profile_write_file() != 0) REXLOG_WARN("pgo: the profile write failed");
+        std::ofstream(temporary, std::ios::trunc);
+        if (__llvm_profile_write_file() != 0) {
+          REXLOG_WARN("pgo: the profile write failed");
+        } else {
+          std::filesystem::rename(temporary, name, error);
+          if (error) REXLOG_WARN("pgo: the profile could not be renamed: {}", error.message());
+        }
         std::this_thread::sleep_for(60s);
       }
     }).detach();
