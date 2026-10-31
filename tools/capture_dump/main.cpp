@@ -95,8 +95,9 @@ std::vector<float> AutoData(const SetConstants& sc, const AutoConstant& a) {
     if (a.physical_index >= r.physical_index &&
         a.physical_index < r.physical_index + r.element_count) {
       uint32_t offset = a.physical_index - r.physical_index;
-      for (uint32_t i = offset; i < r.data.size() && out.size() < a.element_count; ++i) {
-        out.push_back(std::bit_cast<float>(r.data[i]));
+      const auto data = sc.Data(r);
+      for (uint32_t i = offset; i < data.size() && out.size() < a.element_count; ++i) {
+        out.push_back(std::bit_cast<float>(data[i]));
       }
     }
   }

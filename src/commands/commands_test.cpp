@@ -102,7 +102,10 @@ Capture MakeCapture() {
   SetConstants consts;
   consts.stage = Known(ProgramStage::kFragment, 1);
   consts.mask = 0xFFFF;
-  consts.floats.push_back({16, 4, 32, 8, 1, {0x3F800000u, 2, 3, 4, 5, 6, 7, 8}});
+  {
+    const uint32_t data[] = {0x3F800000u, 2, 3, 4, 5, 6, 7, 8};
+    consts.Add(consts.floats, {16, 4, 32, 8, 1}, data, 8);
+  }
   consts.autos.push_back({22, "ACT_WORLDVIEWPROJ_MATRIX", 0, 16, 0, 2});
   consts.transpose_matrices = true;
   f0.commands.push_back({0, consts});
