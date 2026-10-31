@@ -14,7 +14,7 @@
 //
 // The comparison (--diag_store_compare, for option B's native paths, docs/perf/native-render-
 // queue.md section 4): each renderSingleObject runs twice from the same state. First the
-// candidate (g_candidate: the guest's own function until a native path takes its place), with
+// candidate (the guest's own function until a native path takes its place), with
 // every write it makes recorded with the bytes it replaced and its commands kept apart
 // (capture::Session::CompareLog, diverted); its writes are then undone in reverse and the context
 // put back, and the guest's function runs as usual, recorded the same way. The two runs must leave
@@ -121,27 +121,76 @@ struct Call {
 };
 thread_local Call t_call;
 
-// The comparison. While a compared call runs, what other threads write or access raw (their
-// stores, raw accesses by 16-byte granule, our hooks' writes, their critical sections) goes to
-// this ring. A call whose candidate shares an address with them is not undone: its result is kept
-// (raced, not verified). Each slot carries the sequence number it was written for, so a reader
-// never takes a slot claimed but not yet written; a ring that wrapped, or such a slot, raced.
-std::atomic<bool> g_comparing{false};
-constexpr uint64_t kForeignSlots = 1u << 16;
-std::array<std::atomic<uint64_t>, kForeignSlots> g_foreign;      // address << 32 | size
-std::array<std::atomic<uint64_t>, kForeignSlots> g_foreign_seq;  // sequence + 1, once written
-std::atomic<uint64_t> g_foreign_head{0};
-std::atomic<uint32_t> g_foreign_largest{kLine};
-void Foreign(uint32_t address, uint32_t size) {
-  const uint64_t slot = g_foreign_head.fetch_add(1, std::memory_order_relaxed);
-  g_foreign[slot % kForeignSlots].store(uint64_t(address) << 32 | size, std::memory_order_relaxed);
-  g_foreign_seq[slot % kForeignSlots].store(slot + 1, std::memory_order_release);
-  uint32_t largest = g_foreign_largest.load(std::memory_order_relaxed);
-  while (size > largest &&
-         !g_foreign_largest.compare_exchange_weak(largest, size, std::memory_order_relaxed)) {
+// The comparison's race detection. While a call is compared, the render thread enters every
+// 16-byte granule its two runs touch (stores, raw accesses, our hooks' writes, critical sections)
+// into this table, tagged with the call's number; every other thread looks its own stores and raw
+// accesses up in it, and a hit marks the call raced: another thread wrote, or accessed raw, what
+// the call had touched. Entries of older calls count as empty (linear probing; an insert takes the
+// first such slot, a lookup stops at it), so nothing is cleared between calls. A table too full
+// marks the call raced too. Writes another thread makes before the call touches a granule are part
+// of the state the runs start from; one that falls between the last check and the undo is the
+// residual race (documented).
+constexpr uint32_t kTouchedSlots = 1u << 16;
+constexpr uint32_t kTouchedProbes = 64;
+std::array<std::atomic<uint64_t>, kTouchedSlots> g_touched;  // call << 32 | granule
+std::atomic<uint32_t> g_compare_call{0};  // the call being compared; 0: none
+std::atomic<bool> g_raced{false};
+std::atomic<uint32_t> g_raced_at{0};
+std::atomic<const char*> g_raced_by{nullptr};
+uint32_t g_next_call = 0;  // render thread
+
+uint32_t TouchedSlot(uint32_t granule) { return (granule * 2654435761u) >> 16; }
+
+void MarkRaced(uint32_t address, const char* by) {
+  if (!g_raced.exchange(true, std::memory_order_acq_rel)) {
+    g_raced_at.store(address, std::memory_order_relaxed);
+    g_raced_by.store(by, std::memory_order_relaxed);
   }
 }
-bool Comparing() { return g_comparing.load(std::memory_order_acquire); }
+
+// The render thread, while a call is compared: [address, address + size) touched.
+void Touch(uint32_t address, uint32_t size) {
+  const uint64_t call = g_compare_call.load(std::memory_order_relaxed);
+  if (!call || !size) return;
+  for (uint32_t g = address >> 4, last = (address + size - 1) >> 4;; ++g) {
+    uint32_t slot = TouchedSlot(g);
+    bool placed = false;
+    for (uint32_t probe = 0; probe < kTouchedProbes; ++probe, slot = (slot + 1) % kTouchedSlots) {
+      const uint64_t v = g_touched[slot].load(std::memory_order_relaxed);
+      if ((v >> 32) == call && uint32_t(v) == g) {
+        placed = true;
+        break;
+      }
+      if ((v >> 32) != call) {
+        g_touched[slot].store(call << 32 | g, std::memory_order_release);
+        placed = true;
+        break;
+      }
+    }
+    if (!placed) MarkRaced(g << 4, "the touched table full");
+    if (g == last) break;
+  }
+}
+
+// Another thread, while a call is compared: its access to [address, address + size).
+void Foreign(uint32_t address, uint32_t size, const char* by) {
+  const uint64_t call = g_compare_call.load(std::memory_order_acquire);
+  if (!call || !size) return;
+  for (uint32_t g = address >> 4, last = (address + size - 1) >> 4;; ++g) {
+    uint32_t slot = TouchedSlot(g);
+    for (uint32_t probe = 0; probe < kTouchedProbes; ++probe, slot = (slot + 1) % kTouchedSlots) {
+      const uint64_t v = g_touched[slot].load(std::memory_order_acquire);
+      if ((v >> 32) != call) break;
+      if (uint32_t(v) == g) {
+        MarkRaced(g << 4, by);
+        return;
+      }
+    }
+    if (g == last) break;
+  }
+}
+
+bool Comparing() { return g_compare_call.load(std::memory_order_acquire) != 0; }
 
 struct Totals {
   uint64_t calls = 0, writes = 0, dead_stack_writes = 0, raw_lines_changed = 0;
@@ -301,9 +350,10 @@ void LogTotals() {
 // Our own hooks' guest writes (abi::g_guest_write_observer), recorded as "host" byte runs.
 void HostWrite(const uint8_t* base, uint32_t address, const void* bytes, size_t size) {
   if (t_call.depth == 0) {
-    if (Comparing()) Foreign(address, uint32_t(size));
+    if (Comparing()) Foreign(address, uint32_t(size), "host");
     return;
   }
+  if (t_call.undo) Touch(address, uint32_t(size));
   for (size_t i = 0; i < size; i += 8) {
     const size_t n = std::min<size_t>(8, size - i);
     uint64_t before = 0, after = 0;
@@ -326,7 +376,7 @@ struct Install {
 void Store(const uint8_t* base, uint32_t address, uint32_t size, uint64_t value,
            const char* function) {
   if (t_call.depth == 0) {  // another thread is the one inside a traced call
-    if (Comparing()) Foreign(address, size);
+    if (Comparing()) Foreign(address, size, function);
     return;
   }
   if (t_call.undo) {
@@ -334,6 +384,8 @@ void Store(const uint8_t* base, uint32_t address, uint32_t size, uint64_t value,
     std::memcpy(&bytes, abi::xbox_memory::HostAddress(base, address), size);
     t_call.undo_log.push_back({address, size, bytes});
   }
+  if (t_call.undo && !(address < t_call.sp && t_call.sp - address <= kStackWindow))
+    Touch(address, size);
   if (address < t_call.sp && t_call.sp - address <= kStackWindow) {
     ++t_call.dead_stack_writes;
     return;
@@ -366,9 +418,9 @@ void Import(PPCContext& ctx, uint8_t* base, const char* name,
     // Another thread's critical section, while a compared call runs: the undo leaves its words.
     const uint32_t cs = ctx.r3.u32;
     const bool critical = n.find("CriticalSection") != std::string_view::npos;
-    if (critical && Comparing()) Foreign(cs, 28);  // before: it may block inside
+    if (critical && Comparing()) Foreign(cs, 28, name);  // before: it may block inside
     real(ctx, base);
-    if (critical && Comparing()) Foreign(cs, 28);
+    if (critical && Comparing()) Foreign(cs, 28, name);
     return;
   }
   if (t_call.undo && !t_call.not_undoable && !Undoable(n)) {
@@ -376,7 +428,10 @@ void Import(PPCContext& ctx, uint8_t* base, const char* name,
     t_call.not_undoable_kind = "kernel call";
   }
   std::vector<std::pair<uint32_t, uint32_t>> watched;  // guest address, bytes
-  if (n.find("CriticalSection") != std::string_view::npos) watched.push_back({ctx.r3.u32, 28});
+  if (n.find("CriticalSection") != std::string_view::npos) {
+    watched.push_back({ctx.r3.u32, 28});
+    if (t_call.undo) Touch(ctx.r3.u32, 28);
+  }
   if (n == "NtAllocateVirtualMemory" || n == "NtFreeVirtualMemory") {
     watched.push_back({ctx.r3.u32, 4});
     watched.push_back({ctx.r4.u32, 4});
@@ -407,9 +462,11 @@ void RawTouch(const uint8_t* base, uint32_t address, const char* function) {
   const uint32_t line = address & ~(kLine - 1);
   if (t_call.depth == 0) {
     // Another thread: its 16-byte granule, or the whole line from the line's start (dcbz).
-    if (Comparing()) Foreign(address == line ? line : address & ~15u, address == line ? kLine : 16);
+    if (Comparing())
+      Foreign(address == line ? line : address & ~15u, address == line ? kLine : 16, function);
     return;
   }
+  if (t_call.undo) Touch(address == line ? line : address & ~15u, address == line ? kLine : 16);
   if (!t_call.undo && line < t_call.sp && t_call.sp - line <= kStackWindow) return;
   t_call.line_touch[line] |=
       uint16_t((1u << ((address - line) / 16)) | (address == line ? 0x100u : 0u));
@@ -429,7 +486,6 @@ void MmioStore(uint32_t, const char* function) {
 
 namespace {
 
-using GuestFunction = void (*)(PPCContext&, uint8_t*);
 namespace cap = torchlight::capture;
 namespace commands = torchlight::commands;
 
@@ -553,48 +609,10 @@ void StopRun(const uint8_t* base, Run& run) {
   }
 }
 
-// The ranges other threads wrote since `start` (g_foreign), address order; `raced` when the ring
-// wrapped.
-std::vector<Range> ForeignSince(uint64_t start, bool& raced) {
-  const uint64_t end = g_foreign_head.load(std::memory_order_acquire);
-  std::vector<Range> ranges;
-  if (end - start > kForeignSlots) {
-    raced = true;
-    return ranges;
-  }
-  for (uint64_t i = start; i < end; ++i) {
-    if (g_foreign_seq[i % kForeignSlots].load(std::memory_order_acquire) != i + 1) {
-      raced = true;  // claimed, not written yet
-      continue;
-    }
-    const uint64_t v = g_foreign[i % kForeignSlots].load(std::memory_order_relaxed);
-    ranges.push_back({uint32_t(v >> 32), uint32_t(v)});
-  }
-  std::sort(ranges.begin(), ranges.end(),
-            [](const Range& a, const Range& b) { return a.address < b.address; });
-  return ranges;
-}
 
-// The first foreign range overlapping [address, address + size), or null.
-const Range* Overlapping(const std::vector<Range>& sorted, uint32_t address, uint32_t size) {
-  // Look back over the ranges that start before, as far as the largest foreign range reaches.
-  const uint64_t reach = g_foreign_largest.load(std::memory_order_relaxed);
-  auto it = std::lower_bound(sorted.begin(), sorted.end(), uint64_t(address) + size,
-                             [](const Range& r, uint64_t v) { return r.address < v; });
-  while (it != sorted.begin()) {
-    --it;
-    if (uint64_t(it->address) + it->size > address) return &*it;
-    if (uint64_t(address) - it->address > reach) break;
-  }
-  return nullptr;
-}
 
-// Puts back what the run replaced, newest first: of a raw line only the bytes that changed (a line
-// may have been only read), and nothing another thread wrote since the run started. Returns
-// whether another thread wrote what the run did.
-bool UndoRun(uint8_t* base, const Run& run, uint64_t foreign_start) {
-  bool raced = false;
-  const std::vector<Range> foreign = ForeignSince(foreign_start, raced);
+// Puts back what the run replaced, newest first (of a raw line only the bytes the run wrote).
+void UndoRun(uint8_t* base, const Run& run) {
   for (auto it = run.undo_log.rbegin(); it != run.undo_log.rend(); ++it) {
     uint8_t* to = abi::xbox_memory::HostAddress(base, it->address);
     uint8_t bytes[8];
@@ -603,15 +621,9 @@ bool UndoRun(uint8_t* base, const Run& run, uint64_t foreign_start) {
     const uint8_t* from = line ? run.lines.at(it->address).data() : bytes;
     for (uint32_t i = 0; i < it->size; ++i) {
       if (line && !run.line_written.at(it->address)[i]) continue;
-      if (to[i] == from[i]) continue;
-      if (!foreign.empty() && Overlapping(foreign, it->address + i, 1)) {
-        raced = true;
-        continue;
-      }
       to[i] = from[i];
     }
   }
-  return raced;
 }
 
 std::string Describe(const cap::Session::CompareValue& v) {
@@ -777,9 +789,6 @@ void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& ca
               entry, memory, registers, commands_differ, sp, text);
 }
 
-// The candidate for each compared function: the guest's own until a native path is plugged in.
-GuestFunction g_candidate_821C5FA0 = nullptr;
-
 // A call that is not verified: counted by reason and site, the first ones logged.
 void Unverified(uint32_t entry, const char* reason, const std::string& site) {
   bool show = false;
@@ -796,18 +805,14 @@ void Unverified(uint32_t entry, const char* reason, const std::string& site) {
   if (show) REXLOG_INFO("store compare: {:08X} not verified ({}: {})", entry, reason, site);
 }
 
-// The site of a race: the run's first range another thread also wrote, and who wrote it there.
-std::string RaceSite(const Run& run, const std::vector<Range>& foreign) {
-  for (const Range& range : run.ranges) {
-    if (const Range* f = Overlapping(foreign, range.address, range.size)) {
-      const uint32_t at = std::max(range.address, f->address);
-      const char* writer = run.WriterOf(at);
-      char buf[160];
-      std::snprintf(buf, sizeof buf, "%08X by %s", at, writer ? writer : "?");
-      return buf;
-    }
-  }
-  return "ring";
+
+// Where the call raced: the granule and who touched it from another thread.
+std::string RaceSite() {
+  const char* by = g_raced_by.load(std::memory_order_relaxed);
+  char buf[160];
+  std::snprintf(buf, sizeof buf, "%08X by %s", g_raced_at.load(std::memory_order_relaxed),
+                by ? by : "?");
+  return buf;
 }
 
 void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
@@ -815,14 +820,15 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
   cap::Session& session = cap::Session::Get();
   const PPCContext saved = ctx;
   const uint32_t sp = ctx.r1.u32;
-  // Other threads record what they touch from here to the last check (the count of threads
-  // inside keeps their stores calling in between the runs too).
-  g_comparing.store(true, std::memory_order_release);
+  // Other threads look their accesses up from here to the end of the guest's run (the count of
+  // threads inside keeps their stores calling in between the runs too).
+  if (++g_next_call == 0) ++g_next_call;
+  g_raced.store(false, std::memory_order_relaxed);
+  g_compare_call.store(g_next_call, std::memory_order_release);
   g_threads_inside.fetch_add(1, std::memory_order_acq_rel);
-  const uint64_t foreign_start = g_foreign_head.load(std::memory_order_acquire);
   auto finish = [] {
+    g_compare_call.store(0, std::memory_order_release);
     g_threads_inside.fetch_sub(1, std::memory_order_acq_rel);
-    g_comparing.store(false, std::memory_order_release);
   };
 
   cap::Session::CompareLog candidate_log;
@@ -838,22 +844,15 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
 
   // What cannot be undone cleanly is kept: the candidate's memory and context stay and its
   // commands go to the session as if they had not been diverted (nothing runs twice).
-  bool raced = false;
-  std::vector<Range> foreign = ForeignSince(foreign_start, raced);
-  std::string race_site = raced ? "ring" : RaceSite(candidate_run, foreign);
-  raced = raced || race_site != "ring";
-  if (not_undoable || raced) {
+  if (not_undoable || g_raced.load(std::memory_order_acquire)) {
     session.ReplayDiverted(candidate_log);
+    const std::string site = not_undoable ? std::string(not_undoable) : RaceSite();
     finish();
-    if (not_undoable) {
-      Unverified(entry, not_undoable_kind, not_undoable);
-    } else {
-      Unverified(entry, "raced", race_site);
-    }
+    Unverified(entry, not_undoable ? not_undoable_kind : "raced", site);
     return;
   }
   candidate_run.out = ctx;
-  raced = UndoRun(base, candidate_run, foreign_start);
+  UndoRun(base, candidate_run);
 
   ctx = saved;
   cap::Session::CompareLog original_log;
@@ -866,12 +865,11 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
   original_run.out = ctx;
   // The guest's run is kept either way; another thread touching what either run did leaves the
   // comparison unverified.
-  foreign = ForeignSince(foreign_start, raced);
+  const bool raced = g_raced.load(std::memory_order_acquire);
+  const std::string site = raced ? RaceSite() : std::string();
   finish();
-  if (!raced) race_site = RaceSite(candidate_run, foreign);
-  if (!raced && race_site == "ring") race_site = RaceSite(original_run, foreign);
-  if (raced || race_site != "ring") {
-    Unverified(entry, "raced", raced ? std::string("undo") : race_site);
+  if (raced) {
+    Unverified(entry, "raced", site);
     return;
   }
 
@@ -879,6 +877,19 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
 }
 
 }  // namespace
+
+bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
+                        GuestFunction original) {
+  if (CompareEnabled() && t_call.depth == 0) {
+    CompareCall(ctx, base, 0x821C5FA0, candidate, original);
+    return true;
+  }
+  if (!Enabled()) return false;
+  Begin(0x821C5FA0, ctx.r1.u32);
+  original(ctx, base);
+  End(base);
+  return true;
+}
 
 }  // namespace torchlight::diag::store_trace
 
@@ -897,20 +908,14 @@ extern "C" {
 TORCHLIGHT_STORE_TRACE_ENTRY(821C5730)
 #undef TORCHLIGHT_STORE_TRACE_ENTRY
 
-// SceneManager::renderSingleObject (guest_abi render_queue): traced, or compared.
+// SceneManager::renderSingleObject (guest_abi render_queue): traced, or compared with the guest's
+// own function as the candidate (a native path's hook calls RenderSingleObject itself).
 REX_EXTERN(__imp__sub_821C5FA0);
 REX_FUNC(sub_821C5FA0) {
   namespace st = torchlight::diag::store_trace;
-  if (st::CompareEnabled() && st::t_call.depth == 0) {
-    st::CompareCall(ctx, base, 0x821C5FA0,
-                    st::g_candidate_821C5FA0 ? st::g_candidate_821C5FA0 : __imp__sub_821C5FA0,
-                    __imp__sub_821C5FA0);
-    return;
-  }
-  if (!st::Enabled()) return __imp__sub_821C5FA0(ctx, base);
-  st::Begin(0x821C5FA0, ctx.r1.u32);
-  __imp__sub_821C5FA0(ctx, base);
-  st::End(base);
+  if (!st::RenderSingleObject(ctx, base, &__imp__sub_821C5FA0, &__imp__sub_821C5FA0))
+    __imp__sub_821C5FA0(ctx, base);
 }
+
 
 }  // extern "C"

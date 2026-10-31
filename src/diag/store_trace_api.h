@@ -6,6 +6,8 @@
 #include <atomic>
 #include <cstdint>
 
+struct PPCContext;
+
 namespace torchlight::diag::store_trace {
 
 // Set while any thread is inside a traced call (the fast check of every store).
@@ -22,6 +24,13 @@ void Store(const uint8_t* base, uint32_t address, uint32_t size, uint64_t value,
 void RawTouch(const uint8_t* base, uint32_t address, const char* function);
 // A store to the device registers (REX_MM_STORE_* in the MMIO range): it cannot be undone.
 void MmioStore(uint32_t address, const char* function);
+
+// SceneManager::renderSingleObject's call, from its hook (hooks/native_render_object.cpp): with
+// --diag_store_compare, `candidate` against `original` (the guest's function); with
+// --diag_store_trace, `original` traced. False when neither is on (the hook runs the call).
+using GuestFunction = void (*)(PPCContext&, uint8_t*);
+bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
+                        GuestFunction original);
 
 }  // namespace torchlight::diag::store_trace
 
