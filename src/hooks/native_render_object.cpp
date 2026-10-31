@@ -24,7 +24,9 @@
 #include <atomic>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 #include <string>
+#include <vector>
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -44,6 +46,15 @@
 REXCVAR_DEFINE_BOOL(native_render_object, false, "Torchlight",
                     "Option B stage 1: renderSingleObject on the host for the main scene's "
                     "programmable objects (hooks/native_render_object.cpp); off: the guest's");
+REXCVAR_DEFINE_BOOL(native_vector_copy, false, "Torchlight",
+                    "Option B stage 1: the XDK vector copy the constant writers use as a host "
+                    "memcpy where that is the same copy (hooks/native_render_object.cpp); off: the "
+                    "guest's");
+#if TORCHLIGHT_DIAGNOSTICS
+REXCVAR_DEFINE_BOOL(diag_vector_copy_check, false, "Torchlight",
+                    "Diagnostics: with --native_vector_copy, run every routed copy both ways (the "
+                    "guest's, then the host's over the restored destination) and log differences");
+#endif
 
 namespace {
 
@@ -79,7 +90,9 @@ bool Enabled() {
   return enabled;
 }
 
-// The guest functions behind the virtual calls: a few dozen targets, resolved once.
+// The guest functions behind the virtual calls: a few dozen targets, resolved once. Render thread
+// only, as renderSingleObject is (unsynchronized statics). The vtables are checked against known
+// classes first, so every target is a guest function.
 PPCFunc* Resolve(uint32_t target) {
   static uint32_t targets[64];
   static PPCFunc* functions[64];
@@ -254,11 +267,11 @@ void Native(PPCContext& ctx, uint8_t* base) {
   const uint32_t render_system = abi::ReadU32(base, scene + sm::kRenderSystem.offset);
   static const double zero = double(abi::ReadF32(base, rso::kZeroFloat));
 
-  // A frame below the caller's for the RenderOperation (the guest's own sits at r1+112 of its
-  // 320-byte frame); the callees save below it.
+  // The guest's own frame, with the RenderOperation where it keeps it (above the parameter home
+  // area the callees may write).
   const uint32_t caller_sp = ctx.r1.u32;
-  const uint32_t frame = caller_sp - 0x80;
-  const uint32_t op = frame + 0x40;
+  const uint32_t frame = caller_sp - rso::kFrameSize;
+  const uint32_t op = frame + rso::kRenderOperationInFrame;
   abi::WriteU32(base, frame, caller_sp);  // the back chain, as stwu writes it
   ctx.r1.u64 = frame;
   abi::WriteU32(base, op + ro::kVertexData.offset, 0);
@@ -370,8 +383,11 @@ void Native(PPCContext& ctx, uint8_t* base) {
   ctx.r1.u64 = caller_sp;
 }
 
+void InstallSummary();
+
 // The native path when the object qualifies, else the guest's function.
 void NativeOrGuest(PPCContext& ctx, uint8_t* base) {
+  InstallSummary();
   const Reason reason = Check(base, ctx);
   g_reasons[reason].fetch_add(1, std::memory_order_relaxed);
   if (reason == kNative) {
@@ -396,12 +412,16 @@ void LogReasons() {
   REXLOG_INFO("native render object: {} objects:{}", total, line);
 }
 
-struct Install {
-  Install() {
-    if (!torchlight::live::AddSummaryHook([] { if (Enabled()) LogReasons(); }))
+// The census's summary hook, added on the first call with the native path on (the hooks' slots
+// are few).
+void InstallSummary() {
+  static const bool installed = [] {
+    if (!torchlight::live::AddSummaryHook(&LogReasons))
       REXLOG_WARN("native render object: no room for its frame summary hook");
-  }
-} g_install;
+    return true;
+  }();
+  (void)installed;
+}
 
 }  // namespace
 
@@ -426,14 +446,46 @@ REX_FUNC(sub_821C5FA0) {
 }  // extern "C"
 
 // The XDK vector copy the constant writers use (guest_abi functions::kVectorCopy), as a host
-// memcpy where that is the same copy (hooks/guest_copy.h): part of stage 1, under the same switch.
+// memcpy where that is the same copy (hooks/guest_copy.h), behind its own switch: it is global (every
+// caller, every thread), so the per-call comparison of renderSingleObject cannot check it;
+// --diag_vector_copy_check does, copy by copy.
+namespace {
+bool VectorCopyEnabled(const uint8_t* base) {
+  static const bool enabled = REXCVAR_GET(native_vector_copy) &&
+                              abi::ReadU32(base, torchlight::guest_abi::functions::kVectorCopyStep) == 1;
+  return enabled;
+}
+}  // namespace
+
 extern "C" {
 static_assert(torchlight::guest_abi::functions::kVectorCopy.address == 0x821C28D8u);
 REX_EXTERN(__imp__sub_821C28D8);
 REX_FUNC(sub_821C28D8) {
-  if (!Enabled() ||
-      !torchlight::hooks::HostGuestCopy(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32)) {
+  const uint32_t dst = ctx.r3.u32, src = ctx.r4.u32, size = ctx.r5.u32;
+  if (!VectorCopyEnabled(base)) return __imp__sub_821C28D8(ctx, base);
+#if TORCHLIGHT_DIAGNOSTICS
+  if (REXCVAR_GET(diag_vector_copy_check) && size && size <= (1u << 20) &&
+      torchlight::hooks::RouteGuestCopy(dst, src, size) == torchlight::hooks::GuestCopyRoute::kHost) {
+    uint8_t* to = abi::xbox_memory::HostAddress(base, dst);
+    std::vector<uint8_t> before(to, to + size);
     __imp__sub_821C28D8(ctx, base);
+    std::vector<uint8_t> guest(to, to + size);
+    std::memcpy(to, before.data(), size);
+    torchlight::hooks::HostGuestCopy(base, dst, src, size);
+    static uint64_t checked = 0, differing = 0;
+    ++checked;
+    if (std::memcmp(to, guest.data(), size) != 0) {
+      if (++differing <= 20)
+        REXLOG_WARN("vector copy check: {:08X} <- {:08X} ({} bytes) differs from the guest's copy",
+                    dst, src, size);
+      std::memcpy(to, guest.data(), size);
+    }
+    if (checked % 1000000 == 0)
+      REXLOG_INFO("vector copy check: {} copies compared, {} differ", checked, differing);
+    ctx.r3.u64 = dst;
+    return;
   }
+#endif
+  if (!torchlight::hooks::HostGuestCopy(base, dst, src, size)) __imp__sub_821C28D8(ctx, base);
 }
 }  // extern "C"

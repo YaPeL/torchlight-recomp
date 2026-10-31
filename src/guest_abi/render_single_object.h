@@ -12,8 +12,13 @@
 namespace torchlight::guest_abi::render_single_object {
 
 // renderSingleObject(this r3, rend r4, pass r5, lightScissoringClipping r6, doLightIteration r7,
-// manualLightList r8). Frame of 320 bytes (stwu @0x821C5FAC).
+// manualLightList r8). Frame of 320 bytes (stwu r1,-320(r1) @0x821C5FB0); its RenderOperation at
+// r1+112, above the parameter home area (r1+0x10..0x4F) callees may write before their own stwu
+// (sub_8256A270 stores r10 at 76(r1); vararg functions store 64(r1), 72(r1)). The native path
+// builds the same frame.
 inline constexpr uint32_t kRenderSingleObject = 0x821C5FA0;
+inline constexpr uint32_t kFrameSize = 320;
+inline constexpr uint32_t kRenderOperationInFrame = 112;
 
 // The RenderOperation it builds on its stack at r1+112 (lines 395-412): vertexData +0 = 0,
 // operationType +4 = 4 (OT_TRIANGLE_LIST), useIndexes +8 (byte) = 1, indexData +12 = 0,
