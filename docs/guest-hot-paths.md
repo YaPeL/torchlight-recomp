@@ -71,9 +71,24 @@ Classified by instruction mix (from `generated/default`):
   uses the default.
 - **`fmadd` is a call** to libc's `fma` (`__fma_fma3`, 0.75 % of the main thread): the build
   targets x86-64-v2, which has no FMA instruction. x86-64-v3 inlines it but measured no clear gain
-  (`docs/performance-profile.md`).
+  (`docs/performance-profile.md`). Profiled again on 2026-10-31 (the PGO build, `fight.txt`):
+  `__fma_fma3` and `fma@plt` are about 3 % of the guest thread in the fight. The owner's decision:
+  the desktop keeps x86-64-v2; raising the minimum CPU is not worth 3 % where the desktop already
+  has headroom (about 118 guest fps in the fight).
 - **Byte swaps** on every load and store come with a big-endian guest; the physical address offset
   is 0 on Linux and one compare per access on Windows and macOS arm64.
+
+## FMOD's software mixer (a lever for later)
+
+On the POCO (simpleperf, `fight.txt`, PGO, 2026-10-31) the game's FMOD mixing takes about 10.7 % of
+all the phone's samples, on its own guest thread (`XThread`, not the main thread):
+`sub_826E1620` 6.3 % (a leaf of about 6,300 recompiled lines, nearly 900 float operations: the
+mixer's inner loop), `sub_82701148` 2.9 % and `sub_826D3B60` 1.5 %, all under the recursive DSP
+graph walk `sub_82687310` (FMOD's strings are in the image). It is not on the frame's critical path,
+but it keeps about a tenth of the CPU busy: heat, and less headroom for the main thread over time.
+To study when there is time (analysis only, the owner's decision): the configuration the game
+asks of FMOD (sample rate, voices, effects), whether the time is mixing or decoding, and whether a
+cheaper configuration would change the sound.
 
 ## Candidates, by gain and risk
 
