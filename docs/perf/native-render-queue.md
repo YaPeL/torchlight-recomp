@@ -196,11 +196,27 @@ under 33.3 ms at its p95, about 5 ms.
   `bindGpuProgramParameters`) each write is recorded with its address, size, old and new value;
   `REX_RAW_ADDR` lines are snapshot on first touch and diffed; our own `abi::Write*` record too;
   kernel exports are logged as events.
-- *The criterion per call.* Run the native path with its writes recorded and its commands set
-  aside, undo them, run the original; the net writes (address to final value), the returned
-  registers and the commands must be equal. Each call is checked against all the memory it touches,
-  so the hidden caches (the light hash, the dirty mask +0x43B4, the pass iteration index, the auto
-  parameters' lazy caches) are compared too.
+- *The criterion per call* (`--diag_store_compare`, built 2026-10-31). Each `renderSingleObject`
+  runs twice from the same state. First the candidate (the native path; the guest's own function
+  until there is one), with every guest write recorded with the bytes it replaced (the generated
+  code's stores, the raw lines, the kernel exports' writes, our hooks' writes and the host's guest
+  copies) and its commands kept apart: the capture session's comparison log diverts them, so
+  nothing reaches the shadow, the early out's memos, the constant mirror or the streams (resource
+  descriptions still go out: they are idempotent). Its writes are undone newest first and the
+  context put back; then the guest's function runs as usual, recorded the same way. Plain command
+  bytes cannot be compared, because the run kept deduplicates against host state the first run did
+  not touch, so the criterion is what each draw sees. The two runs must leave the same bytes in
+  every address either wrote (the stack below the call excluded), the same return and
+  non-volatile registers, and the same events, whole constant uploads and draws in order, each
+  draw with the same value for every state the call set. Each call is thus checked against all the
+  memory it touches, the hidden caches included (the light hash, the dirty mask +0x43B4, the pass
+  iteration index, the auto parameters' lazy caches). Each difference is logged as byte runs with
+  the function that last wrote them in each run ("none" in a run that did not write them points to
+  another thread). Checked on the desktop, offscreen: with the guest's function as the candidate,
+  `fight.txt` compares 243965 calls and the ten waves of `fight5` 1542306, with no difference; a candidate that flips one bit of the
+  SceneManager, changes r31 and adds a command every 1000 calls is caught on exactly those calls
+  (41 of 41151). The guest frame is 3-4x slower while comparing (44 ms at rest, 68 ms in the
+  fight).
 - *Stages*, by gain over risk (realistic ms, `fight.txt` / wave 10): 1 static opaque of the main
   scene (1.0 / 2.0-2.8), 2 projector passes (0.9 / 0.8-1.1), 3 transparents (0.7 / 1.5-2.2), 4
   skinned (0.3, last or never); `_updateAutoParams` and `bindGpuProgramParameters` within stage 1,
