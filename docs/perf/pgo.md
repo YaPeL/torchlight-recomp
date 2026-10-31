@@ -80,6 +80,23 @@ date beside it (`pgo/README.md` there).
 The profiles written before 2026-10-31 summed every minute's copy of the counts (the runtime
 appended each write to the file), which weighed the start of each run more: trained again.
 
+### Comparable profiles (an A/B of two builds)
+
+Measuring a change that needs its own profile (a codegen change: every function's hash moves)
+compares two builds each with its profile, so the two profiles must be made the same way, or the
+comparison measures the training instead of the change. On 2026-10-31 the same base build gave
+20.7-21.0 ms in the fight with a profile trained the day before and 22.8 ms with one trained that
+afternoon, while the change measured about 1 ms. For any A/B of two PGO builds:
+- Both profiles trained the same day, one right after the other, on the same device in the same
+  state (battery and temperature as for a measurement, charging the same way).
+- The same runs in the same order and of the same length: the bench save copied fresh before each,
+  fps cap 0, vsync off, `fight.txt`, then `fight5.txt`, then `town.txt` (Android) or
+  `measure-fight-town.txt` (desktop), each to its script's end, no run cut short or repeated.
+- The same writer (`src/pgo/pgo_writer.cpp`: one file per run, replaced every minute) and the
+  same merge (`llvm-profdata merge --sparse` of the three files, nothing else in the folder).
+- Each build checked against its own profile (`tools/pgo/check_profile_match.py`, 0 mismatched in
+  the generated code), and the profiles' function counts noted next to the result.
+
 ## In the release
 
 The profiles live in the private assets repository (the owner's decision), next to `default.xex`, as
