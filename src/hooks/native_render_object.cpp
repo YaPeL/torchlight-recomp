@@ -86,25 +86,31 @@ constexpr const char* kReasonNames[kReasonCount] = {
     "no vertex program", "program class",   "per light",      "first light iteration",
     "depth bias per iteration", "scissor or clip planes"};
 std::array<std::atomic<uint64_t>, kReasonCount> g_reasons{};
+// _updateAutoParams (P1): calls on the host, calls left to the guest, and the first automatic
+// constant type that sent a call to the guest (render thread).
+std::atomic<uint64_t> g_auto_native{0}, g_auto_guest{0};
+std::array<std::atomic<uint64_t>, 128> g_auto_guest_types{};
 bool Enabled() {
   static const bool enabled = REXCVAR_GET(native_render_object);
   return enabled;
 }
 
-// The guest functions behind the virtual calls: a few dozen targets, resolved once. Render thread
+// The guest functions behind the virtual calls, resolved once each. Render thread
 // only, as renderSingleObject is (unsynchronized statics). The vtables are checked against known
 // classes first, so every target is a guest function.
 PPCFunc* Resolve(uint32_t target) {
-  static uint32_t targets[64];
-  static PPCFunc* functions[64];
-  static unsigned count = 0;
-  for (unsigned i = 0; i < count; ++i)
-    if (targets[i] == target) return functions[i];
+  // Direct-mapped by the target's address (functions are 4-byte aligned): one compare per call,
+  // as the generated code's own table lookup costs; a collision only resolves again. Each slot is
+  // one pair, written whole.
+  struct Slot {
+    uint32_t target;
+    PPCFunc* function;
+  };
+  static Slot slots[1024];
+  Slot& slot = slots[(target >> 2) & 1023];
+  if (slot.target == target) return slot.function;
   PPCFunc* f = rex::runtime::ResolveIndirectFunction(target);
-  if (f && count < 64) {
-    targets[count] = target;
-    functions[count++] = f;
-  }
+  if (f) slot = {target, f};
   return f;
 }
 
@@ -411,7 +417,16 @@ void LogReasons() {
   for (uint32_t i = 0; i < kReasonCount; ++i) {
     if (counts[i]) line += " " + std::string(kReasonNames[i]) + " " + std::to_string(counts[i]);
   }
-  REXLOG_INFO("native render object: {} objects:{}", total, line);
+  std::string types;
+  for (uint32_t t = 0; t < 128; ++t) {
+    if (const uint64_t n = g_auto_guest_types[t].exchange(0, std::memory_order_relaxed))
+      types += " " + std::to_string(t) + ":" + std::to_string(n);
+  }
+  REXLOG_INFO("native render object: {} objects:{}; automatic constants: {} on the host, {} the "
+              "guest's{}{}",
+              total, line, g_auto_native.exchange(0, std::memory_order_relaxed),
+              g_auto_guest.exchange(0, std::memory_order_relaxed),
+              types.empty() ? "" : " (by type", types.empty() ? "" : types + ")");
 }
 
 // The census's summary hook, added on the first call with the native path on (the hooks' slots
@@ -433,6 +448,7 @@ REX_FUNC(sub_821C5FA0) {
   static_assert(rso::kRenderSingleObject == 0x821C5FA0u);
 #if TORCHLIGHT_DIAGNOSTICS
   namespace st = torchlight::diag::store_trace;
+  if (st::t_reference_run) return __imp__sub_821C5FA0(ctx, base);  // inside a reference run
   if (st::RenderSingleObject(ctx, base, Enabled() ? &NativeOrGuest : &__imp__sub_821C5FA0,
                              &__imp__sub_821C5FA0)) {
     return;
@@ -447,10 +463,132 @@ REX_FUNC(sub_821C5FA0) {
 
 }  // extern "C"
 
+// Stage 1 P1: GpuProgramParameters::_updateAutoParams (guest_abi render_single_object auto_params)
+// on the host for the automatic constants it can transcribe exactly: the matrices, from the guest's
+// own AutoParamDataSource getters (same arithmetic, same lazy caches), copied (and transposed) on
+// the host: data movement only. A call with any other active entry runs the guest's function, so
+// nothing is written before it is known the whole call is transcribed.
+namespace {
+
+namespace ap = rso::auto_params;
+namespace gpp = torchlight::guest_abi::ogre::gpu_program_parameters;
+namespace ace = torchlight::guest_abi::ogre::auto_constant_entry;
+
+const ap::MatrixCase* MatrixCase(uint32_t type) {
+  for (const ap::MatrixCase& c : ap::kMatrixCases)
+    if (c.type == type) return &c;
+  return nullptr;
+}
+
+const ap::VectorCase* VectorCase(uint32_t type) {
+  for (const ap::VectorCase& c : ap::kByValueVectorCases)
+    if (c.type == type) return &c;
+  return nullptr;
+}
+
+// _writeRawConstant(Matrix4) (0x821C2868).
+void WriteMatrix(uint8_t* base, uint32_t params, uint32_t physical, uint32_t matrix,
+                 uint32_t count) {
+  uint32_t words[ap::kMatrixFloats];
+  std::memcpy(words, abi::xbox_memory::HostAddress(base, matrix), sizeof words);
+  // Words, not floats: the guest's transpose (0x824639B8) goes through float registers, which
+  // would quiet a signalling NaN; no matrix the game builds holds one.
+  if (abi::ReadU8(base, params + gpp::kTransposeMatrices.offset)) {
+    uint32_t transposed[ap::kMatrixFloats];
+    for (uint32_t r = 0; r < 4; ++r)
+      for (uint32_t c = 0; c < 4; ++c) transposed[r * 4 + c] = words[c * 4 + r];
+    std::memcpy(words, transposed, sizeof words);
+  }
+  const uint32_t n = count < ap::kMatrixFloats ? count : ap::kMatrixFloats;
+  const uint32_t floats = abi::ReadU32(base, params + gpp::kFloatConstants.offset);
+  abi::WriteBytes(base, floats + physical * 4, words, n * 4);
+}
+
+bool NativeAutoParams(PPCContext& ctx, uint8_t* base) {
+  const uint32_t params = ctx.r3.u32, source = ctx.r4.u32, mask = ctx.r5.u32 & 0xFFFF;
+  const uint32_t autos = params + gpp::kAutoConstants.offset;
+  const uint32_t stride = ace::kSize.bytes;
+  if (abi::ReadU32(base, autos) == abi::ReadU32(base, autos + 4)) return true;
+  if (!(abi::ReadU16(base, params + gpp::kCombinedVariability.offset) & mask)) return true;
+  for (uint32_t e = abi::ReadU32(base, autos), end = abi::ReadU32(base, autos + 4); e != end;
+       e += stride) {
+    if (!(abi::ReadU16(base, e + ace::kVariability.offset) & mask)) continue;
+    const uint32_t type = abi::ReadU32(base, e + ace::kParamType.offset);
+    if (type > ap::kMaxType) continue;
+    if (type != ap::kWorldMatrixArray3x4 && !MatrixCase(type) && !VectorCase(type)) {
+      g_auto_guest.fetch_add(1, std::memory_order_relaxed);
+      g_auto_guest_types[type].fetch_add(1, std::memory_order_relaxed);
+      return false;
+    }
+  }
+  g_auto_native.fetch_add(1, std::memory_order_relaxed);
+  // The guest's frame, for the getters that return by value into it.
+  const uint32_t caller_sp = ctx.r1.u32;
+  const uint32_t frame = caller_sp - ap::kFrameSize;
+  abi::WriteU32(base, frame, caller_sp);
+  ctx.r1.u64 = frame;
+  abi::WriteU32(base, params + gpp::kActivePassIterationIndex.offset, 0xFFFFFFFFu);
+  for (uint32_t e = abi::ReadU32(base, autos); e != abi::ReadU32(base, autos + 4); e += stride) {
+    if (!(abi::ReadU16(base, e + ace::kVariability.offset) & mask)) continue;
+    const uint32_t type = abi::ReadU32(base, e + ace::kParamType.offset);
+    if (type > ap::kMaxType) continue;
+    const uint32_t physical = abi::ReadU32(base, e + ace::kPhysicalIndex.offset);
+    if (type == ap::kWorldMatrixArray3x4) {
+      uint32_t from = Virtual(ctx, base, source, abi::VtableSlot{ap::kArrayGetter / 4,
+                                                                 abi::Confidence::kConfirmed});
+      uint32_t left = Virtual(ctx, base, source, abi::VtableSlot{ap::kArrayCountGetter / 4,
+                                                                 abi::Confidence::kConfirmed});
+      uint32_t to = abi::ReadU32(base, params + gpp::kFloatConstants.offset) + physical * 4;
+      for (; left; --left, from += ap::kArraySourceStride, to += ap::kArrayMatrixBytes) {
+        abi::WriteBytes(base, to, abi::xbox_memory::HostAddress(base, from),
+                        ap::kArrayMatrixBytes);
+      }
+      continue;
+    }
+    if (const ap::VectorCase* v = VectorCase(type)) {
+      // getter(buffer r3, source r4), returning the buffer; then _writeRawConstant(Vector4).
+      ctx.r3.u64 = frame + ap::kByValueBuffer;
+      ctx.r4.u64 = source;
+      Resolve(abi::ReadVirtual(base, source,
+                               abi::VtableSlot{v->getter / 4, abi::Confidence::kConfirmed}))(ctx,
+                                                                                         base);
+      const uint32_t count = abi::ReadU32(base, e + ace::kElementCount.offset);
+      const uint32_t n = count < ap::kVectorFloats ? count : ap::kVectorFloats;
+      const uint32_t floats = abi::ReadU32(base, params + gpp::kFloatConstants.offset);
+      abi::WriteBytes(base, floats + physical * 4, abi::xbox_memory::HostAddress(base, ctx.r3.u32),
+                      n * 4);
+      continue;
+    }
+    const ap::MatrixCase* c = MatrixCase(type);
+    const abi::VtableSlot getter{c->getter / 4, abi::Confidence::kConfirmed};
+    const uint32_t count = abi::ReadU32(base, e + ace::kElementCount.offset);
+    const uint32_t matrix =
+        c->indexed ? Virtual(ctx, base, source, getter, abi::ReadU32(base, e + ace::kData.offset))
+                   : Virtual(ctx, base, source, getter);
+    WriteMatrix(base, params, physical, matrix, count);
+  }
+  ctx.r1.u64 = caller_sp;
+  return true;
+}
+
+}  // namespace
+
+extern "C" {
+REX_EXTERN(__imp__sub_82201EB0);
+REX_FUNC(sub_82201EB0) {
+  static_assert(rso::auto_params::kUpdateAutoParams == 0x82201EB0u);
+#if TORCHLIGHT_DIAGNOSTICS
+  // The comparison's reference run is the guest's code all the way down.
+  if (torchlight::diag::store_trace::t_reference_run) return __imp__sub_82201EB0(ctx, base);
+#endif
+  if (!Enabled() || !NativeAutoParams(ctx, base)) __imp__sub_82201EB0(ctx, base);
+}
+}  // extern "C"
+
 // The XDK vector copy the constant writers use (guest_abi functions::kVectorCopy), as a host
 // memcpy where that is the same copy (hooks/guest_copy.h), behind its own switch: it is global (every
-// caller, every thread), so the per-call comparison of renderSingleObject cannot check it;
-// --diag_vector_copy_check does, copy by copy.
+// caller, every thread), so the per-call comparison of renderSingleObject checks it only inside
+// renderSingleObject; --diag_vector_copy_check checks every copy.
 namespace {
 // Read once, at the first copy: the step word is the guest's static data.
 bool VectorCopyEnabled(const uint8_t* base) {
@@ -508,6 +646,9 @@ extern "C" {
 static_assert(torchlight::guest_abi::functions::kVectorCopy.address == 0x821C28D8u);
 REX_FUNC(sub_821C28D8) {
   const uint32_t dst = ctx.r3.u32, src = ctx.r4.u32, size = ctx.r5.u32;
+#if TORCHLIGHT_DIAGNOSTICS
+  if (torchlight::diag::store_trace::t_reference_run) return __imp__sub_821C28D8(ctx, base);
+#endif
   if (!VectorCopyEnabled(base)) return __imp__sub_821C28D8(ctx, base);
 #if TORCHLIGHT_DIAGNOSTICS
   if (REXCVAR_GET(diag_vector_copy_check) && size &&
