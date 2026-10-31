@@ -122,10 +122,11 @@ inline constexpr Field kGeometryProgramUsage{0x130, Confidence::kConfirmed};
 inline constexpr Field kDepthBiasConstant{0xAC, Confidence::kConfirmed};
 inline constexpr Field kDepthBiasSlopeScale{0xB0, Confidence::kConfirmed};
 inline constexpr Field kDepthBiasPerIteration{0xB4, Confidence::kConfirmed};
-// [inferred] renderSingleObject's light loop reads, in upstream's order, a byte at +0xD2
-// (mIteratePerLight, @0x821C64F0), then +0xD0/+0xCE (start light, max simultaneous lights) and
+// [confirmed] renderSingleObject's light loop reads, in upstream's order, a byte at +0xD2
+// (mIteratePerLight: lbz r21,210(r24) after getLights @0x821C64F0, its branch to the per-light
+// copy), then +0xD0/+0xCE (start light, max simultaneous lights) and
 // +0xD4 (lights per iteration) as u16, +0xD6 (run only for one light type) as a byte.
-inline constexpr Field kIteratePerLight{0xD2, Confidence::kInferred};
+inline constexpr Field kIteratePerLight{0xD2, Confidence::kConfirmed};
 // [confirmed] renderSingleObject passes the word at +0x138 to setCurrentPassIterationCount
 // (render system slot 112, @0x821C67F0).
 inline constexpr Field kPassIterationCount{0x138, Confidence::kConfirmed};

@@ -885,6 +885,14 @@ bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
     return true;
   }
   if (!Enabled()) return false;
+  if (candidate != original) {
+    static const bool logged = [] {
+      REXLOG_INFO("store trace: tracing renderSingleObject runs the guest's function, not the "
+                  "native path");
+      return true;
+    }();
+    (void)logged;
+  }
   Begin(0x821C5FA0, ctx.r1.u32);
   original(ctx, base);
   End(base);
@@ -908,14 +916,6 @@ extern "C" {
 TORCHLIGHT_STORE_TRACE_ENTRY(821C5730)
 #undef TORCHLIGHT_STORE_TRACE_ENTRY
 
-// SceneManager::renderSingleObject (guest_abi render_queue): traced, or compared with the guest's
-// own function as the candidate (a native path's hook calls RenderSingleObject itself).
-REX_EXTERN(__imp__sub_821C5FA0);
-REX_FUNC(sub_821C5FA0) {
-  namespace st = torchlight::diag::store_trace;
-  if (!st::RenderSingleObject(ctx, base, &__imp__sub_821C5FA0, &__imp__sub_821C5FA0))
-    __imp__sub_821C5FA0(ctx, base);
-}
-
+// renderSingleObject's entry is hooks/native_render_object.cpp, which calls RenderSingleObject.
 
 }  // extern "C"
