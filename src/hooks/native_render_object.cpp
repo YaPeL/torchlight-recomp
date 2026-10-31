@@ -100,16 +100,17 @@ bool Enabled() {
 // classes first, so every target is a guest function.
 PPCFunc* Resolve(uint32_t target) {
   // Direct-mapped by the target's address (functions are 4-byte aligned): one compare per call,
-  // as the generated code's own table lookup costs; a collision only resolves again.
-  static uint32_t targets[1024];
-  static PPCFunc* functions[1024];
-  const uint32_t slot = (target >> 2) & 1023;
-  if (targets[slot] == target) return functions[slot];
+  // as the generated code's own table lookup costs; a collision only resolves again. Each slot is
+  // one pair, written whole.
+  struct Slot {
+    uint32_t target;
+    PPCFunc* function;
+  };
+  static Slot slots[1024];
+  Slot& slot = slots[(target >> 2) & 1023];
+  if (slot.target == target) return slot.function;
   PPCFunc* f = rex::runtime::ResolveIndirectFunction(target);
-  if (f) {
-    targets[slot] = target;
-    functions[slot] = f;
-  }
+  if (f) slot = {target, f};
   return f;
 }
 
@@ -489,6 +490,8 @@ void WriteMatrix(uint8_t* base, uint32_t params, uint32_t physical, uint32_t mat
                  uint32_t count) {
   uint32_t words[ap::kMatrixFloats];
   std::memcpy(words, abi::xbox_memory::HostAddress(base, matrix), sizeof words);
+  // Words, not floats: the guest's transpose (0x824639B8) goes through float registers, which
+  // would quiet a signalling NaN; no matrix the game builds holds one.
   if (abi::ReadU8(base, params + gpp::kTransposeMatrices.offset)) {
     uint32_t transposed[ap::kMatrixFloats];
     for (uint32_t r = 0; r < 4; ++r)
@@ -573,6 +576,10 @@ extern "C" {
 REX_EXTERN(__imp__sub_82201EB0);
 REX_FUNC(sub_82201EB0) {
   static_assert(rso::auto_params::kUpdateAutoParams == 0x82201EB0u);
+#if TORCHLIGHT_DIAGNOSTICS
+  // The comparison's reference run is the guest's code all the way down.
+  if (torchlight::diag::store_trace::t_reference_run) return __imp__sub_82201EB0(ctx, base);
+#endif
   if (!Enabled() || !NativeAutoParams(ctx, base)) __imp__sub_82201EB0(ctx, base);
 }
 }  // extern "C"
@@ -638,6 +645,9 @@ extern "C" {
 static_assert(torchlight::guest_abi::functions::kVectorCopy.address == 0x821C28D8u);
 REX_FUNC(sub_821C28D8) {
   const uint32_t dst = ctx.r3.u32, src = ctx.r4.u32, size = ctx.r5.u32;
+#if TORCHLIGHT_DIAGNOSTICS
+  if (torchlight::diag::store_trace::t_reference_run) return __imp__sub_821C28D8(ctx, base);
+#endif
   if (!VectorCopyEnabled(base)) return __imp__sub_821C28D8(ctx, base);
 #if TORCHLIGHT_DIAGNOSTICS
   if (REXCVAR_GET(diag_vector_copy_check) && size &&

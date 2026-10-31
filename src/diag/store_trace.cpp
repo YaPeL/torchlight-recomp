@@ -697,7 +697,7 @@ void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& ca
   }
   flush();
 
-  // Registers: the stack pointer and the return values. The generated code keeps the non-volatile
+  // Registers: the stack pointer and r3. The generated code keeps the non-volatile
   // registers in locals (REX_CONFIG_NON_VOLATILE_AS_LOCAL), never in the context.
   const PPCContext& x = candidate.out;
   const PPCContext& y = original.out;
@@ -712,7 +712,10 @@ void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& ca
 #define TL_REG(r) reg(#r, x.r.u64, y.r.u64)
   TL_REG(r1);
   TL_REG(r3);
-  TL_REG(f1);
+  // f1 is not compared: renderSingleObject returns nothing, and its only callers, the queue
+  // visitors (0x821C0A50, 0x821CCB88, which return right after it) and acceptVisitor(Grouped)
+  // (0x821C08B8, 0x821CC700), never read f1. The guest's _updateAutoParams leaves an intermediate
+  // float there that a transcription need not reproduce.
 #undef TL_REG
 
   // Commands: the same events, constants and draws in order; at each draw, and at the end, the
@@ -859,7 +862,9 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
   Run original_run;
   session.SetCompareLog(&original_log);
   StartRun(entry, sp);
+  t_reference_run = true;
   original(ctx, base);
+  t_reference_run = false;
   StopRun(base, original_run);
   session.SetCompareLog(nullptr);
   original_run.out = ctx;
