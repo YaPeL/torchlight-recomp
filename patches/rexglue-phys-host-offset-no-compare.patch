@@ -1,0 +1,56 @@
+Patch 52. After patch 51.
+
+REX_PHYS_HOST_OFFSET runs in every generated guest load and store on the platforms with the
+physical heap offset (Windows, macOS arm64, Android arm64). It compared the address with
+0xE0000000 and selected 0x1000 or 0. It now computes the same value with shifts and an add:
+addr >> 29 is 0..7, plus 1 is 8 only from 0xE0000000 up, >> 3 gives 1 or 0, << 12 gives the
+offset. The rule itself does not change, and PhysicalHostOffset (rex/system/xmemory.h) keeps the
+comparison: it is not in the generated code's hot path, and it is the readable statement of the
+rule the generated pch is asserted against.
+
+The generated pch now also asserts the macro against PhysicalHostOffset at 0xDFFFFFFF, 0xFFFFFFFF
+and 0, next to the existing 0xE0000000. Linux and macOS x86-64 keep offset 0, so their generated
+code does not change beyond those asserts.
+
+Test: the new form against the comparison for all 2^32 addresses, once, outside the tree (0
+differences); the asserts on every build; CI's PPC tests on Windows and macOS arm64 run the macro.
+Measurement: POCO X7, fight.txt, without PGO, as a local edit of the generated header: not yet a
+result; the series with PGO decides whether this joins the series.
+
+Upstream: not proposed.
+
+--- a/resources/templates/codegen/pch_h.inja
++++ b/resources/templates/codegen/pch_h.inja
+@@ -126,7 +126,8 @@
+ 
+ #if REX_PLATFORM_WIN32 || (REX_PLATFORM_MAC && REX_ARCH_ARM64) || \
+     (REX_PLATFORM_ANDROID && REX_ARCH_ARM64)
+-#define REX_PHYS_HOST_OFFSET(addr) (((u32)(addr) >= 0xE0000000u) ? 0x1000u : 0u)
++// addr >= 0xE0000000u ? 0x1000u : 0u, without a comparison: the top 3 bits plus 1 reach 8 only there.
++#define REX_PHYS_HOST_OFFSET(addr) ((((((u32)(addr)) >> 29) + 1u) >> 3) << 12)
+ #else
+ #define REX_PHYS_HOST_OFFSET(addr) 0u
+ #endif
+@@ -136,6 +137,10 @@
+ static_assert(REX_PHYS_HOST_OFFSET(0xE0000000u) ==
+                   rex::memory::detail::PhysicalHostOffset(0xE0000000u),
+               "REX_PHYS_HOST_OFFSET disagrees with the SDK: regenerate with this SDK's rexglue");
++static_assert(REX_PHYS_HOST_OFFSET(0xDFFFFFFFu) == rex::memory::detail::PhysicalHostOffset(0xDFFFFFFFu) &&
++                  REX_PHYS_HOST_OFFSET(0xFFFFFFFFu) == rex::memory::detail::PhysicalHostOffset(0xFFFFFFFFu) &&
++                  REX_PHYS_HOST_OFFSET(0u) == rex::memory::detail::PhysicalHostOffset(0u),
++              "REX_PHYS_HOST_OFFSET disagrees with the SDK at the heap's boundary");
+ 
+ #define REX_RAW_ADDR(x) (base + (u32)(x) + REX_PHYS_HOST_OFFSET(x))
+ 
+--- a/resources/templates/test/ppc_config_h.inja
++++ b/resources/templates/test/ppc_config_h.inja
+@@ -75,7 +75,8 @@
+ 
+ #if REX_PLATFORM_WIN32 || (REX_PLATFORM_MAC && REX_ARCH_ARM64) || \
+     (REX_PLATFORM_ANDROID && REX_ARCH_ARM64)
+-#define REX_PHYS_HOST_OFFSET(addr) (((u32)(addr) >= 0xE0000000u) ? 0x1000u : 0u)
++// addr >= 0xE0000000u ? 0x1000u : 0u, without a comparison: the top 3 bits plus 1 reach 8 only there.
++#define REX_PHYS_HOST_OFFSET(addr) ((((((u32)(addr)) >> 29) + 1u) >> 3) << 12)
+ #else
+ #define REX_PHYS_HOST_OFFSET(addr) 0u
+ #endif
