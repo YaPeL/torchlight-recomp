@@ -192,4 +192,37 @@ inline constexpr uint32_t kZeroFloat = 0x820AA304;
 inline constexpr uint32_t kCullClockwise = 2;
 inline constexpr uint32_t kCullAnticlockwise = 3;
 
+// GpuProgramParameters::_updateAutoParams(this r3, source r4, mask r5) (OgreGpuProgramParams.cpp
+// :1600; generated torchlight_recomp.163.cpp:847): nothing when the automatic constants are
+// empty or the mask misses their combined variability; else the active pass iteration index
+// (ogre_layout gpu_program_parameters) = -1 and, for each entry whose variability meets the mask
+// and whose type is at most 125, the jump table at 0x82201F58. The cases transcribed (the others
+// run the guest's function): a matrix from an AutoParamDataSource getter (r3 the source; r4 the
+// entry's data for the indexed ones), written by _writeRawConstant(Matrix4) (0x821C2868:
+// transposed when the parameters' flag is set, then min(element count, 16) floats to the float
+// buffer at the entry's physical index); and ACT_WORLD_MATRIX_ARRAY_3x4 (4, @0x822033EC: the
+// array, getter vt+48, then the count, vt+52; 48 bytes per matrix, source stride 64, no
+// transpose). The getter offsets, read from each case's code (the pointer cases end in the shared
+// tail @0x8220422C, the indexed ones go through @0x82204218):
+namespace auto_params {
+inline constexpr uint32_t kUpdateAutoParams = 0x82201EB0;
+inline constexpr uint32_t kMaxType = 125;
+inline constexpr uint32_t kWorldMatrixArray3x4 = 4;
+inline constexpr uint32_t kArrayGetter = 48;       // getWorldMatrixArray
+inline constexpr uint32_t kArrayCountGetter = 52;  // getWorldMatrixCount
+inline constexpr uint32_t kArrayMatrixBytes = 48;
+inline constexpr uint32_t kArraySourceStride = 64;
+struct MatrixCase {
+  uint32_t type;
+  uint32_t getter;  // vtable byte offset
+  bool indexed;     // the entry's data in r4
+};
+inline constexpr MatrixCase kMatrixCases[] = {
+    {0, 44, false},   {1, 76, false},   {3, 88, false},   {6, 56, false},   {7, 84, false},
+    {10, 64, false},  {14, 60, false},  {18, 72, false},  {19, 80, false},  {21, 92, false},
+    {22, 68, false},  {76, 212, true},  {78, 216, true},  {81, 224, true},  {122, 228, true},
+};
+inline constexpr uint32_t kMatrixFloats = 16;
+}  // namespace auto_params
+
 }  // namespace torchlight::guest_abi::render_single_object
