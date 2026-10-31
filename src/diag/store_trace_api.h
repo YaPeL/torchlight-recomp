@@ -29,6 +29,14 @@ void MmioStore(uint32_t address, const char* function);
 // --diag_store_compare, `candidate` against `original` (the guest's function); with
 // --diag_store_trace, `original` traced. False when neither is on (the hook runs the call).
 using GuestFunction = void (*)(PPCContext&, uint8_t*);
+// True on the thread while the comparison runs the guest's function (the reference), or the trace
+// runs it: stage 1's hooks (hooks/native_render_object.cpp) then run the guest's code too, so the
+// reference holds none of stage 1 (develop's older host hooks still run in both).
+inline thread_local bool t_reference_run = false;
+struct ReferenceRun {
+  ReferenceRun() { t_reference_run = true; }
+  ~ReferenceRun() { t_reference_run = false; }
+};
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
                         GuestFunction original);
 

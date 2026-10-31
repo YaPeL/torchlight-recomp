@@ -239,6 +239,36 @@ under 33.3 ms at its p95, about 5 ms.
   `fight5`, and an A B B A of the guest's work per frame with Even frames off and the thermal state
   logged. After stage 1, with its real numbers, the owner decides on stage 2.
 
+### Stage 1 so far (2026-10-31, branch perf/native-render-object)
+
+- **P0** (hooks/native_render_object.cpp, `--native_render_object`, off): renderSingleObject's
+  glue on the host, every callee the guest's, called by vtable in the same order. Every object of
+  every class takes it after the first light iteration (the guest builds its static light list
+  then).
+- **P1a**: `_updateAutoParams` on the host for the matrix constants (the guest's getters, the copy
+  and transpose on the host) and ACT_DERIVED_SCENE_COLOUR, which this game sets per object: every
+  call of the fight on the host.
+- **The XDK vector copy** on the host (`--native_vector_copy`, off, its own check).
+- **Checked**: the per-call comparison over fight.txt and the ten waves of fight5 with 0
+  differences and 0 unverified calls at every step (for P1a only since the reference run was made
+  the guest's code all the way down: before, it reached the native `_updateAutoParams` through its
+  symbol too); the copy check over 115 million copies.
+- **Measured** on the POCO, fight.txt, A B B A with the flag on one APK (the phone ran about 25 %
+  slower than the day before, so only differences within a series count):
+
+| Build | Fight off (ms) | Fight on (ms) |
+| --- | --- | --- |
+| P0, no PGO | 26.59 | 25.06 (-0.9) |
+| P0, PGO, linear target search | 20.36 | 21.62 (+1.26) |
+| P0 + P1a, PGO, direct-mapped targets | 23.12 | 22.71 (-0.4, within the runs' spread) |
+
+- **Profile** (simpleperf, the native path on, fight): the hook is 9.3 % of the samples, its own
+  code 4 % of that. Of the native path: `_render` 38 % (the guest's 60 %: vertex buffer binding
+  47 %, declaration 15 %; our CaptureDraw 37 %), `updateGpuProgramParameters` 32 %
+  (`bindGpuProgramParameters` 68 %, of which our ReadConstants 70 %; `_updateAutoParams` 25 %),
+  the RTSS listener 12 %. What is left is mostly our own capture (ReadConstants, CaptureDraw) and
+  the guest's buffer bindings, not the per-object glue the stage replaced.
+
 ## 5. The decision: our side first, then the culling's pure test
 
 **First: a cheaper capture and cheaper hooks.** Our side of the walk is 2.96 ms in `fight.txt` and
