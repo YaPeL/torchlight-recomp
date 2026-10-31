@@ -71,7 +71,8 @@ Classified by instruction mix (from `generated/default`):
   uses the default.
 - **`fmadd` is a call** to libc's `fma` (`__fma_fma3`, 0.75 % of the main thread): the build
   targets x86-64-v2, which has no FMA instruction. x86-64-v3 inlines it but measured no clear gain
-  (`docs/performance-profile.md`). Profiled again on 2026-10-31 (the PGO build, `fight.txt`):
+  (`docs/performance-profile.md`). Profiled again on 2026-10-31 (the PGO build of 3e36ab5, `fight.txt`; thermal state not recorded,
+  the shares are of one profile's samples):
   `__fma_fma3` and `fma@plt` are about 3 % of the guest thread in the fight. The owner's decision:
   the desktop keeps x86-64-v2; raising the minimum CPU is not worth 3 % where the desktop already
   has headroom (about 118 guest fps in the fight).
@@ -80,7 +81,8 @@ Classified by instruction mix (from `generated/default`):
 
 ## FMOD's software mixer (a lever for later)
 
-On the POCO (simpleperf, `fight.txt`, PGO, 2026-10-31) the game's FMOD mixing takes about 10.7 % of
+On the POCO (simpleperf, `fight.txt`, PGO build of f6c54f8, 2026-10-31; thermal state not
+recorded, the shares are of one profile's samples) the game's FMOD mixing takes about 10.7 % of
 all the phone's samples, on its own guest thread (`XThread`, not the main thread):
 `sub_826E1620` 6.3 % (a leaf of about 6,300 recompiled lines, nearly 900 float operations: the
 mixer's inner loop), `sub_82701148` 2.9 % and `sub_826D3B60` 1.5 %, all under the recursive DSP

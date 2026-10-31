@@ -48,8 +48,13 @@ bool HostCopy(PPCContext& ctx, uint8_t* base) {
 
 // The vector copy routes only while its byte loop's step word is 1 (static data: read once).
 bool VectorCopyEnabled(const uint8_t* base) {
-  static const bool enabled =
-      REXCVAR_GET(native_vector_copy) && abi::ReadU32(base, fn::kVectorCopyStep) == 1;
+  static const bool enabled = [base] {
+    if (!REXCVAR_GET(native_vector_copy)) return false;
+    const uint32_t step = abi::ReadU32(base, fn::kVectorCopyStep);
+    if (step != 1)
+      REXLOG_WARN("vector copy: the guest's step word is {} (not 1); the guest copy runs", step);
+    return step == 1;
+  }();
   return enabled;
 }
 
@@ -62,38 +67,51 @@ REX_EXTERN(__imp__sub_821C28D8);
 namespace {
 
 #if TORCHLIGHT_DIAGNOSTICS
-// --diag_vector_copy_check: the guest's copy, then the host's over the restored destination, both
-// compared over the whole 128-byte lines around it (a dcbzl outside the destination would show).
-// On the render thread only (the first to copy): another thread's write to those lines between the
-// two copies would be undone by the restore.
+// --diag_vector_copy_check: the guest's copy, then the host's over the restored destination. The
+// bytes of the 128-byte lines around the destination but outside it are compared with their state
+// before (a dcbzl outside the destination would show) and never written back, so only the
+// destination is restored. On the first thread to copy only (the render thread in practice), so
+// the counters and logs stay consistent; another thread writing the destination itself between the
+// two copies would be undone, which nothing does for a constant buffer being filled.
 bool CheckedCopy(PPCContext& ctx, uint8_t* base, uint32_t dst, uint32_t src, uint32_t size) {
-  static std::atomic<uint64_t> checked{0}, differing{0}, unchecked{0};
-  static const std::thread::id render_thread = std::this_thread::get_id();
-  if (std::this_thread::get_id() != render_thread) return false;
+  static std::atomic<uint64_t> checked{0}, differing{0}, outside{0}, unchecked{0};
+  static const std::thread::id first_thread = std::this_thread::get_id();
+  if (std::this_thread::get_id() != first_thread) return false;
   if (size > (1u << 20)) {
     if (unchecked.fetch_add(1, std::memory_order_relaxed) == 0)
       REXLOG_INFO("vector copy check: copies over 1 MiB are not checked");
     return false;
   }
   const uint32_t first = dst & ~127u;
-  const uint32_t span = ((dst + size + 127u) & ~127u) - first;
+  const uint32_t span =
+      static_cast<uint32_t>(((uint64_t{dst} + size + 127u) & ~uint64_t{127}) - first);
+  const uint32_t head = dst - first;
   uint8_t* lines = abi::xbox_memory::HostAddress(base, first);
+  uint8_t* out = lines + head;
   std::vector<uint8_t> before(lines, lines + span);
   __imp__sub_821C28D8(ctx, base);
-  std::vector<uint8_t> guest(lines, lines + span);
-  std::memcpy(lines, before.data(), span);
+  if (std::memcmp(lines, before.data(), head) != 0 ||
+      std::memcmp(out + size, before.data() + head + size, span - head - size) != 0) {
+    if (outside.fetch_add(1, std::memory_order_relaxed) < 20)
+      REXLOG_WARN("vector copy check: {:08X} <- {:08X} ({} bytes): the guest's copy changed "
+                  "bytes outside the destination",
+                  dst, src, size);
+  }
+  std::vector<uint8_t> guest(out, out + size);
+  std::memcpy(out, before.data() + head, size);
   torchlight::hooks::HostGuestCopy(base, dst, src, size);
   const uint64_t n = checked.fetch_add(1, std::memory_order_relaxed) + 1;
-  if (std::memcmp(lines, guest.data(), span) != 0) {
+  if (std::memcmp(out, guest.data(), size) != 0) {
     if (differing.fetch_add(1, std::memory_order_relaxed) < 20)
       REXLOG_WARN("vector copy check: {:08X} <- {:08X} ({} bytes) differs from the guest's copy",
                   dst, src, size);
-    std::memcpy(lines, guest.data(), span);
+    std::memcpy(out, guest.data(), size);
   }
   if (n % 1000000 == 0)
-    REXLOG_INFO("vector copy check: {} copies compared, {} differ, {} over 1 MiB not checked", n,
-                differing.load(std::memory_order_relaxed),
-                unchecked.load(std::memory_order_relaxed));
+    REXLOG_INFO("vector copy check: {} copies compared, {} differ, {} wrote outside, {} over 1 MiB "
+                "not checked",
+                n, differing.load(std::memory_order_relaxed),
+                outside.load(std::memory_order_relaxed), unchecked.load(std::memory_order_relaxed));
   ctx.r3.u64 = dst;
   return true;
 }
@@ -109,8 +127,8 @@ void LogGuestCopyMode() {
               REXCVAR_GET(native_guest_copy) ? "host memcpy where it is the same copy"
                                              : "the recompiled guest code",
               REXCVAR_GET(native_guest_copy),
-              REXCVAR_GET(native_vector_copy) ? "host memcpy where it is the same copy (when the "
-                                                "guest's step word is 1)"
+              REXCVAR_GET(native_vector_copy) ? "host memcpy where it is the same copy (a warning "
+                                                "follows if the guest's step word is not 1)"
                                               : "the recompiled guest code",
               REXCVAR_GET(native_vector_copy));
 }
