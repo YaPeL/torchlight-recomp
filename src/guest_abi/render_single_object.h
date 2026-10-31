@@ -223,6 +223,18 @@ inline constexpr MatrixCase kMatrixCases[] = {
     {22, 68, false},  {76, 212, true},  {78, 216, true},  {81, 224, true},  {122, 228, true},
 };
 inline constexpr uint32_t kMatrixFloats = 16;
+// The colour cases a getter returns by value into the function's 2240-byte frame (stwu -2240
+// @0x82201EBC) at +768 (r3 the buffer, r4 the source), written by _writeRawConstant(Vector4)
+// (0x82467DE0: min(element count, 4) floats). ACT_DERIVED_SCENE_COLOUR (66, @0x82202370, getter
+// vt+196) is active per object in this game (Runic scales the surface colours by the renderable).
+inline constexpr uint32_t kFrameSize = 2240;
+inline constexpr uint32_t kByValueBuffer = 768;
+inline constexpr uint32_t kVectorFloats = 4;
+struct VectorCase {
+  uint32_t type;
+  uint32_t getter;  // vtable byte offset
+};
+inline constexpr VectorCase kByValueVectorCases[] = {{66, 196}};
 }  // namespace auto_params
 
 }  // namespace torchlight::guest_abi::render_single_object

@@ -95,19 +95,20 @@ bool Enabled() {
   return enabled;
 }
 
-// The guest functions behind the virtual calls: a few dozen targets, resolved once. Render thread
+// The guest functions behind the virtual calls, resolved once each. Render thread
 // only, as renderSingleObject is (unsynchronized statics). The vtables are checked against known
 // classes first, so every target is a guest function.
 PPCFunc* Resolve(uint32_t target) {
-  static uint32_t targets[64];
-  static PPCFunc* functions[64];
-  static unsigned count = 0;
-  for (unsigned i = 0; i < count; ++i)
-    if (targets[i] == target) return functions[i];
+  // Direct-mapped by the target's address (functions are 4-byte aligned): one compare per call,
+  // as the generated code's own table lookup costs; a collision only resolves again.
+  static uint32_t targets[1024];
+  static PPCFunc* functions[1024];
+  const uint32_t slot = (target >> 2) & 1023;
+  if (targets[slot] == target) return functions[slot];
   PPCFunc* f = rex::runtime::ResolveIndirectFunction(target);
-  if (f && count < 64) {
-    targets[count] = target;
-    functions[count++] = f;
+  if (f) {
+    targets[slot] = target;
+    functions[slot] = f;
   }
   return f;
 }
@@ -477,6 +478,12 @@ const ap::MatrixCase* MatrixCase(uint32_t type) {
   return nullptr;
 }
 
+const ap::VectorCase* VectorCase(uint32_t type) {
+  for (const ap::VectorCase& c : ap::kByValueVectorCases)
+    if (c.type == type) return &c;
+  return nullptr;
+}
+
 // _writeRawConstant(Matrix4) (0x821C2868).
 void WriteMatrix(uint8_t* base, uint32_t params, uint32_t physical, uint32_t matrix,
                  uint32_t count) {
@@ -504,13 +511,18 @@ bool NativeAutoParams(PPCContext& ctx, uint8_t* base) {
     if (!(abi::ReadU16(base, e + ace::kVariability.offset) & mask)) continue;
     const uint32_t type = abi::ReadU32(base, e + ace::kParamType.offset);
     if (type > ap::kMaxType) continue;
-    if (type != ap::kWorldMatrixArray3x4 && !MatrixCase(type)) {
+    if (type != ap::kWorldMatrixArray3x4 && !MatrixCase(type) && !VectorCase(type)) {
       g_auto_guest.fetch_add(1, std::memory_order_relaxed);
       g_auto_guest_types[type].fetch_add(1, std::memory_order_relaxed);
       return false;
     }
   }
   g_auto_native.fetch_add(1, std::memory_order_relaxed);
+  // The guest's frame, for the getters that return by value into it.
+  const uint32_t caller_sp = ctx.r1.u32;
+  const uint32_t frame = caller_sp - ap::kFrameSize;
+  abi::WriteU32(base, frame, caller_sp);
+  ctx.r1.u64 = frame;
   abi::WriteU32(base, params + gpp::kActivePassIterationIndex.offset, 0xFFFFFFFFu);
   for (uint32_t e = abi::ReadU32(base, autos); e != abi::ReadU32(base, autos + 4); e += stride) {
     if (!(abi::ReadU16(base, e + ace::kVariability.offset) & mask)) continue;
@@ -529,6 +541,20 @@ bool NativeAutoParams(PPCContext& ctx, uint8_t* base) {
       }
       continue;
     }
+    if (const ap::VectorCase* v = VectorCase(type)) {
+      // getter(buffer r3, source r4), returning the buffer; then _writeRawConstant(Vector4).
+      ctx.r3.u64 = frame + ap::kByValueBuffer;
+      ctx.r4.u64 = source;
+      Resolve(abi::ReadVirtual(base, source,
+                               abi::VtableSlot{v->getter / 4, abi::Confidence::kConfirmed}))(ctx,
+                                                                                         base);
+      const uint32_t count = abi::ReadU32(base, e + ace::kElementCount.offset);
+      const uint32_t n = count < ap::kVectorFloats ? count : ap::kVectorFloats;
+      const uint32_t floats = abi::ReadU32(base, params + gpp::kFloatConstants.offset);
+      abi::WriteBytes(base, floats + physical * 4, abi::xbox_memory::HostAddress(base, ctx.r3.u32),
+                      n * 4);
+      continue;
+    }
     const ap::MatrixCase* c = MatrixCase(type);
     const abi::VtableSlot getter{c->getter / 4, abi::Confidence::kConfirmed};
     const uint32_t count = abi::ReadU32(base, e + ace::kElementCount.offset);
@@ -537,6 +563,7 @@ bool NativeAutoParams(PPCContext& ctx, uint8_t* base) {
                    : Virtual(ctx, base, source, getter);
     WriteMatrix(base, params, physical, matrix, count);
   }
+  ctx.r1.u64 = caller_sp;
   return true;
 }
 
