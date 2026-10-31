@@ -6,6 +6,24 @@ what happened, which layer should have caught it, and what catches it now (a tes
 checklist item of the pre-release passes). A new entry is added when a bug is found that late; the
 lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
+## ThinLTO bound the generated code's calls past the hooks (caught before any merge)
+
+- **What happened:** with `TORCHLIGHT_LTO` (ThinLTO for the generated code and the game's own,
+  branch `perf/pgo-lto`, 2026-10-30), calls of the generated code to hooked guest functions went
+  straight to their `__imp__` bodies, past the hooks: 1492 such branches on Android, 1454 on Linux
+  (the guest's memcpy hook among them). A hook is a strong `sub_X` over the generated weak alias
+  `sub_X` of `__imp__sub_X`; under ThinLTO the alias, losing to the hook, was replaced by its
+  aliasee instead of becoming a reference to the hook. The desktop measurements taken with it are
+  void: ThinLTO alone -4.5 % and PGO + ThinLTO -13 % in `fight.txt` (docs/perf/pgo.md); PGO alone,
+  linked normally, was not affected (-3.7 %).
+- **Should have been caught by:** the binding check on every platform; it ran only on Android
+  (the shared library's `-Bsymbolic-functions`).
+- **Caught by:** the Android build's binding check, which failed the link.
+- **Covered now:** `tools/android/check_guest_call_binding.py` runs after every game link, Linux
+  (ELF x86-64), macOS (Mach-O) and Windows (PE, from the linker's map) as on Android, and fails the
+  build on a bypass. ThinLTO stays out until the codegen makes `sub_X` a weak function calling
+  `__imp__sub_X` rather than an alias (the request to ReXGlue's owner).
+
 ## The town lamps' light missing on Direct3D 11 (fixed in 0338b58)
 
 - **What happened:** after the backend's per-draw cuts (daeaa8b, constants bound only when they

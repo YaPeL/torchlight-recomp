@@ -51,6 +51,26 @@ if(WIN32)
     set(CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL MinSizeRel Release RelWithDebInfo)
 endif()
 
+# The binding check's tools (tools/android/check_guest_call_binding.py, on the game and on its
+# fixtures in tests/guest_call_binding): the NDK's on Android; elsewhere LLVM's nm and objdump,
+# beside the compiler or apt.llvm.org's (GNU's do not read every format the check does; Xcode's nm
+# and objdump are LLVM's).
+if(ANDROID)
+    set(_binding_tools --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP})
+else()
+    get_filename_component(_toolchain_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_binding_nm llvm-nm llvm-nm-21)
+    set(_binding_objdump llvm-objdump llvm-objdump-21)
+    if(APPLE)
+        list(APPEND _binding_nm nm)
+        list(APPEND _binding_objdump objdump)
+    endif()
+    find_program(TORCHLIGHT_LLVM_NM NAMES ${_binding_nm}
+                 HINTS "${_toolchain_bin}" /usr/lib/llvm-21/bin REQUIRED)
+    find_program(TORCHLIGHT_LLVM_OBJDUMP NAMES ${_binding_objdump}
+                 HINTS "${_toolchain_bin}" /usr/lib/llvm-21/bin REQUIRED)
+    set(_binding_tools --nm ${TORCHLIGHT_LLVM_NM} --objdump ${TORCHLIGHT_LLVM_OBJDUMP})
+endif()
 if(TORCHLIGHT_GAME)
 # Sources
 set(TORCHLIGHT_SOURCES
@@ -132,15 +152,23 @@ add_dependencies(torchlight torchlight_wardrobe_blend_check)
 set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES
     OBJECT_DEPENDS "${_wardrobe_blend_header}")
 target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated_include")
-# On Android the game is a shared library that the SDK links with -Wl,-Bsymbolic-functions (patch
-# 47): every link checks that the generated code's calls are bound inside it and reach the hooks.
-if(ANDROID)
-    add_custom_command(TARGET torchlight POST_BUILD
-        COMMAND ${Python3_EXECUTABLE} -I
-                ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
-                $<TARGET_FILE:torchlight> --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP}
-        VERBATIM)
+# Every link checks that the generated code's calls reach the hooks
+# (tools/android/check_guest_call_binding.py): on Android the game is a shared library the SDK links
+# with -Wl,-Bsymbolic-functions (patch 47); everywhere, nothing (ThinLTO did, docs/regressions.md)
+# may bind a generated call to a hooked function's __imp__ body past its hook. Windows' executable
+# has no symbol table: the linker writes a map the check reads.
+if(WIN32)
+    set(_binding_map "${CMAKE_CURRENT_BINARY_DIR}/torchlight.map")
+    # No incremental link (link.exe's default with debug information): its jump stubs would hide
+    # where a call is bound.
+    target_link_options(torchlight PRIVATE "LINKER:/MAP:${_binding_map}" "LINKER:/INCREMENTAL:NO")
+    list(APPEND _binding_tools --map ${_binding_map})
 endif()
+add_custom_command(TARGET torchlight POST_BUILD
+    COMMAND ${Python3_EXECUTABLE} -I
+            ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
+            $<TARGET_FILE:torchlight> ${_binding_tools}
+    VERBATIM)
 # The default code model for the game on Linux x86-64 (docs/guest-hot-paths.md). The SDK compiles
 # its targets with -mcmodel=large ("large executable support"), which makes every call between
 # guest functions a 64-bit absolute address in a register and an indirect call; the executable's
@@ -149,6 +177,54 @@ endif()
 if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     target_compile_options(torchlight_recomp PRIVATE -mcmodel=small)
     target_compile_options(torchlight PRIVATE -mcmodel=small)
+endif()
+# Whole-program optimisation of the generated code and the game's own (docs/perf/pgo.md): ThinLTO,
+# and clang's instrumented profile-guided optimisation, generated (an instrumented build writes the
+# counters, src/pgo/pgo_writer.cpp) and used (a merged .profdata). Off by default; the SDK's
+# libraries get neither.
+option(TORCHLIGHT_LTO "ThinLTO for the generated code and the game's own" OFF)
+option(TORCHLIGHT_PGO_GENERATE "Instrument the generated code and the game's own for PGO" OFF)
+set(TORCHLIGHT_PGO_USE "" CACHE FILEPATH "Merged clang profile (.profdata) to optimise with")
+if(TORCHLIGHT_LTO)
+    target_compile_options(torchlight_recomp PRIVATE -flto=thin)
+    target_compile_options(torchlight PRIVATE -flto=thin)
+    # lld reads the bitcode (Windows links with lld-link already); Apple's ld64 does ThinLTO itself
+    # and Xcode has no lld.
+    if(APPLE)
+        target_link_options(torchlight PRIVATE -flto=thin)
+    else()
+        target_link_options(torchlight PRIVATE -flto=thin -fuse-ld=lld)
+    endif()
+endif()
+if(TORCHLIGHT_PGO_GENERATE AND TORCHLIGHT_PGO_USE)
+    message(FATAL_ERROR "TORCHLIGHT_PGO_GENERATE and TORCHLIGHT_PGO_USE exclude each other")
+endif()
+if(TORCHLIGHT_PGO_GENERATE)
+    target_compile_options(torchlight_recomp PRIVATE -fprofile-instr-generate)
+    target_compile_options(torchlight PRIVATE -fprofile-instr-generate)
+    target_link_options(torchlight PRIVATE -fprofile-instr-generate)
+    target_sources(torchlight PRIVATE src/pgo/pgo_writer.cpp)
+    target_compile_definitions(torchlight PRIVATE TORCHLIGHT_PGO_GENERATE=1)
+elseif(TORCHLIGHT_PGO_USE)
+    # A function whose code changed since the profile keeps no profile; clang says how many of
+    # each translation unit's functions did (-Wprofile-instr-out-of-date), and
+    # tools/pgo/check_profile_match.py turns the build log's counts into a pass or fail.
+    # The generated code changes only with a codegen or ReXGlue update, which needs a new profile:
+    # a function of it whose profile no longer matches fails the build. The game's own code changes
+    # every day; its stale functions only lose their profile (a warning).
+    # A missing profile stops the configure, and a new one rebuilds what reads it.
+    if(NOT EXISTS "${TORCHLIGHT_PGO_USE}")
+        message(FATAL_ERROR "TORCHLIGHT_PGO_USE: no profile at ${TORCHLIGHT_PGO_USE}")
+    endif()
+    target_compile_options(torchlight_recomp PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
+                           -Wno-profile-instr-unprofiled -Werror=profile-instr-out-of-date)
+    target_compile_options(torchlight PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
+                           -Wno-profile-instr-unprofiled)
+    foreach(_pgo_target IN ITEMS torchlight_recomp torchlight)
+        get_target_property(_pgo_sources ${_pgo_target} SOURCES)
+        set_property(SOURCE ${_pgo_sources} TARGET_DIRECTORY ${_pgo_target}
+                     APPEND PROPERTY OBJECT_DEPENDS "${TORCHLIGHT_PGO_USE}")
+    endforeach()
 endif()
 # The SDK copies the GPU plugins next to the executable in a POST_BUILD step, which only runs when
 # the executable relinks: after reinstalling the SDK the game kept loading the old plugins. This copy
@@ -212,15 +288,14 @@ add_subdirectory(tools/synthetic_capture)
 add_subdirectory(tools/replay)
 add_subdirectory(tools/run_capped)
 add_subdirectory(tools/profile_window)
+add_subdirectory(tools/pgo)
 add_subdirectory(tools/deps)
 add_subdirectory(tools/translations)
 add_subdirectory(tools/achievement_coverage)
 add_subdirectory(tools/class_skill_check)
 add_subdirectory(tools/release)
 add_subdirectory(tests/save_convert)
-if(ANDROID)
-    add_subdirectory(tests/guest_call_binding)
-endif()
+add_subdirectory(tests/guest_call_binding)
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)

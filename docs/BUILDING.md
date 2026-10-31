@@ -8,7 +8,10 @@ be passed with `--game_data_root`). All commands are run from the repository's r
 
 The SDK and OGRE are built with the same scripts CI uses (`tools/deps/`; Release; CI publishes them
 as `deps-<key>` downloads, `tools/deps/key.sh`). On Ubuntu 22.04, `tools/deps/ubuntu_toolchain.sh`
-(as root) installs the toolchain CI uses: clang 21, libstdc++ 13, a recent CMake:
+(as root) installs the toolchain CI uses: clang 21, libstdc++ 13, a recent CMake. Every configure
+also needs LLVM's `llvm-nm` and `llvm-objdump` (package `llvm-21`; on Windows LLVM's installer,
+on macOS Xcode's): after each game link, `tools/android/check_guest_call_binding.py` checks that the
+generated code's calls reach the hooks, which adds about 20 s to the link:
 
 ```sh
 tools/deps/build_sdk.sh ~/rexglue-sdk/out/install/linux-amd64 "" all
