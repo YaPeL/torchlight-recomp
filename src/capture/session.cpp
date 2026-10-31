@@ -149,11 +149,65 @@ void Session::CompareState(uint32_t key, CompareValue value) {
 }
 #endif
 
+#if TORCHLIGHT_DIAGNOSTICS
+void Session::ReplayDiverted(const CompareLog& log) {
+  for (const CompareLog::Op& op : log.ops) {
+    switch (op.kind) {
+      case CompareLog::Op::kState:
+        State(op.key, *op.payload, op.object);
+        break;
+      case CompareLog::Op::kErase:
+        EraseState(op.key);
+        break;
+      case CompareLog::Op::kEvent:
+        Event(*op.payload);
+        break;
+      case CompareLog::Op::kDraw:
+        DrawEvent(std::get<commands::Draw>(*op.payload), op.live_keys);
+        break;
+      case CompareLog::Op::kConstants: {
+        // The whole upload, filtered through the mirror as ReadConstants does for the hook.
+        commands::SetConstants c = std::get<commands::SetConstants>(*op.payload);
+        if (!recording()) break;
+        ConstantMirror* mirror = live() ? &constant_mirror_ : nullptr;
+        const bool filter = mirror && !armed();
+        auto pass_ranges = [&](std::vector<commands::ConstantRange>& ranges, bool floats) {
+          std::vector<commands::ConstantRange> kept;
+          for (commands::ConstantRange& r : ranges) {
+            const uint8_t stage = c.stage.value;
+            if (mirror && filter &&
+                mirror->Holds(floats, stage, r.physical_index, r.data.data(), r.element_count))
+              continue;
+            if (mirror) mirror->Store(floats, stage, r.physical_index, r.data.data(), r.element_count);
+            kept.push_back(std::move(r));
+          }
+          ranges = std::move(kept);
+        };
+        pass_ranges(c.floats, true);
+        pass_ranges(c.ints, false);
+        if (mirror) {
+          if (filter && c.floats.empty() && c.ints.empty() &&
+              mirror->SameTail(c.stage.value, c.autos, c.transpose_matrices)) {
+            break;
+          }
+          mirror->StoreTail(c.stage.value, c.autos, c.transpose_matrices);
+        }
+        Event(std::move(c));
+        break;
+      }
+    }
+  }
+}
+#endif
+
 void Session::State(uint32_t key, commands::CommandPayload payload, uint32_t object) {
 #if TORCHLIGHT_DIAGNOSTICS
   if (compare_) [[unlikely]] {
     CompareState(key, {payload, object});
-    if (compare_->divert) return;
+    if (compare_->divert) {
+      compare_->ops.push_back({CompareLog::Op::kState, key, object, payload, {}});
+      return;
+    }
   }
 #endif
   // A value equal to the shadow's is what every consumer already has (a capture starts from the
@@ -189,7 +243,10 @@ void Session::EraseState(uint32_t key) {
 #if TORCHLIGHT_DIAGNOSTICS
   if (compare_) [[unlikely]] {
     CompareState(key, {});
-    if (compare_->divert) return;
+    if (compare_->divert) {
+      compare_->ops.push_back({CompareLog::Op::kErase, key, 0, std::nullopt, {}});
+      return;
+    }
   }
 #endif
   ShadowEntry* entry = FindShadow(key);
@@ -228,7 +285,11 @@ void Session::Event(commands::CommandPayload payload) {
     if (!std::holds_alternative<commands::SetConstants>(payload)) {
       compare_->items.push_back({payload, {}, {}});
     }
-    if (compare_->divert) return;
+    if (compare_->divert) {
+      if (!std::holds_alternative<commands::SetConstants>(payload))
+        compare_->ops.push_back({CompareLog::Op::kEvent, 0, 0, payload, {}});
+      return;
+    }
   }
 #endif
   if (!armed()) {
@@ -245,7 +306,10 @@ void Session::DrawEvent(commands::Draw draw, const std::vector<commands::Hash>& 
     CompareLog::Item item{draw, live_keys, {}};
     for (const auto& [key, values] : compare_->keys) item.state.emplace(key, values.now);
     compare_->items.push_back(std::move(item));
-    if (compare_->divert) return;
+    if (compare_->divert) {
+      compare_->ops.push_back({CompareLog::Op::kDraw, 0, 0, std::move(draw), live_keys});
+      return;
+    }
   }
 #endif
   if (live()) {

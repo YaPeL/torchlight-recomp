@@ -48,23 +48,23 @@
 #define TORCHLIGHT_MM_STORE(addr, val, size, store)                                             \
   do {                                                                                          \
     u32 _mmio_addr = (addr);                                                                    \
+    u64 _mmio_val = static_cast<u64>(val);                                                      \
     if (REX_IS_MMIO_ADDR(_mmio_addr)) {                                                         \
       if (__builtin_expect(                                                                     \
               torchlight::diag::store_trace::g_threads_inside.load(std::memory_order_relaxed),  \
               0))                                                                               \
         torchlight::diag::store_trace::MmioStore(_mmio_addr, __func__);                         \
       if ((size) == 8) {                                                                        \
-        u64 _v64 = static_cast<u64>(val);                                                       \
-        rex::runtime::MMIOHandler::global_handler()->CheckStore(_mmio_addr,                     \
-                                                                static_cast<u32>(_v64 >> 32));  \
+        rex::runtime::MMIOHandler::global_handler()->CheckStore(                                \
+            _mmio_addr, static_cast<u32>(_mmio_val >> 32));                                     \
         rex::runtime::MMIOHandler::global_handler()->CheckStore(_mmio_addr + 4,                 \
-                                                                static_cast<u32>(_v64));        \
+                                                                static_cast<u32>(_mmio_val));   \
       } else {                                                                                  \
         rex::runtime::MMIOHandler::global_handler()->CheckStore(_mmio_addr,                     \
-                                                                static_cast<u32>(val));         \
+                                                                static_cast<u32>(_mmio_val));   \
       }                                                                                         \
     } else {                                                                                    \
-      store(_mmio_addr, (val));                                                                 \
+      store(_mmio_addr, _mmio_val);                                                             \
     }                                                                                           \
   } while (0)
 #define REX_MM_STORE_U8(addr, val) TORCHLIGHT_MM_STORE(addr, val, 1, REX_STORE_U8)
