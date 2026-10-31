@@ -12,7 +12,7 @@ apt-get install -y --no-install-recommends ca-certificates curl wget gnupg git l
 wget -qO /tmp/llvm.sh https://apt.llvm.org/llvm.sh
 chmod +x /tmp/llvm.sh
 /tmp/llvm.sh 21
-apt-get install -y clang-21 lld-21 llvm-21  # llvm-nm and llvm-objdump: the binding check
+apt-get install -y clang-21 lld-21
 update-alternatives --install /usr/bin/clang clang /usr/bin/clang-21 210
 update-alternatives --install /usr/bin/clang++ clang++ /usr/bin/clang++-21 210
 wget -qO- https://packages.lunarg.com/lunarg-signing-key-pub.asc > /etc/apt/trusted.gpg.d/lunarg.asc
