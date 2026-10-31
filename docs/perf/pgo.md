@@ -94,8 +94,8 @@ For when ThinLTO comes back (it is out for now, above): it moves code generation
 the link's parallel backends: about the same total time (360 s against about 450 s locally), a link
 of minutes. Its memory grows with the backends: 4 jobs on the Linux and Windows runners (16 GB), 2
 on macOS (7 GB): `-Wl,--thinlto-jobs=N`, `-Wl,/opt:lldltojobs=N`, `-Wl,-mllvm,-threads=N`. Windows
-links with lld-link instead of link.exe (which cannot read bitcode; the symbols' collection step is
-to be checked again with lld-link's PDB); Apple keeps ld64, which does ThinLTO itself. The ThinLTO
+already links with lld-link (CMake's default linker for clang there), which reads bitcode; Apple
+keeps ld64, which does ThinLTO itself. The ThinLTO
 cache does not help the release, which starts from nothing and uses no caches.
 
 

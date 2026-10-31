@@ -159,7 +159,9 @@ target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/gener
 # has no symbol table: the linker writes a map the check reads.
 if(WIN32)
     set(_binding_map "${CMAKE_CURRENT_BINARY_DIR}/torchlight.map")
-    target_link_options(torchlight PRIVATE "LINKER:/MAP:${_binding_map}")
+    # No incremental link (link.exe's default with debug information): its jump stubs would hide
+    # where a call is bound.
+    target_link_options(torchlight PRIVATE "LINKER:/MAP:${_binding_map}" "LINKER:/INCREMENTAL:NO")
     list(APPEND _binding_tools --map ${_binding_map})
 endif()
 add_custom_command(TARGET torchlight POST_BUILD
@@ -186,8 +188,8 @@ set(TORCHLIGHT_PGO_USE "" CACHE FILEPATH "Merged clang profile (.profdata) to op
 if(TORCHLIGHT_LTO)
     target_compile_options(torchlight_recomp PRIVATE -flto=thin)
     target_compile_options(torchlight PRIVATE -flto=thin)
-    # lld reads the bitcode (Windows' link.exe cannot); Apple's ld64 does ThinLTO itself and Xcode
-    # has no lld.
+    # lld reads the bitcode (Windows links with lld-link already); Apple's ld64 does ThinLTO itself
+    # and Xcode has no lld.
     if(APPLE)
         target_link_options(torchlight PRIVATE -flto=thin)
     else()

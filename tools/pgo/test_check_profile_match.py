@@ -24,12 +24,15 @@ def run(text, *extra):
 def main():
     used = "clang++ -fprofile-instr-use=/p.profdata -c a.cpp\n"
     assert c.mismatch(W.format(n=100, m=1, v="has") + W.format(n=50, m=4, v="have")) == (150, 5, 2)
-    assert run(used + W.format(n=1000, m=10, v="have")) == 0, "1 % passes the 5 % limit"
-    assert run(used + W.format(n=1000, m=200, v="have")) == 1, "20 % fails"
-    assert run(used + W.format(n=1000, m=200, v="have"), "--max-mismatch-percent", "25") == 0
+    f = ("--functions", "1000")
+    assert run(used + W.format(n=1000, m=10, v="have"), *f) == 0, "1 % passes the 5 % limit"
+    assert run(used + W.format(n=1000, m=200, v="have"), *f) == 1, "20 % fails"
+    assert run(used + W.format(n=1000, m=200, v="have"), *f, "--max-mismatch-percent", "25") == 0
+    assert run(used + W.format(n=1000, m=10, v="have")) == 1, "a mismatch needs the profile count"
     assert run(used) == 0, "no mismatch reported: everything matched"
     assert run("clang++ -c a.cpp\n") == 1, "the profile was not used"
-    assert run(used + W.format(n=10, m=5, v="have"), "--functions", "1000") == 0, "measured on all"
+    assert run(used + W.format(n=40000, m=1500, v="have"), "--functions", "20000") == 1, \
+        "measured on the profile, not on the units that warned"
     d = tempfile.mkdtemp()
     with open(os.path.join(d, "build.ninja"), "w") as f:
         f.write("FLAGS = -O3 -fprofile-instr-use=/p.profdata\n")

@@ -81,7 +81,12 @@ def main(argv=None):
         except (OSError, subprocess.CalledProcessError, ValueError) as error:
             print(f"pgo check: {error}")
             return 1
-    denominator = max(total, functions)
+    if lines and not functions:
+        print("pgo check: mismatched functions reported but no profile count: pass --profdata "
+              "or --functions")
+        return 1
+    # The profile's own count: the units that warned also count their functions with no profile.
+    denominator = functions
     share = 100.0 * bad / denominator if denominator else 0.0
     print(f"pgo check: {bad} of {denominator} functions with mismatched profile data "
           f"({share:.2f}%, limit {args.max_mismatch_percent}%)")

@@ -94,12 +94,12 @@ def map_symbols(map_path):
     return defined
 
 
-def symbols(nm, library, macho=False, map_path=None):
+def symbols(nm, library, macho=False, map_path=None, defined=None):
     """{name: (type, address)} of the library's guest functions: each __imp__X and its X."""
-    defined = {}
     if map_path:
-        defined = map_symbols(map_path)
+        defined = defined if defined is not None else map_symbols(map_path)
     elif macho:
+        defined = {}
         # llvm-nm prints a Mach-O weak definition as T; -m spells it out:
         # "00000001000003d8 (__TEXT,__text) weak external _sub_1".
         out = subprocess.run([nm, "-m", "--defined-only", library], check=True,
@@ -110,6 +110,7 @@ def symbols(nm, library, macho=False, map_path=None):
                 kind = "W" if "weak" in fields[2:-1] else "T"
                 defined[fields[-1][1:]] = (kind, int(fields[0], 16))
     else:
+        defined = {}
         out = subprocess.run([nm, "--defined-only", library], check=True, capture_output=True,
                              text=True).stdout
         for line in out.splitlines():
@@ -129,10 +130,17 @@ def symbols(nm, library, macho=False, map_path=None):
 def check(library, nm, objdump, map_path=None):
     fmt, x86 = file_format(library)
     macho = fmt == "mach-o"
-    syms = symbols(nm, library, macho, map_path)
+    publics = map_symbols(map_path) if map_path else None
+    syms = symbols(nm, library, macho, map_path, publics)
     by_address = {address: name for name, (_, address) in syms.items()}
-    # With a map (no symbols in the disassembly), each branch's function by the nearest symbol.
-    starts = sorted(by_address) if map_path else []
+    # With a map (no symbols in the disassembly), each branch's function is the nearest code
+    # public below it, host functions included (so a host call is never pinned on a guest body).
+    function_at = {}
+    if map_path:
+        for name, (_, address) in publics.items():
+            function_at.setdefault(address, name)
+        function_at.update({address: name for address, name in by_address.items()})
+    starts = sorted(function_at)
     problems = {}
 
     def problem(kind, text):
@@ -184,7 +192,7 @@ def check(library, nm, objdump, map_path=None):
                 site = int(branch.group(1), 16)
                 k = bisect.bisect_right(starts, site) - 1
                 if k >= 0:
-                    function_start, function_name = starts[k], by_address[starts[k]]
+                    function_start, function_name = starts[k], function_at[starts[k]]
             # With a map the disassembly's names are section offsets ("<.text+0x70>").
             target_name = ((by_address.get(target) if map_path else None) or branch.group(4)
                            or by_address.get(target, ""))
