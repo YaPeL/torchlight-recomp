@@ -23,9 +23,11 @@ the function table, whose entries the static linker resolves to X too.
 
 On the desktop the game is an executable, whose direct calls the static linker binds: the same
 bypass check runs on Linux (ELF x86-64), macOS (Mach-O arm64: symbols carry a leading underscore,
-and a weak X may be a thunk of its own rather than at its __imp__'s address) and Windows (PE
-x86-64: the executable has no symbol table, so the names and addresses come from the linker's map,
---map, and a hooked X is one at another address than its __imp__X). ThinLTO bypassed 1492 hooks
+a weak X is a thunk of its own rather than at its __imp__'s address, and the generated code calls
+it through dyld's stubs, which bind weak definitions at load) and Windows (PE x86-64: the
+executable has no symbol table, so the names and addresses come from the linker's map, --map, of
+the code sections only; a hooked X is one at another address than its __imp__X, and an X the map
+does not list is taken as not hooked). ThinLTO bypassed 1492 hooks
 this way on Android and some on the desktop before it was taken out (docs/regressions.md).
 
 Usage: tools/android/check_guest_call_binding.py BINARY [--nm LLVM_NM] [--objdump LLVM_OBJDUMP]
@@ -43,7 +45,9 @@ import sys
 LABEL = re.compile(r"^([0-9a-f]+) <(.+)>:$")
 # "  39e6770:      \tbl\t0x3acef18 <_Unwind_Resume>": every direct branch (bl, b, b.cond,
 # cbz/cbnz, tbz/tbnz) names its target this way.
-BRANCH = re.compile(r"^\s*([0-9a-f]+):\s+(bl|b|b\.\w+|cbn?z|tbn?z)\t(?:.*, )?0x([0-9a-f]+) <(.+)>$")
+# A target without a name (a Mach-O stub, a PE without symbols) is looked up by its address.
+BRANCH = re.compile(
+    r"^\s*([0-9a-f]+):\s+(bl|b|b\.\w+|cbn?z|tbn?z)\t(?:.*, )?0x([0-9a-f]+)(?: <(.+)>)?$")
 # x86-64: "  4a1b2c: \tcall\t0x4a2000 <sub_82100000>" (jmp and jcc for tail calls); on Windows,
 # with no symbols, the target has no name: "call\t0x140001010".
 BRANCH_X86 = re.compile(r"^\s*([0-9a-f]+):\s+(call\w*|jmp\w*|j[a-z]{1,3})\s+0x([0-9a-f]+)(?: <(.+)>)?$")
@@ -54,26 +58,39 @@ PIECE = re.compile(r"OUTLINED_FUNCTION_|\.cold|\.llvm\.|__AArch64\w*Thunk_")
 SHOWN = 20
 
 
-def file_format(objdump, binary):
-    """objdump's name for the binary's format, e.g. "elf64-littleaarch64", "mach-o arm64"."""
-    out = subprocess.run([objdump, "-f", binary], check=True, capture_output=True,
-                         text=True).stdout
-    for line in out.splitlines():
-        if "file format" in line:
-            return line.split("file format", 1)[1].strip()
-    return ""
+def file_format(binary):
+    """("elf" | "mach-o" | "pe", is x86-64) from the binary's first bytes (llvm-objdump -f fails
+    on a Mach-O executable)."""
+    with open(binary, "rb") as f:
+        head = f.read(1024)
+    if head[:4] == b"\x7fELF":
+        return "elf", int.from_bytes(head[18:20], "little") == 62  # EM_X86_64
+    if head[:4] == b"\xcf\xfa\xed\xfe":  # MH_MAGIC_64, little-endian
+        return "mach-o", int.from_bytes(head[4:8], "little") == 0x01000007  # CPU_TYPE_X86_64
+    if head[:2] == b"MZ":
+        pe = int.from_bytes(head[0x3c:0x40], "little")
+        return "pe", int.from_bytes(head[pe + 4:pe + 6], "little") == 0x8664
+    raise OSError(f"{binary}: not an ELF, Mach-O or PE file")
 
 
 def map_symbols(map_path):
     """{name: ("T", address)} from an MSVC / lld-link map ("0001:00000010  sub_82100000
-    0000000140001010 f  obj"): the publics' Rva+Base."""
+    0000000140001010  obj"): the publics' Rva+Base, of the CODE sections only (the import
+    table's __imp_ entries are data)."""
     defined = {}
-    line_re = re.compile(r"^\s*[0-9a-f]{4}:[0-9a-f]{8}\s+(\S+)\s+([0-9a-f]{16})\b", re.I)
+    section_re = re.compile(r"^\s*([0-9a-f]{4}):[0-9a-f]{8}\s+[0-9a-f]+H\s+\S+\s+(\w+)", re.I)
+    line_re = re.compile(r"^\s*([0-9a-f]{4}):[0-9a-f]{8}\s+(\S+)\s+([0-9a-f]{16})\b", re.I)
+    code = set()
     with open(map_path, encoding="utf-8", errors="replace") as f:
         for line in f:
-            m = line_re.match(line)
+            m = section_re.match(line)
             if m:
-                defined[m.group(1)] = ("T", int(m.group(2), 16))
+                if m.group(2).upper() == "CODE":
+                    code.add(m.group(1))
+                continue
+            m = line_re.match(line)
+            if m and m.group(1) in code:
+                defined[m.group(2)] = ("T", int(m.group(3), 16))
     return defined
 
 
@@ -82,14 +99,23 @@ def symbols(nm, library, macho=False, map_path=None):
     defined = {}
     if map_path:
         defined = map_symbols(map_path)
+    elif macho:
+        # llvm-nm prints a Mach-O weak definition as T; -m spells it out:
+        # "00000001000003d8 (__TEXT,__text) weak external _sub_1".
+        out = subprocess.run([nm, "-m", "--defined-only", library], check=True,
+                             capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            fields = line.split()
+            if len(fields) >= 3 and fields[-1].startswith("_"):
+                kind = "W" if "weak" in fields[2:-1] else "T"
+                defined[fields[-1][1:]] = (kind, int(fields[0], 16))
     else:
         out = subprocess.run([nm, "--defined-only", library], check=True, capture_output=True,
                              text=True).stdout
         for line in out.splitlines():
             fields = line.split()
             if len(fields) == 3:
-                name = fields[2][1:] if macho and fields[2].startswith("_") else fields[2]
-                defined[name] = (fields[1], int(fields[0], 16))
+                defined[fields[2]] = (fields[1], int(fields[0], 16))
     found = {}
     for name, value in defined.items():
         if name.startswith("__imp__"):
@@ -101,9 +127,8 @@ def symbols(nm, library, macho=False, map_path=None):
 
 
 def check(library, nm, objdump, map_path=None):
-    fmt = file_format(objdump, library)
-    macho = fmt.startswith("mach-o")
-    x86 = "x86-64" in fmt or "x86_64" in fmt
+    fmt, x86 = file_format(library)
+    macho = fmt == "mach-o"
     syms = symbols(nm, library, macho, map_path)
     by_address = {address: name for name, (_, address) in syms.items()}
     # With a map (no symbols in the disassembly), each branch's function by the nearest symbol.
@@ -121,6 +146,8 @@ def check(library, nm, objdump, map_path=None):
         guest = name[len("__imp__"):]
         imp_addresses[address] = guest
         if guest not in syms:
+            if map_path:
+                continue  # the map leaves out what the link dropped or folded
             problem("missing", f"{guest}: __imp__{guest} has no {guest}")
             continue
         alias_kind, alias_address = syms[guest]
@@ -158,7 +185,9 @@ def check(library, nm, objdump, map_path=None):
                 k = bisect.bisect_right(starts, site) - 1
                 if k >= 0:
                     function_start, function_name = starts[k], by_address[starts[k]]
-            target_name = branch.group(4) or by_address.get(target, "")
+            # With a map the disassembly's names are section offsets ("<.text+0x70>").
+            target_name = ((by_address.get(target) if map_path else None) or branch.group(4)
+                           or by_address.get(target, ""))
             if macho and target_name.startswith("_"):
                 target_name = target_name[1:]
             if target_name.endswith("@plt"):

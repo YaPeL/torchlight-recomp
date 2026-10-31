@@ -51,6 +51,26 @@ if(WIN32)
     set(CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL MinSizeRel Release RelWithDebInfo)
 endif()
 
+# The binding check's tools (tools/android/check_guest_call_binding.py, on the game and on its
+# fixtures in tests/guest_call_binding): the NDK's on Android; elsewhere LLVM's nm and objdump,
+# beside the compiler or apt.llvm.org's (GNU's do not read every format the check does; Xcode's nm
+# and objdump are LLVM's).
+if(ANDROID)
+    set(_binding_tools --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP})
+else()
+    get_filename_component(_toolchain_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_binding_nm llvm-nm llvm-nm-21)
+    set(_binding_objdump llvm-objdump llvm-objdump-21)
+    if(APPLE)
+        list(APPEND _binding_nm nm)
+        list(APPEND _binding_objdump objdump)
+    endif()
+    find_program(TORCHLIGHT_LLVM_NM NAMES ${_binding_nm}
+                 HINTS "${_toolchain_bin}" /usr/lib/llvm-21/bin REQUIRED)
+    find_program(TORCHLIGHT_LLVM_OBJDUMP NAMES ${_binding_objdump}
+                 HINTS "${_toolchain_bin}" /usr/lib/llvm-21/bin REQUIRED)
+    set(_binding_tools --nm ${TORCHLIGHT_LLVM_NM} --objdump ${TORCHLIGHT_LLVM_OBJDUMP})
+endif()
 if(TORCHLIGHT_GAME)
 # Sources
 set(TORCHLIGHT_SOURCES
@@ -137,15 +157,6 @@ target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/gener
 # with -Wl,-Bsymbolic-functions (patch 47); everywhere, nothing (ThinLTO did, docs/regressions.md)
 # may bind a generated call to a hooked function's __imp__ body past its hook. Windows' executable
 # has no symbol table: the linker writes a map the check reads.
-get_filename_component(_toolchain_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
-find_program(TORCHLIGHT_LLVM_NM NAMES llvm-nm llvm-nm-21 nm HINTS "${_toolchain_bin}")
-find_program(TORCHLIGHT_LLVM_OBJDUMP NAMES llvm-objdump llvm-objdump-21 objdump
-             HINTS "${_toolchain_bin}")
-if(ANDROID)
-    set(_binding_tools --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP})
-else()
-    set(_binding_tools --nm ${TORCHLIGHT_LLVM_NM} --objdump ${TORCHLIGHT_LLVM_OBJDUMP})
-endif()
 if(WIN32)
     set(_binding_map "${CMAKE_CURRENT_BINARY_DIR}/torchlight.map")
     target_link_options(torchlight PRIVATE "LINKER:/MAP:${_binding_map}")
@@ -199,10 +210,19 @@ elseif(TORCHLIGHT_PGO_USE)
     # The generated code changes only with a codegen or ReXGlue update, which needs a new profile:
     # a function of it whose profile no longer matches fails the build. The game's own code changes
     # every day; its stale functions only lose their profile (a warning).
+    # A missing profile stops the configure, and a new one rebuilds what reads it.
+    if(NOT EXISTS "${TORCHLIGHT_PGO_USE}")
+        message(FATAL_ERROR "TORCHLIGHT_PGO_USE: no profile at ${TORCHLIGHT_PGO_USE}")
+    endif()
     target_compile_options(torchlight_recomp PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
                            -Wno-profile-instr-unprofiled -Werror=profile-instr-out-of-date)
     target_compile_options(torchlight PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
                            -Wno-profile-instr-unprofiled)
+    foreach(_pgo_target IN ITEMS torchlight_recomp torchlight)
+        get_target_property(_pgo_sources ${_pgo_target} SOURCES)
+        set_property(SOURCE ${_pgo_sources} TARGET_DIRECTORY ${_pgo_target}
+                     APPEND PROPERTY OBJECT_DEPENDS "${TORCHLIGHT_PGO_USE}")
+    endforeach()
 endif()
 # The SDK copies the GPU plugins next to the executable in a POST_BUILD step, which only runs when
 # the executable relinks: after reinstalling the SDK the game kept loading the old plugins. This copy
@@ -273,9 +293,7 @@ add_subdirectory(tools/achievement_coverage)
 add_subdirectory(tools/class_skill_check)
 add_subdirectory(tools/release)
 add_subdirectory(tests/save_convert)
-if(ANDROID)
-    add_subdirectory(tests/guest_call_binding)
-endif()
+add_subdirectory(tests/guest_call_binding)
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)
