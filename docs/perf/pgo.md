@@ -39,11 +39,14 @@ hardware floor stays armv8-a. PGO is integrated for Android (the owner's decisio
    and `--pgo_profile_dir=DIR`: `fight.txt`, `fight5.txt` and the town (`town.txt` on Android,
    `tools/input_scripts/measure-fight-town.txt` on the desktop). The counters are written every
    minute (`src/pgo/pgo_writer.cpp`: the game ends by a hard exit), so a run must last more than a
-   minute.
+   minute; each write replaces the run's file with the counts since the start.
 3. Merge with that compiler's `llvm-profdata merge --sparse -o PLATFORM.profdata DIR/*.profraw`.
-4. Build with `-DTORCHLIGHT_PGO_USE=PLATFORM.profdata` and check the build log
-   with `tools/pgo/check_profile_match.py LOG --build-dir BUILD` (it fails over 5 % of functions
-   with mismatched profile data, or when the profile was not used).
+4. Build with `-DTORCHLIGHT_PGO_USE=PLATFORM.profdata`. The build stops by itself when the profile
+   is missing (configure) or when any generated function no longer matches it
+   (`-Werror=profile-instr-out-of-date`), and rebuilds everything that reads it when it changes.
+   `tools/pgo/check_profile_match.py LOG --build-dir BUILD --profdata LLVM_PROFDATA` on the build's
+   output also measures the game's own code: it fails over 5 % of the profile's functions with
+   mismatched data, or when the profile was not used.
 
 One profile per platform: the generated code differs between them (`REX_PHYS_HOST_OFFSET` is a
 comparison on Windows, macOS arm64 and Android and zero on Linux x86-64), which changes the hash of
@@ -74,13 +77,18 @@ NDK's `llvm-profdata merge --sparse`. The result goes to the private assets repo
 `pgo/android-arm64.profdata`, with the commit of `generated/`'s codegen, the NDK version and the
 date beside it (`pgo/README.md` there).
 
+The profiles written before 2026-10-31 summed every minute's copy of the counts (the runtime
+appended each write to the file), which weighed the start of each run more: trained again.
+
 ## In the release
 
 The profiles live in the private assets repository (the owner's decision), next to `default.xex`, as
-`pgo/<platform>.profdata`; every Game job of `release.yml` already checks it out. The job moves its
-platform's profile out before the checkout is removed, configures with `TORCHLIGHT_PGO_USE`, keeps
-the build's output in a file (the warnings name generated files) and runs the match check right
-after the build, before the tests and packaging.
+`pgo/<platform>.profdata`. Android's APKs are built on our machine until its release job (A6,
+docs/android-port.md): those builds configure with `TORCHLIGHT_PGO_USE` pointing at the assets
+checkout's `pgo/android-arm64.profdata`. Still to do, with A6 and for Linux: every Game job of
+`release.yml` already checks the assets out; the job is to move its platform's profile out before
+the checkout is removed, configure with `TORCHLIGHT_PGO_USE`, keep the build's output in a file and
+run the match check right after the build, before the tests and packaging.
 
 For when ThinLTO comes back (it is out for now, above): it moves code generation from the compile to
 the link's parallel backends: about the same total time (360 s against about 450 s locally), a link

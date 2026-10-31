@@ -34,6 +34,14 @@ def main():
     with open(os.path.join(d, "build.ninja"), "w") as f:
         f.write("FLAGS = -O3 -fprofile-instr-use=/p.profdata\n")
     assert run("[1/2] Building CXX object a.o\n", "--build-dir", d) == 0, "used per build.ninja"
+    tool = os.path.join(d, "fake-profdata")
+    with open(tool, "w") as f:
+        f.write("#!/bin/sh\necho 'Instrumentation level: Front-end'\necho 'Total functions: 400'\n")
+    os.chmod(tool, 0o755)
+    assert run(used + W.format(n=100, m=30, v="have"), "--profdata", tool) == 1, "30 of 400 fails"
+    assert run(used + W.format(n=100, m=10, v="have"), "--profdata", tool) == 0, "10 of 400 passes"
+    assert run("[1/2] Building CXX object a.o\n", "--build-dir", d, "--profdata", tool) == 0
+    assert run(used, "--profdata", os.path.join(d, "missing")) == 1, "no count: fails"
     print("check_profile_match: ok")
 
 
