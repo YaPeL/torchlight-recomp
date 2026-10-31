@@ -167,24 +167,30 @@ void Session::ReplayDiverted(const CompareLog& log) {
         break;
       case CompareLog::Op::kConstants: {
         // The whole upload, filtered through the mirror as ReadConstants does for the hook.
-        commands::SetConstants c = std::get<commands::SetConstants>(*op.payload);
+        const auto& whole = std::get<commands::SetConstants>(*op.payload);
         if (!recording()) break;
         ConstantMirror* mirror = live() ? &constant_mirror_ : nullptr;
         const bool filter = mirror && !armed();
-        auto pass_ranges = [&](std::vector<commands::ConstantRange>& ranges, bool floats) {
-          std::vector<commands::ConstantRange> kept;
-          for (commands::ConstantRange& r : ranges) {
+        commands::SetConstants c;
+        c.stage = whole.stage;
+        c.mask = whole.mask;
+        c.parameters_guest_address = whole.parameters_guest_address;
+        c.autos = whole.autos;
+        c.transpose_matrices = whole.transpose_matrices;
+        auto pass_ranges = [&](const std::vector<commands::ConstantRange>& ranges,
+                               std::vector<commands::ConstantRange>& kept, bool floats) {
+          for (const commands::ConstantRange& r : ranges) {
             const uint8_t stage = c.stage.value;
+            const uint32_t* data = whole.Data(r).data();
             if (mirror && filter &&
-                mirror->Holds(floats, stage, r.physical_index, r.data.data(), r.element_count))
+                mirror->Holds(floats, stage, r.physical_index, data, r.element_count))
               continue;
-            if (mirror) mirror->Store(floats, stage, r.physical_index, r.data.data(), r.element_count);
-            kept.push_back(std::move(r));
+            if (mirror) mirror->Store(floats, stage, r.physical_index, data, r.element_count);
+            c.Add(kept, r, data, r.data_count);
           }
-          ranges = std::move(kept);
         };
-        pass_ranges(c.floats, true);
-        pass_ranges(c.ints, false);
+        pass_ranges(whole.floats, c.floats, true);
+        pass_ranges(whole.ints, c.ints, false);
         if (mirror) {
           if (filter && c.floats.empty() && c.ints.empty() &&
               mirror->SameTail(c.stage.value, c.autos, c.transpose_matrices)) {
