@@ -99,18 +99,25 @@ inline float ReadF32(const uint8_t* membase, uint32_t addr) {
 
 inline bool ReadBool(const uint8_t* membase, uint32_t addr) { return ReadU8(membase, addr) != 0; }
 
+// Who is told of every write below before it is made (the store trace, diag/store_trace.cpp, in
+// diagnostics builds; null otherwise): the guest address, the size and the bytes as they will be in
+// guest memory.
+inline void (*g_guest_write_observer)(const uint8_t* membase, uint32_t addr, const void* bytes,
+                                      size_t size) = nullptr;
+
 // Big-endian guest memory write (for the few hooks that adjust guest data before the original
 // function reads it).
+inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
+  if (g_guest_write_observer) g_guest_write_observer(membase, addr, data, size);
+  std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
+}
 inline void WriteU32(uint8_t* membase, uint32_t addr, uint32_t value) {
   if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
-  std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
+  WriteBytes(membase, addr, &value, sizeof(value));
 }
 inline void WriteU16(uint8_t* membase, uint32_t addr, uint16_t value) {
   if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
-  std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
-}
-inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
-  std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
+  WriteBytes(membase, addr, &value, sizeof(value));
 }
 
 inline uint8_t ReadU8(const uint8_t* membase, uint32_t obj, Field f) {

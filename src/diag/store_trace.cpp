@@ -6,8 +6,10 @@
 // below the traced entry's stack pointer (the dead frames of its callees) are counted, not kept.
 // Logs with every 10 s frame summary the calls, writes and the functions that write most ("store
 // trace: ..."); --diag_store_trace_dump writes every write of the first traced calls to a file.
-// Not traced yet: guest memory written by SDK kernel exports and by our own hooks (abi::Write*),
-// the next step's. Reads only, apart from what the guest writes itself. Compiled only with
+// Also recorded: every call the traced code makes to a kernel export (the link's --wrap,
+// tools/diag/gen_store_trace_imports.py), with what it changed in the critical section or the
+// virtual memory arguments it points to ("kernel:Name"), and the guest writes of our own hooks
+// (abi::WriteBytes and its kin, "host"). Reads only, apart from what the guest writes itself. Compiled only with
 // TORCHLIGHT_DIAGNOSTICS (CMakeLists.txt), off by default (--diag_store_trace).
 
 #include "diag/store_trace_api.h"
@@ -18,6 +20,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <string_view>
 #include <mutex>
 #include <string>
 #include <unordered_map>
@@ -72,6 +75,7 @@ struct Call {
   uint64_t dead_stack_writes = 0;
   std::unordered_map<uint32_t, std::array<uint8_t, kLine>> lines;  // raw lines at first touch
   std::unordered_map<uint32_t, const char*> line_function;
+  std::map<std::string, uint64_t> kernel_calls;
 };
 thread_local Call t_call;
 
@@ -79,6 +83,7 @@ std::atomic<int> g_threads_inside{0};
 
 struct Totals {
   uint64_t calls = 0, writes = 0, dead_stack_writes = 0, raw_lines_changed = 0;
+  std::map<std::string, uint64_t> kernel_calls;
   std::map<uint32_t, uint64_t> calls_by_entry;
   std::map<std::string, uint64_t> writes_by_function;
 };
@@ -95,14 +100,18 @@ uint64_t ReadGuest(const uint8_t* base, uint32_t address, uint32_t size) {
   }
 }
 
+void HostWrite(const uint8_t* base, uint32_t address, const void* bytes, size_t size);
+
 void Begin(uint32_t entry, uint32_t sp) {
   if (t_call.depth++ > 0) return;
+  if (!abi::g_guest_write_observer) abi::g_guest_write_observer = &HostWrite;
   t_call.entry = entry;
   t_call.sp = sp;
   t_call.writes.clear();
   t_call.dead_stack_writes = 0;
   t_call.lines.clear();
   t_call.line_function.clear();
+  t_call.kernel_calls.clear();
   if (g_threads_inside.fetch_add(1) == 0) g_active.store(true, std::memory_order_relaxed);
 }
 
@@ -150,6 +159,7 @@ void End(const uint8_t* base) {
   g_totals.dead_stack_writes += t_call.dead_stack_writes;
   g_totals.raw_lines_changed += raw_changed;
   for (const Write& w : t_call.writes) ++g_totals.writes_by_function[w.function];
+  for (const auto& [name, n] : t_call.kernel_calls) g_totals.kernel_calls[name] += n;
   if (g_dumped_calls < REXCVAR_GET(diag_store_trace_dump_calls)) {
     Dump(t_call);
     ++g_dumped_calls;
@@ -180,6 +190,12 @@ void LogTotals() {
     std::snprintf(buf, sizeof buf, " %08X %llu", entry, (unsigned long long)n);
     line += buf;
   }
+  line += "\n  kernel calls:";
+  for (const auto& [name, n] : t.kernel_calls) {
+    std::snprintf(buf, sizeof buf, " %s %llu", name.c_str(), (unsigned long long)n);
+    line += buf;
+  }
+  if (t.kernel_calls.empty()) line += " none";
   line += "\n  most writes:";
   for (size_t i = 0; i < top.size() && i < 12; ++i) {
     std::snprintf(buf, sizeof buf, " %s %llu", top[i].second.c_str(),
@@ -187,6 +203,18 @@ void LogTotals() {
     line += buf;
   }
   REXLOG_INFO("{}", line);
+}
+
+// Our own hooks' guest writes (abi::g_guest_write_observer), recorded as "host" byte runs.
+void HostWrite(const uint8_t* base, uint32_t address, const void* bytes, size_t size) {
+  if (t_call.depth == 0) return;
+  for (size_t i = 0; i < size; i += 8) {
+    const size_t n = std::min<size_t>(8, size - i);
+    uint64_t before = 0, after = 0;
+    std::memcpy(&before, abi::xbox_memory::HostAddress(base, address + uint32_t(i)), n);
+    std::memcpy(&after, static_cast<const uint8_t*>(bytes) + i, n);
+    t_call.writes.push_back({address + uint32_t(i), 0, before, after, "host"});
+  }
 }
 
 struct Install {
@@ -207,6 +235,40 @@ void Store(const uint8_t* base, uint32_t address, uint32_t size, uint64_t value,
   }
   const uint64_t mask = size == 8 ? ~0ull : ((1ull << (size * 8)) - 1);
   t_call.writes.push_back({address, size, ReadGuest(base, address, size), value & mask, function});
+}
+
+// A kernel export the generated code calls (--wrap): its arguments that point to state it changes
+// (a critical section at r3; the base address and size words of the virtual memory calls at r4 and
+// r5) are compared before and after.
+void Import(PPCContext& ctx, uint8_t* base, const char* name,
+            void (*real)(PPCContext&, uint8_t*)) {
+  if (!g_active.load(std::memory_order_relaxed) || t_call.depth == 0) return real(ctx, base);
+  const std::string_view n(name);
+  std::vector<std::pair<uint32_t, uint32_t>> watched;  // guest address, bytes
+  if (n.find("CriticalSection") != std::string_view::npos) watched.push_back({ctx.r3.u32, 28});
+  if (n.find("VirtualMemory") != std::string_view::npos) {
+    watched.push_back({ctx.r4.u32, 4});
+    watched.push_back({ctx.r5.u32, 4});
+  }
+  std::vector<std::array<uint8_t, 32>> before(watched.size());
+  for (size_t i = 0; i < watched.size(); ++i) {
+    std::memcpy(before[i].data(), abi::xbox_memory::HostAddress(base, watched[i].first),
+                watched[i].second);
+  }
+  ++t_call.kernel_calls[name];
+  real(ctx, base);
+  static thread_local std::unordered_map<std::string, std::string> labels;
+  auto [it, inserted] = labels.try_emplace(name, std::string("kernel:") + name);
+  for (size_t i = 0; i < watched.size(); ++i) {
+    const uint8_t* now = abi::xbox_memory::HostAddress(base, watched[i].first);
+    for (uint32_t off = 0; off < watched[i].second; off += 4) {
+      if (std::memcmp(now + off, before[i].data() + off, 4) == 0) continue;
+      uint64_t b = 0, a = 0;
+      std::memcpy(&b, before[i].data() + off, 4);
+      std::memcpy(&a, now + off, 4);
+      t_call.writes.push_back({watched[i].first + off, 0, b, a, it->second.c_str()});
+    }
+  }
 }
 
 void RawTouch(const uint8_t* base, uint32_t address, const char* function) {

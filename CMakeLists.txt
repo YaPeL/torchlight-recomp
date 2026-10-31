@@ -241,6 +241,23 @@ if(TORCHLIGHT_DIAGNOSTICS)
     if(TARGET torchlight_recomp)
         target_precompile_headers(torchlight_recomp PRIVATE
                                   "${CMAKE_SOURCE_DIR}/src/diag/store_trace.h")
+        # The kernel exports the generated code calls, wrapped by the link (GNU ld and lld:
+        # Linux and Android), recorded by the store trace too.
+        if(NOT WIN32 AND NOT APPLE)
+            set(_st_imports_cpp "${CMAKE_CURRENT_BINARY_DIR}/store_trace_imports.cpp")
+            set(_st_imports_rsp "${CMAKE_CURRENT_BINARY_DIR}/store_trace_imports.rsp")
+            add_custom_command(OUTPUT "${_st_imports_cpp}" "${_st_imports_rsp}"
+                COMMAND ${Python3_EXECUTABLE} -I
+                        ${CMAKE_SOURCE_DIR}/tools/diag/gen_store_trace_imports.py
+                        ${CMAKE_SOURCE_DIR}/generated/default "${_st_imports_cpp}"
+                        "${_st_imports_rsp}"
+                DEPENDS ${CMAKE_SOURCE_DIR}/tools/diag/gen_store_trace_imports.py
+                        ${CMAKE_SOURCE_DIR}/generated/default/codegen.build.stamp
+                VERBATIM)
+            target_sources(torchlight PRIVATE "${_st_imports_cpp}")
+            target_link_options(torchlight PRIVATE "@${_st_imports_rsp}")
+            set_property(TARGET torchlight APPEND PROPERTY LINK_DEPENDS "${_st_imports_rsp}")
+        endif()
     endif()
     target_link_libraries(torchlight PRIVATE torchlight_queue_census)
     # The colour pack/unpack checks against the guest's own functions (pixel_util_check.inc).
