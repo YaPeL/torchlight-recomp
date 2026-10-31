@@ -223,7 +223,17 @@ under 33.3 ms at its p95, about 5 ms.
   there). A candidate in either case is not undone: its memory and context stay and its diverted
   commands are replayed into the session (the owner's decision, 2026-10-31: past 0.1 % of the
   calls, or all at one site, the line stops). A write of another thread between the last check
-  and the undo is not seen (the residual race). The host side of the capture outside the commands
+  and the undo is not seen (the residual race).
+  Known limits, accepted as they are (the owner's decision, 2026-10-31; the comparison is a
+  diagnostic, never in a release): another thread's write can still be undone when it lands
+  between the race check and the end of the undo, when it falls in a 16-byte granule of a raw
+  line the call touches only after the line's snapshot, or through the check-then-write order of
+  the table lookups (no fence); other threads' host writes outside the critical sections (kernel
+  events, SDK threads) are not looked up; the two runs can start from different states if
+  another thread writes, between them, a granule only the guest's run touches (a difference
+  whose candidate writer is "none" then calls for a rerun); a 32-byte dcbz past a line's start
+  marks one granule. The final runs had 0 differences and 0 unverified calls; a diagnostic run
+  that behaves oddly reopens this. The host side of the capture outside the commands
   (content versions, unresolved counts) is not undone.
   Checked on the desktop, offscreen: with the guest's function as the candidate,
   `fight.txt` compares 243965 calls and the ten waves of `fight5` 1542306, with no difference
