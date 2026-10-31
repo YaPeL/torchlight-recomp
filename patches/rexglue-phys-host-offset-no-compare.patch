@@ -14,8 +14,23 @@ code does not change beyond those asserts.
 
 Test: the new form against the comparison for all 2^32 addresses, once, outside the tree (0
 differences); the asserts on every build; CI's PPC tests on Windows and macOS arm64 run the macro.
-Measurement: POCO X7, fight.txt, without PGO, as a local edit of the generated header: not yet a
-result; the series with PGO decides whether this joins the series.
+Measurement: POCO X7, Android PGO builds of the game at develop f6c54f8; patch 52 at 0fb2c9b, the
+base at develop's series up to 51. Each side has its own profile, trained the same afternoon with
+the same runs (2026-10-31). fight.txt, fps cap 0, vsync off, A B B A, each run started at battery
+32.0 C with cpu7 at 2.3-2.5 GHz. simpleperf stat --per-thread on the guest main thread over the
+fight step only, divided by that step's frames:
+
+    run     fight mean  instructions/frame  cycles/frame
+    base 1  22.03 ms    51.77 M             51.72 M
+    p52 1   19.66 ms    49.04 M             47.49 M
+    p52 2   20.86 ms    48.85 M             48.80 M
+    base 2  23.10 ms    53.72 M             54.42 M
+
+Means: instructions -7.2 %, cycles -9.3 %, frame 22.57 to 20.26 ms; every patched run is below
+every base run on both counters. The two base runs differ by 3.7 % in instructions per frame, so
+the percentage is good to about 2 points; the direction is clear. An earlier A B B A with profiles
+trained on different days and one throttled run gave +0.9 ms in the fight, with no counters; it
+is not comparable. Windows and macOS arm64 were not measured.
 
 Upstream: not proposed.
 

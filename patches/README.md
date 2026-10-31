@@ -67,7 +67,7 @@ in number order; a branch adds its own line at its number's place.
 | 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
 | 50 | `rexglue-thread-dump.patch` | `develop` | In the series (after 49); diagnostics only |
 | 51 | `rexglue-android-sdl-power.patch` | `develop` | In the series (after 50); Android only |
-| 52 | `rexglue-phys-host-offset-no-compare.patch` | `sdk/phys-offset-no-compare` | On its branch, waits for the measurement |
+| 52 | `rexglue-phys-host-offset-no-compare.patch` | `sdk/phys-offset-no-compare` | On its branch, measured on Android; waits for the owner |
 | 53 | | | Next free number |
 
 ## The patches
