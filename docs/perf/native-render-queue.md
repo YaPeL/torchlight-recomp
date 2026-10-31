@@ -250,7 +250,9 @@ under 33.3 ms at its p95, about 5 ms.
   call of the fight on the host.
 - **The XDK vector copy** on the host (`--native_vector_copy`, off, its own check).
 - **Checked**: the per-call comparison over fight.txt and the ten waves of fight5 with 0
-  differences and 0 unverified calls at every step; the copy check over 115 million copies.
+  differences and 0 unverified calls at every step (for P1a only since the reference run was made
+  the guest's code all the way down: before, it reached the native `_updateAutoParams` through its
+  symbol too); the copy check over 115 million copies.
 - **Measured** on the POCO, fight.txt, A B B A with the flag on one APK (the phone ran about 25 %
   slower than the day before, so only differences within a series count):
 
