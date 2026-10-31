@@ -105,6 +105,8 @@ Capture MakeCapture() {
   {
     const uint32_t data[] = {0x3F800000u, 2, 3, 4, 5, 6, 7, 8};
     consts.Add(consts.floats, {16, 4, 32, 8, 1}, data, 8);
+    const uint32_t ints[] = {9, 10, 11, 12};
+    consts.Add(consts.ints, {2, 2, 40, 4, 1}, ints, 4);
   }
   consts.autos.push_back({22, "ACT_WORLDVIEWPROJ_MATRIX", 0, 16, 0, 2});
   consts.transpose_matrices = true;
@@ -163,6 +165,12 @@ void TestRoundTrip() {
   for (const auto& cmd : read.frames[0].commands) {
     if (const auto* c = std::get_if<SetConstants>(&cmd.payload); c && !c->autos.empty()) {
       Check(c->autos[0].name == "ACT_WORLDVIEWPROJ_MATRIX", "auto constant name read back");
+      Check(*c == consts, "constants read back equal");
+      Check(c->floats.size() == 1 && c->ints.size() == 1 && c->values.size() == 12,
+            "constant ranges and values read back");
+      Check(c->Data(c->floats[0])[0] == 0x3F800000u && c->Data(c->floats[0])[7] == 8 &&
+                c->Data(c->ints[0])[0] == 9 && c->Data(c->ints[0])[3] == 12,
+            "each range's values read back in place (floats, then ints)");
     }
   }
   Check(read.frames.size() == 2, "frame count");

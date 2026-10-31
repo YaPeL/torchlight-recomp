@@ -337,7 +337,10 @@ struct SetConstants {
   std::vector<uint32_t> values;
   bool operator==(const SetConstants&) const = default;
 
+  // Empty for a range whose values are not in this command (one copied from another command
+  // without Add).
   std::span<const uint32_t> Data(const ConstantRange& r) const {
+    if (size_t(r.data_offset) + r.data_count > values.size()) return {};
     return {values.data() + r.data_offset, r.data_count};
   }
   // Adds `r` to `to` with its `count` values.
