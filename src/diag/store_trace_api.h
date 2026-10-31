@@ -25,8 +25,8 @@ void RawTouch(const uint8_t* base, uint32_t address, const char* function);
 // A store to the device registers (REX_MM_STORE_* in the MMIO range): it cannot be undone.
 void MmioStore(uint32_t address, const char* function);
 
-// SceneManager::renderSingleObject's call, from its entry (this file's own, or a native path's hook): with
-// --diag_store_compare, `candidate` against `original` (the guest's function); with
+// SceneManager::renderSingleObject's call, from its entry (the trace's own, or a native path's
+// hook): with --diag_store_compare, `candidate` against `original` (the guest's function); with
 // --diag_store_trace, `original` traced. False when neither is on (the hook runs the call).
 using GuestFunction = void (*)(PPCContext&, uint8_t*);
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
