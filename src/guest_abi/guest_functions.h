@@ -247,9 +247,10 @@ inline constexpr GuestFunction kLargeCopy{0x821A7138, Confidence::kConfirmed};
 // not 16-byte aligned goes through sub_828853C0, whose dcbzl also stays inside the destination;
 // then the tail. Every dcbzl lies inside [dst, dst + size), so with no overlap the result is
 // memcpy's. The byte loop counts down by the word at kVectorCopyStep (lwz -5040 from 0x83050000),
-// which is 1; a host copy is only taken while it is. The constant writers use it (sub_821C2868,
-// sub_82467DE0). None of its 254 call sites (251 bl, 3 tail calls) reads a register other than r3
-// after it returns before writing it (checked over generated/default, 2026-10-31).
+// which is 1 (static data, checked once at the first copy; a host copy only when it is). The
+// constant writers use it (sub_821C2868, sub_82467DE0). None of its 254 call sites (251 bl, 3 tail
+// calls) reads a register other than r3 after it returns before writing it (checked over
+// generated/default, 2026-10-31).
 inline constexpr GuestFunction kVectorCopy{0x821C28D8, Confidence::kConfirmed};
 inline constexpr uint32_t kVectorCopyStep = 0x8304EC50;
 

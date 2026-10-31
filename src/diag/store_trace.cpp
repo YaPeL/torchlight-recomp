@@ -885,6 +885,14 @@ bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
     return true;
   }
   if (!Enabled()) return false;
+  if (candidate != original) {
+    static const bool logged = [] {
+      REXLOG_INFO("store trace: tracing renderSingleObject runs the guest's function, not the "
+                  "native path");
+      return true;
+    }();
+    (void)logged;
+  }
   Begin(0x821C5FA0, ctx.r1.u32);
   original(ctx, base);
   End(base);
