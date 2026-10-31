@@ -196,8 +196,11 @@ elseif(TORCHLIGHT_PGO_USE)
     # A function whose code changed since the profile keeps no profile; clang says how many of
     # each translation unit's functions did (-Wprofile-instr-out-of-date), and
     # tools/pgo/check_profile_match.py turns the build log's counts into a pass or fail.
+    # The generated code changes only with a codegen or ReXGlue update, which needs a new profile:
+    # a function of it whose profile no longer matches fails the build. The game's own code changes
+    # every day; its stale functions only lose their profile (a warning).
     target_compile_options(torchlight_recomp PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
-                           -Wno-profile-instr-unprofiled)
+                           -Wno-profile-instr-unprofiled -Werror=profile-instr-out-of-date)
     target_compile_options(torchlight PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
                            -Wno-profile-instr-unprofiled)
 endif()

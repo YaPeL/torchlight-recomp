@@ -25,6 +25,12 @@ not run the same code. ThinLTO is out, in measurements and in the release (the o
 until the codegen makes `sub_X` a weak function calling `__imp__sub_X` instead of an alias; then PGO
 + ThinLTO is measured again from the start. The CPU ran at 2.4-3.2 GHz and 55-62 C before each run.
 
+Android (POCO X7, `fight.txt`, fps cap 0, vsync off, 2026-10-30, A B B A, CPU 2.4-2.5 GHz): PGO
+alone, without ThinLTO, takes the fight from 21.6 to 17.7 ms a frame (-18 %; the PGO runs 16.8-18.3,
+the base 21.0-22.2) and the rest from 11.7 to 9.9 ms (-16 %); frames over 50 ms in the fight from
+12-14 to 1-5. `-march=armv8.2-a` on top gave nothing measurable (17.8 against 17.3 ms), so the
+hardware floor stays armv8-a. PGO is integrated for Android (the owner's decision, 2026-10-31).
+
 ## Making a profile
 
 1. Build with `-DTORCHLIGHT_PGO_GENERATE=ON` (the same compiler as the release: the profile format
@@ -50,6 +56,23 @@ training again is part of every freeze.
 | Android arm64 | NDK r30 clang, its `llvm-profdata` | us, on the POCO X7 (`files/pgo`, pulled with `run-as`) |
 | Windows x86-64 (later) | clang 21.1.8 in GNU mode for the MSVC target (`windows_toolchain.ps1`), `C:\llvm\bin\llvm-profdata.exe` | the owner's Windows PC, an instrumented build we hand over |
 | macOS arm64 (later) | AppleClang of the release's Xcode, `xcrun llvm-profdata` of the same Xcode (pinned: AppleClang's profile format does not mix with upstream LLVM's) | the owner's Apple Silicon Mac |
+
+## When to train again
+
+A profile fits one generated code: train again after any codegen or ReXGlue update (new
+`generated/`), or a change of the compiler (NDK) that reads it. The generated code's build fails
+when its functions no longer match the profile (`-Werror=profile-instr-out-of-date` on
+`torchlight_recomp`); the game's own code, which changes every day, only warns and loses the
+profile for the functions that changed, so its share of the gain fades until the next training. A
+large change of what the game does per frame (a new native path) also calls for a new profile.
+
+Android's training, from a build with `-DTORCHLIGHT_PGO_GENERATE=ON` packaged with
+`tools/android/build_apk.sh`: the bench save copied fresh before each script, the settings at fps
+cap 0 and vsync off, `--pgo_profile_dir=/data/user/0/<package>/files/pgo` with each of `fight.txt`,
+`fight5.txt` and `town.txt`, the `.profraw` files pulled with `run-as ... cat`, merged with the
+NDK's `llvm-profdata merge --sparse`. The result goes to the private assets repository as
+`pgo/android-arm64.profdata`, with the commit of `generated/`'s codegen, the NDK version and the
+date beside it (`pgo/README.md` there).
 
 ## In the release
 
