@@ -1,8 +1,14 @@
-// The guest's memory copies (guest_abi functions::kMemcpy, kLargeCopy) as host memcpy calls where
-// that is exactly the same copy (hooks/guest_copy.h), else the guest's own. Every mode.
-// --native_guest_copy=false keeps the guest's copies everywhere (docs/performance-profile.md).
+// The guest's memory copies (guest_abi functions::kMemcpy, kLargeCopy, kVectorCopy) as host memcpy
+// calls where that is exactly the same copy (hooks/guest_copy.h), else the guest's own. Every mode.
+// --native_guest_copy=false keeps the guest's memcpy and large copy (docs/performance-profile.md),
+// --native_vector_copy=false the XDK vector copy the constant writers use.
 
 #include "hooks/guest_copy_hooks.h"
+
+#include <atomic>
+#include <cstring>
+#include <thread>
+#include <vector>
 
 #include <rex/cvar.h>
 #include <rex/logging.h>
@@ -10,14 +16,25 @@
 #include <rex/ppc/func.h>
 
 #include "guest_abi/guest_functions.h"
+#include "guest_abi/ogre_layout.h"
 #include "hooks/guest_copy.h"
 
 REXCVAR_DEFINE_BOOL(native_guest_copy, true, "Torchlight",
                     "Run the guest's memory copies as host memcpy where that is the same copy "
                     "(false: the recompiled guest copies, as before)");
 
+REXCVAR_DEFINE_BOOL(native_vector_copy, true, "Torchlight",
+                    "Run the XDK vector copy (the constant writers' copy) as host memcpy where "
+                    "that is the same copy (false: the recompiled guest copy)");
+#if TORCHLIGHT_DIAGNOSTICS
+REXCVAR_DEFINE_BOOL(diag_vector_copy_check, false, "Torchlight",
+                    "Diagnostics: run every routed vector copy both ways (the guest's, then the "
+                    "host's over the restored destination) and log differences");
+#endif
+
 namespace {
 
+namespace abi = torchlight::guest_abi;
 namespace fn = torchlight::guest_abi::functions;
 
 #define FUNCTION_ADDRESS_CHECK(entry, addr) \
@@ -29,15 +46,73 @@ bool HostCopy(PPCContext& ctx, uint8_t* base) {
          torchlight::hooks::HostGuestCopy(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32);
 }
 
+// The vector copy routes only while its byte loop's step word is 1 (static data: read once).
+bool VectorCopyEnabled(const uint8_t* base) {
+  static const bool enabled =
+      REXCVAR_GET(native_vector_copy) && abi::ReadU32(base, fn::kVectorCopyStep) == 1;
+  return enabled;
+}
+
+}  // namespace
+
+extern "C" {
+REX_EXTERN(__imp__sub_821C28D8);
+}
+
+namespace {
+
+#if TORCHLIGHT_DIAGNOSTICS
+// --diag_vector_copy_check: the guest's copy, then the host's over the restored destination, both
+// compared over the whole 128-byte lines around it (a dcbzl outside the destination would show).
+// On the render thread only (the first to copy): another thread's write to those lines between the
+// two copies would be undone by the restore.
+bool CheckedCopy(PPCContext& ctx, uint8_t* base, uint32_t dst, uint32_t src, uint32_t size) {
+  static std::atomic<uint64_t> checked{0}, differing{0}, unchecked{0};
+  static const std::thread::id render_thread = std::this_thread::get_id();
+  if (std::this_thread::get_id() != render_thread) return false;
+  if (size > (1u << 20)) {
+    if (unchecked.fetch_add(1, std::memory_order_relaxed) == 0)
+      REXLOG_INFO("vector copy check: copies over 1 MiB are not checked");
+    return false;
+  }
+  const uint32_t first = dst & ~127u;
+  const uint32_t span = ((dst + size + 127u) & ~127u) - first;
+  uint8_t* lines = abi::xbox_memory::HostAddress(base, first);
+  std::vector<uint8_t> before(lines, lines + span);
+  __imp__sub_821C28D8(ctx, base);
+  std::vector<uint8_t> guest(lines, lines + span);
+  std::memcpy(lines, before.data(), span);
+  torchlight::hooks::HostGuestCopy(base, dst, src, size);
+  const uint64_t n = checked.fetch_add(1, std::memory_order_relaxed) + 1;
+  if (std::memcmp(lines, guest.data(), span) != 0) {
+    if (differing.fetch_add(1, std::memory_order_relaxed) < 20)
+      REXLOG_WARN("vector copy check: {:08X} <- {:08X} ({} bytes) differs from the guest's copy",
+                  dst, src, size);
+    std::memcpy(lines, guest.data(), span);
+  }
+  if (n % 1000000 == 0)
+    REXLOG_INFO("vector copy check: {} copies compared, {} differ, {} over 1 MiB not checked", n,
+                differing.load(std::memory_order_relaxed),
+                unchecked.load(std::memory_order_relaxed));
+  ctx.r3.u64 = dst;
+  return true;
+}
+#endif
+
 }  // namespace
 
 namespace torchlight::hooks {
 
 void LogGuestCopyMode() {
-  REXLOG_INFO("guest copies: {} (--native_guest_copy={})",
+  REXLOG_INFO("guest copies: {} (--native_guest_copy={}); vector copy: {} "
+              "(--native_vector_copy={})",
               REXCVAR_GET(native_guest_copy) ? "host memcpy where it is the same copy"
                                              : "the recompiled guest code",
-              REXCVAR_GET(native_guest_copy));
+              REXCVAR_GET(native_guest_copy),
+              REXCVAR_GET(native_vector_copy) ? "host memcpy where it is the same copy (when the "
+                                                "guest's step word is 1)"
+                                              : "the recompiled guest code",
+              REXCVAR_GET(native_vector_copy));
 }
 
 }  // namespace torchlight::hooks
@@ -54,6 +129,21 @@ FUNCTION_ADDRESS_CHECK(kLargeCopy, 821A7138);
 REX_EXTERN(__imp__sub_821A7138);
 REX_FUNC(sub_821A7138) {
   if (!HostCopy(ctx, base)) __imp__sub_821A7138(ctx, base);
+}
+
+FUNCTION_ADDRESS_CHECK(kVectorCopy, 821C28D8);
+REX_FUNC(sub_821C28D8) {
+  const uint32_t dst = ctx.r3.u32, src = ctx.r4.u32, size = ctx.r5.u32;
+  if (!VectorCopyEnabled(base)) return __imp__sub_821C28D8(ctx, base);
+#if TORCHLIGHT_DIAGNOSTICS
+  if (REXCVAR_GET(diag_vector_copy_check) && size &&
+      torchlight::hooks::RouteGuestCopy(dst, src, size) ==
+          torchlight::hooks::GuestCopyRoute::kHost &&
+      CheckedCopy(ctx, base, dst, src, size)) {
+    return;
+  }
+#endif
+  if (!torchlight::hooks::HostGuestCopy(base, dst, src, size)) __imp__sub_821C28D8(ctx, base);
 }
 
 }  // extern "C"
