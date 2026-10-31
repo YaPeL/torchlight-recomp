@@ -13,7 +13,7 @@
 #include "diag/store_trace_api.h"
 
 #define TORCHLIGHT_STORE_TRACE(x, size, y)                                                       \
-  (__builtin_expect(torchlight::diag::store_trace::g_active.load(std::memory_order_relaxed), 0)  \
+  (__builtin_expect(torchlight::diag::store_trace::g_threads_inside.load(std::memory_order_relaxed) != 0, 0)  \
        ? torchlight::diag::store_trace::Store(base, (u32)(x), (size), (uint64_t)(y), __func__)   \
        : (void)0)
 
@@ -22,6 +22,10 @@
 #undef REX_STORE_U32
 #undef REX_STORE_U64
 #undef REX_RAW_ADDR
+#undef REX_MM_STORE_U8
+#undef REX_MM_STORE_U16
+#undef REX_MM_STORE_U32
+#undef REX_MM_STORE_U64
 #define REX_STORE_U8(x, y) \
   (TORCHLIGHT_STORE_TRACE(x, 1, y), \
    *(volatile u8*)(base + (u32)(x) + REX_PHYS_HOST_OFFSET(x)) = (y))
@@ -35,7 +39,35 @@
   (TORCHLIGHT_STORE_TRACE(x, 8, y), \
    *(volatile u64*)(base + (u32)(x) + REX_PHYS_HOST_OFFSET(x)) = __builtin_bswap64(y))
 #define REX_RAW_ADDR(x)                                                                          \
-  ((__builtin_expect(torchlight::diag::store_trace::g_active.load(std::memory_order_relaxed), 0) \
+  ((__builtin_expect(torchlight::diag::store_trace::g_threads_inside.load(std::memory_order_relaxed) != 0, 0) \
         ? torchlight::diag::store_trace::RawTouch(base, (u32)(x), __func__)                     \
         : (void)0),                                                                              \
    (base + (u32)(x) + REX_PHYS_HOST_OFFSET(x)))
+// The stores that may reach the device registers: memory stores traced as above; a register store
+// is marked (it cannot be undone) and passed on.
+#define TORCHLIGHT_MM_STORE(addr, val, size, store)                                             \
+  do {                                                                                          \
+    u32 _mmio_addr = (addr);                                                                    \
+    if (REX_IS_MMIO_ADDR(_mmio_addr)) {                                                         \
+      if (__builtin_expect(                                                                     \
+              torchlight::diag::store_trace::g_threads_inside.load(std::memory_order_relaxed),  \
+              0))                                                                               \
+        torchlight::diag::store_trace::MmioStore(_mmio_addr, __func__);                         \
+      if ((size) == 8) {                                                                        \
+        u64 _v64 = static_cast<u64>(val);                                                       \
+        rex::runtime::MMIOHandler::global_handler()->CheckStore(_mmio_addr,                     \
+                                                                static_cast<u32>(_v64 >> 32));  \
+        rex::runtime::MMIOHandler::global_handler()->CheckStore(_mmio_addr + 4,                 \
+                                                                static_cast<u32>(_v64));        \
+      } else {                                                                                  \
+        rex::runtime::MMIOHandler::global_handler()->CheckStore(_mmio_addr,                     \
+                                                                static_cast<u32>(val));         \
+      }                                                                                         \
+    } else {                                                                                    \
+      store(_mmio_addr, (val));                                                                 \
+    }                                                                                           \
+  } while (0)
+#define REX_MM_STORE_U8(addr, val) TORCHLIGHT_MM_STORE(addr, val, 1, REX_STORE_U8)
+#define REX_MM_STORE_U16(addr, val) TORCHLIGHT_MM_STORE(addr, val, 2, REX_STORE_U16)
+#define REX_MM_STORE_U32(addr, val) TORCHLIGHT_MM_STORE(addr, val, 4, REX_STORE_U32)
+#define REX_MM_STORE_U64(addr, val) TORCHLIGHT_MM_STORE(addr, val, 8, REX_STORE_U64)

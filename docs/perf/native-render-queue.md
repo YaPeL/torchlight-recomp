@@ -192,27 +192,33 @@ under 33.3 ms at its p95, about 5 ms.
   atomic ones through `REX_RAW_ADDR`. A diagnostics build (`TORCHLIGHT_DIAGNOSTICS`) adds a header
   to the generated code's target that redefines them (nothing generated or in the SDK edited):
   outside a traced call one load and a predicted branch per store; inside the call tree of a traced
-  entry (wrappers on renderSingleObject, `_setPass`, `_updateAutoParams`,
-  `bindGpuProgramParameters`) each write is recorded with its address, size, old and new value;
+  entry (wrappers on renderSingleObject and `_setPass`; `_updateAutoParams` and
+  `bindGpuProgramParameters` run inside renderSingleObject's tree) each write is recorded with its address, size, old and new value;
   `REX_RAW_ADDR` lines are snapshot on first touch and diffed; our own `abi::Write*` record too;
   kernel exports are logged as events.
 - *The criterion per call* (`--diag_store_compare`, built 2026-10-31). Each `renderSingleObject`
   runs twice from the same state. First the candidate (the native path; the guest's own function
   until there is one), with every guest write recorded with the bytes it replaced (the generated
-  code's stores, the raw lines, the kernel exports' writes, our hooks' writes and the host's guest
-  copies) and its commands kept apart: the capture session's comparison log diverts them, so
+  code's stores, memory-mapped stores outside the device registers and raw lines, the critical
+  sections' words, our hooks' writes through `abi::WriteBytes`, the host's guest copies and
+  pixel packing) and its commands kept apart: the capture session's comparison log diverts them, so
   nothing reaches the shadow, the early out's memos, the constant mirror or the streams (resource
   descriptions still go out: they are idempotent). Its writes are undone newest first and the
   context put back; then the guest's function runs as usual, recorded the same way. Plain command
   bytes cannot be compared, because the run kept deduplicates against host state the first run did
   not touch, so the criterion is what each draw sees. The two runs must leave the same bytes in
-  every address either wrote (the stack below the call excluded), the same return and
-  non-volatile registers, and the same events, whole constant uploads and draws in order, each
+  every address either wrote (the stack below the call excluded), the same stack pointer and return
+  registers (the generated code keeps the non-volatile ones in locals), and the same events, whole constant uploads and draws in order, each
   draw with the same value for every state the call set. Each call is thus checked against all the
   memory it touches, the hidden caches included (the light hash, the dirty mask +0x43B4, the pass
   iteration index, the auto parameters' lazy caches). Each difference is logged as byte runs with
   the function that last wrote them in each run ("none" in a run that did not write them points to
-  another thread). Checked on the desktop, offscreen: with the guest's function as the candidate,
+  another thread). A call is not compared, and counted apart, when the candidate does what the undo
+  cannot take back (a kernel call other than the critical sections and a few that only read, a
+  store to a device register), or when another thread writes what either run touched: other
+  threads' writes during a compared call are logged, and the undo leaves them in place. The host
+  side of the capture outside the commands (content versions, unresolved counts) is not undone.
+  Checked on the desktop, offscreen: with the guest's function as the candidate,
   `fight.txt` compares 243965 calls and the ten waves of `fight5` 1542306, with no difference; a candidate that flips one bit of the
   SceneManager, changes r31 and adds a command every 1000 calls is caught on exactly those calls
   (41 of 41151). The guest frame is 3-4x slower while comparing (44 ms at rest, 68 ms in the

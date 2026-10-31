@@ -25,6 +25,7 @@
 #pragma once
 
 #include <bit>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -101,14 +102,17 @@ inline bool ReadBool(const uint8_t* membase, uint32_t addr) { return ReadU8(memb
 
 // Who is told of every write below before it is made (the store trace, diag/store_trace.cpp, in
 // diagnostics builds; null otherwise): the guest address, the size and the bytes as they will be in
-// guest memory.
-inline void (*g_guest_write_observer)(const uint8_t* membase, uint32_t addr, const void* bytes,
-                                      size_t size) = nullptr;
+// guest memory. Atomic: it is set while other threads write (one relaxed load per write).
+using GuestWriteObserver = void (*)(const uint8_t* membase, uint32_t addr, const void* bytes,
+                                    size_t size);
+inline std::atomic<GuestWriteObserver> g_guest_write_observer{nullptr};
 
 // Big-endian guest memory write (for the few hooks that adjust guest data before the original
 // function reads it).
 inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
-  if (g_guest_write_observer) g_guest_write_observer(membase, addr, data, size);
+  if (GuestWriteObserver observer = g_guest_write_observer.load(std::memory_order_relaxed)) {
+    observer(membase, addr, data, size);
+  }
   std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
 }
 inline void WriteU32(uint8_t* membase, uint32_t addr, uint32_t value) {

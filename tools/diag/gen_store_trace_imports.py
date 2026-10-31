@@ -20,15 +20,11 @@ CALL = re.compile(r"\b__imp__([A-Za-z_][A-Za-z0-9_]*)\(ctx, base\)")
 
 
 def write_if_changed(path, text):
-    """Writes `text` when it differs; else only marks the file as new, so the build sees it
-    newer than the codegen stamp it depends on and does not run this again."""
     old = open(path).read() if os.path.exists(path) else None
     if old != text:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w") as f:
             f.write(text)
-    else:
-        os.utime(path)
 
 
 def main():

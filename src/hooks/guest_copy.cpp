@@ -45,8 +45,9 @@ bool HostGuestCopy(uint8_t* base, uint32_t dst, uint32_t src, uint32_t size) {
       return true;
     case GuestCopyRoute::kHost:
       // The store trace sees the copy as our own guest write (abi::g_guest_write_observer).
-      if (guest_abi::g_guest_write_observer) {
-        guest_abi::g_guest_write_observer(base, dst, rex::memory::GuestPtr(base, src), size);
+      if (guest_abi::GuestWriteObserver observer =
+              guest_abi::g_guest_write_observer.load(std::memory_order_relaxed)) {
+        observer(base, dst, rex::memory::GuestPtr(base, src), size);
       }
       std::memcpy(rex::memory::GuestPtr(base, dst), rex::memory::GuestPtr(base, src), size);
       return true;
