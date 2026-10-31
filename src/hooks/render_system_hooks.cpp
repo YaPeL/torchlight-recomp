@@ -431,15 +431,27 @@ RECORD_HOOK(91, 821C2118, ({
     cap::ProducerTimer constants(s.producer_times(), cap::ProducerSection::kConstants,
                                  s.measuring());
     uint32_t parameters = abi::ReadU32(base, R(ctx.r5) + ogre::shared_ptr::kPRep.offset);
-    // Live commands send only the constants the backend does not hold yet, and no command when
-    // nothing changes; a capture being recorded gets every range (capture/constant_mirror.h).
-    cap::ConstantMirror* mirror = s.live() ? &s.constant_mirror() : nullptr;
-    const bool filter = mirror && !s.armed();
-    bool unchanged = false;
-    cmd::SetConstants c = cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF,
-                                             mirror, filter, &unchanged);
-    // (No return here: the guest's own bindGpuProgramParameters runs after this body.)
-    if (!unchanged) s.Event(std::move(c));
+    bool diverted = false;
+#if TORCHLIGHT_DIAGNOSTICS
+    // The store trace's comparison (diag/store_trace.cpp): every range, and in the run that is
+    // undone, nothing for the mirror (Session::CompareLog).
+    if (cap::Session::CompareLog* log = s.compare_log()) {
+      s.CompareConstants(cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF,
+                                            nullptr, false, nullptr));
+      diverted = log->divert;
+    }
+#endif
+    if (!diverted) {
+      // Live commands send only the constants the backend does not hold yet, and no command when
+      // nothing changes; a capture being recorded gets every range (capture/constant_mirror.h).
+      cap::ConstantMirror* mirror = s.live() ? &s.constant_mirror() : nullptr;
+      const bool filter = mirror && !s.armed();
+      bool unchanged = false;
+      cmd::SetConstants c = cap::ReadConstants(base, parameters, R(ctx.r4), R(ctx.r6) & 0xFFFF,
+                                               mirror, filter, &unchanged);
+      // (No return here: the guest's own bindGpuProgramParameters runs after this body.)
+      if (!unchanged) s.Event(std::move(c));
+    }
   }
 }))
 

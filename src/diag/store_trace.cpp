@@ -9,8 +9,21 @@
 // Also recorded: every call the traced code makes to a kernel export (the link's --wrap,
 // tools/diag/gen_store_trace_imports.py), with what it changed in the critical section or the
 // virtual memory arguments it points to ("kernel:Name"), and the guest writes of our own hooks
-// (abi::WriteBytes and its kin, "host"). Reads only, apart from what the guest writes itself. Compiled only with
-// TORCHLIGHT_DIAGNOSTICS (CMakeLists.txt), off by default (--diag_store_trace).
+// (abi::WriteBytes and its kin, and the host's guest copies, "host"). Reads only, apart from what
+// the guest writes itself.
+//
+// The comparison (--diag_store_compare, for option B's native paths, docs/perf/native-render-
+// queue.md section 4): each renderSingleObject runs twice from the same state. First the
+// candidate (g_candidate: the guest's own function until a native path takes its place), with
+// every write it makes recorded with the bytes it replaced and its commands kept apart
+// (capture::Session::CompareLog, diverted); its writes are then undone in reverse and the context
+// put back, and the guest's function runs as usual, recorded the same way. The two runs must leave
+// the same bytes in every guest address either wrote (the stack below the call's excluded), the
+// same return and non-volatile registers, and the same events, constants and draws, each draw
+// with the same states set. Differences are counted in the summary and the first ones logged.
+//
+// Compiled only with TORCHLIGHT_DIAGNOSTICS (CMakeLists.txt), off by default (--diag_store_trace,
+// --diag_store_compare).
 
 #include "diag/store_trace_api.h"
 
@@ -20,6 +33,7 @@
 #include <cstdio>
 #include <cstring>
 #include <map>
+#include <optional>
 #include <string_view>
 #include <mutex>
 #include <string>
@@ -31,6 +45,7 @@
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 
+#include "capture/session.h"
 #include "guest_abi/ogre_layout.h"
 #include "live/frame_timing.h"
 
@@ -42,6 +57,11 @@ REXCVAR_DEFINE_STRING(diag_store_trace_dump, "", "Torchlight",
                       "--diag_store_trace_dump_calls) to this file");
 REXCVAR_DEFINE_UINT32(diag_store_trace_dump_calls, 20, "Torchlight",
                       "Diagnostics: how many traced calls --diag_store_trace_dump writes");
+REXCVAR_DEFINE_BOOL(diag_store_compare, false, "Torchlight",
+                    "Diagnostics: run every renderSingleObject twice from the same state (the "
+                    "candidate, undone, then the guest's) and log where they differ");
+REXCVAR_DEFINE_UINT32(diag_store_compare_shown, 20, "Torchlight",
+                      "Diagnostics: how many differing calls --diag_store_compare logs in detail");
 
 namespace torchlight::diag::store_trace {
 
@@ -56,6 +76,11 @@ bool Enabled() {
   return enabled;
 }
 
+bool CompareEnabled() {
+  static const bool enabled = REXCVAR_GET(diag_store_compare);
+  return enabled;
+}
+
 // How far below the traced entry's stack pointer a write counts as a dead callee frame.
 constexpr uint32_t kStackWindow = 1u << 20;
 constexpr uint32_t kLine = 128;
@@ -67,10 +92,20 @@ struct Write {
   const char* function;
 };
 
+// A guest write's replaced bytes, to undo it (the comparison): `size` bytes at `address`, from
+// `bytes`, or for a raw line (size kLine) from its snapshot in Call::lines.
+struct Undo {
+  uint32_t address;
+  uint32_t size;
+  uint64_t bytes;
+};
+
 struct Call {
   uint32_t entry = 0;  // the traced guest function
   uint32_t sp = 0;     // its stack pointer at entry
   int depth = 0;
+  bool undo = false;  // the comparison: every write kept in undo_log, the stack's too
+  std::vector<Undo> undo_log;
   std::vector<Write> writes;
   uint64_t dead_stack_writes = 0;
   std::unordered_map<uint32_t, std::array<uint8_t, kLine>> lines;  // raw lines at first touch
@@ -83,6 +118,9 @@ std::atomic<int> g_threads_inside{0};
 
 struct Totals {
   uint64_t calls = 0, writes = 0, dead_stack_writes = 0, raw_lines_changed = 0;
+  // The comparison: calls compared, those with a difference, and the differences by kind.
+  uint64_t compared = 0, differing = 0, memory_differences = 0, register_differences = 0,
+           command_differences = 0;
   std::map<std::string, uint64_t> kernel_calls;
   std::map<uint32_t, uint64_t> calls_by_entry;
   std::map<std::string, uint64_t> writes_by_function;
@@ -112,6 +150,7 @@ void Begin(uint32_t entry, uint32_t sp) {
   t_call.lines.clear();
   t_call.line_function.clear();
   t_call.kernel_calls.clear();
+  t_call.undo_log.clear();
   if (g_threads_inside.fetch_add(1) == 0) g_active.store(true, std::memory_order_relaxed);
 }
 
@@ -173,6 +212,12 @@ void LogTotals() {
     t = std::move(g_totals);
     g_totals = {};
   }
+  if (t.compared) {
+    REXLOG_INFO("store compare: {} calls compared, {} differ ({} memory bytes, {} registers, {} "
+                "commands)",
+                t.compared, t.differing, t.memory_differences, t.register_differences,
+                t.command_differences);
+  }
   if (!t.calls) return;
   std::vector<std::pair<uint64_t, std::string>> top;
   for (const auto& [function, n] : t.writes_by_function) top.push_back({n, function});
@@ -214,12 +259,13 @@ void HostWrite(const uint8_t* base, uint32_t address, const void* bytes, size_t 
     std::memcpy(&before, abi::xbox_memory::HostAddress(base, address + uint32_t(i)), n);
     std::memcpy(&after, static_cast<const uint8_t*>(bytes) + i, n);
     t_call.writes.push_back({address + uint32_t(i), 0, before, after, "host"});
+    if (t_call.undo) t_call.undo_log.push_back({address + uint32_t(i), uint32_t(n), before});
   }
 }
 
 struct Install {
   Install() {
-    if (!torchlight::live::AddSummaryHook([] { if (Enabled()) LogTotals(); }))
+    if (!torchlight::live::AddSummaryHook([] { if (Enabled() || CompareEnabled()) LogTotals(); }))
       std::fprintf(stderr, "store trace: no room for its frame summary hook\n");
   }
 } g_install;
@@ -229,6 +275,11 @@ struct Install {
 void Store(const uint8_t* base, uint32_t address, uint32_t size, uint64_t value,
            const char* function) {
   if (t_call.depth == 0) return;  // another thread is the one inside a traced call
+  if (t_call.undo) {
+    uint64_t bytes = 0;
+    std::memcpy(&bytes, abi::xbox_memory::HostAddress(base, address), size);
+    t_call.undo_log.push_back({address, size, bytes});
+  }
   if (address < t_call.sp && t_call.sp - address <= kStackWindow) {
     ++t_call.dead_stack_writes;
     return;
@@ -267,6 +318,7 @@ void Import(PPCContext& ctx, uint8_t* base, const char* name,
       std::memcpy(&b, before[i].data() + off, 4);
       std::memcpy(&a, now + off, 4);
       t_call.writes.push_back({watched[i].first + off, 0, b, a, it->second.c_str()});
+      if (t_call.undo) t_call.undo_log.push_back({watched[i].first + off, 4, b});
     }
   }
 }
@@ -274,12 +326,325 @@ void Import(PPCContext& ctx, uint8_t* base, const char* name,
 void RawTouch(const uint8_t* base, uint32_t address, const char* function) {
   if (t_call.depth == 0) return;
   const uint32_t line = address & ~(kLine - 1);
-  if (line < t_call.sp && t_call.sp - line <= kStackWindow) return;
+  if (!t_call.undo && line < t_call.sp && t_call.sp - line <= kStackWindow) return;
   auto [it, inserted] = t_call.lines.try_emplace(line);
   if (!inserted) return;
   std::memcpy(it->second.data(), abi::xbox_memory::HostAddress(base, line), kLine);
   t_call.line_function[line] = function;
+  if (t_call.undo) t_call.undo_log.push_back({line, kLine, 0});
 }
+
+namespace {
+
+using GuestFunction = void (*)(PPCContext&, uint8_t*);
+namespace cap = torchlight::capture;
+namespace commands = torchlight::commands;
+
+// One run's record: the undo log and its raw line snapshots, the merged address ranges it wrote
+// with their bytes as it left them and as they were before it, who wrote what, and the context
+// after it.
+struct Range {
+  uint32_t address, size;
+};
+struct Run {
+  std::vector<Undo> undo_log;
+  std::unordered_map<uint32_t, std::array<uint8_t, kLine>> lines;
+  std::vector<Range> ranges;      // address order, merged
+  std::vector<uint32_t> offsets;  // each range's first byte in `left` and `before`
+  std::vector<uint8_t> left, before;
+  struct Writer {
+    uint32_t address, size;
+    const char* function;
+  };
+  std::vector<Writer> writers;  // in order
+  PPCContext out;
+
+  // The index of the byte at `a` in `left` / `before`, or -1.
+  int64_t Find(uint32_t a) const {
+    auto it = std::upper_bound(ranges.begin(), ranges.end(), a,
+                               [](uint32_t v, const Range& r) { return v < r.address; });
+    if (it == ranges.begin()) return -1;
+    --it;
+    if (a - it->address >= it->size) return -1;
+    return int64_t(offsets[size_t(it - ranges.begin())]) + (a - it->address);
+  }
+  // The function that last wrote `a`, or null.
+  const char* WriterOf(uint32_t a) const {
+    for (auto it = writers.rbegin(); it != writers.rend(); ++it) {
+      if (a >= it->address && a - it->address < it->size) return it->function;
+    }
+    return nullptr;
+  }
+};
+
+void StartRun(uint32_t entry, uint32_t sp) {
+  t_call.undo = true;
+  Begin(entry, sp);
+}
+
+// Ends the recording and reads the bytes the run left and replaced.
+void StopRun(const uint8_t* base, Run& run) {
+  --t_call.depth;
+  if (g_threads_inside.fetch_sub(1) == 1) g_active.store(false, std::memory_order_relaxed);
+  t_call.undo = false;
+  run.undo_log = std::move(t_call.undo_log);
+  run.lines = std::move(t_call.lines);
+  t_call.undo_log.clear();
+  t_call.lines.clear();
+  for (const Write& w : t_call.writes) {
+    run.writers.push_back({w.address, w.size ? w.size : 8u, w.function});
+  }
+  for (const auto& [line, function] : t_call.line_function) {
+    run.writers.push_back({line, kLine, function});
+  }
+  std::vector<Range> all;
+  all.reserve(run.undo_log.size());
+  for (const Undo& u : run.undo_log) all.push_back({u.address, u.size});
+  std::sort(all.begin(), all.end(),
+            [](const Range& a, const Range& b) { return a.address < b.address; });
+  for (const Range& r : all) {
+    if (!run.ranges.empty()) {
+      Range& last = run.ranges.back();
+      if (uint64_t(r.address) <= uint64_t(last.address) + last.size) {
+        last.size = uint32_t(std::max<uint64_t>(uint64_t(last.address) + last.size,
+                                                uint64_t(r.address) + r.size) -
+                             last.address);
+        continue;
+      }
+    }
+    run.ranges.push_back(r);
+  }
+  uint32_t total = 0;
+  for (const Range& r : run.ranges) {
+    run.offsets.push_back(total);
+    total += r.size;
+  }
+  run.left.resize(total);
+  run.before.resize(total);
+  for (size_t i = 0; i < run.ranges.size(); ++i) {
+    std::memcpy(run.left.data() + run.offsets[i],
+                abi::xbox_memory::HostAddress(base, run.ranges[i].address), run.ranges[i].size);
+  }
+  // Newest first, so the oldest replaced bytes stay.
+  for (auto it = run.undo_log.rbegin(); it != run.undo_log.rend(); ++it) {
+    uint8_t bytes[8];
+    std::memcpy(bytes, &it->bytes, 8);
+    const uint8_t* from = it->size == kLine ? run.lines.at(it->address).data() : bytes;
+    const int64_t at = run.Find(it->address);
+    std::memcpy(run.before.data() + at, from, it->size);
+  }
+}
+
+// Puts back what the run replaced, newest first.
+void UndoRun(uint8_t* base, const Run& run) {
+  for (auto it = run.undo_log.rbegin(); it != run.undo_log.rend(); ++it) {
+    uint8_t* to = abi::xbox_memory::HostAddress(base, it->address);
+    if (it->size == kLine) {
+      std::memcpy(to, run.lines.at(it->address).data(), kLine);
+    } else {
+      std::memcpy(to, &it->bytes, it->size);
+    }
+  }
+}
+
+std::string Describe(const cap::Session::CompareValue& v) {
+  if (!v.payload) return "absent";
+  char buf[48];
+  std::snprintf(buf, sizeof buf, "opcode %u object %08X", unsigned(commands::OpcodeOf(*v.payload)),
+                v.object);
+  return buf;
+}
+
+uint32_t g_shown = 0;
+
+// Compares the candidate's run with the guest's; returns the differences, and logs the first
+// differing calls.
+void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& candidate,
+                 const Run& original, const cap::Session::CompareLog& candidate_log,
+                 const cap::Session::CompareLog& original_log) {
+  std::vector<std::string> notes;
+  uint64_t memory = 0, registers = 0, commands_differ = 0;
+  auto note = [&](std::string text) {
+    if (notes.size() < 12) notes.push_back(std::move(text));
+  };
+  auto on_stack = [&](uint32_t a) { return a < sp && sp - a <= kStackWindow; };
+
+  // Memory: every byte either run wrote. The guest's run is what memory holds now; the candidate
+  // left `left`, or, where it wrote nothing, the byte from before the call. Differing bytes are
+  // reported in runs, with the function that wrote them last in each run ("none": not written in
+  // that run, so by another thread or not at all).
+  std::vector<Range> ranges = candidate.ranges;
+  ranges.insert(ranges.end(), original.ranges.begin(), original.ranges.end());
+  std::sort(ranges.begin(), ranges.end(),
+            [](const Range& a, const Range& b) { return a.address < b.address; });
+  uint32_t next = 0;  // first address not yet compared
+  uint32_t run_start = 0, run_size = 0;
+  std::string run_want, run_now;
+  auto flush = [&] {
+    if (!run_size) return;
+    const char* cw = candidate.WriterOf(run_start);
+    const char* ow = original.WriterOf(run_start);
+    char buf[160];
+    std::snprintf(buf, sizeof buf, "memory %08X+%u: candidate %s (%s), guest %s (%s)", run_start,
+                  run_size, run_want.c_str(), cw ? cw : "none", run_now.c_str(), ow ? ow : "none");
+    note(buf);
+    run_size = 0;
+    run_want.clear();
+    run_now.clear();
+  };
+  for (const Range& r : ranges) {
+    uint32_t a = std::max(r.address, next);
+    const uint64_t end = uint64_t(r.address) + r.size;
+    for (; a < end; ++a) {
+      if (on_stack(a)) continue;
+      const uint8_t now = *abi::xbox_memory::HostAddress(base, a);
+      const int64_t ci = candidate.Find(a);
+      const uint8_t want =
+          ci >= 0 ? candidate.left[size_t(ci)] : original.before[size_t(original.Find(a))];
+      if (want == now) continue;
+      ++memory;
+      if (run_size && a != run_start + run_size) flush();
+      if (!run_size) run_start = a;
+      if (run_size < 16) {
+        char hex[4];
+        std::snprintf(hex, sizeof hex, "%02X", want);
+        run_want += hex;
+        std::snprintf(hex, sizeof hex, "%02X", now);
+        run_now += hex;
+      }
+      ++run_size;
+    }
+    next = uint32_t(std::max<uint64_t>(next, end));
+  }
+  flush();
+
+  // Registers: the return value and the non-volatile ones.
+  const PPCContext& x = candidate.out;
+  const PPCContext& y = original.out;
+  auto reg = [&](const char* name, uint64_t a, uint64_t b) {
+    if (a == b) return;
+    ++registers;
+    char buf[96];
+    std::snprintf(buf, sizeof buf, "%s: candidate %016llX, guest %016llX", name,
+                  (unsigned long long)a, (unsigned long long)b);
+    note(buf);
+  };
+#define TL_REG(r) reg(#r, x.r.u64, y.r.u64)
+  TL_REG(r1); TL_REG(r3); TL_REG(r13); TL_REG(r14); TL_REG(r15); TL_REG(r16); TL_REG(r17);
+  TL_REG(r18); TL_REG(r19); TL_REG(r20); TL_REG(r21); TL_REG(r22); TL_REG(r23); TL_REG(r24);
+  TL_REG(r25); TL_REG(r26); TL_REG(r27); TL_REG(r28); TL_REG(r29); TL_REG(r30); TL_REG(r31);
+  TL_REG(f1); TL_REG(f14); TL_REG(f15); TL_REG(f16); TL_REG(f17); TL_REG(f18); TL_REG(f19);
+  TL_REG(f20); TL_REG(f21); TL_REG(f22); TL_REG(f23); TL_REG(f24); TL_REG(f25); TL_REG(f26);
+  TL_REG(f27); TL_REG(f28); TL_REG(f29); TL_REG(f30); TL_REG(f31);
+#undef TL_REG
+
+  // Commands: the same events, constants and draws in order; at each draw, and at the end, the
+  // same value for every state either run set (a state one run did not set has its value from
+  // before the call, which both logs keep).
+  auto before_call = [&](uint32_t key) {
+    if (auto it = original_log.keys.find(key); it != original_log.keys.end()) return it->second.before;
+    return candidate_log.keys.at(key).before;
+  };
+  auto same_states = [&](const std::map<uint32_t, cap::Session::CompareValue>& a,
+                         const std::map<uint32_t, cap::Session::CompareValue>& b,
+                         const char* where) {
+    std::vector<uint32_t> keys;
+    for (const auto& [k, v] : a) keys.push_back(k);
+    for (const auto& [k, v] : b) keys.push_back(k);
+    std::sort(keys.begin(), keys.end());
+    keys.erase(std::unique(keys.begin(), keys.end()), keys.end());
+    for (uint32_t k : keys) {
+      auto ia = a.find(k);
+      auto ib = b.find(k);
+      const auto va = ia != a.end() ? ia->second : before_call(k);
+      const auto vb = ib != b.end() ? ib->second : before_call(k);
+      if (va == vb) continue;
+      ++commands_differ;
+      char buf[160];
+      std::snprintf(buf, sizeof buf, "state %08X %s: candidate %s, guest %s", k, where,
+                    Describe(va).c_str(), Describe(vb).c_str());
+      note(buf);
+    }
+  };
+  const auto& ci = candidate_log.items;
+  const auto& oi = original_log.items;
+  if (ci.size() != oi.size()) {
+    ++commands_differ;
+    note("commands: candidate " + std::to_string(ci.size()) + ", guest " +
+         std::to_string(oi.size()));
+  }
+  for (size_t i = 0; i < std::min(ci.size(), oi.size()); ++i) {
+    if (!(ci[i].payload == oi[i].payload) || ci[i].live_keys != oi[i].live_keys) {
+      ++commands_differ;
+      note("command " + std::to_string(i) + ": candidate opcode " +
+           std::to_string(commands::OpcodeOf(ci[i].payload)) + ", guest opcode " +
+           std::to_string(commands::OpcodeOf(oi[i].payload)));
+    }
+    if (std::holds_alternative<commands::Draw>(oi[i].payload)) {
+      same_states(ci[i].state, oi[i].state, ("at command " + std::to_string(i)).c_str());
+    }
+  }
+  std::map<uint32_t, cap::Session::CompareValue> end_c, end_o;
+  for (const auto& [k, v] : candidate_log.keys) end_c.emplace(k, v.now);
+  for (const auto& [k, v] : original_log.keys) end_o.emplace(k, v.now);
+  same_states(end_c, end_o, "at the end");
+
+  const bool differs = memory || registers || commands_differ;
+  bool show = false;
+  {
+    std::lock_guard<std::mutex> lock(g_mutex);
+    ++g_totals.compared;
+    ++g_totals.calls_by_entry[entry];
+    g_totals.differing += differs;
+    g_totals.memory_differences += memory;
+    g_totals.register_differences += registers;
+    g_totals.command_differences += commands_differ;
+    if (differs && g_shown < REXCVAR_GET(diag_store_compare_shown)) {
+      ++g_shown;
+      show = true;
+    }
+  }
+  if (!show) return;
+  std::string text;
+  for (const std::string& n : notes) text += "\n  " + n;
+  REXLOG_INFO("store compare: {:08X} differs ({} memory bytes, {} registers, {} commands, sp "
+              "{:08X}):{}",
+              entry, memory, registers, commands_differ, sp, text);
+}
+
+// The candidate for each compared function: the guest's own until a native path is plugged in.
+GuestFunction g_candidate_821C5FA0 = nullptr;
+
+void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
+                 GuestFunction original) {
+  cap::Session& session = cap::Session::Get();
+  const PPCContext saved = ctx;
+  const uint32_t sp = ctx.r1.u32;
+
+  cap::Session::CompareLog candidate_log;
+  candidate_log.divert = true;
+  Run candidate_run;
+  session.SetCompareLog(&candidate_log);
+  StartRun(entry, sp);
+  candidate(ctx, base);
+  StopRun(base, candidate_run);
+  candidate_run.out = ctx;
+  UndoRun(base, candidate_run);
+
+  ctx = saved;
+  cap::Session::CompareLog original_log;
+  Run original_run;
+  session.SetCompareLog(&original_log);
+  StartRun(entry, sp);
+  original(ctx, base);
+  StopRun(base, original_run);
+  session.SetCompareLog(nullptr);
+  original_run.out = ctx;
+
+  CompareRuns(base, entry, sp, candidate_run, original_run, candidate_log, original_log);
+}
+
+}  // namespace
 
 }  // namespace torchlight::diag::store_trace
 
@@ -294,9 +659,24 @@ extern "C" {
     __imp__sub_##addr(ctx, base);                                             \
     st::End(base);                                                            \
   }
-// SceneManager::renderSingleObject and SceneManager::_setPass (guest_abi render_queue).
-TORCHLIGHT_STORE_TRACE_ENTRY(821C5FA0)
+// SceneManager::_setPass (guest_abi render_queue).
 TORCHLIGHT_STORE_TRACE_ENTRY(821C5730)
 #undef TORCHLIGHT_STORE_TRACE_ENTRY
+
+// SceneManager::renderSingleObject (guest_abi render_queue): traced, or compared.
+REX_EXTERN(__imp__sub_821C5FA0);
+REX_FUNC(sub_821C5FA0) {
+  namespace st = torchlight::diag::store_trace;
+  if (st::CompareEnabled() && st::t_call.depth == 0) {
+    st::CompareCall(ctx, base, 0x821C5FA0,
+                    st::g_candidate_821C5FA0 ? st::g_candidate_821C5FA0 : __imp__sub_821C5FA0,
+                    __imp__sub_821C5FA0);
+    return;
+  }
+  if (!st::Enabled()) return __imp__sub_821C5FA0(ctx, base);
+  st::Begin(0x821C5FA0, ctx.r1.u32);
+  __imp__sub_821C5FA0(ctx, base);
+  st::End(base);
+}
 
 }  // extern "C"

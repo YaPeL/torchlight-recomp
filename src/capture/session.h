@@ -314,6 +314,40 @@ class Session {
   bool LiveTextureDescribed(const commands::ResourceId& id) const;
   bool LiveDeclarationDescribed(const commands::ResourceId& id, commands::Hash content) const;
 
+  // Diagnostics (diag/store_trace.cpp, --diag_store_compare): what one guest call does to the
+  // command stream, for comparing two runs of it from the same state. While a log is set (render
+  // thread), every state the hooks set is kept with the shadow's value before the call's first
+  // write, and the events and draws are listed, each draw with the states the call had set by
+  // then. With `divert` (the run that is compared and then undone) nothing reaches the shadow,
+  // the early out's memos or the streams; resource descriptions still do (they are idempotent,
+  // and the run kept would not send them again). The constants are listed whole, by the hook
+  // (CompareConstants), not as the live stream's filtered ranges.
+  struct CompareValue {
+    std::optional<commands::CommandPayload> payload;  // none: absent
+    uint32_t object = 0;
+    bool operator==(const CompareValue&) const = default;
+  };
+  struct CompareLog {
+    struct Key {
+      CompareValue before, now;
+    };
+    struct Item {
+      commands::CommandPayload payload;
+      std::vector<commands::Hash> live_keys;  // a draw's
+      std::map<uint32_t, CompareValue> state;  // a draw's: the keys the call set, as they were
+    };
+    bool divert = false;
+    std::map<uint32_t, Key> keys;
+    std::vector<Item> items;
+  };
+  void SetCompareLog(CompareLog* log) { compare_ = log; }
+  CompareLog* compare_log() const { return compare_; }
+  void CompareConstants(commands::SetConstants constants) {
+    compare_->items.push_back({std::move(constants), {}, {}});
+  }
+  // (Declared in every build so the class has one layout; only TORCHLIGHT_DIAGNOSTICS builds
+  // compile the code that reads compare_ in session.cpp.)
+
  private:
   Session() = default;
   void Start();
@@ -366,6 +400,8 @@ class Session {
   };
   std::vector<ArgsMemo> memos_ = std::vector<ArgsMemo>(kRenderSystemSlotCount * kMemoSubs);
   const uint8_t* membase_ = nullptr;
+  CompareLog* compare_ = nullptr;
+  void CompareState(uint32_t key, CompareValue value);
   ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;
   bool producer_timing_ = true;  // SetProducerTiming
