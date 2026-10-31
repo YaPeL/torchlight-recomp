@@ -239,6 +239,14 @@ inline constexpr GuestFunction kMemcpy{0x82860A50, Confidence::kConfirmed};
 // @0x821A71D8). Its one direct caller (0x821A71E8 @0x821A7270) copies into a buffer it has just
 // locked.
 inline constexpr GuestFunction kLargeCopy{0x821A7138, Confidence::kConfirmed};
+// [confirmed] XDK vector copy 0x821C28D8 (dst r3, src r4, size r5; returns dst: mr r3,r26 before
+// every return): below 16 bytes doubleword, word and byte copies; else an unaligned head, dcbzl of
+// the whole 128-byte destination lines the remaining size covers ((dst + 127 + i) & ~127 for i
+// below that size rounded down to 128, @0x821C2A48; @0x821C2AE0 in the loop) before vector stores
+// fill them, and the tail. The constant writers use it (sub_821C2868, sub_82467DE0). None of its
+// 254 call sites reads a register other than r3 after it returns before writing it (checked
+// over generated/default, 2026-10-31).
+inline constexpr GuestFunction kVectorCopy{0x821C28D8, Confidence::kConfirmed};
 
 // Xbox D3D device calls of the D3D9 render system's _render (0x821C4058) that only feed the Xenos
 // GPU (hooks/guest_d3d_skip.h; evidence in docs/native-skip-guest-d3d.md, "Draw and bindings").

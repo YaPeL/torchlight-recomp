@@ -31,9 +31,11 @@
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 
+#include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
 #include "guest_abi/render_queue.h"
 #include "guest_abi/render_single_object.h"
+#include "hooks/guest_copy.h"
 #include "live/frame_timing.h"
 #if TORCHLIGHT_DIAGNOSTICS
 #include "diag/store_trace_api.h"
@@ -421,4 +423,17 @@ REX_FUNC(sub_821C5FA0) {
   }
 }
 
+}  // extern "C"
+
+// The XDK vector copy the constant writers use (guest_abi functions::kVectorCopy), as a host
+// memcpy where that is the same copy (hooks/guest_copy.h): part of stage 1, under the same switch.
+extern "C" {
+static_assert(torchlight::guest_abi::functions::kVectorCopy.address == 0x821C28D8u);
+REX_EXTERN(__imp__sub_821C28D8);
+REX_FUNC(sub_821C28D8) {
+  if (!Enabled() ||
+      !torchlight::hooks::HostGuestCopy(base, ctx.r3.u32, ctx.r4.u32, ctx.r5.u32)) {
+    __imp__sub_821C28D8(ctx, base);
+  }
+}
 }  // extern "C"
