@@ -13,7 +13,13 @@ and 0, next to the existing 0xE0000000. Linux and macOS x86-64 keep offset 0, so
 code does not change beyond those asserts.
 
 Test: the new form against the comparison for all 2^32 addresses, once, outside the tree (0
-differences); the asserts on every build; CI's PPC tests on Windows and macOS arm64 run the macro.
+differences); the asserts on every build, the only continuing check of the 0x1000 value. CI's PPC
+tests on Windows and macOS arm64 run the macro only below 0xE0000000, where it gives 0.
+
+PGO: the comparison was a counted region, so this changes the control-flow hash of nearly every
+generated function on those platforms. An Android profile trained without this patch fails the
+build (-Werror=profile-instr-out-of-date); the retrained profile is published with the merge.
+
 Measurement: POCO X7, Android PGO builds of the game at develop f6c54f8; patch 52 at 0fb2c9b, the
 base at develop's series up to 51. Each side has its own profile, trained the same afternoon with
 the same runs (2026-10-31). fight.txt, fps cap 0, vsync off, A B B A, each run started at battery
