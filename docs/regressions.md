@@ -6,6 +6,35 @@ what happened, which layer should have caught it, and what catches it now (a tes
 checklist item of the pre-release passes). A new entry is added when a bug is found that late; the
 lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
+## Windows game builds stopped at the binding check's fixture test (caught before a release)
+
+- **What happened:** since e3984aa (2026-10-30) the game appended Windows' `--map torchlight.map`
+  to `_binding_tools`; 420a927 (2026-10-31, the desktop fixtures) made `tests/guest_call_binding`
+  pass that same list to its test script, which takes each fixture's map apart (`--ok-map`,
+  `--bypass-map`) and refused `--map`. From then every full Windows build of the game failed at that
+  test (the release job builds everything). Found by the Windows agent training PGO, 2026-11-01; no
+  release was built since.
+- **Should have been caught by:** CI, which builds Windows without the game (no XEX), so the
+  game's block of CMakeLists.txt never ran there.
+- **Caught by:** a full build on the owner's Windows PC.
+- **Covered now:** the game keeps its own list (`_game_binding_tools`), and
+  `tests/guest_call_binding/CMakeLists.txt` stops the configure with a clear error if `--map` is
+  ever in `_binding_tools` again (a game build only; no-game CI still cannot see game-only code, so a
+  full Windows build runs on the Windows PC or in the freeze's candidate tag before a release).
+
+## Windows import thunks taken for hooks by the binding check (caught before a release)
+
+- **What happened:** with the linker's map, the check paired each `__imp__X` with any public `X`
+  in a code section; the thunk of KERNEL32's `RtlCaptureContext`, which the executable imports,
+  shares its name with the kernel export the SDK implements as `__imp__RtlCaptureContext`, so the
+  game's `sub_8287C570` calling it read as a bypass and failed the Windows link. Found by the
+  Windows agent, 2026-11-01, right after the `--map` entry below.
+- **Should have been caught by:** the fixtures, which had no import named like a kernel export.
+- **Caught by:** a full build on the owner's Windows PC.
+- **Covered now:** `map_symbols` leaves out the publics whose object column names a DLL; the
+  Windows fixtures import `RtlCaptureContext` and call an `__imp__RtlCaptureContext` from guest-style
+  code (the fixture failed Windows CI before the fix, with this exact message).
+
 ## A flag-switched optimisation measured against a profile trained without it (caught before the default changed)
 
 - **What happened:** the skeleton port (`--native_skeleton`, PR #85, 2026-11-01) was measured with
