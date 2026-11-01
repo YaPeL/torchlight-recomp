@@ -2,8 +2,9 @@
 """Runs check_guest_call_binding.py on the fixtures of tests/guest_call_binding.
 
 OK, the hooked build, has to pass; BYPASS, generated code calling a hooked __imp__ directly, has
-to fail on that. On Android, PLT, the library linked without -Wl,-Bsymbolic-functions, has to fail
-on its PLT calls. On Windows each executable comes with its linker map.
+to fail on that, twice (a generated body and a compiler piece). On Android, PLT, the library
+linked without -Wl,-Bsymbolic-functions, has to fail on its PLT calls. On Windows each executable
+comes with its linker map.
 
 Usage: test_check_guest_call_binding.py OK BYPASS [--plt PLT] [--ok-map MAP --bypass-map MAP]
                                         --nm LLVM_NM --objdump LLVM_OBJDUMP
@@ -36,7 +37,8 @@ def main():
     args = parser.parse_args()
     tools = ["--nm", args.nm, "--objdump", args.objdump]
 
-    cases = [(args.ok, args.ok_map, 0, None), (args.bypass, args.bypass_map, 1, "bypass:")]
+    # BYPASS has two: a generated body and a piece split off one (fixture.cpp).
+    cases = [(args.ok, args.ok_map, 0, None), (args.bypass, args.bypass_map, 1, "bypass: 2")]
     if args.plt:
         cases.append((args.plt, None, 1, "plt:"))
     failures = []

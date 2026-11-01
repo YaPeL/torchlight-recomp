@@ -273,7 +273,18 @@ as before. It compares the two with one binary, and rules the change out if some
 (a report of corrupted data, a crash in a copy).
 
 The log's first lines say which: `guest copies: host memcpy where it is the same copy
-(--native_guest_copy=true)` or `... the recompiled guest code (--native_guest_copy=false)`.
+(--native_guest_copy=true); vector copy: ...` or `... the recompiled guest code
+(--native_guest_copy=false); ...`.
+
+**The XDK vector copy** (`0x821C28D8`, the copy the constant writers use, about 0.2 ms a frame of
+the POCO's fight) runs the same way, behind its own **`--native_vector_copy`** (on by default). It
+also zeroes 128-byte lines with `dcbzl`, but only lines inside the destination that it then fills,
+so between ranges that do not overlap its result is `memcpy`'s (evidence in
+`guest_abi/guest_functions.h`). It routes only while its byte loop's step word (`0x8304EC50`) is 1,
+as the image ships it; otherwise the log warns and the guest copy runs. The log line ends with
+`vector copy: host memcpy where it is the same copy (...) (--native_vector_copy=true)`. A
+diagnostics build's `--diag_vector_copy_check` runs every routed copy both ways and logs
+differences: 0 in 11 million copies of `fight.txt` and 101 million of the ten waves of `fight5`.
 
 **Measured** (2026-10-07; same machine, flags, warm shader caches and release build as above; the
 steps of each run start from one saved game on the first floor of the mine, so the dungeon is the

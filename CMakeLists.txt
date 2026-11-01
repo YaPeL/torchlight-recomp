@@ -314,8 +314,8 @@ if(TORCHLIGHT_DIAGNOSTICS)
     # The store trace's comparison reaches into the capture session and the constants hook
     # (capture::Session::CompareLog).
     set_property(SOURCE src/capture/session.cpp src/hooks/render_system_hooks.cpp
-                 src/diag/store_trace.cpp APPEND PROPERTY COMPILE_DEFINITIONS
-                 TORCHLIGHT_DIAGNOSTICS=1)
+                 src/hooks/guest_copy_hooks.cpp src/diag/store_trace.cpp
+                 APPEND PROPERTY COMPILE_DEFINITIONS TORCHLIGHT_DIAGNOSTICS=1)
     # The store trace (diag/store_trace.h, --diag_store_trace): precompiled after the generated
     # code's own header, it redefines its guest stores; the whole generated code is rebuilt.
     if(TARGET torchlight_recomp)
