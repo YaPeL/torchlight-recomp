@@ -359,8 +359,7 @@ class Session {
   // they had not been diverted. No log may be set. The constants go through the live stream's
   // mirror as the hook would have sent them.
   void ReplayDiverted(const CompareLog& log);
-  // (Declared in every build so the class has one layout; only TORCHLIGHT_DIAGNOSTICS builds
-  // compile the code that reads compare_ in session.cpp.)
+  // (Only TORCHLIGHT_DIAGNOSTICS builds compile the code that reads compare_ in session.cpp.)
 
  private:
   Session() = default;

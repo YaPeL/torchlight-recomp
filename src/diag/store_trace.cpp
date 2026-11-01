@@ -314,6 +314,14 @@ void LogTotals() {
       sites += "\n    " + site + " " + std::to_string(n);
       top = std::max(top, n);
     }
+    // The calls by entry, so a run shows which functions it compared.
+    std::string entries;
+    for (const auto& [entry, n] : t.calls_by_entry) {
+      char buf[32];
+      std::snprintf(buf, sizeof buf, " %08X %llu", entry, (unsigned long long)n);
+      entries += buf;
+    }
+    REXLOG_INFO("store compare: calls by entry:{}", entries);
     REXLOG_INFO("store compare: {} calls compared, {} differ ({} memory bytes, {} registers, {} "
                 "commands); not verified: {} ({:.3f} %: {} raced with another thread, {} not "
                 "undoable){}",
@@ -864,6 +872,8 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
   UndoRun(base, candidate_run);
 
   ctx = saved;
+  // The host's FPU mode as the context says (the candidate's guest calls may have changed it).
+  ctx.fpscr.restoreGuestBits(saved.fpscr.csr);
   cap::Session::CompareLog original_log;
   Run original_run;
   session.SetCompareLog(&original_log);
@@ -903,9 +913,12 @@ bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunc
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
                         GuestFunction original) {
   if (CompareEnabled() && t_call.depth == 0) {
+    // One comparing thread: its state (g_next_call, g_compare_call, the session's log) is not
+    // shared; a call on another thread runs uncompared.
     std::thread::id none{};
     g_compare_thread.compare_exchange_strong(none, std::this_thread::get_id(),
                                              std::memory_order_relaxed);
+    if (g_compare_thread.load(std::memory_order_relaxed) != std::this_thread::get_id()) return false;
     CompareCall(ctx, base, 0x821C5FA0, candidate, original);
     return true;
   }

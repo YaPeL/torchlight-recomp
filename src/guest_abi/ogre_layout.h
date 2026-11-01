@@ -195,6 +195,8 @@ inline constexpr Field kNodeLeft{0x00, Confidence::kConfirmed};
 inline constexpr Field kNodeParent{0x04, Confidence::kConfirmed};
 inline constexpr Field kNodeRight{0x08, Confidence::kConfirmed};
 inline constexpr Field kNodeKey{0x0C, Confidence::kConfirmed};
+// _Isnil of a set<ptr> node (key 4 bytes; the comment above, @0x824213F0).
+inline constexpr Field kSetNodeIsNil{0x11, Confidence::kConfirmed};
 // Value of a map whose key is <= 4 bytes and whose value is 4-byte aligned.
 inline constexpr Field kNodeValue{0x10, Confidence::kConfirmed};
 }  // namespace stl_tree

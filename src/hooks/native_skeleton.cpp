@@ -31,8 +31,13 @@
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 
+// The function table of the image (REX_LOOKUP_FUNC, REX_CODE_BASE), as the generated code
+// finds indirect calls.
+#include "torchlight_pch.h"
+
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
+#include "guest_abi/ogre_node.h"
 #include "hooks/native_skeleton.h"
 
 #if TORCHLIGHT_DIAGNOSTICS
@@ -59,21 +64,17 @@ namespace fn = torchlight::guest_abi::functions;
 #define FUNCTION_ADDRESS_CHECK(entry, addr) \
   static_assert(fn::entry.address == 0x##addr##u, "guest_functions mismatch")
 
-// Node (OGRE 1.7, the Xbox build): +4 mParent, +12 mChildren (a hash_map's list: next +0, Node*
-// +36), +52 mChildrenToUpdate (an MSVC std::set: head +56, size +60; nodes: left +0, parent +4,
-// right +8, value +12, isnil +17), +72 mNeedParentUpdate, +73 mNeedChildUpdate, +74
-// mParentNotified, +104 mOrientation (w x y z), +120 mPosition, +132 mScale, +144
-// mInheritOrientation, +145 mInheritScale, +148 mDerivedOrientation, +164 mDerivedPosition, +176
-// mDerivedScale, +292 mCachedTransformOutOfDate, +296 mListener. Bone: +310 manually controlled,
-// +312 mCreator (the Skeleton: +264 mManualBonesDirty). Vtable byte offsets: 4 _updateFromParent,
-// 8 updateFromParentImpl, 188/192/196 the derived orientation/position/scale getters, 204 _update,
-// 252 needUpdate, 256 requestUpdate; the Skeleton's 300 _notifyManualBoneStateChange.
-constexpr uint32_t kConstants = 0x820AA2C0;  // the game's float constants: +124 is 2.0
-constexpr uint32_t kUpdateFromParent = 0x821C9F08, kUpdateFromParentImpl = 0x821C9770;
-constexpr uint32_t kDerivedOrientation = 0x821C9BB0, kDerivedPosition = 0x821C8518;
-constexpr uint32_t kDerivedScale = 0x821C99D0, kNodeUpdate = 0x821C9F68;
-constexpr uint32_t kNotifyManualBoneStateChange = 0x824E8F60;
-constexpr uint32_t kSetClear = 0x8246CA80;  // the std::set's clear
+namespace node = torchlight::guest_abi::ogre_node;
+namespace tree = torchlight::guest_abi::ogre::stl_tree;
+
+// The functions the virtual slots are compared with (the native code runs only for OGRE's own).
+constexpr uint32_t kUpdateFromParent = fn::kNodeUpdateFromParent.address;
+constexpr uint32_t kUpdateFromParentImpl = fn::kNodeUpdateFromParentImpl.address;
+constexpr uint32_t kDerivedOrientation = fn::kNodeDerivedOrientation.address;
+constexpr uint32_t kDerivedPosition = fn::kNodeDerivedPosition.address;
+constexpr uint32_t kDerivedScale = fn::kNodeDerivedScale.address;
+constexpr uint32_t kNodeUpdate = fn::kNodeUpdate.address;
+constexpr uint32_t kNotifyManualBonesDirty = fn::kSkeletonNotifyManualBonesDirty.address;
 
 uint32_t L32(const uint8_t* base, uint32_t a) { return abi::ReadU32(base, a); }
 uint8_t L8(const uint8_t* base, uint32_t a) { return abi::ReadU8(base, a); }
@@ -92,29 +93,45 @@ uint32_t Slot(const uint8_t* base, uint32_t object, uint32_t offset) {
   return L32(base, L32(base, object) + offset);
 }
 
-// A guest function by address with r3 = object, r4, r5, on the caller's stack; returns r3.
+// A guest function by address, as the generated code's indirect calls find it: the image's
+// function table (REX_LOOKUP_FUNC), else the SDK's resolver.
+void CallAddress(PPCContext& ctx, uint8_t* base, uint32_t function) {
+  PPCFunc* f = nullptr;
+  if (uint32_t(function - REX_CODE_BASE) < REX_CODE_SIZE + REX_THUNK_RESERVE_SIZE) {
+    f = REX_LOOKUP_FUNC(base, function);
+  }
+  if (!f) {
+    ctx.last_indirect_target = function;
+    f = rex::runtime::ResolveIndirectFunction(function);
+  }
+  f(ctx, base);
+}
+
+// A guest function with r3 = object, r4, r5, on the caller's stack; returns r3.
 uint32_t CallGuest(PPCContext& ctx, uint8_t* base, uint32_t function, uint32_t object,
                    uint64_t r4 = 0, uint64_t r5 = 0) {
   ctx.r3.u64 = object;
   ctx.r4.u64 = r4;
   ctx.r5.u64 = r5;
-  rex::runtime::ResolveIndirectFunction(function)(ctx, base);
+  CallAddress(ctx, base, function);
   return ctx.r3.u32;
 }
 
-void UpdateFromParent(PPCContext& ctx, uint8_t* base, uint32_t node);
+uint32_t At(uint32_t object, abi::Field f) { return object + f.offset; }
 
-uint32_t Derived(PPCContext& ctx, uint8_t* base, uint32_t node, uint32_t slot, uint32_t native,
-                 uint32_t field) {
-  const uint32_t f = Slot(base, node, slot);
-  if (f != native) return CallGuest(ctx, base, f, node);
-  if (L8(base, node + 72)) UpdateFromParent(ctx, base, node);
-  return node + field;
+void UpdateFromParent(PPCContext& ctx, uint8_t* base, uint32_t n);
+
+uint32_t Derived(PPCContext& ctx, uint8_t* base, uint32_t n, uint32_t slot, uint32_t native,
+                 abi::Field field) {
+  const uint32_t f = Slot(base, n, slot);
+  if (f != native) return CallGuest(ctx, base, f, n);
+  if (L8(base, At(n, node::kNeedParentUpdate))) UpdateFromParent(ctx, base, n);
+  return At(n, field);
 }
 
 // 0x821C9BF8: Quaternion * Vector3 (q: w x y z), in the guest's order of operations.
 void RotateVector(const uint8_t* base, const float q[4], const float v[3], float out[3]) {
-  const float two = LF(base, kConstants + 124);
+  const float two = LF(base, node::kFloatTwo);
   const float w = q[0], qx = q[1], qy = q[2], qz = q[3];
   const float uvy = FmsG(v[0], qz, v[2] * qx);
   const float uvx = FmsG(v[2], qy, v[1] * qz);
@@ -128,23 +145,30 @@ void RotateVector(const uint8_t* base, const float q[4], const float v[3], float
   out[2] = (v[2] + uvz * w2) + uuvz * two;
 }
 
+void LoadFloats(const uint8_t* base, uint32_t address, float* v, int count) {
+  for (int i = 0; i < count; i++) v[i] = LF(base, address + 4 * i);
+}
+
 // 0x821C9770: Node::updateFromParentImpl; the derived orientation, position and scale in out[10].
-void UpdateFromParentImplValues(PPCContext& ctx, uint8_t* base, uint32_t node, float out[10]) {
-  float o[4], p[3], s[3];
-  for (int i = 0; i < 4; i++) o[i] = LF(base, node + 104 + 4 * i);
-  for (int i = 0; i < 3; i++) p[i] = LF(base, node + 120 + 4 * i);
-  for (int i = 0; i < 3; i++) s[i] = LF(base, node + 132 + 4 * i);
-  const uint32_t parent = L32(base, node + 4);
+// Each field is read where the guest reads it (after the parent getter before it), the parent
+// again before each getter, and the guest's scalar FPU mode (flush to zero off) set before each
+// block of arithmetic, after any guest call that may have changed it.
+void UpdateFromParentImplValues(PPCContext& ctx, uint8_t* base, uint32_t n, float out[10]) {
+  uint32_t parent = L32(base, At(n, node::kParent));
   if (!parent) {
-    std::memcpy(out, o, 16);
-    std::memcpy(out + 4, p, 12);
-    std::memcpy(out + 7, s, 12);
+    LoadFloats(base, At(n, node::kOrientation), out, 4);
+    LoadFloats(base, At(n, node::kPosition), out + 4, 3);
+    LoadFloats(base, At(n, node::kScale), out + 7, 3);
     return;
   }
-  const uint32_t pq_addr = Derived(ctx, base, parent, 188, kDerivedOrientation, 148);
-  if (L8(base, node + 144)) {
+  const uint32_t pq_addr = Derived(ctx, base, parent, node::kVtDerivedOrientation,
+                                   kDerivedOrientation, node::kDerivedOrientation);
+  float o[4];
+  LoadFloats(base, At(n, node::kOrientation), o, 4);
+  ctx.fpscr.disableFlushMode();
+  if (L8(base, At(n, node::kInheritOrientation))) {
     float pq[4];
-    for (int i = 0; i < 4; i++) pq[i] = LF(base, pq_addr + 4 * i);
+    LoadFloats(base, pq_addr, pq, 4);
     const float pw = pq[0], px = pq[1], py = pq[2], pz = pq[3];
     const float ow = o[0], ox = o[1], oy = o[2], oz = o[3];
     const float t1 = FmsG(ow, pw, ox * px);
@@ -160,81 +184,94 @@ void UpdateFromParentImplValues(PPCContext& ctx, uint8_t* base, uint32_t node, f
     out[2] = FnmsG(oz, px, t2b);
     out[3] = FnmsG(ox, py, t1b);
   } else {
-    std::memcpy(out, o, 16);
+    for (int i = 0; i < 4; i++) out[i] = o[i];
   }
-  const uint32_t ps_addr = Derived(ctx, base, parent, 196, kDerivedScale, 176);
-  float ps[3];
-  for (int i = 0; i < 3; i++) ps[i] = LF(base, ps_addr + 4 * i);
-  const bool inherit_scale = L8(base, node + 145) != 0;
+  parent = L32(base, At(n, node::kParent));
+  const uint32_t ps_addr =
+      Derived(ctx, base, parent, node::kVtDerivedScale, kDerivedScale, node::kDerivedScale);
+  float p[3], s[3], ps[3];
+  LoadFloats(base, At(n, node::kPosition), p, 3);
+  LoadFloats(base, At(n, node::kScale), s, 3);
+  LoadFloats(base, ps_addr, ps, 3);
+  ctx.fpscr.disableFlushMode();
+  const bool inherit_scale = L8(base, At(n, node::kInheritScale)) != 0;
   for (int i = 0; i < 3; i++) out[7 + i] = inherit_scale ? s[i] * ps[i] : s[i];
   float scaled[3], pq[4];
   for (int i = 0; i < 3; i++) scaled[i] = ps[i] * p[i];
-  for (int i = 0; i < 4; i++) pq[i] = LF(base, pq_addr + 4 * i);
+  LoadFloats(base, pq_addr, pq, 4);
   RotateVector(base, pq, scaled, out + 4);
-  const uint32_t pp_addr = Derived(ctx, base, parent, 192, kDerivedPosition, 164);
+  parent = L32(base, At(n, node::kParent));
+  const uint32_t pp_addr = Derived(ctx, base, parent, node::kVtDerivedPosition, kDerivedPosition,
+                                   node::kDerivedPosition);
+  ctx.fpscr.disableFlushMode();
   for (int i = 0; i < 3; i++) out[4 + i] = out[4 + i] + LF(base, pp_addr + 4 * i);
 }
 
-void UpdateFromParentImpl(PPCContext& ctx, uint8_t* base, uint32_t node) {
+void UpdateFromParentImpl(PPCContext& ctx, uint8_t* base, uint32_t n) {
   float out[10];
-  UpdateFromParentImplValues(ctx, base, node, out);
-  for (int i = 0; i < 10; i++) SF(base, node + 148 + 4 * i, out[i]);
-  S8(base, node + 292, 1);
-  S8(base, node + 72, 0);
+  UpdateFromParentImplValues(ctx, base, n, out);
+  // The derived orientation, position and scale are consecutive (ogre_node.h).
+  for (int i = 0; i < 10; i++) SF(base, At(n, node::kDerivedOrientation) + 4 * i, out[i]);
+  S8(base, At(n, node::kCachedTransformOutOfDate), 1);
+  S8(base, At(n, node::kNeedParentUpdate), 0);
 }
 
 // 0x821C9F08: Node::_updateFromParent (updateFromParentImpl, then mListener->nodeUpdated).
-void UpdateFromParent(PPCContext& ctx, uint8_t* base, uint32_t node) {
-  const uint32_t f = Slot(base, node, 4);
+void UpdateFromParent(PPCContext& ctx, uint8_t* base, uint32_t n) {
+  const uint32_t f = Slot(base, n, node::kVtUpdateFromParent);
   if (f != kUpdateFromParent) {
-    CallGuest(ctx, base, f, node);
+    CallGuest(ctx, base, f, n);
     return;
   }
-  const uint32_t impl = Slot(base, node, 8);
+  const uint32_t impl = Slot(base, n, node::kVtUpdateFromParentImpl);
   if (impl == kUpdateFromParentImpl) {
-    UpdateFromParentImpl(ctx, base, node);
+    UpdateFromParentImpl(ctx, base, n);
   } else {
-    CallGuest(ctx, base, impl, node);
+    CallGuest(ctx, base, impl, n);
   }
-  const uint32_t listener = L32(base, node + 296);
-  if (listener) CallGuest(ctx, base, Slot(base, listener, 4), listener, node);
+  const uint32_t listener = L32(base, At(n, node::kListener));
+  if (listener) {
+    CallGuest(ctx, base, Slot(base, listener, node::kVtListenerNodeUpdated), listener, n);
+  }
 }
 
 // 0x8246CA80 on mChildrenToUpdate: an empty set (the usual case) here, else the guest's clear.
-void ClearChildrenToUpdate(PPCContext& ctx, uint8_t* base, uint32_t node) {
-  const uint32_t set = node + 52, head = L32(base, set + 4);
-  if (!L8(base, L32(base, head + 4) + 17)) {
+void ClearChildrenToUpdate(PPCContext& ctx, uint8_t* base, uint32_t n) {
+  const uint32_t set = At(n, node::kChildrenToUpdate);
+  const uint32_t head = L32(base, At(set, tree::kHead));
+  if (!L8(base, At(L32(base, At(head, tree::kNodeParent)), tree::kSetNodeIsNil))) {
     ctx.r3.u64 = set;
-    rex::runtime::ResolveIndirectFunction(kSetClear)(ctx, base);
+    CallAddress(ctx, base, fn::kSetClear.address);
     return;
   }
-  S32(base, head + 4, head);
-  S32(base, head + 0, head);
-  S32(base, head + 8, head);
-  S32(base, set + 8, 0);
+  S32(base, At(head, tree::kNodeParent), head);
+  S32(base, At(head, tree::kNodeLeft), head);
+  S32(base, At(head, tree::kNodeRight), head);
+  S32(base, At(set, tree::kSize), 0);
 }
 
-// 0x824C6960: the next node of an MSVC tree (isnil +17).
+// 0x824C6960: the next node of a set<ptr> (isnil +0x11).
 uint32_t SetNext(const uint8_t* base, uint32_t n) {
-  if (L8(base, n + 17)) return n;
-  uint32_t r = L32(base, n + 8);
-  if (!L8(base, r + 17)) {
-    while (!L8(base, L32(base, r) + 17)) r = L32(base, r);
+  auto nil = [&](uint32_t x) { return L8(base, At(x, tree::kSetNodeIsNil)) != 0; };
+  if (nil(n)) return n;
+  uint32_t r = L32(base, At(n, tree::kNodeRight));
+  if (!nil(r)) {
+    while (!nil(L32(base, At(r, tree::kNodeLeft)))) r = L32(base, At(r, tree::kNodeLeft));
     return r;
   }
-  uint32_t p = L32(base, n + 4);
-  while (!L8(base, p + 17) && n == L32(base, p + 8)) {
+  uint32_t p = L32(base, At(n, tree::kNodeParent));
+  while (!nil(p) && n == L32(base, At(p, tree::kNodeRight))) {
     n = p;
-    p = L32(base, p + 4);
+    p = L32(base, At(p, tree::kNodeParent));
   }
   return p;
 }
 
-void NodeUpdate(PPCContext& ctx, uint8_t* base, uint32_t node, bool update_children,
+void NodeUpdate(PPCContext& ctx, uint8_t* base, uint32_t n, bool update_children,
                 bool parent_changed);
 
 void ChildUpdate(PPCContext& ctx, uint8_t* base, uint32_t child, bool parent_changed) {
-  const uint32_t f = Slot(base, child, 204);
+  const uint32_t f = Slot(base, child, node::kVtUpdate);
   if (f == kNodeUpdate) {
     NodeUpdate(ctx, base, child, true, parent_changed);
   } else {
@@ -243,50 +280,56 @@ void ChildUpdate(PPCContext& ctx, uint8_t* base, uint32_t child, bool parent_cha
 }
 
 // 0x821C9F68: Node::_update(updateChildren, parentHasChanged).
-void NodeUpdate(PPCContext& ctx, uint8_t* base, uint32_t node, bool update_children,
+void NodeUpdate(PPCContext& ctx, uint8_t* base, uint32_t n, bool update_children,
                 bool parent_changed) {
-  S8(base, node + 74, 0);
-  if (!update_children && !L8(base, node + 72) && !L8(base, node + 73) && !parent_changed) return;
-  if (L8(base, node + 72) || parent_changed) UpdateFromParent(ctx, base, node);
-  if (!L8(base, node + 73) && !parent_changed) {
-    const uint32_t head = L32(base, node + 56);
-    for (uint32_t it = L32(base, head); it != head; it = SetNext(base, it)) {
-      ChildUpdate(ctx, base, L32(base, it + 12), false);
+  const uint32_t need_parent = At(n, node::kNeedParentUpdate);
+  const uint32_t need_child = At(n, node::kNeedChildUpdate);
+  S8(base, At(n, node::kParentNotified), 0);
+  if (!update_children && !L8(base, need_parent) && !L8(base, need_child) && !parent_changed) {
+    return;
+  }
+  if (L8(base, need_parent) || parent_changed) UpdateFromParent(ctx, base, n);
+  if (!L8(base, need_child) && !parent_changed) {
+    const uint32_t head = L32(base, At(At(n, node::kChildrenToUpdate), tree::kHead));
+    for (uint32_t it = L32(base, At(head, tree::kNodeLeft)); it != head; it = SetNext(base, it)) {
+      ChildUpdate(ctx, base, L32(base, At(it, tree::kNodeKey)), false);
     }
   } else {
-    const uint32_t head = L32(base, node + 12);
-    for (uint32_t it = L32(base, head); it != head; it = L32(base, it)) {
-      ChildUpdate(ctx, base, L32(base, it + 36), true);
+    const uint32_t head = L32(base, At(n, node::kChildren));
+    for (uint32_t it = L32(base, At(head, node::kChildListNext)); it != head;
+         it = L32(base, At(it, node::kChildListNext))) {
+      ChildUpdate(ctx, base, L32(base, At(it, node::kChildListNode)), true);
     }
   }
-  ClearChildrenToUpdate(ctx, base, node);
-  S8(base, node + 73, 0);
+  ClearChildrenToUpdate(ctx, base, n);
+  S8(base, need_child, 0);
 }
 
 // 0x821CA0B8: Node::needUpdate(forceParentUpdate).
-void NeedUpdate(PPCContext& ctx, uint8_t* base, uint32_t node, uint64_t force) {
-  S8(base, node + 72, 1);
-  S8(base, node + 73, 1);
-  S8(base, node + 292, 1);
-  const uint32_t parent = L32(base, node + 4);
-  if (parent && (!L8(base, node + 74) || uint8_t(force))) {
-    CallGuest(ctx, base, Slot(base, parent, 256), parent, node, force);
-    S8(base, node + 74, 1);
+void NeedUpdate(PPCContext& ctx, uint8_t* base, uint32_t n, uint64_t force) {
+  S8(base, At(n, node::kNeedParentUpdate), 1);
+  S8(base, At(n, node::kNeedChildUpdate), 1);
+  S8(base, At(n, node::kCachedTransformOutOfDate), 1);
+  const uint32_t parent = L32(base, At(n, node::kParent));
+  if (parent && (!L8(base, At(n, node::kParentNotified)) || uint8_t(force))) {
+    CallGuest(ctx, base, Slot(base, parent, node::kVtRequestUpdate), parent, n, force);
+    S8(base, At(n, node::kParentNotified), 1);
   }
-  ClearChildrenToUpdate(ctx, base, node);
+  ClearChildrenToUpdate(ctx, base, n);
 }
 
-// 0x821CA140: Bone::needUpdate; then, for a manually controlled bone, the creator Skeleton's
-// _notifyManualBoneStateChange (0x824E8F60 sets mManualBonesDirty).
-void BoneNeedUpdate(PPCContext& ctx, uint8_t* base, uint32_t node, uint64_t force) {
-  NeedUpdate(ctx, base, node, force);
-  if (!L8(base, node + 310)) return;
-  const uint32_t creator = L32(base, node + 312);
-  const uint32_t f = Slot(base, creator, 300);
-  if (f == kNotifyManualBoneStateChange) {
-    S8(base, creator + 264, 1);
+// 0x821CA140: Bone::needUpdate; then, for a manually controlled bone, its Skeleton's
+// _notifyManualBonesDirty (OGRE's 0x824E8F60 sets mManualBonesDirty; an override is called with
+// the bone in r4, which the OGRE function ignores).
+void BoneNeedUpdate(PPCContext& ctx, uint8_t* base, uint32_t n, uint64_t force) {
+  NeedUpdate(ctx, base, n, force);
+  if (!L8(base, At(n, node::kBoneManuallyControlled))) return;
+  const uint32_t creator = L32(base, At(n, node::kBoneCreator));
+  const uint32_t f = Slot(base, creator, node::kVtSkeletonNotifyManualBonesDirty);
+  if (f == kNotifyManualBonesDirty) {
+    S8(base, At(creator, node::kSkeletonManualBonesDirty), 1);
   } else {
-    CallGuest(ctx, base, f, creator, node);
+    CallGuest(ctx, base, f, creator, n);
   }
 }
 
@@ -302,11 +345,11 @@ void NativeUpdateFromParentImpl(PPCContext& ctx, uint8_t* base) {
 void NativeUpdateFromParent(PPCContext& ctx, uint8_t* base) {
   UpdateFromParent(ctx, base, ctx.r3.u32);
 }
-template <uint32_t kField>
+template <const abi::Field& kField>
 void NativeDerived(PPCContext& ctx, uint8_t* base) {
-  const uint32_t node = ctx.r3.u32;
-  if (L8(base, node + 72)) UpdateFromParent(ctx, base, node);
-  ctx.r3.u64 = node + kField;
+  const uint32_t n = ctx.r3.u32;
+  if (L8(base, At(n, node::kNeedParentUpdate))) UpdateFromParent(ctx, base, n);
+  ctx.r3.u64 = At(n, kField);
 }
 void NativeNodeUpdate(PPCContext& ctx, uint8_t* base) {
   NodeUpdate(ctx, base, ctx.r3.u32, ctx.r4.u8 != 0, ctx.r5.u8 != 0);
@@ -326,18 +369,19 @@ void NativeBoneNeedUpdate(PPCContext& ctx, uint8_t* base) {
 void CheckedUpdateFromParentImpl(PPCContext& ctx, uint8_t* base,
                                  void (*original)(PPCContext&, uint8_t*)) {
   static std::atomic<uint64_t> checked{0}, differing{0};
-  const uint32_t node = ctx.r3.u32;
+  const uint32_t n = ctx.r3.u32;
   original(ctx, base);
   float out[10];
-  UpdateFromParentImplValues(ctx, base, node, out);
+  UpdateFromParentImplValues(ctx, base, n, out);
   bool same = true;
   for (int i = 0; i < 10; i++) {
-    same = same && L32(base, node + 148 + 4 * i) == std::bit_cast<uint32_t>(out[i]);
+    same = same && L32(base, At(n, node::kDerivedOrientation) + 4 * i) ==
+                       std::bit_cast<uint32_t>(out[i]);
   }
   const uint64_t n = checked.fetch_add(1, std::memory_order_relaxed) + 1;
   if (!same && differing.fetch_add(1, std::memory_order_relaxed) < 20) {
     REXLOG_WARN("skeleton check: updateFromParentImpl of node {:08X} differs from the guest's",
-                node);
+                n);
   }
   if (n % 1000000 == 0) {
     REXLOG_INFO("skeleton check: {} updateFromParentImpl calls compared, {} differ", n,
@@ -390,7 +434,8 @@ REX_EXTERN(__imp__sub_821C9770);
 REX_FUNC(sub_821C9770) {
   if (!Enabled()) return __imp__sub_821C9770(ctx, base);
 #if TORCHLIGHT_DIAGNOSTICS
-  if (REXCVAR_GET(diag_skeleton_check) && !torchlight::diag::store_trace::t_reference_run) {
+  static const bool check = REXCVAR_GET(diag_skeleton_check);
+  if (check && !torchlight::diag::store_trace::t_reference_run) {
     return CheckedUpdateFromParentImpl(ctx, base, &__imp__sub_821C9770);
   }
 #endif
@@ -398,9 +443,9 @@ REX_FUNC(sub_821C9770) {
   NativeUpdateFromParentImpl(ctx, base);
 }
 TL_SKELETON_HOOK(kNodeUpdateFromParent, 821C9F08, NativeUpdateFromParent, TL_VOID)
-TL_SKELETON_HOOK(kNodeDerivedOrientation, 821C9BB0, NativeDerived<148>, TL_R3)
-TL_SKELETON_HOOK(kNodeDerivedPosition, 821C8518, NativeDerived<164>, TL_R3)
-TL_SKELETON_HOOK(kNodeDerivedScale, 821C99D0, NativeDerived<176>, TL_R3)
+TL_SKELETON_HOOK(kNodeDerivedOrientation, 821C9BB0, NativeDerived<node::kDerivedOrientation>, TL_R3)
+TL_SKELETON_HOOK(kNodeDerivedPosition, 821C8518, NativeDerived<node::kDerivedPosition>, TL_R3)
+TL_SKELETON_HOOK(kNodeDerivedScale, 821C99D0, NativeDerived<node::kDerivedScale>, TL_R3)
 TL_SKELETON_HOOK(kNodeUpdate, 821C9F68, NativeNodeUpdate, TL_VOID)
 TL_SKELETON_HOOK(kNodeNeedUpdate, 821CA0B8, NativeNeedUpdate, TL_VOID)
 TL_SKELETON_HOOK(kBoneNeedUpdate, 821CA140, NativeBoneNeedUpdate, TL_VOID)

@@ -303,6 +303,9 @@ target_include_directories(torchlight PRIVATE src)
 # The wardrobe blend loop's arithmetic must stay the recompiled code's: no contraction of
 # floating-point operations (hooks/wardrobe_blend.h).
 set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+# The node and bone updates reproduce the guest's rounding (hooks/native_skeleton.cpp): no fused
+# operations the guest does not do.
+set_source_files_properties(src/hooks/native_skeleton.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 # Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
 # hooks/queue_census_hooks.cpp, --diag_queue_census; diag/store_trace.cpp, --diag_store_trace).
 # Off by default and in every release workflow: without it nothing of them is compiled, no guest
