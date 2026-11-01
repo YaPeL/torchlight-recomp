@@ -79,6 +79,9 @@ class TorchlightApp : public rex::ReXApp {
             !rex::cvar::Query<std::string>("user_data_root").empty() ||
             !rex::cvar::Query<std::string>("game_data_root").empty() ||
             !rex::cvar::Query<std::string>("cache_root").empty());
+        // A run with its own roots touches nothing outside them.
+        torchlight::platform::SetRunRoots(rex::cvar::Query<std::string>("user_data_root"),
+                                          rex::cvar::Query<std::string>("cache_root"));
         break;
       case torchlight::platform::StorageMode::kPortable:
         torchlight::platform::SetPortableRoot(storage.portable_folder);
@@ -100,8 +103,11 @@ class TorchlightApp : public rex::ReXApp {
         std::exit(EXIT_SUCCESS);  // the user quit the setup; nothing is running yet
       }
     }
-    // The achievement set, asked once (before the host settings are read).
-    torchlight::game_setup::EnsureAchievementChoice(startup_log());
+    // The achievement set, asked once (before the host settings are read). A test run's fresh
+    // settings never stop it with a question: the default set, nothing saved.
+    if (rex::cvar::Query<std::string>("user_data_root").empty()) {
+      torchlight::game_setup::EnsureAchievementChoice(startup_log());
+    }
     torchlight::live::PreCreate();
     return std::unique_ptr<TorchlightApp>(new TorchlightApp(ctx, "torchlight",
         PPCImageConfig));
