@@ -2,8 +2,8 @@
 // is __imp__sub_X with a weak alias sub_X that callers use, the codegen's DEFINE_REX_FUNC on ELF
 // and COFF; on Mach-O, which has no overridable alias, sub_X is a weak function tail-calling it.
 // sub_2 is hooked (hook.cpp); sub_3 has a cold piece split off. FIXTURE_BYPASS adds a generated
-// function and makes the piece call the hooked function's __imp__ directly: two bypasses the check
-// has to report. On Windows, sub_5 calls __imp__RtlCaptureContext, a kernel export the SDK
+// function and makes the piece call the hooked function's __imp__ directly, and the generated
+// function also reaches the hook's outlined pieces: three bypasses the check has to report. On Windows, sub_5 calls __imp__RtlCaptureContext, a kernel export the SDK
 // implements whose plain name main.cpp also imports from KERNEL32: no bypass.
 
 #if defined(__APPLE__)
@@ -55,8 +55,13 @@ GUEST_FUNC(sub_3) {
 }
 
 #ifdef FIXTURE_BYPASS
+extern "C" void OUTLINED_FUNCTION_90001(int* calls);
+
+// Generated code that calls the hooked __imp__ directly, and reaches the outlined piece that holds
+// the hook's own call to it (hook.cpp): that piece is now a bypass too.
 GUEST_FUNC(sub_4) {
   __imp__sub_2(calls);
+  OUTLINED_FUNCTION_90001(calls);
   ++*calls;
 }
 #endif

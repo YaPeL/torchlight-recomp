@@ -18,8 +18,11 @@ fails when:
 
 A branch through a linker range thunk counts as a branch to the thunk's target. A branch from a
 function to its own start is not a bypass (a loop or a recursive call made by the compiler), and
-the hooks' (host code's) calls to __imp__X are what they are for. Indirect guest calls go through
-the function table, whose entries the static linker resolves to X too.
+the hooks' (host code's) calls to __imp__X are what they are for. An outlined piece
+(OUTLINED_FUNCTION_*) is judged by who reaches it: one whose every caller is the hook X itself, or
+another outlined piece only X reaches, holds X's own call to __imp__X, which the machine outliner
+moved there (AppleClang with a PGO profile, docs/regressions.md), and is no bypass. Indirect guest
+calls go through the function table, whose entries the static linker resolves to X too.
 
 On the desktop the game is an executable, whose direct calls the static linker binds: the same
 bypass check runs on Linux (ELF x86-64), macOS (Mach-O arm64: symbols carry a leading underscore,
@@ -55,6 +58,8 @@ BRANCH_X86 = re.compile(r"^\s*([0-9a-f]+):\s+(call\w*|jmp\w*|j[a-z]{1,3})\s+0x([
 THUNK = re.compile(r"__AArch64\w*Thunk_(.+)$")
 # Code the compiler or linker split off or made, which may belong to a generated function.
 PIECE = re.compile(r"OUTLINED_FUNCTION_|\.cold|\.llvm\.|__AArch64\w*Thunk_")
+# The machine outliner's pieces: reached only by direct branches, never through their address.
+OUTLINED = re.compile(r"OUTLINED_FUNCTION_")
 SHOWN = 20
 
 
@@ -184,6 +189,11 @@ def check(library, nm, objdump, map_path=None):
 
     calls = 0
     function_start, function_name = None, None
+    # Outlined pieces, judged after the pass by who reaches them: their starts, the starts of the
+    # functions that branch to each, and the pieces' branches to a hooked __imp__X.
+    piece_starts = {address for address, name in function_at.items() if OUTLINED.search(name)}
+    piece_callers = {}
+    piece_bypasses = []
     with subprocess.Popen([objdump, "-d", "--no-show-raw-insn", library],
                           stdout=subprocess.PIPE, text=True, bufsize=1 << 20) as dump:
         for line in dump.stdout:
@@ -193,6 +203,8 @@ def check(library, nm, objdump, map_path=None):
                     function_start, function_name = int(label.group(1), 16), label.group(2)
                     if macho and function_name.startswith("_"):
                         function_name = function_name[1:]
+                    if OUTLINED.search(function_name):
+                        piece_starts.add(function_start)
                 continue
             branch = (BRANCH_X86 if x86 else BRANCH).match(line)
             if not branch:
@@ -213,6 +225,8 @@ def check(library, nm, objdump, map_path=None):
                     problem("plt", f"{function_name} at {branch.group(1)}: "
                             f"{branch.group(2)} {target_name}")
                 continue
+            if (target in piece_starts or OUTLINED.search(target_name)) and target != function_start:
+                piece_callers.setdefault(target, set()).add(function_start)
             thunk = THUNK.match(target_name)
             if thunk and thunk.group(1) in syms:
                 target_name, target = thunk.group(1), syms[thunk.group(1)][1]
@@ -221,10 +235,34 @@ def check(library, nm, objdump, map_path=None):
             if target in hooked and target != function_start and (
                     function_start in imp_addresses or PIECE.search(function_name)):
                 guest = hooked[target]
-                problem("bypass", f"{function_name} at {branch.group(1)}: "
+                text = (f"{function_name} at {branch.group(1)}: "
                         f"{branch.group(2)} to __imp__{guest}, past the hook {guest}")
+                if function_start in imp_addresses or not OUTLINED.search(function_name):
+                    problem("bypass", text)
+                else:
+                    piece_bypasses.append((function_start, guest, text))
     if dump.returncode:
         raise subprocess.CalledProcessError(dump.returncode, objdump)
+
+    def reached_only_from(piece, hook_start):
+        """Whether the hook at hook_start reaches the outlined piece and nothing else does,
+        directly or through other outlined pieces only it reaches."""
+        seen, todo, from_hook = {piece}, [piece], False
+        while todo:
+            for caller in piece_callers.get(todo.pop(), ()):
+                if caller == hook_start:
+                    from_hook = True
+                elif caller in piece_starts:
+                    if caller not in seen:
+                        seen.add(caller)
+                        todo.append(caller)
+                else:
+                    return False
+        return from_hook
+
+    for piece, guest, text in piece_bypasses:
+        if not reached_only_from(piece, syms[guest][1]):
+            problem("bypass", text)
 
     if not hooked:
         problem("vacuous", "no hooked guest function (a strong X beside its __imp__X)")

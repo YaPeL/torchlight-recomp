@@ -6,6 +6,22 @@ what happened, which layer should have caught it, and what catches it now (a tes
 checklist item of the pre-release passes). A new entry is added when a bug is found that late; the
 lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
+## The macOS outliner's piece taken for a bypass by the binding check (caught before a release)
+
+- **What happened:** with the PGO profile, AppleClang's machine outliner moved the hook
+  `sub_8276A858`'s own call to its original, `__imp__sub_8276A858`, into a shared piece,
+  `OUTLINED_FUNCTION_7`, reached only from that hook. The check counted every compiler piece as
+  possibly generated code, so the macOS release link with the profile failed. Found by the macOS
+  agent's check build of its PGO profile, 2026-11-01.
+- **Should have been caught by:** the fixtures, which had no outlined piece; no-game CI builds
+  without a profile, where the outliner leaves the hooks alone.
+- **Caught by:** the check build of the macOS profile on the owner's Mac (kit step 4).
+- **Covered now:** the check judges an `OUTLINED_FUNCTION_*` piece by its callers: it is accepted
+  when the hook X is all that reaches it (directly or through other outlined pieces only X
+  reaches), and still a bypass when anything else does. The fixtures' hook calls its `__imp__`
+  through two outlined pieces (OK must pass; the old check failed it with this exact message), and
+  the BYPASS fixture's generated function also reaches them (reported).
+
 ## Windows game builds stopped at the binding check's fixture test (caught before a release)
 
 - **What happened:** since e3984aa (2026-10-30) the game appended Windows' `--map torchlight.map`
