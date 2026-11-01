@@ -36,7 +36,20 @@ Means: instructions -7.2 %, cycles -9.3 %, frame 22.57 to 20.26 ms; every patche
 every base run on both counters. The two base runs differ by 3.7 % in instructions per frame, so
 the percentage is good to about 2 points; the direction is clear. An earlier A B B A with profiles
 trained on different days and one throttled run gave +0.9 ms in the fight, with no counters; it
-is not comparable. Windows and macOS arm64 were not measured.
+is not comparable.
+
+Mac mini M2, macOS 26.6, Apple clang 17: base f6c54f8 against patch d942d04, each with its own SDK,
+mac-arm64-release without PGO, fight.txt, fps cap 0, vsync off, 1280x720, AC power, no thermal
+warnings, A B B A. Fight mean: base 7.38 / 7.89 ms, patched 7.20 / 7.09 ms, -6.4 %, good to a few
+points (the base runs are 0.51 ms apart); every patched run is below every base run. No hardware
+counters. All runs quit by themselves with no fault; guest call bindings pass on both builds with
+the check's fix for .cold pieces.
+
+Windows, same comparison, reported by the owner as a summary: fight -1.2 %, within noise; rest
+-2.9 %; 8 of 8 runs clean; bindings pass on both builds. Neutral on x86-64, as expected: the
+comparison there was already free of branches.
+
+Linux keeps offset 0: develop 6b3e84b with this SDK passes the binding check and fight.txt.
 
 Upstream: not proposed.
 
