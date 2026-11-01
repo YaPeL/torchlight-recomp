@@ -57,8 +57,8 @@ training again is part of every freeze.
 | --- | --- | --- |
 | Linux x86-64 (also the Steam Deck) | clang 21 (apt.llvm.org, the release's), `llvm-profdata-21` | us, on the owner's desktop |
 | Android arm64 | NDK r30 clang, its `llvm-profdata` | us, on the POCO X7 (`files/pgo`, pulled with `run-as`) |
-| Windows x86-64 (later) | clang 21.1.8 in GNU mode for the MSVC target (`windows_toolchain.ps1`), `C:\llvm\bin\llvm-profdata.exe` | the owner's Windows PC, an instrumented build we hand over |
-| macOS arm64 (later) | AppleClang of the release's Xcode, `xcrun llvm-profdata` of the same Xcode (pinned: AppleClang's profile format does not mix with upstream LLVM's) | the owner's Apple Silicon Mac |
+| Windows x86-64 | clang 21.1.8 in GNU mode for the MSVC target (`windows_toolchain.ps1`), `C:\llvm\bin\llvm-profdata.exe` (21.1.8) | the owner's Windows PC, by its agent |
+| macOS arm64 | AppleClang 21.0.0 (21000101) of Xcode 26.6, the release runner's (`macos-26-arm64`; pinned in `release.yml` with `DEVELOPER_DIR`), `xcrun llvm-profdata` of the same Xcode (AppleClang's profile format does not mix with upstream LLVM's) | the owner's Apple Silicon Mac, by its agent |
 
 ## When to train again
 
@@ -120,7 +120,9 @@ checkout's `pgo/android-arm64.profdata`. The Linux release job (`release.yml`, `
 with `pgo/linux-x86_64.profdata` (2026-11-01): it moves the profile out before the assets checkout is
 removed, configures with `TORCHLIGHT_PGO_USE`, keeps the build's output in a file and runs the match
 check right after the build, before the tests and the packaging. Still to do: the same in Android's
-release job (A6), and for Windows and macOS once they have profiles.
+release job (A6). The Windows and macOS release jobs do the same with `pgo/windows-x86_64.profdata` and
+`pgo/macos-arm64.profdata` when the assets have them (built without PGO until then), the macOS job
+on the pinned Xcode 26.6.
 
 For when ThinLTO comes back (it is out for now, above): it moves code generation from the compile to
 the link's parallel backends: about the same total time (360 s against about 450 s locally), a link
