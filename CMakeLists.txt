@@ -158,17 +158,21 @@ target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/gener
 # with -Wl,-Bsymbolic-functions (patch 47); everywhere, nothing (ThinLTO did, docs/regressions.md)
 # may bind a generated call to a hooked function's __imp__ body past its hook. Windows' executable
 # has no symbol table: the linker writes a map the check reads.
+# The game's own list: _binding_tools (the tools only) is also what tests/guest_call_binding passes
+# to its test script, which takes each fixture's map apart (--ok-map, --bypass-map) and refuses
+# --map; appending the game's map to it broke every Windows build of the game at that test.
+set(_game_binding_tools ${_binding_tools})
 if(WIN32)
     set(_binding_map "${CMAKE_CURRENT_BINARY_DIR}/torchlight.map")
     # No incremental link (link.exe's default with debug information): its jump stubs would hide
     # where a call is bound.
     target_link_options(torchlight PRIVATE "LINKER:/MAP:${_binding_map}" "LINKER:/INCREMENTAL:NO")
-    list(APPEND _binding_tools --map ${_binding_map})
+    list(APPEND _game_binding_tools --map ${_binding_map})
 endif()
 add_custom_command(TARGET torchlight POST_BUILD
     COMMAND ${Python3_EXECUTABLE} -I
             ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
-            $<TARGET_FILE:torchlight> ${_binding_tools}
+            $<TARGET_FILE:torchlight> ${_game_binding_tools}
     VERBATIM)
 # The default code model for the game on Linux x86-64 (docs/guest-hot-paths.md). The SDK compiles
 # its targets with -mcmodel=large ("large executable support"), which makes every call between
