@@ -154,7 +154,7 @@ void LiveMode::RunWithoutDrawing() {
   Series consume_ms;
   auto last_summary = Clock::now();
   while (running_) {
-    auto frame = queue_.Pop(std::chrono::milliseconds(100));
+    auto frame = queue_.Pop(std::chrono::milliseconds(100), false);
     if (!frame) continue;
     auto start = Clock::now();
     frame->MergeAbsorbed();

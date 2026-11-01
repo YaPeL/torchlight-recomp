@@ -60,7 +60,8 @@ struct LiveFrame {
   };
   Producer producer;
 
-  // Frames dropped into this one and not merged yet, oldest first (FrameQueue: merged at Pop).
+  // Frames dropped into this one and not merged yet, oldest first: merged at Pop, or by the caller
+  // after Pop(..., false); past kMaxAbsorbedPending the oldest is merged at Push.
   std::vector<LiveFrame> absorbed;
   // What merged frames left behind (their draws and clears), freed with this frame.
   std::vector<LiveFrame> discarded;

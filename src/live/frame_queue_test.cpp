@@ -203,9 +203,15 @@ int main() {
         capacity = 1 + ops() % 3;
         queue.SetCapacity(capacity);
       } else {
-        auto f = queue.Pop(std::chrono::milliseconds(0));
+        // Live mode pops unmerged and merges itself; both ways give the same frame.
+        const bool merge = (step + seed) % 2 == 0;
+        auto f = queue.Pop(std::chrono::milliseconds(0), merge);
         Check(bool(f) == !reference.empty(), "the same frames waiting as the old algorithm");
         if (f) {
+          if (!merge) f->MergeAbsorbed();
+          Check(f->absorbed.empty() &&
+                    f->discarded.size() <= torchlight::live::kMaxAbsorbedPending,
+                "merged frames hold at most kMaxAbsorbedPending drops' leftovers");
           Check(SameFrame(*f, reference.front()), "the same frame as the old algorithm");
           reference.pop_front();
         }
