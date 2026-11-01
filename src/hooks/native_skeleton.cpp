@@ -33,7 +33,7 @@
 
 #include "guest_abi/guest_functions.h"
 #include "guest_abi/ogre_layout.h"
-#include "hooks/guest_tree_hooks.h"
+#include "hooks/native_skeleton.h"
 
 #if TORCHLIGHT_DIAGNOSTICS
 #include "diag/store_trace_api.h"
