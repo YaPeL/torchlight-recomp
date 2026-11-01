@@ -2,6 +2,7 @@
 // to the user's folders. (The layout of the kinds is storage_mode_test's; this is the platform's
 // own functions, one implementation per platform.)
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <string>
@@ -19,6 +20,17 @@ void Check(const std::string& got, const fs::path& want, const char* what) {
   // Lexical, so the trailing separator the functions add does not count.
   if ((fs::path(got) / "").lexically_normal() != (want / "").lexically_normal()) {
     std::fprintf(stderr, "FAIL: %s: %s, not %s\n", what, got.c_str(), want.string().c_str());
+    std::exit(1);
+  }
+}
+
+// Before a function that creates its folder: if the roots did not take, it would create the user's
+// real one, so the test stops here instead.
+void RequireBelow(UserFolderKind kind, const fs::path& root, const char* what) {
+  const fs::path folder = UserFolder(kind);
+  const auto [end, unused] = std::mismatch(root.begin(), root.end(), folder.begin(), folder.end());
+  if (end != root.end()) {
+    std::fprintf(stderr, "FAIL: %s: %s is not below the root\n", what, folder.string().c_str());
     std::exit(1);
   }
 }
@@ -52,6 +64,10 @@ void TestRunRoots() {
   SetEnvironment(variable, "");
   const fs::path real_config = PlainUserFolder(UserFolderKind::kConfig);
   SetRunRoots(root, {});
+  for (const auto kind : {UserFolderKind::kConfig, UserFolderKind::kState, UserFolderKind::kCache,
+                          UserFolderKind::kData, UserFolderKind::kGameData}) {
+    RequireBelow(kind, root, "--user_data_root");
+  }
   Check(ConfigDir(), root / "config", "--user_data_root: settings");
   Check(DataDir(), root, "--user_data_root: the saves are the root itself");
   Check(GameDataDir(), root / "game", "--user_data_root: game files and import");
@@ -60,11 +76,13 @@ void TestRunRoots() {
   Check(CacheDir("layouts"), root / "cache" / "layouts", "--user_data_root: other caches");
 
   SetRunRoots(root, cache_root);
+  RequireBelow(UserFolderKind::kCache, cache_root, "--cache_root with --user_data_root");
   Check(ShaderCacheDir(), cache_root / "ogre", "--cache_root wins for the cache");
   Check(ConfigDir(), root / "config", "--cache_root leaves the settings below --user_data_root");
   SetPortableRoot({});
 
   SetRunRoots({}, cache_root);
+  RequireBelow(UserFolderKind::kCache, cache_root, "--cache_root alone");
   Check(ShaderCacheDir(), cache_root / "ogre", "--cache_root alone: the cache");
   if (UserFolder(UserFolderKind::kConfig) != real_config) {
     std::fprintf(stderr, "FAIL: --cache_root alone moves only the cache\n");
@@ -83,11 +101,14 @@ void TestRunRoots() {
     std::fprintf(stderr, "FAIL: a start with roots keeps to them and migrates nothing\n");
     std::exit(1);
   }
+  RequireBelow(UserFolderKind::kConfig, root, "the start: settings");
+  RequireBelow(UserFolderKind::kState, root, "the start: logs");
   Check(ConfigDir(), root / "config", "the start: settings below the root");
   Check(LogDir(), root / "logs", "the start: logs below the root");
   SetPortableRoot({});
   log.clear();
   SetUpFolders("", "", "", "", cache_root, log);
+  RequireBelow(UserFolderKind::kCache, cache_root, "the start: --cache_root alone");
   Check(ShaderCacheDir(), cache_root / "ogre", "the start: --cache_root alone");
   SetPortableRoot({});
 
