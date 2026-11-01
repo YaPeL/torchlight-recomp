@@ -9,6 +9,7 @@
 
 #include "platform/gl_probe_win.h"
 #include "platform/platform.h"
+#include "platform/storage_mode.h"
 #include "platform/user_folders.h"
 
 #ifndef WIN32_LEAN_AND_MEAN
@@ -199,7 +200,38 @@ void TestGlProbe() {
   std::printf("platform_win_test: OpenGL 3.3 here: %s\n", gl33 ? "yes" : "no");
 }
 
+// A folder this user is denied writing to through an ACL, as Program Files is for a normal user (the
+// runners are administrators, so the folder's permissions are what is tested).
+void TestUnwritableFolder() {
+  const std::filesystem::path dir = std::filesystem::temp_directory_path() / "tl_unwritable";
+  std::filesystem::remove_all(dir);
+  std::filesystem::create_directories(dir);
+  const std::string target = "icacls \"" + dir.string() + "\" ";
+  Check(std::system((target + "/deny *S-1-1-0:(WD,AD) >nul").c_str()) == 0, "icacls denies writing");
+  std::string error;
+  const bool writable = platform::CanWriteFolder(dir, error);
+  std::system((target + "/remove:d *S-1-1-0 >nul").c_str());
+  std::filesystem::remove_all(dir);
+  Check(!writable, "a folder denied by its ACL is not writable");
+}
+
+// Without a requested execution level a process is "legacy": Windows silently redirects its refused
+// writes below Program Files to VirtualStore, so CanWriteFolder would say yes and the player's files
+// would end up elsewhere. Every executable gets the same manifest (top CMakeLists.txt).
+void TestRunsAsInvoker() {
+  HMODULE self = GetModuleHandleW(nullptr);
+  HRSRC info = FindResourceW(self, MAKEINTRESOURCEW(1), MAKEINTRESOURCEW(24));
+  Check(info != nullptr, "the executable has a manifest");
+  const char* data = static_cast<const char*>(LockResource(LoadResource(self, info)));
+  const std::string manifest(data, SizeofResource(self, info));
+  Check(manifest.find("requestedExecutionLevel") != std::string::npos &&
+            manifest.find("asInvoker") != std::string::npos,
+        "the manifest asks for asInvoker (no VirtualStore)");
+}
+
 int main() {
+  TestUnwritableFolder();
+  TestRunsAsInvoker();
   TestGlProbe();
   TestGpus();
   TestUserFolderBases();

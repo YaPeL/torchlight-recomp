@@ -5,6 +5,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 
 #include <rex/cvar.h>
@@ -36,6 +37,7 @@
 #include "live/install.h"
 #include "dev/script_input.h"
 #include "game_setup/first_run.h"
+#include "platform/storage_mode.h"
 #include "live/frame_counter.h"
 #include "live/system_back_button.h"
 #include "live/touch_input.h"
@@ -64,12 +66,31 @@ class TorchlightApp : public rex::ReXApp {
 
   static std::unique_ptr<rex::ui::WindowedApp> Create(
       rex::ui::WindowedAppContext& ctx) {
-    // First of all, before anything opens or creates the user's folders: the ones with the old
-    // name move to the new one (logged once logging is up), never in a run with its own roots.
-    startup_log() = torchlight::platform::MigrateUserFolders(
+    // First of all, before anything opens or creates the user's folders: where this run keeps the
+    // player's files. A portable run leaves the user's folders alone; otherwise the ones with the
+    // old name move to the new one (logged once logging is up), never in a run with its own roots.
+    const torchlight::platform::StorageFacts storage = torchlight::platform::ReadStorageFacts(
+        torchlight::platform::ExecutableDir(), rex::cvar::Query<std::string>("appimage_path"),
         !rex::cvar::Query<std::string>("user_data_root").empty() ||
-        !rex::cvar::Query<std::string>("game_data_root").empty() ||
-        !rex::cvar::Query<std::string>("cache_root").empty());
+            !rex::cvar::Query<std::string>("game_data_root").empty());
+    switch (torchlight::platform::DecideStorage(storage)) {
+      case torchlight::platform::StorageMode::kUserFolders:
+        startup_log() = torchlight::platform::MigrateUserFolders(
+            !rex::cvar::Query<std::string>("user_data_root").empty() ||
+            !rex::cvar::Query<std::string>("game_data_root").empty() ||
+            !rex::cvar::Query<std::string>("cache_root").empty());
+        break;
+      case torchlight::platform::StorageMode::kPortable:
+        torchlight::platform::SetPortableRoot(storage.portable_folder);
+        startup_log().push_back({false, "storage: portable, " + storage.portable_folder.string()});
+        break;
+      case torchlight::platform::StorageMode::kPortableUnwritable:
+      case torchlight::platform::StorageMode::kAsk:
+        // Unreachable until the setup wizard answers them: the build refuses
+        // TORCHLIGHT_PORTABLE_DEFAULT without it (platform/CMakeLists.txt). Nothing is migrated
+        // before the player's answer.
+        std::abort();
+    }
     // The game's files: installed from the user's package on the first start (REL.4), unless
     // --game_data_root points at them.
     if (rex::cvar::Query<std::string>("game_data_root").empty()) {

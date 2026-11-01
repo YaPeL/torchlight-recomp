@@ -33,8 +33,8 @@ enum class UserFolderKind {
 // CMakeLists.txt), every user folder lives below it, in config/, state/, cache/, data/ and
 // game_data/, so no test writes to the user's real folders. Checked first, on every platform,
 // before the platform's own folders (which on Windows are known folders that ignore the
-// environment). Nothing else sets it; it is the project's only environment variable, and only for
-// that.
+// environment). Nothing else sets it; it is the project's only environment variable of its own, and
+// only for that (AppRun.in reads AppImage's $APPIMAGE, the documented exception in AGENTS.md).
 inline constexpr const char* kTestUserFoldersVariable = "TORCHLIGHT_TEST_USER_FOLDERS";
 
 // The base directory a kind of user folder lives in, not created; empty when there is none:
@@ -43,9 +43,19 @@ std::filesystem::path UserFolderBase(UserFolderKind kind);
 // The platform's own base directory (Linux: the XDG base directory; one implementation file per
 // platform).
 std::filesystem::path PlatformUserFolderBase(UserFolderKind kind);
-// <base>/TorchlightRecomp (kGameData: <base>/TorchlightRecomp/game), not created; empty when there
-// is no base. Linux: kGameData below the data base, ~/.local/share/TorchlightRecomp/game/.
+// The folder of `kind` in this run, not created: below the portable root when one is set, else
+// PlainUserFolder.
 std::filesystem::path UserFolder(UserFolderKind kind);
+// The user's own folder of `kind`, portable root or not: <base>/TorchlightRecomp (kGameData:
+// <base>/TorchlightRecomp/game); empty when there is no base. Linux: kGameData below the data base,
+// ~/.local/share/TorchlightRecomp/game/.
+std::filesystem::path PlainUserFolder(UserFolderKind kind);
+// Makes every UserFolder live below `root` (storage_mode.h): config/, logs/, cache/, data/, game/.
+// Set once at the very start, on the main thread; empty goes back to the user's folders.
+void SetPortableRoot(const std::filesystem::path& root);
+// The logs' folder below UserFolder(kState) where that folder is not the logs' own: "logs" in the
+// user's folders (Linux, Windows), nothing in a portable root, whose kState is logs/ already.
+std::filesystem::path LogsSubfolder();
 
 struct LegacyFolder {
   std::filesystem::path old_path, new_path;

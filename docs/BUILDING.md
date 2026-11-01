@@ -249,6 +249,12 @@ Pending (isolation): on Windows and macOS there is no such variable, so a test r
 `~/Library/Caches/TorchlightRecomp/ogre`) and the real settings. Making them follow
 `--user_data_root` / `--cache_root` is still to do.
 
+Not in use yet: packages will keep all of this in a portable folder, `TorchlightRecomp-data/` beside
+the AppImage, the `.exe` or the `.app` (`platform/storage_mode.h`), with `config/`, `logs/`, `cache/`,
+`data/` and `game/`. The CMake option `TORCHLIGHT_PORTABLE_DEFAULT` will turn it on; the build
+refuses it until the setup wizard, which asks the player, is in. A build without it, a run with
+`--user_data_root` or `--game_data_root` and the tests never use one.
+
 The logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
 runtime's as `torchlight_NNN.log` and OGRE's next to it as `torchlight_NNN_ogre.log`. The game
 prints the log's path at startup, and the first line of each log has the executable's path and the

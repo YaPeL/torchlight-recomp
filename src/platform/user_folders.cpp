@@ -12,6 +12,11 @@ bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::p
 
 namespace {
 
+std::filesystem::path& PortableRoot() {
+  static std::filesystem::path root;
+  return root;
+}
+
 bool IsXuid(const std::string& name) {
   if (name.size() != 16) return false;
   for (unsigned char c : name) {
@@ -80,7 +85,7 @@ std::vector<StartupMessage> MigrateUserFolders(bool run_has_own_roots) {
     messages.push_back({false, "user folders: this run has its own roots; nothing migrated"});
     return messages;
   }
-  const std::filesystem::path cache = UserFolder(UserFolderKind::kCache);
+  const std::filesystem::path cache = PlainUserFolder(UserFolderKind::kCache);
   for (const LegacyFolder& folder : LegacyUserFolders()) {
     MigrationResult result = MigrateFolder(folder);
     if (result.message.empty()) continue;
@@ -104,7 +109,26 @@ std::filesystem::path UserFolderBase(UserFolderKind kind) {
   return PlatformUserFolderBase(kind);
 }
 
+void SetPortableRoot(const std::filesystem::path& root) { PortableRoot() = root; }
+
+std::filesystem::path LogsSubfolder() {
+  return PortableRoot().empty() ? std::filesystem::path("logs") : std::filesystem::path();
+}
+
 std::filesystem::path UserFolder(UserFolderKind kind) {
+  if (const std::filesystem::path& root = PortableRoot(); !root.empty()) {
+    switch (kind) {
+      case UserFolderKind::kConfig: return root / "config";
+      case UserFolderKind::kState: return root / "logs";
+      case UserFolderKind::kCache: return root / "cache";
+      case UserFolderKind::kData: return root / "data";
+      case UserFolderKind::kGameData: return root / "game";
+    }
+  }
+  return PlainUserFolder(kind);
+}
+
+std::filesystem::path PlainUserFolder(UserFolderKind kind) {
   const std::filesystem::path base = UserFolderBase(kind);
   if (base.empty()) return base;
   if (kind == UserFolderKind::kGameData) return base / kUserFolderName / "game";
