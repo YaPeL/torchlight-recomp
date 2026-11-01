@@ -8,9 +8,12 @@
 # This repository is public: the logs show only the build's outcome lines (filtered below), never
 # the assets' paths or contents, the codegen's output or the build directory.
 #
-# Started by hand (workflow_dispatch, once this file is on main) or by pushing a tag
-# v-pgo-check-<n> on develop or main: the environment only admits v* tags, and a dispatch needs the
-# file on the default branch. release.yml ignores these tags.
+# Started by pushing a tag v-pgo-check-<n> on a commit of develop or main that has this file (an
+# older commit's release.yml would take the tag for a release), or by hand once the file is on main
+# (a freeze), choosing such a tag under "Use workflow from": the environment admits only v* tags, a
+# dispatch needs the file on the default branch. release.yml ignores these tags. The approval
+# screen shows the commit: check it. The checkout of the assets logs the repository's name and
+# commit, as release.yml's does, never its files.
 name: Release check (PGO candidates)
 
 on:
@@ -24,6 +27,11 @@ on:
 
 permissions:
   contents: read
+
+# One candidate at a time: a new tag cancels the waiting or running check.
+concurrency:
+  group: release-check
+  cancel-in-progress: true
 
 env:
   DEPS_DIR: /deps
@@ -96,7 +104,7 @@ jobs:
           cmake --preset linux-amd64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
             -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
             -DTORCHLIGHT_PGO_USE=/tmp/linux-x86_64.profdata > /tmp/configure.log 2>&1 || {
-            echo "configure failed" >&2; exit 1; }
+            grep -A4 "^CMake Error" /tmp/configure.log | head -40; echo "configure failed" >&2; exit 1; }
           status=0
           cmake --build --preset linux-amd64-release --parallel > /tmp/build.log 2>&1 || status=$?
           python3 tools/release/build_outcome.py /tmp/build.log
@@ -168,7 +176,7 @@ jobs:
         shell: pwsh
         run: |
           & "$env:DEPS_DIR\sdk\bin\rexglue.exe" codegen torchlight_manifest.toml *> "$env:RUNNER_TEMP\codegen.log"
-          if ($LASTEXITCODE) { Write-Error "codegen failed"; exit 1 }
+          if ($LASTEXITCODE) { Write-Host "codegen failed"; exit 1 }
       - name: Build with the profile, binding and match checks
         shell: pwsh
         run: |
@@ -176,7 +184,11 @@ jobs:
           cmake --preset win-amd64-release "-DCMAKE_PREFIX_PATH=$env:DEPS_DIR\sdk" `
             "-DTORCHLIGHT_OGRE_INSTALL=$env:DEPS_DIR\ogre" "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -g" `
             "-DTORCHLIGHT_PGO_USE=$profile" *> "$env:RUNNER_TEMP\configure.log"
-          if ($LASTEXITCODE) { Write-Error "configure failed"; exit 1 }
+          if ($LASTEXITCODE) {
+            Select-String -Path "$env:RUNNER_TEMP\configure.log" -Pattern "^CMake Error" -Context 0,4 |
+              Select-Object -First 10 | ForEach-Object { $_.ToString() }
+            Write-Host "configure failed"; exit 1
+          }
           cmake --build --preset win-amd64-release --parallel *> "$env:RUNNER_TEMP\build.log"
           $status = $LASTEXITCODE
           python tools/release/build_outcome.py "$env:RUNNER_TEMP\build.log"
@@ -240,6 +252,7 @@ jobs:
           cmake --preset mac-arm64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
             -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
             -DTORCHLIGHT_PGO_USE="$profile" > "$RUNNER_TEMP/configure.log" 2>&1 || {
+            grep -A4 "^CMake Error" "$RUNNER_TEMP/configure.log" | head -40
             echo "configure failed" >&2; exit 1; }
           status=0
           cmake --build --preset mac-arm64-release --parallel > "$RUNNER_TEMP/build.log" 2>&1 || status=$?

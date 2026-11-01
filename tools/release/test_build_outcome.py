@@ -22,6 +22,14 @@ FAILED: CMakeFiles/a.dir/src/b.cpp.o
 /runner/work/x/out/build/linux-amd64-release/torchlight: 43927 guest functions, 209 hooked, 392796 direct branches to guest functions
 bypass: 1
   OUTLINED_FUNCTION_7 at 1021ccba8: b to __imp__sub_8276A858, past the hook sub_8276A858
+FAILED: [code=1] out/build/x/torchlight.exe
+C:\\Program Files\\LLVM\\x.h(3): error: no member named 'y'
+LINK : fatal error LNK1120: 1 unresolved externals
+a.obj : error LNK2019: unresolved external symbol f
+lld-link: error: undefined symbol: g
+/runner/work/x/generated/default/torchlight_recomp.2.cpp: error: profile data may be out of date: of 9 functions, 9 have mismatched data that will be ignored [-Werror,-Wprofile-instr-out-of-date]
+check_guest_call_binding: [Errno 2] No such file or directory: 'llvm-nm'
+D:\\a\\x\\out\\build\\win\\torchlight.exe: 44146 guest functions, 210 hooked, 389127 direct branches to guest functions\r
 ninja: build stopped: subcommand failed.
 """
 
@@ -29,9 +37,18 @@ WANT = [
     "torchlight: 43927 guest functions, 209 hooked, 392796 direct branches to guest functions",
     "bypass: 1",
     "  OUTLINED_FUNCTION_7 at 1021ccba8: b to __imp__sub_8276A858, past the hook sub_8276A858",
-    "1 translation units reported mismatched profile data",
+    "check_guest_call_binding: [Errno 2] No such file or directory: 'llvm-nm'",
+    "torchlight.exe: 44146 guest functions, 210 hooked, 389127 direct branches to guest functions",
+    "1 translation units warned of mismatched profile data",
+    "1 translation units failed on mismatched profile data (generated code: the profile no longer "
+    "matches)",
     "FAILED: b.cpp.o",
+    "FAILED: torchlight.exe",
     "b.cpp: error: use of undeclared identifier 'q'",
+    "x.h: error: no member named 'y'",
+    "LINK: fatal error: LNK1120: 1 unresolved externals",
+    "a.obj: error: LNK2019: unresolved external symbol f",
+    "lld-link: error: undefined symbol: g",
     "[3/3] (ninja's last step)",
 ]
 
@@ -40,7 +57,7 @@ failures = []
 if got != WANT:
     failures.append("got:\n  " + "\n  ".join(got))
 text = "\n".join(got)
-for leak in ("/runner", "/secret", "profdata", "q = 1"):
+for leak in ("/runner", "/secret", "profdata", "q = 1", "Program Files", "D:\\"):
     if leak in text:
         failures.append(f"{leak!r} printed")
 for failure in failures:

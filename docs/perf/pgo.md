@@ -128,10 +128,11 @@ A new or retrained profile goes to a branch of the assets repository first (`pgo
 `release-check.yml` builds the three desktop releases with it: the same builds as the release jobs,
 through the same `release` environment and its approval, each one compiled against its profile,
 linked with the binding check and measured by the match check, with nothing published or uploaded.
-The public log only shows each build's outcome lines (`tools/release/build_outcome.py`). Only when
-the three link are the profiles merged into the assets' main. It runs on a pushed tag
-`v-pgo-check-<n>` on develop or main (the environment admits only `v*` tags; `release.yml` ignores
-these), or by hand once the file is on main; delete the tag after the run.
+The public log only shows each build's outcome lines (`tools/release/build_outcome.py`). The
+profiles go to the assets' main only once all three link. It runs on a pushed tag `v-pgo-check-<n>`
+on a commit of develop or main that has the workflow (the environment admits only `v*` tags;
+`release.yml` ignores these, from that commit on), or by hand once the file is on main, choosing
+such a tag as the ref. Check the commit on the approval screen, and delete the tag after the run.
 
 For when ThinLTO comes back (it is out for now, above): it moves code generation from the compile to
 the link's parallel backends: about the same total time (360 s against about 450 s locally), a link
