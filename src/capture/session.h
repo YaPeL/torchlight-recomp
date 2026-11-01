@@ -414,7 +414,10 @@ class Session {
   };
   std::vector<ArgsMemo> memos_ = std::vector<ArgsMemo>(kRenderSystemSlotCount * kMemoSubs);
   const uint8_t* membase_ = nullptr;
-  CompareLog* compare_ = nullptr;
+  // The comparison's log, for the thread that set it only (the store trace compares on the render
+  // thread; other threads' state and events, a loader's for instance, are not part of the call and
+  // must not reach the log).
+  static inline thread_local CompareLog* compare_ = nullptr;
   void CompareState(uint32_t key, CompareValue value);
   ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;
