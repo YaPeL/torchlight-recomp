@@ -29,6 +29,13 @@ void MmioStore(uint32_t address, const char* function);
 // hook): with --diag_store_compare, `candidate` against `original` (the guest's function); with
 // --diag_store_trace, `original` traced. False when neither is on (the hook runs the call).
 using GuestFunction = void (*)(PPCContext&, uint8_t*);
+// True on the thread while a comparison runs the guest's function (the reference): native hooks
+// called from inside it run the guest's code too, so the reference holds none of their native code.
+inline thread_local bool t_reference_run = false;
+struct ReferenceRun {
+  ReferenceRun() { t_reference_run = true; }
+  ~ReferenceRun() { t_reference_run = false; }
+};
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
                         GuestFunction original);
 
@@ -37,8 +44,11 @@ bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
 // (memory other than the stack, r1, r3, f1), entry `entry`, on the render thread (the one
 // renderSingleObject was first compared on) and not inside another traced or compared call. False
 // when the comparison does not run (the hook runs the call).
+// The registers a native function's comparison checks besides r1: its results (a void function's
+// r3 and f1 are whatever its last callee left).
+enum CompareRegisters : uint32_t { kCompareR3 = 1, kCompareF1 = 2, kCompareResults = 3 };
 bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
-                       GuestFunction original);
+                       GuestFunction original, uint32_t registers = kCompareResults);
 
 }  // namespace torchlight::diag::store_trace
 

@@ -649,7 +649,7 @@ uint32_t g_shown = 0;
 // differing calls.
 void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& candidate,
                  const Run& original, const cap::Session::CompareLog& candidate_log,
-                 const cap::Session::CompareLog& original_log) {
+                 const cap::Session::CompareLog& original_log, uint32_t compared_registers) {
   std::vector<std::string> notes;
   uint64_t memory = 0, registers = 0, commands_differ = 0;
   auto note = [&](std::string text) {
@@ -720,8 +720,8 @@ void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& ca
   };
 #define TL_REG(r) reg(#r, x.r.u64, y.r.u64)
   TL_REG(r1);
-  TL_REG(r3);
-  TL_REG(f1);
+  if (compared_registers & kCompareR3) TL_REG(r3);
+  if (compared_registers & kCompareF1) TL_REG(f1);
 #undef TL_REG
 
   // Commands: the same events, constants and draws in order; at each draw, and at the end, the
@@ -825,7 +825,7 @@ std::string RaceSite() {
 }
 
 void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
-                 GuestFunction original) {
+                 GuestFunction original, uint32_t compared_registers = kCompareResults) {
   cap::Session& session = cap::Session::Get();
   const PPCContext saved = ctx;
   const uint32_t sp = ctx.r1.u32;
@@ -868,7 +868,10 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
   Run original_run;
   session.SetCompareLog(&original_log);
   StartRun(entry, sp);
-  original(ctx, base);
+  {
+    ReferenceRun reference;
+    original(ctx, base);
+  }
   StopRun(base, original_run);
   session.SetCompareLog(nullptr);
   original_run.out = ctx;
@@ -882,17 +885,18 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
     return;
   }
 
-  CompareRuns(base, entry, sp, candidate_run, original_run, candidate_log, original_log);
+  CompareRuns(base, entry, sp, candidate_run, original_run, candidate_log, original_log,
+              compared_registers);
 }
 
 }  // namespace
 
 bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
-                       GuestFunction original) {
+                       GuestFunction original, uint32_t registers) {
   static const bool native = REXCVAR_GET(diag_store_compare_native);
   if (!native || !CompareEnabled() || t_call.depth != 0) return false;
   if (g_compare_thread.load(std::memory_order_relaxed) != std::this_thread::get_id()) return false;
-  CompareCall(ctx, base, entry, candidate, original);
+  CompareCall(ctx, base, entry, candidate, original, registers);
   return true;
 }
 
@@ -907,6 +911,7 @@ bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
   }
   if (!Enabled()) return false;
   Begin(0x821C5FA0, ctx.r1.u32);
+  ReferenceRun reference;
   original(ctx, base);
   End(base);
   return true;

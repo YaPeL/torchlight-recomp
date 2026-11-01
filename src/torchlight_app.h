@@ -127,6 +127,7 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::hooks::InstallVideoMode();
     torchlight::hooks::LogGuestCopyMode();
     torchlight::hooks::LogTreeLookupMode();
+    torchlight::hooks::LogNativeSkeletonMode();
     torchlight::hooks::LogPixelUtilMode();
     torchlight::hooks::LogWardrobeBlendMode();
     torchlight::hooks::InstallFrustumTest();

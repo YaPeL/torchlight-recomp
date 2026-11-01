@@ -267,6 +267,19 @@ inline constexpr GuestFunction kDeviceMapFind{0x82581D98, Confidence::kConfirmed
 // up the parents while coming from the right (storing each parent at r3 on the way), then the
 // parent. A nil node (the head) stays. Leaves r9-r11 (r9 not on a nil node). No calls. 0x824C6960
 // is reached from 0x821C8C00 (docs/guest-hot-paths.md). Host code: hooks/guest_tree.h.
+// OGRE 1.7's Node and Bone transform updates (hooks/native_skeleton.cpp, ported from
+// torchlight-nx 1.0.3, which identified them on this executable and verified its native versions
+// bit for bit; the addresses are also the vtable slots that file dispatches on: Node 4
+// _updateFromParent, 8 updateFromParentImpl, 188/192/196 the derived getters, 204 _update, 252
+// needUpdate, with Bone overriding 252).
+inline constexpr GuestFunction kNodeUpdateFromParentImpl{0x821C9770, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeUpdateFromParent{0x821C9F08, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedOrientation{0x821C9BB0, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedPosition{0x821C8518, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedScale{0x821C99D0, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeUpdate{0x821C9F68, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeNeedUpdate{0x821CA0B8, Confidence::kConfirmed};
+inline constexpr GuestFunction kBoneNeedUpdate{0x821CA140, Confidence::kConfirmed};
 inline constexpr GuestFunction kTreeNext17{0x824C6960, Confidence::kConfirmed};
 inline constexpr GuestFunction kTreeNext21{0x8262D6C8, Confidence::kConfirmed};
 

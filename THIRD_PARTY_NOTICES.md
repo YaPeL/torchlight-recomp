@@ -164,6 +164,17 @@ Microsoft documents (`https://learn.microsoft.com/cpp/windows/deployment-in-visu
 
 ## Notices and license texts
 
+### torchlight-nx (code adapted into this project)
+
+`src/hooks/native_skeleton.cpp` adapts native implementations of OGRE's node and bone updates from
+[torchlight-nx](https://github.com/liartes/torchlight-nx) by liartes (tag `v1.0.3`, commit
+`6624ad2`, `src/torchlight_ogre_natif.cpp`), licensed under the GNU General Public License 3.0 (text
+below), the same license as this project. torchlight-nx follows the method of
+[NFSMW-NX](https://github.com/StevensND/nfsmw-nx) by StevensND (GPL-3.0), itself derived from
+[NFSMW Recompiled](https://github.com/madelrandel-blip/NFSMW-Recompiled) by madelrandel-blip. The
+adaptation reads and writes guest memory through this project's helpers, calls guest functions
+through the SDK's resolver and adds this project's checks; it is compiled into the game executable.
+
 ### ReXGlue SDK
 
 ```
