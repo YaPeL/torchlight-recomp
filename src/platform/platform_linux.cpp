@@ -257,7 +257,7 @@ std::string GameDataDir() {
 }
 
 std::string LogDir() {
-  return UserDir(UserFolderKind::kState, "logs");
+  return UserDir(UserFolderKind::kState, LogsSubfolder());
 }
 
 void BringToFront() {}

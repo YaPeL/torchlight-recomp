@@ -82,6 +82,17 @@ elseif(APPLE)
 else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
+# Where this run keeps the player's files (storage_mode.h). The portable folder beside the
+# application will be the default of the packages; a development build keeps the user's folders, so no
+# run from a build tree opens the first-start questions or offers to copy the real user data.
+option(TORCHLIGHT_PORTABLE_DEFAULT "Keep the player's files in a folder beside the application" OFF)
+# Refused until the setup wizard answers kAsk and kPortableUnwritable (torchlight_app.h).
+if(TORCHLIGHT_PORTABLE_DEFAULT)
+    message(FATAL_ERROR "TORCHLIGHT_PORTABLE_DEFAULT needs the setup wizard, which is not in yet")
+endif()
+target_sources(torchlight_user_folders PRIVATE storage_mode.cpp)
+target_compile_definitions(torchlight_user_folders PRIVATE
+    TORCHLIGHT_PORTABLE_DEFAULT=$<BOOL:${TORCHLIGHT_PORTABLE_DEFAULT}>)
 target_include_directories(torchlight_user_folders PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_user_folders PUBLIC cxx_std_23)
 target_compile_options(torchlight_user_folders PRIVATE -Wall -Wextra)
@@ -133,6 +144,22 @@ add_executable(user_folders_test user_folders_test.cpp)
 target_link_libraries(user_folders_test PRIVATE torchlight_user_folders)
 target_compile_options(user_folders_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME user_folders_test COMMAND user_folders_test)
+
+add_executable(storage_mode_test storage_mode_test.cpp)
+target_link_libraries(storage_mode_test PRIVATE torchlight_user_folders)
+target_compile_options(storage_mode_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME storage_mode_test COMMAND storage_mode_test)
+
+add_executable(portable_dirs_test portable_dirs_test.cpp)
+target_link_libraries(portable_dirs_test PRIVATE torchlight_platform)
+target_compile_options(portable_dirs_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME portable_dirs_test COMMAND portable_dirs_test)
+
+# AppRun hands the game the AppImage's path (AppRun.in), and only the game.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    add_test(NAME apprun_test
+             COMMAND sh "${CMAKE_SOURCE_DIR}/packaging/linux/apprun_test.sh")
+endif()
 
 # On battery or not, from made-up /sys/class/power_supply trees (Linux's reader, pure C++).
 if(UNIX AND NOT APPLE AND NOT ANDROID)

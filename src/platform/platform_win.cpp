@@ -178,7 +178,7 @@ std::string GameDataDir() {
   return folder.empty() ? "" : Utf8(folder.wstring()) + "\\";
 }
 
-std::string LogDir() { return UserDir(UserFolderKind::kState, "logs"); }
+std::string LogDir() { return UserDir(UserFolderKind::kState, LogsSubfolder()); }
 
 std::string ExecutableDir() {
   std::wstring path(MAX_PATH, L'\0');

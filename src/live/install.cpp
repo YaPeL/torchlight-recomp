@@ -31,6 +31,10 @@
 #include "platform/platform.h"
 #include "settings/host_settings.h"
 
+// Not configuration: AppRun.in passes AppImage's own $APPIMAGE, the only way to know the folder the
+// image is in (the executable runs from its temporary mount). platform/storage_mode.h.
+REXCVAR_DEFINE_STRING(appimage_path, "", "Torchlight",
+                      "The AppImage this run started from (set by the image's AppRun)");
 REXCVAR_DEFINE_STRING(native_live, "only", "Torchlight",
                       "Renderer: only (the default: the native OGRE backend is the only renderer, "
                       "Xenos off, GPU plugin rexgpu-null); off (the emulated Xenos GPU; also chosen "
