@@ -95,7 +95,8 @@ def map_symbols(map_path):
 
 
 def symbols(nm, library, macho=False, map_path=None, defined=None):
-    """{name: (type, address)} of the library's guest functions: each __imp__X and its X."""
+    """{name: (type, address)} of the library's guest functions: each __imp__X and its X (not the
+    pieces the compiler split off a body)."""
     if map_path:
         defined = defined if defined is not None else map_symbols(map_path)
     elif macho:
