@@ -23,4 +23,6 @@ if [ "${bundled:-0}" -gt "${host:-0}" ]; then
   LD_LIBRARY_PATH="$here/usr/lib/compat${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
   export LD_LIBRARY_PATH
 fi
-exec "$here/usr/bin/@EXECUTABLE@" "$@"
+# The game also gets the image's path (make_apprun.sh): $APPIMAGE is AppImage's own variable, not
+# this project's configuration (AGENTS.md), set by its runtime and unset in an extracted tree.
+exec "$here/usr/bin/@EXECUTABLE@" @APP_OPTIONS@ "$@"

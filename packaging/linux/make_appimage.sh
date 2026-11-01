@@ -55,7 +55,7 @@ done
 # linuxdeploy leaves AppRun as a link to the executable: writing through it would replace the
 # executable with the script.
 rm -f "$appdir/AppRun"
-sed "s/@EXECUTABLE@/$executable/" "$here/AppRun.in" > "$appdir/AppRun"
+sh "$here/make_apprun.sh" "$executable" > "$appdir/AppRun"
 chmod +x "$appdir/AppRun"
 
 runtime="$(dirname "$(command -v appimagetool)")/runtime-x86_64"

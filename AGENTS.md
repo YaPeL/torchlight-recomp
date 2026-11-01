@@ -80,7 +80,9 @@ not count.
 - Behaviour is generic, decided by capability or state. A draw, file or unit is never treated
   differently by hash, signature, mesh, material or other content name (`CONTRIBUTING.md`).
 - No environment variables in the project. If configuration is needed, ask; it goes in the settings
-  or a command-line option.
+  or a command-line option. One documented exception: the AppImage's `AppRun` reads `$APPIMAGE`,
+  which AppImage's runtime sets (it is not configuration of ours), and passes it to the game as
+  `--appimage_path`; nothing in the code reads it.
 - Generated code (`generated/`) and the ReXGlue SDK are not edited by hand.
 - Guest (OGRE 1.7) and host (OGRE 14) enums are never assumed equal: each is mapped explicitly
   (`src/guest_abi/`).
