@@ -78,6 +78,17 @@ NDK's `llvm-profdata merge --sparse`. The result goes to the private assets repo
 `pgo/android-arm64.profdata`, with the commit of `generated/`'s codegen, the NDK version and the
 date beside it (`pgo/README.md` there).
 
+**A flag-switched optimisation is trained on.** Code that runs only behind a flag is cold to the
+compiler when the training ran with the flag off: it is optimised for size and laid out away from
+the hot path, and measuring it then measures that, not the optimisation (docs/regressions.md, the
+skeleton port). So any new optimisation behind a flag is measured with a profile trained with it on,
+and a profile for a build where a flag may be either way is trained with both: every script once
+with the flag off and once with it on, in the same order and length, merged into one profile. The
+Linux release profile (`pgo/linux-x86_64.profdata`, x86-64-v3) is trained that way for
+`--native_skeleton` (on by default there): `fight.txt`, `fight5.txt` and `measure-fight-town.txt`
+with `--native_skeleton=false`, then the three again with `--native_skeleton=true`, each from a
+fresh bench save, offscreen.
+
 The profiles written before 2026-10-31 summed every minute's copy of the counts (the runtime
 appended each write to the file), which weighed the start of each run more: trained again.
 

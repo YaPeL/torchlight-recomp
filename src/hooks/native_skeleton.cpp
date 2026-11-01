@@ -1,4 +1,5 @@
-// OGRE's node and bone transforms as host code (--native_skeleton, off by default): Node::_update,
+// OGRE's node and bone transforms as host code (--native_skeleton; on by default in the Linux
+// x86-64-v3 build only): Node::_update,
 // Node::needUpdate, Bone::needUpdate, Node::_updateFromParent, Node::updateFromParentImpl and the
 // derived orientation/position/scale getters, under Entity::cacheBoneMatrices and the scene graph.
 //
@@ -50,7 +51,14 @@
 
 #pragma clang fp contract(off)
 
-REXCVAR_DEFINE_BOOL(native_skeleton, false, "Torchlight",
+// On by default in the Linux x86-64-v3 build only (TORCHLIGHT_NATIVE_SKELETON_DEFAULT, CMakeLists.txt;
+// the owner's decision of 2026-11-01): measured there −5.9 % cycles a frame on the Steam Deck and
+// −6 % on the desktop with a PGO profile trained with it on; on x86-64-v2 (Windows) its fma calls go
+// to libm as the recompiled code's and it gains nothing, and on ARM64 (the POCO) no clear gain.
+#ifndef TORCHLIGHT_NATIVE_SKELETON_DEFAULT
+#define TORCHLIGHT_NATIVE_SKELETON_DEFAULT 0
+#endif
+REXCVAR_DEFINE_BOOL(native_skeleton, TORCHLIGHT_NATIVE_SKELETON_DEFAULT != 0, "Torchlight",
                     "Run OGRE's node and bone transform updates as host code (ported from "
                     "torchlight-nx; false: the recompiled guest functions)");
 REXCVAR_DEFINE_BOOL(skeleton_crossing_counts, false, "Torchlight",
