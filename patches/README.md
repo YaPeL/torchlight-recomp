@@ -67,7 +67,8 @@ in number order; a branch adds its own line at its number's place.
 | 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
 | 50 | `rexglue-thread-dump.patch` | `develop` | In the series (after 49); diagnostics only |
 | 51 | `rexglue-android-sdl-power.patch` | `develop` | In the series (after 50); Android only |
-| 52 | | | Next free number |
+| 52 | `rexglue-phys-host-offset-no-compare.patch` | `develop` | In the series (after 51); changes Windows' and macOS arm64's generated code too (the owner's OK) |
+| 53 | | | Next free number |
 
 ## The patches
 
@@ -743,6 +744,11 @@ in number order; a branch adds its own line at its number's place.
     everywhere, so on Android `SDL_GetPowerInfo` always said unknown and an app could not tell
     it ran on battery. `SDL_POWER` is on when `ANDROID` is set (SDL reads the battery through the
     app's Java side); the desktop platforms keep it off.
+
+52. `rexglue-phys-host-offset-no-compare.patch`: the generated code's physical heap offset is
+    computed with shifts and an add instead of a comparison, with the same value for every address;
+    the runtime's `PhysicalHostOffset` keeps the comparison. Android arm64, Windows and macOS arm64
+    only.
 
 The observation and diagnostic patches there were before remain in the git history.
 

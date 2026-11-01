@@ -48,9 +48,9 @@ hardware floor stays armv8-a. PGO is integrated for Android (the owner's decisio
    output also measures the game's own code: it fails over 5 % of the profile's functions with
    mismatched data, or when the profile was not used.
 
-One profile per platform: the generated code differs between them (`REX_PHYS_HOST_OFFSET` is a
-comparison on Windows, macOS arm64 and Android and zero on Linux x86-64), which changes the hash of
-nearly every function. Any ReXGlue update or codegen change makes every profile stale at once, so
+One profile per platform: the generated code differs between them, and any change to what the
+generated code computes can change the hash of nearly every function (it happened when
+`REX_PHYS_HOST_OFFSET` lost its comparison: patch 52). Any ReXGlue update or codegen change makes every profile stale at once, so
 training again is part of every freeze.
 
 | Platform | Compiler and merge tool | Who trains, where |
