@@ -157,6 +157,7 @@ void LiveMode::RunWithoutDrawing() {
     auto frame = queue_.Pop(std::chrono::milliseconds(100));
     if (!frame) continue;
     auto start = Clock::now();
+    frame->MergeAbsorbed();
     frames_dropped += frame->dropped_before;
     content.Apply(*frame);
     for (const auto& cmd : frame->commands) draws += std::holds_alternative<commands::Draw>(cmd.payload);
@@ -339,7 +340,8 @@ void LiveMode::Run() {
     // between slices.
     const bool idle_start = last_present.time_since_epoch().count() == 0;
     const bool precompiling = !precompile_done && (LevelLoading() || idle_start);
-    auto frame = queue_.Pop(std::chrono::milliseconds(precompiling ? 0 : 100));
+    // Unmerged: the frames dropped into it are merged below, inside this frame's timed work.
+    auto frame = queue_.Pop(std::chrono::milliseconds(precompiling ? 0 : 100), false);
     if (!frame && precompiling) {
       const size_t left = tl_backend_precompile_programs(backend, 50.0);
       tl_backend_counters counters;
@@ -379,6 +381,7 @@ void LiveMode::Run() {
       continue;
     }
     auto start = Clock::now();
+    frame->MergeAbsorbed();
     frames_dropped += frame->dropped_before;
     dropped_since_present += frame->dropped_before;
     FrameRecord record;

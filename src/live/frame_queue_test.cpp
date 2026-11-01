@@ -3,6 +3,8 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <deque>
+#include <random>
 #include <thread>
 
 #include "live/frame_queue.h"
@@ -36,6 +38,60 @@ LiveFrame MakeFrame(uint64_t swap, SnapshotStore& store) {
   ResourceId vb{ResourceKind::kVertexBuffer, 0x2000, 1};
   f.contents.push_back({vb, store.Put(vb, uint32_t(swap), b)});
   return f;
+}
+
+LiveFrame RandomFrame(uint64_t swap, std::mt19937& r, SnapshotStore& store) {
+  LiveFrame f;
+  f.swap = swap;
+  for (unsigned i = 0, n = r() % 6; i < n; ++i) {
+    switch (r() % 3) {
+      case 0: f.commands.push_back({0, SetDepthCheck{r() % 2 == 0}}); break;
+      case 1: f.commands.push_back({0, Clear{}}); break;
+      default: f.commands.push_back({0, Draw{}}); break;
+    }
+  }
+  if (r() % 2) {
+    TextureDesc t;
+    t.id = {ResourceKind::kTexture, uint32_t(swap), 1};
+    f.textures.push_back(t);
+  }
+  if (r() % 3 == 0) f.destroyed.push_back({ResourceKind::kTexture, uint32_t(swap + 7), 1});
+  if (r() % 2) {
+    Blob b;
+    b.bytes.assign(4, uint8_t(swap));
+    ResourceId vb{ResourceKind::kVertexBuffer, uint32_t(swap), 1};
+    f.contents.push_back({vb, store.Put(vb, uint32_t(swap), b)});
+  }
+  f.dropped_before = r() % 3 == 0 ? r() % 3 : 0;
+  f.producer.guest_ms = r() % 1000 / 10.0;
+  f.producer.worst_dropped_guest_ms = r() % 2 ? r() % 1000 / 10.0 : 0;
+  f.producer.snapshot_copies = r() % 5;
+  f.producer.snapshot_bytes = r() % 1000;
+  return f;
+}
+
+bool SameFrame(const LiveFrame& a, const LiveFrame& b) {
+  if (a.swap != b.swap || a.dropped_before != b.dropped_before ||
+      a.commands.size() != b.commands.size() || a.textures.size() != b.textures.size() ||
+      a.contents.size() != b.contents.size() || !(a.destroyed == b.destroyed)) {
+    return false;
+  }
+  for (size_t i = 0; i < a.commands.size(); ++i) {
+    if (!(a.commands[i].payload == b.commands[i].payload)) return false;
+  }
+  for (size_t i = 0; i < a.textures.size(); ++i) {
+    if (!(a.textures[i].id == b.textures[i].id)) return false;
+  }
+  for (size_t i = 0; i < a.contents.size(); ++i) {
+    if (!(a.contents[i].id == b.contents[i].id) ||
+        a.contents[i].content->hash != b.contents[i].content->hash) {
+      return false;
+    }
+  }
+  return a.producer.guest_ms == b.producer.guest_ms &&
+         a.producer.worst_dropped_guest_ms == b.producer.worst_dropped_guest_ms &&
+         a.producer.snapshot_copies == b.producer.snapshot_copies &&
+         a.producer.snapshot_bytes == b.producer.snapshot_bytes;
 }
 
 }  // namespace
@@ -112,16 +168,50 @@ int main() {
   Check(merged->textures.size() == drops + 1 && merged->textures.front().id.guest_address == 0x1064 &&
             merged->contents.size() == drops + 1,
         "the drops' resources in order");
+  // Past kMaxAbsorbedPending drops the oldest are merged and freed at push: the frame holds the
+  // last ones' leftovers only, flat.
   size_t discarded_draws = 0;
-  std::vector<const LiveFrame*> pending;
-  for (const auto& d : merged->discarded) pending.push_back(&d);
-  while (!pending.empty()) {
-    const LiveFrame* f = pending.back();
-    pending.pop_back();
-    for (const auto& c : f->commands) discarded_draws += std::holds_alternative<Draw>(c.payload);
-    for (const auto& d : f->discarded) pending.push_back(&d);
+  bool flat = true;
+  for (const auto& d : merged->discarded) {
+    flat = flat && d.discarded.empty() && d.absorbed.empty();
+    for (const auto& c : d.commands) discarded_draws += std::holds_alternative<Draw>(c.payload);
   }
-  Check(discarded_draws == drops, "the drops' draws held until the frame is freed");
+  Check(flat && merged->discarded.size() == torchlight::live::kMaxAbsorbedPending &&
+            discarded_draws == torchlight::live::kMaxAbsorbedPending,
+        "a stall holds the last drops' leftovers only, flat");
+
+  // Against the old algorithm (each drop merged at once into the next frame): random pushes,
+  // pops and capacity changes give the same frames, every field compared.
+  for (unsigned seed = 0; seed < 200; ++seed) {
+    std::mt19937 make_a(seed), make_b(seed), ops(seed * 7 + 1);
+    FrameQueue queue(1 + seed % 3);
+    std::deque<LiveFrame> reference;
+    size_t capacity = 1 + seed % 3;
+    uint64_t swap = 1;
+    for (int step = 0; step < 300; ++step) {
+      const unsigned op = ops() % 10;
+      if (op < 7 + (seed % 2) * 2) {
+        queue.Push(RandomFrame(swap, make_a, store));
+        reference.push_back(RandomFrame(swap, make_b, store));
+        ++swap;
+        while (reference.size() > capacity) {
+          LiveFrame oldest = std::move(reference.front());
+          reference.pop_front();
+          reference.front().AbsorbDropped(std::move(oldest));
+        }
+      } else if (op == 9 && seed % 5 == 0) {
+        capacity = 1 + ops() % 3;
+        queue.SetCapacity(capacity);
+      } else {
+        auto f = queue.Pop(std::chrono::milliseconds(0));
+        Check(bool(f) == !reference.empty(), "the same frames waiting as the old algorithm");
+        if (f) {
+          Check(SameFrame(*f, reference.front()), "the same frame as the old algorithm");
+          reference.pop_front();
+        }
+      }
+    }
+  }
   std::printf("frame queue test: ok\n");
   return 0;
 }

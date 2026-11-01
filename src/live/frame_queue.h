@@ -3,11 +3,12 @@
 //
 // The producer never waits: with the queue full, the oldest queued frame is dropped. Dropping
 // keeps continuity: its state commands and resources are carried into the next frame, only its
-// draws and clears are discarded (counted). The merge happens when the consumer pops the frame,
-// on its thread: the producer only moves the dropped frame aside (it is the guest's render thread,
-// where moving a frame's thousands of commands and freeing its draws cost ~0.5 M cycles a frame on
-// the POCO with frames dropping). The merged frame keeps what the dropped frames discarded until it
-// is itself freed (on the reclaimer's thread).
+// draws and clears are discarded (counted). The merge happens on the consumer's thread, after it
+// pops the frame: the producer only moves the dropped frame aside (it is the guest's render
+// thread, where moving a frame's thousands of commands and freeing its draws cost ~0.5 M cycles a
+// frame on the POCO with frames dropping). The merged frame keeps what the dropped frames
+// discarded until it is itself freed (on the reclaimer's thread). Past kMaxAbsorbedPending drops
+// into one frame (a stalled consumer) the oldest is merged and freed on the producer, as before.
 
 #pragma once
 
@@ -24,6 +25,10 @@
 #include "live/snapshot_store.h"
 
 namespace torchlight::live {
+
+// Dropped frames a queued frame holds unmerged; past it the oldest is merged at push (bounds the
+// memory while the consumer is stalled, a load for instance).
+constexpr size_t kMaxAbsorbedPending = 4;
 
 struct LiveFrame {
   uint64_t swap = 0;
@@ -64,7 +69,7 @@ struct LiveFrame {
   // Moves `older`'s state and resources in front of this frame's; its draws and clears are
   // discarded (they stay in `older`).
   void AbsorbDropped(LiveFrame&& older);
-  // Queues `older` (and what was dropped into it) to be merged by MergeAbsorbed.
+  // Queues `older` (and what was dropped into it) to be merged by MergeAbsorbed (FrameQueue::Push).
   void QueueDropped(LiveFrame&& older);
   // Merges every queued dropped frame, as AbsorbDropped on each from the newest back; their
   // leftovers go to `discarded`.
@@ -92,8 +97,9 @@ class FrameQueue {
 
   // Producer: never blocks.
   void Push(LiveFrame frame);
-  // Consumer: waits up to `timeout` for a frame.
-  std::optional<LiveFrame> Pop(std::chrono::milliseconds timeout);
+  // Consumer: waits up to `timeout` for a frame. With `merge` false the frames dropped into it are
+  // left in `absorbed` for the caller to merge (MergeAbsorbed) where it times its work.
+  std::optional<LiveFrame> Pop(std::chrono::milliseconds timeout, bool merge = true);
   void Close();  // wakes the consumer; Pop returns nullopt once empty
 
   uint64_t pushed() const;
@@ -107,9 +113,5 @@ class FrameQueue {
   bool closed_ = false;
   uint64_t pushed_ = 0, dropped_ = 0;
 };
-
-// Dropped frames a queued frame holds unmerged before the oldest are merged at push (bounds the
-// memory while the consumer is stalled, a load for instance).
-constexpr size_t kMaxAbsorbedPending = 4;
 
 }  // namespace torchlight::live
