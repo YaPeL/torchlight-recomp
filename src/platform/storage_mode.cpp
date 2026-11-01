@@ -37,18 +37,18 @@ fs::path ApplicationFolder(const fs::path& executable_dir, const fs::path& appim
 bool CanWriteFolder(const fs::path& folder, std::string& error) {
   const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
   const fs::path probe = folder / (".tl-write-test-" + std::to_string(stamp));
+  bool written = false;
   {
     std::ofstream out(probe, std::ios::binary);
     out << "test";
     out.flush();
-    if (!out) {
-      error = "cannot create a file in " + folder.string();
-      return false;
-    }
+    written = bool(out);
   }
+  // Also after a failed write: the file may exist (a full disk).
   std::error_code ec;
   fs::remove(probe, ec);
-  return true;
+  if (!written) error = "cannot create a file in " + folder.string();
+  return written;
 }
 
 StorageFacts ReadStorageFacts(const fs::path& executable_dir, const fs::path& appimage_path,
