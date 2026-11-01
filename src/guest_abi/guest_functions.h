@@ -253,6 +253,21 @@ inline constexpr GuestFunction kLargeCopy{0x821A7138, Confidence::kConfirmed};
 // generated/default, 2026-10-31).
 inline constexpr GuestFunction kVectorCopy{0x821C28D8, Confidence::kConfirmed};
 inline constexpr uint32_t kVectorCopyStep = 0x8304EC50;
+// [confirmed] std::map<uint32_t, T>::find 0x82581D98 (out r3, map r4, key pointer r5): the head at
+// map+4, the root at head+4; MSVC tree nodes with left +0, parent +4, right +8, key +12, isnil
+// +21. Walks to the lower bound (key at +12 below the key: right, else remember the node and go
+// left), then stores the node (or the head when the key is below it or the tree is empty) at r3;
+// it also stores the candidate at r1-16 and, on the head path, the head at r1-12 (red zone), and
+// leaves r8-r11 (cr6 is a local of the generated code). No calls. The per-device resource maps'
+// lookup (D3D9 buffers, textures, programs; docs/game-thread-parallelism.md, section 11).
+inline constexpr GuestFunction kDeviceMapFind{0x82581D98, Confidence::kConfirmed};
+// [confirmed] A tree iterator's operator++ (the iterator's node pointer at r3) for MSVC trees with
+// isnil at +17 (0x824C6960) and at +21 (0x8262D6C8): with a right child, its leftmost node; else
+// up the parents while coming from the right (storing each parent at r3 on the way), then the
+// parent. A nil node (the head) stays. Leaves r9-r11. No calls. 0x824C6960 is reached from
+// 0x821C8C00 (docs/guest-hot-paths.md).
+inline constexpr GuestFunction kTreeNext17{0x824C6960, Confidence::kConfirmed};
+inline constexpr GuestFunction kTreeNext21{0x8262D6C8, Confidence::kConfirmed};
 
 // Xbox D3D device calls of the D3D9 render system's _render (0x821C4058) that only feed the Xenos
 // GPU (hooks/guest_d3d_skip.h; evidence in docs/native-skip-guest-d3d.md, "Draw and bindings").

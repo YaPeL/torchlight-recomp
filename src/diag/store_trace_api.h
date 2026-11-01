@@ -32,5 +32,11 @@ using GuestFunction = void (*)(PPCContext&, uint8_t*);
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
                         GuestFunction original);
 
+// Any native function's call, with --diag_store_compare: `candidate` (the native code) against
+// `original` (the guest's function) by the same comparison, entry `entry`, when not inside another
+// traced or compared call. False when the comparison does not run (the hook runs the call).
+bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
+                       GuestFunction original);
+
 }  // namespace torchlight::diag::store_trace
 

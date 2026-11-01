@@ -878,6 +878,13 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
 
 }  // namespace
 
+bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
+                       GuestFunction original) {
+  if (!CompareEnabled() || t_call.depth != 0) return false;
+  CompareCall(ctx, base, entry, candidate, original);
+  return true;
+}
+
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
                         GuestFunction original) {
   if (CompareEnabled() && t_call.depth == 0) {
