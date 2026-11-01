@@ -9,7 +9,9 @@
 // librexruntime.so binds an inline rex::cvar::FlagEntry constructor to the executable's copy and
 // crashed in its own initialiser). Without x86-64-v3 it writes the message to standard error with
 // the write system call, shows it in SDL's message box (no SDL_Init needed; without a display it
-// fails and the message on standard error stands) and exits.
+// fails and the message on standard error stands) and exits. libc sets environ only in its own
+// initialiser, after this one, so it is set here from the environment the loader passes: SDL starts
+// its helper (zenity on Wayland) with it, which otherwise finds no display.
 
 #if defined(__x86_64__) && defined(__linux__) && defined(TORCHLIGHT_X86_64_V3)
 
@@ -25,9 +27,10 @@ constexpr char kMessage[] =
     "as the Steam Deck's or a PC processor from about 2015 on (Intel Haswell, AMD Zen or later). "
     "This processor does not have it.";
 
-void CheckCpu(int, char**, char**) {
+void CheckCpu(int, char**, char** envp) {
   __builtin_cpu_init();
   if (__builtin_cpu_supports("x86-64-v3")) return;
+  if (!environ) environ = envp;
   const char prefix[] = "Torchlight Recomp: ";
   (void)!write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
   (void)!write(STDERR_FILENO, kMessage, sizeof(kMessage) - 1);
