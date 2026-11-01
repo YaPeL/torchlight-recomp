@@ -83,7 +83,9 @@ struct StartupMessage {
 };
 // MigrateFolder on each of them; the messages to log (logging is not up yet at that point). Warnings:
 // a rename that failed, and both folders existing for anything but the cache (the old one may hold
-// data no longer used).
-std::vector<StartupMessage> MigrateUserFolders();
+// data no longer used). With `run_has_own_roots` (--user_data_root, --game_data_root or --cache_root:
+// a run isolated on its own files) nothing is looked at or moved: the old folders are the player's,
+// outside those roots.
+std::vector<StartupMessage> MigrateUserFolders(bool run_has_own_roots);
 
 }  // namespace torchlight::platform

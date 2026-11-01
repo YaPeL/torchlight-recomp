@@ -68,14 +68,17 @@ class TorchlightApp : public rex::ReXApp {
       rex::ui::WindowedAppContext& ctx) {
     // First of all, before anything opens or creates the user's folders: where this run keeps the
     // player's files. A portable run leaves the user's folders alone; otherwise the ones with the
-    // old name move to the new one (logged once logging is up).
+    // old name move to the new one (logged once logging is up), never in a run with its own roots.
     const torchlight::platform::StorageFacts storage = torchlight::platform::ReadStorageFacts(
         torchlight::platform::ExecutableDir(), rex::cvar::Query<std::string>("appimage_path"),
         !rex::cvar::Query<std::string>("user_data_root").empty() ||
             !rex::cvar::Query<std::string>("game_data_root").empty());
     switch (torchlight::platform::DecideStorage(storage)) {
       case torchlight::platform::StorageMode::kUserFolders:
-        startup_log() = torchlight::platform::MigrateUserFolders();
+        startup_log() = torchlight::platform::MigrateUserFolders(
+            !rex::cvar::Query<std::string>("user_data_root").empty() ||
+            !rex::cvar::Query<std::string>("game_data_root").empty() ||
+            !rex::cvar::Query<std::string>("cache_root").empty());
         break;
       case torchlight::platform::StorageMode::kPortable:
         torchlight::platform::SetPortableRoot(storage.portable_folder);

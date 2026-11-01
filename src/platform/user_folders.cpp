@@ -79,8 +79,12 @@ std::vector<LegacyFolder> LegacyUserFolders() {
   return folders;
 }
 
-std::vector<StartupMessage> MigrateUserFolders() {
+std::vector<StartupMessage> MigrateUserFolders(bool run_has_own_roots) {
   std::vector<StartupMessage> messages;
+  if (run_has_own_roots) {
+    messages.push_back({false, "user folders: this run has its own roots; nothing migrated"});
+    return messages;
+  }
   const std::filesystem::path cache = PlainUserFolder(UserFolderKind::kCache);
   for (const LegacyFolder& folder : LegacyUserFolders()) {
     MigrationResult result = MigrateFolder(folder);

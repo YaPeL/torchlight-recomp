@@ -232,7 +232,8 @@ The user's folders are named `TorchlightRecomp` (so they do not collide with the
 `~/.local/share/TorchlightRecomp/` (saves, `save-backups`, profiles; the runtime's default
 `--user_data_root`), or under the `XDG_*_HOME` directories. At startup, each folder still named
 `torchlight` is renamed to `TorchlightRecomp` when the new one does not exist yet and the old one
-holds this project's files; with both, nothing is touched. The log says what moved.
+holds this project's files; with both, nothing is touched. The log says what moved. A run with
+`--user_data_root`, `--game_data_root` or `--cache_root` moves nothing.
 
 With `--user_data_root` (or `--cache_root`), everything the player's mods and their progress
 use moves below it (`settings/user_folders_in_use.h`): `mods/`, `mod_set.txt`, `replacements/`, the

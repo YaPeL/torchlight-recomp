@@ -162,9 +162,36 @@ void TestNonAsciiFolders() {
   fs::remove_all(root);
 }
 
+// A run with its own roots leaves the player's old folders where they are; a normal run moves them.
+void TestOwnRootsMigrateNothing() {
+  const char* name = torchlight::platform::kTestUserFoldersVariable;
+  const char* previous = std::getenv(name);
+  const std::string saved = previous ? previous : "";
+  const fs::path root = fs::temp_directory_path() / "tl_user_folders_own_roots";
+  fs::remove_all(root);
+  SetEnvironment(name, root.string());
+  const fs::path old_config = root / "config" / "torchlight";
+  const fs::path new_config = root / "config" / "TorchlightRecomp";
+  Write(old_config / "settings.toml", "kept");
+
+  const auto own_roots = torchlight::platform::MigrateUserFolders(true);
+  Check(Read(old_config / "settings.toml") == "kept" && !fs::exists(new_config),
+        "own roots: the old folder is not moved");
+  Check(own_roots.size() == 1 && !own_roots[0].warning, "own roots: the log says so, no warning");
+
+  const auto normal = torchlight::platform::MigrateUserFolders(false);
+  Check(!fs::exists(old_config) && Read(new_config / "settings.toml") == "kept",
+        "a normal run still moves it");
+  Check(normal.size() == 1 && !normal[0].warning, "a normal run logs the move");
+
+  SetEnvironment(name, saved);
+  fs::remove_all(root);
+}
+
 }  // namespace
 
 int main() {
+  TestOwnRootsMigrateNothing();
   TestTestFoldersVariable();
   TestNonAsciiFolders();
   TestOldOnlyMoves();
