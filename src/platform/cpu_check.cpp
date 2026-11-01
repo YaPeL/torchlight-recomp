@@ -24,9 +24,9 @@ namespace {
 
 constexpr const char* kTitle = "Torchlight Recomp";
 constexpr char kMessage[] =
-    "This build of Torchlight Recomp needs a processor with x86-64-v3 (AVX2, FMA, BMI2): the "
-    "Steam Deck's, Intel Core 4th generation (Haswell) or later, or AMD Zen or later. This "
-    "processor does not have it.";
+    "This build of Torchlight Recomp needs a processor with x86-64-v3 (AVX2, FMA, BMI2):\n"
+    "the Steam Deck's, Intel Core 4th generation (Haswell) or later, or AMD Zen or later.\n"
+    "This processor does not have it.";  // lines short enough for SDL's own X11 box
 
 void CheckCpu(int, char**, char** envp) {
   __builtin_cpu_init();
