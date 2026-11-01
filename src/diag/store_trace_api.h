@@ -32,9 +32,11 @@ using GuestFunction = void (*)(PPCContext&, uint8_t*);
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
                         GuestFunction original);
 
-// Any native function's call, with --diag_store_compare: `candidate` (the native code) against
-// `original` (the guest's function) by the same comparison, entry `entry`, when not inside another
-// traced or compared call. False when the comparison does not run (the hook runs the call).
+// Any native function's call, with --diag_store_compare and --diag_store_compare_native:
+// `candidate` (the native code) against `original` (the guest's function) by the same comparison
+// (memory other than the stack, r1, r3, f1), entry `entry`, on the render thread (the one
+// renderSingleObject was first compared on) and not inside another traced or compared call. False
+// when the comparison does not run (the hook runs the call).
 bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
                        GuestFunction original);
 

@@ -162,3 +162,12 @@ add_executable(wardrobe_blend_test wardrobe_blend_test.cpp)
 target_link_libraries(wardrobe_blend_test PRIVATE torchlight_pixel_util)
 target_compile_options(wardrobe_blend_test PRIVATE -Wall -Wextra -Werror -ffp-contract=off)
 add_test(NAME wardrobe_blend_test COMMAND wardrobe_blend_test)
+
+# The guest's hottest tree walks on the host (guest_tree.h, header only), tested over a fake address
+# space; the hooks that use them (guest_tree_hooks.cpp) are part of the executable.
+add_executable(guest_tree_test guest_tree_test.cpp)
+target_include_directories(guest_tree_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/.."
+                           "${TORCHLIGHT_REX_INCLUDE}")
+target_compile_features(guest_tree_test PRIVATE cxx_std_23)
+target_compile_options(guest_tree_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME guest_tree_test COMMAND guest_tree_test)

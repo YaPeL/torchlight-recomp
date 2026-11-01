@@ -36,6 +36,7 @@
 #include <optional>
 #include <string_view>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -60,6 +61,9 @@ REXCVAR_DEFINE_UINT32(diag_store_trace_dump_calls, 20, "Torchlight",
 REXCVAR_DEFINE_BOOL(diag_store_compare, false, "Torchlight",
                     "Diagnostics: run every renderSingleObject twice from the same state (the "
                     "candidate, undone, then the guest's) and log where they differ");
+REXCVAR_DEFINE_BOOL(diag_store_compare_native, false, "Torchlight",
+                    "Diagnostics: with --diag_store_compare, also compare the native functions' "
+                    "calls on the render thread (store_trace::CompareNativeCall)");
 REXCVAR_DEFINE_UINT32(diag_store_compare_shown, 20, "Torchlight",
                       "Diagnostics: how many differing calls --diag_store_compare logs in detail");
 
@@ -80,6 +84,11 @@ bool CompareEnabled() {
   static const bool enabled = REXCVAR_GET(diag_store_compare);
   return enabled;
 }
+
+// The thread whose calls are compared: renderSingleObject's (the guest's render thread), recorded
+// at its first call. The comparison's state (g_next_call, the session's compare log) is that
+// thread's alone, so native functions called on other threads (loaders) are not compared.
+std::atomic<std::thread::id> g_compare_thread{};
 
 // How far below the traced entry's stack pointer a write counts as a dead callee frame.
 constexpr uint32_t kStackWindow = 1u << 20;
@@ -880,7 +889,9 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
 
 bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
                        GuestFunction original) {
-  if (!CompareEnabled() || t_call.depth != 0) return false;
+  static const bool native = REXCVAR_GET(diag_store_compare_native);
+  if (!native || !CompareEnabled() || t_call.depth != 0) return false;
+  if (g_compare_thread.load(std::memory_order_relaxed) != std::this_thread::get_id()) return false;
   CompareCall(ctx, base, entry, candidate, original);
   return true;
 }
@@ -888,6 +899,9 @@ bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunc
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
                         GuestFunction original) {
   if (CompareEnabled() && t_call.depth == 0) {
+    std::thread::id none{};
+    g_compare_thread.compare_exchange_strong(none, std::this_thread::get_id(),
+                                             std::memory_order_relaxed);
     CompareCall(ctx, base, 0x821C5FA0, candidate, original);
     return true;
   }

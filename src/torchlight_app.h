@@ -25,6 +25,7 @@
 #include "mods/unit_index_install.h"
 #include "game_menu/video_menu.h"
 #include "hooks/guest_copy_hooks.h"
+#include "hooks/guest_tree_hooks.h"
 #include "hooks/pixel_util_hooks.h"
 #include "hooks/wardrobe_blend_hooks.h"
 #include "hooks/guest_d3d_skip.h"

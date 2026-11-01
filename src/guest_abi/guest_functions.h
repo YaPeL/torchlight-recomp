@@ -258,14 +258,15 @@ inline constexpr uint32_t kVectorCopyStep = 0x8304EC50;
 // +21. Walks to the lower bound (key at +12 below the key: right, else remember the node and go
 // left), then stores the node (or the head when the key is below it or the tree is empty) at r3;
 // it also stores the candidate at r1-16 and, on the head path, the head at r1-12 (red zone), and
-// leaves r8-r11 (cr6 is a local of the generated code). No calls. The per-device resource maps'
-// lookup (D3D9 buffers, textures, programs; docs/game-thread-parallelism.md, section 11).
+// leaves r9-r11, and r8 except on an empty tree (cr6 is a local of the generated code). No calls.
+// The per-device resource maps' lookup (D3D9 buffers, textures, programs;
+// docs/game-thread-parallelism.md, sections 2 and 9). Host code: hooks/guest_tree.h.
 inline constexpr GuestFunction kDeviceMapFind{0x82581D98, Confidence::kConfirmed};
 // [confirmed] A tree iterator's operator++ (the iterator's node pointer at r3) for MSVC trees with
 // isnil at +17 (0x824C6960) and at +21 (0x8262D6C8): with a right child, its leftmost node; else
 // up the parents while coming from the right (storing each parent at r3 on the way), then the
-// parent. A nil node (the head) stays. Leaves r9-r11. No calls. 0x824C6960 is reached from
-// 0x821C8C00 (docs/guest-hot-paths.md).
+// parent. A nil node (the head) stays. Leaves r9-r11 (r9 not on a nil node). No calls. 0x824C6960
+// is reached from 0x821C8C00 (docs/guest-hot-paths.md). Host code: hooks/guest_tree.h.
 inline constexpr GuestFunction kTreeNext17{0x824C6960, Confidence::kConfirmed};
 inline constexpr GuestFunction kTreeNext21{0x8262D6C8, Confidence::kConfirmed};
 
