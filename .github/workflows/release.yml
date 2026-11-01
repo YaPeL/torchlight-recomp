@@ -14,7 +14,8 @@ name: Release
 
 on:
   push:
-    tags: ["v*"]
+    # v-pgo-check-<n> tags are release-check.yml's (the PGO candidates' builds), not releases.
+    tags: ["v*", "!v-pgo-check-*"]
   workflow_dispatch:
 
 permissions:

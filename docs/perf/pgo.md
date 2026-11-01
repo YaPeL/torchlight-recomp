@@ -124,6 +124,15 @@ release job (A6). The Windows and macOS release jobs do the same with `pgo/windo
 `pgo/macos-arm64.profdata` when the assets have them (built without PGO until then), the macOS job
 on the pinned Xcode 26.6.
 
+A new or retrained profile goes to a branch of the assets repository first (`pgo/candidate`), and
+`release-check.yml` builds the three desktop releases with it: the same builds as the release jobs,
+through the same `release` environment and its approval, each one compiled against its profile,
+linked with the binding check and measured by the match check, with nothing published or uploaded.
+The public log only shows each build's outcome lines (`tools/release/build_outcome.py`). Only when
+the three link are the profiles merged into the assets' main. It runs on a pushed tag
+`v-pgo-check-<n>` on develop or main (the environment admits only `v*` tags; `release.yml` ignores
+these), or by hand once the file is on main; delete the tag after the run.
+
 For when ThinLTO comes back (it is out for now, above): it moves code generation from the compile to
 the link's parallel backends: about the same total time (360 s against about 450 s locally), a link
 of minutes. Its memory grows with the backends: 4 jobs on the Linux and Windows runners (16 GB), 2
