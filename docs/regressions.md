@@ -28,7 +28,7 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   in a code section; the thunk of KERNEL32's `RtlCaptureContext`, which the executable imports,
   shares its name with the kernel export the SDK implements as `__imp__RtlCaptureContext`, so the
   game's `sub_8287C570` calling it read as a bypass and failed the Windows link. Found by the
-  Windows agent, 2026-11-01, right after the `--map` entry below.
+  Windows agent, 2026-11-01, right after the `--map` entry above.
 - **Should have been caught by:** the fixtures, which had no import named like a kernel export.
 - **Caught by:** a full build on the owner's Windows PC.
 - **Covered now:** `map_symbols` leaves out the publics whose object column names a DLL; the

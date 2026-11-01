@@ -5,7 +5,7 @@ extern "C" void sub_1(int* calls);
 
 #if defined(_WIN32)
 extern "C" void sub_5(int* calls);
-extern "C" void __stdcall RtlCaptureContext(void* context);  // no dllimport: a thunk in the map
+extern "C" void RtlCaptureContext(void* context);  // no dllimport: a thunk in the map
 #endif
 
 int main() {
