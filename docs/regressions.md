@@ -22,6 +22,19 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   ever in `_binding_tools` again (a game build only; no-game CI still cannot see game-only code, so a
   full Windows build runs on the Windows PC or in the freeze's candidate tag before a release).
 
+## Windows import thunks taken for hooks by the binding check (caught before a release)
+
+- **What happened:** with the linker's map, the check paired each `__imp__X` with any public `X`
+  in a code section; the thunk of KERNEL32's `RtlCaptureContext`, which the executable imports,
+  shares its name with the kernel export the SDK implements as `__imp__RtlCaptureContext`, so the
+  game's `sub_8287C570` calling it read as a bypass and failed the Windows link. Found by the
+  Windows agent, 2026-11-01, right after the `--map` entry below.
+- **Should have been caught by:** the fixtures, which had no import named like a kernel export.
+- **Caught by:** a full build on the owner's Windows PC.
+- **Covered now:** `map_symbols` leaves out the publics whose object column names a DLL; the
+  Windows fixtures import `RtlCaptureContext` and call an `__imp__RtlCaptureContext` from guest-style
+  code (the fixture failed Windows CI before the fix, with this exact message).
+
 ## A flag-switched optimisation measured against a profile trained without it (caught before the default changed)
 
 - **What happened:** the skeleton port (`--native_skeleton`, PR #85, 2026-11-01) was measured with
