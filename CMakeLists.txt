@@ -94,6 +94,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/frustum_hooks.cpp
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
+    src/hooks/native_skeleton.cpp
     src/hooks/pixel_util_hooks.cpp
     src/hooks/wardrobe_blend_hooks.cpp
     src/hooks/adaptive_vsync_hooks.cpp
@@ -319,6 +320,9 @@ target_include_directories(torchlight PRIVATE src)
 # The wardrobe blend loop's arithmetic must stay the recompiled code's: no contraction of
 # floating-point operations (hooks/wardrobe_blend.h).
 set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+# The node and bone updates reproduce the guest's rounding (hooks/native_skeleton.cpp): no fused
+# operations the guest does not do.
+set_source_files_properties(src/hooks/native_skeleton.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
 # Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
 # hooks/queue_census_hooks.cpp, --diag_queue_census; diag/store_trace.cpp, --diag_store_trace).
 # Off by default and in every release workflow: without it nothing of them is compiled, no guest
@@ -331,7 +335,8 @@ if(TORCHLIGHT_DIAGNOSTICS)
     # The store trace's comparison reaches into the capture session and the constants hook
     # (capture::Session::CompareLog).
     set_property(SOURCE src/capture/session.cpp src/hooks/render_system_hooks.cpp
-                 src/hooks/guest_copy_hooks.cpp src/diag/store_trace.cpp
+                 src/hooks/guest_copy_hooks.cpp src/hooks/native_skeleton.cpp
+                 src/diag/store_trace.cpp
                  APPEND PROPERTY COMPILE_DEFINITIONS TORCHLIGHT_DIAGNOSTICS=1)
     # The store trace (diag/store_trace.h, --diag_store_trace): precompiled after the generated
     # code's own header, it redefines its guest stores; the whole generated code is rebuilt.

@@ -359,8 +359,7 @@ class Session {
   // they had not been diverted. No log may be set. The constants go through the live stream's
   // mirror as the hook would have sent them.
   void ReplayDiverted(const CompareLog& log);
-  // (Declared in every build so the class has one layout; only TORCHLIGHT_DIAGNOSTICS builds
-  // compile the code that reads compare_ in session.cpp.)
+  // (Only TORCHLIGHT_DIAGNOSTICS builds compile the code that reads compare_ in session.cpp.)
 
  private:
   Session() = default;
@@ -414,7 +413,10 @@ class Session {
   };
   std::vector<ArgsMemo> memos_ = std::vector<ArgsMemo>(kRenderSystemSlotCount * kMemoSubs);
   const uint8_t* membase_ = nullptr;
-  CompareLog* compare_ = nullptr;
+  // The comparison's log, for the thread that set it only (the store trace compares on the render
+  // thread; other threads' state and events, a loader's for instance, are not part of the call and
+  // must not reach the log).
+  static inline thread_local CompareLog* compare_ = nullptr;
   void CompareState(uint32_t key, CompareValue value);
   ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;

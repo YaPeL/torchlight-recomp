@@ -253,6 +253,24 @@ inline constexpr GuestFunction kLargeCopy{0x821A7138, Confidence::kConfirmed};
 // generated/default, 2026-10-31).
 inline constexpr GuestFunction kVectorCopy{0x821C28D8, Confidence::kConfirmed};
 inline constexpr uint32_t kVectorCopyStep = 0x8304EC50;
+// [confirmed] OGRE 1.7's Node and Bone transform updates (hooks/native_skeleton.cpp, ported from
+// torchlight-nx 1.0.3, which identified them on this executable; the evidence from the recompiled
+// functions, their fields and the vtable slots they are reached through, is in guest_abi
+// ogre_node.h).
+inline constexpr GuestFunction kNodeUpdateFromParentImpl{0x821C9770, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeUpdateFromParent{0x821C9F08, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedOrientation{0x821C9BB0, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedPosition{0x821C8518, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedScale{0x821C99D0, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeUpdate{0x821C9F68, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeNeedUpdate{0x821CA0B8, Confidence::kConfirmed};
+inline constexpr GuestFunction kBoneNeedUpdate{0x821CA140, Confidence::kConfirmed};
+// [confirmed] Skeleton::_notifyManualBonesDirty: sets +0x108 only (the Skeleton's vtable +0x12C,
+// called by Bone::needUpdate for a manually controlled bone; guest_abi ogre_node.h).
+inline constexpr GuestFunction kSkeletonNotifyManualBonesDirty{0x824E8F60, Confidence::kConfirmed};
+// [confirmed] std::set<Node*>::clear on a Node's mChildrenToUpdate (r3 = the set), called by
+// Node::_update and Node::needUpdate (guest_abi ogre_node.h).
+inline constexpr GuestFunction kSetClear{0x8246CA80, Confidence::kConfirmed};
 
 // Xbox D3D device calls of the D3D9 render system's _render (0x821C4058) that only feed the Xenos
 // GPU (hooks/guest_d3d_skip.h; evidence in docs/native-skip-guest-d3d.md, "Draw and bindings").

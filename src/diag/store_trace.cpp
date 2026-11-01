@@ -36,6 +36,7 @@
 #include <optional>
 #include <string_view>
 #include <mutex>
+#include <thread>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -60,6 +61,9 @@ REXCVAR_DEFINE_UINT32(diag_store_trace_dump_calls, 20, "Torchlight",
 REXCVAR_DEFINE_BOOL(diag_store_compare, false, "Torchlight",
                     "Diagnostics: run every renderSingleObject twice from the same state (the "
                     "candidate, undone, then the guest's) and log where they differ");
+REXCVAR_DEFINE_BOOL(diag_store_compare_native, false, "Torchlight",
+                    "Diagnostics: with --diag_store_compare, also compare the native functions' "
+                    "calls on the render thread (store_trace::CompareNativeCall)");
 REXCVAR_DEFINE_UINT32(diag_store_compare_shown, 20, "Torchlight",
                       "Diagnostics: how many differing calls --diag_store_compare logs in detail");
 
@@ -80,6 +84,11 @@ bool CompareEnabled() {
   static const bool enabled = REXCVAR_GET(diag_store_compare);
   return enabled;
 }
+
+// The thread whose calls are compared: renderSingleObject's (the guest's render thread), recorded
+// at its first call. The comparison's state (g_next_call, the session's compare log) is that
+// thread's alone, so native functions called on other threads (loaders) are not compared.
+std::atomic<std::thread::id> g_compare_thread{};
 
 // How far below the traced entry's stack pointer a write counts as a dead callee frame.
 constexpr uint32_t kStackWindow = 1u << 20;
@@ -305,6 +314,14 @@ void LogTotals() {
       sites += "\n    " + site + " " + std::to_string(n);
       top = std::max(top, n);
     }
+    // The calls by entry, so a run shows which functions it compared.
+    std::string entries;
+    for (const auto& [entry, n] : t.calls_by_entry) {
+      char buf[32];
+      std::snprintf(buf, sizeof buf, " %08X %llu", entry, (unsigned long long)n);
+      entries += buf;
+    }
+    REXLOG_INFO("store compare: calls by entry:{}", entries);
     REXLOG_INFO("store compare: {} calls compared, {} differ ({} memory bytes, {} registers, {} "
                 "commands); not verified: {} ({:.3f} %: {} raced with another thread, {} not "
                 "undoable){}",
@@ -640,7 +657,7 @@ uint32_t g_shown = 0;
 // differing calls.
 void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& candidate,
                  const Run& original, const cap::Session::CompareLog& candidate_log,
-                 const cap::Session::CompareLog& original_log) {
+                 const cap::Session::CompareLog& original_log, uint32_t compared_registers) {
   std::vector<std::string> notes;
   uint64_t memory = 0, registers = 0, commands_differ = 0;
   auto note = [&](std::string text) {
@@ -711,8 +728,8 @@ void CompareRuns(const uint8_t* base, uint32_t entry, uint32_t sp, const Run& ca
   };
 #define TL_REG(r) reg(#r, x.r.u64, y.r.u64)
   TL_REG(r1);
-  TL_REG(r3);
-  TL_REG(f1);
+  if (compared_registers & kCompareR3) TL_REG(r3);
+  if (compared_registers & kCompareF1) TL_REG(f1);
 #undef TL_REG
 
   // Commands: the same events, constants and draws in order; at each draw, and at the end, the
@@ -816,7 +833,7 @@ std::string RaceSite() {
 }
 
 void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
-                 GuestFunction original) {
+                 GuestFunction original, uint32_t compared_registers = kCompareResults) {
   cap::Session& session = cap::Session::Get();
   const PPCContext saved = ctx;
   const uint32_t sp = ctx.r1.u32;
@@ -855,11 +872,16 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
   UndoRun(base, candidate_run);
 
   ctx = saved;
+  // The host's FPU mode as the context says (the candidate's guest calls may have changed it).
+  ctx.fpscr.restoreGuestBits(saved.fpscr.csr);
   cap::Session::CompareLog original_log;
   Run original_run;
   session.SetCompareLog(&original_log);
   StartRun(entry, sp);
-  original(ctx, base);
+  {
+    ReferenceRun reference;
+    original(ctx, base);
+  }
   StopRun(base, original_run);
   session.SetCompareLog(nullptr);
   original_run.out = ctx;
@@ -873,19 +895,36 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
     return;
   }
 
-  CompareRuns(base, entry, sp, candidate_run, original_run, candidate_log, original_log);
+  CompareRuns(base, entry, sp, candidate_run, original_run, candidate_log, original_log,
+              compared_registers);
 }
 
 }  // namespace
 
+bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
+                       GuestFunction original, uint32_t registers) {
+  static const bool native = REXCVAR_GET(diag_store_compare_native);
+  if (!native || !CompareEnabled() || t_call.depth != 0) return false;
+  if (g_compare_thread.load(std::memory_order_relaxed) != std::this_thread::get_id()) return false;
+  CompareCall(ctx, base, entry, candidate, original, registers);
+  return true;
+}
+
 bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
                         GuestFunction original) {
   if (CompareEnabled() && t_call.depth == 0) {
+    // One comparing thread: its state (g_next_call, g_compare_call, the session's log) is not
+    // shared; a call on another thread runs uncompared.
+    std::thread::id none{};
+    g_compare_thread.compare_exchange_strong(none, std::this_thread::get_id(),
+                                             std::memory_order_relaxed);
+    if (g_compare_thread.load(std::memory_order_relaxed) != std::this_thread::get_id()) return false;
     CompareCall(ctx, base, 0x821C5FA0, candidate, original);
     return true;
   }
   if (!Enabled()) return false;
   Begin(0x821C5FA0, ctx.r1.u32);
+  ReferenceRun reference;
   original(ctx, base);
   End(base);
   return true;
