@@ -59,3 +59,16 @@ GUEST_FUNC(sub_4) {
   ++*calls;
 }
 #endif
+
+#if defined(_WIN32)
+// A kernel export the SDK implements under its __imp__ name, called by the generated code, whose
+// plain name is also a Windows API the executable imports (main.cpp calls KERNEL32's
+// RtlCaptureContext, so the map lists that import's thunk as RtlCaptureContext): the thunk is not a
+// hook of it, and the call below is no bypass (the game's sub_8287C570, 2026-11-01).
+extern "C" __attribute__((noinline)) void __imp__RtlCaptureContext(int* calls) { *calls += 3; }
+
+GUEST_FUNC(sub_5) {
+  __imp__RtlCaptureContext(calls);
+  ++*calls;
+}
+#endif
