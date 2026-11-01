@@ -45,9 +45,12 @@ points (the base runs are 0.51 ms apart); every patched run is below every base 
 counters. All runs quit by themselves with no fault; guest call bindings pass on both builds with
 the check's fix for .cold pieces.
 
-Windows, same comparison, reported by the owner as a summary: fight -1.2 %, within noise; rest
--2.9 %; 8 of 8 runs clean; bindings pass on both builds. Neutral on x86-64, as expected: the
-comparison there was already free of branches.
+Windows: base f6c54f8 against patch d942d04, each with its own SDK, win-amd64-release without LTO
+or PGO, fight.txt, two A B B A rounds. Means in ms, base to patched: fight 6.375 to 6.330 and 6.470
+to 6.365, -1.2 % over the 8 runs and within noise (both sides span 6.13 to 6.68); rest 3.390 to
+3.320 and 3.460 to 3.330, -2.9 %, every patched run below every base run. No hardware counters.
+8 of 8 runs quit by themselves; bindings pass on both builds. Neutral in the fight on x86-64, where
+the comparison was already free of branches.
 
 Linux keeps offset 0: develop 6b3e84b with this SDK passes the binding check and fight.txt.
 
