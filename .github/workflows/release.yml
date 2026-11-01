@@ -76,16 +76,27 @@ jobs:
           # Where torchlight_manifest.toml expects it, relative to the checkout.
           mkdir -p ../360tools/extracted/extracted
           mv _assets/default.xex ../360tools/extracted/extracted/default.xex
+          # The Linux PGO profile (docs/perf/pgo.md, "In the release"), out before the checkout goes.
+          mv _assets/pgo/linux-x86_64.profdata /tmp/linux-x86_64.profdata
           rm -rf _assets
       - name: Codegen
         run: |
           "$DEPS_DIR/sdk/bin/rexglue" codegen torchlight_manifest.toml > /tmp/codegen.log 2>&1 || {
             tail -20 /tmp/codegen.log; exit 1; }
-      - name: Build (Release with debug information)
+      # With the profile: the generated code fails to compile if it no longer matches it
+      # (-Werror=profile-instr-out-of-date); the match check then measures the game's own code from
+      # the build's output, before the tests and the packaging.
+      - name: Build (Release with debug information, PGO)
+        shell: bash
         run: |
+          set -o pipefail
+          command -v llvm-profdata-21 > /dev/null || apt-get install -y --no-install-recommends llvm-21
           cmake --preset linux-amd64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
-            -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g"
-          cmake --build --preset linux-amd64-release --parallel
+            -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
+            -DTORCHLIGHT_PGO_USE=/tmp/linux-x86_64.profdata
+          cmake --build --preset linux-amd64-release --parallel 2>&1 | tee /tmp/build.log
+          python3 tools/pgo/check_profile_match.py /tmp/build.log \
+            --build-dir out/build/linux-amd64-release --profdata llvm-profdata-21
           # The backend tests' GL3+ runs (label opengl33) need a display: here they would only be
           # skipped. CI's Linux job runs them on Mesa's llvmpipe (ci.yml, "Test, GL3+") on every
           # push to develop and main, which the tagged commit has passed.
