@@ -32,7 +32,18 @@ GUEST_FUNC(sub_2) {
   ++*calls;
 }
 
-GUEST_FUNC(sub_3) { *calls += 2; }
+// A piece the compiler split off a body, named as clang names them (__imp__X.cold.1): the check
+// has to leave it out of the guest functions, since it has no sub_3.cold.1 beside it.
+#define FIXTURE_STRING(x) #x
+#define FIXTURE_LABEL(prefix, name) FIXTURE_STRING(prefix) name
+extern "C" __attribute__((noinline, cold)) void FixtureColdPiece(int* calls) __asm__(
+    FIXTURE_LABEL(__USER_LABEL_PREFIX__, "__imp__sub_3.cold.1"));
+extern "C" void FixtureColdPiece(int* calls) { *calls -= 1; }
+
+GUEST_FUNC(sub_3) {
+  if (*calls < 0) FixtureColdPiece(calls);
+  *calls += 2;
+}
 
 #ifdef FIXTURE_BYPASS
 GUEST_FUNC(sub_4) {
