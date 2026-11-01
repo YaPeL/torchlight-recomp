@@ -4,11 +4,12 @@
 //
 // The check runs from the executable's .preinit_array: the dynamic linker calls it before the
 // initialisers of every shared library and every constructor of the executable, whatever their
-// order. Only the write system call is safe that early (the libraries, libc's stdio and SDL
-// included, are not initialised yet), so it writes the message to standard error and records the
-// result. The constructor below, of the highest user priority, runs before every other
-// constructor of the executable (the shared libraries' initialisers before it are not built for
-// x86-64-v3): it shows the message in SDL's message box and exits.
+// order. It has to stop the game there, before any initialiser: the executable exports symbols the
+// libraries also use, so their initialisers can run its x86-64-v3 code (found with qemu: the SDK's
+// librexruntime.so binds an inline rex::cvar::FlagEntry constructor to the executable's copy and
+// crashed in its own initialiser). Without x86-64-v3 it writes the message to standard error with
+// the write system call, shows it in SDL's message box (no SDL_Init needed; without a display it
+// fails and the message on standard error stands) and exits.
 
 #if defined(__x86_64__) && defined(__linux__) && defined(TORCHLIGHT_X86_64_V3)
 
@@ -24,28 +25,19 @@ constexpr char kMessage[] =
     "as the Steam Deck's or a PC processor from about 2015 on (Intel Haswell, AMD Zen or later). "
     "This processor does not have it.";
 
-bool g_unsupported = false;
-
 void CheckCpu(int, char**, char**) {
   __builtin_cpu_init();
   if (__builtin_cpu_supports("x86-64-v3")) return;
-  g_unsupported = true;
   const char prefix[] = "Torchlight Recomp: ";
   (void)!write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
   (void)!write(STDERR_FILENO, kMessage, sizeof(kMessage) - 1);
   (void)!write(STDERR_FILENO, "\n", 1);
+  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kTitle, kMessage, nullptr);
+  _exit(1);
 }
 
 __attribute__((used, section(".preinit_array"))) void (*const kCheckCpu)(int, char**, char**) =
     &CheckCpu;
-
-__attribute__((constructor(101))) void ExitOnUnsupportedCpu() {
-  if (!g_unsupported) return;
-  // SDL's message box needs no SDL_Init; without a display it fails and the message written above
-  // stands.
-  SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kTitle, kMessage, nullptr);
-  _exit(1);
-}
 
 }  // namespace
 
