@@ -23,11 +23,14 @@
 
 #include <atomic>
 #include <bit>
+#include <chrono>
+#include <string>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
 
 #include <rex/cvar.h>
+#include <fmt/format.h>
 #include <rex/logging.h>
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
@@ -50,6 +53,9 @@
 REXCVAR_DEFINE_BOOL(native_skeleton, false, "Torchlight",
                     "Run OGRE's node and bone transform updates as host code (ported from "
                     "torchlight-nx; false: the recompiled guest functions)");
+REXCVAR_DEFINE_BOOL(skeleton_crossing_counts, false, "Torchlight",
+                    "Measurement: with --native_skeleton, count the host code's calls back into "
+                    "the guest by target and time one in 64, logged every 10 s");
 #if TORCHLIGHT_DIAGNOSTICS
 REXCVAR_DEFINE_BOOL(diag_skeleton_check, false, "Torchlight",
                     "Diagnostics: torchlight-nx's validate mode: run the guest's "
@@ -96,6 +102,62 @@ uint32_t Slot(const uint8_t* base, uint32_t object, uint32_t offset) {
 
 // A guest function by address, as the generated code's indirect calls find it: the image's
 // function table (REX_LOOKUP_FUNC), else the SDK's resolver.
+// --skeleton_crossing_counts: the calls back into the guest by target (a small open-addressed
+// table, relaxed atomics), one in 64 timed (the guest callee included), and the hooks' entries;
+// logged every 10 s.
+struct Crossings {
+  static constexpr size_t kSlots = 128;
+  std::atomic<uint32_t> target[kSlots] = {};
+  std::atomic<uint64_t> calls[kSlots] = {};
+  std::atomic<uint64_t> timed{0}, timed_ns{0}, total{0}, entries{0};
+  std::atomic<int64_t> last_log{0};
+};
+Crossings g_crossings;
+
+bool CountCrossings() {
+  static const bool count = REXCVAR_GET(skeleton_crossing_counts);
+  return count;
+}
+
+void LogCrossings() {
+  const int64_t now = std::chrono::duration_cast<std::chrono::milliseconds>(
+                          std::chrono::steady_clock::now().time_since_epoch())
+                          .count();
+  int64_t last = g_crossings.last_log.load(std::memory_order_relaxed);
+  if (last == 0) {
+    g_crossings.last_log.compare_exchange_strong(last, now);
+    return;
+  }
+  if (now - last < 10000 || !g_crossings.last_log.compare_exchange_strong(last, now)) return;
+  const double seconds = double(now - last) / 1000.0;
+  std::string targets;
+  for (size_t i = 0; i < Crossings::kSlots; ++i) {
+    const uint64_t n = g_crossings.calls[i].exchange(0, std::memory_order_relaxed);
+    if (!n) continue;
+    targets += fmt::format(" {:08X} {:.0f}/s", g_crossings.target[i].load(), double(n) / seconds);
+  }
+  const uint64_t timed = g_crossings.timed.exchange(0), ns = g_crossings.timed_ns.exchange(0);
+  REXLOG_INFO("skeleton crossings: {:.0f} hook entries/s, {:.0f} guest calls/s, {:.0f} ns a call "
+              "(callee included, {} timed); by target:{}",
+              double(g_crossings.entries.exchange(0)) / seconds,
+              double(g_crossings.total.exchange(0)) / seconds,
+              timed ? double(ns) / double(timed) : 0.0, timed, targets);
+}
+
+void CountCrossing(uint32_t function) {
+  size_t i = (function >> 2) % Crossings::kSlots;
+  for (size_t probe = 0; probe < Crossings::kSlots; ++probe, i = (i + 1) % Crossings::kSlots) {
+    uint32_t expected = 0;
+    if (g_crossings.target[i].load(std::memory_order_relaxed) == function ||
+        g_crossings.target[i].compare_exchange_strong(expected, function) ||
+        expected == function) {
+      g_crossings.calls[i].fetch_add(1, std::memory_order_relaxed);
+      break;
+    }
+  }
+  g_crossings.total.fetch_add(1, std::memory_order_relaxed);
+}
+
 void CallAddress(PPCContext& ctx, uint8_t* base, uint32_t function) {
   PPCFunc* f = nullptr;
   if (uint32_t(function - REX_CODE_BASE) < REX_CODE_SIZE + REX_THUNK_RESERVE_SIZE) {
@@ -104,6 +166,20 @@ void CallAddress(PPCContext& ctx, uint8_t* base, uint32_t function) {
   if (!f) {
     ctx.last_indirect_target = function;
     f = rex::runtime::ResolveIndirectFunction(function);
+  }
+  if (CountCrossings()) [[unlikely]] {
+    CountCrossing(function);
+    if ((g_crossings.total.load(std::memory_order_relaxed) & 63) == 0) {
+      const auto start = std::chrono::steady_clock::now();
+      f(ctx, base);
+      g_crossings.timed_ns.fetch_add(
+          uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                       std::chrono::steady_clock::now() - start)
+                       .count()),
+          std::memory_order_relaxed);
+      g_crossings.timed.fetch_add(1, std::memory_order_relaxed);
+      return;
+    }
   }
   f(ctx, base);
 }
@@ -428,6 +504,10 @@ extern "C" {
   REX_FUNC(sub_##addr) {                                                                        \
     if (!Enabled()) return __imp__sub_##addr(ctx, base);                                        \
     TL_SKELETON_DIAG(addr, native, registers)                                                   \
+    if (CountCrossings()) [[unlikely]] {                                                        \
+      g_crossings.entries.fetch_add(1, std::memory_order_relaxed);                              \
+      LogCrossings();                                                                           \
+    }                                                                                           \
     native(ctx, base);                                                                          \
   }
 
