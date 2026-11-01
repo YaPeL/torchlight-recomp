@@ -8,7 +8,8 @@ SIGINT, SIGTERM, timeout). Needs write access to /dev/uinput; no Python packages
 
     tools/pad_prompts/virtual_pad.py LOG_FILE_OR_FOLDER [--kind ps5|ps4|switch] [--timeout 300]
 
-LOG_FILE_OR_FOLDER: the game's log, or its folder (~/.local/state/TorchlightRecomp/logs: the
+LOG_FILE_OR_FOLDER: the game's log, or its folder (~/.local/state/TorchlightRecomp/logs, or
+<root>/logs with --user_data_root: the
 newest torchlight_N.log written after the start). Not run_capped's --output: the script's lines are
 not on the game's stdout.
 """

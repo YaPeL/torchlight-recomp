@@ -98,7 +98,7 @@ std::string GameDataDir() {
   return folder.empty() ? "" : folder.string() + "/";
 }
 
-std::string LogDir() { return UserDir(UserFolderKind::kState, "logs"); }
+std::string LogDir() { return UserDir(UserFolderKind::kState, LogsSubfolder()); }
 
 // The app is a library inside the APK, not a file the game's data sits next to.
 std::string ExecutableDir() { return ""; }

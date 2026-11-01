@@ -9,6 +9,9 @@
 
 #include <filesystem>
 #include <string>
+#include <vector>
+
+#include "platform/user_folders.h"
 
 namespace torchlight::platform {
 
@@ -26,7 +29,7 @@ enum class StorageMode {
 
 struct StorageFacts {
   bool test_folders = false;         // ctest's user folders (kTestUserFoldersVariable)
-  bool roots_given = false;          // --user_data_root or --game_data_root: a run with its own files
+  bool roots_given = false;          // --user_data_root, --game_data_root or --cache_root
   bool portable_by_default = false;  // this build's default (TORCHLIGHT_PORTABLE_DEFAULT)
   std::filesystem::path portable_folder;  // empty: no place for one (Android, unknown location)
   bool portable_exists = false;
@@ -49,5 +52,18 @@ bool CanWriteFolder(const std::filesystem::path& folder, std::string& error);
 // folder that exists, and only where the build's default makes it matter.
 StorageFacts ReadStorageFacts(const std::filesystem::path& executable_dir,
                               const std::filesystem::path& appimage_path, bool roots_given);
+
+// What this run's start does with its folders, the one place that decides them, before anything
+// opens or creates a user folder. The roots are --user_data_root, --game_data_root and --cache_root
+// as given (empty: not given). kUserFolders: the old-named folders migrated (never with own roots)
+// and the run's roots set; kPortable: the portable root set, nothing migrated. kAsk and
+// kPortableUnwritable change nothing and are the caller's to answer. `log` gets the messages for
+// the runtime's log.
+StorageMode SetUpFolders(const std::filesystem::path& executable_dir,
+                         const std::filesystem::path& appimage_path,
+                         const std::filesystem::path& user_data_root,
+                         const std::filesystem::path& game_data_root,
+                         const std::filesystem::path& cache_root,
+                         std::vector<StartupMessage>& log);
 
 }  // namespace torchlight::platform

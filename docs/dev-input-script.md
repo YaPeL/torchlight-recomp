@@ -13,14 +13,19 @@ controller. Any agent can repeat the same sequence on Linux, Windows or macOS.
   `tools/run_capped/run_capped.py` (time and log caps, nothing left behind):
 
 ```
-python3 tools/run_capped/run_capped.py --timeout 300 --watch <the game's log folder> \
+python3 tools/run_capped/run_capped.py --timeout 300 --watch <the copy>/logs \
   --output run.out -- <torchlight executable> --game_data_root <game data> \
   --user_data_root <a COPY of the user data> --capture_dir <captures> \
   --dev_input_script tools/input_scripts/load-and-quit.txt
 ```
 
 - Always on a copy of the user data (`--user_data_root`): scripts save the game, and
-  `new-character` adds a character.
+  `new-character` adds a character. Such a run keeps everything below that copy, its log in
+  `<the copy>/logs/` (`docs/BUILDING.md`).
+- A measurement brings its own `<the copy>/config/settings.toml` with the frame rate cap, the vsync
+  and the achievement set explicit, so it does not depend on the defaults. A copy made fresh for
+  each run also starts with no shader cache: pass `--cache_root` with a folder kept between runs
+  when the runs must start warm, as a measurement's usually do.
 - The game window still opens on the screen. Running the game still needs the owner's OK, as any
   run does.
 

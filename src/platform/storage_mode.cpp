@@ -73,4 +73,21 @@ StorageFacts ReadStorageFacts(const fs::path& executable_dir, const fs::path& ap
   return facts;
 }
 
+StorageMode SetUpFolders(const fs::path& executable_dir, const fs::path& appimage_path,
+                         const fs::path& user_data_root, const fs::path& game_data_root,
+                         const fs::path& cache_root, std::vector<StartupMessage>& log) {
+  const bool own_roots =
+      !user_data_root.empty() || !game_data_root.empty() || !cache_root.empty();
+  const StorageFacts facts = ReadStorageFacts(executable_dir, appimage_path, own_roots);
+  const StorageMode mode = DecideStorage(facts);
+  if (mode == StorageMode::kUserFolders) {
+    log = MigrateUserFolders(own_roots);
+    SetRunRoots(user_data_root, cache_root);
+  } else if (mode == StorageMode::kPortable) {
+    SetPortableRoot(facts.portable_folder);
+    log.push_back({false, "storage: portable, " + facts.portable_folder.string()});
+  }
+  return mode;
+}
+
 }  // namespace torchlight::platform

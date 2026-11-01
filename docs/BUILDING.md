@@ -243,7 +243,11 @@ atlases, prompts, `unitdata/`), `game/` (with `import/`), and in the root itself
 question is not asked. Without `--game_data_root`, a game not yet in `<root>/game/` starts the
 first-start setup, so unattended runs give both. `--cache_root` moves the cache, alone or
 with `--user_data_root`. `--game_data_root` alone only says where to read the game from: that run
-uses the player's saves and settings.
+uses the player's saves and settings. A measurement brings its own `<root>/config/settings.toml`
+with the frame rate cap, the vsync and the achievement set explicit, and its shader cache starts
+empty in a fresh root (`--cache_root` keeps one between runs). Outside the project's reach: the
+graphics and audio libraries' own caches, and on Android the APK's resources, which the app copies
+to its internal storage.
 
 Not in use yet: packages will keep all of this in a portable folder, `TorchlightRecomp-data/` beside
 the AppImage, the `.exe` or the `.app` (`platform/storage_mode.h`), with `config/`, `logs/`, `cache/`,
@@ -251,7 +255,7 @@ the AppImage, the `.exe` or the `.app` (`platform/storage_mode.h`), with `config
 refuses it until the setup wizard, which asks the player, is in. A build without it, a run with
 `--user_data_root` or `--game_data_root` and the tests never use one.
 
-The logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
+Without `--user_data_root`, the logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
 runtime's as `torchlight_NNN.log` and OGRE's next to it as `torchlight_NNN_ogre.log`. The game
 prints the log's path at startup, and the first line of each log has the executable's path and the
 build's commit (`git describe`, `-dirty` with local changes). `--log_file=PATH` puts the runtime's

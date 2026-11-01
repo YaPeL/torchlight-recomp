@@ -7,6 +7,7 @@
 #include <string>
 
 #include "platform/platform.h"
+#include "platform/storage_mode.h"
 #include "platform/user_folders.h"
 
 namespace {
@@ -74,6 +75,21 @@ void TestRunRoots() {
     std::fprintf(stderr, "FAIL: the user's own folder does not change\n");
     std::exit(1);
   }
+
+  // The start's own function: with roots, the folders follow them, nothing is migrated.
+  std::vector<StartupMessage> log;
+  if (SetUpFolders("", "", root, "", "", log) != StorageMode::kUserFolders || log.size() != 1 ||
+      log[0].text.find("nothing migrated") == std::string::npos) {
+    std::fprintf(stderr, "FAIL: a start with roots keeps to them and migrates nothing\n");
+    std::exit(1);
+  }
+  Check(ConfigDir(), root / "config", "the start: settings below the root");
+  Check(LogDir(), root / "logs", "the start: logs below the root");
+  SetPortableRoot({});
+  log.clear();
+  SetUpFolders("", "", "", "", cache_root, log);
+  Check(ShaderCacheDir(), cache_root / "ogre", "the start: --cache_root alone");
+  SetPortableRoot({});
 
   SetEnvironment(variable, saved);
   fs::remove_all(root);

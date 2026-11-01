@@ -71,8 +71,9 @@ profile for the functions that changed, so its share of the gain fades until the
 large change of what the game does per frame (a new native path) also calls for a new profile.
 
 Android's training, from a build with `-DTORCHLIGHT_PGO_GENERATE=ON` packaged with
-`tools/android/build_apk.sh`: the bench save copied fresh before each script, the settings at fps
-cap 0 and vsync off, `--pgo_profile_dir=/data/user/0/<package>/files/pgo` with each of `fight.txt`,
+`tools/android/build_apk.sh`: the bench save copied fresh before each script, with its own
+`config/settings.toml` (fps cap 0, vsync off, the achievement set explicit: `--user_data_root` reads
+the settings there), `--pgo_profile_dir=/data/user/0/<package>/files/pgo` with each of `fight.txt`,
 `fight5.txt` and `town.txt`, the `.profraw` files pulled with `run-as ... cat`, merged with the
 NDK's `llvm-profdata merge --sparse`. The result goes to the private assets repository as
 `pgo/android-arm64.profdata`, with the commit of `generated/`'s codegen, the NDK version and the
@@ -103,7 +104,7 @@ afternoon, while the change measured about 1 ms. For any A/B of two PGO builds:
 - Both profiles trained the same day, one right after the other, on the same device in the same
   state (battery and temperature as for a measurement, charging the same way).
 - The same runs in the same order and of the same length: the bench save copied fresh before each,
-  fps cap 0, vsync off, `fight.txt`, then `fight5.txt`, then `town.txt` (Android) or
+  with its own `config/settings.toml` (fps cap 0, vsync off, the achievement set explicit), `fight.txt`, then `fight5.txt`, then `town.txt` (Android) or
   `measure-fight-town.txt` (desktop), each to its script's end, no run cut short or repeated.
 - The same writer (`src/pgo/pgo_writer.cpp`: one file per run, replaced every minute) and the
   same merge (`llvm-profdata merge --sparse` of the three files, six for Linux: the three with

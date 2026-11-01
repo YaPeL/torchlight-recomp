@@ -69,23 +69,14 @@ class TorchlightApp : public rex::ReXApp {
     // First of all, before anything opens or creates the user's folders: where this run keeps the
     // player's files. A portable run leaves the user's folders alone; otherwise the ones with the
     // old name move to the new one (logged once logging is up), never in a run with its own roots.
-    const torchlight::platform::StorageFacts storage = torchlight::platform::ReadStorageFacts(
-        torchlight::platform::ExecutableDir(), rex::cvar::Query<std::string>("appimage_path"),
-        !rex::cvar::Query<std::string>("user_data_root").empty() ||
-            !rex::cvar::Query<std::string>("game_data_root").empty());
-    switch (torchlight::platform::DecideStorage(storage)) {
+    switch (torchlight::platform::SetUpFolders(torchlight::platform::ExecutableDir(),
+                                                rex::cvar::Query<std::string>("appimage_path"),
+                                                rex::cvar::Query<std::string>("user_data_root"),
+                                                rex::cvar::Query<std::string>("game_data_root"),
+                                                rex::cvar::Query<std::string>("cache_root"),
+                                                startup_log())) {
       case torchlight::platform::StorageMode::kUserFolders:
-        startup_log() = torchlight::platform::MigrateUserFolders(
-            !rex::cvar::Query<std::string>("user_data_root").empty() ||
-            !rex::cvar::Query<std::string>("game_data_root").empty() ||
-            !rex::cvar::Query<std::string>("cache_root").empty());
-        // A run with its own roots touches nothing outside them.
-        torchlight::platform::SetRunRoots(rex::cvar::Query<std::string>("user_data_root"),
-                                          rex::cvar::Query<std::string>("cache_root"));
-        break;
       case torchlight::platform::StorageMode::kPortable:
-        torchlight::platform::SetPortableRoot(storage.portable_folder);
-        startup_log().push_back({false, "storage: portable, " + storage.portable_folder.string()});
         break;
       case torchlight::platform::StorageMode::kPortableUnwritable:
       case torchlight::platform::StorageMode::kAsk:
