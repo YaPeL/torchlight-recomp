@@ -6,7 +6,8 @@
 // 6624ad2, src/torchlight_ogre_natif.cpp; GPL-3.0, after NFSMW-NX's method), which wrote them for
 // the same game executable and verified them bit for bit against the recompiled code. Changes here:
 // guest memory through guest_abi's readers and writers (the host offset, the store trace), guest
-// functions through the SDK's resolver, the comments in English, and our two checks.
+// functions through the image's function table as the generated code's indirect calls (else the
+// SDK's resolver), the layout in guest_abi/ogre_node.h, the comments in English, and our checks.
 //
 // The arithmetic reproduces the guest's in its order and rounding: fmuls/fadds as float operations,
 // fmadds/fmsubs/fnmsubs as float(fma) in double (as the recompiler emits them), and the file is
@@ -156,6 +157,7 @@ void LoadFloats(const uint8_t* base, uint32_t address, float* v, int count) {
 void UpdateFromParentImplValues(PPCContext& ctx, uint8_t* base, uint32_t n, float out[10]) {
   uint32_t parent = L32(base, At(n, node::kParent));
   if (!parent) {
+    ctx.fpscr.disableFlushMode();  // as the guest's path (0x821C9958), for the mode it leaves
     LoadFloats(base, At(n, node::kOrientation), out, 4);
     LoadFloats(base, At(n, node::kPosition), out + 4, 3);
     LoadFloats(base, At(n, node::kScale), out + 7, 3);
@@ -319,8 +321,8 @@ void NeedUpdate(PPCContext& ctx, uint8_t* base, uint32_t n, uint64_t force) {
 }
 
 // 0x821CA140: Bone::needUpdate; then, for a manually controlled bone, its Skeleton's
-// _notifyManualBonesDirty (OGRE's 0x824E8F60 sets mManualBonesDirty; an override is called with
-// the bone in r4, which the OGRE function ignores).
+// _notifyManualBonesDirty (OGRE's 0x824E8F60 sets mManualBonesDirty and takes no argument; the
+// guest's r4 there is whatever the set clear left, an override gets the bone).
 void BoneNeedUpdate(PPCContext& ctx, uint8_t* base, uint32_t n, uint64_t force) {
   NeedUpdate(ctx, base, n, force);
   if (!L8(base, At(n, node::kBoneManuallyControlled))) return;
@@ -378,13 +380,13 @@ void CheckedUpdateFromParentImpl(PPCContext& ctx, uint8_t* base,
     same = same && L32(base, At(n, node::kDerivedOrientation) + 4 * i) ==
                        std::bit_cast<uint32_t>(out[i]);
   }
-  const uint64_t n = checked.fetch_add(1, std::memory_order_relaxed) + 1;
+  const uint64_t count = checked.fetch_add(1, std::memory_order_relaxed) + 1;
   if (!same && differing.fetch_add(1, std::memory_order_relaxed) < 20) {
     REXLOG_WARN("skeleton check: updateFromParentImpl of node {:08X} differs from the guest's",
                 n);
   }
-  if (n % 1000000 == 0) {
-    REXLOG_INFO("skeleton check: {} updateFromParentImpl calls compared, {} differ", n,
+  if (count % 1000000 == 0) {
+    REXLOG_INFO("skeleton check: {} updateFromParentImpl calls compared, {} differ", count,
                 differing.load(std::memory_order_relaxed));
   }
 }
