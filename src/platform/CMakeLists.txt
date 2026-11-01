@@ -86,6 +86,10 @@ endif()
 # application is the default of the packages; a development build keeps the user's folders, so no
 # run from a build tree opens the first-start questions or offers to copy the real user data.
 option(TORCHLIGHT_PORTABLE_DEFAULT "Keep the player's files in a folder beside the application" OFF)
+# Refused until the setup wizard answers kAsk and kPortableUnwritable (torchlight_app.h).
+if(TORCHLIGHT_PORTABLE_DEFAULT)
+    message(FATAL_ERROR "TORCHLIGHT_PORTABLE_DEFAULT needs the setup wizard, which is not in yet")
+endif()
 target_sources(torchlight_user_folders PRIVATE storage_mode.cpp)
 target_compile_definitions(torchlight_user_folders PRIVATE
     TORCHLIGHT_PORTABLE_DEFAULT=$<BOOL:${TORCHLIGHT_PORTABLE_DEFAULT}>)

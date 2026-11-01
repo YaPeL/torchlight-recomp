@@ -250,7 +250,8 @@ Pending (isolation): on Windows and macOS there is no such variable, so a test r
 
 Packages can keep all of this in a portable folder instead, `TorchlightRecomp-data/` beside the
 AppImage, the `.exe` or the `.app` (`platform/storage_mode.h`), with `config/`, `logs/`, `cache/`,
-`data/` and `game/`. The CMake option `TORCHLIGHT_PORTABLE_DEFAULT` (off) turns it on. A build without
+`data/` and `game/`. The CMake option `TORCHLIGHT_PORTABLE_DEFAULT` will turn it on; the build refuses it until the setup
+wizard, which asks the player, is in. A build without
 it, a run with `--user_data_root` or `--game_data_root` and the tests never use one.
 
 The logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the

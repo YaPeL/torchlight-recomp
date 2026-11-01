@@ -72,11 +72,20 @@ class TorchlightApp : public rex::ReXApp {
         torchlight::platform::ExecutableDir(), rex::cvar::Query<std::string>("appimage_path"),
         !rex::cvar::Query<std::string>("user_data_root").empty() ||
             !rex::cvar::Query<std::string>("game_data_root").empty());
-    if (torchlight::platform::DecideStorage(storage) == torchlight::platform::StorageMode::kPortable) {
-      torchlight::platform::SetPortableRoot(storage.portable_folder);
-      startup_log().push_back({false, "storage: portable, " + storage.portable_folder.string()});
-    } else {
-      startup_log() = torchlight::platform::MigrateUserFolders();
+    switch (torchlight::platform::DecideStorage(storage)) {
+      case torchlight::platform::StorageMode::kUserFolders:
+        startup_log() = torchlight::platform::MigrateUserFolders();
+        break;
+      case torchlight::platform::StorageMode::kPortable:
+        torchlight::platform::SetPortableRoot(storage.portable_folder);
+        startup_log().push_back({false, "storage: portable, " + storage.portable_folder.string()});
+        break;
+      case torchlight::platform::StorageMode::kPortableUnwritable:
+      case torchlight::platform::StorageMode::kAsk:
+        // Unreachable until the setup wizard answers them: the build refuses
+        // TORCHLIGHT_PORTABLE_DEFAULT without it (platform/CMakeLists.txt). Nothing is migrated
+        // before the player's answer.
+        std::abort();
     }
     // The game's files: installed from the user's package on the first start (REL.4), unless
     // --game_data_root points at them.
