@@ -255,9 +255,11 @@ def check(library, nm, objdump, map_path=None):
                 guest = hooked[target]
                 text = (f"{function_name} at {branch.group(1)}: "
                         f"{branch.group(2)} to __imp__{guest}, past the hook {guest}")
-                if function_name.startswith(guest + ".cold"):
+                if function_start in imp_addresses:
+                    problem("bypass", text)
+                elif function_name.startswith(guest + ".cold"):
                     pass  # the hook's own piece (X.cold.N): its call to __imp__X
-                elif function_start in imp_addresses or not OUTLINED.search(function_name):
+                elif not OUTLINED.search(function_name):
                     problem("bypass", text)
                 else:
                     piece_bypasses.append((function_start, guest, text))
@@ -296,6 +298,7 @@ def check(library, nm, objdump, map_path=None):
         while todo:
             for caller_start, caller_name in piece_callers.get(todo.pop(), ()):
                 if caller_start == hook_start or (caller_start is not None
+                                                  and caller_start not in imp_addresses
                                                   and caller_name.startswith(guest + ".cold")):
                     from_hook = True
                 elif caller_start in piece_names:
