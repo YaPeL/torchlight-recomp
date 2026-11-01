@@ -609,7 +609,9 @@ same iteration were not counted.
 Before tagging, the Linux PGO profile has to match: the manifest's and `config/torchlight_hooks.toml`'s
 sha256 and the SDK patch series must be those the assets' `pgo/README.md` records for
 `linux-x86_64.profdata`; otherwise it is trained again first (`docs/perf/pgo.md`), or the tag's
-Linux build fails on the stale profile.
+Linux build fails on the stale profile. The profile also has to cover the flags that are on by default there: its
+`pgo/README.md` row says it was trained with `--native_skeleton` off and on (docs/perf/pgo.md); a
+profile that never ran a default-on path still matches and only makes that path slower.
 
 Validation before the release: the freeze is merged into `main` and tagged as a release candidate
 (`v0.7.6-beta.rc1`), whose run leaves a draft release with the three platforms' packages, never

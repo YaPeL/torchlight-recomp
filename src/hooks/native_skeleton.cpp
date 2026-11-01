@@ -1,7 +1,7 @@
 // OGRE's node and bone transforms as host code (--native_skeleton; on by default in the Linux
-// x86-64-v3 build only): Node::_update,
-// Node::needUpdate, Bone::needUpdate, Node::_updateFromParent, Node::updateFromParentImpl and the
-// derived orientation/position/scale getters, under Entity::cacheBoneMatrices and the scene graph.
+// x86-64-v3 build only): Node::_update, Node::needUpdate, Bone::needUpdate, Node::_updateFromParent,
+// Node::updateFromParentImpl and the derived orientation/position/scale getters, under
+// Entity::cacheBoneMatrices and the scene graph.
 //
 // Ported from torchlight-nx 1.0.3 (https://github.com/liartes/torchlight-nx, tag v1.0.3, commit
 // 6624ad2, src/torchlight_ogre_natif.cpp; GPL-3.0, after NFSMW-NX's method), which wrote them for

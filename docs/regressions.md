@@ -16,8 +16,8 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   the port.
 - **Should have been caught by:** the measuring procedure: a flag's optimisation needs a profile
   that saw the flag on.
-- **Caught by:** the owner's hypothesis, tested on the POCO (no PGO, and PGO trained with the port
-  on) and then on the Deck.
+- **Caught by:** the owner's hypothesis, confirmed on the Deck (on the POCO neither test, without
+  PGO or with a profile trained with the port on, showed a clear gain).
 - **Covered now:** docs/perf/pgo.md: any optimisation behind a flag is measured with a profile
   trained with it on, and a release profile for a build where the flag may be either way is trained
   with both (the Linux profile, for `--native_skeleton`).
