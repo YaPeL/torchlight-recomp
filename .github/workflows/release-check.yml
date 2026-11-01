@@ -1,0 +1,263 @@
+# The release's game builds with candidate PGO profiles, before they go to the assets' main
+# (docs/perf/pgo.md, "In the release"): the three platforms built as release.yml builds them, from a
+# branch of the private assets repository, through the same `release` environment and its approval.
+# Each build must compile against its profile (-Werror=profile-instr-out-of-date), pass the binding
+# check its link runs (tools/android/check_guest_call_binding.py) and the profile match check.
+# Nothing is published or uploaded: no artifacts, no symbols, no packages, no tests.
+#
+# This repository is public: the logs show only the build's outcome lines (filtered below), never
+# the assets' paths or contents, the codegen's output or the build directory.
+#
+# Started by pushing a tag v-pgo-check-<n> on a commit of develop or main that has this file (an
+# older commit's release.yml would take the tag for a release), or by hand once the file is on main
+# (a freeze), choosing such a tag under "Use workflow from": the environment admits only v* tags, a
+# dispatch needs the file on the default branch. release.yml ignores these tags. The approval
+# screen shows the commit: check it. The checkout of the assets logs the repository's name and
+# commit, as release.yml's does, never its files.
+name: Release check (PGO candidates)
+
+on:
+  push:
+    tags: ["v-pgo-check-*"]
+  workflow_dispatch:
+    inputs:
+      assets_ref:
+        description: Branch of the assets repository with the candidate profiles
+        default: pgo/candidate
+
+permissions:
+  contents: read
+
+# One candidate at a time: a new tag cancels the waiting or running check.
+concurrency:
+  group: release-check
+  cancel-in-progress: true
+
+env:
+  DEPS_DIR: /deps
+  ASSETS_REF: ${{ inputs.assets_ref || 'pgo/candidate' }}
+
+jobs:
+  on-develop:
+    name: Commit on develop or main
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: The commit is on develop or main
+        run: |
+          git merge-base --is-ancestor "$GITHUB_SHA" origin/develop ||
+            git merge-base --is-ancestor "$GITHUB_SHA" origin/main || {
+            echo "$GITHUB_SHA is on neither develop nor main" >&2; exit 1; }
+
+  linux:
+    name: Game (Linux)
+    needs: on-develop
+    runs-on: ubuntu-24.04
+    container: ubuntu:22.04
+    environment: release
+    steps:
+      - name: Bootstrap
+        run: |
+          apt-get update > /dev/null
+          apt-get install -y --no-install-recommends ca-certificates curl git zstd gh openssh-client > /dev/null
+          git config --global --add safe.directory '*'
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        run: sh tools/deps/ubuntu_toolchain.sh
+      - name: Dependencies (published by CI for this key)
+        run: |
+          key=$(tools/deps/key.sh)
+          tools/deps/store.sh fetch linux "$key" /tmp/deps || {
+            echo "No published dependencies for key $key" >&2; exit 1; }
+          mkdir -p "$DEPS_DIR"
+          for f in /tmp/deps/*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
+      - name: Game executable and profile (private repository)
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.ASSETS_REPOSITORY }}
+          ref: ${{ env.ASSETS_REF }}
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          persist-credentials: false
+          path: _assets
+      - name: Check the XEX, take the profile
+        run: |
+          expected=$(sed -nE 's/^\{"default\.xex", [0-9]+, "([0-9a-f]{64})"\},$/\1/p' \
+            src/game_setup/game_files_table.inc)
+          actual=$(sha256sum _assets/default.xex | cut -d' ' -f1)
+          [ -n "$expected" ] && [ "$expected" = "$actual" ] || {
+            echo "default.xex is not the supported version (1.0.140.0)" >&2; exit 1; }
+          mkdir -p ../360tools/extracted/extracted
+          mv _assets/default.xex ../360tools/extracted/extracted/default.xex
+          [ -f _assets/pgo/linux-x86_64.profdata ] || { echo "no Linux profile" >&2; exit 1; }
+          mv _assets/pgo/linux-x86_64.profdata /tmp/linux-x86_64.profdata
+          rm -rf _assets
+      - name: Codegen
+        run: |
+          "$DEPS_DIR/sdk/bin/rexglue" codegen torchlight_manifest.toml > /tmp/codegen.log 2>&1 || {
+            echo "codegen failed" >&2; exit 1; }
+      - name: Build with the profile, binding and match checks
+        shell: bash
+        run: |
+          command -v llvm-profdata-21 > /dev/null || apt-get install -y --no-install-recommends llvm-21 > /dev/null
+          cmake --preset linux-amd64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
+            -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
+            -DTORCHLIGHT_PGO_USE=/tmp/linux-x86_64.profdata > /tmp/configure.log 2>&1 || {
+            { grep -A4 "^CMake Error" /tmp/configure.log | head -40; } || true
+            echo "configure failed" >&2; exit 1; }
+          status=0
+          cmake --build --preset linux-amd64-release --parallel > /tmp/build.log 2>&1 || status=$?
+          python3 tools/release/build_outcome.py /tmp/build.log
+          [ "$status" = 0 ] || exit "$status"
+          python3 tools/pgo/check_profile_match.py /tmp/build.log \
+            --build-dir out/build/linux-amd64-release --profdata llvm-profdata-21
+
+  windows:
+    name: Game (Windows)
+    needs: on-develop
+    runs-on: windows-2022
+    environment: release
+    env:
+      DEPS_DIR: C:\deps
+    steps:
+      - uses: actions/checkout@v7
+      - name: Toolchain
+        shell: pwsh
+        run: tools/build-deps/windows_toolchain.ps1 -Destination C:\llvm
+      - id: key
+        name: Dependency key
+        shell: bash
+        run: echo "key=$(tools/deps/key.sh windows)" >> "$GITHUB_OUTPUT"
+      - name: Dependencies (published by CI for this key)
+        shell: bash
+        run: |
+          key=${{ steps.key.outputs.key }}
+          tools/deps/store.sh fetch windows "$key" deps-download || {
+            echo "No published Windows dependencies for key $key" >&2; exit 1; }
+      - name: Unpack the dependencies
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force $env:DEPS_DIR | Out-Null
+          foreach ($f in Get-ChildItem "deps-download\*.zip") {
+            tar -xf $f.FullName -C $env:DEPS_DIR
+            if ($LASTEXITCODE) { exit 1 }
+          }
+      - name: Game executable and profile (private repository)
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.ASSETS_REPOSITORY }}
+          ref: ${{ env.ASSETS_REF }}
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          persist-credentials: false
+          path: _assets
+      - name: Check the XEX, take the profile
+        shell: bash
+        run: |
+          expected=$(sed -nE 's/^\{"default\.xex", [0-9]+, "([0-9a-f]{64})"\},\r?$/\1/p' \
+            src/game_setup/game_files_table.inc)
+          actual=$(sha256sum _assets/default.xex | cut -d' ' -f1)
+          [ -n "$expected" ] && [ "$expected" = "$actual" ] || {
+            echo "default.xex is not the supported version (1.0.140.0)" >&2; exit 1; }
+          mkdir -p ../360tools/extracted/extracted
+          mv _assets/default.xex ../360tools/extracted/extracted/default.xex
+          [ -f _assets/pgo/windows-x86_64.profdata ] || { echo "no Windows profile" >&2; exit 1; }
+          mv _assets/pgo/windows-x86_64.profdata "$RUNNER_TEMP/windows-x86_64.profdata"
+          rm -rf _assets
+      - name: Environment
+        shell: pwsh
+        run: |
+          $vs = & "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe" -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          cmd /d /s /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" >nul 2>&1 && set" | ForEach-Object {
+            if ($_ -match '^([^=]+)=(.*)$') { "$($Matches[1])=$($Matches[2])" >> $env:GITHUB_ENV }
+          }
+          "C:\llvm\bin" >> $env:GITHUB_PATH
+      - name: Codegen
+        shell: pwsh
+        run: |
+          & "$env:DEPS_DIR\sdk\bin\rexglue.exe" codegen torchlight_manifest.toml *> "$env:RUNNER_TEMP\codegen.log"
+          if ($LASTEXITCODE) { Write-Host "codegen failed"; exit 1 }
+      - name: Build with the profile, binding and match checks
+        shell: pwsh
+        run: |
+          $profile = "$env:RUNNER_TEMP\windows-x86_64.profdata"
+          cmake --preset win-amd64-release "-DCMAKE_PREFIX_PATH=$env:DEPS_DIR\sdk" `
+            "-DTORCHLIGHT_OGRE_INSTALL=$env:DEPS_DIR\ogre" "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -g" `
+            "-DTORCHLIGHT_PGO_USE=$profile" *> "$env:RUNNER_TEMP\configure.log"
+          if ($LASTEXITCODE) {
+            Select-String -Path "$env:RUNNER_TEMP\configure.log" -Pattern "^CMake Error" -Context 0,4 |
+              Select-Object -First 8 | ForEach-Object { $_.Line; $_.Context.PostContext }
+            Write-Host "configure failed"; exit 1
+          }
+          cmake --build --preset win-amd64-release --parallel *> "$env:RUNNER_TEMP\build.log"
+          $status = $LASTEXITCODE
+          python tools/release/build_outcome.py "$env:RUNNER_TEMP\build.log"
+          if ($status) { exit $status }
+          python tools/pgo/check_profile_match.py "$env:RUNNER_TEMP\build.log" `
+            --build-dir out/build/win-amd64-release --profdata C:\llvm\bin\llvm-profdata.exe
+          if ($LASTEXITCODE) { exit 1 }
+
+  macos:
+    name: Game (macOS)
+    needs: on-develop
+    runs-on: macos-26
+    environment: release
+    steps:
+      - uses: actions/checkout@v7
+      - name: Locations
+        run: echo "DEPS_DIR=$RUNNER_TEMP/deps" >> "$GITHUB_ENV"
+      - name: Xcode
+        run: |
+          xcode=/Applications/Xcode_26.6.app/Contents/Developer
+          [ -d "$xcode" ] || { echo "Xcode 26.6 is not on this runner image" >&2; exit 1; }
+          echo "DEVELOPER_DIR=$xcode" >> "$GITHUB_ENV"
+      - name: Tools
+        run: |
+          command -v ninja > /dev/null || brew install ninja
+          command -v zstd > /dev/null || brew install zstd
+      - name: Dependencies (published by CI for this key)
+        run: |
+          key=$(tools/deps/key.sh macos)
+          tools/deps/store.sh fetch macos "$key" "$RUNNER_TEMP/deps-download" || {
+            echo "No published macOS dependencies for key $key" >&2; exit 1; }
+          mkdir -p "$DEPS_DIR"
+          for f in "$RUNNER_TEMP"/deps-download/*.tar.zst; do zstd -dc "$f" | tar -C "$DEPS_DIR" -xf -; done
+      - name: Game executable and profile (private repository)
+        uses: actions/checkout@v7
+        with:
+          repository: ${{ vars.ASSETS_REPOSITORY }}
+          ref: ${{ env.ASSETS_REF }}
+          ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
+          persist-credentials: false
+          path: _assets
+      - name: Check the XEX, take the profile
+        run: |
+          expected=$(sed -nE 's/^\{"default\.xex", [0-9]+, "([0-9a-f]{64})"\},$/\1/p' \
+            src/game_setup/game_files_table.inc)
+          actual=$(shasum -a 256 _assets/default.xex | cut -d' ' -f1)
+          [ -n "$expected" ] && [ "$expected" = "$actual" ] || {
+            echo "default.xex is not the supported version (1.0.140.0)" >&2; exit 1; }
+          mkdir -p ../360tools/extracted/extracted
+          mv _assets/default.xex ../360tools/extracted/extracted/default.xex
+          [ -f _assets/pgo/macos-arm64.profdata ] || { echo "no macOS profile" >&2; exit 1; }
+          mv _assets/pgo/macos-arm64.profdata "$RUNNER_TEMP/macos-arm64.profdata"
+          rm -rf _assets
+      - name: Codegen
+        run: |
+          "$DEPS_DIR/sdk/bin/rexglue" codegen torchlight_manifest.toml > "$RUNNER_TEMP/codegen.log" 2>&1 || {
+            echo "codegen failed" >&2; exit 1; }
+      - name: Build with the profile, binding and match checks
+        run: |
+          profile="$RUNNER_TEMP/macos-arm64.profdata"
+          cmake --preset mac-arm64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
+            -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
+            -DTORCHLIGHT_PGO_USE="$profile" > "$RUNNER_TEMP/configure.log" 2>&1 || {
+            grep -A4 "^CMake Error" "$RUNNER_TEMP/configure.log" | head -40
+            echo "configure failed" >&2; exit 1; }
+          status=0
+          cmake --build --preset mac-arm64-release --parallel > "$RUNNER_TEMP/build.log" 2>&1 || status=$?
+          python3 tools/release/build_outcome.py "$RUNNER_TEMP/build.log"
+          [ "$status" = 0 ] || exit "$status"
+          python3 tools/pgo/check_profile_match.py "$RUNNER_TEMP/build.log" \
+            --build-dir out/build/mac-arm64-release --profdata "$(xcrun -f llvm-profdata)"
