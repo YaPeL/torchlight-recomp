@@ -18,8 +18,16 @@ fails when:
 
 A branch through a linker range thunk counts as a branch to the thunk's target. A branch from a
 function to its own start is not a bypass (a loop or a recursive call made by the compiler), and
-the hooks' (host code's) calls to __imp__X are what they are for. Indirect guest calls go through
-the function table, whose entries the static linker resolves to X too.
+the hooks' (host code's) calls to __imp__X are what they are for. An outlined piece
+(OUTLINED_FUNCTION_*) is judged by who reaches it: one whose every caller is the hook X itself, or
+another outlined piece only X reaches, holds X's own call to __imp__X, which the machine outliner
+moved there (AppleClang with a PGO profile, docs/regressions.md), and is no bypass. A piece split
+off the hook X itself (X.cold.N; a generated body's are __imp__X.cold.N) counts as X. A piece
+reached through a range thunk is the piece of the thunk's name; an ambiguous name (the outliner
+reuses names in every module) counts as reached from elsewhere, and a name with no piece is a
+problem. A map keeps one address per name, so on Windows only one of several same-named pieces is
+seen (LLVM outlines by default on AArch64 only). Indirect guest calls go through the function
+table, whose entries the static linker resolves to X too.
 
 On the desktop the game is an executable, whose direct calls the static linker binds: the same
 bypass check runs on Linux (ELF x86-64), macOS (Mach-O arm64: symbols carry a leading underscore,
@@ -55,6 +63,11 @@ BRANCH_X86 = re.compile(r"^\s*([0-9a-f]+):\s+(call\w*|jmp\w*|j[a-z]{1,3})\s+0x([
 THUNK = re.compile(r"__AArch64\w*Thunk_(.+)$")
 # Code the compiler or linker split off or made, which may belong to a generated function.
 PIECE = re.compile(r"OUTLINED_FUNCTION_|\.cold|\.llvm\.|__AArch64\w*Thunk_")
+# The machine outliner's pieces. The check relies on the outliner's guarantee that they are reached
+# only by direct branches (or a range thunk to one), never through their address.
+OUTLINED = re.compile(r"OUTLINED_FUNCTION_")
+# "OUTLINED_FUNCTION_7+0x4": a branch into a function names it with an offset.
+OFFSET = re.compile(r"^(.*)\+0x([0-9a-f]+)$")
 SHOWN = 20
 
 
@@ -184,6 +197,15 @@ def check(library, nm, objdump, map_path=None):
 
     calls = 0
     function_start, function_name = None, None
+    # Outlined pieces, judged after the pass by who reaches them: their starts and names, every
+    # branch that may reach one (target, target name, caller's start and name), and the pieces'
+    # branches to a hooked __imp__X. Range thunks to a piece are not pieces themselves.
+    def is_piece(name):
+        return OUTLINED.search(name) and not THUNK.search(name)
+
+    piece_names = {address: name for address, name in function_at.items() if is_piece(name)}
+    piece_edges = []
+    piece_bypasses = []
     with subprocess.Popen([objdump, "-d", "--no-show-raw-insn", library],
                           stdout=subprocess.PIPE, text=True, bufsize=1 << 20) as dump:
         for line in dump.stdout:
@@ -193,6 +215,8 @@ def check(library, nm, objdump, map_path=None):
                     function_start, function_name = int(label.group(1), 16), label.group(2)
                     if macho and function_name.startswith("_"):
                         function_name = function_name[1:]
+                    if is_piece(function_name):
+                        piece_names[function_start] = function_name
                 continue
             branch = (BRANCH_X86 if x86 else BRANCH).match(line)
             if not branch:
@@ -213,6 +237,14 @@ def check(library, nm, objdump, map_path=None):
                     problem("plt", f"{function_name} at {branch.group(1)}: "
                             f"{branch.group(2)} {target_name}")
                 continue
+            if OUTLINED.search(target_name):
+                piece_edges.append((target, target_name, function_start, function_name))
+            elif map_path:
+                # With a map a branch names no symbol: the function holding its target.
+                k = bisect.bisect_right(starts, target) - 1
+                if k >= 0 and starts[k] in piece_names:
+                    piece_edges.append((starts[k], piece_names[starts[k]], function_start,
+                                        function_name))
             thunk = THUNK.match(target_name)
             if thunk and thunk.group(1) in syms:
                 target_name, target = thunk.group(1), syms[thunk.group(1)][1]
@@ -221,10 +253,65 @@ def check(library, nm, objdump, map_path=None):
             if target in hooked and target != function_start and (
                     function_start in imp_addresses or PIECE.search(function_name)):
                 guest = hooked[target]
-                problem("bypass", f"{function_name} at {branch.group(1)}: "
+                text = (f"{function_name} at {branch.group(1)}: "
                         f"{branch.group(2)} to __imp__{guest}, past the hook {guest}")
+                if function_start in imp_addresses:
+                    problem("bypass", text)
+                elif function_name.startswith(guest + ".cold"):
+                    pass  # the hook's own piece (X.cold.N): its call to __imp__X
+                elif not OUTLINED.search(function_name):
+                    problem("bypass", text)
+                else:
+                    piece_bypasses.append((function_start, guest, text))
     if dump.returncode:
         raise subprocess.CalledProcessError(dump.returncode, objdump)
+
+    # Each edge pinned on the piece it reaches: through a range thunk, the piece of that name (the
+    # outliner reuses a name in every module: an ambiguous one taints them all, a caller of None);
+    # into a piece, its start.
+    starts_by_name = {}
+    for address, name in piece_names.items():
+        starts_by_name.setdefault(name, []).append(address)
+    piece_callers = {}  # piece start -> {(caller start, caller name)}
+    for target, target_name, caller_start, caller_name in piece_edges:
+        thunk = THUNK.search(target_name)
+        if thunk:
+            pieces = starts_by_name.get(thunk.group(1), [])
+            if not pieces:  # e.g. two names on one address: not judged, so not accepted
+                problem("bypass", f"{caller_name}: branch to {target_name}, whose piece is not "
+                        "in the disassembly")
+            caller = (caller_start, caller_name) if len(pieces) == 1 else (None, target_name)
+        else:
+            offset = OFFSET.match(target_name)
+            pieces = [target - int(offset.group(2), 16) if offset else target]
+            caller = (caller_start, caller_name)
+        for piece in pieces:
+            if piece != caller_start:
+                piece_callers.setdefault(piece, set()).add(caller)
+
+    def reached_only_from(piece, guest):
+        """Whether the hook X (guest) reaches the outlined piece and nothing else does, directly,
+        from a piece split off it (X.cold.N, which only X can have), or through other outlined
+        pieces only it reaches."""
+        hook_start = syms[guest][1]
+        seen, todo, from_hook = {piece}, [piece], False
+        while todo:
+            for caller_start, caller_name in piece_callers.get(todo.pop(), ()):
+                if caller_start == hook_start or (caller_start is not None
+                                                  and caller_start not in imp_addresses
+                                                  and caller_name.startswith(guest + ".cold")):
+                    from_hook = True
+                elif caller_start in piece_names:
+                    if caller_start not in seen:
+                        seen.add(caller_start)
+                        todo.append(caller_start)
+                else:
+                    return False
+        return from_hook
+
+    for piece, guest, text in piece_bypasses:
+        if not reached_only_from(piece, guest):
+            problem("bypass", text)
 
     if not hooked:
         problem("vacuous", "no hooked guest function (a strong X beside its __imp__X)")
