@@ -65,8 +65,11 @@ class TorchlightApp : public rex::ReXApp {
   static std::unique_ptr<rex::ui::WindowedApp> Create(
       rex::ui::WindowedAppContext& ctx) {
     // First of all, before anything opens or creates the user's folders: the ones with the old
-    // name move to the new one (logged once logging is up).
-    startup_log() = torchlight::platform::MigrateUserFolders();
+    // name move to the new one (logged once logging is up), never in a run with its own roots.
+    startup_log() = torchlight::platform::MigrateUserFolders(
+        !rex::cvar::Query<std::string>("user_data_root").empty() ||
+        !rex::cvar::Query<std::string>("game_data_root").empty() ||
+        !rex::cvar::Query<std::string>("cache_root").empty());
     // The game's files: installed from the user's package on the first start (REL.4), unless
     // --game_data_root points at them.
     if (rex::cvar::Query<std::string>("game_data_root").empty()) {
