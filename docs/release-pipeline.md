@@ -377,7 +377,8 @@ environment (approval first), on GitHub-hosted runners only.
 1. **Dependencies**: each game job downloads the SDK and OGRE CI published for the commit's key
    (the `deps` store, below in 5.9) and fails if there are none: CI on `main` publishes them.
 2. **game-linux** (container `ubuntu:22.04`): checkout, deps from the previous job, private
-   checkout + hash check, `rexglue codegen`, Release build with debug info, `ctest`,
+   checkout + hash check, `rexglue codegen`, Release build with debug info and the Linux PGO
+   profile from the private checkout (`docs/perf/pgo.md`; the match check runs before `ctest`), `ctest`,
    `cmake --install` into an AppDir, debug info split from every ELF we build (`objcopy
    --only-keep-debug`, then strip, keeping the build ID), linuxdeploy (without `libwayland-*`) +
    appimagetool (static runtime), the bundled `libstdc++` and its startup check (decision 2),
@@ -604,6 +605,11 @@ Wayland; saves not reaching the disk; a renamed save leaving its old spelling be
 crash hanging instead of ending; the log folder growing without limit; a renderer that could not
 start crashing instead of saying why) take Y to 6: **`v0.7.6-beta`**. Fixes to things new in the
 same iteration were not counted.
+
+Before tagging, the Linux PGO profile has to match: the manifest's and `config/torchlight_hooks.toml`'s
+sha256 and the SDK patch series must be those the assets' `pgo/README.md` records for
+`linux-x86_64.profdata`; otherwise it is trained again first (`docs/perf/pgo.md`), or the tag's
+Linux build fails on the stale profile.
 
 Validation before the release: the freeze is merged into `main` and tagged as a release candidate
 (`v0.7.6-beta.rc1`), whose run leaves a draft release with the three platforms' packages, never

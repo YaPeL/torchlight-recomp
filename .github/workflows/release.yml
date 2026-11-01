@@ -66,7 +66,7 @@ jobs:
           ssh-key: ${{ secrets.ASSETS_DEPLOY_KEY }}
           persist-credentials: false
           path: _assets
-      - name: Check the XEX
+      - name: Check the XEX, take the PGO profile
         run: |
           expected=$(sed -nE 's/^\{"default\.xex", [0-9]+, "([0-9a-f]{64})"\},$/\1/p' \
             src/game_setup/game_files_table.inc)
@@ -89,7 +89,7 @@ jobs:
       - name: Build (Release with debug information, PGO)
         shell: bash
         run: |
-          set -o pipefail
+          # llvm.sh's lldb-21 brings llvm-21 (llvm-profdata-21) today; a guard if its packages change.
           command -v llvm-profdata-21 > /dev/null || apt-get install -y --no-install-recommends llvm-21
           cmake --preset linux-amd64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
             -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
