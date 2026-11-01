@@ -3,7 +3,11 @@
 //
 // The producer never waits: with the queue full, the oldest queued frame is dropped. Dropping
 // keeps continuity: its state commands and resources are carried into the next frame, only its
-// draws and clears are discarded (counted).
+// draws and clears are discarded (counted). The merge happens when the consumer pops the frame,
+// on its thread: the producer only moves the dropped frame aside (it is the guest's render thread,
+// where moving a frame's thousands of commands and freeing its draws cost ~0.5 M cycles a frame on
+// the POCO with frames dropping). The merged frame keeps what the dropped frames discarded until it
+// is itself freed (on the reclaimer's thread).
 
 #pragma once
 
@@ -51,10 +55,20 @@ struct LiveFrame {
   };
   Producer producer;
 
+  // Frames dropped into this one and not merged yet, oldest first (FrameQueue: merged at Pop).
+  std::vector<LiveFrame> absorbed;
+  // What merged frames left behind (their draws and clears), freed with this frame.
+  std::vector<LiveFrame> discarded;
+
   bool empty() const;
   // Moves `older`'s state and resources in front of this frame's; its draws and clears are
-  // discarded.
+  // discarded (they stay in `older`).
   void AbsorbDropped(LiveFrame&& older);
+  // Queues `older` (and what was dropped into it) to be merged by MergeAbsorbed.
+  void QueueDropped(LiveFrame&& older);
+  // Merges every queued dropped frame, as AbsorbDropped on each from the newest back; their
+  // leftovers go to `discarded`.
+  void MergeAbsorbed();
 };
 
 // The frame queue's depth: `chosen` (--native_frame_queue), or automatic for 0. With vsync the
@@ -93,5 +107,9 @@ class FrameQueue {
   bool closed_ = false;
   uint64_t pushed_ = 0, dropped_ = 0;
 };
+
+// Dropped frames a queued frame holds unmerged before the oldest are merged at push (bounds the
+// memory while the consumer is stalled, a load for instance).
+constexpr size_t kMaxAbsorbedPending = 4;
 
 }  // namespace torchlight::live

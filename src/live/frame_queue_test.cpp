@@ -90,6 +90,38 @@ int main() {
   shallow.Push(MakeFrame(22, store));
   shallow.Push(MakeFrame(23, store));
   Check(shallow.dropped() == 2, "a capacity of 0 means one");
+
+  // More drops than a frame holds unmerged (kMaxAbsorbedPending): the merged frame is the same as
+  // merging each drop at once, and what the drops discarded stays with it until it is freed.
+  FrameQueue deep(1);
+  const uint64_t drops = 3 * torchlight::live::kMaxAbsorbedPending + 1;
+  for (uint64_t swap = 100; swap <= 100 + drops; ++swap) deep.Push(MakeFrame(swap, store));
+  auto merged = deep.Pop(std::chrono::milliseconds(0));
+  Check(merged && merged->swap == 100 + drops && merged->dropped_before == drops &&
+            merged->absorbed.empty(),
+        "every drop merged at pop, counted");
+  std::vector<bool> order;
+  size_t merged_draws = 0;
+  for (const auto& c : merged->commands) {
+    merged_draws += std::holds_alternative<Draw>(c.payload);
+    if (auto* d = std::get_if<SetDepthCheck>(&c.payload)) order.push_back(d->enabled);
+  }
+  bool alternating = order.size() == drops + 1;
+  for (size_t i = 0; alternating && i < order.size(); ++i) alternating = order[i] == (i % 2 == 0);
+  Check(alternating && merged_draws == 1, "the drops' state in order, their draws discarded");
+  Check(merged->textures.size() == drops + 1 && merged->textures.front().id.guest_address == 0x1064 &&
+            merged->contents.size() == drops + 1,
+        "the drops' resources in order");
+  size_t discarded_draws = 0;
+  std::vector<const LiveFrame*> pending;
+  for (const auto& d : merged->discarded) pending.push_back(&d);
+  while (!pending.empty()) {
+    const LiveFrame* f = pending.back();
+    pending.pop_back();
+    for (const auto& c : f->commands) discarded_draws += std::holds_alternative<Draw>(c.payload);
+    for (const auto& d : f->discarded) pending.push_back(&d);
+  }
+  Check(discarded_draws == drops, "the drops' draws held until the frame is freed");
   std::printf("frame queue test: ok\n");
   return 0;
 }

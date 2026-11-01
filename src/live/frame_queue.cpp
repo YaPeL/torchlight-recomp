@@ -18,7 +18,34 @@ void Prepend(std::vector<T>& to, std::vector<T>&& from) {
 bool LiveFrame::empty() const {
   return commands.empty() && vertex_buffers.empty() && index_buffers.empty() &&
          declarations.empty() && textures.empty() && programs.empty() &&
-         program_sources.empty() && destroyed.empty();
+         program_sources.empty() && destroyed.empty() && absorbed.empty();
+}
+
+void LiveFrame::QueueDropped(LiveFrame&& older) {
+  // Oldest first: what was dropped into `older` came before it.
+  std::vector<LiveFrame> chain = std::move(older.absorbed);
+  older.absorbed.clear();
+  chain.push_back(std::move(older));
+  chain.insert(chain.end(), std::make_move_iterator(absorbed.begin()),
+               std::make_move_iterator(absorbed.end()));
+  absorbed = std::move(chain);
+  if (absorbed.size() > kMaxAbsorbedPending) {
+    // Merge the oldest pair into one held frame: the order and the result stay those of merging
+    // everything at Pop.
+    LiveFrame oldest = std::move(absorbed.front());
+    absorbed.erase(absorbed.begin());
+    absorbed.front().AbsorbDropped(std::move(oldest));
+    absorbed.front().discarded.push_back(std::move(oldest));
+  }
+}
+
+void LiveFrame::MergeAbsorbed() {
+  while (!absorbed.empty()) {
+    LiveFrame newest = std::move(absorbed.back());
+    absorbed.pop_back();
+    AbsorbDropped(std::move(newest));
+    discarded.push_back(std::move(newest));
+  }
 }
 
 void LiveFrame::AbsorbDropped(LiveFrame&& older) {
@@ -61,7 +88,7 @@ void FrameQueue::Push(LiveFrame frame) {
     while (frames_.size() > capacity_) {
       LiveFrame oldest = std::move(frames_.front());
       frames_.pop_front();
-      frames_.front().AbsorbDropped(std::move(oldest));
+      frames_.front().QueueDropped(std::move(oldest));
       ++dropped_;
     }
   }
@@ -74,6 +101,8 @@ std::optional<LiveFrame> FrameQueue::Pop(std::chrono::milliseconds timeout) {
   if (frames_.empty()) return std::nullopt;
   LiveFrame f = std::move(frames_.front());
   frames_.pop_front();
+  lock.unlock();
+  f.MergeAbsorbed();
   return f;
 }
 
