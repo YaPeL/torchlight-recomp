@@ -6,6 +6,22 @@ what happened, which layer should have caught it, and what catches it now (a tes
 checklist item of the pre-release passes). A new entry is added when a bug is found that late; the
 lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
+## A flag-switched optimisation measured against a profile trained without it (caught before the default changed)
+
+- **What happened:** the skeleton port (`--native_skeleton`, PR #85, 2026-11-01) was measured with
+  PGO profiles trained with the flag off, so its code had never run in training and the compiler
+  treated it as cold (optimised for size, out of the hot path). On the Steam Deck it measured +2 %
+  cycles a frame with the release's v3 profile, against −5.9 % with a profile trained with the port
+  off and on; on the POCO the first A B B A showed no gain and was nearly taken as a reason to drop
+  the port.
+- **Should have been caught by:** the measuring procedure: a flag's optimisation needs a profile
+  that saw the flag on.
+- **Caught by:** the owner's hypothesis, confirmed on the Deck (on the POCO neither test, without
+  PGO or with a profile trained with the port on, showed a clear gain).
+- **Covered now:** docs/perf/pgo.md: any optimisation behind a flag is measured with a profile
+  trained with it on, and a release profile for a build where the flag may be either way is trained
+  with both (the Linux profile, for `--native_skeleton`).
+
 ## ThinLTO bound the generated code's calls past the hooks (caught before any merge)
 
 - **What happened:** with `TORCHLIGHT_LTO` (ThinLTO for the generated code and the game's own,

@@ -78,6 +78,18 @@ NDK's `llvm-profdata merge --sparse`. The result goes to the private assets repo
 `pgo/android-arm64.profdata`, with the commit of `generated/`'s codegen, the NDK version and the
 date beside it (`pgo/README.md` there).
 
+**A flag-switched optimisation is trained on.** Code that runs only behind a flag is cold to the
+compiler when the training ran with the flag off: it is optimised for size and laid out away from
+the hot path, and measuring it then measures that, not the optimisation (docs/regressions.md, the
+skeleton port). So any new optimisation behind a flag is measured with a profile trained with it on,
+and a profile for a build where a flag may be either way is trained with both: every script once
+with the flag off and once with it on, in the same order and length, merged into one profile. The
+Linux release profile (`pgo/linux-x86_64.profdata`, x86-64-v3) is trained that way for
+`--native_skeleton` (on by default there): `fight.txt`, `fight5.txt` and `measure-fight-town.txt`
+with `--native_skeleton=false`, then the three again with `--native_skeleton=true`, each from a
+fresh bench save, offscreen on the desktop (the first one, 2026-11-01, on the i7-8750H; the Steam
+Deck measured with it, it did not train it).
+
 The profiles written before 2026-10-31 summed every minute's copy of the counts (the runtime
 appended each write to the file), which weighed the start of each run more: trained again.
 
@@ -94,7 +106,8 @@ afternoon, while the change measured about 1 ms. For any A/B of two PGO builds:
   fps cap 0, vsync off, `fight.txt`, then `fight5.txt`, then `town.txt` (Android) or
   `measure-fight-town.txt` (desktop), each to its script's end, no run cut short or repeated.
 - The same writer (`src/pgo/pgo_writer.cpp`: one file per run, replaced every minute) and the
-  same merge (`llvm-profdata merge --sparse` of the three files, nothing else in the folder).
+  same merge (`llvm-profdata merge --sparse` of the three files, six for Linux: the three with
+  `--native_skeleton=false`, then with `=true`; nothing else in the folder).
 - Each build checked against its own profile (`tools/pgo/check_profile_match.py`, 0 mismatched in
   the generated code), and the profiles' function counts noted next to the result.
 

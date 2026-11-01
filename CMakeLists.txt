@@ -195,6 +195,10 @@ if(TORCHLIGHT_X86_64_V3 AND UNIX AND NOT APPLE AND NOT ANDROID AND
     set_source_files_properties(src/platform/cpu_check.cpp PROPERTIES
         COMPILE_OPTIONS "-march=x86-64;-mno-sse4.1;-mno-sse4.2;-mno-popcnt"
         COMPILE_DEFINITIONS TORCHLIGHT_X86_64_V3=1)
+    # The skeleton port (hooks/native_skeleton.cpp) on by default here only: it gains with fma as an
+    # instruction (measured on the Steam Deck and the desktop, 2026-11-01).
+    set_property(SOURCE src/hooks/native_skeleton.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+                 TORCHLIGHT_NATIVE_SKELETON_DEFAULT=1)
 endif()
 # Whole-program optimisation of the generated code and the game's own (docs/perf/pgo.md): ThinLTO,
 # and clang's instrumented profile-guided optimisation, generated (an instrumented build writes the
