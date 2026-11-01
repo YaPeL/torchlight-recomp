@@ -5,6 +5,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 
 #include <rex/cvar.h>

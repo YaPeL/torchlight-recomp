@@ -41,7 +41,7 @@ bool CanWriteFolder(const fs::path& folder, std::string& error) {
   {
     std::ofstream out(probe, std::ios::binary);
     out << "test";
-    out.flush();
+    out.close();  // a failure may only show here (a quota, a network file system)
     written = bool(out);
   }
   // Also after a failed write: the file may exist (a full disk).

@@ -83,7 +83,7 @@ else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
 # Where this run keeps the player's files (storage_mode.h). The portable folder beside the
-# application is the default of the packages; a development build keeps the user's folders, so no
+# application will be the default of the packages; a development build keeps the user's folders, so no
 # run from a build tree opens the first-start questions or offers to copy the real user data.
 option(TORCHLIGHT_PORTABLE_DEFAULT "Keep the player's files in a folder beside the application" OFF)
 # Refused until the setup wizard answers kAsk and kPortableUnwritable (torchlight_app.h).
