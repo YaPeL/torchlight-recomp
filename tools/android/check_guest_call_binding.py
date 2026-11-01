@@ -95,7 +95,8 @@ def map_symbols(map_path):
 
 
 def symbols(nm, library, macho=False, map_path=None, defined=None):
-    """{name: (type, address)} of the library's guest functions: each __imp__X and its X."""
+    """{name: (type, address)} of the library's guest functions: each __imp__X and its X (not the
+    pieces the compiler split off a body)."""
     if map_path:
         defined = defined if defined is not None else map_symbols(map_path)
     elif macho:
@@ -119,6 +120,10 @@ def symbols(nm, library, macho=False, map_path=None, defined=None):
                 defined[fields[2]] = (fields[1], int(fields[0], 16))
     found = {}
     for name, value in defined.items():
+        # A piece the compiler split off a body (__imp__X.cold.1, an .llvm. clone) is not a guest
+        # function: it has no X of its own. Its branches are still checked (PIECE in check()).
+        if PIECE.search(name):
+            continue
         if name.startswith("__imp__"):
             found[name] = value
             guest = name[len("__imp__"):]
