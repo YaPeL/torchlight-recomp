@@ -107,7 +107,7 @@ checkout's `pgo/android-arm64.profdata`. The Linux release job (`release.yml`, `
 with `pgo/linux-x86_64.profdata` (2026-11-01): it moves the profile out before the assets checkout is
 removed, configures with `TORCHLIGHT_PGO_USE`, keeps the build's output in a file and runs the match
 check right after the build, before the tests and the packaging. Still to do: the same in Android's
-release job (A6), and for Windows and macOS once they have profiles. The Windows and macOS release jobs do the same with `pgo/windows-x86_64.profdata` and
+release job (A6). The Windows and macOS release jobs do the same with `pgo/windows-x86_64.profdata` and
 `pgo/macos-arm64.profdata` when the assets have them (built without PGO until then), the macOS job
 on the pinned Xcode 26.6.
 
