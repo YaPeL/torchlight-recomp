@@ -6,6 +6,10 @@
 # executables, the platform's own format (ELF, Mach-O, or PE with the linker's map): the check has
 # to pass the hooked one and fail the one with a bypass.
 find_package(Python3 REQUIRED COMPONENTS Interpreter)
+# _binding_tools must hold the tools only: the test script refuses the game's --map (docs/regressions.md).
+if("--map" IN_LIST _binding_tools)
+    message(FATAL_ERROR "_binding_tools holds --map: the game's map belongs in _game_binding_tools")
+endif()
 
 if(ANDROID)
     add_library(guest_call_binding_ok SHARED fixture.cpp hook.cpp)

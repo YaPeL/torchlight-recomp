@@ -158,9 +158,8 @@ target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/gener
 # with -Wl,-Bsymbolic-functions (patch 47); everywhere, nothing (ThinLTO did, docs/regressions.md)
 # may bind a generated call to a hooked function's __imp__ body past its hook. Windows' executable
 # has no symbol table: the linker writes a map the check reads.
-# The game's own list: _binding_tools (the tools only) is also what tests/guest_call_binding passes
-# to its test script, which takes each fixture's map apart (--ok-map, --bypass-map) and refuses
-# --map; appending the game's map to it broke every Windows build of the game at that test.
+# The game's own list: _binding_tools stays the tools only, since tests/guest_call_binding passes it
+# to a script that takes each fixture's map apart and refuses --map.
 set(_game_binding_tools ${_binding_tools})
 if(WIN32)
     set(_binding_map "${CMAKE_CURRENT_BINARY_DIR}/torchlight.map")

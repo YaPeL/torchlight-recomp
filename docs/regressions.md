@@ -8,18 +8,19 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
 ## Windows game builds stopped at the binding check's fixture test (caught before a release)
 
-- **What happened:** the binding check after every game link (e3984aa, 2026-10-30) appended
-  Windows' `--map torchlight.map` to `_binding_tools`, the list `tests/guest_call_binding` also
-  passes to its test script; the script takes each fixture's map apart (`--ok-map`,
-  `--bypass-map`) and refused `--map`, so every full Windows build of the game failed at that test
-  before linking `torchlight.exe` (the release job builds everything). Found by the Windows agent
-  training PGO, 2026-11-01; no release was built since.
+- **What happened:** since e3984aa (2026-10-30) the game appended Windows' `--map torchlight.map`
+  to `_binding_tools`; 420a927 (2026-10-31, the desktop fixtures) made `tests/guest_call_binding`
+  pass that same list to its test script, which takes each fixture's map apart (`--ok-map`,
+  `--bypass-map`) and refused `--map`. From then every full Windows build of the game failed at that
+  test (the release job builds everything). Found by the Windows agent training PGO, 2026-11-01; no
+  release was built since.
 - **Should have been caught by:** CI, which builds Windows without the game (no XEX), so the
   game's block of CMakeLists.txt never ran there.
 - **Caught by:** a full build on the owner's Windows PC.
-- **Covered now:** the game keeps its own list (`_game_binding_tools`); `_binding_tools` stays
-  the tools only, for every user. A full Windows build of the game runs on the Windows PC before a
-  release (the freeze's candidate tag builds it in the release job).
+- **Covered now:** the game keeps its own list (`_game_binding_tools`), and
+  `tests/guest_call_binding/CMakeLists.txt` stops the configure with a clear error if `--map` is
+  ever in `_binding_tools` again (a game build only; no-game CI still cannot see game-only code, so a
+  full Windows build runs on the Windows PC or in the freeze's candidate tag before a release).
 
 ## A flag-switched optimisation measured against a profile trained without it (caught before the default changed)
 
