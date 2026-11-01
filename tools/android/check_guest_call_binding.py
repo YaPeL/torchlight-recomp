@@ -21,11 +21,13 @@ function to its own start is not a bypass (a loop or a recursive call made by th
 the hooks' (host code's) calls to __imp__X are what they are for. An outlined piece
 (OUTLINED_FUNCTION_*) is judged by who reaches it: one whose every caller is the hook X itself, or
 another outlined piece only X reaches, holds X's own call to __imp__X, which the machine outliner
-moved there (AppleClang with a PGO profile, docs/regressions.md), and is no bypass; one reached
-through a range thunk is the piece of the thunk's name, and an ambiguous name (the outliner reuses
-names in every module) counts as reached from elsewhere. A map keeps one address per name, so on
-Windows only one of several same-named pieces is seen (LLVM outlines by default on AArch64 only). Indirect guest
-calls go through the function table, whose entries the static linker resolves to X too.
+moved there (AppleClang with a PGO profile, docs/regressions.md), and is no bypass. A piece split
+off the hook X itself (X.cold.N; a generated body's are __imp__X.cold.N) counts as X. A piece
+reached through a range thunk is the piece of the thunk's name; an ambiguous name (the outliner
+reuses names in every module) counts as reached from elsewhere, and a name with no piece is a
+problem. A map keeps one address per name, so on Windows only one of several same-named pieces is
+seen (LLVM outlines by default on AArch64 only). Indirect guest calls go through the function
+table, whose entries the static linker resolves to X too.
 
 On the desktop the game is an executable, whose direct calls the static linker binds: the same
 bypass check runs on Linux (ELF x86-64), macOS (Mach-O arm64: symbols carry a leading underscore,
@@ -253,7 +255,9 @@ def check(library, nm, objdump, map_path=None):
                 guest = hooked[target]
                 text = (f"{function_name} at {branch.group(1)}: "
                         f"{branch.group(2)} to __imp__{guest}, past the hook {guest}")
-                if function_start in imp_addresses or not OUTLINED.search(function_name):
+                if function_name.startswith(guest + ".cold"):
+                    pass  # the hook's own piece (X.cold.N): its call to __imp__X
+                elif function_start in imp_addresses or not OUTLINED.search(function_name):
                     problem("bypass", text)
                 else:
                     piece_bypasses.append((function_start, guest, text))
@@ -271,6 +275,9 @@ def check(library, nm, objdump, map_path=None):
         thunk = THUNK.search(target_name)
         if thunk:
             pieces = starts_by_name.get(thunk.group(1), [])
+            if not pieces:  # e.g. two names on one address: not judged, so not accepted
+                problem("bypass", f"{caller_name}: branch to {target_name}, whose piece is not "
+                        "in the disassembly")
             caller = (caller_start, caller_name) if len(pieces) == 1 else (None, target_name)
         else:
             offset = OFFSET.match(target_name)
@@ -285,12 +292,11 @@ def check(library, nm, objdump, map_path=None):
         from a piece split off it (X.cold.N, which only X can have), or through other outlined
         pieces only it reaches."""
         hook_start = syms[guest][1]
-        own_piece = re.compile(re.escape(guest) + r"\.cold")
         seen, todo, from_hook = {piece}, [piece], False
         while todo:
             for caller_start, caller_name in piece_callers.get(todo.pop(), ()):
                 if caller_start == hook_start or (caller_start is not None
-                                                  and own_piece.match(caller_name)):
+                                                  and caller_name.startswith(guest + ".cold")):
                     from_hook = True
                 elif caller_start in piece_names:
                     if caller_start not in seen:

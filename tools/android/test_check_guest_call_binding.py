@@ -66,11 +66,7 @@ def load_check():
 def check_outlined_pieces():
     """check() on synthetic llvm-nm and llvm-objdump output of an ELF arm64 library, on every
     platform: the outlined piece paths no compiler makes on demand (a range thunk to a piece, a
-    name the outliner reused, a branch into a piece, the hook's own .cold piece)."""
-    import contextlib
-    import io
-    import tempfile
-    import types
+    name the outliner reused or no piece has, a branch into a piece, the hook's own .cold piece)."""
     check = load_check()
     nm = """0000000000001000 T __imp__sub_1
 0000000000001000 W sub_1
@@ -115,11 +111,38 @@ def check_outlined_pieces():
          dict(hook="    3000:      \tb\t0x8000 <sub_2.cold.1>", generated="",
               more="0000000000008000 <sub_2.cold.1>:\n"
                    "    8000:      \tbl\t0x5000 <OUTLINED_FUNCTION_1>"), 0),
+        ("the hook's .cold piece calling its __imp__",
+         dict(hook=direct + "\n    3004:      \tb\t0x8000 <sub_2.cold.1>", generated="",
+              more="0000000000008000 <sub_2.cold.1>:\n"
+                   "    8000:      \tbl\t0x2000 <__imp__sub_2>"), 0),
+        ("a thunk to no piece",
+         dict(hook=direct, generated="    4000:      \tbl\t0x7100 "
+              "<__AArch64ADRPThunk_OUTLINED_FUNCTION_9>", more=""), 1),
         ("another function's .cold piece",
          dict(hook=direct, generated="",
               more="0000000000008000 <__imp__sub_4.cold.1>:\n"
                    "    8000:      \tbl\t0x5000 <OUTLINED_FUNCTION_1>"), 1),
     ]
+
+    failures = []
+    for name, parts, bypasses in cases:
+        failures += run_synthetic(check, f"outlined pieces, {name}", ELF_ARM64, nm,
+                                  head.format(**parts), None, bypasses)
+    return failures
+
+
+ELF_ARM64 = bytes(b"\x7fELF" + bytes(14) + (183).to_bytes(2, "little") + bytes(1004))
+PE_X86_64 = bytes(b"MZ" + bytes(0x3a) + (0x80).to_bytes(4, "little") + bytes(0x40) + b"PE\0\0"
+                  + (0x8664).to_bytes(2, "little") + bytes(886))
+
+
+def run_synthetic(check, name, header, nm, disassembly, map_text, bypasses):
+    """check() on a fake binary (`header`), with llvm-nm and llvm-objdump stubbed to print `nm`
+    and `disassembly`, and the map `map_text` if any: [] when it reports `bypasses` bypasses."""
+    import contextlib
+    import io
+    import tempfile
+    import types
 
     class Dump:
         def __init__(self, text):
@@ -131,28 +154,57 @@ def check_outlined_pieces():
         def __exit__(self, *exc):
             return False
 
-    failures = []
-    with tempfile.NamedTemporaryFile("wb", suffix=".so", delete=False) as f:
-        header = bytearray(1024)
-        header[:4], header[18:20] = b"\x7fELF", (183).to_bytes(2, "little")  # EM_AARCH64
-        f.write(header)
+    check.subprocess = types.SimpleNamespace(
+        run=lambda *a, **k: types.SimpleNamespace(stdout=nm),
+        Popen=lambda *a, **k: Dump(disassembly),
+        PIPE=None, CalledProcessError=subprocess.CalledProcessError)
+    paths = []
     try:
-        for name, parts, bypasses in cases:
-            disassembly = head.format(**parts)
-            check.subprocess = types.SimpleNamespace(
-                run=lambda *a, **k: types.SimpleNamespace(stdout=nm),
-                Popen=lambda *a, listing=disassembly, **k: Dump(listing),
-                PIPE=None, CalledProcessError=subprocess.CalledProcessError)
-            out = io.StringIO()
-            with contextlib.redirect_stdout(out):
-                code = check.check(f.name, "nm", "objdump")
-            output = out.getvalue()
-            if code != (1 if bypasses else 0) or (bypasses and f"\nbypass: {bypasses}\n"
-                                                    not in output):
-                failures.append(f"outlined pieces, {name}: exit {code}, expected "
-                                f"{bypasses} bypasses\n{output}")
+        with tempfile.NamedTemporaryFile("wb", delete=False) as f:
+            f.write(header)
+        paths.append(f.name)
+        if map_text is not None:
+            with tempfile.NamedTemporaryFile("w", suffix=".map", delete=False) as m:
+                m.write(map_text)
+            paths.append(m.name)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = check.check(f.name, "nm", "objdump", paths[1] if map_text else None)
     finally:
-        os.unlink(f.name)
+        for path in paths:
+            os.unlink(path)
+    output = out.getvalue()
+    if code != (1 if bypasses else 0) or (bypasses and f"\nbypass: {bypasses}\n" not in output):
+        return [f"{name}: exit {code}, expected {bypasses} bypasses\n{output}"]
+    return []
+
+
+def check_outlined_pieces_map():
+    """The same on Windows' footing: a PE with the linker's map and a disassembly without names,
+    where each branch is pinned on the function holding its site or target."""
+    check = load_check()
+    publics = [("__imp__sub_1", 0x1000), ("sub_1", 0x1000), ("__imp__sub_2", 0x2000),
+               ("sub_2", 0x3000), ("__imp__sub_4", 0x4000), ("sub_4", 0x4000),
+               ("OUTLINED_FUNCTION_1", 0x5000), ("host", 0x6000)]
+    map_text = (" 0001:00000000 00010000H .text                   CODE\n\n"
+                + "".join(f" 0001:{a:08x}       {n}   {0x140000000 + a:016x} f   x.obj\n"
+                          for n, a in publics))
+    body = """   140001000: \tcall\t0x140003000
+   140005000: \tmovq\t%rbx, %rcx
+   140005004: \tjmp\t0x140002000
+{extra}
+"""
+    cases = [
+        ("the hook into the piece", "   140003000: \tcall\t0x140005004", 0),
+        ("generated code into the piece", "   140003000: \tcall\t0x140005000\n"
+         "   140004000: \tcall\t0x140005004", 1),
+        ("host code to the piece", "   140003000: \tcall\t0x140005000\n"
+         "   140006000: \tcall\t0x140005000", 1),
+    ]
+    failures = []
+    for name, extra, bypasses in cases:
+        failures += run_synthetic(check, f"outlined pieces with a map, {name}", PE_X86_64, "",
+                                  body.format(extra=extra), map_text, bypasses)
     return failures
 
 
@@ -183,7 +235,7 @@ def main():
     cases = [(args.ok, args.ok_map, 0, None), (args.bypass, args.bypass_map, 1, "bypass: 3")]
     if args.plt:
         cases.append((args.plt, None, 1, "plt:"))
-    failures = check_map_parser() + check_outlined_pieces()
+    failures = check_map_parser() + check_outlined_pieces() + check_outlined_pieces_map()
     # On Windows the OK fixture must still carry the RtlCaptureContext import thunk, or its case
     # (an import named like an SDK kernel export) would pass without testing anything.
     if args.ok_map and not has_import_thunk(args.ok_map, "RtlCaptureContext"):
