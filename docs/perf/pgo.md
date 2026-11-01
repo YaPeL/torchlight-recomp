@@ -63,7 +63,8 @@ training again is part of every freeze.
 ## When to train again
 
 A profile fits one generated code: train again after any codegen or ReXGlue update (new
-`generated/`), or a change of the compiler (NDK) that reads it. The generated code's build fails
+`generated/`), a change of the compiler (NDK) that reads it, or of the target CPU level (`-march`:
+the x86-64-v3 Linux build has its own profile). The generated code's build fails
 when its functions no longer match the profile (`-Werror=profile-instr-out-of-date` on
 `torchlight_recomp`); the game's own code, which changes every day, only warns and loses the
 profile for the functions that changed, so its share of the gain fades until the next training. A
@@ -102,10 +103,11 @@ afternoon, while the change measured about 1 ms. For any A/B of two PGO builds:
 The profiles live in the private assets repository (the owner's decision), next to `default.xex`, as
 `pgo/<platform>.profdata`. Android's APKs are built on our machine until its release job (A6,
 docs/android-port.md): those builds configure with `TORCHLIGHT_PGO_USE` pointing at the assets
-checkout's `pgo/android-arm64.profdata`. Still to do, with A6 and for Linux: every Game job of
-`release.yml` already checks the assets out; the job is to move its platform's profile out before
-the checkout is removed, configure with `TORCHLIGHT_PGO_USE`, keep the build's output in a file and
-run the match check right after the build, before the tests and packaging.
+checkout's `pgo/android-arm64.profdata`. The Linux release job (`release.yml`, `game-linux`) builds
+with `pgo/linux-x86_64.profdata` (2026-11-01): it moves the profile out before the assets checkout is
+removed, configures with `TORCHLIGHT_PGO_USE`, keeps the build's output in a file and runs the match
+check right after the build, before the tests and the packaging. Still to do: the same in Android's
+release job (A6), and for Windows and macOS once they have profiles.
 
 For when ThinLTO comes back (it is out for now, above): it moves code generation from the compile to
 the link's parallel backends: about the same total time (360 s against about 450 s locally), a link

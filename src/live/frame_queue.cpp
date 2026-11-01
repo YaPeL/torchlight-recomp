@@ -18,7 +18,34 @@ void Prepend(std::vector<T>& to, std::vector<T>&& from) {
 bool LiveFrame::empty() const {
   return commands.empty() && vertex_buffers.empty() && index_buffers.empty() &&
          declarations.empty() && textures.empty() && programs.empty() &&
-         program_sources.empty() && destroyed.empty();
+         program_sources.empty() && destroyed.empty() && absorbed.empty();
+}
+
+void LiveFrame::QueueDropped(LiveFrame&& older) {
+  // `older`'s own drops (oldest first) come before it. From Push this frame has none yet (nothing
+  // older than it was dropped into it), so `absorbed` becomes exactly that chain.
+  std::vector<LiveFrame> chain = std::move(older.absorbed);
+  older.absorbed.clear();  // a moved-from vector is only "valid"
+  chain.push_back(std::move(older));
+  for (LiveFrame& f : absorbed) chain.push_back(std::move(f));
+  absorbed = std::move(chain);
+  if (absorbed.size() > kMaxAbsorbedPending) {
+    // A stalled consumer: the oldest is merged into the next here and its leftovers freed, as
+    // before this queue merged at Pop, so a stall holds at most kMaxAbsorbedPending whole frames.
+    LiveFrame oldest = std::move(absorbed.front());
+    absorbed.erase(absorbed.begin());
+    absorbed.front().AbsorbDropped(std::move(oldest));
+  }
+}
+
+void LiveFrame::MergeAbsorbed() {
+  while (!absorbed.empty()) {
+    LiveFrame newest = std::move(absorbed.back());
+    absorbed.pop_back();
+    AbsorbDropped(std::move(newest));
+    newest.absorbed.clear();
+    discarded.push_back(std::move(newest));  // flat: absorbed frames hold no discarded of their own
+  }
 }
 
 void LiveFrame::AbsorbDropped(LiveFrame&& older) {
@@ -61,19 +88,21 @@ void FrameQueue::Push(LiveFrame frame) {
     while (frames_.size() > capacity_) {
       LiveFrame oldest = std::move(frames_.front());
       frames_.pop_front();
-      frames_.front().AbsorbDropped(std::move(oldest));
+      frames_.front().QueueDropped(std::move(oldest));
       ++dropped_;
     }
   }
   ready_.notify_one();
 }
 
-std::optional<LiveFrame> FrameQueue::Pop(std::chrono::milliseconds timeout) {
+std::optional<LiveFrame> FrameQueue::Pop(std::chrono::milliseconds timeout, bool merge) {
   std::unique_lock<MeasuredMutex> lock(mutex_);
   ready_.wait_for(lock, timeout, [&] { return !frames_.empty() || closed_; });
   if (frames_.empty()) return std::nullopt;
   LiveFrame f = std::move(frames_.front());
   frames_.pop_front();
+  lock.unlock();
+  if (merge) f.MergeAbsorbed();
   return f;
 }
 
