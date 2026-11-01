@@ -30,7 +30,10 @@ OUT_OF_DATE = re.compile(r"profile data may be out of date")
 FAILED = re.compile(r"^FAILED: (?:\[code=\d+\] )?(\S*)")
 # "path/file.cpp:12:3: error: message", "C:\Program Files\x.h(3): error: message",
 # "ld: error: message", "LINK : fatal error LNK1120: message", "a.obj : error LNK2019: message"
-ERROR = re.compile(r"^(?:(.+?)(?:\(\d+\)|(?::\d+)+)?\s?:\s*)?((?:fatal )?error)\b:?\s*(.*)$")
+# The file part stops at its first colon (a drive letter aside), so a warning or note that only
+# mentions an error further on is not one. The output is normalized ("error: message").
+ERROR = re.compile(r"^(?:((?:[A-Za-z]:)?[^:]+?)(?:\(\d+(?:,\d+)?\)|(?::\d+)+)?\s?:\s*)?"
+                   r"((?:fatal )?error)\b:?\s*(.*)$")
 PROGRESS = re.compile(r"^\[\d+/\d+\] ")
 SHOWN = 20
 
@@ -61,7 +64,7 @@ def outcome(lines):
             out.append(line)
             continue
         if OUT_OF_DATE.search(line):
-            if re.search(r"\berror\b", line):
+            if "-Werror" in line or ": error:" in line:
                 out_of_date_errors += 1
             else:
                 out_of_date += 1
@@ -71,7 +74,7 @@ def outcome(lines):
             failed.append(f"FAILED: {base(m.group(1))}")
             continue
         m = ERROR.match(line)
-        if m and not line.startswith(" "):
+        if m and not line.startswith((" ", "-- ")):  # source lines, CMake's status lines
             where = f"{base(m.group(1))}: " if m.group(1) else ""
             errors.append(f"{where}{m.group(2)}: {m.group(3)}")
             continue
