@@ -76,10 +76,12 @@ def file_format(binary):
 def map_symbols(map_path):
     """{name: ("T", address)} from an MSVC / lld-link map ("0001:00000010  sub_82100000
     0000000140001010  obj"): the publics' Rva+Base, of the CODE sections only (the import
-    table's __imp_ entries are data)."""
+    table's __imp_ entries are data). The thunks of functions imported from Windows DLLs (their
+    object column names the DLL, "kernel32:KERNEL32.dll") are left out: one named like a kernel
+    export the SDK implements (RtlCaptureContext beside __imp__RtlCaptureContext) is not its hook."""
     defined = {}
     section_re = re.compile(r"^\s*([0-9a-f]{4}):[0-9a-f]{8}\s+[0-9a-f]+H\s+\S+\s+(\w+)", re.I)
-    line_re = re.compile(r"^\s*([0-9a-f]{4}):[0-9a-f]{8}\s+(\S+)\s+([0-9a-f]{16})\b", re.I)
+    line_re = re.compile(r"^\s*([0-9a-f]{4}):[0-9a-f]{8}\s+(\S+)\s+([0-9a-f]{16})\b(.*)$", re.I)
     code = set()
     with open(map_path, encoding="utf-8", errors="replace") as f:
         for line in f:
@@ -90,6 +92,9 @@ def map_symbols(map_path):
                 continue
             m = line_re.match(line)
             if m and m.group(1) in code:
+                rest = m.group(4).split()
+                if rest and rest[-1].lower().endswith(".dll"):
+                    continue  # an import thunk
                 defined[m.group(2)] = ("T", int(m.group(3), 16))
     return defined
 
