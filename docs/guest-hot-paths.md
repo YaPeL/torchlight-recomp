@@ -70,12 +70,14 @@ Classified by instruction mix (from `generated/default`):
   executable's text is 67 MB, far from the 2 GB the small model allows; the Windows build already
   uses the default.
 - **`fmadd` is a call** to libc's `fma` (`__fma_fma3`, 0.75 % of the main thread): the build
-  targets x86-64-v2, which has no FMA instruction. x86-64-v3 inlines it but measured no clear gain
-  (`docs/performance-profile.md`). Profiled again on 2026-10-31 (the PGO build of 3e36ab5, `fight.txt`; thermal state not recorded,
+  targets x86-64-v2, which has no FMA instruction. x86-64-v3 inlines it; first measured with no
+  clear gain, then −4.9 % cycles in the fight with PGO (`docs/performance-profile.md`). Profiled again on 2026-10-31 (the PGO build of 3e36ab5, `fight.txt`; thermal state not recorded,
   the shares are of one profile's samples):
-  `__fma_fma3` and `fma@plt` are about 3 % of the guest thread in the fight. The owner's decision:
-  the desktop keeps x86-64-v2; raising the minimum CPU is not worth 3 % where the desktop already
-  has headroom (about 118 guest fps in the fight).
+  `__fma_fma3` and `fma@plt` are about 3 % of the guest thread in the fight. The owner's decision
+  then: the desktop keeps x86-64-v2. Revised on 2026-11-01: Linux builds for x86-64-v3, because
+  the Steam Deck (Zen 2: AVX2, FMA) is Linux's target; Windows stays on x86-64-v2. A CPU check
+  built for baseline x86-64 (`src/platform/cpu_check.cpp`) stops the game with a message on an
+  older CPU (`TORCHLIGHT_X86_64_V3`, CMakeLists.txt).
 - **Byte swaps** on every load and store come with a big-endian guest; the physical address offset
   is 0 on Linux and one compare per access on Windows and macOS arm64.
 

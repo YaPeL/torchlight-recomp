@@ -178,6 +178,23 @@ if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     target_compile_options(torchlight_recomp PRIVATE -mcmodel=small)
     target_compile_options(torchlight PRIVATE -mcmodel=small)
 endif()
+# x86-64-v3 on Linux x86-64 (the owner's decision, 2026-11-01: the Steam Deck is Linux's target and
+# its Zen 2 has AVX2 and FMA; Windows stays on x86-64-v2): the generated code and the torchlight
+# target's own sources (the game's static libraries keep their flags).
+# src/platform/cpu_check.cpp is compiled for baseline x86-64 and stops the game with a message on a
+# CPU without x86-64-v3, before anything built for it runs. The SDK's and OGRE's libraries keep
+# their own flags.
+option(TORCHLIGHT_X86_64_V3 "Build the game for x86-64-v3 (Linux x86-64), with a CPU check" ON)
+if(TORCHLIGHT_X86_64_V3 AND UNIX AND NOT APPLE AND NOT ANDROID AND
+   CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    target_compile_options(torchlight_recomp PRIVATE -march=x86-64-v3)
+    target_compile_options(torchlight PRIVATE -march=x86-64-v3)
+    target_sources(torchlight PRIVATE src/platform/cpu_check.cpp)
+    # The file's -march comes after the target's, so it wins.
+    set_source_files_properties(src/platform/cpu_check.cpp PROPERTIES
+        COMPILE_OPTIONS "-march=x86-64;-mno-sse4.1;-mno-sse4.2;-mno-popcnt"
+        COMPILE_DEFINITIONS TORCHLIGHT_X86_64_V3=1)
+endif()
 # Whole-program optimisation of the generated code and the game's own (docs/perf/pgo.md): ThinLTO,
 # and clang's instrumented profile-guided optimisation, generated (an instrumented build writes the
 # counters, src/pgo/pgo_writer.cpp) and used (a merged .profdata). Off by default; the SDK's

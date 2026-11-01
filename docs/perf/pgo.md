@@ -63,7 +63,8 @@ training again is part of every freeze.
 ## When to train again
 
 A profile fits one generated code: train again after any codegen or ReXGlue update (new
-`generated/`), or a change of the compiler (NDK) that reads it. The generated code's build fails
+`generated/`), a change of the compiler (NDK) that reads it, or of the target CPU level (`-march`:
+the x86-64-v3 Linux build has its own profile). The generated code's build fails
 when its functions no longer match the profile (`-Werror=profile-instr-out-of-date` on
 `torchlight_recomp`); the game's own code, which changes every day, only warns and loses the
 profile for the functions that changed, so its share of the gain fades until the next training. A
