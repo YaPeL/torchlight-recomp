@@ -1,6 +1,7 @@
 // The x86-64-v3 Linux build's CPU check (TORCHLIGHT_X86_64_V3, CMakeLists.txt): the game's code is
 // compiled for x86-64-v3 (AVX, AVX2, BMI1/2, F16C, FMA, LZCNT, MOVBE), so on an older CPU it would
-// crash on its first such instruction. This file is compiled for baseline x86-64.
+// crash on its first such instruction. This file is compiled for baseline x86-64 (without the SDK's
+// -msse4.1 too).
 //
 // The check runs from the executable's .preinit_array: the dynamic linker calls it before the
 // initialisers of every shared library and every constructor of the executable, whatever their
@@ -23,9 +24,9 @@ namespace {
 
 constexpr const char* kTitle = "Torchlight Recomp";
 constexpr char kMessage[] =
-    "This build of Torchlight Recomp needs a processor with x86-64-v3 (AVX2, FMA, BMI2), such "
-    "as the Steam Deck's or a PC processor from about 2015 on (Intel Haswell, AMD Zen or later). "
-    "This processor does not have it.";
+    "This build of Torchlight Recomp needs a processor with x86-64-v3 (AVX2, FMA, BMI2): the "
+    "Steam Deck's, Intel Core 4th generation (Haswell) or later, or AMD Zen or later. This "
+    "processor does not have it.";
 
 void CheckCpu(int, char**, char** envp) {
   __builtin_cpu_init();
@@ -35,6 +36,9 @@ void CheckCpu(int, char**, char** envp) {
   (void)!write(STDERR_FILENO, prefix, sizeof(prefix) - 1);
   (void)!write(STDERR_FILENO, kMessage, sizeof(kMessage) - 1);
   (void)!write(STDERR_FILENO, "\n", 1);
+  // Nobody may be there to close the box (an unattended run, or a dialog without focus under
+  // gamescope): the default SIGALRM action ends the process after two minutes.
+  alarm(120);
   SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, kTitle, kMessage, nullptr);
   _exit(1);
 }

@@ -38,8 +38,9 @@ Download only from this repository's
 
 ### Linux
 
-Requirements: an x86-64 processor with x86-64-v3 (AVX2 and FMA: the Steam Deck, or a PC processor
-from about 2015 on, Intel Haswell or AMD Zen and later; the game says so and exits on an older one),
+Requirements: an x86-64 processor with x86-64-v3 (AVX2 and FMA): the Steam Deck, Intel Core 4th
+generation (Haswell) or later, AMD Zen (or Excavator) or later; many Intel Pentium, Celeron and Atom
+processors lack it, and the game says so and exits on them,
 glibc 2.35 or newer (Ubuntu 22.04 or later, or any current distribution), a GPU driver with OpenGL
 3.3. X11 and Wayland both work.
 

@@ -306,9 +306,24 @@ No step changed its long frames (0-3 over 33 ms in any run). A profile of a run 
 as above) no longer has the guest's block copy loop.
 
 **x86-64-v3** (the game built with `-march=x86-64-v3`: AVX2, BMI2, FMA; the SDK and OGRE unchanged)
-was measured too and dropped: 0-2 % in the dungeon (within the noise), +4 % in the main menu, and
-the town, still, is the noisy step. Not worth requiring AVX2 (CPUs from about 2013 on), two builds
-or a launcher choosing one; the release stays x86-64-v2.
+was measured too and dropped at first: 0-2 % in the dungeon (within the noise), +4 % in the main
+menu, and the town, still, is the noisy step; the release stayed x86-64-v2.
+
+Revised on 2026-11-01 (the owner's decision: the Steam Deck, Zen 2, is Linux's target; Windows stays
+on x86-64-v2): Linux builds for x86-64-v3 (`TORCHLIGHT_X86_64_V3`, with the CPU check of
+`src/platform/cpu_check.cpp`). Measured with counters on the guest main thread over `fight.txt`'s
+fight step (i7-8750H, offscreen x11, power profile performance, CPU at 2.4-3.0 GHz and 62-71 °C at
+each run's start; perf/native-skeleton + this branch, local f5284af and later; PGO with each build's
+own profile, the v3 one trained on the v3 build, 0 of 19633 mismatched), A B B A:
+
+| | v2 | v3 | v3 against v2 |
+|---|---|---|---|
+| cycles a frame, skeleton port off | 33.97, 34.91 | 31.91, 33.60 | −4.9 % |
+| instructions a frame, port off | 34.40, 35.81 | 31.26, 32.95 | −8.6 % |
+| cycles a frame, `--native_skeleton` on | 34.85, 34.02 | 30.65, 30.96 | −10.5 % |
+
+The fused multiply-adds become instructions instead of libm calls; the skeleton port (#85) gains
+about 6 % on v3 and nothing on v2, where its own fma calls go to libm too.
 
 **Where the frame rate drops** (same profile): below 100 fps, in the dungeon with several enemies and
 an NPC on screen and in the town walking, the game issues about twice the draws (about 340 per frame

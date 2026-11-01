@@ -70,8 +70,8 @@ Classified by instruction mix (from `generated/default`):
   executable's text is 67 MB, far from the 2 GB the small model allows; the Windows build already
   uses the default.
 - **`fmadd` is a call** to libc's `fma` (`__fma_fma3`, 0.75 % of the main thread): the build
-  targets x86-64-v2, which has no FMA instruction. x86-64-v3 inlines it but measured no clear gain
-  (`docs/performance-profile.md`). Profiled again on 2026-10-31 (the PGO build of 3e36ab5, `fight.txt`; thermal state not recorded,
+  targets x86-64-v2, which has no FMA instruction. x86-64-v3 inlines it; first measured with no
+  clear gain, then −4.9 % cycles in the fight with PGO (`docs/performance-profile.md`). Profiled again on 2026-10-31 (the PGO build of 3e36ab5, `fight.txt`; thermal state not recorded,
   the shares are of one profile's samples):
   `__fma_fma3` and `fma@plt` are about 3 % of the guest thread in the fight. The owner's decision
   then: the desktop keeps x86-64-v2. Revised on 2026-11-01: Linux builds for x86-64-v3, because
