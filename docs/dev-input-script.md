@@ -19,6 +19,10 @@ python3 tools/run_capped/run_capped.py --timeout 300 --watch <the copy>/logs \
   --dev_input_script tools/input_scripts/load-and-quit.txt
 ```
 
+- The first start plays from its own script, in a development build (`--dev_setup_script <file>`,
+  with `--dev_setup_shots <folder>` and `--dev_setup_browse_from <folder>`; the steps are in
+  `src/wizard/wizard.cpp`). It needs a run without `--user_data_root`, so give it empty folders
+  (`HOME` and `XDG_*`), never the real ones.
 - Always on a copy of the user data (`--user_data_root`): scripts save the game, and
   `new-character` adds a character. Such a run keeps everything below that copy, its log in
   `<the copy>/logs/` (`docs/BUILDING.md`).

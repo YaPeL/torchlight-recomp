@@ -73,7 +73,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   achievement progress follow `--user_data_root` / `--cache_root` when they come
   (`settings/user_folders_in_use.h`, resolved by `live::UserFoldersInUse`). The first line of each
   log names the executable and the build's commit (`cmake/build_info.cmake`).
-- Setup wizard (`src/wizard/`, not in the game yet): one window for the first start, on desktop,
+- Setup wizard (`src/wizard/`, its first-start pages in `src/game_setup/setup_pages.h`): one window
+  for the first start, on desktop,
   with a pad, a mouse or a keyboard. SDL's software renderer (forced; on Linux and Windows the SDK's SDL has no other), Dear
   ImGui with the SDK's green palette, Noto Sans, the owner's cat as its icon (`data/icon/README.md`)
   and its own folder browser for where the system's picker does not show. `tools/wizard_shots` plays
@@ -83,8 +84,9 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   `platform::GameDataDir()` (`~/.local/share/TorchlightRecomp/game/`; its `import/` is where saves
   to import go). At every start its `default.xex` is checked (size and SHA-256); when it does not
   check out, a run with `--user_data_root` stops with an error, and any other, before the runtime's
-  window exists, gets a message box that asks for the user's Torchlight XBLA
-  package or an extracted folder (the system's pickers, SDL3; on the Steam Deck in Desktop Mode). A
+  window exists, gets the setup wizard (on Android, message boxes) that asks for the user's Torchlight
+  XBLA package or an extracted folder (the system's pickers, SDL3; where there is none, as in the
+  Steam Deck's Game Mode, the wizard's own browser). A
   package's header must say LIVE/CON/PIRS, Arcade Title, title `0x58410A7E`; it is extracted with
   the runtime's STFS reader (a folder is copied, never linked) into `game.partial/`, every file
   checked by size and SHA-256 against `game_files_table.inc` (the one supported version, 1.0.140.0;
