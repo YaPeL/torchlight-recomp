@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <thread>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -597,11 +598,20 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   if (Only()) {
     // The backend draws inside the game window, which keeps focus, input and window management.
     std::string error;
-    if (!platform::FindGameWindow(options.parent_window, options.window_width,
-                                  options.window_height, error)) {
-      REXLOG_ERROR("live: only mode needs the game window ({}); live mode not started", error);
-      return;
+    bool waited = false;
+    while (!platform::FindGameWindow(options.parent_window, options.window_width,
+                                     options.window_height, error)) {
+      if (!platform::GameWindowMayGetSurface()) {
+        REXLOG_ERROR("live: only mode needs the game window ({}); live mode not started", error);
+        return;
+      }
+      // Android: the app went to the background before the renderer started; the window gets its
+      // surface when the app is in front again.
+      if (!waited) REXLOG_INFO("live: the game window has no surface yet ({}); waiting for it", error);
+      waited = true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
+    if (waited) REXLOG_INFO("live: the game window has its surface");
     // The guest's vblank is the frame rate cap (with Xenos, the runtime's own presentation keeps
     // its --vsync).
     InitRunningSettings(game_data_root, dialogs.runtime);

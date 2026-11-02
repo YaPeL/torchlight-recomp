@@ -250,6 +250,10 @@ bool ServeSurfaceChanges(const std::function<void()>&,
   return true;
 }
 
+void SurfaceTaken() {}
+
+bool GameWindowMayGetSurface() { return false; }
+
 bool OgreWindowFollowsGameWindow() { return true; }
 
 namespace {

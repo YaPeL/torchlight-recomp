@@ -290,6 +290,15 @@ bool OgreWindowFollowsGameWindow();
 // true at once.
 bool ServeSurfaceChanges(const std::function<void()>& lost,
                          const std::function<bool(const NativeWindow&)>& restored);
+// The backend made its window on the game window's surface of now, on the thread it draws with. On
+// Android a surface that went away before the backend existed (the first start's file picker) and
+// came back is that same surface: it is not handed over again, or the backend would let go of its
+// own window and fail to make another on that surface (docs/regressions.md). Elsewhere nothing.
+void SurfaceTaken();
+// Whether a game window without a surface yet may still get one: on Android, an app sent to the
+// background before its renderer started (the window has no surface until it is in front again),
+// unless the activity is finishing. Elsewhere false: a window without handles stays so.
+bool GameWindowMayGetSurface();
 // How many times that surface has gone away or come back: odd while it is away (Android, the app
 // in the background), 0 elsewhere. Any thread, without a lock: for the guest's GPU wait watch
 // (hooks/gpu_wait_watch.h), which keeps quiet while the app is away, where the system may slow
