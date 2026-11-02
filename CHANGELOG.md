@@ -5,13 +5,63 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
+Draft for the next release (everything integrated into `develop` since v0.12.5-beta). The setup
+wizard and the portable mode are still being integrated; their lines are marked TO FILL.
+
+### Faster
+
+- Every desktop build is now optimized with a profile of real play (profile-guided optimization)
+  on Linux, Windows and macOS. In the benchmark fight, the game's main thread needs 6.4 % fewer CPU
+  cycles per frame than v0.12.5 (Linux, i7-8750H; frame 10.9 to 10.1 ms).
+- Linux: the game is built for x86-64-v3 CPUs and computes animated characters' skeletons
+  natively: on top of the line above, 10.5 % fewer cycles per frame in the same fight than a
+  Linux build without them. On the Steam Deck the native skeletons alone take 5.9 % off.
+- The recompiled game code translates memory addresses more cheaply: 9.3 % fewer cycles on
+  Android and a 6.4 % faster fight on macOS in the tests.
 - Much faster rendering of animated characters: big fights no longer drop the frame rate,
   especially on Android.
 - Shaders are now prepared during loading screens, removing small stutters at the title screen and
   after loading a level; on Windows (Direct3D 11) they are also cached between sessions.
-- Linux: the game's memory is now reserved before use and moves to a free address if its usual
-  one is taken, instead of silently overwriting memory already in use (a possible cause of rare
-  crashes).
+- Changing equipment builds the character's textures natively: about 41 to 21 ms per change on a
+  desktop PC, 22 to 15 ms on a phone, so equipping no longer hitches.
+- The game remembers which of its files do not exist instead of asking the disk again: the frame
+  where a new wave of enemies appears is shorter.
+- The game uses less CPU while waiting for the graphics work, which saves battery on laptops and
+  the Steam Deck.
+
+### Linux and the Steam Deck
+
+- The Linux build now needs a CPU with x86-64-v3 (AVX2, FMA): Intel Haswell (2013) or newer, AMD
+  Excavator or Zen or newer, and the Steam Deck. Many Pentium, Celeron and Atom processors lack
+  it. On such a CPU the game shows a message saying so and closes, instead of crashing.
+- The game's memory is now reserved before use and moves to a free address if its usual one is
+  taken, instead of silently overwriting memory already in use (a possible cause of rare crashes).
+
+### Display
+
+- 40 fps is among the frame rate caps.
+- The 30 fps cap holds: it used to run near 47 fps standing still and 33 in fights.
+
+### Setup (TO FILL when the setup wizard is in)
+
+- TO FILL: the setup wizard (first install from the game package or an extracted folder, in
+  English, German, French and Spanish; full controller navigation).
+- TO FILL: portable mode (all the game's files in a TorchlightRecomp-data folder next to the
+  AppImage, the .exe or the .app), and copying an existing installation into it.
+
+### For testers
+
+- `--user_data_root` now keeps everything below that folder: the settings
+  (`<root>/config/settings.toml`), the logs, the cache and the game files (`<root>/game`), unless
+  `--log_file`, `--cache_root` or `--game_data_root` say otherwise. A run whose folder has no game
+  stops with an error that says what to pass, instead of asking for the package.
+
+### Known limitations
+
+- A rare hang at startup on an Intel laptop (1 start in 5 of one series, never reproduced in 42
+  starts since): if the game stays on the first screens, close it and start it again. Its log now
+  records where every thread waits, to find the cause.
+- Android is not part of this release (the app is still in development builds).
 
 ## v0.12.5-beta (2026-10-17)
 
