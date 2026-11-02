@@ -9,8 +9,11 @@
 #include <string>
 #include <vector>
 
+#include "game_setup/first_run.h"
+#include "platform/user_folders.h"
 #include "game_setup/game_files.h"
 #include "game_setup/install.h"
+#include "game_setup/synthetic_package.h"
 
 namespace {
 
@@ -130,6 +133,28 @@ void TestInstallFromFolder() {
         "cancelled: nothing installed, nothing partial left");
 }
 
+// A whole install from a package, read by the runtime's reader, against an invented table.
+void TestInstallFromPackage() {
+  const fs::path root = fs::temp_directory_path() / "tl_game_setup_package";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const std::string xex = "an invented executable", data(9000, 'd');
+  Check(WriteSyntheticPackage(root / "package", {{"default.xex", xex}, {"data.bin", data}}),
+        "the package is written");
+  const auto facts = ReadPackageFacts(root / "package");
+  Check(facts && CheckPackage(*facts).empty(), "it reads as the game's package");
+  std::ofstream(root / "a") << xex;
+  std::ofstream(root / "b") << data;
+  const std::string xex_hash = Sha256File(root / "a"), data_hash = Sha256File(root / "b");
+  const std::vector<GameFile> files = {{"default.xex", xex.size(), xex_hash},
+                                       {"data.bin", data.size(), data_hash}};
+  const auto result = Install(Source::kPackage, root / "package", root / "game", files, {});
+  Check(result.error.empty(), "it installs");
+  Check(XexMatches(root / "game", files), "and checks out");
+  Check(VerifyGameFolder(root / "game", files).empty(), "every file");
+  fs::remove_all(root);
+}
+
 void TestTable() {
   bool xex = false;
   for (const GameFile& f : GameFiles()) {
@@ -156,13 +181,36 @@ int CheckRealPackage(const char* package) {
 
 }  // namespace
 
+// A run with its own user root and no game answers at once, with no dialog, leaving the folder as it
+// was. Below the tests' user folders.
+void TestMissingGameInRoot() {
+  namespace platform = torchlight::platform;
+  const fs::path dir = platform::UserFolder(platform::UserFolderKind::kGameData);
+  Check(std::getenv(platform::kTestUserFoldersVariable) != nullptr, "run with the tests' folders");
+  fs::remove_all(dir);
+  FirstStartFacts facts;
+  facts.own_user_root = true;
+  std::vector<platform::StartupMessage> log;
+  Check(FirstStart(facts, log) == GameData::kMissingInRoot, "no game, may not ask: stops");
+  Check(!fs::exists(dir), "no game, may not ask: creates nothing");
+  fs::create_directories(dir);
+  std::ofstream(dir / "default.xex") << "not the game";
+  Check(FirstStart(facts, log) == GameData::kMissingInRoot, "wrong game: stops too");
+  fs::remove_all(dir);
+  // The game given, and nothing else to ask for: ready, no question.
+  facts.game_given = true;
+  Check(FirstStart(facts, log) == GameData::kReady, "the game given: nothing asked");
+}
+
 int main(int argc, char** argv) {
   if (argc > 1) return CheckRealPackage(argv[1]);
   TestCheckPackage();
   TestReadPackageFacts();
   TestVerifyFolder();
   TestInstallFromFolder();
+  TestInstallFromPackage();
   TestTable();
+  TestMissingGameInRoot();
   std::printf("game_setup_test: ok\n");
   return 0;
 }

@@ -6,6 +6,85 @@ what happened, which layer should have caught it, and what catches it now (a tes
 checklist item of the pre-release passes). A new entry is added when a bug is found that late; the
 lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
+## The macOS outliner's piece taken for a bypass by the binding check (caught before a release)
+
+- **What happened:** with the PGO profile, AppleClang's machine outliner moved the hook
+  `sub_8276A858`'s own call to its original, `__imp__sub_8276A858`, into a shared piece,
+  `OUTLINED_FUNCTION_7`, reached only from that hook. The check counted every compiler piece as
+  possibly generated code, so the macOS release link with the profile failed. Found by the macOS
+  agent's check build of its PGO profile, 2026-11-01.
+- **Should have been caught by:** the fixtures, which had no outlined piece; no-game CI builds
+  without a profile, where the outliner leaves the hooks alone.
+- **Caught by:** the check build of the macOS profile on the owner's Mac (kit step 4).
+- **Covered now:** the check judges an `OUTLINED_FUNCTION_*` piece by its callers: it is accepted
+  when the hook X is all that reaches it (directly or through other outlined pieces only X
+  reaches), and still a bypass when anything else does. The fixtures' hook calls its `__imp__`
+  through two outlined pieces (OK must pass; the old check failed it with this exact message), and
+  the BYPASS fixture's generated function also reaches them (reported).
+
+## Windows game builds stopped at the binding check's fixture test (caught before a release)
+
+- **What happened:** since e3984aa (2026-10-30) the game appended Windows' `--map torchlight.map`
+  to `_binding_tools`; 420a927 (2026-10-31, the desktop fixtures) made `tests/guest_call_binding`
+  pass that same list to its test script, which takes each fixture's map apart (`--ok-map`,
+  `--bypass-map`) and refused `--map`. From then every full Windows build of the game failed at that
+  test (the release job builds everything). Found by the Windows agent training PGO, 2026-11-01; no
+  release was built since.
+- **Should have been caught by:** CI, which builds Windows without the game (no XEX), so the
+  game's block of CMakeLists.txt never ran there.
+- **Caught by:** a full build on the owner's Windows PC.
+- **Covered now:** the game keeps its own list (`_game_binding_tools`), and
+  `tests/guest_call_binding/CMakeLists.txt` stops the configure with a clear error if `--map` is
+  ever in `_binding_tools` again (a game build only; no-game CI still cannot see game-only code, so a
+  full Windows build runs on the Windows PC or in the freeze's candidate tag before a release).
+
+## Windows import thunks taken for hooks by the binding check (caught before a release)
+
+- **What happened:** with the linker's map, the check paired each `__imp__X` with any public `X`
+  in a code section; the thunk of KERNEL32's `RtlCaptureContext`, which the executable imports,
+  shares its name with the kernel export the SDK implements as `__imp__RtlCaptureContext`, so the
+  game's `sub_8287C570` calling it read as a bypass and failed the Windows link. Found by the
+  Windows agent, 2026-11-01, right after the `--map` entry above.
+- **Should have been caught by:** the fixtures, which had no import named like a kernel export.
+- **Caught by:** a full build on the owner's Windows PC.
+- **Covered now:** `map_symbols` leaves out the publics whose object column names a DLL; the
+  Windows fixtures import `RtlCaptureContext` and call an `__imp__RtlCaptureContext` from guest-style
+  code (the fixture failed Windows CI before the fix, with this exact message).
+
+## A flag-switched optimisation measured against a profile trained without it (caught before the default changed)
+
+- **What happened:** the skeleton port (`--native_skeleton`, PR #85, 2026-11-01) was measured with
+  PGO profiles trained with the flag off, so its code had never run in training and the compiler
+  treated it as cold (optimised for size, out of the hot path). On the Steam Deck it measured +2 %
+  cycles a frame with the release's v3 profile, against −5.9 % with a profile trained with the port
+  off and on; on the POCO the first A B B A showed no gain and was nearly taken as a reason to drop
+  the port.
+- **Should have been caught by:** the measuring procedure: a flag's optimisation needs a profile
+  that saw the flag on.
+- **Caught by:** the owner's hypothesis, confirmed on the Deck (on the POCO neither test, without
+  PGO or with a profile trained with the port on, showed a clear gain).
+- **Covered now:** docs/perf/pgo.md: any optimisation behind a flag is measured with a profile
+  trained with it on, and a release profile for a build where the flag may be either way is trained
+  with both (the Linux profile, for `--native_skeleton`).
+
+## ThinLTO bound the generated code's calls past the hooks (caught before any merge)
+
+- **What happened:** with `TORCHLIGHT_LTO` (ThinLTO for the generated code and the game's own,
+  branch `perf/pgo-lto`, 2026-10-30), calls of the generated code to hooked guest functions went
+  straight to their `__imp__` bodies, past the hooks: 1492 such branches on Android, 1454 on Linux
+  (the guest's memcpy hook among them). A hook is a strong `sub_X` over the generated weak alias
+  `sub_X` of `__imp__sub_X`; under ThinLTO the alias, losing to the hook, was replaced by its
+  aliasee instead of becoming a reference to the hook. The desktop measurements taken with it are
+  void: ThinLTO alone -4.5 % and PGO + ThinLTO -13 % in `fight.txt` (docs/perf/pgo.md); PGO alone,
+  linked normally, was not affected (-3.7 %).
+- **Should have been caught by:** the binding check on every platform; it ran only on Android
+  (the shared library's `-Bsymbolic-functions`).
+- **Caught by:** the Android build's binding check, which failed the link.
+- **Covered now:** `tools/android/check_guest_call_binding.py` runs after every game link, Linux
+  (ELF x86-64), macOS (Mach-O) and Windows (PE, from the linker's map) as on Android, and fails the
+  build on a bypass. ThinLTO stays out until the codegen makes `sub_X` a weak function calling
+  `__imp__sub_X` rather than an alias (the request to ReXGlue's owner).
+
 ## The town lamps' light missing on Direct3D 11 (fixed in 0338b58)
 
 - **What happened:** after the backend's per-draw cuts (daeaa8b, constants bound only when they

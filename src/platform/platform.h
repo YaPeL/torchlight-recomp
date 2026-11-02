@@ -110,10 +110,18 @@ void SetCurrentThreadName(const char* name);
 // SDL3 message boxes, the system's file and folder pickers and a small progress window. Main
 // thread.
 
+// macOS brings the application to the front (started from a terminal, it stays behind the
+// terminal and its dialogs with it); Linux and Windows show them in front already.
+void BringToFront();
 // A message box with `buttons`; the index of the one chosen, -1 when it was closed.
 int AskChoice(const std::string& title, const std::string& message,
               const std::vector<std::string>& buttons);
 void ShowError(const std::string& title, const std::string& message);
+// One line for whoever started a run that cannot go on, before the runtime's log is up. It never
+// blocks: stderr on Linux, stderr and the system log on macOS, logcat on Android; on Windows, a
+// windowed program, the inherited stderr or else the parent's console. A run with nowhere to write
+// it, on any platform, leaves only its exit code.
+void PrintStartupError(const std::string& message);
 enum class PickResult { kChosen, kCancelled, kFailed, kUncopied };
 // The system's picker for one file or one folder (blocks until it closes); kFailed with the
 // reason when no picker could be shown (e.g. no desktop portal in a gamescope session), kUncopied

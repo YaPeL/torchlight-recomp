@@ -21,6 +21,7 @@
 #include <rex/logging.h>
 #include <rex/ui/presenter.h>
 
+#include "hooks/adaptive_vsync.h"
 #include "hooks/video_mode.h"
 #include "live/deferred_check.h"
 #include "live/live_mode.h"
@@ -30,6 +31,10 @@
 #include "platform/platform.h"
 #include "settings/host_settings.h"
 
+// Not configuration: AppRun.in passes AppImage's own $APPIMAGE, the only way to know the folder the
+// image is in (the executable runs from its temporary mount). platform/storage_mode.h.
+REXCVAR_DEFINE_STRING(appimage_path, "", "Torchlight",
+                      "The AppImage this run started from (set by the image's AppRun)");
 REXCVAR_DEFINE_STRING(native_live, "only", "Torchlight",
                       "Renderer: only (the default: the native OGRE backend is the only renderer, "
                       "Xenos off, GPU plugin rexgpu-null); off (the emulated Xenos GPU; also chosen "
@@ -52,6 +57,13 @@ REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
 REXCVAR_DEFINE_BOOL(diag_depth_discard, true, "Torchlight",
                     "Diagnostics: on GLES, drop a render texture's depth when the next pass clears "
                     "it (frontend/depth_discard.h); =false to measure without it in the same build");
+REXCVAR_DEFINE_BOOL(native_shadow_index, true, "Torchlight",
+                    "Live mode: find the session's last value of each state by direct index, not "
+                    "through its map; =false to measure without it in the same build");
+REXCVAR_DEFINE_BOOL(diag_shadow_index, false, "Torchlight",
+                    "Diagnostics, live mode: check each lookup of the session's direct shadow "
+                    "index against the shadow map (an entry added or moved past the index) and "
+                    "log the mismatches in the live summary; it does not compare commands");
 REXCVAR_DEFINE_UINT32(live_record_max_mb, 4096, "Torchlight",
                       "Live mode: the session recording stops (well formed) at this size in MiB");
 
@@ -325,9 +337,12 @@ void ApplyFpsCap(uint32_t fps_cap, rex::Runtime* runtime) {
   if (flag->source == rex::cvar::Source::kCommandLine) {
     REXLOG_INFO("settings: fps cap left to --vsync={} from the command line",
                 rex::cvar::Query<bool>("vsync"));
+    hooks::SetAdaptiveVsyncCap(0);
     return;
   }
   graphics->SetGuestVblankRate(fps_cap);
+  // The game's own adaptive vsync would drop the vsync at a cap of 30 (hooks/adaptive_vsync.h).
+  hooks::SetAdaptiveVsyncCap(fps_cap);
   rex::cvar::SetFlagByName("vsync", fps_cap == 0 ? "false" : "true");
 }
 
@@ -565,6 +580,8 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
   options.depth_discard = REXCVAR_GET(diag_depth_discard);
+  options.shadow_index = REXCVAR_GET(native_shadow_index);
+  options.shadow_index_check = REXCVAR_GET(diag_shadow_index);
   options.on_backend_failed = dialogs.renderer_failed;
   options.frame_queue = size_t(std::max(0, REXCVAR_GET(native_frame_queue)));
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.

@@ -51,6 +51,26 @@ if(WIN32)
     set(CMAKE_MAP_IMPORTED_CONFIG_MINSIZEREL MinSizeRel Release RelWithDebInfo)
 endif()
 
+# The binding check's tools (tools/android/check_guest_call_binding.py, on the game and on its
+# fixtures in tests/guest_call_binding): the NDK's on Android; elsewhere LLVM's nm and objdump,
+# beside the compiler or apt.llvm.org's (GNU's do not read every format the check does; Xcode's nm
+# and objdump are LLVM's).
+if(ANDROID)
+    set(_binding_tools --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP})
+else()
+    get_filename_component(_toolchain_bin "${CMAKE_CXX_COMPILER}" DIRECTORY)
+    set(_binding_nm llvm-nm llvm-nm-21)
+    set(_binding_objdump llvm-objdump llvm-objdump-21)
+    if(APPLE)
+        list(APPEND _binding_nm nm)
+        list(APPEND _binding_objdump objdump)
+    endif()
+    find_program(TORCHLIGHT_LLVM_NM NAMES ${_binding_nm}
+                 HINTS "${_toolchain_bin}" /usr/lib/llvm-21/bin REQUIRED)
+    find_program(TORCHLIGHT_LLVM_OBJDUMP NAMES ${_binding_objdump}
+                 HINTS "${_toolchain_bin}" /usr/lib/llvm-21/bin REQUIRED)
+    set(_binding_tools --nm ${TORCHLIGHT_LLVM_NM} --objdump ${TORCHLIGHT_LLVM_OBJDUMP})
+endif()
 if(TORCHLIGHT_GAME)
 # Sources
 set(TORCHLIGHT_SOURCES
@@ -74,6 +94,10 @@ set(TORCHLIGHT_SOURCES
     src/hooks/frustum_hooks.cpp
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
+    src/hooks/native_skeleton.cpp
+    src/hooks/pixel_util_hooks.cpp
+    src/hooks/wardrobe_blend_hooks.cpp
+    src/hooks/adaptive_vsync_hooks.cpp
     src/hooks/guest_io_hooks.cpp
     src/hooks/render_system_hooks.cpp
     src/hooks/rtss_listener_hooks.cpp
@@ -109,16 +133,46 @@ endif()
 
 set(TORCHLIGHT_GPU_PLUGINS xenos null)
 rexglue_setup_target(torchlight GPU_PLUGINS ${TORCHLIGHT_GPU_PLUGINS})
-# On Android the game is a shared library that the SDK links with -Wl,-Bsymbolic-functions (patch
-# 47): every link checks that the generated code's calls are bound inside it and reach the hooks.
-if(ANDROID)
-    find_package(Python3 REQUIRED COMPONENTS Interpreter)
-    add_custom_command(TARGET torchlight POST_BUILD
-        COMMAND ${Python3_EXECUTABLE} -I
-                ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
-                $<TARGET_FILE:torchlight> --nm ${CMAKE_NM} --objdump ${CMAKE_OBJDUMP}
-        VERBATIM)
+# The host wardrobe blend loop (hooks/wardrobe_blend_hooks.cpp) relies on the generated sub_822DC6B0
+# being the one it was checked on: every codegen is checked again, and the result is a header the
+# hook reads. A changed function does not fail the build: the game keeps the recompiled loop and
+# logs why; the wardrobe_blend_generated test fails instead (tools/wardrobe_blend/check_generated.py).
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+set(_wardrobe_blend_header "${CMAKE_CURRENT_BINARY_DIR}/generated_include/wardrobe_blend_generated.h")
+add_custom_command(OUTPUT "${_wardrobe_blend_header}"
+    COMMAND ${Python3_EXECUTABLE} -I ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py
+            ${CMAKE_SOURCE_DIR}/generated/default --header "${_wardrobe_blend_header}"
+    DEPENDS ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py
+            ${CMAKE_SOURCE_DIR}/src/guest_abi/wardrobe.h
+            ${CMAKE_SOURCE_DIR}/generated/default/codegen.build.stamp
+    COMMENT "Checking the generated wardrobe build against the host blend loop"
+    VERBATIM)
+add_custom_target(torchlight_wardrobe_blend_check DEPENDS "${_wardrobe_blend_header}")
+add_dependencies(torchlight_wardrobe_blend_check torchlight_codegen)
+add_dependencies(torchlight torchlight_wardrobe_blend_check)
+set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES
+    OBJECT_DEPENDS "${_wardrobe_blend_header}")
+target_include_directories(torchlight PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated_include")
+# Every link checks that the generated code's calls reach the hooks
+# (tools/android/check_guest_call_binding.py): on Android the game is a shared library the SDK links
+# with -Wl,-Bsymbolic-functions (patch 47); everywhere, nothing (ThinLTO did, docs/regressions.md)
+# may bind a generated call to a hooked function's __imp__ body past its hook. Windows' executable
+# has no symbol table: the linker writes a map the check reads.
+# The game's own list: _binding_tools stays the tools only, since tests/guest_call_binding passes it
+# to a script that takes each fixture's map apart and refuses --map.
+set(_game_binding_tools ${_binding_tools})
+if(WIN32)
+    set(_binding_map "${CMAKE_CURRENT_BINARY_DIR}/torchlight.map")
+    # No incremental link (link.exe's default with debug information): its jump stubs would hide
+    # where a call is bound.
+    target_link_options(torchlight PRIVATE "LINKER:/MAP:${_binding_map}" "LINKER:/INCREMENTAL:NO")
+    list(APPEND _game_binding_tools --map ${_binding_map})
 endif()
+add_custom_command(TARGET torchlight POST_BUILD
+    COMMAND ${Python3_EXECUTABLE} -I
+            ${CMAKE_SOURCE_DIR}/tools/android/check_guest_call_binding.py
+            $<TARGET_FILE:torchlight> ${_game_binding_tools}
+    VERBATIM)
 # The default code model for the game on Linux x86-64 (docs/guest-hot-paths.md). The SDK compiles
 # its targets with -mcmodel=large ("large executable support"), which makes every call between
 # guest functions a 64-bit absolute address in a register and an indirect call; the executable's
@@ -127,6 +181,75 @@ endif()
 if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     target_compile_options(torchlight_recomp PRIVATE -mcmodel=small)
     target_compile_options(torchlight PRIVATE -mcmodel=small)
+endif()
+# x86-64-v3 on Linux x86-64 (the owner's decision, 2026-11-01: the Steam Deck is Linux's target and
+# its Zen 2 has AVX2 and FMA; Windows stays on x86-64-v2): the generated code and the torchlight
+# target's own sources (the game's static libraries keep their flags).
+# src/platform/cpu_check.cpp is compiled for baseline x86-64 and stops the game with a message on a
+# CPU without x86-64-v3, before anything built for it runs. The SDK's and OGRE's libraries keep
+# their own flags.
+option(TORCHLIGHT_X86_64_V3 "Build the game for x86-64-v3 (Linux x86-64), with a CPU check" ON)
+if(TORCHLIGHT_X86_64_V3 AND UNIX AND NOT APPLE AND NOT ANDROID AND
+   CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+    target_compile_options(torchlight_recomp PRIVATE -march=x86-64-v3)
+    target_compile_options(torchlight PRIVATE -march=x86-64-v3)
+    target_sources(torchlight PRIVATE src/platform/cpu_check.cpp)
+    # The file's -march comes after the target's, so it wins.
+    set_source_files_properties(src/platform/cpu_check.cpp PROPERTIES
+        COMPILE_OPTIONS "-march=x86-64;-mno-sse4.1;-mno-sse4.2;-mno-popcnt"
+        COMPILE_DEFINITIONS TORCHLIGHT_X86_64_V3=1)
+    # The skeleton port (hooks/native_skeleton.cpp) on by default here only: it gains with fma as an
+    # instruction (measured on the Steam Deck and the desktop, 2026-11-01).
+    set_property(SOURCE src/hooks/native_skeleton.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+                 TORCHLIGHT_NATIVE_SKELETON_DEFAULT=1)
+endif()
+# Whole-program optimisation of the generated code and the game's own (docs/perf/pgo.md): ThinLTO,
+# and clang's instrumented profile-guided optimisation, generated (an instrumented build writes the
+# counters, src/pgo/pgo_writer.cpp) and used (a merged .profdata). Off by default; the SDK's
+# libraries get neither.
+option(TORCHLIGHT_LTO "ThinLTO for the generated code and the game's own" OFF)
+option(TORCHLIGHT_PGO_GENERATE "Instrument the generated code and the game's own for PGO" OFF)
+set(TORCHLIGHT_PGO_USE "" CACHE FILEPATH "Merged clang profile (.profdata) to optimise with")
+if(TORCHLIGHT_LTO)
+    target_compile_options(torchlight_recomp PRIVATE -flto=thin)
+    target_compile_options(torchlight PRIVATE -flto=thin)
+    # lld reads the bitcode (Windows links with lld-link already); Apple's ld64 does ThinLTO itself
+    # and Xcode has no lld.
+    if(APPLE)
+        target_link_options(torchlight PRIVATE -flto=thin)
+    else()
+        target_link_options(torchlight PRIVATE -flto=thin -fuse-ld=lld)
+    endif()
+endif()
+if(TORCHLIGHT_PGO_GENERATE AND TORCHLIGHT_PGO_USE)
+    message(FATAL_ERROR "TORCHLIGHT_PGO_GENERATE and TORCHLIGHT_PGO_USE exclude each other")
+endif()
+if(TORCHLIGHT_PGO_GENERATE)
+    target_compile_options(torchlight_recomp PRIVATE -fprofile-instr-generate)
+    target_compile_options(torchlight PRIVATE -fprofile-instr-generate)
+    target_link_options(torchlight PRIVATE -fprofile-instr-generate)
+    target_sources(torchlight PRIVATE src/pgo/pgo_writer.cpp)
+    target_compile_definitions(torchlight PRIVATE TORCHLIGHT_PGO_GENERATE=1)
+elseif(TORCHLIGHT_PGO_USE)
+    # A function whose code changed since the profile keeps no profile; clang says how many of
+    # each translation unit's functions did (-Wprofile-instr-out-of-date), and
+    # tools/pgo/check_profile_match.py turns the build log's counts into a pass or fail.
+    # The generated code changes only with a codegen or ReXGlue update, which needs a new profile:
+    # a function of it whose profile no longer matches fails the build. The game's own code changes
+    # every day; its stale functions only lose their profile (a warning).
+    # A missing profile stops the configure, and a new one rebuilds what reads it.
+    if(NOT EXISTS "${TORCHLIGHT_PGO_USE}")
+        message(FATAL_ERROR "TORCHLIGHT_PGO_USE: no profile at ${TORCHLIGHT_PGO_USE}")
+    endif()
+    target_compile_options(torchlight_recomp PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
+                           -Wno-profile-instr-unprofiled -Werror=profile-instr-out-of-date)
+    target_compile_options(torchlight PRIVATE "-fprofile-instr-use=${TORCHLIGHT_PGO_USE}"
+                           -Wno-profile-instr-unprofiled)
+    foreach(_pgo_target IN ITEMS torchlight_recomp torchlight)
+        get_target_property(_pgo_sources ${_pgo_target} SOURCES)
+        set_property(SOURCE ${_pgo_sources} TARGET_DIRECTORY ${_pgo_target}
+                     APPEND PROPERTY OBJECT_DEPENDS "${TORCHLIGHT_PGO_USE}")
+    endforeach()
 endif()
 # The SDK copies the GPU plugins next to the executable in a POST_BUILD step, which only runs when
 # the executable relinks: after reinstalling the SDK the game kept loading the old plugins. This copy
@@ -158,6 +281,15 @@ add_test(NAME no_direct_spdlog COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOU
 # v14 and up): cmake/check_guest_registers.cmake.
 add_test(NAME no_preserved_guest_registers COMMAND ${CMAKE_COMMAND} -DSOURCE_DIR=${CMAKE_SOURCE_DIR}/src
     -P ${CMAKE_SOURCE_DIR}/cmake/check_guest_registers.cmake)
+# With the game's generated code: fails when the generated sub_822DC6B0 is not the one the host
+# wardrobe blend loop was checked on (the game build then keeps the recompiled loop). Labelled
+# "development": the release workflow leaves it out (-LE), so a changed function there is a warning
+# in the game's log, not a failed release.
+if(TORCHLIGHT_GAME)
+    add_test(NAME wardrobe_blend_generated COMMAND ${Python3_EXECUTABLE} -I
+        ${CMAKE_SOURCE_DIR}/tools/wardrobe_blend/check_generated.py ${CMAKE_SOURCE_DIR}/generated/default)
+    set_tests_properties(wardrobe_blend_generated PROPERTIES LABELS development)
+endif()
 add_subdirectory(src/guest_abi)
 add_subdirectory(src/achievements)
 add_subdirectory(src/input)
@@ -174,31 +306,77 @@ add_subdirectory(src/platform)
 add_subdirectory(src/backend)
 add_subdirectory(src/frontend)
 add_subdirectory(src/live)
+if(NOT ANDROID)
+  add_subdirectory(src/wizard)
+endif()
 add_subdirectory(src/game_setup)
 add_subdirectory(tools/capture_dump)
 add_subdirectory(tools/thread_profile)
 add_subdirectory(tools/synthetic_capture)
 add_subdirectory(tools/replay)
+add_subdirectory(tools/wizard_shots)
 add_subdirectory(tools/run_capped)
 add_subdirectory(tools/profile_window)
+add_subdirectory(tools/pgo)
 add_subdirectory(tools/deps)
 add_subdirectory(tools/translations)
 add_subdirectory(tools/achievement_coverage)
 add_subdirectory(tools/class_skill_check)
 add_subdirectory(tools/release)
 add_subdirectory(tests/save_convert)
-if(ANDROID)
-    add_subdirectory(tests/guest_call_binding)
-endif()
+add_subdirectory(tests/guest_call_binding)
 
 if(TORCHLIGHT_GAME)
 target_include_directories(torchlight PRIVATE src)
-# Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census). Off by
-# default and in every release workflow: without it nothing of them is compiled, no guest function
-# is wrapped and nothing runs, so they cost nothing. The one build flag for such diagnostics.
+# The wardrobe blend loop's arithmetic must stay the recompiled code's: no contraction of
+# floating-point operations (hooks/wardrobe_blend.h).
+set_source_files_properties(src/hooks/wardrobe_blend_hooks.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+# The node and bone updates reproduce the guest's rounding (hooks/native_skeleton.cpp): no fused
+# operations the guest does not do.
+set_source_files_properties(src/hooks/native_skeleton.cpp PROPERTIES COMPILE_OPTIONS -ffp-contract=off)
+# Diagnostics that wrap guest functions (hooks/census_hooks.cpp, --diag_object_census;
+# hooks/queue_census_hooks.cpp, --diag_queue_census; diag/store_trace.cpp, --diag_store_trace).
+# Off by default and in every release workflow: without it nothing of them is compiled, no guest
+# function is wrapped and nothing runs, so they cost nothing. The one build flag for such
+# diagnostics.
 option(TORCHLIGHT_DIAGNOSTICS "Compile the diagnostics that wrap guest functions" OFF)
 if(TORCHLIGHT_DIAGNOSTICS)
-    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp)
+    target_sources(torchlight PRIVATE src/hooks/census_hooks.cpp src/hooks/queue_census_hooks.cpp
+                   src/diag/store_trace.cpp)
+    # The store trace's comparison reaches into the capture session and the constants hook
+    # (capture::Session::CompareLog).
+    set_property(SOURCE src/capture/session.cpp src/hooks/render_system_hooks.cpp
+                 src/hooks/guest_copy_hooks.cpp src/hooks/native_skeleton.cpp
+                 src/diag/store_trace.cpp
+                 APPEND PROPERTY COMPILE_DEFINITIONS TORCHLIGHT_DIAGNOSTICS=1)
+    # The store trace (diag/store_trace.h, --diag_store_trace): precompiled after the generated
+    # code's own header, it redefines its guest stores; the whole generated code is rebuilt.
+    if(TARGET torchlight_recomp)
+        target_precompile_headers(torchlight_recomp PRIVATE
+                                  "${CMAKE_SOURCE_DIR}/src/diag/store_trace.h")
+        # The kernel exports the generated code calls, wrapped by the link (GNU ld and lld:
+        # Linux and Android), recorded by the store trace too.
+        if(NOT WIN32 AND NOT APPLE)
+            set(_st_imports_cpp "${CMAKE_CURRENT_BINARY_DIR}/store_trace_imports.cpp")
+            set(_st_imports_rsp "${CMAKE_CURRENT_BINARY_DIR}/store_trace_imports.rsp")
+            add_custom_command(OUTPUT "${_st_imports_cpp}" "${_st_imports_rsp}"
+                COMMAND ${Python3_EXECUTABLE} -I
+                        ${CMAKE_SOURCE_DIR}/tools/diag/gen_store_trace_imports.py
+                        ${CMAKE_SOURCE_DIR}/generated/default "${_st_imports_cpp}"
+                        "${_st_imports_rsp}"
+                DEPENDS ${CMAKE_SOURCE_DIR}/tools/diag/gen_store_trace_imports.py
+                        ${CMAKE_SOURCE_DIR}/generated/default/codegen.build.stamp
+                VERBATIM)
+            target_sources(torchlight PRIVATE "${_st_imports_cpp}")
+            target_link_options(torchlight PRIVATE "@${_st_imports_rsp}")
+            set_property(TARGET torchlight APPEND PROPERTY LINK_DEPENDS "${_st_imports_rsp}")
+        endif()
+    endif()
+    target_link_libraries(torchlight PRIVATE torchlight_queue_census)
+    # The colour pack/unpack checks against the guest's own functions (pixel_util_check.inc).
+    # The wardrobe blend loop's check against the recompiled loop (wardrobe_blend_check.inl).
+    set_source_files_properties(src/hooks/pixel_util_hooks.cpp src/hooks/wardrobe_blend_hooks.cpp PROPERTIES
+        COMPILE_DEFINITIONS TORCHLIGHT_PIXEL_UTIL_DIAGNOSTICS=1)
 endif()
 # Guest developer commands for validation runs (dev/guest_command.h). Off by default; the release
 # workflows never set it, so release builds ignore --dev_guest_command.
@@ -214,6 +392,11 @@ option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_scri
 if(TORCHLIGHT_DEV_INPUT)
     set_source_files_properties(src/dev/script_input.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    # The first start played from a script (--dev_setup_script).
+    if(NOT ANDROID)
+        set_source_files_properties(src/game_setup/first_run_wizard.cpp DIRECTORY src/game_setup PROPERTIES
+            COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    endif()
     # The mouse as a finger on the touch controls (--dev_touch_mouse).
     set_source_files_properties(src/live/touch_input.cpp DIRECTORY src/live PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
@@ -227,7 +410,7 @@ add_dependencies(torchlight torchlight_data)
 # The live mode (and through it the frontend) and the backend objects.
 target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_mods torchlight_texture_files
     torchlight_save_mod_list torchlight_video_mode torchlight_guest_path torchlight_gpu_wait_watch torchlight_missing_file_cache
-    torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_bucket_cull
+    torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_pixel_util torchlight_bucket_cull
     torchlight_native_render_system torchlight_frustum_test torchlight_dev_input_script)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
@@ -245,6 +428,16 @@ add_custom_target(torchlight_build_info
     VERBATIM)
 add_dependencies(torchlight torchlight_build_info)
 target_include_directories(torchlight PRIVATE "${TORCHLIGHT_BUILD_INFO_DIR}")
+endif()
+
+# The game's icon in the Windows executable (data/icon/README.md). The path is generated: rc files
+# have no way to name a folder of the build's own.
+if(WIN32 AND TORCHLIGHT_GAME)
+    enable_language(RC)
+    set(_icon "${CMAKE_SOURCE_DIR}/data/icon/torchlight-recomp.ico")
+    file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/torchlight_icon.rc" CONTENT "1 ICON \"${_icon}\"\n")
+    target_sources(torchlight PRIVATE "${CMAKE_BINARY_DIR}/torchlight_icon.rc")
+    set_source_files_properties("${CMAKE_BINARY_DIR}/torchlight_icon.rc" PROPERTIES OBJECT_DEPENDS "${_icon}")
 endif()
 
 # Every Windows executable (game, replay, tests):

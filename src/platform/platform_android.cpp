@@ -89,6 +89,10 @@ std::string ShaderCompilerVersion() { return {}; }
 
 std::string CacheDir(const std::string& name) { return UserDir(UserFolderKind::kCache, name); }
 
+void PrintStartupError(const std::string& message) {
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
+}
+
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
 
 std::string DataDir() { return UserDir(UserFolderKind::kData); }
@@ -98,7 +102,7 @@ std::string GameDataDir() {
   return folder.empty() ? "" : folder.string() + "/";
 }
 
-std::string LogDir() { return UserDir(UserFolderKind::kState, "logs"); }
+std::string LogDir() { return UserDir(UserFolderKind::kState, LogsSubfolder()); }
 
 // The app is a library inside the APK, not a file the game's data sits next to.
 std::string ExecutableDir() { return ""; }

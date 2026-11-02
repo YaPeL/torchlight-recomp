@@ -13,14 +13,23 @@ controller. Any agent can repeat the same sequence on Linux, Windows or macOS.
   `tools/run_capped/run_capped.py` (time and log caps, nothing left behind):
 
 ```
-python3 tools/run_capped/run_capped.py --timeout 300 --watch <the game's log folder> \
+python3 tools/run_capped/run_capped.py --timeout 300 --watch <the copy>/logs \
   --output run.out -- <torchlight executable> --game_data_root <game data> \
   --user_data_root <a COPY of the user data> --capture_dir <captures> \
   --dev_input_script tools/input_scripts/load-and-quit.txt
 ```
 
+- The first start plays from its own script, in a development build (`--dev_setup_script <file>`,
+  with `--dev_setup_shots <folder>` and `--dev_setup_browse_from <folder>`; the steps are in
+  `src/wizard/wizard.cpp`). It needs a run without `--user_data_root`, so give it empty folders
+  (`HOME` and `XDG_*`), never the real ones.
 - Always on a copy of the user data (`--user_data_root`): scripts save the game, and
-  `new-character` adds a character.
+  `new-character` adds a character. Such a run keeps everything below that copy, its log in
+  `<the copy>/logs/` (`docs/BUILDING.md`).
+- A measurement brings its own `<the copy>/config/settings.toml` with the frame rate cap, the vsync
+  and the achievement set explicit, so it does not depend on the defaults. A copy made fresh for
+  each run also starts with no shader cache: pass `--cache_root` with a folder kept between runs
+  when the runs must start warm, as a measurement's usually do.
 - The game window still opens on the screen. Running the game still needs the owner's OK, as any
   run does.
 
@@ -78,6 +87,7 @@ One command per line; `#` starts a comment. Durations are `N` or `Ns` (seconds),
 | `touch ID X Y` | a finger (1-9) on the touch controls (docs/android-port.md, A4), down at X, Y in window fractions (0-1, Y down), or moved there when it is down; needs the touch controls installed (`touch_controls` not `never`; on a desktop without a touch screen, `"always"` or `--dev_touch_mouse`) |
 | `touch ID CONTROL` | the same at a control's centre: `X`, `Y`, `A`, `B`, `LT`, `RT`, `LB`, `RB`, `Back`, `Start`, and the d-pad's `Up`, `Down`, `Left`, `Right` |
 | `release ID` | that finger lifted |
+| `replay FILE [trace FILE]` | a recorded controller played by time, and with `trace` the hero's trace of each frame (below) |
 | `command TEXT` | a guest developer command, e.g. `ASCEND` (to the town from the mine's first floor) |
 | `quit` | close the game |
 
@@ -116,6 +126,33 @@ during a long stall (a level load) may therefore reach the game as a held button
 The dumps run on the game's thread at the frame's swap (CGameUI::Update does not run on every
 screen). Host dialogs (the achievement list, the runtime's message boxes) are ImGui, not CEGUI:
 they are neither in the dumps nor in the captures, and they take the controller while open.
+
+### Replays and the hero trace
+
+`replay FILE [trace FILE]` plays a recorded controller (`x360ui pad replay v1`, the format the Xbox
+UI on PC proxy records: `src/dev/pad_replay.h`) for comparing how the hero moves under the same
+stick on this build and on the PC game. Relative paths are the script's folder's.
+
+- **By time, not by line.** Each frame gets the sample due at its time since the command began,
+  minus the recording's `start_ms` (held at rest first). Samples finer than a frame are skipped,
+  never queued, so a recording does not stretch however dense it is. The last sample holds until 2 s
+  after it, then the next command runs.
+- **The trace** (`x360ui pad trace v1`) has one line per frame from t=0 to that end, integers only:
+  `t_us,frame,x_mu,z_mu,fx_mu,fz_mu,scale_mu,speed_mu,lx,ly`. `t_us` is the frame's time since t=0
+  when its stick was chosen; x, z and the facing (fx, fz) are the hero node's world transform
+  (translation, and the third column's rows 0 and 2), x1000; scale and speed are the hero's +0x1F4
+  and +0x1F8 (`src/guest_abi/hero_motion.h`), x1000; lx, ly are the stick given to the game in that
+  frame. It is written at the frame's swap, on the game's thread, by reading guest memory only.
+- At the end the log has `dev input script: trace FILE: N frames, ...`, with the frames whose
+  transform was out of date when read and the ones without a hero (not written). Each `replay`
+  writes its trace file anew; the trace is also closed when the script quits, fails or ends. A file
+  that cannot be opened or written is logged once and that replay's trace stops there; frames whose
+  values are not finite (a hero being freed or loaded) are counted, not written.
+- File names in a script are UTF-8 and cannot contain spaces or `#` (the script's words and
+  comments).
+- A button press shorter than a frame still reaches the game: each frame holds the buttons of every
+  sample since the previous frame (the sticks and triggers are the last sample's). A recording's
+  times, and its `start_ms` (before the samples), go up to a day.
 
 ## The game, as the scripts see it
 

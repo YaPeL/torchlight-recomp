@@ -62,6 +62,10 @@ struct LiveOptions {
   bool producer_timing = false;
   // Render textures' depth dropped on GLES when the next pass clears it (--diag_depth_discard).
   bool depth_discard = true;
+  // The session's direct shadow index (--native_shadow_index), checked against its map
+  // (--diag_shadow_index).
+  bool shadow_index = true;
+  bool shadow_index_check = false;
   // Guest frames that wait for the backend before the oldest is dropped (--native_frame_queue); 0:
   // one with vsync, two without (frame_queue.h FrameQueueDepth).
   size_t frame_queue = 0;

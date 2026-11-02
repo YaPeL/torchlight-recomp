@@ -47,3 +47,4 @@ rexglue-command-processor-spin-backoff.patch
 rexglue-command-processor-pending-calls-lock.patch
 rexglue-thread-dump.patch
 rexglue-android-sdl-power.patch
+rexglue-phys-host-offset-no-compare.patch

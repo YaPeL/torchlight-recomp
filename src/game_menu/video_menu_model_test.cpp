@@ -68,6 +68,7 @@ void TestFpsAndVsync() {
   Check(m.Text(Row::kFpsCap) == "Auto (144)", "default cap: automatic, the display's rate");
   Check(!m.Step(Row::kFpsCap, -1), "automatic is first");
   Check(m.Step(Row::kFpsCap, +1) && m.Text(Row::kFpsCap) == "30", "right: 30");
+  Check(m.Step(Row::kFpsCap, +1) && m.Text(Row::kFpsCap) == "40", "then 40");
   for (int i = 0; i < 20; ++i) m.Step(Row::kFpsCap, +1);
   Check(m.Text(Row::kFpsCap) == "Unlimited" && m.settings().fps_cap == 0, "last: unlimited");
   Check(m.Checked(Row::kVsync), "vsync on by default");

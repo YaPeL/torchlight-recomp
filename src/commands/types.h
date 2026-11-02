@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
 #include <string_view>
 #include <variant>
@@ -303,7 +304,10 @@ struct ConstantRange {
   uint32_t physical_index = 0;  // index into the guest constant array (auto constants use it)
   uint32_t element_count = 0;   // floats or ints
   uint16_t variability = 0;
-  std::vector<uint32_t> data;  // raw 32-bit values (float bits or ints), host order
+  // Its raw 32-bit values (float bits or ints, host order): data_count of them from data_offset
+  // in the command's `values` (one buffer per command, not one per range: SetConstants::Data).
+  uint32_t data_offset = 0;
+  uint32_t data_count = 0;
   bool operator==(const ConstantRange&) const = default;
 };
 struct AutoConstant {
@@ -327,7 +331,25 @@ struct SetConstants {
   // GpuProgramParameters::mTransposeMatrices: matrices in `floats` were written transposed.
   // Absent in captures older than 1.2.
   std::optional<bool> transpose_matrices;
+  // Every range's values, in the order the ranges were added (floats and ints alike): a command
+  // allocates this one buffer instead of one per range (the capture builds hundreds a frame, freed
+  // on another thread).
+  std::vector<uint32_t> values;
   bool operator==(const SetConstants&) const = default;
+
+  // Empty for a range whose values are not in this command (one copied from another command
+  // without Add).
+  std::span<const uint32_t> Data(const ConstantRange& r) const {
+    if (size_t(r.data_offset) + r.data_count > values.size()) return {};
+    return {values.data() + r.data_offset, r.data_count};
+  }
+  // Adds `r` to `to` with its `count` values.
+  void Add(std::vector<ConstantRange>& to, ConstantRange r, const uint32_t* data, uint32_t count) {
+    r.data_offset = uint32_t(values.size());
+    r.data_count = count;
+    values.insert(values.end(), data, data + count);
+    to.push_back(r);
+  }
 };
 struct BufferSnapshot {
   ResourceId buffer;

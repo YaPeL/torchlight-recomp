@@ -19,6 +19,7 @@
 #include <system_error>
 #include <vector>
 
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
@@ -169,6 +170,18 @@ std::string CacheDir(const std::string& name) {
                  std::filesystem::path(std::u8string(name.begin(), name.end())));
 }
 
+void PrintStartupError(const std::string& message) {
+  // SDL's log would skip an inherited stderr when the parent has no console.
+  const std::string line = "ERROR: " + message + "\n";
+  const HANDLE handle = GetStdHandle(STD_ERROR_HANDLE);
+  DWORD written = 0;
+  if (handle && handle != INVALID_HANDLE_VALUE &&
+      WriteFile(handle, line.data(), static_cast<DWORD>(line.size()), &written, nullptr)) {
+    return;
+  }
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
+}
+
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
 
 std::string DataDir() { return UserDir(UserFolderKind::kData); }
@@ -178,7 +191,7 @@ std::string GameDataDir() {
   return folder.empty() ? "" : Utf8(folder.wstring()) + "\\";
 }
 
-std::string LogDir() { return UserDir(UserFolderKind::kState, "logs"); }
+std::string LogDir() { return UserDir(UserFolderKind::kState, LogsSubfolder()); }
 
 std::string ExecutableDir() {
   std::wstring path(MAX_PATH, L'\0');
