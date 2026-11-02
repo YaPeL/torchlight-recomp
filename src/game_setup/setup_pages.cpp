@@ -165,7 +165,13 @@ void SetupPages::StoragePage() {
   const std::string folder = Utf8(question.portable_folder);
   const bool can_portable =
       question.mode == platform::StorageMode::kAsk && question.parent_writable;
-  bool keep = false, copy_user = false, copy_other = false;
+  bool keep = false, copy_user = false, copy_other = false, use_user = false;
+  // The default choice, right after the notices: what a warning advises against is never it.
+  const auto use_user_button = [&] {
+    if (ui_.entered()) ui_.FocusNext();
+    use_user = ImGui::Button(Tr(kTextUseUser).c_str());
+    ui_.Took();
+  };
   ui_.Heading(Tr(kTextPageStorage), "");
   ImGui::BeginChild("body", ImVec2(0, ui_.BodyHeight()), ImGuiChildFlags_NavFlattened);
   if (!error_.empty()) ui_.Error(error_);  // on top: this page may scroll
@@ -173,10 +179,13 @@ void SetupPages::StoragePage() {
     ui_.Wrapped(Render({std::string(kTextStorageIntro), {{"folder", folder}}}, config_.translate));
     ImGui::Spacing();
     if (question.elevated) {
+      // The folder would belong to the administrators: the user's folders come first.
       ui_.Warning("elevated", Tr(kTextElevatedTitle), Tr(kTextElevated));
       ImGui::Spacing();
+      use_user_button();
+      ImGui::Spacing();
     }
-    if (ui_.entered()) ui_.FocusNext();
+    if (ui_.entered() && !question.elevated) ui_.FocusNext();
     keep = ImGui::Button(Tr(kTextKeepHere).c_str());
     ui_.Took();
     if (question.user_data) {
@@ -197,9 +206,11 @@ void SetupPages::StoragePage() {
                        config_.translate));
   }
   ImGui::Spacing();
-  if (!can_portable && ui_.entered()) ui_.FocusNext();
-  const bool use_user = ImGui::Button(Tr(kTextUseUser).c_str());
-  ui_.Took();
+  if (!can_portable) {
+    use_user_button();
+  } else if (!question.elevated) {
+    use_user = ImGui::Button(Tr(kTextUseUser).c_str());
+  }
   if (ImGui::Button(Tr(kTextQuit).c_str())) quit_ = true;
   ImGui::EndChild();
   ui_.Footer(nullptr, false, false);
