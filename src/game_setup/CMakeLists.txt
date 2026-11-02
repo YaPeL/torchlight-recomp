@@ -8,6 +8,12 @@ target_compile_options(torchlight_game_files PRIVATE -Wall -Wextra)
 target_link_libraries(torchlight_game_files PRIVATE torchlight_sha256)
 
 add_library(torchlight_game_setup STATIC install.cpp first_run.cpp)
+if(ANDROID)
+  target_sources(torchlight_game_setup PRIVATE first_run_dialogs.cpp)
+else()
+  target_sources(torchlight_game_setup PRIVATE first_run_wizard.cpp setup_pages.cpp)
+  target_link_libraries(torchlight_game_setup PUBLIC torchlight_wizard)
+endif()
 target_link_libraries(torchlight_game_setup PUBLIC torchlight_game_files rex::runtime
                       torchlight_platform torchlight_settings torchlight_game_menu_model)
 target_include_directories(torchlight_game_setup PRIVATE "${TORCHLIGHT_REX_INCLUDE}")

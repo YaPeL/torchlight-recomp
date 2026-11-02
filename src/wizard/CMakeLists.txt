@@ -1,8 +1,7 @@
 # The setup wizard (wizard.h): one window, played with a pad, a mouse or a keyboard. Desktop only:
 # Android keeps its own first start. The SDK's SDL and Dear ImGui, with ImGui's two SDL backends,
 # which the SDK does not install, and Noto Sans, built in: both fetched at fixed versions and checked
-# by hash, nothing of theirs in the repository. No package carries the wizard yet: its notices join
-# THIRD_PARTY_NOTICES.md with the first that does.
+# by hash, nothing of theirs in the repository (THIRD_PARTY_NOTICES.md).
 include(FetchContent)
 FetchContent_Declare(wizard_imgui
   URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.5.tar.gz
@@ -51,5 +50,5 @@ set_source_files_properties(
   PROPERTIES COMPILE_OPTIONS "-w")
 target_include_directories(torchlight_wizard PRIVATE "${wizard_imgui_SOURCE_DIR}/backends")
 target_include_directories(torchlight_wizard PUBLIC "${TORCHLIGHT_REX_INCLUDE}")
-target_link_libraries(torchlight_wizard PUBLIC torchlight_folder_browser rex::runtime)
+target_link_libraries(torchlight_wizard PUBLIC torchlight_folder_browser torchlight_platform rex::runtime)
 target_compile_options(torchlight_wizard PRIVATE -Wall -Wextra)

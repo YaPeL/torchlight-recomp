@@ -85,24 +85,21 @@ class TorchlightApp : public rex::ReXApp {
         // before the player's answer.
         std::abort();
     }
-    // The game's files: installed from the user's package on the first start (REL.4), unless
-    // --game_data_root points at them.
-    if (rex::cvar::Query<std::string>("game_data_root").empty()) {
-      const std::string game_dir = torchlight::platform::GameDataDir();
-      if (!game_dir.empty()) {
-        using torchlight::game_setup::GameData;
-        const bool may_ask = rex::cvar::Query<std::string>("user_data_root").empty();
-        switch (torchlight::game_setup::EnsureGameData(game_dir, may_ask, startup_log())) {
-          case GameData::kReady: break;
-          case GameData::kQuit: std::exit(EXIT_SUCCESS);  // nothing is running yet
-          case GameData::kMissingInRoot: std::exit(EXIT_FAILURE);
-        }
+    // The game's files, unless --game_data_root points at them, and the achievement set (before the
+    // host settings are read). A test run's fresh settings never stop it with a question.
+    {
+      using torchlight::game_setup::GameData;
+      const bool own_user_root = !rex::cvar::Query<std::string>("user_data_root").empty();
+      const std::string game_dir = rex::cvar::Query<std::string>("game_data_root").empty()
+                                       ? torchlight::platform::GameDataDir()
+                                       : std::string();
+      switch (torchlight::game_setup::FirstStart(game_dir, !own_user_root, !own_user_root,
+                                                 startup_log())) {
+        case GameData::kReady: break;
+        case GameData::kQuit: std::exit(EXIT_SUCCESS);  // nothing is running yet
+        case GameData::kMissingInRoot:
+        case GameData::kFailed: std::exit(EXIT_FAILURE);
       }
-    }
-    // The achievement set, asked once (before the host settings are read). A test run's fresh
-    // settings never stop it with a question: the default set, nothing saved.
-    if (rex::cvar::Query<std::string>("user_data_root").empty()) {
-      torchlight::game_setup::EnsureAchievementChoice(startup_log());
     }
     torchlight::live::PreCreate();
     return std::unique_ptr<TorchlightApp>(new TorchlightApp(ctx, "torchlight",

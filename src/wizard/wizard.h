@@ -9,6 +9,8 @@
 
 #include "imgui.h"
 
+struct SDL_Window;
+
 namespace torchlight::wizard {
 
 struct Options {
@@ -31,7 +33,7 @@ class Pages {
  public:
   virtual ~Pages() = default;
   // Once, before the first frame.
-  virtual void Attach(const Fonts& fonts) = 0;
+  virtual void Attach(const Fonts& fonts, SDL_Window* window) = 0;
   // Draws this frame; true once the player is done.
   virtual bool Frame() = 0;
   // The page shown: the scripts wait for one.
@@ -42,8 +44,9 @@ class Pages {
   virtual bool Busy() const { return false; }
 };
 
-// Opens the window and runs until it is closed. 0 when it ran, 2 when no window could be opened,
-// 3 when a script failed.
+inline constexpr int kNoWindow = 2;
+// Opens the window and runs until it is closed. 0 when it ran, kNoWindow when no window could be
+// opened, 3 when a script failed.
 int Run(const Options& options, Pages& pages);
 
 }  // namespace torchlight::wizard

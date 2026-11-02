@@ -100,15 +100,17 @@ function keys" in System Settings, Keyboard).
 
 ## First start
 
-1. A dialog asks for your Torchlight XBLA package: the file copied from your console's storage, or
-   a folder with its contents already extracted. The package is checked (it must be Torchlight's,
-   version 1.0.140.0, with every file intact) and its files, about 200 MB, are copied to the game's
-   data folder ([Where files are kept](#where-files-are-kept)). Your package is only read.
-2. A second dialog asks which achievement set to use, Xbox 360 or PC
-   ([Achievements](#achievements)). It can be changed later in the settings.
+A setup window opens, played with a gamepad, a mouse or a keyboard:
 
-After that the game starts; later starts go straight to it. These dialogs follow your system's
-language (English, German, French or Spanish).
+1. It asks for your Torchlight XBLA package: the file copied from your console's storage, or a folder
+   with its contents already extracted. The package is checked (it must be Torchlight's, version
+   1.0.140.0, with every file intact) and its files, about 200 MB, are copied to the game's data
+   folder ([Where files are kept](#where-files-are-kept)). Your package is only read.
+2. It asks which achievement set to use, Xbox 360 or PC ([Achievements](#achievements)). It can be
+   changed later in the settings.
+
+After that the game starts; later starts go straight to it. The window follows your system's language
+(English, German, French or Spanish). On Android, these are dialogs.
 
 A gamepad is recommended. A keyboard can play through ReXGlue's controller emulation: start the game
 with `--mnk_mode=true`.

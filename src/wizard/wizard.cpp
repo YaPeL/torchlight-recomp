@@ -7,12 +7,14 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <utility>
 #include <vector>
 
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
+#include "platform/platform.h"
 #include "wizard/wizard_ui.h"
 
 namespace torchlight::wizard {
@@ -134,6 +136,26 @@ ImGuiKey KeyOf(const std::string& name) {
   return ImGuiKey_None;
 }
 
+// A hint for this window only: on leaving, the value it had before, or none.
+class ScopedHint {
+ public:
+  ScopedHint(const char* name, const char* value) : name_(name) {
+    if (const char* before = SDL_GetHint(name)) before_ = before;
+    SDL_SetHint(name, value);
+  }
+  ~ScopedHint() {
+    if (before_) {
+      SDL_SetHint(name_, before_->c_str());
+    } else {
+      SDL_ResetHint(name_);
+    }
+  }
+
+ private:
+  const char* name_;
+  std::optional<std::string> before_;
+};
+
 bool SaveShot(SDL_Renderer* renderer, const std::string& path) {
   SDL_Surface* shot = SDL_RenderReadPixels(renderer, nullptr);
   if (!shot) return false;
@@ -154,10 +176,17 @@ void SetIcon(SDL_Window* window) {
 }  // namespace
 
 int Run(const Options& options, Pages& pages) {
-  if (!options.video.empty()) SDL_SetHint(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
-  SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-  SDL_SetHint(SDL_HINT_APP_NAME, options.title.c_str());
-  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+  // The runtime's SDL may be up already, with its event watches and hints: left as it was found, so
+  // no SDL_Quit, which would take them all down whatever the count of who uses it.
+  std::optional<ScopedHint> video_hint;
+  if (!options.video.empty()) video_hint.emplace(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
+  const ScopedHint render_hint(SDL_HINT_RENDER_DRIVER, "software");
+  const ScopedHint name_hint(SDL_HINT_APP_NAME, options.title.c_str());
+  // Linux: the desktop portal's pickers only; where there is none (the Steam Deck's Game Mode), the
+  // pages' own browser.
+  const ScopedHint picker_hint(SDL_HINT_FILE_DIALOG_DRIVER, "portal");
+  constexpr SDL_InitFlags kSubsystems = SDL_INIT_VIDEO | SDL_INIT_GAMEPAD;
+  if (!SDL_InitSubSystem(kSubsystems)) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
     return 2;
   }
@@ -180,10 +209,11 @@ int Run(const Options& options, Pages& pages) {
   if (!renderer) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
     if (window) SDL_DestroyWindow(window);
-    SDL_Quit();
+    SDL_QuitSubSystem(kSubsystems);
     return 2;
   }
   SetIcon(window);
+  platform::BringToFront();  // macOS: it would open behind what is in front (docs/macos-port.md)
   SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
   SDL_ShowWindow(window);
 
@@ -230,7 +260,7 @@ int Run(const Options& options, Pages& pages) {
     }
   }
 
-  pages.Attach(fonts);
+  pages.Attach(fonts, window);
   size_t next = 0;
   int wait = 3, held = -1, hold_frames = 0;
   constexpr int kReleased = 1000;  // `held`: the button is up again, for a few frames
@@ -238,9 +268,15 @@ int Run(const Options& options, Pages& pages) {
   bool quit = !error.empty();
   bool script_done = false;
   Uint64 frame_start = SDL_GetTicksNS();
+  std::vector<SDL_Event> others;
   while (!quit) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      // The application's own (the runtime's): for its event loop, once this one ends.
+      if (event.type >= SDL_EVENT_USER && event.type <= SDL_EVENT_LAST) {
+        others.push_back(event);
+        continue;
+      }
       ImGui_ImplSDL3_ProcessEvent(&event);
       if (event.type == SDL_EVENT_QUIT ||
           (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
@@ -363,7 +399,10 @@ int Run(const Options& options, Pages& pages) {
   if (gamepad) SDL_CloseGamepad(gamepad);
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
-  SDL_Quit();
+  // Nothing of this window for the game's event loop, such as a key still going up.
+  SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_USER - 1);
+  for (SDL_Event& event : others) SDL_PushEvent(&event);
+  SDL_QuitSubSystem(kSubsystems);
   return error.empty() ? 0 : 3;
 }
 

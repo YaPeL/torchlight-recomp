@@ -63,7 +63,7 @@ void SetPortableRoot(const std::filesystem::path& root);
 void SetRunRoots(const std::filesystem::path& user_data_root,
                  const std::filesystem::path& cache_root);
 // Where a folder browser starts and tops out: the user's home (empty when there is none), and the
-// filesystem's roots (Windows' drives; elsewhere "/").
+// filesystem's roots (Windows' drives; elsewhere "/" and where removable disks appear).
 std::filesystem::path HomeFolder();
 std::vector<std::filesystem::path> FolderRoots();
 // The logs' folder below UserFolder(kState) where that folder is not the logs' own: "logs" in the
