@@ -1,6 +1,8 @@
 #include "game_setup/first_run.h"
 
+#include <fstream>
 #include <optional>
+#include <system_error>
 
 #include <rex/cvar.h>
 
@@ -9,9 +11,13 @@
 #include "game_setup/first_run_steps.h"
 #include "game_setup/setup_text.h"
 #include "platform/platform.h"
+#include "platform/portable_copy.h"
+#include "platform/storage_mode.h"
 #include "settings/host_settings.h"
 
 namespace torchlight::game_setup {
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -30,10 +36,11 @@ Translate SetupTranslate(std::vector<platform::StartupMessage>& log) {
   }
   for (const std::string& warning : warnings) log.push_back({true, "game setup: " + warning});
   settings::HostSettings host;
-  if (const std::string dir = platform::ConfigDir(); !dir.empty()) {
+  // UserFolder, which creates nothing: the storage question may still be open.
+  if (const fs::path dir = platform::UserFolder(platform::UserFolderKind::kConfig); !dir.empty()) {
     std::vector<std::string> ignored;
     std::string load_error;
-    settings::Load(dir + std::string(settings::kFileName), host, ignored, load_error);
+    settings::Load((dir / settings::kFileName).string(), host, ignored, load_error);
   }
   std::optional<std::string> console;
   if (const auto* flag = rex::cvar::GetFlagInfo("user_language");
@@ -55,43 +62,93 @@ std::string Text(const Translate& tr, std::string_view english,
 
 }  // namespace
 
-GameData FirstStart(const std::filesystem::path& game_dir, bool may_ask, bool ask_achievements,
-                    std::vector<platform::StartupMessage>& log) {
-  const bool ask_game = !game_dir.empty() && !XexMatches(game_dir, GameFiles());
-  if (ask_game && !may_ask) {
-    platform::PrintStartupError("--user_data_root given, but no valid game in " + game_dir.string() +
-                                ": pass --game_data_root=<the game's folder>, or put the game there");
-    return GameData::kMissingInRoot;
-  }
-  // The achievement set, asked once: the settings have no "achievements" key yet.
-  const std::string config = platform::ConfigDir();
-  const std::string settings_path = config.empty() ? "" : config + std::string(settings::kFileName);
+GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupMessage>& log) {
+  // Nothing is created while the questions are open: the player may still close the window.
   settings::HostSettings host;
-  bool needs_achievements = false;
-  if (ask_achievements && !settings_path.empty()) {
-    std::vector<std::string> warnings;
-    std::string error;
-    if (!settings::Load(settings_path, host, warnings, error)) {
-      log.push_back({true, "achievements choice: " + error + "; not asked"});
+  const auto open_questions = [&] {
+    OpenQuestions open;
+    if (!facts.game_given) {
+      open.game_dir = platform::UserFolder(platform::UserFolderKind::kGameData);
+      open.ask_game = !open.game_dir.empty() && !XexMatches(open.game_dir, GameFiles());
+    }
+    const fs::path config = platform::UserFolder(platform::UserFolderKind::kConfig);
+    if (!facts.own_user_root && !config.empty()) {
+      std::vector<std::string> warnings;
+      std::string error;
+      if (!settings::Load((config / settings::kFileName).string(), host, warnings, error)) {
+        log.push_back({true, "achievements choice: " + error + "; not asked"});
+      } else {
+        open.ask_achievements = !host.achievements.has_value();
+      }
+    }
+    return open;
+  };
+  std::optional<StorageQuestion> storage;
+  if (facts.storage == platform::StorageMode::kAsk ||
+      facts.storage == platform::StorageMode::kPortableUnwritable) {
+    StorageQuestion question;
+    question.mode = facts.storage;
+    question.portable_folder = facts.portable_folder;
+    std::string ignored;
+    question.parent_writable = platform::CanWriteFolder(facts.portable_folder.parent_path(), ignored);
+    question.user_sources = platform::UserFolderSources();
+    question.user_data = platform::SourcesHoldFiles(question.user_sources);
+    storage = question;
+  }
+  OpenQuestions open;
+  if (!storage) {
+    open = open_questions();
+    if (open.ask_game && facts.own_user_root) {
+      platform::PrintStartupError("--user_data_root given, but no valid game in " +
+                                  open.game_dir.string() +
+                                  ": pass --game_data_root=<the game's folder>, or put the game there");
+      return GameData::kMissingInRoot;
+    }
+    if (!open.ask_game && !open.ask_achievements) return GameData::kReady;
+  }
+  const auto after_storage = [&](bool portable) {
+    if (portable) {
+      platform::SetPortableRoot(facts.portable_folder);
     } else {
-      needs_achievements = !host.achievements.has_value();
+      platform::SetPortableRoot({});
+      const auto migrated = platform::MigrateUserFolders(false);
+      log.insert(log.end(), migrated.begin(), migrated.end());
+    }
+    return open_questions();
+  };
+  FirstStartAnswers answers;
+  const GameData answer =
+      AskFirstStart(open, storage, after_storage, SetupTranslate(log), answers, log);
+  if (answer != GameData::kReady) return answer;
+  if (answers.portable) {
+    std::error_code ec;
+    if (*answers.portable) {
+      fs::create_directories(facts.portable_folder, ec);
+      if (ec) {
+        log.push_back({true, "storage: cannot create the portable folder: " + ec.message()});
+      }
+      log.push_back({false, "storage: portable, " + facts.portable_folder.string()});
+    } else {
+      // Asked once: the next start goes straight to the user's folders.
+      const fs::path config = platform::PlainUserFolder(platform::UserFolderKind::kConfig);
+      fs::create_directories(config, ec);
+      std::ofstream(config / platform::kUserFoldersChoiceFile) << "";
+      log.push_back({false, "storage: the user's folders, by the player's choice"});
     }
   }
-  if (!ask_game && !needs_achievements) return GameData::kReady;
-  std::optional<settings::AchievementSet> achievement;
-  const GameData answer = AskFirstStart(game_dir, ask_game, needs_achievements, SetupTranslate(log),
-                                        achievement, log);
-  if (answer == GameData::kReady && achievement) {
-    host.achievements = achievement;
+  if (answers.achievement) {
+    const std::string dir = platform::ConfigDir();
+    const std::string path = dir + std::string(settings::kFileName);
+    host.achievements = answers.achievement;
     std::string error;
-    if (settings::Save(settings_path, host, error)) {
+    if (settings::Save(path, host, error)) {
       log.push_back({false, "achievements choice: " +
-                                std::string(settings::AchievementSetName(*achievement))});
+                                std::string(settings::AchievementSetName(*answers.achievement))});
     } else {
-      log.push_back({true, "achievements choice: cannot save " + settings_path + ": " + error});
+      log.push_back({true, "achievements choice: cannot save " + path + ": " + error});
     }
   }
-  return answer;
+  return GameData::kReady;
 }
 
 void ShowRendererError(const std::string& error) {

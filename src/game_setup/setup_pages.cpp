@@ -61,7 +61,10 @@ void SetupPages::Attach(const wizard::Fonts& fonts, SDL_Window* window) {
   browser_.texts.this_computer = Tr(kTextThisComputer);
   browser_.texts.use_folder = Tr(kTextUseFolder);
   browser_.texts.folder_mark = Tr(kTextFolderMark) + "  ";
-  if (config_.ask_game) {
+  source_browser_.texts = browser_.texts;
+  if (config_.storage) {
+    ui_.Reset(kStorage);
+  } else if (config_.questions.ask_game) {
     ui_.Reset(kGame);
   } else {
     AfterGame();
@@ -69,13 +72,15 @@ void SetupPages::Attach(const wizard::Fonts& fonts, SDL_Window* window) {
 }
 
 void SetupPages::AfterGame() {
-  ui_.Reset(config_.ask_achievements ? kAchievements : kReady);
+  ui_.Reset(config_.questions.ask_achievements ? kAchievements : kReady);
 }
 
 bool SetupPages::Frame() {
   PollPick();
   ui_.Frame(ui_.page() != kWorking, [&] {
     switch (ui_.page()) {
+      case kStorage: StoragePage(); break;
+      case kSourceBrowser: SourceBrowserPage(); break;
       case kGame: GamePage(); break;
       case kBrowser: BrowserPage(); break;
       case kWorking: WorkingPage(); break;
@@ -87,7 +92,8 @@ bool SetupPages::Frame() {
 }
 
 std::string SetupPages::Name() const {
-  static const char* const names[] = {"game", "browser", "working", "achievements", "ready"};
+  static const char* const names[] = {"storage", "source-browser", "game", "browser",
+                                       "working", "achievements", "ready"};
   return names[ui_.page()];
 }
 
@@ -95,6 +101,7 @@ std::string SetupPages::Detail() const {
   if (ui_.page() == kReady && achievements_) {
     return std::string(settings::AchievementSetName(*achievements_));
   }
+  if (ui_.page() == kReady && portable_) return *portable_ ? "portable" : "user folders";
   return error_;
 }
 
@@ -105,11 +112,118 @@ bool SetupPages::Busy() const {
   return pick_->pending && !pick_->answered;  // a picker's window answers into this
 }
 
+void SetupPages::ApplyStorage(bool portable, bool way_back) {
+  portable_ = portable;
+  config_.questions = config_.after_storage(portable);
+  if (config_.questions.ask_game) {
+    if (way_back) {
+      ui_.Go(kGame);
+    } else {
+      ui_.Reset(kGame);
+    }
+  } else if (way_back) {
+    ui_.Go(config_.questions.ask_achievements ? kAchievements : kReady);
+  } else {
+    AfterGame();
+  }
+}
+
+void SetupPages::StartCopy(std::vector<platform::CopySource> sources) {
+  copying_ = true;
+  cancel_ = false;
+  finished_ = false;
+  done_ = 0;
+  total_ = 0;
+  error_.clear();
+  worker_ = std::thread([this, sources = std::move(sources)] {
+    copy_result_ = platform::CopyIntoPortable(
+        sources, config_.storage->portable_folder,
+        [this](uint64_t done, uint64_t total) {
+          done_ = done;
+          total_ = total;
+          if (config_.test_install_delay_ms) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(config_.test_install_delay_ms));
+          }
+          return !cancel_.load();
+        },
+        copy_error_);
+    finished_ = true;
+  });
+  ui_.Go(kWorking);
+}
+
+void SetupPages::StoragePage() {
+  const StorageQuestion& question = *config_.storage;
+  const std::string folder = Utf8(question.portable_folder);
+  const bool can_portable =
+      question.mode == platform::StorageMode::kAsk && question.parent_writable;
+  bool keep = false, copy_user = false, copy_other = false;
+  ui_.Heading(Tr(kTextPageStorage), "");
+  ImGui::BeginChild("body", ImVec2(0, ui_.BodyHeight()), ImGuiChildFlags_NavFlattened);
+  if (!error_.empty()) ui_.Error(error_);  // on top: this page may scroll
+  if (can_portable) {
+    ui_.Wrapped(Render({std::string(kTextStorageIntro), {{"folder", folder}}}, config_.translate));
+    ImGui::Spacing();
+    if (ui_.entered()) ui_.FocusNext();
+    keep = ImGui::Button(Tr(kTextKeepHere).c_str());
+    ui_.Took();
+    if (question.user_data) {
+      ImGui::Spacing();
+      ui_.Muted(Tr(kTextCopyUserNote));
+      copy_user = ImGui::Button(Tr(kTextCopyUser).c_str());
+    }
+    copy_other = ImGui::Button(Tr(kTextCopyPortable).c_str());
+  } else if (question.mode == platform::StorageMode::kAsk) {
+    ui_.Warning("warning", Tr(kTextParentUnwritableTitle),
+                Render({std::string(kTextParentUnwritable), {{"folder", folder}}},
+                       config_.translate));
+  } else {
+    ui_.Warning("warning", Tr(kTextPortableUnwritableTitle),
+                Render({std::string(kTextPortableUnwritable), {{"folder", folder}}},
+                       config_.translate));
+  }
+  ImGui::Spacing();
+  if (!can_portable && ui_.entered()) ui_.FocusNext();
+  const bool use_user = ImGui::Button(Tr(kTextUseUser).c_str());
+  ui_.Took();
+  if (ImGui::Button(Tr(kTextQuit).c_str())) quit_ = true;
+  ImGui::EndChild();
+  ui_.Footer(nullptr, false, false);
+  if (keep) {
+    error_.clear();
+    ApplyStorage(true, true);
+  } else if (use_user) {
+    error_.clear();
+    ApplyStorage(false, true);
+  } else if (copy_user) {
+    from_ = "the user's folders";
+    StartCopy(question.user_sources);
+  } else if (copy_other) {
+    error_.clear();
+    fs::path start = config_.browse_from;
+    if (start.empty()) start = question.portable_folder.parent_path();
+    source_browser_.Open(start);
+    ui_.Go(kSourceBrowser);
+  }
+}
+
+void SetupPages::SourceBrowserPage() {
+  if (auto chosen = source_browser_.Draw(ui_, Tr(kTextPortableSource), "")) {
+    ui_.Back();
+    if (!platform::LooksLikePortableFolder(*chosen)) {
+      error_ = Tr(kTextNotPortable);
+      return;
+    }
+    from_ = Utf8(*chosen);
+    StartCopy(platform::PortableFolderSources(*chosen));
+  }
+}
+
 void SetupPages::GamePage() {
   const bool picking = Busy();
   ui_.Heading(Tr(kTextPageGame), "");
   ImGui::BeginChild("body", ImVec2(0, ui_.BodyHeight()), ImGuiChildFlags_NavFlattened);
-  ui_.Wrapped(Render({std::string(kTextIntro), {{"where", Utf8(config_.game_dir)}}},
+  ui_.Wrapped(Render({std::string(kTextIntro), {{"where", Utf8(config_.questions.game_dir)}}},
                      config_.translate));
   ImGui::Spacing();
   if (picking) ImGui::BeginDisabled();
@@ -129,7 +243,7 @@ void SetupPages::GamePage() {
   ImGui::Spacing();
   if (!error_.empty()) ui_.Error(error_);
   ImGui::EndChild();
-  ui_.Footer(nullptr, false, false);
+  ui_.Footer(nullptr, false, ui_.can_go_back());
   if (package) Pick(false);
   if (folder) Pick(true);
   if (browse) OpenBrowser();
@@ -200,6 +314,7 @@ void SetupPages::Chosen(const fs::path& path, Source source) {
     }
   }
   source_ = source;
+  copying_ = false;
   from_ = Utf8(path);
   cancel_ = false;
   finished_ = false;
@@ -207,7 +322,7 @@ void SetupPages::Chosen(const fs::path& path, Source source) {
   total_ = 0;
   phase_ = 0;
   worker_ = std::thread([this, path, source] {
-    result_ = Install(source, path, config_.game_dir, config_.files,
+    result_ = Install(source, path, config_.questions.game_dir, config_.files,
                       [this](Phase phase, uint64_t done, uint64_t total) {
                         phase_ = int(phase);
                         done_ = done;
@@ -233,6 +348,21 @@ void SetupPages::BrowserPage() {
 }
 
 void SetupPages::WorkingPage() {
+  if (finished_ && copying_) {
+    worker_.join();
+    if (copy_result_ == platform::CopyResult::kDone) {
+      log_.push_back({false, "storage: copied the files from " + from_});
+      ApplyStorage(true, false);
+    } else {
+      if (copy_result_ == platform::CopyResult::kFailed) {
+        error_ = Render({std::string(kTextCannotCopyData), {{"error", copy_error_}}},
+                        config_.translate);
+        log_.push_back({true, "storage: the copy from " + from_ + " failed: " + copy_error_});
+      }
+      ui_.Back();
+    }
+    return;
+  }
   if (finished_) {
     worker_.join();
     if (Cancelled(result_.error)) {
@@ -245,7 +375,7 @@ void SetupPages::WorkingPage() {
     } else {
       installed_ = true;
       log_.push_back({false, "game setup: installed the game files from " + from_ + " to " +
-                                 Utf8(config_.game_dir)});
+                                 Utf8(config_.questions.game_dir)});
       if (!result_.moved_to.empty()) {
         log_.push_back({false, "game setup: the previous one was moved to " + result_.moved_to});
       }
@@ -253,11 +383,13 @@ void SetupPages::WorkingPage() {
     }
     return;
   }
-  const bool checking = phase_.load() == int(Phase::kChecking);
-  ui_.Heading(Tr(kTextPageWorking), "");
+  const bool checking = !copying_ && phase_.load() == int(Phase::kChecking);
+  ui_.Heading(Tr(copying_ ? kTextPageCopying : kTextPageWorking), "");
   ImGui::BeginChild("body", ImVec2(0, ui_.BodyHeight()), ImGuiChildFlags_NavFlattened);
-  ui_.Wrapped(Tr(checking ? kTextChecking
-                          : source_ == Source::kPackage ? kTextExtracting : kTextCopying));
+  if (!copying_) {
+    ui_.Wrapped(Tr(checking ? kTextChecking
+                            : source_ == Source::kPackage ? kTextExtracting : kTextCopying));
+  }
   ImGui::Spacing();
   const uint64_t total = total_.load();
   ImGui::ProgressBar(total ? float(double(done_.load()) / double(total)) : 0.0f,

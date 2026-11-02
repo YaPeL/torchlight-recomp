@@ -97,6 +97,36 @@ inline constexpr std::string_view kTextUseFolder = "Use this folder";
 inline constexpr std::string_view kTextFolderMark = "Folder:";
 inline constexpr std::string_view kTextNoWindow =
     "The setup window could not open, and the game's files are not installed yet.";
+inline constexpr std::string_view kTextPageStorage =
+    "Where to keep your files";
+inline constexpr std::string_view kTextStorageIntro =
+    "Your saves, your settings and the game's files are kept in this folder, beside the game:\n{folder}\n\nMove the game and this folder together to take everything with you.";
+inline constexpr std::string_view kTextKeepHere =
+    "Keep them here";
+inline constexpr std::string_view kTextCopyUser =
+    "Copy them from this computer's user folders";
+inline constexpr std::string_view kTextCopyUserNote =
+    "Files from an earlier install were found in this computer's user folders. They are copied, never moved or deleted.";
+inline constexpr std::string_view kTextCopyPortable =
+    "Copy them from another portable folder...";
+inline constexpr std::string_view kTextUseUser =
+    "Use this computer's user folders instead";
+inline constexpr std::string_view kTextParentUnwritableTitle =
+    "The game cannot write beside itself";
+inline constexpr std::string_view kTextParentUnwritable =
+    "It cannot create its folder here:\n{folder}\n\nThe disk may be read-only, or macOS may be running the game from a temporary place: move it to another folder first. You can also keep your files in this computer's user folders.";
+inline constexpr std::string_view kTextPortableUnwritableTitle =
+    "The portable folder cannot be written";
+inline constexpr std::string_view kTextPortableUnwritable =
+    "The folder exists, but nothing can be written in it:\n{folder}\n\nCheck its permissions and its disk, then start again. Or use this computer's user folders; the portable folder is left as it is.";
+inline constexpr std::string_view kTextNotPortable =
+    "That folder is not a portable folder of this game: it has no config, data or game folder.";
+inline constexpr std::string_view kTextPortableSource =
+    "Choose the other portable folder";
+inline constexpr std::string_view kTextPageCopying =
+    "Copying your files";
+inline constexpr std::string_view kTextCannotCopyData =
+    "The files could not be copied: {error}\n\nThe originals are as they were.";
 std::span<const std::string_view> InterfaceTexts();
 
 }  // namespace torchlight::game_setup

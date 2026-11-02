@@ -94,6 +94,7 @@ jobs:
           command -v llvm-profdata-21 > /dev/null || apt-get install -y --no-install-recommends llvm-21
           cmake --preset linux-amd64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
             -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
+            -DTORCHLIGHT_PORTABLE_DEFAULT=ON \
             -DTORCHLIGHT_PGO_USE=/tmp/linux-x86_64.profdata
           cmake --build --preset linux-amd64-release --parallel 2>&1 | tee /tmp/build.log
           python3 tools/pgo/check_profile_match.py /tmp/build.log \
@@ -259,7 +260,8 @@ jobs:
           $pgo = @()
           if (Test-Path $profile) { $pgo = @("-DTORCHLIGHT_PGO_USE=$profile") }
           cmake --preset win-amd64-release "-DCMAKE_PREFIX_PATH=$env:DEPS_DIR\sdk" `
-            "-DTORCHLIGHT_OGRE_INSTALL=$env:DEPS_DIR\ogre" "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -g" @pgo
+            "-DTORCHLIGHT_OGRE_INSTALL=$env:DEPS_DIR\ogre" "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -g" `
+            -DTORCHLIGHT_PORTABLE_DEFAULT=ON @pgo
           if ($LASTEXITCODE) { exit 1 }
           cmake --build --preset win-amd64-release --parallel 2>&1 | Tee-Object -FilePath "$env:RUNNER_TEMP\build.log"
           if ($LASTEXITCODE) { exit 1 }
@@ -382,7 +384,8 @@ jobs:
           pgo=()
           [ -f "$profile" ] && pgo=(-DTORCHLIGHT_PGO_USE="$profile")
           cmake --preset mac-arm64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
-            -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" "${pgo[@]}"
+            -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
+            -DTORCHLIGHT_PORTABLE_DEFAULT=ON "${pgo[@]}"
           cmake --build --preset mac-arm64-release --parallel 2>&1 | tee "$RUNNER_TEMP/build.log"
           # With the assets' profile: the match check before the tests and the disk image (AppleClang's
           # profile format goes with its own llvm-profdata, xcrun's of the pinned Xcode).

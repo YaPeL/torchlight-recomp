@@ -17,7 +17,9 @@
 
 #include "game_menu/menu_strings.h"
 #include "game_setup/game_files.h"
+#include "game_setup/first_run_steps.h"
 #include "game_setup/setup_pages.h"
+#include "platform/storage_mode.h"
 #include "wizard/browser_page.h"
 #include "wizard/wizard.h"
 #include "wizard/wizard_ui.h"
@@ -104,6 +106,8 @@ struct SetupRun {
   bool ask_game = true;
   int install_delay = 0;
   std::string expect;
+  std::string storage;     // ask, parent_unwritable, portable_unwritable
+  bool user_data = false;  // invented user folders holding files to copy
 };
 
 int RunSetup(const Options& options, const SetupRun& run) {
@@ -121,13 +125,40 @@ int RunSetup(const Options& options, const SetupRun& run) {
       {"data.bin", fs::file_size(source / "data.bin"), data_hash}};
 
   gs::SetupConfig config;
-  config.game_dir = game;
+  const fs::path portable = run.sample_root / "app" / torchlight::platform::kPortableFolderName;
+  const fs::path user_game = run.sample_root / "user-folders" / "game";
+  config.questions = {game, run.ask_game, true};
   config.files = files;
-  config.ask_game = run.ask_game;
-  config.ask_achievements = true;
   config.own_browser_only = true;
   config.browse_from = run.sample_root;
   config.test_install_delay_ms = run.install_delay;
+  if (!run.storage.empty()) {
+    fs::create_directories(portable.parent_path());
+    // Another portable folder, and files in the tests' user folders, to copy from.
+    const fs::path other = run.sample_root / "other-portable";
+    fs::create_directories(other / "config");
+    std::ofstream(other / "config" / "settings.toml") << "achievements = \"pc\"\n";
+    fs::create_directories(other / "data");
+    std::ofstream(other / "data" / "a.sav") << "a save";
+    gs::StorageQuestion question;
+    question.portable_folder = portable;
+    question.mode = run.storage == "portable_unwritable"
+                        ? torchlight::platform::StorageMode::kPortableUnwritable
+                        : torchlight::platform::StorageMode::kAsk;
+    question.parent_writable = run.storage == "ask";
+    if (run.user_data) {
+      const fs::path user = run.sample_root / "user-folders";
+      fs::create_directories(user / "data");
+      std::ofstream(user / "data" / "from-user.sav") << "a save";
+      question.user_sources = torchlight::platform::UserFolderSources(
+          user / "config", user / "data", user / "cache", user / "data" / "game");
+    }
+    question.user_data = run.user_data;
+    config.storage = question;
+    config.after_storage = [=](bool portable_chosen) {
+      return gs::OpenQuestions{portable_chosen ? portable / "game" : user_game, true, true};
+    };
+  }
   auto strings = std::make_shared<torchlight::game_menu::MenuStrings>();
   if (!run.language.empty()) {
     std::vector<std::string> warnings;
@@ -142,6 +173,18 @@ int RunSetup(const Options& options, const SetupRun& run) {
   }
   gs::SetupPages pages(std::move(config));
   if (const int status = Run(options, pages); status != 0) return status;
+  if (run.expect == "copied-other" && !fs::exists(portable / "data" / "a.sav")) {
+    std::fprintf(stderr, "wizard_shots: the other portable folder was not copied\n");
+    return 4;
+  }
+  if (run.expect == "copied-user" && !fs::exists(portable / "data" / "from-user.sav")) {
+    std::fprintf(stderr, "wizard_shots: the user's folders were not copied\n");
+    return 4;
+  }
+  if (run.expect == "user-folders" && pages.portable() != false) {
+    std::fprintf(stderr, "wizard_shots: the user's folders were not chosen\n");
+    return 4;
+  }
   if (run.expect == "installed" && (!pages.completed() || !gs::XexMatches(game, files))) {
     std::fprintf(stderr, "wizard_shots: the game was not installed\n");
     return 4;
@@ -230,6 +273,8 @@ int main(int argc, char** argv) {
     else if (key == "--no_game") setup.ask_game = value != "1";
     else if (key == "--install_delay") setup.install_delay = std::atoi(value.c_str());
     else if (key == "--expect") setup.expect = value;
+    else if (key == "--storage") setup.storage = value;
+    else if (key == "--user_data") setup.user_data = value == "1";
     else if (key == "--video") options.video = value;
     else if (key == "--width") options.width = std::atoi(value.c_str());
     else if (key == "--height") options.height = std::atoi(value.c_str());

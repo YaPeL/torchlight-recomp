@@ -103,7 +103,7 @@ jobs:
           command -v llvm-profdata-21 > /dev/null || apt-get install -y --no-install-recommends llvm-21 > /dev/null
           cmake --preset linux-amd64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
             -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
-            -DTORCHLIGHT_PGO_USE=/tmp/linux-x86_64.profdata > /tmp/configure.log 2>&1 || {
+            -DTORCHLIGHT_PORTABLE_DEFAULT=ON -DTORCHLIGHT_PGO_USE=/tmp/linux-x86_64.profdata > /tmp/configure.log 2>&1 || {
             { grep -A4 "^CMake Error" /tmp/configure.log | head -40; } || true
             echo "configure failed" >&2; exit 1; }
           status=0
@@ -184,7 +184,7 @@ jobs:
           $profile = "$env:RUNNER_TEMP\windows-x86_64.profdata"
           cmake --preset win-amd64-release "-DCMAKE_PREFIX_PATH=$env:DEPS_DIR\sdk" `
             "-DTORCHLIGHT_OGRE_INSTALL=$env:DEPS_DIR\ogre" "-DCMAKE_CXX_FLAGS_RELEASE=-O3 -DNDEBUG -g" `
-            "-DTORCHLIGHT_PGO_USE=$profile" *> "$env:RUNNER_TEMP\configure.log"
+            -DTORCHLIGHT_PORTABLE_DEFAULT=ON "-DTORCHLIGHT_PGO_USE=$profile" *> "$env:RUNNER_TEMP\configure.log"
           if ($LASTEXITCODE) {
             Select-String -Path "$env:RUNNER_TEMP\configure.log" -Pattern "^CMake Error" -Context 0,4 |
               Select-Object -First 8 | ForEach-Object { $_.Line; $_.Context.PostContext }
@@ -252,7 +252,7 @@ jobs:
           profile="$RUNNER_TEMP/macos-arm64.profdata"
           cmake --preset mac-arm64-release -DCMAKE_PREFIX_PATH="$DEPS_DIR/sdk" \
             -DTORCHLIGHT_OGRE_INSTALL="$DEPS_DIR/ogre" -DCMAKE_CXX_FLAGS_RELEASE="-O3 -DNDEBUG -g" \
-            -DTORCHLIGHT_PGO_USE="$profile" > "$RUNNER_TEMP/configure.log" 2>&1 || {
+            -DTORCHLIGHT_PORTABLE_DEFAULT=ON -DTORCHLIGHT_PGO_USE="$profile" > "$RUNNER_TEMP/configure.log" 2>&1 || {
             grep -A4 "^CMake Error" "$RUNNER_TEMP/configure.log" | head -40
             echo "configure failed" >&2; exit 1; }
           status=0

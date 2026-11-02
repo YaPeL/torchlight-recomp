@@ -7,6 +7,7 @@
 #include <string>
 #include <vector>
 
+#include "platform/storage_mode.h"
 #include "platform/user_folders.h"
 
 namespace torchlight::game_setup {
@@ -17,14 +18,20 @@ enum class GameData {
   kMissingInRoot,  // no game, and this run may not ask: it says so and stops
   kFailed,         // the setup's window could not open: it says so and stops
 };
-// The first start's questions, those still open: the game's files in `game_dir` (empty: not asked;
-// its default.xex checks out at every start, a cheap test), and with `ask_achievements` the
+// What the start knows when it asks.
+struct FirstStartFacts {
+  platform::StorageMode storage = platform::StorageMode::kUserFolders;  // SetUpFolders' answer
+  std::filesystem::path portable_folder;  // where a portable folder goes, when one is possible
+  bool game_given = false;                // --game_data_root
+  bool own_user_root = false;             // --user_data_root
+};
+// The first start's questions, those still open: where to keep the files when `storage` leaves it to
+// the player, the game's files (their default.xex checks out at every start, a cheap test), and the
 // achievement set when settings.toml has no "achievements" key yet. A run with --user_data_root and
-// no --game_data_root does not ask for the game (`may_ask` false): nobody may be there to answer
-// (test runs, scripts, a phone). `log` gets what was done, for the runtime's log (logging is not up
-// yet). The wizard on desktop, the system's dialogs on Android.
-GameData FirstStart(const std::filesystem::path& game_dir, bool may_ask, bool ask_achievements,
-                    std::vector<platform::StartupMessage>& log);
+// no --game_data_root does not ask for the game: nobody may be there to answer (test runs, scripts,
+// a phone); nor for the achievement set. `log` gets what was done, for the runtime's log (logging is
+// not up yet). The wizard on desktop, the system's dialogs on Android.
+GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupMessage>& log);
 
 // The renderer could not start (`error`, the render system's reason): a message box in the setup's
 // language says so, instead of a black window. Main thread; the caller then closes the game.

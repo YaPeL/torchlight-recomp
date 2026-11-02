@@ -69,32 +69,25 @@ class TorchlightApp : public rex::ReXApp {
     // First of all, before anything opens or creates the user's folders: where this run keeps the
     // player's files. A portable run leaves the user's folders alone; otherwise the ones with the
     // old name move to the new one (logged once logging is up), never in a run with its own roots.
-    switch (torchlight::platform::SetUpFolders(torchlight::platform::ExecutableDir(),
-                                                rex::cvar::Query<std::string>("appimage_path"),
-                                                rex::cvar::Query<std::string>("user_data_root"),
-                                                rex::cvar::Query<std::string>("game_data_root"),
-                                                rex::cvar::Query<std::string>("cache_root"),
-                                                startup_log())) {
-      case torchlight::platform::StorageMode::kUserFolders:
-      case torchlight::platform::StorageMode::kPortable:
-        break;
-      case torchlight::platform::StorageMode::kPortableUnwritable:
-      case torchlight::platform::StorageMode::kAsk:
-        // Unreachable until the setup wizard answers them: the build refuses
-        // TORCHLIGHT_PORTABLE_DEFAULT without it (platform/CMakeLists.txt). Nothing is migrated
-        // before the player's answer.
-        std::abort();
-    }
-    // The game's files, unless --game_data_root points at them, and the achievement set (before the
-    // host settings are read). A test run's fresh settings never stop it with a question.
+    const std::string appimage = rex::cvar::Query<std::string>("appimage_path");
+    const torchlight::platform::StorageMode storage = torchlight::platform::SetUpFolders(
+        torchlight::platform::ExecutableDir(), appimage,
+        rex::cvar::Query<std::string>("user_data_root"),
+        rex::cvar::Query<std::string>("game_data_root"),
+        rex::cvar::Query<std::string>("cache_root"), startup_log());
+    // The questions still open: where to keep the files (kAsk, kPortableUnwritable), the game's
+    // files unless --game_data_root points at them, and the achievement set, before the host
+    // settings are read. A test run's fresh settings never stop it with a question.
     {
       using torchlight::game_setup::GameData;
-      const bool own_user_root = !rex::cvar::Query<std::string>("user_data_root").empty();
-      const std::string game_dir = rex::cvar::Query<std::string>("game_data_root").empty()
-                                       ? torchlight::platform::GameDataDir()
-                                       : std::string();
-      switch (torchlight::game_setup::FirstStart(game_dir, !own_user_root, !own_user_root,
-                                                 startup_log())) {
+      torchlight::game_setup::FirstStartFacts facts;
+      facts.storage = storage;
+      facts.portable_folder = torchlight::platform::ApplicationFolder(
+                                  torchlight::platform::ExecutableDir(), appimage) /
+                              torchlight::platform::kPortableFolderName;
+      facts.game_given = !rex::cvar::Query<std::string>("game_data_root").empty();
+      facts.own_user_root = !rex::cvar::Query<std::string>("user_data_root").empty();
+      switch (torchlight::game_setup::FirstStart(facts, startup_log())) {
         case GameData::kReady: break;
         case GameData::kQuit: std::exit(EXIT_SUCCESS);  // nothing is running yet
         case GameData::kMissingInRoot:

@@ -122,17 +122,18 @@ GameData AskGame(const std::filesystem::path& game_dir, const Translate& tr,
 
 }  // namespace
 
-GameData AskFirstStart(const std::filesystem::path& game_dir, bool ask_game, bool ask_achievements,
-                       const Translate& translate,
-                       std::optional<settings::AchievementSet>& achievement,
-                       std::vector<platform::StartupMessage>& log) {
-  if (ask_game && AskGame(game_dir, translate, log) != GameData::kReady) return GameData::kQuit;
-  if (ask_achievements) {
+GameData AskFirstStart(const OpenQuestions& questions, const std::optional<StorageQuestion>&,
+                       const std::function<OpenQuestions(bool)>&, const Translate& translate,
+                       FirstStartAnswers& answers, std::vector<platform::StartupMessage>& log) {
+  if (questions.ask_game && AskGame(questions.game_dir, translate, log) != GameData::kReady) {
+    return GameData::kQuit;
+  }
+  if (questions.ask_achievements) {
     // Closing the box keeps the default, Xbox 360, and saves it too.
     const int choice = platform::AskChoice(
         Text(translate, kTextTitle), Text(translate, kTextAchievementsChoice),
         {Text(translate, kTextAchievementsXbox), Text(translate, kTextAchievementsPc)});
-    achievement = choice == 1 ? settings::AchievementSet::kPc : settings::AchievementSet::kXbox;
+    answers.achievement = choice == 1 ? settings::AchievementSet::kPc : settings::AchievementSet::kXbox;
   }
   return GameData::kReady;
 }
