@@ -1,0 +1,8 @@
+# The same warning on a page taller than the window (a larger scale, the copy from the user's
+# folders offered): the page still opens with the warning's title in view.
+page storage 5
+view
+shot storage-elevated-large
+press a
+page game 5
+quit

@@ -46,17 +46,24 @@ class Ui {
               bool focus_next = false);
   void Wrapped(const std::string& text);
   void Muted(const std::string& text);
+  // Error and Warning are the page's notices: the page shows its first one from its top when it
+  // opens, above the focused item, which the page puts after it.
   void Error(const std::string& text);
   // A box in the warning's colour, its height its text's.
   void Warning(const char* id, const std::string& title, const std::string& text);
+  // The first notice and the focused item both in view (for a script's `view` step).
+  bool in_view() const { return in_view_; }
 
   // The page's default item: call FocusNext before it and Took after it. The focus is given after
   // the item (ImGui's SetFocusID), with the pad's cursor shown, since ImGui ignores a first A while
   // it is hidden; SetKeyboardFocusHere is not resolved inside a NavFlattened child.
+  // Scrolls only as far as the item needs, and never past the top of the page's first notice.
   void FocusNext() { want_focus_ = true; }
   void Took();
 
  private:
+  void Notice();
+
   Fonts fonts_;
   std::string title_;
   int page_ = 0;
@@ -64,6 +71,10 @@ class Ui {
   bool entered_ = true;
   int entered_frames_ = 0;
   bool want_focus_ = false;
+  // The frame's first notice: its window, and its top in that window's content (scroll included).
+  const void* notice_window_ = nullptr;
+  float notice_top_ = 0;
+  bool in_view_ = true;
 };
 
 }  // namespace torchlight::wizard
