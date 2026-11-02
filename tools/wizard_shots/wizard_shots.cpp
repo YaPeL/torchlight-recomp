@@ -151,7 +151,7 @@ int RunSetup(const Options& options, const SetupRun& run) {
       fs::create_directories(user / "data");
       std::ofstream(user / "data" / "from-user.sav") << "a save";
       question.user_sources = torchlight::platform::UserFolderSources(
-          user / "config", user / "data", user / "cache", user / "data" / "game");
+          user / "config", user / "data", user / "cache", user / "data" / "game", user / "logs");
     }
     question.user_data = run.user_data;
     config.storage = question;
@@ -179,6 +179,10 @@ int RunSetup(const Options& options, const SetupRun& run) {
   }
   if (run.expect == "copied-user" && !fs::exists(portable / "data" / "from-user.sav")) {
     std::fprintf(stderr, "wizard_shots: the user's folders were not copied\n");
+    return 4;
+  }
+  if (run.expect == "no-portable" && fs::exists(portable)) {
+    std::fprintf(stderr, "wizard_shots: a cancelled install left the portable folder\n");
     return 4;
   }
   if (run.expect == "user-folders" && pages.portable() != false) {

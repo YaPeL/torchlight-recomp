@@ -87,6 +87,7 @@ endif()
 # run from a build tree opens the first-start questions or offers to copy the real user data.
 option(TORCHLIGHT_PORTABLE_DEFAULT "Keep the player's files in a folder beside the application" OFF)
 target_sources(torchlight_user_folders PRIVATE storage_mode.cpp portable_copy.cpp)
+target_link_libraries(torchlight_user_folders PRIVATE torchlight_durable_file)
 target_compile_definitions(torchlight_user_folders PRIVATE
     TORCHLIGHT_PORTABLE_DEFAULT=$<BOOL:${TORCHLIGHT_PORTABLE_DEFAULT}>)
 target_include_directories(torchlight_user_folders PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")

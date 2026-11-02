@@ -63,7 +63,8 @@ std::string Text(const Translate& tr, std::string_view english,
 }  // namespace
 
 GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupMessage>& log) {
-  // Nothing is created while the questions are open: the player may still close the window.
+  // Nothing is created until an answer needs it (a copy or an install): the player may still close
+  // the window, and what a copy or an install finished then stays, for the next start.
   settings::HostSettings host;
   const auto open_questions = [&] {
     OpenQuestions open;
@@ -125,19 +126,31 @@ GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupM
     if (*answers.portable) {
       fs::create_directories(facts.portable_folder, ec);
       if (ec) {
-        log.push_back({true, "storage: cannot create the portable folder: " + ec.message()});
+        platform::PrintStartupError("cannot create the portable folder: " + ec.message());
+        return GameData::kFailed;
       }
       log.push_back({false, "storage: portable, " + facts.portable_folder.string()});
     } else {
-      // Asked once: the next start goes straight to the user's folders.
-      const fs::path config = platform::PlainUserFolder(platform::UserFolderKind::kConfig);
-      fs::create_directories(config, ec);
-      std::ofstream(config / platform::kUserFoldersChoiceFile) << "";
       log.push_back({false, "storage: the user's folders, by the player's choice"});
+      // Asked once. A portable folder that exists but cannot be written is asked again every start:
+      // it may work next time, and then it is the player's again.
+      if (facts.storage == platform::StorageMode::kAsk) {
+        const fs::path config = platform::PlainUserFolder(platform::UserFolderKind::kConfig);
+        fs::create_directories(config, ec);
+        std::ofstream choice(config / platform::kUserFoldersChoiceFile);
+        choice.close();
+        if (config.empty() || ec || !choice) {
+          log.push_back({true, "storage: cannot save the choice; it will be asked again"});
+        }
+      }
     }
   }
   if (answers.achievement) {
     const std::string dir = platform::ConfigDir();
+    if (dir.empty()) {
+      log.push_back({true, "achievements choice: no settings folder; not saved"});
+      return GameData::kReady;
+    }
     const std::string path = dir + std::string(settings::kFileName);
     host.achievements = answers.achievement;
     std::string error;

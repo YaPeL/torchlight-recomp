@@ -1,0 +1,20 @@
+# Keep here, then a cancelled install: no portable folder is left deciding the next start.
+page storage 5
+press a
+page game 5
+press a
+page browser 5
+# app, other-portable, source: into it, then the button below its two files.
+press down
+press down
+press down
+press a
+wait 10
+press down
+press down
+press down
+press a
+page working 5
+press a
+page game 20
+quit

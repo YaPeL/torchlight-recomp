@@ -82,9 +82,11 @@ class TorchlightApp : public rex::ReXApp {
       using torchlight::game_setup::GameData;
       torchlight::game_setup::FirstStartFacts facts;
       facts.storage = storage;
-      facts.portable_folder = torchlight::platform::ApplicationFolder(
-                                  torchlight::platform::ExecutableDir(), appimage) /
-                              torchlight::platform::kPortableFolderName;
+      if (const auto application = torchlight::platform::ApplicationFolder(
+              torchlight::platform::ExecutableDir(), appimage);
+          !application.empty()) {
+        facts.portable_folder = application / torchlight::platform::kPortableFolderName;
+      }
       facts.game_given = !rex::cvar::Query<std::string>("game_data_root").empty();
       facts.own_user_root = !rex::cvar::Query<std::string>("user_data_root").empty();
       switch (torchlight::game_setup::FirstStart(facts, startup_log())) {

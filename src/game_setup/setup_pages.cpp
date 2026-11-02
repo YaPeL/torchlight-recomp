@@ -284,7 +284,13 @@ void SetupPages::Pick(bool folder) {
 
 void SetupPages::PollPick() {
   if (!pick_) return;
-  bool failed, folder;
+  // Only where the answer is for: gone Back, or anything under way, it is a late one.
+  if (ui_.page() != kGame && ui_.page() != kBrowser) {
+    std::lock_guard lock(pick_->mutex);
+    pick_->pending = false;
+    return;
+  }
+  bool failed = false, folder = false;
   std::string path;
   {
     std::lock_guard lock(pick_->mutex);
@@ -365,12 +371,22 @@ void SetupPages::WorkingPage() {
   }
   if (finished_) {
     worker_.join();
+    const auto forget_attempt = [&] {
+      // The install made the portable folder for itself: an empty one would decide the next start,
+      // and the storage question is still open.
+      if (portable_.value_or(false)) {
+        std::error_code ec;
+        fs::remove(config_.storage->portable_folder, ec);  // only when empty
+      }
+    };
     if (Cancelled(result_.error)) {
       log_.push_back({false, "game setup: install from " + from_ + " cancelled"});
+      forget_attempt();
       ui_.Back();
     } else if (!result_.error.empty()) {
       error_ = Render(result_.error, config_.translate);
       log_.push_back({true, "game setup: install from " + from_ + " failed: " + Render(result_.error)});
+      forget_attempt();
       ui_.Back();
     } else {
       installed_ = true;

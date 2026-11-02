@@ -4,6 +4,7 @@
 #include <fstream>
 #include <system_error>
 
+#include "platform/durable_file.h"
 #include "platform/storage_mode.h"
 #include "platform/user_folders.h"
 
@@ -16,6 +17,7 @@ struct Item {
   fs::path from, to;
   uint64_t size = 0;
   bool folder = false;
+  bool durable = true;
 };
 
 std::string Utf8(const fs::path& path) {
@@ -27,8 +29,39 @@ std::string Utf8(const fs::path& path) {
 // cannot be read: a copy that silently lost part of the saves would be worse than none.
 bool ListSource(const CopySource& source, std::vector<Item>& items, std::string& error) {
   std::error_code ec;
-  if (!fs::is_directory(source.from, ec)) return true;
-  items.push_back({{}, source.to, 0, true});
+  const fs::file_status status = fs::status(source.from, ec);
+  if (status.type() == fs::file_type::not_found) {
+    // Nothing there, unless a link pointing to what is not there (a card that is not in).
+    std::error_code link_ec;
+    if (fs::is_symlink(fs::symlink_status(source.from, link_ec))) {
+      error = Utf8(source.from) + " is a link to what cannot be reached";
+      return false;
+    }
+    return true;
+  }
+  if (ec) {
+    error = "cannot read " + Utf8(source.from) + ": " + ec.message();
+    return false;
+  }
+  if (!fs::is_directory(status)) {
+    error = Utf8(source.from) + " is not a folder";
+    return false;
+  }
+  items.push_back({{}, source.to, 0, true, source.durable});
+  if (!source.only.empty()) {
+    for (const fs::path& file : source.only) {
+      std::error_code entry_ec;
+      const fs::path path = source.from / file;
+      if (!fs::exists(path, entry_ec)) continue;
+      const uint64_t size = fs::file_size(path, entry_ec);
+      if (entry_ec) {
+        error = "cannot read " + Utf8(path) + ": " + entry_ec.message();
+        return false;
+      }
+      items.push_back({path, source.to / file, size, false, source.durable});
+    }
+    return true;
+  }
   for (fs::recursive_directory_iterator it(source.from, ec), end; !ec && it != end; it.increment(ec)) {
     const fs::path& path = it->path();
     if (std::find(source.leave_out.begin(), source.leave_out.end(), path) != source.leave_out.end()) {
@@ -36,7 +69,7 @@ bool ListSource(const CopySource& source, std::vector<Item>& items, std::string&
       continue;
     }
     std::error_code entry_ec;
-    const fs::file_status status = it->symlink_status(entry_ec);
+    const fs::file_status entry = it->symlink_status(entry_ec);
     if (entry_ec) {
       error = "cannot read " + Utf8(path) + ": " + entry_ec.message();
       return false;
@@ -46,15 +79,18 @@ bool ListSource(const CopySource& source, std::vector<Item>& items, std::string&
       error = "cannot read " + Utf8(path) + ": " + entry_ec.message();
       return false;
     }
-    if (fs::is_directory(status)) {
-      items.push_back({{}, to, 0, true});
-    } else if (fs::is_regular_file(status)) {
+    if (fs::is_directory(entry)) {
+      items.push_back({{}, to, 0, true, source.durable});
+    } else if (fs::is_regular_file(entry)) {
       const uint64_t size = it->file_size(entry_ec);
       if (entry_ec) {
         error = "cannot read " + Utf8(path) + ": " + entry_ec.message();
         return false;
       }
-      items.push_back({path, to, size, false});
+      items.push_back({path, to, size, false, source.durable});
+    } else {
+      error = Utf8(path) + " is a link or a special file, which cannot be copied";
+      return false;
     }
   }
   if (ec) {
@@ -98,6 +134,11 @@ bool CopyFile(const Item& item, const fs::path& partial, uint64_t& done, uint64_
     error = "cannot write " + Utf8(partial / item.to) + " (is the disk full?)";
     return false;
   }
+  // A power cut after the rename must not leave empty files in a folder taken as whole.
+  if (item.durable && !FlushFileToDisk(partial / item.to, error)) {
+    error = "cannot write " + Utf8(partial / item.to) + ": " + error;
+    return false;
+  }
   return true;
 }
 
@@ -107,25 +148,61 @@ std::vector<CopySource> UserFolderSources() {
   return UserFolderSources(PlainUserFolder(UserFolderKind::kConfig),
                            PlainUserFolder(UserFolderKind::kData),
                            PlainUserFolder(UserFolderKind::kCache),
-                           PlainUserFolder(UserFolderKind::kGameData));
+                           PlainUserFolder(UserFolderKind::kGameData),
+                           PlainUserFolder(UserFolderKind::kState) / "logs");
 }
 
 std::vector<CopySource> UserFolderSources(const fs::path& config, const fs::path& data,
-                                          const fs::path& cache, const fs::path& game) {
+                                          const fs::path& cache, const fs::path& game,
+                                          const fs::path& logs) {
+  const auto clean = [](const fs::path& path) {
+    return path.has_filename() ? path : path.parent_path();
+  };
+  const fs::path config_folder = clean(config), data_folder = clean(data), cache_folder = clean(cache),
+                 game_folder = clean(game), logs_folder = clean(logs);
   std::vector<CopySource> sources;
-  // The choice of the user's folders says nothing about a portable folder.
-  if (!config.empty()) sources.push_back({config, "config", {config / kUserFoldersChoiceFile}});
-  // The game's files may be below the saves' folder (Linux): they have their own place.
-  if (!data.empty()) sources.push_back({data, "data", {game}});
-  if (!cache.empty() && cache != data) sources.push_back({cache, "cache", {}});
-  if (!game.empty()) sources.push_back({game, "game", {}});
+  const bool shared_config = !config_folder.empty() && config_folder == data_folder;
+  const fs::path settings = "settings.toml", runtime = "torchlight.toml";
+  if (!config_folder.empty()) {
+    CopySource source{config_folder, "config", {config_folder / kUserFoldersChoiceFile}};
+    if (shared_config) source.only = {settings, runtime};
+    sources.push_back(source);
+  }
+  if (!data_folder.empty()) {
+    CopySource source{data_folder, "data", {}};
+    if (shared_config) {
+      source.leave_out = {data_folder / settings, data_folder / runtime,
+                          data_folder / kUserFoldersChoiceFile};
+    }
+    sources.push_back(source);
+  }
+  if (!cache_folder.empty() && cache_folder != data_folder && cache_folder != config_folder) {
+    CopySource source{cache_folder, "cache", {}};
+    source.durable = false;
+    sources.push_back(source);
+  }
+  if (!game_folder.empty()) sources.push_back({game_folder, "game", {}});
+  // Each file once: what a source's folder holds of another's stays out, and the logs of all.
+  const auto below = [](const fs::path& inner, const fs::path& outer) {
+    const fs::path relative = inner.lexically_relative(outer);
+    return !relative.empty() && *relative.begin() != ".." && relative != ".";
+  };
+  for (CopySource& source : sources) {
+    for (const fs::path& other : {config_folder, data_folder, cache_folder, game_folder, logs_folder}) {
+      if (!other.empty() && other != source.from && below(other, source.from)) {
+        source.leave_out.push_back(other);
+      }
+    }
+  }
   return sources;
 }
 
 std::vector<CopySource> PortableFolderSources(const fs::path& portable) {
   std::vector<CopySource> sources;
   for (const char* name : {"config", "data", "cache", "game"}) {
-    sources.push_back({portable / name, name, {}});
+    CopySource source{portable / name, name, {}};
+    source.durable = std::string_view(name) != "cache";
+    sources.push_back(source);
   }
   return sources;
 }
@@ -133,6 +210,10 @@ std::vector<CopySource> PortableFolderSources(const fs::path& portable) {
 bool SourcesHoldFiles(const std::vector<CopySource>& sources) {
   for (const CopySource& source : sources) {
     std::error_code ec;
+    for (const fs::path& file : source.only) {
+      if (fs::is_regular_file(source.from / file, ec)) return true;
+    }
+    if (!source.only.empty()) continue;
     for (fs::recursive_directory_iterator it(source.from, ec), end; !ec && it != end;
          it.increment(ec)) {
       if (std::find(source.leave_out.begin(), source.leave_out.end(), it->path()) !=
@@ -149,17 +230,26 @@ bool SourcesHoldFiles(const std::vector<CopySource>& sources) {
 
 bool LooksLikePortableFolder(const fs::path& folder) {
   std::error_code ec;
-  for (const char* name : {"config", "data", "game"}) {
-    if (fs::is_directory(folder / name, ec)) return true;
-  }
-  return false;
+  return fs::is_regular_file(folder / "config" / "settings.toml", ec) ||
+         fs::is_regular_file(folder / "game" / "default.xex", ec);
 }
 
 CopyResult CopyIntoPortable(const std::vector<CopySource>& sources, const fs::path& portable,
                             const CopyProgress& progress, std::string& error) {
   std::error_code ec;
+  // An empty one is what nobody has used (an attempt that came to nothing).
+  if (fs::is_directory(portable, ec) && fs::is_empty(portable, ec)) fs::remove(portable, ec);
   if (fs::exists(portable, ec)) {
     error = Utf8(portable) + " already exists";
+    return CopyResult::kFailed;
+  }
+  fs::path partial = portable;
+  partial += ".partial";
+  // A partial folder is only ever an interrupted copy of ours; before listing, in case a source
+  // holds it.
+  fs::remove_all(partial, ec);
+  if (ec) {
+    error = "cannot remove " + Utf8(partial) + ": " + ec.message();
     return CopyResult::kFailed;
   }
   std::vector<Item> items;
@@ -169,14 +259,6 @@ CopyResult CopyIntoPortable(const std::vector<CopySource>& sources, const fs::pa
   uint64_t total = 0;
   for (const Item& item : items) total += item.size;
 
-  fs::path partial = portable;
-  partial += ".partial";
-  // A partial folder is only ever an interrupted copy of ours.
-  fs::remove_all(partial, ec);
-  if (ec) {
-    error = "cannot remove " + Utf8(partial) + ": " + ec.message();
-    return CopyResult::kFailed;
-  }
   const auto discard = [&] {
     std::error_code ignored;
     fs::remove_all(partial, ignored);
