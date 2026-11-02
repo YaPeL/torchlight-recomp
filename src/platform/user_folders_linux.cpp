@@ -28,6 +28,13 @@ std::filesystem::path PlatformUserFolderBase(UserFolderKind kind) {
   return {};
 }
 
+std::filesystem::path HomeFolder() {
+  const char* home = std::getenv("HOME");
+  return home ? std::filesystem::path(home) : std::filesystem::path();
+}
+
+std::vector<std::filesystem::path> FolderRoots() { return {"/"}; }
+
 bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to,
                      std::string& error) {
   if (renameat2(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), RENAME_NOREPLACE) == 0) return true;

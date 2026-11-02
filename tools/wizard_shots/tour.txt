@@ -1,0 +1,65 @@
+# The wizard's parts with the simulated pad, then the keyboard: every page shot.
+page welcome 5
+shot welcome
+press a
+page browser 5
+shot browser
+# Down to the first folder, into it, and back up.
+press down
+press a
+wait 5
+shot browser-inner
+press up
+press a
+wait 5
+# A long list scrolls with the focus.
+press down
+press down
+press down
+press a
+wait 5
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+shot browser-scrolled
+key escape
+page welcome 5
+key enter
+page browser 5
+# B goes back a page, Start or Next forward again.
+press b
+page welcome 5
+press start
+page browser 5
+key escape
+page welcome 5
+key enter
+page browser 5
+# The button below the list.
+press down
+press down
+press down
+press down
+shot browser-focus
+press a
+page chosen 5
+shot chosen
+press a
+quit

@@ -73,6 +73,12 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   achievement progress follow `--user_data_root` / `--cache_root` when they come
   (`settings/user_folders_in_use.h`, resolved by `live::UserFoldersInUse`). The first line of each
   log names the executable and the build's commit (`cmake/build_info.cmake`).
+- Setup wizard (`src/wizard/`, not in the game yet): one window for the first start, on desktop,
+  with a pad, a mouse or a keyboard. SDL's software renderer (the only one the SDK's SDL has), Dear
+  ImGui with the SDK's green palette, Noto Sans, the owner's cat as its icon (`data/icon/README.md`)
+  and its own folder browser for where the system's picker does not show. `tools/wizard_shots` plays
+  its parts on sample pages from a script, offscreen, and keeps the screenshots in `wizard-shots/`
+  of the build folder; CI uploads them for Linux, Windows and macOS.
 - First start (REL.4, `src/game_setup/`): without `--game_data_root`, the game's files live in
   `platform::GameDataDir()` (`~/.local/share/TorchlightRecomp/game/`; its `import/` is where saves
   to import go). At every start its `default.xex` is checked (size and SHA-256); when it does not

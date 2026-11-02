@@ -137,6 +137,14 @@ jobs:
         run: cmake --build --preset linux-amd64-nogame --parallel
       - name: Test
         run: ctest --test-dir out/build/linux-amd64-nogame --output-on-failure -LE opengl33
+      - name: The wizard's screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wizard-shots-linux
+          path: out/build/linux-amd64-nogame/wizard-shots/
+          if-no-files-found: warn
+          retention-days: 14
       # The backend tests' GL3+ runs (label opengl33) need OpenGL 3.3 and a display: xvfb-run gives
       # them an X server, and with no GPU Mesa draws with llvmpipe. Without a display they exit 77 and
       # ctest marks them skipped, which passed CI without running them (docs/regressions.md): a
@@ -392,6 +400,14 @@ jobs:
       - name: Test
         shell: pwsh
         run: ctest --test-dir out/build/win-amd64-nogame --output-on-failure -LE opengl33
+      - name: The wizard's screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wizard-shots-windows
+          path: out/build/win-amd64-nogame/wizard-shots/
+          if-no-files-found: warn
+          retention-days: 14
 
   # macOS on Apple Silicon: the same scheme on the macos-26 runner (pinned, as ubuntu-24.04 is), with
   # Apple's clang from the runner's Command Line Tools; keyed by `key.sh macos`, published as
@@ -487,6 +503,14 @@ jobs:
       # src/backend/CMakeLists.txt). They pass on Apple Silicon Macs (GL 4.1).
       - name: Test
         run: ctest --test-dir out/build/mac-arm64-nogame --output-on-failure -LE opengl33
+      - name: The wizard's screenshots
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: wizard-shots-macos
+          path: out/build/mac-arm64-nogame/wizard-shots/
+          if-no-files-found: warn
+          retention-days: 14
       # A test that crashed leaves macOS's crash report (the stack of every thread) in the user's
       # DiagnosticReports; nothing of the game is built here.
       - name: Crash reports

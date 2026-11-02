@@ -1,0 +1,7 @@
+# The pages at the Steam Deck's 1280x800.
+page welcome 5
+shot deck-welcome
+press a
+page browser 5
+shot deck-browser
+quit
