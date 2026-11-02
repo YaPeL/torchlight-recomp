@@ -73,7 +73,8 @@ large change of what the game does per frame (a new native path) also calls for 
 Android's training, from a build with `-DTORCHLIGHT_PGO_GENERATE=ON` packaged with
 `tools/android/build_apk.sh`: the bench save copied fresh before each script, with its own
 `config/settings.toml` (fps cap 0, vsync off, the achievement set explicit: `--user_data_root` reads
-the settings there), `--pgo_profile_dir=/data/user/0/<package>/files/pgo` with each of `fight.txt`,
+the settings there), `--game_data_root` at the app's game folder (a root holds no game),
+`--pgo_profile_dir=/data/user/0/<package>/files/pgo` with each of `fight.txt`,
 `fight5.txt` and `town.txt`, the `.profraw` files pulled with `run-as ... cat`, merged with the
 NDK's `llvm-profdata merge --sparse`. The result goes to the private assets repository as
 `pgo/android-arm64.profdata`, with the commit of `generated/`'s codegen, the NDK version and the

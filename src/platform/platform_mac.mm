@@ -7,6 +7,7 @@
 
 #include <atomic>
 #include <climits>
+#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -121,6 +122,10 @@ std::string ExecutableDir() {
   const std::filesystem::path exe = std::filesystem::canonical(path.c_str(), ec);
   if (ec) return "";
   return exe.parent_path().string() + "/";
+}
+
+void PrintStartupError(const std::string& message) {
+  std::fprintf(stderr, "ERROR: %s\n", message.c_str());
 }
 
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }

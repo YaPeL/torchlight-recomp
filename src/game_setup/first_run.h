@@ -15,7 +15,7 @@ namespace torchlight::game_setup {
 enum class GameData {
   kReady,          // `game_dir` holds the game
   kQuit,           // the user quit the setup
-  kMissingInRoot,  // not there, and this run may not ask: it says so on stderr and stops
+  kMissingInRoot,  // not there, and this run may not ask: it says so and stops
 };
 // Whether `game_dir` holds the game (its default.xex checks out, a cheap test done at every start),
 // installing it first if needed. A run with --user_data_root and no --game_data_root does not ask

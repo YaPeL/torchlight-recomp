@@ -6,7 +6,6 @@
 #include <optional>
 #include <thread>
 
-#include <SDL3/SDL_log.h>
 #include <rex/cvar.h>
 
 #include "game_menu/menu_strings.h"
@@ -102,11 +101,8 @@ GameData EnsureGameData(const std::filesystem::path& game_dir, bool may_ask,
   const auto info = [&](std::string text) { log.push_back({false, std::move(text)}); };
   if (XexMatches(game_dir, GameFiles())) return GameData::kReady;
   if (!may_ask) {
-    // Not the runtime's log, which is not up yet. SDL's reaches stderr and Android's logcat.
-    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
-                 "--user_data_root given, but no game in %s: pass --game_data_root=<the game's "
-                 "folder>, or put the game there",
-                 game_dir.string().c_str());
+    platform::PrintStartupError("--user_data_root given, but no valid game in " + game_dir.string() +
+                                ": pass --game_data_root=<the game's folder>, or put the game there");
     return GameData::kMissingInRoot;
   }
   const Translate tr = SetupTranslate(log);

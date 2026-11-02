@@ -164,6 +164,10 @@ void TestMissingGameInRoot() {
   std::vector<torchlight::platform::StartupMessage> log;
   Check(EnsureGameData(dir, false, log) == GameData::kMissingInRoot, "no game, may not ask: stops");
   Check(!fs::exists(dir), "no game, may not ask: creates nothing");
+  fs::create_directories(dir);
+  std::ofstream(dir / "default.xex") << "not the game";
+  Check(EnsureGameData(dir, false, log) == GameData::kMissingInRoot, "wrong game: stops too");
+  fs::remove_all(dir);
 }
 
 int main(int argc, char** argv) {

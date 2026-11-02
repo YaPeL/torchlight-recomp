@@ -76,7 +76,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
 - First start (REL.4, `src/game_setup/`): without `--game_data_root`, the game's files live in
   `platform::GameDataDir()` (`~/.local/share/TorchlightRecomp/game/`; its `import/` is where saves
   to import go). At every start its `default.xex` is checked (size and SHA-256); when it does not
-  check out, before the runtime's window exists, a message box asks for the user's Torchlight XBLA
+  check out, a run with `--user_data_root` stops with an error, and any other, before the runtime's
+  window exists, gets a message box that asks for the user's Torchlight XBLA
   package or an extracted folder (the system's pickers, SDL3; on the Steam Deck in Desktop Mode). A
   package's header must say LIVE/CON/PIRS, Arcade Title, title `0x58410A7E`; it is extracted with
   the runtime's STFS reader (a folder is copied, never linked) into `game.partial/`, every file
