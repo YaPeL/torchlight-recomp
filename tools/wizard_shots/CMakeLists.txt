@@ -29,7 +29,10 @@ if(NOT ANDROID)
   add_test(NAME wizard_shots_setup_cancel COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_cancel.txt" --shots "${shots}"
            --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-cancel" --install_delay 2000 --expect none)
-  set(setup_tests wizard_shots_setup_tour wizard_shots_setup_cancel)
+  add_test(NAME wizard_shots_setup_package COMMAND wizard_shots ${setup}
+           --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_package.txt" --shots "${shots}"
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-package" --install_delay 200 --expect installed)
+  set(setup_tests wizard_shots_setup_tour wizard_shots_setup_cancel wizard_shots_setup_package)
   # The storage pages, over invented folders.
   foreach(case "ask|1|copied-user" "other|1|copied-other" "parent_unwritable|0|user-folders"
           "portable_unwritable|0|user-folders" "cancel|0|no-portable")

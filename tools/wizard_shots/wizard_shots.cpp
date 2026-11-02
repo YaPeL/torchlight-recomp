@@ -19,6 +19,7 @@
 #include "game_setup/game_files.h"
 #include "game_setup/first_run_steps.h"
 #include "game_setup/setup_pages.h"
+#include "game_setup/synthetic_package.h"
 #include "platform/storage_mode.h"
 #include "wizard/browser_page.h"
 #include "wizard/wizard.h"
@@ -118,6 +119,10 @@ int RunSetup(const Options& options, const SetupRun& run) {
   std::ofstream(source / "default.xex") << "an invented executable";
   std::ofstream(source / "data.bin") << std::string(4096, 'x');
   std::ofstream(run.sample_root / "not-a-package.bin") << "not a package";
+  // Beside it, its own invented package: the same two files, so either way installs.
+  gs::WriteSyntheticPackage(run.sample_root / "synthetic.package",
+                            {{"default.xex", "an invented executable"},
+                             {"data.bin", std::string(4096, 'x')}});
   const std::string xex_hash = gs::Sha256File(source / "default.xex");
   const std::string data_hash = gs::Sha256File(source / "data.bin");
   const std::vector<gs::GameFile> files = {
