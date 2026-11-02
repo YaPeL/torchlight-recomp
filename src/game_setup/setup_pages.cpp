@@ -102,6 +102,13 @@ std::string SetupPages::Detail() const {
     return std::string(settings::AchievementSetName(*achievements_));
   }
   if (ui_.page() == kReady && portable_) return *portable_ ? "portable" : "user folders";
+  if (ui_.page() == kStorage && config_.storage && error_.empty()) {
+    // The warning's own explanation, for a script to check (English).
+    const StorageQuestion& question = *config_.storage;
+    const bool can_portable = question.mode == platform::StorageMode::kAsk && question.parent_writable;
+    if (can_portable) return question.elevated ? std::string(kTextElevated) : std::string();
+    return std::string(UnwritableReason(question.os, question.mode != platform::StorageMode::kAsk));
+  }
   return error_;
 }
 
@@ -165,6 +172,10 @@ void SetupPages::StoragePage() {
   if (can_portable) {
     ui_.Wrapped(Render({std::string(kTextStorageIntro), {{"folder", folder}}}, config_.translate));
     ImGui::Spacing();
+    if (question.elevated) {
+      ui_.Warning("elevated", Tr(kTextElevatedTitle), Tr(kTextElevated));
+      ImGui::Spacing();
+    }
     if (ui_.entered()) ui_.FocusNext();
     keep = ImGui::Button(Tr(kTextKeepHere).c_str());
     ui_.Took();
@@ -176,11 +187,13 @@ void SetupPages::StoragePage() {
     copy_other = ImGui::Button(Tr(kTextCopyPortable).c_str());
   } else if (question.mode == platform::StorageMode::kAsk) {
     ui_.Warning("warning", Tr(kTextParentUnwritableTitle),
-                Render({std::string(kTextParentUnwritable), {{"folder", folder}}},
+                Render({std::string(kTextParentUnwritable),
+                        {{"folder", folder}, {"reason", Tr(UnwritableReason(question.os, false))}}},
                        config_.translate));
   } else {
     ui_.Warning("warning", Tr(kTextPortableUnwritableTitle),
-                Render({std::string(kTextPortableUnwritable), {{"folder", folder}}},
+                Render({std::string(kTextPortableUnwritable),
+                        {{"folder", folder}, {"reason", Tr(UnwritableReason(question.os, true))}}},
                        config_.translate));
   }
   ImGui::Spacing();

@@ -62,12 +62,33 @@ std::set<std::string> FileKeys(const torchlight::game_menu::MenuStrings& strings
 
 }  // namespace
 
+// Each operating system's explanation: macOS's temporary place only on macOS, the administrator only
+// on Windows.
+void TestUnwritableReasons() {
+  using torchlight::platform::OsKind;
+  for (const bool existing : {false, true}) {
+    for (const OsKind os : {OsKind::kLinux, OsKind::kWindows, OsKind::kAndroid}) {
+      Check(std::string(UnwritableReason(os, existing)).find("macOS") == std::string::npos,
+            "macOS's explanation only on macOS");
+    }
+    Check(std::string(UnwritableReason(OsKind::kMacOS, existing)).find("macOS") != std::string::npos,
+          "macOS's explanation on macOS");
+    for (const OsKind os : {OsKind::kLinux, OsKind::kMacOS}) {
+      Check(std::string(UnwritableReason(os, existing)).find("administrator") == std::string::npos,
+            "the administrator only on Windows");
+    }
+  }
+  Check(std::string(UnwritableReason(OsKind::kWindows, true)).find("administrator") != std::string::npos,
+        "Windows' existing folder names the administrator as a cause");
+}
+
 int main() {
   torchlight::game_menu::MenuStrings strings;
   std::vector<std::string> warnings;
   std::string error;
   Check(strings.Load(TL_SETUP_STRINGS_FILE, warnings, error), "strings file loads: " + error);
   Check(warnings.empty(), "no malformed lines");
+  TestUnwritableReasons();
   const std::vector<std::string> texts = AllTexts();
   const std::vector<std::string> languages = {"de", "fr", "es"};
   Check(strings.Languages() == std::vector<std::string>{"de", "es", "fr"}, "sections de, es, fr");

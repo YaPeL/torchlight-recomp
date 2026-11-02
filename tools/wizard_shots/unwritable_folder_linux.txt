@@ -1,0 +1,5 @@
+# The explanation of this system, in the warning for an existing portable folder.
+page storage 5
+detail check its permissions and its disk, then start again.
+shot storage-portable-unwritable
+quit

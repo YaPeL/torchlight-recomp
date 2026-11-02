@@ -1,0 +1,5 @@
+# The explanation of this system, in the warning for an existing portable folder.
+page storage 5
+detail It may also be on a read-only disk.
+shot storage-portable-unwritable
+quit

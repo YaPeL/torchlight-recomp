@@ -388,6 +388,8 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
   return PickResult::kChosen;
 }
 
+bool RunningElevated() { return false; }
+
 bool CanPickFolder() { return false; }
 
 void ForgetPickedFiles() {

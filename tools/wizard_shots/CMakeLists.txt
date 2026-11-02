@@ -12,6 +12,7 @@ if(NOT ANDROID)
   endforeach()
   add_test(NAME wizard_shots_setup COMMAND ${CMAKE_COMMAND}
            -E make_directory "${shots}" "${shots}/es" "${shots}/de" "${shots}/fr"
+           "${shots}/windows" "${shots}/macos" "${shots}/linux"
            "${sample}/A folder/Inside" "${sample}/Another folder" ${many})
   add_test(NAME wizard_shots_setup_file COMMAND ${CMAKE_COMMAND} -E touch "${sample}/A file.txt")
   set_tests_properties(wizard_shots_setup wizard_shots_setup_file PROPERTIES
@@ -57,6 +58,21 @@ if(NOT ANDROID)
              --language ${language} --strings "${CMAKE_SOURCE_DIR}/data/ui/tl_setup_strings.txt")
     list(APPEND setup_tests wizard_shots_setup_${language})
   endforeach()
+  set_tests_properties(${setup_tests} PROPERTIES FIXTURES_REQUIRED wizard_shots_sample TIMEOUT 60)
+  # Each operating system's explanation for an unwritable place, and the elevated warning.
+  foreach(os windows macos linux)
+    add_test(NAME wizard_shots_unwritable_${os} COMMAND wizard_shots ${setup}
+             --script "${CMAKE_CURRENT_SOURCE_DIR}/unwritable_${os}.txt" --shots "${shots}/${os}"
+             --sample_root "${CMAKE_CURRENT_BINARY_DIR}/unwritable-${os}" --storage parent_unwritable --os ${os})
+    add_test(NAME wizard_shots_unwritable_folder_${os} COMMAND wizard_shots ${setup}
+             --script "${CMAKE_CURRENT_SOURCE_DIR}/unwritable_folder_${os}.txt" --shots "${shots}/${os}"
+             --sample_root "${CMAKE_CURRENT_BINARY_DIR}/unwritable-folder-${os}" --storage portable_unwritable --os ${os})
+    list(APPEND setup_tests wizard_shots_unwritable_${os} wizard_shots_unwritable_folder_${os})
+  endforeach()
+  add_test(NAME wizard_shots_elevated COMMAND wizard_shots ${setup}
+           --script "${CMAKE_CURRENT_SOURCE_DIR}/elevated_shots.txt" --shots "${shots}/windows"
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/elevated" --storage ask --elevated 1 --os windows)
+  list(APPEND setup_tests wizard_shots_elevated)
   set_tests_properties(${setup_tests} PROPERTIES FIXTURES_REQUIRED wizard_shots_sample TIMEOUT 60)
   # The Steam Deck's size.
   add_test(NAME wizard_shots_deck COMMAND wizard_shots --script
