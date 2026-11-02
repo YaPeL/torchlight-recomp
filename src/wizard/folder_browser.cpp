@@ -17,15 +17,23 @@ std::string Utf8(const fs::path& path) {
 
 }  // namespace
 
-void FolderBrowser::Open(const fs::path& folder) {
+UpMove MoveUp(const fs::path& folder, size_t root_count) {
+  const fs::path above = folder.parent_path();
+  if (!above.empty() && above != folder) return UpMove::kAbove;
+  return root_count > 1 ? UpMove::kRoots : UpMove::kStay;
+}
+
+void FolderBrowser::Open(const fs::path& given) {
+  // Without a last separator: its parent_path would be the same folder.
+  fs::path folder = given;
+  if (!folder.has_filename() && folder.has_relative_path()) folder = folder.parent_path();
   at_roots_ = false;
   folder_ = folder;
   entries_.clear();
   error_.clear();
   std::vector<BrowserEntry> files;
   std::error_code ec;
-  for (fs::directory_iterator it(folder, fs::directory_options::skip_permission_denied, ec), end;
-       !ec && it != end; it.increment(ec)) {
+  for (fs::directory_iterator it(folder, ec), end; !ec && it != end; it.increment(ec)) {
     // Its own code: a broken link is a file here, and does not end the listing.
     std::error_code entry_ec;
     const bool is_folder = it->is_directory(entry_ec);
@@ -44,13 +52,10 @@ void FolderBrowser::Open(const fs::path& folder) {
 
 void FolderBrowser::Up() {
   if (at_roots_) return;
-  const fs::path above = folder_.parent_path();
-  if (!above.empty() && above != folder_) {
-    Open(above);
-    return;
-  }
   const std::vector<fs::path> roots = platform::FolderRoots();
-  if (roots.size() < 2) return;
+  const UpMove move = MoveUp(folder_, roots.size());
+  if (move == UpMove::kAbove) Open(folder_.parent_path());
+  if (move != UpMove::kRoots) return;
   at_roots_ = true;
   entries_.clear();
   error_.clear();

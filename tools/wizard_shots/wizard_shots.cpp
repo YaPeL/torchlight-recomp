@@ -28,6 +28,11 @@ class SamplePages : public Pages {
     static const char* const names[] = {"welcome", "browser", "chosen"};
     return names[ui_.page()];
   }
+  std::string Detail() const override {
+    if (ui_.page() == kChosen) return chosen_;
+    const std::u8string folder = browser_.folder().generic_u8string();
+    return std::string(folder.begin(), folder.end());
+  }
   bool Frame() override {
     ui_.Frame(ui_.page() != kWelcome, [&] {
       switch (ui_.page()) {
@@ -60,7 +65,7 @@ class SamplePages : public Pages {
   }
   void Browser() {
     if (auto chosen = browser_.Draw(ui_, "Choose a folder", "Step 2 of 2")) {
-      const std::u8string text = chosen->u8string();
+      const std::u8string text = chosen->generic_u8string();
       chosen_ = std::string(text.begin(), text.end());
       ui_.Go(kChosen);
     }

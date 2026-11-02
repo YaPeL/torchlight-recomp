@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <vector>
@@ -15,14 +16,18 @@ struct BrowserEntry {
   bool folder = false;
 };
 
+// Where Up goes from `folder`, on a machine with `root_count` filesystem roots: the folder above,
+// else the list of roots where there are several (Windows' drives), else nowhere.
+enum class UpMove { kAbove, kRoots, kStay };
+UpMove MoveUp(const std::filesystem::path& folder, size_t root_count);
+
 class FolderBrowser {
  public:
   // `with_files`: the files too, after the folders; otherwise only folders are listed.
   explicit FolderBrowser(bool with_files) : with_files_(with_files) {}
 
   void Open(const std::filesystem::path& folder);
-  // The folder above; above a filesystem's root, the list of roots where there are several
-  // (Windows' drives), else it stays.
+  // As MoveUp says.
   void Up();
 
   const std::filesystem::path& folder() const { return folder_; }

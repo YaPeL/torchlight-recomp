@@ -29,6 +29,7 @@ class BrowserPage {
     browser_.Open(folder);
     refocus_frames_ = kRefocusFrames;
   }
+  const std::filesystem::path& folder() const { return browser_.folder(); }
   // Draws the page; the folder or file once one is chosen. The caller then leaves the page.
   std::optional<std::filesystem::path> Draw(Ui& ui, const std::string& title,
                                             const std::string& step);

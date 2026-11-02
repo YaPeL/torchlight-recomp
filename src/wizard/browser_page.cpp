@@ -17,7 +17,7 @@ std::optional<std::filesystem::path> BrowserPage::Draw(Ui& ui, const std::string
   // What to do once the list is drawn: it changes under the loop otherwise.
   std::optional<BrowserEntry> pressed;
   bool up = false;
-  const bool focus_first = refocus_frames_ > 0;
+  const bool focus_first = refocus_frames_ > 0 || ui.entered();  // also coming Back to the page
   if (focus_first) --refocus_frames_;
   if (!browser_.at_roots()) {
     if (focus_first) ui.FocusNext();

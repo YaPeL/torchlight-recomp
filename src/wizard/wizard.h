@@ -1,7 +1,7 @@
 // The setup wizard's window: SDL3 and Dear ImGui (its SDL3 and SDL_Renderer backends) with the SDK's
-// green palette, Noto Sans, the owner's cat as its icon. It uses SDL's software renderer, the only
-// one the SDK's SDL has (nothing of the GPU's is loaded before the runtime chooses one), so it paces
-// itself. A script plays it with a simulated pad and takes the screenshots for the tests.
+// green palette, Noto Sans, the owner's cat as its icon. It always uses SDL's software renderer, the
+// only one the SDK's SDL has on Linux and Windows (nothing of the GPU's is loaded before the runtime
+// chooses one), so it paces itself. A script plays it with a simulated pad and takes the screenshots for the tests.
 
 #pragma once
 
@@ -36,6 +36,8 @@ class Pages {
   virtual bool Frame() = 0;
   // The page shown: the scripts wait for one.
   virtual std::string Name() const = 0;
+  // More of what the page shows, as text, for a script's `detail` step.
+  virtual std::string Detail() const { return {}; }
   // Work under way: the window does not close then.
   virtual bool Busy() const { return false; }
 };

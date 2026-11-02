@@ -25,5 +25,6 @@ if(NOT ANDROID)
            "${CMAKE_CURRENT_SOURCE_DIR}/deck.txt" --width 1280 --height 800 ${common})
   set_tests_properties(wizard_shots_tour wizard_shots_bad_page wizard_shots_deck PROPERTIES
                        FIXTURES_REQUIRED wizard_shots_sample TIMEOUT 60)
-  set_tests_properties(wizard_shots_bad_page PROPERTIES WILL_FAIL TRUE)
+  # The failure it must report, not just any non-zero exit.
+  set_tests_properties(wizard_shots_bad_page PROPERTIES PASS_REGULAR_EXPRESSION "was not reached")
 endif()

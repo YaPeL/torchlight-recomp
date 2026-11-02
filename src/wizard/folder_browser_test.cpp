@@ -8,7 +8,7 @@
 #include "wizard/folder_browser.h"
 
 namespace fs = std::filesystem;
-using torchlight::wizard::FolderBrowser;
+using namespace torchlight::wizard;
 
 namespace {
 
@@ -51,14 +51,28 @@ int main() {
   folders.Open(root / "not there");
   Check(!folders.error().empty() && folders.entries().empty(), "a missing folder says so");
 
-  // At a root: the roots where there are several (Windows' drives), else it stays.
+  folders.Open(root / "a folder" / "inner" / "");
+  folders.Up();
+  Check(folders.folder() == root / "a folder", "up from a path ending in a separator");
+
+  // A folder that cannot be read says so. Only where permissions stop it (not as root or on Windows).
+  const fs::path locked = root / "locked";
+  fs::create_directories(locked);
+  fs::permissions(locked, fs::perms::none);
+  std::error_code probe;
+  fs::directory_iterator check(locked, probe);
+  if (probe) {
+    folders.Open(locked);
+    Check(!folders.error().empty(), "an unreadable folder is not an empty one");
+  }
+  fs::permissions(locked, fs::perms::owner_all);
+
+  // Above a root, by name only: no real folder is listed.
   fs::path top = root;
   while (top.parent_path() != top) top = top.parent_path();
-  folders.Open(top);
-  folders.Up();
-  Check(folders.at_roots() ? !folders.entries().empty() : folders.folder() == top,
-        "above a root");
-  folders.Up();
+  Check(MoveUp(root, 1) == UpMove::kAbove, "below a root: the folder above");
+  Check(MoveUp(top, 1) == UpMove::kStay, "a root, the only one: it stays");
+  Check(MoveUp(top, 3) == UpMove::kRoots, "a root among several: the roots");
   fs::remove_all(root);
   std::printf("folder_browser_test: ok\n");
   return 0;

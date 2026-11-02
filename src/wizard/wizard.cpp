@@ -80,7 +80,9 @@ void ApplyTheme(ImGuiStyle& style, float scale) {
 
 // A script: one step per line, `#` for a comment. wait FRAMES, press BUTTON (a b x y up down left
 // right start back), key KEY (enter escape tab up down left right space backspace), shot NAME,
-// page NAME [SECONDS] (waits for it, or fails), quit.
+// page NAME [SECONDS] (waits for it, or fails), detail TEXT (waits up to 5 s for Pages::Detail to end
+// in it), finished (the pages must end by themselves within 5 s), quit. A script fails unless it
+// reaches `quit` or its pages end at `finished`.
 struct Step {
   std::string op, arg;
   double seconds = 30;
@@ -95,7 +97,12 @@ bool ReadScript(const std::string& path, std::vector<Step>& steps) {
     if (line.empty() || line[0] == '#') continue;
     std::istringstream words(line);
     Step step;
-    words >> step.op >> step.arg;
+    words >> step.op;
+    if (step.op == "detail") {
+      std::getline(words >> std::ws, step.arg);
+    } else {
+      words >> step.arg;
+    }
     if (double seconds; step.op == "page" && words >> seconds) step.seconds = seconds;
     steps.push_back(std::move(step));
   }
@@ -228,6 +235,7 @@ int Run(const Options& options, Pages& pages) {
   constexpr int kReleased = 1000;  // `held`: the button is up again, for a few frames
   Uint64 page_since = 0;
   bool quit = !error.empty();
+  bool script_done = false;
   Uint64 frame_start = SDL_GetTicksNS();
   while (!quit) {
     SDL_Event event;
@@ -257,7 +265,8 @@ int Run(const Options& options, Pages& pages) {
       const Step& step = steps[next];
       wait = 1;
       if (step.op == "wait") {
-        wait = std::max(1, std::atoi(step.arg.c_str()));
+        wait = std::atoi(step.arg.c_str());
+        if (wait < 1) error = "wait needs a number of frames: " + step.arg;
         next++;
       } else if (step.op == "press") {
         const int button = ButtonOf(step.arg);
@@ -281,6 +290,7 @@ int Run(const Options& options, Pages& pages) {
         next++;
       } else if (step.op == "shot") {
         shot = step.arg;
+        if (shot.empty()) error = "shot needs a name";
         next++;
       } else if (step.op == "page") {
         if (!page_since) page_since = SDL_GetTicks();
@@ -291,7 +301,21 @@ int Run(const Options& options, Pages& pages) {
         } else if (double(SDL_GetTicks() - page_since) > step.seconds * 1000) {
           error = "the page " + step.arg + " was not reached (still " + pages.Name() + ")";
         }
+      } else if (step.op == "detail") {
+        if (!page_since) page_since = SDL_GetTicks();
+        const std::string detail = pages.Detail();
+        if (detail.ends_with(step.arg)) {
+          page_since = 0;
+          wait = 4;
+          next++;
+        } else if (SDL_GetTicks() - page_since > 5000) {
+          error = "the detail is " + detail + ", not " + step.arg;
+        }
+      } else if (step.op == "finished") {
+        if (!page_since) page_since = SDL_GetTicks();
+        if (SDL_GetTicks() - page_since > 5000) error = "the pages did not end";
       } else if (step.op == "quit") {
+        script_done = true;
         quit = true;
       } else {
         error = "no step " + step.op;
@@ -304,7 +328,10 @@ int Run(const Options& options, Pages& pages) {
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
-    if (pages.Frame()) quit = true;
+    if (pages.Frame()) {
+      quit = true;
+      if (next < steps.size() && steps[next].op == "finished") script_done = true;
+    }
     ImGui::Render();
     SDL_SetRenderScale(renderer, io.DisplayFramebufferScale.x, io.DisplayFramebufferScale.y);
     SDL_SetRenderDrawColorFloat(renderer, 0.0f, 0.06f, 0.0f, 1.0f);
@@ -321,6 +348,9 @@ int Run(const Options& options, Pages& pages) {
     const Uint64 spent = SDL_GetTicksNS() - frame_start;
     if (spent < kFrameNanoseconds) SDL_DelayPrecise(kFrameNanoseconds - spent);
     frame_start = SDL_GetTicksNS();
+  }
+  if (error.empty() && !steps.empty() && !script_done) {
+    error = "the window closed before the script's end, at step " + std::to_string(next + 1);
   }
   if (!error.empty()) std::fprintf(stderr, "wizard: %s\n", error.c_str());
   ImGui_ImplSDLRenderer3_Shutdown();

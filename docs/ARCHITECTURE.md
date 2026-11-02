@@ -74,7 +74,7 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   (`settings/user_folders_in_use.h`, resolved by `live::UserFoldersInUse`). The first line of each
   log names the executable and the build's commit (`cmake/build_info.cmake`).
 - Setup wizard (`src/wizard/`, not in the game yet): one window for the first start, on desktop,
-  with a pad, a mouse or a keyboard. SDL's software renderer (the only one the SDK's SDL has), Dear
+  with a pad, a mouse or a keyboard. SDL's software renderer (forced; on Linux and Windows the SDK's SDL has no other), Dear
   ImGui with the SDK's green palette, Noto Sans, the owner's cat as its icon (`data/icon/README.md`)
   and its own folder browser for where the system's picker does not show. `tools/wizard_shots` plays
   its parts on sample pages from a script, offscreen, and keeps the screenshots in `wizard-shots/`
