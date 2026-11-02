@@ -13,6 +13,7 @@
 #include "platform/user_folders.h"
 #include "game_setup/game_files.h"
 #include "game_setup/install.h"
+#include "game_setup/synthetic_package.h"
 
 namespace {
 
@@ -132,6 +133,28 @@ void TestInstallFromFolder() {
         "cancelled: nothing installed, nothing partial left");
 }
 
+// A whole install from a package, read by the runtime's reader, against an invented table.
+void TestInstallFromPackage() {
+  const fs::path root = fs::temp_directory_path() / "tl_game_setup_package";
+  fs::remove_all(root);
+  fs::create_directories(root);
+  const std::string xex = "an invented executable", data(9000, 'd');
+  Check(WriteSyntheticPackage(root / "package", {{"default.xex", xex}, {"data.bin", data}}),
+        "the package is written");
+  const auto facts = ReadPackageFacts(root / "package");
+  Check(facts && CheckPackage(*facts).empty(), "it reads as the game's package");
+  std::ofstream(root / "a") << xex;
+  std::ofstream(root / "b") << data;
+  const std::string xex_hash = Sha256File(root / "a"), data_hash = Sha256File(root / "b");
+  const std::vector<GameFile> files = {{"default.xex", xex.size(), xex_hash},
+                                       {"data.bin", data.size(), data_hash}};
+  const auto result = Install(Source::kPackage, root / "package", root / "game", files, {});
+  Check(result.error.empty(), "it installs");
+  Check(XexMatches(root / "game", files), "and checks out");
+  Check(VerifyGameFolder(root / "game", files).empty(), "every file");
+  fs::remove_all(root);
+}
+
 void TestTable() {
   bool xex = false;
   for (const GameFile& f : GameFiles()) {
@@ -185,6 +208,7 @@ int main(int argc, char** argv) {
   TestReadPackageFacts();
   TestVerifyFolder();
   TestInstallFromFolder();
+  TestInstallFromPackage();
   TestTable();
   TestMissingGameInRoot();
   std::printf("game_setup_test: ok\n");
