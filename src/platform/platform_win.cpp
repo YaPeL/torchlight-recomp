@@ -271,6 +271,10 @@ bool ServeSurfaceChanges(const std::function<void()>&,
   return true;
 }
 
+void SurfaceTaken(uint64_t) {}
+
+bool GameWindowMayGetSurface() { return false; }
+
 bool OgreWindowFollowsGameWindow() { return false; }
 
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
