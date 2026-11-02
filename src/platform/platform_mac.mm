@@ -7,7 +7,6 @@
 
 #include <atomic>
 #include <climits>
-#include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <filesystem>
@@ -25,6 +24,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
@@ -125,7 +125,7 @@ std::string ExecutableDir() {
 }
 
 void PrintStartupError(const std::string& message) {
-  std::fprintf(stderr, "ERROR: %s\n", message.c_str());
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
 }
 
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }

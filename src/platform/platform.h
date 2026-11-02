@@ -115,8 +115,9 @@ int AskChoice(const std::string& title, const std::string& message,
               const std::vector<std::string>& buttons);
 void ShowError(const std::string& title, const std::string& message);
 // One line for whoever started a run that cannot go on, before the runtime's log is up. It never
-// blocks: stderr, Android's logcat; on Windows, a windowed program, the inherited stderr or else the
-// parent's console. A Windows run with neither shows nothing, only its exit code.
+// blocks: stderr on Linux, stderr and the system log on macOS, logcat on Android; on Windows, a
+// windowed program, the inherited stderr or else the parent's console. A run with nowhere to write
+// it, on any platform, leaves only its exit code.
 void PrintStartupError(const std::string& message);
 enum class PickResult { kChosen, kCancelled, kFailed, kUncopied };
 // The system's picker for one file or one folder (blocks until it closes); kFailed with the
