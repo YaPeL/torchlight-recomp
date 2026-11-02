@@ -58,6 +58,17 @@ User-facing changes for the release notes, newest first. Developers: add a line 
   warns before making that folder and suggests the user folders.
 - The game has its own icon, a cat, on Linux, Windows and macOS.
 
+### Android (highly experimental)
+
+- A first Android build, for 64-bit ARM phones and tablets with Android 11 or newer. Expect bugs:
+  it has been tested mostly on one phone (POCO X7).
+- The first start installs the game from your Torchlight XBLA package, chosen with the system's
+  file picker, and asks for the achievement set.
+- Touch controls laid out as a gamepad, shown when no controller is connected; a connected
+  controller works as on the desktop.
+- Sending the app to the background and back keeps the game where it was. A black screen after the
+  first start's file picker, or after leaving the app in its first seconds, is fixed.
+
 ### For testers
 
 - `--user_data_root` now keeps everything below that folder: the settings
@@ -70,7 +81,8 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 - A rare hang at startup on an Intel laptop (1 start in 5 of one series, never reproduced in 42
   starts since): if the game stays on the first screens, close it and start it again. Its log now
   records where every thread waits, to find the cause.
-- Android is not part of this release (the app is still in development builds).
+- Android is highly experimental: tested mostly on one phone, with performance and compatibility
+  on other devices unknown.
 
 ## v0.12.5-beta (2026-10-17)
 
