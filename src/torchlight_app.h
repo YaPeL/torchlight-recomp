@@ -69,20 +69,14 @@ class TorchlightApp : public rex::ReXApp {
     // First of all, before anything opens or creates the user's folders: where this run keeps the
     // player's files. A portable run leaves the user's folders alone; otherwise the ones with the
     // old name move to the new one (logged once logging is up), never in a run with its own roots.
-    const torchlight::platform::StorageFacts storage = torchlight::platform::ReadStorageFacts(
-        torchlight::platform::ExecutableDir(), rex::cvar::Query<std::string>("appimage_path"),
-        !rex::cvar::Query<std::string>("user_data_root").empty() ||
-            !rex::cvar::Query<std::string>("game_data_root").empty());
-    switch (torchlight::platform::DecideStorage(storage)) {
+    switch (torchlight::platform::SetUpFolders(torchlight::platform::ExecutableDir(),
+                                                rex::cvar::Query<std::string>("appimage_path"),
+                                                rex::cvar::Query<std::string>("user_data_root"),
+                                                rex::cvar::Query<std::string>("game_data_root"),
+                                                rex::cvar::Query<std::string>("cache_root"),
+                                                startup_log())) {
       case torchlight::platform::StorageMode::kUserFolders:
-        startup_log() = torchlight::platform::MigrateUserFolders(
-            !rex::cvar::Query<std::string>("user_data_root").empty() ||
-            !rex::cvar::Query<std::string>("game_data_root").empty() ||
-            !rex::cvar::Query<std::string>("cache_root").empty());
-        break;
       case torchlight::platform::StorageMode::kPortable:
-        torchlight::platform::SetPortableRoot(storage.portable_folder);
-        startup_log().push_back({false, "storage: portable, " + storage.portable_folder.string()});
         break;
       case torchlight::platform::StorageMode::kPortableUnwritable:
       case torchlight::platform::StorageMode::kAsk:
@@ -95,13 +89,21 @@ class TorchlightApp : public rex::ReXApp {
     // --game_data_root points at them.
     if (rex::cvar::Query<std::string>("game_data_root").empty()) {
       const std::string game_dir = torchlight::platform::GameDataDir();
-      if (!game_dir.empty() &&
-          !torchlight::game_setup::EnsureGameData(game_dir, startup_log())) {
-        std::exit(EXIT_SUCCESS);  // the user quit the setup; nothing is running yet
+      if (!game_dir.empty()) {
+        using torchlight::game_setup::GameData;
+        const bool may_ask = rex::cvar::Query<std::string>("user_data_root").empty();
+        switch (torchlight::game_setup::EnsureGameData(game_dir, may_ask, startup_log())) {
+          case GameData::kReady: break;
+          case GameData::kQuit: std::exit(EXIT_SUCCESS);  // nothing is running yet
+          case GameData::kMissingInRoot: std::exit(EXIT_FAILURE);
+        }
       }
     }
-    // The achievement set, asked once (before the host settings are read).
-    torchlight::game_setup::EnsureAchievementChoice(startup_log());
+    // The achievement set, asked once (before the host settings are read). A test run's fresh
+    // settings never stop it with a question: the default set, nothing saved.
+    if (rex::cvar::Query<std::string>("user_data_root").empty()) {
+      torchlight::game_setup::EnsureAchievementChoice(startup_log());
+    }
     torchlight::live::PreCreate();
     return std::unique_ptr<TorchlightApp>(new TorchlightApp(ctx, "torchlight",
         PPCImageConfig));

@@ -12,11 +12,18 @@
 
 namespace torchlight::game_setup {
 
-// True when `game_dir` holds the game (its default.xex checks out, a cheap test done at every
-// start), installing it first if needed; false when the user quit instead. `log` gets what was
-// done, for the runtime's log (logging is not up yet).
-bool EnsureGameData(const std::filesystem::path& game_dir,
-                    std::vector<platform::StartupMessage>& log);
+enum class GameData {
+  kReady,          // `game_dir` holds the game
+  kQuit,           // the user quit the setup
+  kMissingInRoot,  // not there, and this run may not ask: it says so and stops
+};
+// Whether `game_dir` holds the game (its default.xex checks out, a cheap test done at every start),
+// installing it first if needed. A run with --user_data_root and no --game_data_root does not ask
+// (`may_ask` false): nobody may be there to answer (test runs, scripts, a phone), and installing is
+// a question for a player, not for a test root. `log` gets what was done, for the runtime's log
+// (logging is not up yet).
+GameData EnsureGameData(const std::filesystem::path& game_dir, bool may_ask,
+                        std::vector<platform::StartupMessage>& log);
 
 // The achievement set (settings::AchievementSet), asked once: when settings.toml has no
 // "achievements" key yet, a message box offers Xbox 360 and PC, and the choice is saved

@@ -24,6 +24,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
@@ -121,6 +122,10 @@ std::string ExecutableDir() {
   const std::filesystem::path exe = std::filesystem::canonical(path.c_str(), ec);
   if (ec) return "";
   return exe.parent_path().string() + "/";
+}
+
+void PrintStartupError(const std::string& message) {
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
 }
 
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }

@@ -247,6 +247,10 @@ std::string ExecutableDir() {
   return exe.parent_path().string() + "/";
 }
 
+void PrintStartupError(const std::string& message) {
+  std::fprintf(stderr, "ERROR: %s\n", message.c_str());
+}
+
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
 
 std::string DataDir() { return UserDir(UserFolderKind::kData); }

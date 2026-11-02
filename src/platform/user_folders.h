@@ -53,8 +53,17 @@ std::filesystem::path PlainUserFolder(UserFolderKind kind);
 // Makes every UserFolder live below `root` (storage_mode.h): config/, logs/, cache/, data/, game/.
 // Set once at the very start, on the main thread; empty goes back to the user's folders.
 void SetPortableRoot(const std::filesystem::path& root);
+// A run with its own roots touches nothing outside them. --user_data_root holds every kind:
+// <root>/config, logs, cache and game, and the data is the root itself (the runtime's saves are
+// there). --cache_root alone moves only the cache; with both, the cache goes there. Below
+// kTestUserFoldersVariable nothing changes (those folders are isolated already). --game_data_root
+// is not one of these: it only says where to read the game from, and such a run uses the player's
+// saves and settings. A root with no game in <root>/game and no --game_data_root stops the run
+// (game_setup/first_run.h). Set once at the very start, on the main thread.
+void SetRunRoots(const std::filesystem::path& user_data_root,
+                 const std::filesystem::path& cache_root);
 // The logs' folder below UserFolder(kState) where that folder is not the logs' own: "logs" in the
-// user's folders (Linux, Windows), nothing in a portable root, whose kState is logs/ already.
+// user's folders (Linux, Windows), nothing in a portable or run root, whose kState is logs/ already.
 std::filesystem::path LogsSubfolder();
 
 struct LegacyFolder {

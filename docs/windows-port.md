@@ -222,7 +222,8 @@ UTF-8, the game's through the SDK), `user_folders_test` and `platform_win_test` 
 below such a base. A game run with `--game_data_root` on a copy of the data below
 `D:\prueba-ñandú-copia` and `--user_data_root` below `D:\Usuarios\Martín Pérez` reached the menu
 without the first-start setup, and saving wrote there and nothing in the default saves folder.
-(`--user_data_root` is for testing; the settings stay in `%APPDATA%\TorchlightRecomp`.)
+(`--user_data_root` is for testing; since then the settings, logs and caches follow it too, as
+`docs/BUILDING.md` says.)
 
 ## Platform module
 

@@ -9,6 +9,7 @@
 #include <string>
 #include <vector>
 
+#include "game_setup/first_run.h"
 #include "game_setup/game_files.h"
 #include "game_setup/install.h"
 
@@ -156,6 +157,19 @@ int CheckRealPackage(const char* package) {
 
 }  // namespace
 
+// A run that may not ask answers at once, with no dialog, and leaves the folder as it was.
+void TestMissingGameInRoot() {
+  const fs::path dir = fs::temp_directory_path() / "tl_game_setup_no_game";
+  fs::remove_all(dir);
+  std::vector<torchlight::platform::StartupMessage> log;
+  Check(EnsureGameData(dir, false, log) == GameData::kMissingInRoot, "no game, may not ask: stops");
+  Check(!fs::exists(dir), "no game, may not ask: creates nothing");
+  fs::create_directories(dir);
+  std::ofstream(dir / "default.xex") << "not the game";
+  Check(EnsureGameData(dir, false, log) == GameData::kMissingInRoot, "wrong game: stops too");
+  fs::remove_all(dir);
+}
+
 int main(int argc, char** argv) {
   if (argc > 1) return CheckRealPackage(argv[1]);
   TestCheckPackage();
@@ -163,6 +177,7 @@ int main(int argc, char** argv) {
   TestVerifyFolder();
   TestInstallFromFolder();
   TestTable();
+  TestMissingGameInRoot();
   std::printf("game_setup_test: ok\n");
   return 0;
 }

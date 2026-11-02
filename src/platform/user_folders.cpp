@@ -12,9 +12,10 @@ bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::p
 
 namespace {
 
-std::filesystem::path& PortableRoot() {
-  static std::filesystem::path root;
-  return root;
+// The folders this run keeps in place of the user's, by kind; empty: the user's.
+std::filesystem::path& FolderOverride(UserFolderKind kind) {
+  static std::filesystem::path folders[5];
+  return folders[static_cast<int>(kind)];
 }
 
 bool IsXuid(const std::string& name) {
@@ -109,22 +110,32 @@ std::filesystem::path UserFolderBase(UserFolderKind kind) {
   return PlatformUserFolderBase(kind);
 }
 
-void SetPortableRoot(const std::filesystem::path& root) { PortableRoot() = root; }
+void SetPortableRoot(const std::filesystem::path& root) {
+  const bool set = !root.empty();
+  FolderOverride(UserFolderKind::kConfig) = set ? root / "config" : std::filesystem::path();
+  FolderOverride(UserFolderKind::kState) = set ? root / "logs" : std::filesystem::path();
+  FolderOverride(UserFolderKind::kCache) = set ? root / "cache" : std::filesystem::path();
+  FolderOverride(UserFolderKind::kData) = set ? root / "data" : std::filesystem::path();
+  FolderOverride(UserFolderKind::kGameData) = set ? root / "game" : std::filesystem::path();
+}
+
+void SetRunRoots(const std::filesystem::path& user_data_root,
+                 const std::filesystem::path& cache_root) {
+  if (const char* test = std::getenv(kTestUserFoldersVariable); test && *test) return;
+  if (!user_data_root.empty()) {
+    SetPortableRoot(user_data_root);
+    FolderOverride(UserFolderKind::kData) = user_data_root;
+  }
+  if (!cache_root.empty()) FolderOverride(UserFolderKind::kCache) = cache_root;
+}
 
 std::filesystem::path LogsSubfolder() {
-  return PortableRoot().empty() ? std::filesystem::path("logs") : std::filesystem::path();
+  return FolderOverride(UserFolderKind::kState).empty() ? std::filesystem::path("logs")
+                                                        : std::filesystem::path();
 }
 
 std::filesystem::path UserFolder(UserFolderKind kind) {
-  if (const std::filesystem::path& root = PortableRoot(); !root.empty()) {
-    switch (kind) {
-      case UserFolderKind::kConfig: return root / "config";
-      case UserFolderKind::kState: return root / "logs";
-      case UserFolderKind::kCache: return root / "cache";
-      case UserFolderKind::kData: return root / "data";
-      case UserFolderKind::kGameData: return root / "game";
-    }
-  }
+  if (const std::filesystem::path& folder = FolderOverride(kind); !folder.empty()) return folder;
   return PlainUserFolder(kind);
 }
 

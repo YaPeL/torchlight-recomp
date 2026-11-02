@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <string>
 
 #include "platform/gl_probe_win.h"
@@ -229,9 +230,32 @@ void TestRunsAsInvoker() {
         "the manifest asks for asInvoker (no VirtualStore)");
 }
 
+// A windowed program started by a harness has an inherited stderr and no console.
+void TestStartupErrorReachesInheritedStderr() {
+  const std::filesystem::path file = std::filesystem::temp_directory_path() / "tl_startup_error.txt";
+  SECURITY_ATTRIBUTES attributes{sizeof(attributes), nullptr, TRUE};
+  const HANDLE handle = CreateFileW(file.c_str(), GENERIC_WRITE, FILE_SHARE_READ, &attributes,
+                                    CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+  const HANDLE previous = GetStdHandle(STD_ERROR_HANDLE);
+  SetStdHandle(STD_ERROR_HANDLE, handle);
+  torchlight::platform::PrintStartupError("the reason");
+  SetStdHandle(STD_ERROR_HANDLE, previous);
+  CloseHandle(handle);
+  std::ifstream in(file);
+  std::string line;
+  std::getline(in, line);
+  in.close();
+  std::filesystem::remove(file);
+  if (line.find("ERROR: the reason") != 0) {
+    std::fprintf(stderr, "FAIL: the startup error reaches the inherited stderr\n");
+    std::exit(1);
+  }
+}
+
 int main() {
   TestUnwritableFolder();
   TestRunsAsInvoker();
+  TestStartupErrorReachesInheritedStderr();
   TestGlProbe();
   TestGpus();
   TestUserFolderBases();
