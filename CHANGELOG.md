@@ -5,9 +5,6 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ## Unreleased
 
-Draft for the next release (everything integrated into `develop` since v0.12.5-beta). The setup
-wizard and the portable mode are still being integrated; their lines are marked TO FILL.
-
 ### Faster
 
 - Every desktop build is now optimized with a profile of real play (profile-guided optimization)
@@ -42,12 +39,21 @@ wizard and the portable mode are still being integrated; their lines are marked 
 - 40 fps is among the frame rate caps.
 - The 30 fps cap holds: it used to run near 47 fps standing still and 33 in fights.
 
-### Setup (TO FILL when the setup wizard is in)
+### Setup
 
-- TO FILL: the setup wizard (first install from the game package or an extracted folder, in
-  English, German, French and Spanish; full controller navigation).
-- TO FILL: portable mode (all the game's files in a TorchlightRecomp-data folder next to the
-  AppImage, the .exe or the .app), and copying an existing installation into it.
+- A setup window replaces the first start's dialogs on Linux, Windows and macOS, and works with a
+  gamepad, a mouse or a keyboard, in English, German, French or Spanish (following the system's
+  language). It asks for your Torchlight XBLA package (the file from your console's storage, or a
+  folder with its contents extracted), checks it is the right version with every file intact, and
+  copies its files (about 200 MB); your package is only read. Then it asks which achievement set
+  to use. Later starts go straight to the game. On Android these stay dialogs.
+- The released game keeps all its files in one folder beside it, `TorchlightRecomp-data/`, next to
+  the AppImage, the `.exe` or the `.app`: settings, saves, mods, the game's data, logs and the
+  shader cache. Move the two together to take everything with you.
+- The first start offers to copy your files from an earlier install (they stay where they were),
+  or to keep using the system's user folders. If the game cannot write beside itself (inside
+  Program Files, or a `.app` run straight from its disk image), it says so and offers the user
+  folders instead.
 
 ### For testers
 
