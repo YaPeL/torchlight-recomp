@@ -30,6 +30,23 @@ if(NOT ANDROID)
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_cancel.txt" --shots "${shots}"
            --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-cancel" --install_delay 2000 --expect none)
   set(setup_tests wizard_shots_setup_tour wizard_shots_setup_cancel)
+  # The storage pages, over invented folders.
+  foreach(case "ask|1|copied-user" "other|1|copied-other" "parent_unwritable|0|user-folders"
+          "portable_unwritable|0|user-folders" "cancel|0|no-portable")
+    string(REPLACE "|" ";" parts "${case}")
+    list(GET parts 0 name)
+    list(GET parts 1 user_data)
+    list(GET parts 2 expect)
+    set(mode ${name})
+    if(name STREQUAL "other" OR name STREQUAL "cancel")
+      set(mode ask)
+    endif()
+    add_test(NAME wizard_shots_storage_${name} COMMAND wizard_shots ${setup}
+             --script "${CMAKE_CURRENT_SOURCE_DIR}/storage_${name}.txt" --shots "${shots}"
+             --sample_root "${CMAKE_CURRENT_BINARY_DIR}/storage-${name}" --storage ${mode}
+             --user_data ${user_data} --expect ${expect} --install_delay 300)
+    list(APPEND setup_tests wizard_shots_storage_${name})
+  endforeach()
   foreach(language es de fr)
     add_test(NAME wizard_shots_setup_${language} COMMAND wizard_shots ${setup}
              --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_language.txt" --shots "${shots}/${language}"

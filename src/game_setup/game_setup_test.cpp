@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "game_setup/first_run.h"
+#include "platform/user_folders.h"
 #include "game_setup/game_files.h"
 #include "game_setup/install.h"
 
@@ -157,17 +158,25 @@ int CheckRealPackage(const char* package) {
 
 }  // namespace
 
-// A run that may not ask answers at once, with no dialog, and leaves the folder as it was.
+// A run with its own user root and no game answers at once, with no dialog, leaving the folder as it
+// was. Below the tests' user folders.
 void TestMissingGameInRoot() {
-  const fs::path dir = fs::temp_directory_path() / "tl_game_setup_no_game";
+  namespace platform = torchlight::platform;
+  const fs::path dir = platform::UserFolder(platform::UserFolderKind::kGameData);
+  Check(std::getenv(platform::kTestUserFoldersVariable) != nullptr, "run with the tests' folders");
   fs::remove_all(dir);
-  std::vector<torchlight::platform::StartupMessage> log;
-  Check(FirstStart(dir, false, false, log) == GameData::kMissingInRoot, "no game, may not ask: stops");
+  FirstStartFacts facts;
+  facts.own_user_root = true;
+  std::vector<platform::StartupMessage> log;
+  Check(FirstStart(facts, log) == GameData::kMissingInRoot, "no game, may not ask: stops");
   Check(!fs::exists(dir), "no game, may not ask: creates nothing");
   fs::create_directories(dir);
   std::ofstream(dir / "default.xex") << "not the game";
-  Check(FirstStart(dir, false, false, log) == GameData::kMissingInRoot, "wrong game: stops too");
+  Check(FirstStart(facts, log) == GameData::kMissingInRoot, "wrong game: stops too");
   fs::remove_all(dir);
+  // The game given, and nothing else to ask for: ready, no question.
+  facts.game_given = true;
+  Check(FirstStart(facts, log) == GameData::kReady, "the game given: nothing asked");
 }
 
 int main(int argc, char** argv) {

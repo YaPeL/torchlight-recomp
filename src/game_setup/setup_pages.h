@@ -8,6 +8,7 @@
 
 #include <atomic>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
@@ -15,9 +16,11 @@
 #include <thread>
 #include <vector>
 
+#include "game_setup/first_run_steps.h"
 #include "game_setup/game_files.h"
 #include "game_setup/install.h"
 #include "game_setup/setup_text.h"
+#include "platform/portable_copy.h"
 #include "platform/user_folders.h"
 #include "settings/host_settings.h"
 #include "wizard/browser_page.h"
@@ -27,14 +30,15 @@
 namespace torchlight::game_setup {
 
 struct SetupConfig {
-  std::filesystem::path game_dir;
+  OpenQuestions questions;
+  std::optional<StorageQuestion> storage;
+  // Applies a storage answer; what is open then. Needed with `storage`.
+  std::function<OpenQuestions(bool portable)> after_storage;
   std::span<const GameFile> files;
-  bool ask_game = false;
-  bool ask_achievements = false;
   Translate translate;
   bool own_browser_only = false;       // never the system's picker (a script's run)
   std::filesystem::path browse_from;   // the browser's first folder; empty: the home folder
-  int test_install_delay_ms = 0;       // a test's slower install, to see its page
+  int test_install_delay_ms = 0;       // a test's slower work, to see its page
 };
 
 class SetupPages : public wizard::Pages {
@@ -52,14 +56,19 @@ class SetupPages : public wizard::Pages {
   bool completed() const { return completed_; }
   bool installed() const { return installed_; }
   std::optional<settings::AchievementSet> achievements() const { return achievements_; }
+  std::optional<bool> portable() const { return portable_; }
   // For the runtime's log: what each attempt did (true: an error).
   const std::vector<platform::StartupMessage>& log() const { return log_; }
 
  private:
-  enum Page { kGame, kBrowser, kWorking, kAchievements, kReady };
+  enum Page { kStorage, kSourceBrowser, kGame, kBrowser, kWorking, kAchievements, kReady };
   struct PickState;
 
   std::string Tr(std::string_view english) const;
+  void StoragePage();
+  void SourceBrowserPage();
+  void StartCopy(std::vector<platform::CopySource> sources);
+  void ApplyStorage(bool portable, bool way_back);
   void GamePage();
   void BrowserPage();
   void WorkingPage();
@@ -75,6 +84,8 @@ class SetupPages : public wizard::Pages {
   SDL_Window* window_ = nullptr;
   wizard::Ui ui_;
   wizard::BrowserPage browser_{true};
+  wizard::BrowserPage source_browser_{false};
+  std::optional<bool> portable_;
   std::string error_;
   std::shared_ptr<PickState> pick_;
 
@@ -83,6 +94,9 @@ class SetupPages : public wizard::Pages {
   std::atomic<int> phase_{0};
   std::atomic<uint64_t> done_{0}, total_{0};
   InstallResult result_;
+  bool copying_ = false;  // the work is the copy, not the install
+  platform::CopyResult copy_result_ = platform::CopyResult::kDone;
+  std::string copy_error_;
   Source source_ = Source::kFolder;
   std::string from_;
 

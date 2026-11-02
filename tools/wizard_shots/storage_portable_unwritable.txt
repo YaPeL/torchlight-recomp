@@ -1,0 +1,6 @@
+# The portable folder exists, unwritable: the warning, never a silent fall back.
+page storage 5
+shot storage-portable-unwritable
+press a
+page game 5
+quit

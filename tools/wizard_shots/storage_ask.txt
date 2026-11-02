@@ -1,0 +1,8 @@
+# Fresh, with files in the user folders: the page, then copying them (the second button).
+page storage 5
+shot storage-ask
+press down
+press a
+page game 20
+shot storage-after-copy
+quit
