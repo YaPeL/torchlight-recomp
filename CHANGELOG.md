@@ -53,7 +53,10 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 - The first start offers to copy your files from an earlier install (they stay where they were),
   or to keep using the system's user folders. If the game cannot write beside itself (inside
   Program Files, or a `.app` run straight from its disk image), it says so and offers the user
-  folders instead.
+  folders instead, with the likely reason on your system (on Windows, also a game started once as
+  administrator, whose folder then belongs to the administrators). Started as administrator, it
+  warns before making that folder and suggests the user folders.
+- The game has its own icon, a cat, on Linux, Windows and macOS.
 
 ### For testers
 
