@@ -2,7 +2,7 @@
 # Makes "Torchlight Recomp.app" from a `cmake --install` tree (the top CMakeLists.txt's macOS rules:
 # MacOS/, Frameworks/, PlugIns/ogre/, Resources/), as make_appimage.sh does for Linux: the tree as
 # the bundle's Contents/, the rpaths that find Frameworks/ from the plugins, Info.plist, the icon
-# (rendered from the project's SVG) and an ad-hoc signature on every Mach-O and on the bundle
+# (rendered from data/icon) and an ad-hoc signature on every Mach-O and on the bundle
 # (Apple Silicon runs only signed code; the beta is not signed with a Developer ID,
 # docs/macos-port.md section 6). Run split_symbols.sh on the tree first: signing comes last.
 # Usage: make_app.sh INSTALL_DIR OUTPUT_DIR VERSION
@@ -39,7 +39,7 @@ sed "s/@VERSION@/$version/g" "$here/Info.plist.in" > "$contents/Info.plist"
 plutil -lint "$contents/Info.plist" >/dev/null
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-swift "$here/make_icon.swift" "$here/../linux/torchlight-recomp.svg" "$work/icon.iconset"
+swift "$here/make_icon.swift" "$here/../../data/icon/torchlight-recomp-256.png" "$work/icon.iconset"
 iconutil -c icns "$work/icon.iconset" -o "$contents/Resources/torchlight-recomp.icns"
 
 # Inside out: every library and plugin, then the bundle (its executable and the resources' seal).
