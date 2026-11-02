@@ -250,11 +250,14 @@ empty in a fresh root (`--cache_root` keeps one between runs). Outside the proje
 graphics and audio libraries' own caches, and on Android the APK's resources, which the app copies
 to its internal storage.
 
-Not in use yet: packages will keep all of this in a portable folder, `TorchlightRecomp-data/` beside
-the AppImage, the `.exe` or the `.app` (`platform/storage_mode.h`), with `config/`, `logs/`, `cache/`,
-`data/` and `game/`. The CMake option `TORCHLIGHT_PORTABLE_DEFAULT` will turn it on; the build
-refuses it until the setup wizard, which asks the player, is in. A build without it, a run with
-`--user_data_root` or `--game_data_root` and the tests never use one.
+Packages keep all of this in a portable folder, `TorchlightRecomp-data/` beside the AppImage, the
+`.exe` or the `.app` (`platform/storage_mode.h`), with `config/`, `logs/`, `cache/`, `data/` and
+`game/`. The CMake option `TORCHLIGHT_PORTABLE_DEFAULT` turns it on, which `release.yml` does. On the
+first start the setup wizard shows where the files will go and offers copying them from the user's
+folders or another portable folder (never moving or deleting the originals; `platform/portable_copy.h`),
+or using the user's folders. Where the folder cannot be created or written, it warns and offers only
+the user's folders. A build without the option, a run with `--user_data_root` or `--game_data_root` and
+the tests never use one. Android keeps its app's storage.
 
 Without `--user_data_root`, the logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
 runtime's as `torchlight_NNN.log` and OGRE's next to it as `torchlight_NNN_ogre.log`. The game

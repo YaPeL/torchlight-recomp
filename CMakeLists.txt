@@ -306,11 +306,15 @@ add_subdirectory(src/platform)
 add_subdirectory(src/backend)
 add_subdirectory(src/frontend)
 add_subdirectory(src/live)
+if(NOT ANDROID)
+  add_subdirectory(src/wizard)
+endif()
 add_subdirectory(src/game_setup)
 add_subdirectory(tools/capture_dump)
 add_subdirectory(tools/thread_profile)
 add_subdirectory(tools/synthetic_capture)
 add_subdirectory(tools/replay)
+add_subdirectory(tools/wizard_shots)
 add_subdirectory(tools/run_capped)
 add_subdirectory(tools/profile_window)
 add_subdirectory(tools/pgo)
@@ -388,6 +392,11 @@ option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_scri
 if(TORCHLIGHT_DEV_INPUT)
     set_source_files_properties(src/dev/script_input.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    # The first start played from a script (--dev_setup_script).
+    if(NOT ANDROID)
+        set_source_files_properties(src/game_setup/first_run_wizard.cpp DIRECTORY src/game_setup PROPERTIES
+            COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    endif()
     # The mouse as a finger on the touch controls (--dev_touch_mouse).
     set_source_files_properties(src/live/touch_input.cpp DIRECTORY src/live PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
@@ -419,6 +428,16 @@ add_custom_target(torchlight_build_info
     VERBATIM)
 add_dependencies(torchlight torchlight_build_info)
 target_include_directories(torchlight PRIVATE "${TORCHLIGHT_BUILD_INFO_DIR}")
+endif()
+
+# The game's icon in the Windows executable (data/icon/README.md). The path is generated: rc files
+# have no way to name a folder of the build's own.
+if(WIN32 AND TORCHLIGHT_GAME)
+    enable_language(RC)
+    set(_icon "${CMAKE_SOURCE_DIR}/data/icon/torchlight-recomp.ico")
+    file(CONFIGURE OUTPUT "${CMAKE_BINARY_DIR}/torchlight_icon.rc" CONTENT "1 ICON \"${_icon}\"\n")
+    target_sources(torchlight PRIVATE "${CMAKE_BINARY_DIR}/torchlight_icon.rc")
+    set_source_files_properties("${CMAKE_BINARY_DIR}/torchlight_icon.rc" PROPERTIES OBJECT_DEPENDS "${_icon}")
 endif()
 
 # Every Windows executable (game, replay, tests):

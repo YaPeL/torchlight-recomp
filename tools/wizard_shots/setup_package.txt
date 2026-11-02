@@ -1,0 +1,17 @@
+# From nothing with a package of invented files, through the runtime's reader: source/, the rejected
+# file, then the package.
+page game 5
+press a
+page browser 5
+press down
+press down
+press down
+shot package-browser
+press a
+page working 5
+shot package-extracting
+page achievements 20
+press a
+page ready 5
+press a
+finished

@@ -1,0 +1,15 @@
+# Cancelled while it copies: back on the page, and nothing installed.
+page game 5
+press a
+page browser 5
+press down
+press a
+wait 10
+press down
+press down
+press down
+press a
+page working 5
+press a
+page game 20
+quit

@@ -23,10 +23,11 @@ mkdir -p "$appdir/usr"
 cp -a "$install_dir/." "$appdir/usr/"
 [ -x "$appdir/usr/bin/$executable" ] || { echo "no usr/bin/$executable in $1" >&2; exit 1; }
 
-mkdir -p "$appdir/usr/share/applications" "$appdir/usr/share/icons/hicolor/scalable/apps"
+mkdir -p "$appdir/usr/share/applications" "$appdir/usr/share/icons/hicolor/256x256/apps"
 sed "s/^Exec=.*/Exec=$executable/" "$here/torchlight-recomp.desktop" \
   > "$appdir/usr/share/applications/torchlight-recomp.desktop"
-cp "$here/torchlight-recomp.svg" "$appdir/usr/share/icons/hicolor/scalable/apps/"
+cp "$here/../../data/icon/torchlight-recomp-256.png" \
+  "$appdir/usr/share/icons/hicolor/256x256/apps/torchlight-recomp.png"
 
 # The libraries the executable and the plugins it loads need, from the build image. Besides
 # AppImage's exclusion list (pkg2appimage's excludelist, which linuxdeploy applies), libraries that
@@ -42,7 +43,7 @@ done
 APPIMAGE_EXTRACT_AND_RUN=1 linuxdeploy --appdir "$appdir" \
   --executable "$appdir/usr/bin/$executable" $deploy_only \
   --desktop-file "$appdir/usr/share/applications/torchlight-recomp.desktop" \
-  --icon-file "$appdir/usr/share/icons/hicolor/scalable/apps/torchlight-recomp.svg" \
+  --icon-file "$appdir/usr/share/icons/hicolor/256x256/apps/torchlight-recomp.png" \
   --exclude-library 'libwayland-*' --exclude-library 'libXau.so.*' \
   --exclude-library 'libXdmcp.so.*' --exclude-library 'libbsd.so.*' \
   --exclude-library 'libmd.so.*' --exclude-library 'libffi.so.*'
