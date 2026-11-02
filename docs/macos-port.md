@@ -806,7 +806,7 @@ finds no dependency outside the bundle and the system.
   `MacOS/` (the executable and the null GPU plugin), `Frameworks/` (OGRE, `librexruntime`),
   `PlugIns/ogre/`, `Resources/` (`6bfe7d3`, `d784784`).
 - `packaging/macos/`: `make_app.sh` (rpaths, `Info.plist` with `io.github.yapel.torchlight-recomp`
-  and macOS 13.3, the icon from the Linux SVG, ad-hoc signatures), `check_app.sh`,
+  and macOS 13.3, the icon from `data/icon/`, ad-hoc signatures), `check_app.sh`,
   `split_symbols.sh`, `make_dmg.sh` (`c465b3f`). The Release `.dmg` is 31 MB. With `-g`, the
   executable's `.dSYM` is 116 MB; its UUID matches the signed binary and `atos` resolves addresses
   (`LiveMode::Stop()`, `live_mode.cpp:132`).

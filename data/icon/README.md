@@ -13,4 +13,4 @@ version 3; this repository's licence is the same (`LICENSE`).
 - `source-1254.png`: the owner's original, the form to edit; the others are made from it (cropped to
   the cat, centred on a transparent square, scaled with Lanczos).
 
-Android keeps its own launcher icon (`packaging/android/res`).
+The Android package does not use it: its manifest names no icon.

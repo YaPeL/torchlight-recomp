@@ -503,6 +503,11 @@ jobs:
       # src/backend/CMakeLists.txt). They pass on Apple Silicon Macs (GL 4.1).
       - name: Test
         run: ctest --test-dir out/build/mac-arm64-nogame --output-on-failure -LE opengl33
+      # The .app's icon, which only a release would otherwise make (packaging/macos/make_app.sh).
+      - name: The icon
+        run: |
+          swift packaging/macos/make_icon.swift data/icon/torchlight-recomp-256.png "$RUNNER_TEMP/icon.iconset"
+          iconutil -c icns "$RUNNER_TEMP/icon.iconset" -o "$RUNNER_TEMP/icon.icns"
       - name: The wizard's screenshots
         if: always()
         uses: actions/upload-artifact@v7
