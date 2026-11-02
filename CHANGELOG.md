@@ -66,8 +66,8 @@ User-facing changes for the release notes, newest first. Developers: add a line 
   file picker, and asks for the achievement set.
 - Touch controls laid out as a gamepad, shown when no controller is connected; a connected
   controller works as on the desktop.
-- Sending the app to the background and back keeps the game where it was. A black screen after the
-  first start's file picker, or after leaving the app in its first seconds, is fixed.
+- Sending the app to the background and back keeps the game where it was, also right after the
+  first start's file picker or when you leave the app in its first seconds.
 
 ### For testers
 
