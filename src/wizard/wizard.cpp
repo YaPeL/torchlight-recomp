@@ -71,8 +71,9 @@ void ApplyTheme(ImGuiStyle& style, float scale) {
   style.FramePadding = ImVec2(14, 8);
   style.ItemSpacing = ImVec2(12, 10);
   style.ScrollbarSize = 16;
-  // SDL's software renderer loses long, thin, antialiased lines (the 1280-wide boxes' borders).
-  style.AntiAliasedLines = false;
+  // SDL's software renderer loses long, thin lines drawn from ImGui's line texture (the boxes'
+  // borders at 1280 wide), and pieces of the plain ones: geometry with its own edge fade keeps them.
+  style.AntiAliasedLinesUseTex = false;
   style.ScaleAllSizes(scale);
   style.FontSizeBase = kTextSize;
   style.FontScaleDpi = scale;

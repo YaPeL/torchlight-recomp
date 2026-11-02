@@ -71,7 +71,17 @@ page browser 5
 shot browser-back
 press a
 detail tools/wizard_shots
+# Back to the start, and through to the end: Close ends the pages.
 press b
+page welcome 5
+press start
+page browser 5
+press down
+press down
+press down
+press down
+press down
+press a
 page chosen 5
 press a
 finished
