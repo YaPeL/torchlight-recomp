@@ -45,7 +45,42 @@ int main() {
   Check(line.find("reads 2 (5.0 KiB, 0.50 ms)") != std::string::npos, "line reads");
   Check(line.find("allocations 2 (1.0 MiB, 3.50 ms; largest 1.0 MiB in 3.00 ms)") !=
             std::string::npos, "line allocations");
-  Check(line.find("the rest 42.5 ms") != std::string::npos, "line rest");
+  Check(line.find("the rest 42.5 ms | looked up 1: 'GAME:\\B.MESH' (found)") != std::string::npos,
+        "line rest and the resource looked up");
+  // A resource's name: from MEDIA\ on, upper case, '/' as '\', no compiled suffix.
+  using torchlight::live::ResourceName;
+  Check(ResourceName("game:\\music\\MEDIA\\Models\\a.MESH.ADM") == "MEDIA\\MODELS\\A.MESH" &&
+            ResourceName("tlhost:/media/models/a.mesh") == "MEDIA\\MODELS\\A.MESH" &&
+            ResourceName("GAME:\\MEDIA\\UI\\X.UILAYOUT.CMP") == "MEDIA\\UI\\X.UILAYOUT" &&
+            ResourceName("game:\\b.mesh") == "GAME:\\B.MESH" && ResourceName(".ADM") == ".ADM",
+        "resource names");
+  // The resources looked up: each once whatever its location and form, found if any check found
+  // it, directories, wildcard searches and empty paths left out, the first kMaxLookedUpPaths
+  // listed, the rest counted.
+  g.FileCheck("game:\\media\\", true, 0.1);
+  g.FileCheck("game:/media/", true, 0.1);
+  g.FileCheck("game:\\media\\*.dds", true, 0.1);
+  g.FileCheck("", false, 0.1);
+  g.FileCheck("game:\\music\\MEDIA\\T0.DDS", false, 0.1);
+  g.FileCheck("tlhost:\\MEDIA\\T0.DDS", false, 0.1);
+  g.FileCheck("GAME:\\MEDIA\\T0.DDS", false, 0.1);
+  g.FileCheck("GAME:\\MEDIA\\M0.MESH.ADM", false, 0.1);
+  g.FileCheck("tlmod0:\\MEDIA\\M0.MESH", true, 0.1);
+  for (int i = 1; i < 18; ++i)
+    g.FileCheck("GAME:\\MEDIA\\T" + std::to_string(i) + ".DDS", false, 0.1);
+  GuestFrameEvents many = g.Take();
+  using torchlight::live::kMaxLookedUpPaths;
+  Check(many.looked_up.size() == kMaxLookedUpPaths && many.looked_up[0].path == "MEDIA\\T0.DDS" &&
+            !many.looked_up[0].found && many.looked_up[1].path == "MEDIA\\M0.MESH" &&
+            many.looked_up[1].found && many.looked_up.back().path == "MEDIA\\T14.DDS",
+        "looked up: each resource once, found kept, no directories, wildcards or empty paths");
+  Check(many.looked_up_unlisted == 3, "resources past the list counted");
+  const std::string many_line = DescribeLongFrame(35.0, many);
+  Check(many_line.find("| looked up 19: 'MEDIA\\T0.DDS' 'MEDIA\\M0.MESH' (found) "
+                       "'MEDIA\\T1.DDS'") != std::string::npos &&
+            many_line.find("'MEDIA\\T14.DDS' (+3 more)") != std::string::npos,
+        "line lists the resources looked up and the rest");
+  Check(g.Take().looked_up.empty(), "reset after take: no paths");
   // A frame with no events says so, without the optional parts.
   Check(DescribeLongFrame(40.0, GuestFrameEvents{}) ==
             "40.0 ms | guest: file checks 0 (0 missing, 0.00 ms), reads 0 (0 B, 0.00 ms), "

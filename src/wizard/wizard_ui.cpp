@@ -28,8 +28,18 @@ void Ui::Reset(int page) {
   entered_frames_ = 0;
 }
 
+namespace {
+
+// The height of a window's content shown at once (a bordered child has padding).
+float ViewHeight(const ImGuiWindow& window) {
+  return window.InnerRect.GetHeight() - window.WindowPadding.y * 2;
+}
+
+}  // namespace
+
 void Ui::Frame(bool can_go_back, const std::function<void()>& draw) {
   want_focus_ = false;  // a request no item took never reaches a later page
+  notice_window_ = nullptr;
   const ImGuiIO& io = ImGui::GetIO();
   ImGui::SetNextWindowPos(ImVec2(0, 0));
   ImGui::SetNextWindowSize(io.DisplaySize);
@@ -43,8 +53,22 @@ void Ui::Frame(bool can_go_back, const std::function<void()>& draw) {
        ImGui::IsKeyPressed(ImGuiKey_Escape, false))) {
     Back();
   }
+  // Each page its own ids, so its body's scroll starts at the top the first time it is shown.
+  ImGui::PushID(page_);
   draw();
+  ImGui::PopID();
   ImGui::End();
+  in_view_ = true;
+  if (notice_window_) {
+    const ImGuiContext& g = *ImGui::GetCurrentContext();
+    const auto* window = static_cast<const ImGuiWindow*>(notice_window_);
+    const float top = window->Scroll.y, bottom = top + ViewHeight(*window);
+    in_view_ = notice_top_ >= top - 0.5f && notice_top_ < bottom;
+    if (g.NavWindow == window) {
+      const ImRect& focused = window->NavRectRel[ImGuiNavLayer_Main];
+      in_view_ = in_view_ && focused.Min.y >= top - 0.5f && focused.Max.y <= bottom + 0.5f;
+    }
+  }
   // The focus is asked for on a page's first two frames (ImGui takes it from the second).
   if (page_ == before && entered_ && ++entered_frames_ >= 2) entered_ = false;
 }
@@ -108,13 +132,22 @@ void Ui::Muted(const std::string& text) {
   ImGui::PopStyleColor();
 }
 
+void Ui::Notice() {
+  if (notice_window_) return;
+  ImGuiWindow* window = ImGui::GetCurrentContext()->CurrentWindow;
+  notice_window_ = window;
+  notice_top_ = ImGui::GetCursorScreenPos().y - window->DC.CursorStartPos.y;
+}
+
 void Ui::Error(const std::string& text) {
+  Notice();
   ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.00f, 0.45f, 0.40f, 1.00f));
   Wrapped(text);
   ImGui::PopStyleColor();
 }
 
 void Ui::Warning(const char* id, const std::string& title, const std::string& text) {
+  Notice();
   ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.30f, 0.20f, 0.00f, 0.55f));
   ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.90f, 0.70f, 0.00f, 1.00f));
   ImGui::BeginChild(id, ImVec2(0, 0),
@@ -135,7 +168,14 @@ void Ui::Took() {
   // library holds, which a Windows executable cannot reach without an import.
   ImGui::SetFocusID(ImGui::GetItemID(), ImGui::GetCurrentContext()->CurrentWindow);
   ImGui::SetNavCursorVisible(true);
-  ImGui::ScrollToItem();
+  // In the window's content: the least scroll that shows the item, from the top.
+  ImGuiWindow* window = ImGui::GetCurrentContext()->CurrentWindow;
+  const float item_bottom = ImGui::GetItemRectMax().y - window->DC.CursorStartPos.y;
+  float scroll =
+      std::max(0.0f, item_bottom + ImGui::GetStyle().ItemSpacing.y - ViewHeight(*window));
+  // A notice above it stays in view, from its top, even when that leaves the item below.
+  if (notice_window_ == window) scroll = std::min(scroll, notice_top_);
+  ImGui::SetScrollY(scroll);
 }
 
 }  // namespace torchlight::wizard

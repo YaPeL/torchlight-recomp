@@ -28,6 +28,8 @@ struct StorageQuestion {
   std::filesystem::path portable_folder;
   bool parent_writable = false;  // the portable folder can be created where it goes
   bool user_data = false;        // the user's folders hold files that could be copied
+  bool elevated = false;         // Windows: run as administrator (platform::RunningElevated)
+  platform::OsKind os = platform::ThisOs();
   std::vector<platform::CopySource> user_sources;  // those folders
 };
 

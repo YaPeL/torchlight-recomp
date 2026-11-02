@@ -92,6 +92,7 @@ GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupM
     question.portable_folder = facts.portable_folder;
     std::string ignored;
     question.parent_writable = platform::CanWriteFolder(facts.portable_folder.parent_path(), ignored);
+    question.elevated = platform::RunningElevated();
     question.user_sources = platform::UserFolderSources();
     question.user_data = platform::SourcesHoldFiles(question.user_sources);
     storage = question;

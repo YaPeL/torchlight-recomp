@@ -113,6 +113,9 @@ void SetCurrentThreadName(const char* name);
 // macOS brings the application to the front (started from a terminal, it stays behind the
 // terminal and its dialogs with it); Linux and Windows show them in front already.
 void BringToFront();
+// Windows: this process runs elevated (as administrator), so what it creates belongs to the
+// administrators. False elsewhere.
+bool RunningElevated();
 // A message box with `buttons`; the index of the one chosen, -1 when it was closed.
 int AskChoice(const std::string& title, const std::string& message,
               const std::vector<std::string>& buttons);

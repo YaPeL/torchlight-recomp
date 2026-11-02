@@ -1,8 +1,8 @@
 // Frame times, always measured and summarised in the log every 10 s, with or without the live mode,
 // so the two can be compared:
-// - the guest's (swap to swap): how fast the game itself runs; a frame past kLongFrameMs gets its
-//   own "long frame:" line with what the guest did in it (guest_events.h; in the native mode the
-//   live mode's "slow frame" line has the backend's side);
+// - the guest's (swap to swap): how fast the game itself runs; a frame past --long_frame_ms gets
+//   its own "long frame:" line with what the guest did in it (guest_events.h; in the native mode
+//   the live mode's "slow frame" line has the backend's side);
 // - in the native mode, what reaches the screen (present to present, the backend thread) and the
 //   guest frames dropped because the backend was still busy with an earlier one: when the backend
 //   is the limit these are fewer than the guest's.

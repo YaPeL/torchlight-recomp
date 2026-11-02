@@ -507,10 +507,17 @@ a resource location is named exactly as the game asks for it: in upper case when
 it through the data loader (the unit index), with the game's own spelling when it asks by its own
 name through CEGUI or OGRE (our video layout on `tlhost:`, which we load by our own name; the
 widened layouts on `tllayouts:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
-and the rule. **[to verify]** with a mod whose files are named in lower case, as PC mods often
-are (Windows ignores case): the mods' file maps, which the game fills from the folder listing and
-looks up in upper case, and the mods' assets that OGRE finds through the mod folders' locations.
-Those are the player's files, so the fix, if needed, cannot be renaming them.
+and the rule. **Mods with files named in lower case, as PC mods often are (Windows ignores case),
+checked (2026-10-14):** both ways the game reaches a mod's file work with them.
+- **The data loader** (the mods' file maps, filled from the folder listing and looked up in upper
+  case): class units in `valkyrie.dat` and `enchanter.dat` (Enhanced Edition) are offered at
+  creation and made, and the Kensai's skills in `kensaibase/explorer.dat`, `ritual.dat`,
+  `titanic.dat` show in his tree (hand runs of 2026-10-13); a lower-case axe mod changed its data
+  (2026-10-09).
+- **OGRE** (the mods' assets, found through the mod folders' locations): the Enchantress's
+  `eyes.png` and `body.png` load as `MEDIA/MODELS/ENCHANTRESS/EYES.PNG` and `BODY.PNG` (run logs)
+  and she is drawn with them (captures).
+**[observed in runs]**
 
 **Rule: folders we mount, and files created in them later.** A host folder mounted as a device
 (`HostPathDevice`) is read into memory when it is mounted. Opening a file by its path still finds

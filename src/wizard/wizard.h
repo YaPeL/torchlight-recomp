@@ -40,6 +40,8 @@ class Pages {
   virtual std::string Name() const = 0;
   // More of what the page shows, as text, for a script's `detail` step.
   virtual std::string Detail() const { return {}; }
+  // The page's notice and its focused item both in view, for a script's `view` step.
+  virtual bool InView() const { return true; }
   // Work under way: the window does not close then.
   virtual bool Busy() const { return false; }
 };
