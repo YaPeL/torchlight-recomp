@@ -374,6 +374,9 @@ int Run(const Options& options, Pages& pages) {
 
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
+    // A script counts frames: ImGui's own time (a held button's repeat) follows them, not the
+    // clock, so a slow machine plays it the same.
+    if (!steps.empty()) io.DeltaTime = 1.0f / 60.0f;
     ImGui::NewFrame();
     if (pages.Frame()) {
       quit = true;
