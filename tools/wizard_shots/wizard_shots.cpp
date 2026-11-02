@@ -157,6 +157,10 @@ int RunSetup(const Options& options, const SetupRun& run) {
     if (run.os == "windows") question.os = torchlight::platform::OsKind::kWindows;
     if (run.os == "macos") question.os = torchlight::platform::OsKind::kMacOS;
     if (run.os == "linux") question.os = torchlight::platform::OsKind::kLinux;
+    if (!run.os.empty() && run.os != "windows" && run.os != "macos" && run.os != "linux") {
+      std::fprintf(stderr, "wizard_shots: --os is windows, macos or linux\n");
+      return 1;
+    }
     if (run.user_data) {
       const fs::path user = run.sample_root / "user-folders";
       fs::create_directories(user / "data");

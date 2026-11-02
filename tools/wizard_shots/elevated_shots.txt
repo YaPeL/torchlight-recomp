@@ -1,3 +1,5 @@
+# The warning of a run as administrator, beside a place it can write.
 page storage 5
+detail unless you will always start it as administrator.
 shot storage-elevated
 quit

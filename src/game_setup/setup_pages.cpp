@@ -102,6 +102,13 @@ std::string SetupPages::Detail() const {
     return std::string(settings::AchievementSetName(*achievements_));
   }
   if (ui_.page() == kReady && portable_) return *portable_ ? "portable" : "user folders";
+  if (ui_.page() == kStorage && config_.storage && error_.empty()) {
+    // The warning's own explanation, for a script to check (English).
+    const StorageQuestion& question = *config_.storage;
+    const bool can_portable = question.mode == platform::StorageMode::kAsk && question.parent_writable;
+    if (can_portable) return question.elevated ? std::string(kTextElevated) : std::string();
+    return std::string(UnwritableReason(question.os, question.mode != platform::StorageMode::kAsk));
+  }
   return error_;
 }
 

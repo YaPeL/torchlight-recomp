@@ -124,19 +124,19 @@ inline constexpr std::string_view kTextPortableUnwritable =
 inline constexpr std::string_view kTextPlaceReasonLinux =
     "The disk may be read-only, or the folder may belong to another user. Move the game to a folder of yours first.";
 inline constexpr std::string_view kTextPlaceReasonWindows =
-    "Folders such as Program Files can only be written by an administrator. Move the game to a folder of yours (in Documents, or on another drive) first.";
+    "Folders such as Program Files can only be written by an administrator. Move the game to a folder of yours (in Documents, or on another drive) first. The disk may also be read-only.";
 inline constexpr std::string_view kTextPlaceReasonMac =
     "The disk may be read-only (a disk image), or macOS may be running the game from a temporary place. Move it to Applications or another folder first.";
 inline constexpr std::string_view kTextFolderReasonLinux =
     "It may belong to another user, or be on a read-only disk: check its permissions and its disk, then start again.";
 inline constexpr std::string_view kTextFolderReasonWindows =
-    "If it was made while the game ran as administrator, it belongs to the administrators: give your account write access to it in its Properties (Security tab), then start again. It may also be on a read-only disk.";
+    "If it is in a place such as Program Files and was made while the game ran as administrator, only administrators can write in it: move the game and this folder to a folder of yours, or give your account write access in its Properties (Security tab), then start again. It may also be on a read-only disk.";
 inline constexpr std::string_view kTextFolderReasonMac =
     "It may be on a read-only disk (a disk image), or macOS may be running the game from a temporary place: move the game and this folder to Applications or another folder, then start again.";
 inline constexpr std::string_view kTextElevatedTitle =
     "Running as administrator";
 inline constexpr std::string_view kTextElevated =
-    "The game is running as administrator. A folder made now belongs to the administrators, and the game started normally will not be able to write in it. Close it and start it normally, unless you will always start it as administrator.";
+    "The game is running as administrator, so the folder made now will belong to the administrators. In a place such as Program Files, the game started normally will then not be able to write in it. Close it and start it normally, unless you will always start it as administrator.";
 inline constexpr std::string_view kTextNotPortable =
     "That folder is not a portable folder of this game: it has no config, data or game folder.";
 inline constexpr std::string_view kTextPortableSource =

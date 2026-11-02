@@ -62,10 +62,10 @@ if(NOT ANDROID)
   # Each operating system's explanation for an unwritable place, and the elevated warning.
   foreach(os windows macos linux)
     add_test(NAME wizard_shots_unwritable_${os} COMMAND wizard_shots ${setup}
-             --script "${CMAKE_CURRENT_SOURCE_DIR}/unwritable_shots.txt" --shots "${shots}/${os}"
+             --script "${CMAKE_CURRENT_SOURCE_DIR}/unwritable_${os}.txt" --shots "${shots}/${os}"
              --sample_root "${CMAKE_CURRENT_BINARY_DIR}/unwritable-${os}" --storage parent_unwritable --os ${os})
     add_test(NAME wizard_shots_unwritable_folder_${os} COMMAND wizard_shots ${setup}
-             --script "${CMAKE_CURRENT_SOURCE_DIR}/unwritable_folder_shots.txt" --shots "${shots}/${os}"
+             --script "${CMAKE_CURRENT_SOURCE_DIR}/unwritable_folder_${os}.txt" --shots "${shots}/${os}"
              --sample_root "${CMAKE_CURRENT_BINARY_DIR}/unwritable-folder-${os}" --storage portable_unwritable --os ${os})
     list(APPEND setup_tests wizard_shots_unwritable_${os} wizard_shots_unwritable_folder_${os})
   endforeach()

@@ -1,0 +1,5 @@
+# The explanation of this system, in the warning for the place beside the game.
+page storage 5
+detail on another drive) first. The disk may also be read-only.
+shot storage-parent-unwritable
+quit
