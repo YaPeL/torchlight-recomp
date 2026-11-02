@@ -15,6 +15,7 @@ constexpr std::string_view kInterfaceTexts[] = {
     kTextPageGame, kTextPageWorking, kTextPageAchievements, kTextPageReady, kTextReady, kTextStart,
     kTextBrowsePad, kTextBrowseTitle, kTextCancel, kTextBack, kTextHint, kTextHintNext,
     kTextFolderAbove, kTextThisComputer, kTextUseFolder, kTextFolderMark, kTextNoWindow,
+    kTextPageStorage, kTextStorageIntro, kTextKeepHere, kTextCopyUser, kTextCopyUserNote, kTextCopyPortable, kTextUseUser, kTextParentUnwritableTitle, kTextParentUnwritable, kTextPortableUnwritableTitle, kTextPortableUnwritable, kTextNotPortable, kTextPortableSource, kTextPageCopying, kTextCannotCopyData,
 };
 }  // namespace
 

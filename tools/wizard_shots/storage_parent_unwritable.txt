@@ -1,0 +1,6 @@
+# Cannot write beside itself: the warning, and only the user folders or quit.
+page storage 5
+shot storage-parent-unwritable
+press a
+page game 5
+quit

@@ -209,6 +209,23 @@ Other languages can be added as language packs, including translations made for 
 
 ## Where files are kept
 
+The released game keeps everything in one folder beside it: `TorchlightRecomp-data/`, next to the
+AppImage, the `.exe` or the `.app`. Move the two together to take your saves, settings and mods with
+you.
+
+| | In `TorchlightRecomp-data/` |
+|---|---|
+| Settings (`settings.toml`) | `config/` |
+| Saves | `data/` |
+| Mods (with `mods.dat`) and replacements | `data/mods/`, `data/replacements/` |
+| Game data, with `import` for PC saves | `game/` |
+| Logs | `logs/` |
+| Shader cache | `cache/` |
+
+The first start offers copying files from an earlier install, which stay where they were. If you
+chose the user folders there, or the game cannot write beside itself, or you built the game yourself,
+these are used instead:
+
 | | Linux | Windows |
 |---|---|---|
 | Settings (`settings.toml`) | `~/.config/TorchlightRecomp/` | `%APPDATA%\TorchlightRecomp\` |

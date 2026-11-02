@@ -20,15 +20,16 @@ REXCVAR_DEFINE_STRING(dev_setup_browse_from, "", "Torchlight",
 
 namespace torchlight::game_setup {
 
-GameData AskFirstStart(const std::filesystem::path& game_dir, bool ask_game, bool ask_achievements,
-                       const Translate& translate,
-                       std::optional<settings::AchievementSet>& achievement,
+GameData AskFirstStart(const OpenQuestions& questions,
+                       const std::optional<StorageQuestion>& storage,
+                       const std::function<OpenQuestions(bool portable)>& after_storage,
+                       const Translate& translate, FirstStartAnswers& answers,
                        std::vector<platform::StartupMessage>& log) {
   SetupConfig config;
-  config.game_dir = game_dir;
+  config.questions = questions;
+  config.storage = storage;
+  config.after_storage = after_storage;
   config.files = GameFiles();
-  config.ask_game = ask_game;
-  config.ask_achievements = ask_achievements;
   config.translate = translate;
   wizard::Options options;
   options.title = Render({std::string(kTextRendererTitle), {}}, translate);
@@ -58,9 +59,9 @@ GameData AskFirstStart(const std::filesystem::path& game_dir, bool ask_game, boo
   if (status == wizard::kNoWindow) {
     // Only the achievement set was open: the default, as a closed box used to give, not worth
     // stopping a game that is there.
-    if (!ask_game) {
+    if (!questions.ask_game && !storage) {
       log.push_back({true, "game setup: no setup window; the default achievement set"});
-      achievement = settings::AchievementSet::kXbox;
+      answers.achievement = settings::AchievementSet::kXbox;
       return GameData::kReady;
     }
     const std::string reason = Render({std::string(kTextNoWindow), {}}, translate);
@@ -72,7 +73,8 @@ GameData AskFirstStart(const std::filesystem::path& game_dir, bool ask_game, boo
     log.push_back({false, "game setup: closed by the user"});
     return GameData::kQuit;
   }
-  achievement = pages.achievements();
+  answers.achievement = pages.achievements();
+  answers.portable = pages.portable();
   return GameData::kReady;
 }
 
