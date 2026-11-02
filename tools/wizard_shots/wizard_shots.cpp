@@ -109,6 +109,8 @@ struct SetupRun {
   std::string expect;
   std::string storage;     // ask, parent_unwritable, portable_unwritable
   bool user_data = false;  // invented user folders holding files to copy
+  bool elevated = false;   // as a Windows run as administrator shows it
+  std::string os;          // the texts of windows, macos or linux; empty: this one
 };
 
 int RunSetup(const Options& options, const SetupRun& run) {
@@ -151,6 +153,10 @@ int RunSetup(const Options& options, const SetupRun& run) {
                         ? torchlight::platform::StorageMode::kPortableUnwritable
                         : torchlight::platform::StorageMode::kAsk;
     question.parent_writable = run.storage == "ask";
+    question.elevated = run.elevated;
+    if (run.os == "windows") question.os = torchlight::platform::OsKind::kWindows;
+    if (run.os == "macos") question.os = torchlight::platform::OsKind::kMacOS;
+    if (run.os == "linux") question.os = torchlight::platform::OsKind::kLinux;
     if (run.user_data) {
       const fs::path user = run.sample_root / "user-folders";
       fs::create_directories(user / "data");
@@ -284,6 +290,8 @@ int main(int argc, char** argv) {
     else if (key == "--expect") setup.expect = value;
     else if (key == "--storage") setup.storage = value;
     else if (key == "--user_data") setup.user_data = value == "1";
+    else if (key == "--elevated") setup.elevated = value == "1";
+    else if (key == "--os") setup.os = value;
     else if (key == "--video") options.video = value;
     else if (key == "--width") options.width = std::atoi(value.c_str());
     else if (key == "--height") options.height = std::atoi(value.c_str());

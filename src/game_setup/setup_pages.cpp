@@ -165,6 +165,10 @@ void SetupPages::StoragePage() {
   if (can_portable) {
     ui_.Wrapped(Render({std::string(kTextStorageIntro), {{"folder", folder}}}, config_.translate));
     ImGui::Spacing();
+    if (question.elevated) {
+      ui_.Warning("elevated", Tr(kTextElevatedTitle), Tr(kTextElevated));
+      ImGui::Spacing();
+    }
     if (ui_.entered()) ui_.FocusNext();
     keep = ImGui::Button(Tr(kTextKeepHere).c_str());
     ui_.Took();
@@ -176,11 +180,13 @@ void SetupPages::StoragePage() {
     copy_other = ImGui::Button(Tr(kTextCopyPortable).c_str());
   } else if (question.mode == platform::StorageMode::kAsk) {
     ui_.Warning("warning", Tr(kTextParentUnwritableTitle),
-                Render({std::string(kTextParentUnwritable), {{"folder", folder}}},
+                Render({std::string(kTextParentUnwritable),
+                        {{"folder", folder}, {"reason", Tr(UnwritableReason(question.os, false))}}},
                        config_.translate));
   } else {
     ui_.Warning("warning", Tr(kTextPortableUnwritableTitle),
-                Render({std::string(kTextPortableUnwritable), {{"folder", folder}}},
+                Render({std::string(kTextPortableUnwritable),
+                        {{"folder", folder}, {"reason", Tr(UnwritableReason(question.os, true))}}},
                        config_.translate));
   }
   ImGui::Spacing();

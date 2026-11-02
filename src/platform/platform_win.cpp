@@ -320,6 +320,17 @@ PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
   return PickResult::kChosen;
 }
 
+bool RunningElevated() {
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+  TOKEN_ELEVATION elevation{};
+  DWORD size = 0;
+  const bool elevated = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size) &&
+                        elevation.TokenIsElevated != 0;
+  CloseHandle(token);
+  return elevated;
+}
+
 bool CanPickFolder() { return true; }
 
 void ForgetPickedFiles() {}
