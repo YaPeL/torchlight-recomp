@@ -126,7 +126,9 @@ GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupM
     if (*answers.portable) {
       fs::create_directories(facts.portable_folder, ec);
       if (ec) {
-        platform::PrintStartupError("cannot create the portable folder: " + ec.message());
+        const std::string reason = "Cannot create " + facts.portable_folder.string() + ": " + ec.message();
+        platform::PrintStartupError(reason);
+        platform::ShowError("Torchlight Recomp", reason);  // a player with no console
         return GameData::kFailed;
       }
       log.push_back({false, "storage: portable, " + facts.portable_folder.string()});

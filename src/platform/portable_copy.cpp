@@ -230,8 +230,10 @@ bool SourcesHoldFiles(const std::vector<CopySource>& sources) {
 
 bool LooksLikePortableFolder(const fs::path& folder) {
   std::error_code ec;
+  // Not the game alone: the user's own folder has game/ too, with the saves elsewhere.
   return fs::is_regular_file(folder / "config" / "settings.toml", ec) ||
-         fs::is_regular_file(folder / "game" / "default.xex", ec);
+         (fs::is_regular_file(folder / "game" / "default.xex", ec) &&
+          fs::is_directory(folder / "data", ec));
 }
 
 CopyResult CopyIntoPortable(const std::vector<CopySource>& sources, const fs::path& portable,
@@ -245,6 +247,16 @@ CopyResult CopyIntoPortable(const std::vector<CopySource>& sources, const fs::pa
   }
   fs::path partial = portable;
   partial += ".partial";
+  for (const CopySource& source : sources) {
+    const fs::path absolute = fs::absolute(source.from, ec).lexically_normal();
+    for (const fs::path& target : {portable, partial}) {
+      const fs::path relative = absolute.lexically_relative(fs::absolute(target, ec).lexically_normal());
+      if (!relative.empty() && *relative.begin() != "..") {
+        error = "cannot copy " + Utf8(source.from) + " into itself";
+        return CopyResult::kFailed;
+      }
+    }
+  }
   // A partial folder is only ever an interrupted copy of ours; before listing, in case a source
   // holds it.
   fs::remove_all(partial, ec);

@@ -38,8 +38,8 @@ std::vector<CopySource> UserFolderSources(const std::filesystem::path& config,
 std::vector<CopySource> PortableFolderSources(const std::filesystem::path& portable);
 // Whether any of these sources holds a file.
 bool SourcesHoldFiles(const std::vector<CopySource>& sources);
-// Whether `folder` is a portable folder of this game (its settings or its game's executable are
-// there): an application's own folder with a data/ is not.
+// Whether `folder` is a portable folder of this game (its settings, or its game's executable and a
+// data/): an application's own folder with a data/ is not, nor the user's folder with a game/.
 bool LooksLikePortableFolder(const std::filesystem::path& folder);
 
 // Bytes copied so far, of `total`; returns false to cancel.
