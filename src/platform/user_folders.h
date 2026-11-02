@@ -62,6 +62,10 @@ void SetPortableRoot(const std::filesystem::path& root);
 // (game_setup/first_run.h). Set once at the very start, on the main thread.
 void SetRunRoots(const std::filesystem::path& user_data_root,
                  const std::filesystem::path& cache_root);
+// Where a folder browser starts and tops out: the user's home (empty when there is none), and the
+// filesystem's roots (Windows' drives; elsewhere "/").
+std::filesystem::path HomeFolder();
+std::vector<std::filesystem::path> FolderRoots();
 // The logs' folder below UserFolder(kState) where that folder is not the logs' own: "logs" in the
 // user's folders (Linux, Windows), nothing in a portable or run root, whose kState is logs/ already.
 std::filesystem::path LogsSubfolder();
