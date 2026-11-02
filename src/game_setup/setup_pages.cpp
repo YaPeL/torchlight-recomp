@@ -138,7 +138,9 @@ void SetupPages::GamePage() {
 void SetupPages::OpenBrowser() {
   if (pick_) {
     std::lock_guard lock(pick_->mutex);
-    pick_->pending = false;  // a late answer is ignored
+    // A late answer is ignored. The system's picker may stay open until the player closes it, also
+    // over the game: SDL has no way to close it from here.
+    pick_->pending = false;
   }
   error_.clear();
   fs::path start = config_.browse_from;

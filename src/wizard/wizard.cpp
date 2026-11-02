@@ -14,7 +14,7 @@
 
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
-#include "platform/platform_sdl.h"
+#include "platform/platform.h"
 #include "wizard/wizard_ui.h"
 
 namespace torchlight::wizard {

@@ -44,8 +44,9 @@ class Pages {
   virtual bool Busy() const { return false; }
 };
 
-// Opens the window and runs until it is closed. 0 when it ran, 2 when no window could be opened,
-// 3 when a script failed.
+inline constexpr int kNoWindow = 2;
+// Opens the window and runs until it is closed. 0 when it ran, kNoWindow when no window could be
+// opened, 3 when a script failed.
 int Run(const Options& options, Pages& pages);
 
 }  // namespace torchlight::wizard

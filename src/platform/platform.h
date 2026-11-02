@@ -110,6 +110,9 @@ void SetCurrentThreadName(const char* name);
 // SDL3 message boxes, the system's file and folder pickers and a small progress window. Main
 // thread.
 
+// macOS brings the application to the front (started from a terminal, it stays behind the
+// terminal and its dialogs with it); Linux and Windows show them in front already.
+void BringToFront();
 // A message box with `buttons`; the index of the one chosen, -1 when it was closed.
 int AskChoice(const std::string& title, const std::string& message,
               const std::vector<std::string>& buttons);

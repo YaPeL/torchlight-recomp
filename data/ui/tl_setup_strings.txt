@@ -54,6 +54,7 @@ A: choose     B: back     Start: next     D-pad or arrows: move = A: wählen    
 This computer = Dieser Computer
 Use this folder = Diesen Ordner verwenden
 Folder: = Ordner:
+The setup window could not open, and the game's files are not installed yet. = Das Einrichtungsfenster konnte nicht geöffnet werden, und die Spieldateien sind noch nicht installiert.
 
 [fr]
 Torchlight setup = Configuration de Torchlight
@@ -105,6 +106,7 @@ A: choose     B: back     Start: next     D-pad or arrows: move = A : choisir   
 This computer = Cet ordinateur
 Use this folder = Utiliser ce dossier
 Folder: = Dossier :
+The setup window could not open, and the game's files are not installed yet. = La fenêtre de configuration n'a pas pu s'ouvrir, et les fichiers du jeu ne sont pas encore installés.
 
 [es]
 Torchlight setup = Configuración de Torchlight
@@ -156,3 +158,4 @@ A: choose     B: back     Start: next     D-pad or arrows: move = A: elegir     
 This computer = Este equipo
 Use this folder = Usar esta carpeta
 Folder: = Carpeta:
+The setup window could not open, and the game's files are not installed yet. = No se pudo abrir la ventana de configuración, y los archivos del juego aún no están instalados.

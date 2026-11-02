@@ -50,17 +50,22 @@ GameData AskFirstStart(const std::filesystem::path& game_dir, bool ask_game, boo
   SetupPages pages(std::move(config));
   const int status = wizard::Run(options, pages);
   log.insert(log.end(), pages.log().begin(), pages.log().end());
-  if (status != 0) {
-    const std::string reason = "The setup window could not open (status " + std::to_string(status) + ").";
-    platform::PrintStartupError(reason);
-    // A player with no console sees this. The window's failure already means nobody is scripting it.
-    if (options.script.empty() && ask_game) platform::ShowError(options.title, reason);
+  // A development script's failure ends the run; only no window at all has another way on.
+  if (status != 0 && (status != wizard::kNoWindow || !options.script.empty())) {
+    platform::PrintStartupError("the setup script failed (status " + std::to_string(status) + ")");
+    return GameData::kFailed;
+  }
+  if (status == wizard::kNoWindow) {
     // Only the achievement set was open: the default, as a closed box used to give, not worth
     // stopping a game that is there.
     if (!ask_game) {
+      log.push_back({true, "game setup: no setup window; the default achievement set"});
       achievement = settings::AchievementSet::kXbox;
       return GameData::kReady;
     }
+    const std::string reason = Render({std::string(kTextNoWindow), {}}, translate);
+    platform::PrintStartupError(reason);
+    platform::ShowError(options.title, reason);  // a player with no console
     return GameData::kFailed;
   }
   if (!pages.completed()) {

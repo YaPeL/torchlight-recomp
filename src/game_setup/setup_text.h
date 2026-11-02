@@ -95,6 +95,8 @@ inline constexpr std::string_view kTextFolderAbove = "..  (the folder above)";
 inline constexpr std::string_view kTextThisComputer = "This computer";
 inline constexpr std::string_view kTextUseFolder = "Use this folder";
 inline constexpr std::string_view kTextFolderMark = "Folder:";
+inline constexpr std::string_view kTextNoWindow =
+    "The setup window could not open, and the game's files are not installed yet.";
 std::span<const std::string_view> InterfaceTexts();
 
 }  // namespace torchlight::game_setup
