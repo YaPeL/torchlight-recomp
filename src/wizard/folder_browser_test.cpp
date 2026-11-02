@@ -23,6 +23,9 @@ void Check(bool ok, const char* what) {
 
 int main() {
   const fs::path root = fs::temp_directory_path() / "tl_folder_browser_test";
+  // A killed run may have left the locked folder below.
+  std::error_code unlock_ec;
+  fs::permissions(root / "locked", fs::perms::owner_all, unlock_ec);
   fs::remove_all(root);
   fs::create_directories(root / "b folder");
   fs::create_directories(root / "a folder" / "inner");
@@ -61,11 +64,10 @@ int main() {
   fs::permissions(locked, fs::perms::none);
   std::error_code probe;
   fs::directory_iterator check(locked, probe);
-  if (probe) {
-    folders.Open(locked);
-    Check(!folders.error().empty(), "an unreadable folder is not an empty one");
-  }
+  if (probe) folders.Open(locked);
+  const bool said_so = !probe || !folders.error().empty();
   fs::permissions(locked, fs::perms::owner_all);
+  Check(said_so, "an unreadable folder is not an empty one");
 
   // Above a root, by name only: no real folder is listed.
   fs::path top = root;

@@ -302,6 +302,8 @@ int Run(const Options& options, Pages& pages) {
         } else if (double(SDL_GetTicks() - page_since) > step.seconds * 1000) {
           error = "the page " + step.arg + " was not reached (still " + pages.Name() + ")";
         }
+      } else if (step.op == "detail" && step.arg.empty()) {
+        error = "detail needs a text";
       } else if (step.op == "detail") {
         if (!page_since) page_since = SDL_GetTicks();
         const std::string detail = pages.Detail();
