@@ -89,9 +89,14 @@ class TorchlightApp : public rex::ReXApp {
     // --game_data_root points at them.
     if (rex::cvar::Query<std::string>("game_data_root").empty()) {
       const std::string game_dir = torchlight::platform::GameDataDir();
-      if (!game_dir.empty() &&
-          !torchlight::game_setup::EnsureGameData(game_dir, startup_log())) {
-        std::exit(EXIT_SUCCESS);  // the user quit the setup; nothing is running yet
+      if (!game_dir.empty()) {
+        using torchlight::game_setup::GameData;
+        const bool may_ask = rex::cvar::Query<std::string>("user_data_root").empty();
+        switch (torchlight::game_setup::EnsureGameData(game_dir, may_ask, startup_log())) {
+          case GameData::kReady: break;
+          case GameData::kQuit: std::exit(EXIT_SUCCESS);  // nothing is running yet
+          case GameData::kMissingInRoot: std::exit(EXIT_FAILURE);
+        }
       }
     }
     // The achievement set, asked once (before the host settings are read). A test run's fresh

@@ -58,7 +58,8 @@ void SetPortableRoot(const std::filesystem::path& root);
 // there). --cache_root alone moves only the cache; with both, the cache goes there. Below
 // kTestUserFoldersVariable nothing changes (those folders are isolated already). --game_data_root
 // is not one of these: it only says where to read the game from, and such a run uses the player's
-// saves and settings. Set once at the very start, on the main thread.
+// saves and settings. A root with no game in <root>/game and no --game_data_root stops the run
+// (game_setup/first_run.h). Set once at the very start, on the main thread.
 void SetRunRoots(const std::filesystem::path& user_data_root,
                  const std::filesystem::path& cache_root);
 // The logs' folder below UserFolder(kState) where that folder is not the logs' own: "logs" in the

@@ -240,8 +240,9 @@ A run with `--user_data_root` touches nothing outside it (`platform/user_folders
 atlases, prompts, `unitdata/`), `game/` (with `import/`), and in the root itself the saves, `mods/`,
 `mod_set.txt`, `replacements/` and `achievements/`. To run with given settings, put a
 `settings.toml` in `<root>/config/` first; without one the defaults apply and the achievements
-question is not asked. Without `--game_data_root`, a game not yet in `<root>/game/` starts the
-first-start setup, so unattended runs give both. `--cache_root` moves the cache, alone or
+question is not asked. The game is read from `<root>/game/`, so a root is normally used with
+`--game_data_root`: without it and with no game there, the run stops at once with an error on stderr
+(logcat on Android) and exit code 1, never the first-start setup's question. `--cache_root` moves the cache, alone or
 with `--user_data_root`. `--game_data_root` alone only says where to read the game from: that run
 uses the player's saves and settings. A measurement brings its own `<root>/config/settings.toml`
 with the frame rate cap, the vsync and the achievement set explicit, and its shader cache starts

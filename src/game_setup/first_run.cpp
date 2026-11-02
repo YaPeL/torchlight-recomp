@@ -6,6 +6,7 @@
 #include <optional>
 #include <thread>
 
+#include <SDL3/SDL_log.h>
 #include <rex/cvar.h>
 
 #include "game_menu/menu_strings.h"
@@ -96,10 +97,18 @@ InstallResult InstallWithProgress(Source source, const std::filesystem::path& fr
 
 }  // namespace
 
-bool EnsureGameData(const std::filesystem::path& game_dir,
-                    std::vector<platform::StartupMessage>& log) {
+GameData EnsureGameData(const std::filesystem::path& game_dir, bool may_ask,
+                        std::vector<platform::StartupMessage>& log) {
   const auto info = [&](std::string text) { log.push_back({false, std::move(text)}); };
-  if (XexMatches(game_dir, GameFiles())) return true;
+  if (XexMatches(game_dir, GameFiles())) return GameData::kReady;
+  if (!may_ask) {
+    // Not the runtime's log, which is not up yet. SDL's reaches stderr and Android's logcat.
+    SDL_LogError(SDL_LOG_CATEGORY_APPLICATION,
+                 "--user_data_root given, but no game in %s: pass --game_data_root=<the game's "
+                 "folder>, or put the game there",
+                 game_dir.string().c_str());
+    return GameData::kMissingInRoot;
+  }
   const Translate tr = SetupTranslate(log);
   const std::string title = Text(tr, kTextTitle);
   const std::string where = game_dir.string();
@@ -117,7 +126,7 @@ bool EnsureGameData(const std::filesystem::path& game_dir,
                                       {Text(tr, kTextChoosePackage), Text(tr, kTextQuit)});
     if (choice != 0 && !(folders && choice == 1)) {
       info("game setup: no game files; quit by the user");
-      return false;
+      return GameData::kQuit;
     }
     const Source source = choice == 0 ? Source::kPackage : Source::kFolder;
     std::string path, error;
@@ -159,7 +168,7 @@ bool EnsureGameData(const std::filesystem::path& game_dir,
       info("game setup: the previous " + where + " was moved to " + result.moved_to);
     }
     info("game setup: installed the game files from " + path + " to " + where);
-    return true;
+    return GameData::kReady;
   }
 }
 
