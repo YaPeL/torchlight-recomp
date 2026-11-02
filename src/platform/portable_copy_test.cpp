@@ -56,6 +56,9 @@ void TestCopy(const fs::path& root) {
   Check(!LooksLikePortableFolder(root / "outside"), "not a portable folder's layout");
   Write(root / "app-folder" / "data" / "ui" / "strings.txt", "x");
   Check(!LooksLikePortableFolder(root / "app-folder"), "an application's own data/ is not one");
+  Write(root / "user-folder" / "game" / "default.xex", "x");
+  Write(root / "user-folder" / "a.sav", "x");
+  Check(!LooksLikePortableFolder(root / "user-folder"), "nor the user's folder with its game/");
 
   // Cancelled, then failed: nothing is left, and the source is as it was.
   std::string error;
@@ -107,6 +110,13 @@ void TestNothingLost(const fs::path& root) {
               CopyResult::kFailed,
           "a link to what cannot be reached fails the copy");
   }
+  // A leftover .partial chosen as the source is not deleted and copied as nothing.
+  const fs::path stale = Partial(root / "stale-portable");
+  Write(stale / "config" / "settings.toml", "s");
+  Check(CopyIntoPortable(PortableFolderSources(stale), root / "stale-portable", {}, error) ==
+            CopyResult::kFailed,
+        "a source inside the target fails");
+  Check(fs::exists(stale / "config" / "settings.toml"), "and stays");
   // An empty target, what an attempt left, is no obstacle.
   fs::create_directories(portable);
   fs::remove(from / "data" / "saves", link_ec);

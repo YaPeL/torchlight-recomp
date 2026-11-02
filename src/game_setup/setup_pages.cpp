@@ -114,6 +114,7 @@ bool SetupPages::Busy() const {
 
 void SetupPages::ApplyStorage(bool portable, bool way_back) {
   portable_ = portable;
+  achievements_.reset();  // an answer for the other place's settings
   config_.questions = config_.after_storage(portable);
   if (config_.questions.ask_game) {
     if (way_back) {
@@ -376,7 +377,9 @@ void SetupPages::WorkingPage() {
       // and the storage question is still open.
       if (portable_.value_or(false)) {
         std::error_code ec;
-        fs::remove(config_.storage->portable_folder, ec);  // only when empty
+        // What a failure left, and the folder only when that leaves it empty.
+        fs::remove_all(config_.storage->portable_folder / "game.partial", ec);
+        fs::remove(config_.storage->portable_folder, ec);
       }
     };
     if (Cancelled(result_.error)) {
