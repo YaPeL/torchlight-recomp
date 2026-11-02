@@ -1851,6 +1851,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     });
     b->window->setAutoUpdated(false);
     if (b->visible_window) {
+      torchlight::platform::SurfaceTaken(b->child_window ? parent_window.window : 0);
       b->window_viewport = b->window->addViewport(nullptr);
       b->window_viewport->setClearEveryFrame(false);
       b->window_viewport->setOverlaysEnabled(false);
