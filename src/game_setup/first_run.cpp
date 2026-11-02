@@ -1,16 +1,12 @@
 #include "game_setup/first_run.h"
 
-#include <atomic>
-#include <chrono>
-#include <mutex>
 #include <optional>
-#include <thread>
 
 #include <rex/cvar.h>
 
 #include "game_menu/menu_strings.h"
 #include "game_setup/game_files.h"
-#include "game_setup/install.h"
+#include "game_setup/first_run_steps.h"
 #include "game_setup/setup_text.h"
 #include "platform/platform.h"
 #include "settings/host_settings.h"
@@ -57,141 +53,45 @@ std::string Text(const Translate& tr, std::string_view english,
   return Render({std::string(english), std::move(values)}, tr);
 }
 
-// Runs Install on a thread while the progress window is drawn here; the window's close button
-// cancels.
-InstallResult InstallWithProgress(Source source, const std::filesystem::path& from,
-                                  const std::filesystem::path& game_dir, const Translate& tr) {
-  auto window = platform::ProgressWindow::Open(Text(tr, kTextTitle));
-  std::atomic<bool> cancel{false}, finished{false};
-  std::mutex mutex;
-  Phase phase = Phase::kCopying;
-  uint64_t done = 0, total = 0;
-  InstallResult result;
-  std::thread worker([&] {
-    result = Install(source, from, game_dir, GameFiles(),
-                     [&](Phase p, uint64_t d, uint64_t t) {
-                       std::lock_guard lock(mutex);
-                       phase = p, done = d, total = t;
-                       return !cancel.load();
-                     });
-    finished = true;
-  });
-  const std::string copying =
-      Text(tr, source == Source::kPackage ? kTextExtracting : kTextCopying);
-  const std::string checking = Text(tr, kTextChecking);
-  while (!finished) {
-    double fraction = 0;
-    bool is_checking = false;
-    {
-      std::lock_guard lock(mutex);
-      if (total) fraction = double(done) / double(total);
-      is_checking = phase == Phase::kChecking;
-    }
-    if (window && !window->Show(fraction, is_checking ? checking : copying)) cancel = true;
-    std::this_thread::sleep_for(std::chrono::milliseconds(16));
-  }
-  worker.join();
-  return result;
-}
-
 }  // namespace
 
-GameData EnsureGameData(const std::filesystem::path& game_dir, bool may_ask,
-                        std::vector<platform::StartupMessage>& log) {
-  const auto info = [&](std::string text) { log.push_back({false, std::move(text)}); };
-  if (XexMatches(game_dir, GameFiles())) return GameData::kReady;
-  if (!may_ask) {
+GameData FirstStart(const std::filesystem::path& game_dir, bool may_ask, bool ask_achievements,
+                    std::vector<platform::StartupMessage>& log) {
+  const bool ask_game = !game_dir.empty() && !XexMatches(game_dir, GameFiles());
+  if (ask_game && !may_ask) {
     platform::PrintStartupError("--user_data_root given, but no valid game in " + game_dir.string() +
                                 ": pass --game_data_root=<the game's folder>, or put the game there");
     return GameData::kMissingInRoot;
   }
-  const Translate tr = SetupTranslate(log);
-  const std::string title = Text(tr, kTextTitle);
-  const std::string where = game_dir.string();
-  // Where no folder can be picked (Android), the package is the only choice.
-  const bool folders = platform::CanPickFolder();
-  struct ForgetCopies {
-    ~ForgetCopies() { platform::ForgetPickedFiles(); }
-  } forget_copies;
-  while (true) {
-    const int choice =
-        folders ? platform::AskChoice(title, Text(tr, kTextIntro, {{"where", where}}),
-                                      {Text(tr, kTextChoosePackage), Text(tr, kTextChooseFolder),
-                                       Text(tr, kTextQuit)})
-                : platform::AskChoice(title, Text(tr, kTextIntroPackageOnly, {{"where", where}}),
-                                      {Text(tr, kTextChoosePackage), Text(tr, kTextQuit)});
-    if (choice != 0 && !(folders && choice == 1)) {
-      info("game setup: no game files; quit by the user");
-      return GameData::kQuit;
-    }
-    const Source source = choice == 0 ? Source::kPackage : Source::kFolder;
-    std::string path, error;
-    const platform::PickResult picked =
-        source == Source::kPackage ? platform::PickFile(Text(tr, kTextPackagePicker), path, error)
-                                   : platform::PickFolder(Text(tr, kTextFolderPicker), path, error);
-    if (picked == platform::PickResult::kCancelled) continue;
-    if (picked == platform::PickResult::kFailed) {
-      platform::ShowError(title, Text(tr, kTextPickerFailed, {{"error", error}}));
-      continue;
-    }
-    if (picked == platform::PickResult::kUncopied) {
-      platform::ShowError(title, Text(tr, kTextPickedCopyFailed, {{"error", error}}));
-      info("game setup: the chosen file was not copied: " + error);
-      continue;
-    }
-    if (source == Source::kPackage) {
-      const auto facts = ReadPackageFacts(path);
-      const Message problem =
-          facts ? CheckPackage(*facts) : Message{std::string(kTextNotPackage), {}};
-      if (!problem.empty()) {
-        platform::ShowError(title, Render(problem, tr));
-        info("game setup: " + path + " rejected: " + Render(problem));
-        continue;
-      }
-    }
-    const InstallResult result = InstallWithProgress(source, path, game_dir, tr);
-    if (Cancelled(result.error)) {
-      info("game setup: install from " + path + " cancelled");
-      continue;
-    }
-    if (!result.error.empty()) {
-      platform::ShowError(title, Render(result.error, tr));
-      log.push_back(
-          {true, "game setup: install from " + path + " failed: " + Render(result.error)});
-      continue;
-    }
-    if (!result.moved_to.empty()) {
-      info("game setup: the previous " + where + " was moved to " + result.moved_to);
-    }
-    info("game setup: installed the game files from " + path + " to " + where);
-    return GameData::kReady;
-  }
-}
-
-void EnsureAchievementChoice(std::vector<platform::StartupMessage>& log) {
-  const std::string dir = platform::ConfigDir();
-  if (dir.empty()) return;
-  const std::string path = dir + std::string(settings::kFileName);
+  // The achievement set, asked once: the settings have no "achievements" key yet.
+  const std::string config = platform::ConfigDir();
+  const std::string settings_path = config.empty() ? "" : config + std::string(settings::kFileName);
   settings::HostSettings host;
-  std::vector<std::string> warnings;
-  std::string error;
-  if (!settings::Load(path, host, warnings, error)) {
-    log.push_back({true, "achievements choice: " + error + "; not asked"});
-    return;
+  bool needs_achievements = false;
+  if (ask_achievements && !settings_path.empty()) {
+    std::vector<std::string> warnings;
+    std::string error;
+    if (!settings::Load(settings_path, host, warnings, error)) {
+      log.push_back({true, "achievements choice: " + error + "; not asked"});
+    } else {
+      needs_achievements = !host.achievements.has_value();
+    }
   }
-  if (host.achievements) return;  // chosen before
-  const Translate tr = SetupTranslate(log);
-  const int choice = platform::AskChoice(
-      Text(tr, kTextTitle), Text(tr, kTextAchievementsChoice),
-      {Text(tr, kTextAchievementsXbox), Text(tr, kTextAchievementsPc)});
-  host.achievements = choice == 1 ? settings::AchievementSet::kPc : settings::AchievementSet::kXbox;
-  if (!settings::Save(path, host, error)) {
-    log.push_back({true, "achievements choice: cannot save " + path + ": " + error});
-    return;
+  if (!ask_game && !needs_achievements) return GameData::kReady;
+  std::optional<settings::AchievementSet> achievement;
+  const GameData answer = AskFirstStart(game_dir, ask_game, needs_achievements, SetupTranslate(log),
+                                        achievement, log);
+  if (answer == GameData::kReady && achievement) {
+    host.achievements = achievement;
+    std::string error;
+    if (settings::Save(settings_path, host, error)) {
+      log.push_back({false, "achievements choice: " +
+                                std::string(settings::AchievementSetName(*achievement))});
+    } else {
+      log.push_back({true, "achievements choice: cannot save " + settings_path + ": " + error});
+    }
   }
-  log.push_back({false, "achievements choice: " +
-                            std::string(settings::AchievementSetName(*host.achievements)) +
-                            (choice < 0 ? " (the box was closed: the default)" : "")});
+  return answer;
 }
 
 void ShowRendererError(const std::string& error) {

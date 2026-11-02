@@ -30,6 +30,9 @@ class Ui {
   int page() const { return page_; }
   void Go(int page);
   void Back();
+  // To `page` with no way back from it.
+  void Reset(int page);
+  bool can_go_back() const { return !history_.empty(); }
   // The page's first frames: its default item takes the focus then.
   bool entered() const { return entered_; }
   // Draws the frame's full-window page. `can_go_back` false: B and Escape do nothing.

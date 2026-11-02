@@ -306,10 +306,10 @@ add_subdirectory(src/platform)
 add_subdirectory(src/backend)
 add_subdirectory(src/frontend)
 add_subdirectory(src/live)
-add_subdirectory(src/game_setup)
 if(NOT ANDROID)
   add_subdirectory(src/wizard)
 endif()
+add_subdirectory(src/game_setup)
 add_subdirectory(tools/capture_dump)
 add_subdirectory(tools/thread_profile)
 add_subdirectory(tools/synthetic_capture)
@@ -392,6 +392,11 @@ option(TORCHLIGHT_DEV_INPUT "Play controller input scripts from --dev_input_scri
 if(TORCHLIGHT_DEV_INPUT)
     set_source_files_properties(src/dev/script_input.cpp PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    # The first start played from a script (--dev_setup_script).
+    if(NOT ANDROID)
+        set_source_files_properties(src/game_setup/first_run_wizard.cpp DIRECTORY src/game_setup PROPERTIES
+            COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)
+    endif()
     # The mouse as a finger on the touch controls (--dev_touch_mouse).
     set_source_files_properties(src/live/touch_input.cpp DIRECTORY src/live PROPERTIES
         COMPILE_DEFINITIONS TORCHLIGHT_DEV_INPUT=1)

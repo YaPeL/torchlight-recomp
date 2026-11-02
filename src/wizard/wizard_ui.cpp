@@ -21,6 +21,13 @@ void Ui::Back() {
   entered_frames_ = 0;
 }
 
+void Ui::Reset(int page) {
+  history_.clear();
+  page_ = page;
+  entered_ = true;
+  entered_frames_ = 0;
+}
+
 void Ui::Frame(bool can_go_back, const std::function<void()>& draw) {
   want_focus_ = false;  // a request no item took never reaches a later page
   const ImGuiIO& io = ImGui::GetIO();
@@ -46,9 +53,11 @@ void Ui::Heading(const std::string& title, const std::string& step) {
   ImGui::PushFont(fonts_.bold, 30.0f);
   ImGui::TextUnformatted(title_.c_str());
   ImGui::PopFont();
-  ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
-  ImGui::TextUnformatted(step.c_str());
-  ImGui::PopStyleColor();
+  if (!step.empty()) {
+    ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+    ImGui::TextUnformatted(step.c_str());
+    ImGui::PopStyleColor();
+  }
   ImGui::Separator();
   ImGui::Spacing();
   ImGui::PushFont(fonts_.bold, 24.0f);

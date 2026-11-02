@@ -1,0 +1,34 @@
+# The first start from nothing, with the simulated pad only.
+page game 5
+shot setup-game
+# A file that is no package: back on the page, saying so.
+press a
+page browser 5
+shot setup-browser
+press down
+press down
+press a
+page game 5
+detail (no LIVE, CON or PIRS header).
+shot setup-error
+# The extracted folder: into source/, then the button below its two files.
+press a
+page browser 5
+press down
+press a
+wait 10
+press down
+press down
+press down
+press a
+page working 5
+shot setup-working
+page achievements 20
+shot setup-achievements
+press right
+press a
+page ready 5
+detail pc
+shot setup-ready
+press a
+finished

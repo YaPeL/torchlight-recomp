@@ -77,6 +77,24 @@ inline constexpr std::string_view kTextAchievementsChoice =
     "this later in the settings (restart required).";
 inline constexpr std::string_view kTextAchievementsXbox = "Xbox 360";
 inline constexpr std::string_view kTextAchievementsPc = "PC";
+// The wizard's pages (setup_pages.h).
+inline constexpr std::string_view kTextPageGame = "The game's files";
+inline constexpr std::string_view kTextPageWorking = "Installing the game's files";
+inline constexpr std::string_view kTextPageAchievements = "Achievements";
+inline constexpr std::string_view kTextPageReady = "Ready";
+inline constexpr std::string_view kTextReady = "Everything is set. The game starts now.";
+inline constexpr std::string_view kTextStart = "Start the game";
+inline constexpr std::string_view kTextBrowsePad = "Browse with the pad...";
+inline constexpr std::string_view kTextBrowseTitle = "Choose the package, or a folder extracted from it";
+inline constexpr std::string_view kTextCancel = "Cancel";
+inline constexpr std::string_view kTextBack = "Back";
+inline constexpr std::string_view kTextHint = "A: choose     B: back     D-pad or arrows: move";
+inline constexpr std::string_view kTextHintNext =
+    "A: choose     B: back     Start: next     D-pad or arrows: move";
+inline constexpr std::string_view kTextFolderAbove = "..  (the folder above)";
+inline constexpr std::string_view kTextThisComputer = "This computer";
+inline constexpr std::string_view kTextUseFolder = "Use this folder";
+inline constexpr std::string_view kTextFolderMark = "Folder:";
 std::span<const std::string_view> InterfaceTexts();
 
 }  // namespace torchlight::game_setup

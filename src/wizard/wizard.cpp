@@ -157,6 +157,9 @@ int Run(const Options& options, Pages& pages) {
   if (!options.video.empty()) SDL_SetHint(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
   SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
   SDL_SetHint(SDL_HINT_APP_NAME, options.title.c_str());
+  // Linux: the desktop portal's pickers only; where there is none (the Steam Deck's Game Mode), the
+  // pages' own browser.
+  SDL_SetHint(SDL_HINT_FILE_DIALOG_DRIVER, "portal");
   if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
     return 2;
@@ -230,7 +233,7 @@ int Run(const Options& options, Pages& pages) {
     }
   }
 
-  pages.Attach(fonts);
+  pages.Attach(fonts, window);
   size_t next = 0;
   int wait = 3, held = -1, hold_frames = 0;
   constexpr int kReleased = 1000;  // `held`: the button is up again, for a few frames

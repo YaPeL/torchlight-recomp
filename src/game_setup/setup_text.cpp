@@ -12,6 +12,9 @@ constexpr std::string_view kInterfaceTexts[] = {
     kTextPickedCopyFailed,
     kTextExtracting,    kTextCopying,        kTextChecking,      kTextAchievementsChoice,
     kTextAchievementsXbox, kTextAchievementsPc,
+    kTextPageGame, kTextPageWorking, kTextPageAchievements, kTextPageReady, kTextReady, kTextStart,
+    kTextBrowsePad, kTextBrowseTitle, kTextCancel, kTextBack, kTextHint, kTextHintNext,
+    kTextFolderAbove, kTextThisComputer, kTextUseFolder, kTextFolderMark,
 };
 }  // namespace
 
