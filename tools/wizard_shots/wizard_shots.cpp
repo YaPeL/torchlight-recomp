@@ -5,7 +5,10 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <SDL3/SDL.h>
+
 #include <filesystem>
+#include <functional>
 #include <fstream>
 #include <memory>
 #include <vector>
@@ -152,6 +155,59 @@ int RunSetup(const Options& options, const SetupRun& run) {
 
 }  // namespace
 
+namespace {
+
+// As the game's start finds it, with the runtime's SDL up: the wizard must leave it so.
+bool WatchCounts(void* count, SDL_Event*) {
+  ++*static_cast<int*>(count);
+  return true;
+}
+
+int RunWithSdlUp(const Options& options, const std::function<int()>& run) {
+  if (!options.video.empty()) SDL_SetHint(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
+  if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
+    std::fprintf(stderr, "wizard_shots: no SDL: %s\n", SDL_GetError());
+    return 2;
+  }
+  int watched = 0;
+  SDL_AddEventWatch(WatchCounts, &watched);
+  const Uint32 user_event = SDL_RegisterEvents(1);
+  SDL_Event before{};
+  before.type = user_event;
+  SDL_PushEvent(&before);
+  const int status = run();
+  if (status == 0) {
+    if (!SDL_WasInit(SDL_INIT_VIDEO) || !SDL_GetCurrentVideoDriver()) {
+      std::fprintf(stderr, "wizard_shots: the wizard took the video subsystem down\n");
+      return 5;
+    }
+    const int seen = watched;
+    SDL_Event after{};
+    after.type = user_event + 0;
+    SDL_PushEvent(&after);
+    if (watched == seen) {
+      std::fprintf(stderr, "wizard_shots: the wizard took the event watch away\n");
+      return 5;
+    }
+    SDL_Event queued;
+    int kept = 0;
+    while (SDL_PollEvent(&queued)) kept += queued.type == user_event;
+    if (kept != 2) {
+      std::fprintf(stderr, "wizard_shots: the wizard ate the runtime's events (%d of 2)\n", kept);
+      return 5;
+    }
+    if (SDL_GetHint(SDL_HINT_RENDER_DRIVER) || SDL_GetHint(SDL_HINT_FILE_DIALOG_DRIVER)) {
+      std::fprintf(stderr, "wizard_shots: the wizard left its hints set\n");
+      return 5;
+    }
+  }
+  SDL_RemoveEventWatch(WatchCounts, &watched);
+  SDL_Quit();
+  return status;
+}
+
+}  // namespace
+
 int main(int argc, char** argv) {
   Options options;
   options.width = 960;
@@ -183,7 +239,7 @@ int main(int argc, char** argv) {
       std::fprintf(stderr, "usage: wizard_shots --pages setup --script FILE --sample_root DIR\n");
       return 1;
     }
-    return RunSetup(options, setup);
+    return RunWithSdlUp(options, [&] { return RunSetup(options, setup); });
   }
   // Both required: it never lists a real folder or waits for a player by default.
   if (options.script.empty() || browse_from.empty()) {
@@ -191,5 +247,5 @@ int main(int argc, char** argv) {
     return 1;
   }
   SamplePages pages(Path(browse_from));
-  return Run(options, pages);
+  return RunWithSdlUp(options, [&] { return Run(options, pages); });
 }

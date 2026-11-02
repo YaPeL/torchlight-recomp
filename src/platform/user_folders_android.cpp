@@ -40,6 +40,10 @@ std::filesystem::path PlatformUserFolderBase(UserFolderKind kind) {
   return {};
 }
 
+// No folder browser on Android (its first start uses the system's picker).
+std::filesystem::path HomeFolder() { return {}; }
+std::vector<std::filesystem::path> FolderRoots() { return {}; }
+
 bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to,
                      std::string& error) {
   if (renameat2(AT_FDCWD, from.c_str(), AT_FDCWD, to.c_str(), RENAME_NOREPLACE) == 0) return true;

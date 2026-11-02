@@ -192,6 +192,7 @@ void SetupPages::Chosen(const fs::path& path, Source source) {
     const Message problem = facts ? CheckPackage(*facts) : Message{std::string(kTextNotPackage), {}};
     if (!problem.empty()) {
       error_ = Render(problem, config_.translate);
+      log_.push_back({false, "game setup: " + Utf8(path) + " rejected: " + Render(problem)});
       if (ui_.page() == kBrowser) ui_.Back();
       return;
     }
@@ -233,17 +234,18 @@ void SetupPages::WorkingPage() {
   if (finished_) {
     worker_.join();
     if (Cancelled(result_.error)) {
+      log_.push_back({false, "game setup: install from " + from_ + " cancelled"});
       ui_.Back();
     } else if (!result_.error.empty()) {
       error_ = Render(result_.error, config_.translate);
-      log_line_ = "game setup: install from " + from_ + " failed: " + Render(result_.error);
+      log_.push_back({true, "game setup: install from " + from_ + " failed: " + Render(result_.error)});
       ui_.Back();
     } else {
       installed_ = true;
-      log_line_ = "game setup: installed the game files from " + from_ + " to " +
-                  Utf8(config_.game_dir);
+      log_.push_back({false, "game setup: installed the game files from " + from_ + " to " +
+                                 Utf8(config_.game_dir)});
       if (!result_.moved_to.empty()) {
-        log_line_ += " (the previous one was moved to " + result_.moved_to + ")";
+        log_.push_back({false, "game setup: the previous one was moved to " + result_.moved_to});
       }
       AfterGame();
     }

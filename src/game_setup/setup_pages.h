@@ -13,10 +13,12 @@
 #include <span>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "game_setup/game_files.h"
 #include "game_setup/install.h"
 #include "game_setup/setup_text.h"
+#include "platform/user_folders.h"
 #include "settings/host_settings.h"
 #include "wizard/browser_page.h"
 #include "wizard/wizard.h"
@@ -50,8 +52,8 @@ class SetupPages : public wizard::Pages {
   bool completed() const { return completed_; }
   bool installed() const { return installed_; }
   std::optional<settings::AchievementSet> achievements() const { return achievements_; }
-  // What an install did, for the runtime's log: its source and where an older install went.
-  const std::string& log_line() const { return log_line_; }
+  // For the runtime's log: what each attempt did (true: an error).
+  const std::vector<platform::StartupMessage>& log() const { return log_; }
 
  private:
   enum Page { kGame, kBrowser, kWorking, kAchievements, kReady };
@@ -87,7 +89,7 @@ class SetupPages : public wizard::Pages {
   bool quit_ = false;
   bool completed_ = false, installed_ = false;
   std::optional<settings::AchievementSet> achievements_;
-  std::string log_line_;
+  std::vector<platform::StartupMessage> log_;
 };
 
 }  // namespace torchlight::game_setup

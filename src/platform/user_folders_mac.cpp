@@ -43,7 +43,7 @@ std::filesystem::path HomeFolder() {
   return home ? std::filesystem::path(home) : std::filesystem::path();
 }
 
-std::vector<std::filesystem::path> FolderRoots() { return {"/"}; }
+std::vector<std::filesystem::path> FolderRoots() { return {"/", "/Volumes"}; }
 
 bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to,
                      std::string& error) {

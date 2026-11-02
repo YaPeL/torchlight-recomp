@@ -13,6 +13,7 @@
 
 #include "imgui_impl_sdl3.h"
 #include "imgui_impl_sdlrenderer3.h"
+#include "platform/platform_sdl.h"
 #include "wizard/wizard_ui.h"
 
 namespace torchlight::wizard {
@@ -160,8 +161,18 @@ int Run(const Options& options, Pages& pages) {
   // Linux: the desktop portal's pickers only; where there is none (the Steam Deck's Game Mode), the
   // pages' own browser.
   SDL_SetHint(SDL_HINT_FILE_DIALOG_DRIVER, "portal");
-  if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
+  // The runtime's SDL may be up already, with its event watches and hints: left as it was found, so
+  // no SDL_Quit, which would take them all down whatever the count of who uses it.
+  const auto reset_hints = [&] {
+    SDL_ResetHint(SDL_HINT_RENDER_DRIVER);
+    SDL_ResetHint(SDL_HINT_APP_NAME);
+    SDL_ResetHint(SDL_HINT_FILE_DIALOG_DRIVER);
+    if (!options.video.empty()) SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
+  };
+  constexpr SDL_InitFlags kSubsystems = SDL_INIT_VIDEO | SDL_INIT_GAMEPAD;
+  if (!SDL_InitSubSystem(kSubsystems)) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
+    reset_hints();
     return 2;
   }
   float scale = options.scale > 0 ? options.scale
@@ -183,10 +194,12 @@ int Run(const Options& options, Pages& pages) {
   if (!renderer) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
     if (window) SDL_DestroyWindow(window);
-    SDL_Quit();
+    SDL_QuitSubSystem(kSubsystems);
+    reset_hints();
     return 2;
   }
   SetIcon(window);
+  platform::BringToFront();  // macOS: it would open behind what is in front (docs/macos-port.md)
   SDL_SetWindowPosition(window, SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED);
   SDL_ShowWindow(window);
 
@@ -241,9 +254,15 @@ int Run(const Options& options, Pages& pages) {
   bool quit = !error.empty();
   bool script_done = false;
   Uint64 frame_start = SDL_GetTicksNS();
+  std::vector<SDL_Event> others;
   while (!quit) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+      // The application's own (the runtime's): for its event loop, once this one ends.
+      if (event.type >= SDL_EVENT_USER && event.type <= SDL_EVENT_LAST) {
+        others.push_back(event);
+        continue;
+      }
       ImGui_ImplSDL3_ProcessEvent(&event);
       if (event.type == SDL_EVENT_QUIT ||
           (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
@@ -366,7 +385,11 @@ int Run(const Options& options, Pages& pages) {
   if (gamepad) SDL_CloseGamepad(gamepad);
   SDL_DestroyRenderer(renderer);
   SDL_DestroyWindow(window);
-  SDL_Quit();
+  // Nothing of this window for the game's event loop, such as a key still going up.
+  SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_USER - 1);
+  for (SDL_Event& event : others) SDL_PushEvent(&event);
+  SDL_QuitSubSystem(kSubsystems);
+  reset_hints();
   return error.empty() ? 0 : 3;
 }
 

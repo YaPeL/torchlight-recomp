@@ -36,6 +36,11 @@ GameData AskFirstStart(const std::filesystem::path& game_dir, bool ask_game, boo
   options.script = REXCVAR_GET(dev_setup_script);
   options.shots = REXCVAR_GET(dev_setup_shots);
   if (!options.script.empty()) {
+    if (REXCVAR_GET(dev_setup_browse_from).empty()) {
+      // A script's run never lists the real home folder.
+      platform::PrintStartupError("--dev_setup_script needs --dev_setup_browse_from");
+      return GameData::kFailed;
+    }
     options.scale = 1;
     config.own_browser_only = true;
     const std::string from = REXCVAR_GET(dev_setup_browse_from);
@@ -44,9 +49,18 @@ GameData AskFirstStart(const std::filesystem::path& game_dir, bool ask_game, boo
 #endif
   SetupPages pages(std::move(config));
   const int status = wizard::Run(options, pages);
-  if (!pages.log_line().empty()) log.push_back({false, pages.log_line()});
+  log.insert(log.end(), pages.log().begin(), pages.log().end());
   if (status != 0) {
-    platform::PrintStartupError("the setup window failed (status " + std::to_string(status) + ")");
+    const std::string reason = "The setup window could not open (status " + std::to_string(status) + ").";
+    platform::PrintStartupError(reason);
+    // A player with no console sees this. The window's failure already means nobody is scripting it.
+    if (options.script.empty() && ask_game) platform::ShowError(options.title, reason);
+    // Only the achievement set was open: the default, as a closed box used to give, not worth
+    // stopping a game that is there.
+    if (!ask_game) {
+      achievement = settings::AchievementSet::kXbox;
+      return GameData::kReady;
+    }
     return GameData::kFailed;
   }
   if (!pages.completed()) {

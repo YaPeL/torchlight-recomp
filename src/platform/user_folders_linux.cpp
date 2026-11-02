@@ -33,7 +33,16 @@ std::filesystem::path HomeFolder() {
   return home ? std::filesystem::path(home) : std::filesystem::path();
 }
 
-std::vector<std::filesystem::path> FolderRoots() { return {"/"}; }
+std::vector<std::filesystem::path> FolderRoots() {
+  // Where a removable disk appears (the Steam Deck's SD card: /run/media/deck/<label>), which a pad
+  // should not have to walk to from "/".
+  std::vector<std::filesystem::path> roots = {"/"};
+  std::error_code ec;
+  for (const char* place : {"/run/media", "/media", "/mnt"}) {
+    if (std::filesystem::is_directory(place, ec)) roots.emplace_back(place);
+  }
+  return roots;
+}
 
 bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to,
                      std::string& error) {

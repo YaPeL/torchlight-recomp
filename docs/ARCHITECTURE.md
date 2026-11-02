@@ -98,8 +98,9 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   translations) in the host settings' language, else `--user_language`'s, else the system's
   preferred one, else English; `setup_text_test` fails when a text lacks a line in any language. New
   first-start texts go the same way. After the game's files, when `settings.toml` has no
-  `achievements` yet, a message box asks which set to earn, Xbox 360 or PC, and saves
-  the answer (closing it saves Xbox 360); `EnsureAchievementChoice`, before the runtime starts.
+  `achievements` yet, the wizard asks which set to earn, Xbox 360 or PC, and saves the answer (closing it saves nothing and
+  ends the start; on Android, a message box whose closing saves Xbox 360); `FirstStart`, before the
+  runtime starts.
   `license_mask` is 1 by default (the full game; decision 1 of
   `docs/release-pipeline.md`), `--license_mask` on the command line wins.
 - Release (REL.5-REL.7, `docs/release-pipeline.md`): the SDK (`patches/series`) and OGRE are built
