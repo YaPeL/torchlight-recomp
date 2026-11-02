@@ -7,6 +7,7 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <sstream>
 #include <utility>
 #include <vector>
@@ -135,6 +136,26 @@ ImGuiKey KeyOf(const std::string& name) {
   return ImGuiKey_None;
 }
 
+// A hint for this window only: on leaving, the value it had before, or none.
+class ScopedHint {
+ public:
+  ScopedHint(const char* name, const char* value) : name_(name) {
+    if (const char* before = SDL_GetHint(name)) before_ = before;
+    SDL_SetHint(name, value);
+  }
+  ~ScopedHint() {
+    if (before_) {
+      SDL_SetHint(name_, before_->c_str());
+    } else {
+      SDL_ResetHint(name_);
+    }
+  }
+
+ private:
+  const char* name_;
+  std::optional<std::string> before_;
+};
+
 bool SaveShot(SDL_Renderer* renderer, const std::string& path) {
   SDL_Surface* shot = SDL_RenderReadPixels(renderer, nullptr);
   if (!shot) return false;
@@ -155,24 +176,18 @@ void SetIcon(SDL_Window* window) {
 }  // namespace
 
 int Run(const Options& options, Pages& pages) {
-  if (!options.video.empty()) SDL_SetHint(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
-  SDL_SetHint(SDL_HINT_RENDER_DRIVER, "software");
-  SDL_SetHint(SDL_HINT_APP_NAME, options.title.c_str());
-  // Linux: the desktop portal's pickers only; where there is none (the Steam Deck's Game Mode), the
-  // pages' own browser.
-  SDL_SetHint(SDL_HINT_FILE_DIALOG_DRIVER, "portal");
   // The runtime's SDL may be up already, with its event watches and hints: left as it was found, so
   // no SDL_Quit, which would take them all down whatever the count of who uses it.
-  const auto reset_hints = [&] {
-    SDL_ResetHint(SDL_HINT_RENDER_DRIVER);
-    SDL_ResetHint(SDL_HINT_APP_NAME);
-    SDL_ResetHint(SDL_HINT_FILE_DIALOG_DRIVER);
-    if (!options.video.empty()) SDL_ResetHint(SDL_HINT_VIDEO_DRIVER);
-  };
+  std::optional<ScopedHint> video_hint;
+  if (!options.video.empty()) video_hint.emplace(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
+  const ScopedHint render_hint(SDL_HINT_RENDER_DRIVER, "software");
+  const ScopedHint name_hint(SDL_HINT_APP_NAME, options.title.c_str());
+  // Linux: the desktop portal's pickers only; where there is none (the Steam Deck's Game Mode), the
+  // pages' own browser.
+  const ScopedHint picker_hint(SDL_HINT_FILE_DIALOG_DRIVER, "portal");
   constexpr SDL_InitFlags kSubsystems = SDL_INIT_VIDEO | SDL_INIT_GAMEPAD;
   if (!SDL_InitSubSystem(kSubsystems)) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
-    reset_hints();
     return 2;
   }
   float scale = options.scale > 0 ? options.scale
@@ -195,7 +210,6 @@ int Run(const Options& options, Pages& pages) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
     if (window) SDL_DestroyWindow(window);
     SDL_QuitSubSystem(kSubsystems);
-    reset_hints();
     return 2;
   }
   SetIcon(window);
@@ -389,7 +403,6 @@ int Run(const Options& options, Pages& pages) {
   SDL_FlushEvents(SDL_EVENT_FIRST, SDL_EVENT_USER - 1);
   for (SDL_Event& event : others) SDL_PushEvent(&event);
   SDL_QuitSubSystem(kSubsystems);
-  reset_hints();
   return error.empty() ? 0 : 3;
 }
 

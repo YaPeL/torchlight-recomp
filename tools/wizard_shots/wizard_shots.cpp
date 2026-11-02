@@ -171,6 +171,7 @@ int RunWithSdlUp(const Options& options, const std::function<int()>& run) {
   }
   int watched = 0;
   SDL_AddEventWatch(WatchCounts, &watched);
+  SDL_SetHint(SDL_HINT_APP_NAME, "the runtime's name");
   const Uint32 user_event = SDL_RegisterEvents(1);
   SDL_Event before{};
   before.type = user_event;
@@ -194,6 +195,10 @@ int RunWithSdlUp(const Options& options, const std::function<int()>& run) {
     while (SDL_PollEvent(&queued)) kept += queued.type == user_event;
     if (kept != 2) {
       std::fprintf(stderr, "wizard_shots: the wizard ate the runtime's events (%d of 2)\n", kept);
+      return 5;
+    }
+    if (std::string(SDL_GetHint(SDL_HINT_APP_NAME)) != "the runtime's name") {
+      std::fprintf(stderr, "wizard_shots: the wizard lost a hint it found\n");
       return 5;
     }
     if (SDL_GetHint(SDL_HINT_RENDER_DRIVER) || SDL_GetHint(SDL_HINT_FILE_DIALOG_DRIVER)) {
