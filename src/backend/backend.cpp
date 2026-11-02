@@ -239,6 +239,11 @@ struct tl_backend {
   Ogre::Root* root = nullptr;
   std::unique_ptr<torchlight::backend::OgrePlugins> plugins;  // outlives `root` (ogre_plugins.h)
   Ogre::RenderSystem* rs = nullptr;
+  // Textures in BGRA byte order cannot be sampled (SampledTextureFormat).
+  bool bgra_textures_unusable = false;
+  // OGRE's GLES render system (Android): the only one whose render textures discard their depth
+  // (tl_backend_discard_depth). Elsewhere targets share OGRE's default depth pool, as before.
+  bool discards_depth = false;
   Ogre::RenderWindow* window = nullptr;
   // The native window OGRE draws in where it cannot make its own (platform.h; macOS); outlives
   // `window`.
@@ -260,6 +265,7 @@ struct tl_backend {
     uint32_t guest_width = 0, guest_height = 0;  // as the guest created it
     bool scaled = false;  // drawn at the render scale (RenderScale): the main target and output
     int32_t viewport_width = 0, viewport_height = 0;  // the current viewport, guest pixels
+    uint16_t depth_pool = 0;  // its own depth pool on GLES (MakeTarget), kept when it is remade
   };
   Target main;
   Target output;  // main after the display gamma (DisplayGammaPass)
@@ -345,6 +351,12 @@ struct tl_backend {
   std::unordered_map<uint64_t, Ogre::SamplerPtr> samplers;  // by packed state (GetSampler)
   uint32_t texture_serial = 0;
   uint32_t enabled_units = 0;
+  uint16_t next_depth_pool = Ogre::RBP_DEFAULT + 1;  // MakeTarget: one depth pool per target
+  // Pools of released render textures, given to the next target made. OGRE keeps a detached depth
+  // buffer in its pool until shutdown and reuses it for a target of that pool it fits, so a pool
+  // id must be reused, never left behind. A pool still keeps one buffer per larger size it has
+  // had (a target remade larger cannot use the smaller one): bounded, not freed.
+  std::vector<uint16_t> free_depth_pools;
   std::unique_ptr<Ogre::Frustum> projectors[TL_MAX_STAGES];
   // RTSS programs by structural key (ProgramKey), and what feeds their auto constants.
   struct Program {
@@ -490,6 +502,18 @@ Ogre::SamplerPtr GetSampler(tl_backend* b, Ogre::FilterOptions min, Ogre::Filter
 
 // A render target of the guest's size w x h; `scaled` ones are created at the render scale's host
 // size.
+// The format a sampled texture is made in, for one whose data comes as `format`. OGRE's GLES render
+// system (Android) makes BGRA textures (PF_A8R8G8B8, PF_X8R8G8B8) with glTexStorage2D, which
+// GLES 3 accepts only with GL_EXT_texture_storage: without it (the Adreno 615's driver) the texture
+// gets no storage and samples as black. There they are made RGBA, and OGRE converts the data on
+// upload. Every other render system takes BGRA as it is.
+Ogre::PixelFormat SampledTextureFormat(const tl_backend* b, Ogre::PixelFormat format) {
+  if (!b->bgra_textures_unusable) return format;
+  if (format == Ogre::PF_A8R8G8B8) return Ogre::PF_A8B8G8R8;
+  if (format == Ogre::PF_X8R8G8B8) return Ogre::PF_X8B8G8R8;
+  return format;
+}
+
 bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, bool scaled,
                 tl_backend::Target& t) {
   t.scaled = scaled;
@@ -503,6 +527,20 @@ bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, 
       Ogre::TU_RENDERTARGET);
   t.rt = t.texture->getBuffer()->getRenderTarget();
   t.rt->setAutoUpdated(false);
+  // On GLES a depth buffer of its own: OGRE's default pool shares one buffer among targets it fits
+  // (a 512x512 render texture takes the main target's), and tl_backend_discard_depth must not drop
+  // another target's depth. Elsewhere nothing is discarded and the shared pool stays.
+  if (b->discards_depth) {
+    if (!t.depth_pool) {  // a remade target keeps its pool, and so its detached depth buffer
+      if (b->free_depth_pools.empty()) {
+        t.depth_pool = b->next_depth_pool++;
+      } else {
+        t.depth_pool = b->free_depth_pools.back();
+        b->free_depth_pools.pop_back();
+      }
+    }
+    t.rt->setDepthBufferPool(t.depth_pool);
+  }
   t.viewport = t.rt->addViewport(nullptr);
   t.viewport->setClearEveryFrame(false);
   t.viewport->setOverlaysEnabled(false);
@@ -1256,11 +1294,15 @@ MAIN_DECLARATION
 Ogre::HighLevelGpuProgramPtr MakeProgram(const char* name, Ogre::GpuProgramType type,
                                           const char* source) {
   auto& programs = Ogre::HighLevelGpuProgramManager::getSingleton();
-  const bool glsl = programs.isLanguageSupported("glsl");
-  auto program =
-      programs.createProgram(name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME,
-                             glsl ? "glsl" : "hlsl", type);
-  if (!glsl) {
+  // The render system's language: GLSL (GL3+), GLSL ES (GLES, Android) or HLSL (Direct3D 11). The
+  // sources are OGRE's unified shader macros, which build as any of them. A language the render
+  // system lacks gives a program that draws nothing, silently.
+  const char* language = programs.isLanguageSupported("glsl")     ? "glsl"
+                         : programs.isLanguageSupported("glsles") ? "glsles"
+                                                                  : "hlsl";
+  auto program = programs.createProgram(
+      name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, language, type);
+  if (std::strcmp(language, "hlsl") == 0) {
     program->setParameter("entry_point", "main");
     program->setParameter("target", type == Ogre::GPT_VERTEX_PROGRAM ? "vs_4_0" : "ps_4_0");
   }
@@ -1292,7 +1334,7 @@ void UploadGammaLut(tl_backend* b, const uint8_t lut[256 * 3]) {
 void CreateDisplayGamma(tl_backend* b) {
   b->gamma_lut = Ogre::TextureManager::getSingleton().createManual(
       "tl_gamma_lut", Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, Ogre::TEX_TYPE_2D,
-      256, 1, 0, Ogre::PF_A8R8G8B8, Ogre::TU_DEFAULT);
+      256, 1, 0, SampledTextureFormat(b, Ogre::PF_A8R8G8B8), Ogre::TU_DEFAULT);
   uint8_t lut[256 * 3];
   for (int v = 0; v < 256; ++v) lut[v * 3] = lut[v * 3 + 1] = lut[v * 3 + 2] = uint8_t(v);
   UploadGammaLut(b, lut);
@@ -1478,6 +1520,8 @@ void DisplayGammaPass(tl_backend* b) {
   rs->_disableTextureUnitsFrom(2);
   DrawQuad(b, b->quad);
   EndFullScreenPass(b);
+  // The output's depth is never used: on GLES it is not written back (tl_backend_discard_depth).
+  if (b->discards_depth) b->output.rt->swapBuffers();
 }
 
 // ---- host UI pass ------------------------------------------------------------------------------
@@ -1691,9 +1735,9 @@ void CreateProgramGenerator(tl_backend* b) {
   b->light_node->attachObject(b->light);
   auto& textures = Ogre::TextureManager::getSingleton();
   b->placeholder_2d = textures.createManual("tl_rtss_2d", group, Ogre::TEX_TYPE_2D, 1, 1, 0,
-                                            Ogre::PF_A8R8G8B8);
+                                            SampledTextureFormat(b, Ogre::PF_A8R8G8B8));
   b->placeholder_cube = textures.createManual("tl_rtss_cube", group, Ogre::TEX_TYPE_CUBE_MAP, 1, 1,
-                                              0, Ogre::PF_A8R8G8B8);
+                                              0, SampledTextureFormat(b, Ogre::PF_A8R8G8B8));
 }
 
 // The GPU `gpu` (a platform GPU id) for render systems that take one (Direct3D 11's "Rendering
@@ -1756,6 +1800,9 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     }
     b->rs = list.front();
     b->root->setRenderSystem(b->rs);
+    // OGRE's GLES render system (the one with GLSL ES): SampledTextureFormat.
+    b->bgra_textures_unusable = b->rs->getName().find("OpenGL ES") != std::string::npos;
+    b->discards_depth = b->bgra_textures_unusable;
     SelectGpu(b->rs, gpu);
     b->rs->setConfigOption("Full Screen", "No");
     b->root->initialise(false);
@@ -1951,6 +1998,32 @@ int tl_backend_index_buffer(tl_backend* b, uint64_t id, const void* data, uint32
   return 0;
 }
 
+// A texture uploaded, for tl_backend_take_counters: the format it has on the GPU and its bytes.
+static void CountTextureUpload(tl_backend* b, const Ogre::TexturePtr& texture) {
+  tl_backend_counters& c = b->counters;
+  ++c.textures_uploaded;
+  const Ogre::PixelFormat format = texture->getFormat();
+  if (Ogre::PixelUtil::isCompressed(format)) {
+    ++c.textures_compressed;
+  } else if (format == Ogre::PF_A8B8G8R8 || format == Ogre::PF_A8R8G8B8 ||
+             format == Ogre::PF_X8B8G8R8 || format == Ogre::PF_X8R8G8B8) {
+    ++c.textures_rgba8;
+  } else if (format == Ogre::PF_B8G8R8 || format == Ogre::PF_R8G8B8) {
+    ++c.textures_rgb8;
+  } else {
+    ++c.textures_other;
+  }
+  c.texture_bytes += texture->getSize();
+}
+
+// Whether `data` is a DDS file of DXT1/3/5 blocks (its pixel format's FourCC, at byte 84).
+static bool IsDxtDds(const void* data, uint32_t size) {
+  const auto* bytes = static_cast<const char*>(data);
+  return size >= 88 && std::memcmp(bytes, "DDS ", 4) == 0 &&
+         (std::memcmp(bytes + 84, "DXT1", 4) == 0 || std::memcmp(bytes + 84, "DXT3", 4) == 0 ||
+          std::memcmp(bytes + 84, "DXT5", 4) == 0);
+}
+
 int tl_backend_texture_file(tl_backend* b, uint64_t id, const char* name, const void* data,
                             uint32_t size, const char* extension, uint32_t type, char* error,
                             uint32_t error_size) {
@@ -1958,7 +2031,18 @@ int tl_backend_texture_file(tl_backend* b, uint64_t id, const char* name, const 
     Ogre::DataStreamPtr stream =
         std::make_shared<Ogre::MemoryDataStream>(const_cast<void*>(data), size, false, true);
     Ogre::Image image;
+    // Without DXT on the GPU, OGRE's DDS codec decodes a DXT file to RGB(A) inside the load.
+    const bool cpu_decode =
+        IsDxtDds(data, size) &&
+        !b->rs->getCapabilities()->hasCapability(Ogre::RSC_TEXTURE_COMPRESSION_DXT);
+    const auto load_start = std::chrono::steady_clock::now();
     image.load(stream, extension);
+    if (cpu_decode) {
+      ++b->counters.dxt_decoded;
+      b->counters.dxt_decode_ms += std::chrono::duration<double, std::milli>(
+                                       std::chrono::steady_clock::now() - load_start)
+                                       .count();
+    }
     char unique[32];
     std::snprintf(unique, sizeof(unique), "#%u", ++b->texture_serial);
     const int mipmaps = Ogre::PixelUtil::isCompressed(image.getFormat())
@@ -1968,7 +2052,9 @@ int tl_backend_texture_file(tl_backend* b, uint64_t id, const char* name, const 
                             : int(Ogre::MIP_DEFAULT);
     b->textures[id] = Ogre::TextureManager::getSingleton().loadImage(
         std::string(name) + unique, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME,
-        image, type == TL_TEXTURE_CUBE ? Ogre::TEX_TYPE_CUBE_MAP : Ogre::TEX_TYPE_2D, mipmaps);
+        image, type == TL_TEXTURE_CUBE ? Ogre::TEX_TYPE_CUBE_MAP : Ogre::TEX_TYPE_2D, mipmaps,
+        1.0f, false, SampledTextureFormat(b, image.getFormat()));
+    CountTextureUpload(b, b->textures[id]);
   } catch (Ogre::Exception& e) {
     SetError(error, error_size, e.getDescription());
     return 1;
@@ -1992,10 +2078,12 @@ int tl_backend_texture_linear(tl_backend* b, uint64_t id, uint32_t width, uint32
     if (existing != b->textures.end() && !b->targets.count(id)) {
       const Ogre::TexturePtr& texture = existing->second;
       if (texture->getTextureType() == Ogre::TEX_TYPE_2D && texture->getWidth() == width &&
-          texture->getHeight() == height && texture->getFormat() == pf &&
+          texture->getHeight() == height &&
+          texture->getFormat() == SampledTextureFormat(b, pf) &&
           texture->getNumMipmaps() == 0) {
         Ogre::PixelBox box(width, height, 1, pf, const_cast<void*>(data));
         texture->getBuffer()->blitFromMemory(box);
+        CountTextureUpload(b, texture);
         return 0;
       }
       tl_backend_release_texture(b, id);
@@ -2007,7 +2095,8 @@ int tl_backend_texture_linear(tl_backend* b, uint64_t id, uint32_t width, uint32
     std::snprintf(unique, sizeof(unique), "tl_linear#%u", ++b->texture_serial);
     b->textures[id] = Ogre::TextureManager::getSingleton().loadImage(
         unique, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, image,
-        Ogre::TEX_TYPE_2D, 0);
+        Ogre::TEX_TYPE_2D, 0, 1.0f, false, SampledTextureFormat(b, pf));
+    CountTextureUpload(b, b->textures[id]);
   } catch (Ogre::Exception&) {
     return 3;
   }
@@ -2231,6 +2320,7 @@ void tl_backend_release_texture(tl_backend* b, uint64_t id) {
   auto t = b->targets.find(id);
   if (t != b->targets.end()) {
     if (b->current == &t->second) b->current = &b->main;
+    if (t->second.depth_pool) b->free_depth_pools.push_back(t->second.depth_pool);
     b->targets.erase(t);
   }
   Ogre::TextureManager::getSingleton().remove(
@@ -2241,6 +2331,18 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
   uint8_t lut[256 * 3];
   conv::GammaRampLut(pwl != 0, values, lut);
   UploadGammaLut(b, lut);
+}
+
+void tl_backend_discard_depth(tl_backend* b) {
+  if (b->discards_depth && b->current && b->current->rt) b->current->rt->swapBuffers();
+}
+
+int tl_backend_discards_depth(const tl_backend* b) { return b->discards_depth ? 1 : 0; }
+
+void tl_backend_current_target_size(const tl_backend* b, uint32_t* width, uint32_t* height) {
+  const tl_backend::Target* t = b->current ? b->current : &b->main;
+  *width = t->guest_width;
+  *height = t->guest_height;
 }
 
 int tl_backend_set_target(tl_backend* b, uint64_t target_id) {

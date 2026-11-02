@@ -54,6 +54,15 @@ Classified by instruction mix (from `generated/default`):
 - **`volatile` guest memory accesses are not the cause.** The same generated file compiled without
   `volatile` in `REX_LOAD_*`/`REX_STORE_*` (offline, nothing changed in the repository): 55,232
   against 55,241 instructions.
+  Measured on Android too (POCO X7, `fight.txt`, fps cap 0, vsync off, A B B A, CPU 2.4-2.5 GHz,
+  battery 31-33 C, 2026-10-31; local builds of the generated code edited with sed, never
+  published): without `volatile` on any guest access the build crashed at start until it was
+  compiled with `-fno-strict-aliasing` (the u32 and u64 views of the same guest bytes alias);
+  with it, the fight's mean guest frame went from 20.85 to 21.33 ms; without `volatile` on stack
+  accesses only, from 22.16 to 22.81 ms. No gain: closed (the owner's decision). The same series
+  measured the physical address offset computed without its comparison (Android's 0x1000 above
+  0xE0000000, by shifts instead of a branch): 22.30 against 21.20 ms, a signal for the ReXGlue
+  request (docs/rexglue-upstream.md), to be measured again on the PGO build.
 - **The large code model.** The SDK compiles every Linux x86-64 target with `-mcmodel=large`
   ("large executable support", `rexglue_apply_target_settings`): every call between guest
   functions is a `movabs` and an indirect call. The same generated file with the default code
@@ -61,17 +70,36 @@ Classified by instruction mix (from `generated/default`):
   executable's text is 67 MB, far from the 2 GB the small model allows; the Windows build already
   uses the default.
 - **`fmadd` is a call** to libc's `fma` (`__fma_fma3`, 0.75 % of the main thread): the build
-  targets x86-64-v2, which has no FMA instruction. x86-64-v3 inlines it but measured no clear gain
-  (`docs/performance-profile.md`).
+  targets x86-64-v2, which has no FMA instruction. x86-64-v3 inlines it; first measured with no
+  clear gain, then −4.9 % cycles in the fight with PGO (`docs/performance-profile.md`). Profiled again on 2026-10-31 (the PGO build of 3e36ab5, `fight.txt`; thermal state not recorded,
+  the shares are of one profile's samples):
+  `__fma_fma3` and `fma@plt` are about 3 % of the guest thread in the fight. The owner's decision
+  then: the desktop keeps x86-64-v2. Revised on 2026-11-01: Linux builds for x86-64-v3, because
+  the Steam Deck (Zen 2: AVX2, FMA) is Linux's target; Windows stays on x86-64-v2. A CPU check
+  built for baseline x86-64 (`src/platform/cpu_check.cpp`) stops the game with a message on an
+  older CPU (`TORCHLIGHT_X86_64_V3`, CMakeLists.txt).
 - **Byte swaps** on every load and store come with a big-endian guest; the physical address offset
   is 0 on Linux and one compare per access on Windows and macOS arm64.
+
+## FMOD's software mixer (a lever for later)
+
+On the POCO (simpleperf, `fight.txt`, PGO build of f6c54f8, 2026-10-31; thermal state not
+recorded, the shares are of one profile's samples) the game's FMOD mixing takes about 10.7 % of
+all the phone's samples, on its own guest thread (`XThread`, not the main thread):
+`sub_826E1620` 6.3 % (a leaf of about 6,300 recompiled lines, nearly 900 float operations: the
+mixer's inner loop), `sub_82701148` 2.9 % and `sub_826D3B60` 1.5 %, all under the recursive DSP
+graph walk `sub_82687310` (FMOD's strings are in the image). It is not on the frame's critical path,
+but it keeps about a tenth of the CPU busy: heat, and less headroom for the main thread over time.
+To study when there is time (analysis only, the owner's decision): the configuration the game
+asks of FMOD (sample rate, voices, effects), whether the time is mixing or decoding, and whether a
+cheaper configuration would change the sound.
 
 ## Candidates, by gain and risk
 
 | # | Candidate | Estimate (main thread) | Risk | Where |
 |---|---|---|---|---|
 | 1 | The default code model on Linux (no `-mcmodel=large`) | measured: +11 % main menu, +4.5 % dungeon still, fight within noise (`docs/performance-profile.md`); done | Low (build flag; Windows already) | This project's CMake; report upstream |
-| 2 | Native implementations of the hottest lookups (`0x82581D98`, `0x824C6960`, `0x8262D6C8`) | about 2 % | Low to medium (read only; the comparison must match) | Here, as the memcpy |
+| 2 | Native implementations of the hottest lookups (`0x82581D98`, `0x824C6960`, `0x8262D6C8`) | about 2 %; tried 2026-11-01: literal host versions took as long (POCO samples, M cycles a frame: guest 0.65/0.57/0.67, host 0.71/0.63/0.81; the time is the tree loads, not the recompiled code), not merged | Low to medium (read only; the comparison must match) | Here, as the memcpy |
 | 3 | Native register save and restore helpers | 1-2 % | Low (fixed semantics) | Here, or in the codegen upstream |
 | 4 | Native implementations of the five hottest arithmetic functions | about 3 % | Medium (results must be bit identical: fused multiply-add, vector denormals; some may feed game logic) | Here, with the evidence of each |
 | 5 | Automatic shader parameters, light lists (`0x82201EB0`, `0x821C26D0`) | | High (reimplementing OGRE 1.7's automatic parameters) | Not recommended |

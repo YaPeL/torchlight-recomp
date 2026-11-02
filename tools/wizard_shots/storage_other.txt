@@ -1,0 +1,34 @@
+# Another portable folder: first a folder that is not one, then the right one.
+page storage 5
+press down
+press down
+press a
+page source-browser 5
+shot storage-source-browser
+# Down to source/, which has no portable layout; its only item below ".." is the button.
+press down
+press down
+press down
+press a
+wait 10
+press down
+press a
+page storage 5
+detail config, data or game folder.
+shot storage-not-portable
+press down
+press down
+press a
+page source-browser 5
+# other-portable, then the button below its config and data.
+press down
+press down
+press a
+wait 10
+press down
+press down
+press down
+press a
+page game 20
+shot storage-after-copy-other
+quit

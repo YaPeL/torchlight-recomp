@@ -1,11 +1,11 @@
-// Renders the project's SVG icon (packaging/linux/torchlight-recomp.svg) into the PNG sizes of a
-// macOS .iconset, for iconutil (make_app.sh). AppKit reads SVG since macOS 13.
-// Usage: swift make_icon.swift ICON.svg OUTPUT.iconset
+// Renders the project's icon (data/icon/torchlight-recomp-256.png) into the PNG sizes of a macOS
+// .iconset, for iconutil (make_app.sh).
+// Usage: swift make_icon.swift ICON.png OUTPUT.iconset
 import AppKit
 
 let arguments = CommandLine.arguments
 guard arguments.count == 3, let image = NSImage(contentsOfFile: arguments[1]) else {
-  FileHandle.standardError.write(Data("usage: make_icon.swift ICON.svg OUTPUT.iconset\n".utf8))
+  FileHandle.standardError.write(Data("usage: make_icon.swift ICON.png OUTPUT.iconset\n".utf8))
   exit(2)
 }
 let output = URL(fileURLWithPath: arguments[2])

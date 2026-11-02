@@ -61,6 +61,10 @@ bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.
 bool IsSteamDeck();
+// The internal resolution the game starts at by default, where the platform wants less than the
+// display (Android: about 1280x800 on a 2560x1600 tablet, docs/android-port.md, A2); 0x0 elsewhere,
+// the display's size.
+std::pair<uint32_t, uint32_t> PreferredRenderResolution();
 // Whether the system has a Back button of its own (Android's navigation Back), which the game takes
 // as the pad's Back (live/system_back_button.h).
 bool HasSystemBackButton();
@@ -106,10 +110,18 @@ void SetCurrentThreadName(const char* name);
 // SDL3 message boxes, the system's file and folder pickers and a small progress window. Main
 // thread.
 
+// macOS brings the application to the front (started from a terminal, it stays behind the
+// terminal and its dialogs with it); Linux and Windows show them in front already.
+void BringToFront();
 // A message box with `buttons`; the index of the one chosen, -1 when it was closed.
 int AskChoice(const std::string& title, const std::string& message,
               const std::vector<std::string>& buttons);
 void ShowError(const std::string& title, const std::string& message);
+// One line for whoever started a run that cannot go on, before the runtime's log is up. It never
+// blocks: stderr on Linux, stderr and the system log on macOS, logcat on Android; on Windows, a
+// windowed program, the inherited stderr or else the parent's console. A run with nowhere to write
+// it, on any platform, leaves only its exit code.
+void PrintStartupError(const std::string& message);
 enum class PickResult { kChosen, kCancelled, kFailed, kUncopied };
 // The system's picker for one file or one folder (blocks until it closes); kFailed with the
 // reason when no picker could be shown (e.g. no desktop portal in a gamescope session), kUncopied
@@ -275,6 +287,11 @@ bool OgreWindowFollowsGameWindow();
 // true at once.
 bool ServeSurfaceChanges(const std::function<void()>& lost,
                          const std::function<bool(const NativeWindow&)>& restored);
+// How many times that surface has gone away or come back: odd while it is away (Android, the app
+// in the background), 0 elsewhere. Any thread, without a lock: for the guest's GPU wait watch
+// (hooks/gpu_wait_watch.h), which keeps quiet while the app is away, where the system may slow
+// down or stop its threads.
+uint64_t SurfaceAwayCount();
 
 // The backend's own top-level window (offscreen backends keep a hidden one for the GL context, the
 // replay shows one) where OGRE's render system cannot create it itself: macOS, whose OGRE 14 Cocoa

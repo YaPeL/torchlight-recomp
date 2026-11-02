@@ -1,0 +1,231 @@
+Patch 49. After patch 48.
+
+The command processor's pending_fns_ was a std::queue without a lock. CallInThread pushes to it
+from other threads (clearing caches, invalidating GPU memory, shader storage, pause, the swap's
+post effect), while the command processor's thread checks it, takes calls from it and runs
+them: a data race on the queue.
+
+The queue is now rex::graphics::PendingCalls (include/rex/graphics/pending_calls.h): Push and
+Empty take a mutex, and RunAll takes each call out under the mutex and runs it outside it, so a
+call can queue another one and no lock is held while a call runs. CallInThread still runs a call
+at once when it is on the command processor's thread and nothing is queued. It checks the thread
+first: only that thread runs queued calls, so there an empty queue cannot fill with an earlier
+call before this one runs. Calls run in the order they were queued, as before.
+
+Test: tests/unit/graphics/pending_calls_test.cpp. Four threads each push 20,000 calls while
+another thread drains the queue, as the command processor's loop does. Every call runs, and each
+pushing thread's calls run in its order. A second test checks that a call queued by a running
+call runs as well. Built alone with ThreadSanitizer (clang 21, Linux): three runs, no report.
+The same test against a copy of the class with its locks removed: 61 data race reports, and the
+run hangs on the corrupted queue. The SDK's tests pass with it (Linux: 1775).
+
+diff --git a/include/rex/graphics/command_processor.h b/include/rex/graphics/command_processor.h
+index da8e432..d6f6c6a 100644
+--- a/include/rex/graphics/command_processor.h
++++ b/include/rex/graphics/command_processor.h
+@@ -21,6 +21,7 @@
+ #include <unordered_map>
+ #include <vector>
+ 
++#include <rex/graphics/pending_calls.h>
+ #include <rex/graphics/register_file.h>
+ #include <rex/graphics/registers.h>
+ #include <rex/graphics/xenos.h>
+@@ -238,7 +239,7 @@ class CommandProcessor {
+   std::atomic<bool> worker_running_;
+   system::object_ref<system::XHostThread> worker_thread_;
+ 
+-  std::queue<std::function<void()>> pending_fns_;
++  PendingCalls pending_fns_;
+ 
+   // MicroEngine binary from PM4_ME_INIT
+   std::vector<uint32_t> me_bin_;
+diff --git a/include/rex/graphics/pending_calls.h b/include/rex/graphics/pending_calls.h
+new file mode 100644
+index 0000000..d68b79f
+--- /dev/null
++++ b/include/rex/graphics/pending_calls.h
+@@ -0,0 +1,52 @@
++/**
++ * @file        rex/graphics/pending_calls.h
++ * @brief       Calls queued from any thread for the command processor's thread to run
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#pragma once
++
++#include <functional>
++#include <mutex>
++#include <queue>
++#include <utility>
++
++namespace rex::graphics {
++
++// Any thread may Push; only the thread that runs the calls calls RunAll. Each call runs outside
++// the lock, so a call may queue another one (RunAll runs it too).
++class PendingCalls {
++ public:
++  void Push(std::function<void()> fn) {
++    std::lock_guard lock(mutex_);
++    queue_.push(std::move(fn));
++  }
++
++  bool Empty() const {
++    std::lock_guard lock(mutex_);
++    return queue_.empty();
++  }
++
++  void RunAll() {
++    while (true) {
++      std::function<void()> fn;
++      {
++        std::lock_guard lock(mutex_);
++        if (queue_.empty()) {
++          return;
++        }
++        fn = std::move(queue_.front());
++        queue_.pop();
++      }
++      fn();
++    }
++  }
++
++ private:
++  mutable std::mutex mutex_;
++  std::queue<std::function<void()>> queue_;
++};
++
++}  // namespace rex::graphics
+diff --git a/src/graphics/command_processor.cpp b/src/graphics/command_processor.cpp
+index 153b9e0..72ef9a6 100644
+--- a/src/graphics/command_processor.cpp
++++ b/src/graphics/command_processor.cpp
+@@ -167,10 +167,12 @@ void CommandProcessor::InitializeShaderStorage(const std::filesystem::path& cach
+                                                uint32_t title_id, bool blocking) {}
+ 
+ void CommandProcessor::CallInThread(std::function<void()> fn) {
+-  if (pending_fns_.empty() && system::XThread::IsInThread(worker_thread_.get())) {
++  // Only the worker runs queued calls, so on the worker an empty queue stays empty until it runs
++  // this one: it can run it at once without passing an earlier call.
++  if (system::XThread::IsInThread(worker_thread_.get()) && pending_fns_.Empty()) {
+     fn();
+   } else {
+-    pending_fns_.push(std::move(fn));
++    pending_fns_.Push(std::move(fn));
+     // Wake the worker if it is blocked on an empty ring buffer.
+     write_ptr_index_event_->Set();
+   }
+@@ -215,11 +217,7 @@ void CommandProcessor::WorkerThreadMain() {
+   }
+ 
+   while (worker_running_) {
+-    while (!pending_fns_.empty()) {
+-      auto fn = std::move(pending_fns_.front());
+-      pending_fns_.pop();
+-      fn();
+-    }
++    pending_fns_.RunAll();
+ 
+     uint32_t write_ptr_index = write_ptr_index_.load();
+     if (write_ptr_index == 0xBAADF00D || read_ptr_index_ == write_ptr_index) {
+@@ -238,10 +236,10 @@ void CommandProcessor::WorkerThreadMain() {
+         rex::thread::MaybeYield();
+         loop_count++;
+         write_ptr_index = write_ptr_index_.load();
+-      } while (worker_running_ && pending_fns_.empty() &&
++      } while (worker_running_ && pending_fns_.Empty() &&
+                (write_ptr_index == 0xBAADF00D || read_ptr_index_ == write_ptr_index));
+       ReturnFromWait();
+-      if (!worker_running_ || !pending_fns_.empty()) {
++      if (!worker_running_ || !pending_fns_.Empty()) {
+         continue;
+       }
+     }
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index 340d61f..d424f20 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -7,6 +7,7 @@ add_executable(unit_tests
+     kernel/object_table_test.cpp
+     core/cvar_test.cpp
+     core/fiber_test.cpp
++    graphics/pending_calls_test.cpp
+     core/filesystem_test.cpp
+     core/filesystem_wildcard_test.cpp
+     core/vfs_overwrite_test.cpp
+diff --git a/tests/unit/graphics/pending_calls_test.cpp b/tests/unit/graphics/pending_calls_test.cpp
+new file mode 100644
+index 0000000..d0990a2
+--- /dev/null
++++ b/tests/unit/graphics/pending_calls_test.cpp
+@@ -0,0 +1,68 @@
++/**
++ * @file        graphics/pending_calls_test.cpp
++ * @brief       The command processor's queue of calls: pushed from several threads, run by one
++ *
++ * @license     BSD 3-Clause License
++ *              See LICENSE file in the project root for full license text.
++ */
++
++#include <catch2/catch_test_macros.hpp>
++
++#include <atomic>
++#include <thread>
++#include <vector>
++
++#include <rex/graphics/pending_calls.h>
++
++using rex::graphics::PendingCalls;
++
++TEST_CASE("PendingCalls runs every call pushed from other threads, each thread's in order",
++          "[graphics]") {
++  constexpr int kThreads = 4;
++  constexpr int kCallsPerThread = 20000;
++  PendingCalls calls;
++  std::vector<int> next(kThreads, 0);  // touched only by the running thread
++  int out_of_order = 0;
++  std::atomic<int> pushers_done{0};
++
++  std::vector<std::thread> pushers;
++  for (int t = 0; t < kThreads; ++t) {
++    pushers.emplace_back([&, t] {
++      for (int i = 0; i < kCallsPerThread; ++i) {
++        calls.Push([&, t, i] {
++          if (next[t] != i) {
++            ++out_of_order;
++          }
++          next[t] = i + 1;
++        });
++      }
++      pushers_done.fetch_add(1);
++    });
++  }
++  // The worker: checks and drains while the others push, as the command processor's loop does.
++  while (pushers_done.load() < kThreads || !calls.Empty()) {
++    calls.RunAll();
++  }
++  for (auto& pusher : pushers) {
++    pusher.join();
++  }
++  calls.RunAll();
++
++  CHECK(out_of_order == 0);
++  for (int t = 0; t < kThreads; ++t) {
++    CHECK(next[t] == kCallsPerThread);
++  }
++  CHECK(calls.Empty());
++}
++
++TEST_CASE("PendingCalls runs a call queued by a running call", "[graphics]") {
++  PendingCalls calls;
++  int ran = 0;
++  calls.Push([&] {
++    ++ran;
++    calls.Push([&] { ++ran; });
++  });
++  calls.RunAll();
++  CHECK(ran == 2);
++  CHECK(calls.Empty());
++}

@@ -1221,6 +1221,34 @@ Our patch 33 (`patches/README.md`). Measured on Linux and Windows; ready to send
 
 ---
 
+### D33. Android: ReXApp writes its config and logs next to the executable
+
+From the Android port (`docs/android-port.md`). Checked on `bd833a2`.
+
+**Issue: `[UI]: on Android, ReXApp's config and logs go to a read-only folder`**
+
+`ReXApp::SetupEnvironment` (`src/ui/rex_app.cpp`) puts `<app>.toml`, which the settings dialog
+saves, and the `logs` folder in `GetExecutableFolder()`. On Android that is the app's native
+library folder: read-only, or inside the APK when the app keeps its libraries there
+(`extractNativeLibs=false`). Neither can be written, so an app that keeps the defaults loses its
+settings and logs.
+
+**PR: `fix(ui): Android keeps ReXApp's config and logs with the user data`**
+
+Fixes #NNN. On Android only, the default config path and the log folder go with the user data
+(`user_data_root`, or where the app's `OnConfigurePaths` moved it), and that folder is made before
+the settings are first saved. An app can still move both (`OnConfigurePaths`,
+`OnConfigureLogging`). Other platforms are unchanged.
+
+Our patch 43, withdrawn from our series on 2026-10-22: Torchlight places its own config and logs
+(`ConfigurePaths`), so the defaults never decide them here. The patch is
+`patches/rexglue-android-writable-settings.patch` at commit `326cbe2` (branch
+`sdk/android-apk-libs`). Built for Android, Linux, Windows and macOS; on the POCO X7 the game
+ran with it and no write error, but with its own paths, so the defaults themselves were not
+exercised: test an app that keeps them before sending.
+
+---
+
 Not drafted, from the same port (`docs/macos-port.md`, section 1, items 5-7, and section 2):
 - No `SO_NOSIGPIPE` / `MSG_NOSIGNAL` in `xsocket.cpp`.
 - Scalar audio fallbacks, one of which truncates where x86 rounds.
@@ -1371,12 +1399,11 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   pointing the builds at the new prefix) happens then, agreed with the agents that share it.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
-- The shared SDK copies on the Linux machine (2026-10-14). The live SDK is `bd833a2` with
-  develop's series: 1-30 (21 included), then 20, 31 and 33. One older copy stays next to it:
-  `rexglue-sdk-bd833a2-31`, the same series without 33, to roll back the last swap (two `mv`;
-  its install is inside it). It goes at the next swap, when the copy it replaces becomes the
-  rollback. The old base `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as
-  planned.
+- The shared SDK copies on the Linux machine (2026-10-31). The live SDK is `bd833a2` with
+  develop's series, up to patch 52. One older copy stays next to it: `rexglue-sdk-bd833a2-51`, the
+  same series up to patch 51, to roll back the last swap (two `mv`; its install is inside it). It
+  goes at the next swap, when the copy it replaces becomes the rollback. The old base
+  `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as planned.
 - The SDK copies on the Windows machine (2026-10-15). The live SDK is `D:\rexglue-sdk-33\install`:
   `bd833a2` with develop's series up to 33, built by `tools\build-deps\windows.ps1 -SdkPrefix`
   (its checkout in the script's work folder, `D:\ogre-build\rexglue-sdk`), every configuration.
@@ -1440,10 +1467,17 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | `bd833a2`, after 38 |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` (D29) | `sdk/known-test-failures` | `bd833a2`, after 39 |
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | `bd833a2`, after 40 |
-| 42-43 | (`sdk/android-apk-libs`) | | |
+| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | `bd833a2`, after 41; integrated with A6 (`docs/android-port.md`) |
+| 43 | `rexglue-android-writable-settings.patch` | withdrawn (draft D33) | `bd833a2`, after 42 |
 | 44 | `rexglue-alloc-commit-mprotect-first.patch` | `develop` | `bd833a2`, after 41 |
-| 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | `bd833a2`, after 44 |
-| 46 | next free | | |
+| 45 | `rexglue-arena-reserve-before-views.patch` | `develop` | `bd833a2`, after 44 |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` (SDL's file) | `develop` | `bd833a2`, after 45 |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | `bd833a2`, after 46 |
+| 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | `bd833a2`, after 47 |
+| 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | `bd833a2`, after 48 |
+| 50 | `rexglue-thread-dump.patch` | `develop` | `bd833a2`, after 49 |
+| 51 | `rexglue-android-sdl-power.patch` | `develop` | `bd833a2`, after 50 |
+| 52 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

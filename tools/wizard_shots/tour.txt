@@ -1,0 +1,87 @@
+# The wizard's parts with the simulated pad, then the keyboard: every page shot, every move checked.
+page welcome 5
+shot welcome
+press a
+page browser 5
+detail sample-folder
+shot browser
+# Into the first folder, with the pad's focus on its first item, and up again from there.
+press down
+press a
+detail sample-folder/A folder
+shot browser-inner
+press a
+detail sample-folder
+# A long list scrolls with the focus: the 20th item is the one entered.
+press down
+press down
+press down
+press a
+detail sample-folder/Long list
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+press down
+shot browser-scrolled
+press a
+detail Long list/Folder 29
+press a
+detail sample-folder/Long list
+press a
+detail sample-folder
+# B goes back a page, Start and Next forward again; Escape and Enter do the same.
+press b
+page welcome 5
+press start
+page browser 5
+key escape
+page welcome 5
+key enter
+page browser 5
+# The button below the list: past A folder, Another folder, Long list and A file.txt.
+press down
+press down
+press down
+press down
+press down
+shot browser-focus
+press a
+page chosen 5
+detail sample-folder
+shot chosen
+# Back to the browser, whose focus must still answer: choose from it again.
+press b
+page browser 5
+shot browser-back
+press a
+detail tools/wizard_shots
+# Back to the start, and through to the end: Close ends the pages.
+press b
+page welcome 5
+press start
+page browser 5
+press down
+press down
+press down
+press down
+press down
+press a
+page chosen 5
+press a
+finished

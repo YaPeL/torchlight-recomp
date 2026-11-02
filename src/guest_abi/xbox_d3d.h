@@ -111,6 +111,11 @@ namespace gpu_wait {
 // rewritten when it changes (stw r11,8(r31) @0x827741E8).
 inline constexpr Field kDevice{0, Confidence::kConfirmed};
 inline constexpr Field kLastProgress{8, Confidence::kConfirmed};
+// [confirmed] The time base when the wait began: the begin function 0x82774078, which the callers
+// run before their loop (0x821A5C10 @0x821A5C98), fills the state (device +0, progress +8, time +12
+// and +16) and ends with mftb r11; stw r11,20(r3). The step writes only +8 and +12, so this stays
+// the same through one wait and changes with every new one.
+inline constexpr Field kBeganTimeBase{20, Confidence::kConfirmed};
 }  // namespace gpu_wait
 
 }  // namespace torchlight::guest_abi::xbox_d3d

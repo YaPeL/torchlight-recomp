@@ -3,6 +3,9 @@
 # The user's folders and their migration (user_folders.h): no SDL or runtime, tested on their own.
 # Writes that survive a power cut (durable_file.h), the same.
 include(durable_file.cmake)
+# When each present reached the screen (presentation_time.h): a development measurement, on
+# Wayland and Android; elsewhere, and off, presentation_time_none.cpp.
+option(TORCHLIGHT_PRESENTATION_TIME "Measure when presents reach the screen (Wayland, Android)" OFF)
 if(ANDROID)
     # Android (arm64-v8a, SDLActivity): its own platform, no X11 or Wayland; the window, folders,
     # lifecycle and input are stage A1 of docs/android-port.md (platform_android.cpp).
@@ -10,19 +13,26 @@ if(ANDROID)
     # The app's storage comes from the activity, through SDL (user_folders_android.cpp).
     target_link_libraries(torchlight_user_folders PRIVATE SDL3::SDL3)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_android.cpp text_wrap.cpp
-                presentation_time_none.cpp display_refresh_none.cpp)
+                display_refresh_none.cpp)
     # android: ANativeWindow from the Java surface (the surface's lifecycle).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE android)
+    # When each present reached the screen (presentation_time.h): a development measurement, on
+    # EGL_ANDROID_get_frame_timestamps; off in releases, which then ask the compositor for nothing.
+    if(TORCHLIGHT_PRESENTATION_TIME)
+        target_sources(torchlight_platform PRIVATE presentation_time_android.cpp)
+        target_link_libraries(torchlight_platform PRIVATE EGL)
+    else()
+        target_sources(torchlight_platform PRIVATE presentation_time_none.cpp)
+    endif()
 elseif(UNIX AND NOT APPLE)
     add_library(torchlight_user_folders STATIC user_folders.cpp user_folders_linux.cpp)
-    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp power_supply_linux.cpp
-                text_wrap.cpp display_refresh_none.cpp)
+    add_library(torchlight_platform STATIC platform_sdl.cpp platform_linux.cpp
+                power_supply_linux.cpp text_wrap.cpp display_refresh_none.cpp)
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
                           PRIVATE X11)
     # When each present reached the screen (presentation_time.h): a development measurement, on
     # Wayland's presentation-time protocol; off in releases, which then need no Wayland libraries.
-    option(TORCHLIGHT_PRESENTATION_TIME "Measure when presents reach the screen (Wayland)" OFF)
     if(TORCHLIGHT_PRESENTATION_TIME)
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(WAYLAND_CLIENT REQUIRED IMPORTED_TARGET wayland-client)
@@ -72,6 +82,14 @@ elseif(APPLE)
 else()
     message(FATAL_ERROR "torchlight_platform: no implementation for this platform yet")
 endif()
+# Where this run keeps the player's files (storage_mode.h). The portable folder beside the
+# application is the default of the packages (release.yml); a development build keeps the user's folders, so no
+# run from a build tree opens the first-start questions or offers to copy the real user data.
+option(TORCHLIGHT_PORTABLE_DEFAULT "Keep the player's files in a folder beside the application" OFF)
+target_sources(torchlight_user_folders PRIVATE storage_mode.cpp portable_copy.cpp)
+target_link_libraries(torchlight_user_folders PRIVATE torchlight_durable_file)
+target_compile_definitions(torchlight_user_folders PRIVATE
+    TORCHLIGHT_PORTABLE_DEFAULT=$<BOOL:${TORCHLIGHT_PORTABLE_DEFAULT}>)
 target_include_directories(torchlight_user_folders PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_user_folders PUBLIC cxx_std_23)
 target_compile_options(torchlight_user_folders PRIVATE -Wall -Wextra)
@@ -123,6 +141,27 @@ add_executable(user_folders_test user_folders_test.cpp)
 target_link_libraries(user_folders_test PRIVATE torchlight_user_folders)
 target_compile_options(user_folders_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME user_folders_test COMMAND user_folders_test)
+
+add_executable(storage_mode_test storage_mode_test.cpp)
+target_link_libraries(storage_mode_test PRIVATE torchlight_user_folders)
+target_compile_options(storage_mode_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME storage_mode_test COMMAND storage_mode_test)
+
+add_executable(portable_copy_test portable_copy_test.cpp)
+target_link_libraries(portable_copy_test PRIVATE torchlight_user_folders)
+target_compile_options(portable_copy_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME portable_copy_test COMMAND portable_copy_test)
+
+add_executable(portable_dirs_test portable_dirs_test.cpp)
+target_link_libraries(portable_dirs_test PRIVATE torchlight_platform)
+target_compile_options(portable_dirs_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME portable_dirs_test COMMAND portable_dirs_test)
+
+# AppRun hands the game the AppImage's path (AppRun.in), and only the game.
+if(UNIX AND NOT APPLE AND NOT ANDROID)
+    add_test(NAME apprun_test
+             COMMAND sh "${CMAKE_SOURCE_DIR}/packaging/linux/apprun_test.sh")
+endif()
 
 # On battery or not, from made-up /sys/class/power_supply trees (Linux's reader, pure C++).
 if(UNIX AND NOT APPLE AND NOT ANDROID)

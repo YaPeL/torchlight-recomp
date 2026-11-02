@@ -33,6 +33,23 @@ std::filesystem::path PlatformUserFolderBase(UserFolderKind kind) {
   return base;
 }
 
+std::filesystem::path HomeFolder() {
+  PWSTR path = nullptr;
+  std::filesystem::path home;
+  if (SUCCEEDED(SHGetKnownFolderPath(FOLDERID_Profile, KF_FLAG_DEFAULT, nullptr, &path))) home = path;
+  CoTaskMemFree(path);
+  return home;
+}
+
+std::vector<std::filesystem::path> FolderRoots() {
+  std::vector<std::filesystem::path> roots;
+  const DWORD drives = GetLogicalDrives();
+  for (int i = 0; i < 26; ++i) {
+    if (drives & (1u << i)) roots.push_back(std::string(1, char('A' + i)) + ":\\");
+  }
+  return roots;
+}
+
 bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to,
                      std::string& error) {
   // Without MOVEFILE_REPLACE_EXISTING the move fails when `to` exists; without

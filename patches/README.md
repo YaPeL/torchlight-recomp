@@ -57,13 +57,18 @@ in number order; a branch adds its own line at its number's place.
 | 39 | `rexglue-tests-depfile-escape-literals.patch` | `sdk/known-test-failures` | In the branch (after 38) |
 | 40 | `rexglue-chrono-nt-epoch-range.patch` | `sdk/known-test-failures` | In the branch (after 39) |
 | 41 | `rexglue-bitstream-write-byte-order.patch` | `sdk/known-test-failures` | In the branch (after 40) |
-| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41) |
-| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | In that branch (after 42) |
-| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `sdk/alloc-commit-mprotect` | In the branch (after 43); changes desktop Linux, needs the owner's OK |
-| 45 | `rexglue-arena-reserve-before-views.patch` | `sdk/arena-reserve` | In the branch (after 44); changes desktop Linux, needs the owner's OK |
-| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `sdk/android-sdl-wait` | In the branch (after 45) |
-| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 45; 46 is still on its branch); Android only |
-| 48 | | | Next free number |
+| 42 | `rexglue-android-gpu-plugin-by-name.patch` | `sdk/android-apk-libs` | In that branch (after 41), until the APK keeps its libraries inside (A6, `docs/android-port.md`) |
+| 43 | `rexglue-android-writable-settings.patch` | `sdk/android-apk-libs` | Withdrawn from our series (2026-10-22); an upstream draft (`docs/rexglue-upstream.md`, D33) |
+| 44 | `rexglue-alloc-commit-mprotect-first.patch` | `develop` | In the series (after 41); changes desktop Linux (the owner's OK) |
+| 45 | `rexglue-arena-reserve-before-views.patch` | `develop` | In the series (after 44); changes desktop Linux (the owner's OK) |
+| 46 | `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` | `develop` | In the series (after 45); Android only |
+| 47 | `rexglue-android-bsymbolic-functions.patch` | `develop` | In the series (after 46); Android only |
+| 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
+| 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
+| 50 | `rexglue-thread-dump.patch` | `develop` | In the series (after 49); diagnostics only |
+| 51 | `rexglue-android-sdl-power.patch` | `develop` | In the series (after 50); Android only |
+| 52 | `rexglue-phys-host-offset-no-compare.patch` | `develop` | In the series (after 51); changes Windows' and macOS arm64's generated code too (the owner's OK) |
+| 53 | | | Next free number |
 
 ## The patches
 
@@ -683,6 +688,14 @@ in number order; a branch adds its own line at its number's place.
     and the arena goes elsewhere (without the change the page reads 0); the guard pages have no
     access.
 
+46. `rexglue-android-sdl-wait-no-sentinel-wakeup.patch` (Android only; SDL's file): SDL 3.4.14's
+    `SDL_WaitEventTimeoutNS` waited on Android in a loop that pushed a poll sentinel each time,
+    and every pushed event sends a wakeup, so `Android_PumpEvents` returned at once and the SDL
+    thread spun about a full big core on the POCO X7 the whole game. The loop now pumps without
+    a new sentinel and waits at most 1 ms, as SDL's polling loop elsewhere. Upstream SDL (main,
+    release-3.4.x) has the same loop: worth reporting there. The first patch to a submodule's
+    file: the build scripts update submodules with `--force`.
+
 47. `rexglue-android-bsymbolic-functions.patch`: on Android the host app is a shared library, so
     every call it made to a function it defines itself went through the PLT (on Torchlight, all
     386,595 direct calls between guest functions). `rexglue_configure_target` links Android
@@ -698,4 +711,73 @@ in number order; a branch adds its own line at its number's place.
     -7.4 % in a fight (the two runs without it differ by 10 %); presented frame time unchanged
     (GPU-bound there).
 
+48. `rexglue-command-processor-spin-backoff.patch`: the command processor's thread yielded in a
+    loop while it had nothing to do (about a third of a core on the POCO X7 in a fight). With an
+    empty ring buffer it yields 16 times instead of 500 before waiting on its event (which every
+    write pointer update, and now every queued call, sets). In WAIT_REG_MEM it yields 16 times,
+    then sleeps 20 us doubling up to the packet's poll interval or 500 us, whichever is smaller
+    (with vsync on, never less than the whole milliseconds it slept before; it yielded on every
+    poll otherwise). Every poll still reads its register or memory; no unit test reaches these
+    loops. Torchlight on the POCO X7 (A B B A): the thread's share of the app's cycles in a
+    fight 9.49 -> 2.83 % with fps_cap 0 and 3.42 -> 2.24 % with fps_cap 60; frame times,
+    temperature and battery current unchanged beyond the runs' spread.
+
+49. `rexglue-command-processor-pending-calls-lock.patch`: the command processor's queue of calls
+    from other threads (`CallInThread`) was a `std::queue` without a lock, pushed from other
+    threads while the command processor's thread took calls from it. It is now
+    `rex::graphics::PendingCalls`, with a mutex; each call runs outside the lock, in the order
+    queued. Test: several threads push while one drains, every call runs in each thread's order;
+    under ThreadSanitizer no report with it, 61 races and a hang with its locks removed.
+
+50. `rexglue-thread-dump.patch`: `rex::system::LogThreadDump(reason)` logs every guest thread's
+    ids, state and current kernel wait (objects, kind, timeout, how long, guest LR), and the
+    command processor's ring pointers, idle or WAIT_REG_MEM wait (and for how long) and pending
+    calls, for a watchdog that found a hang. It takes none of the runtime's or the command
+    processor's locks: the threads write their own state into a fixed table of atomics with
+    sequence counters, a record being written is printed as inconsistent, other threads never
+    wait for a record's writer, and the command processor's section only tries its lock. It can
+    still wait on the log sink's lock and the heap's. Tests, under ThreadSanitizer too, hold a
+    record's writer and the pending calls' lock on other threads and check that the dump
+    returns.
+
+51. `rexglue-android-sdl-power.patch` (Android only): SDL was built with its power subsystem off
+    everywhere, so on Android `SDL_GetPowerInfo` always said unknown and an app could not tell
+    it ran on battery. `SDL_POWER` is on when `ANDROID` is set (SDL reads the battery through the
+    app's Java side); the desktop platforms keep it off.
+
+52. `rexglue-phys-host-offset-no-compare.patch`: the generated code's physical heap offset is
+    computed with shifts and an add instead of a comparison, with the same value for every address;
+    the runtime's `PhysicalHostOffset` keeps the comparison. Android arm64, Windows and macOS arm64
+    only.
+
 The observation and diagnostic patches there were before remain in the git history.
+
+## OGRE
+
+Patches to OGRE 14.6.0 are `ogre-*.patch` (not in `series`, which is the SDK's). `tools/deps/build_ogre.sh`
+(Linux, macOS, Android) and `tools/build-deps/windows.ps1` apply them to the OGRE checkout in name
+order with `git apply`, leaving a checkout they are already applied to as it is; Windows clones
+OGRE with LF line endings for them. Each applies to a pristine OGRE on its own: they must not
+depend on one another, so the order (which the two scripts' sorts could see differently for some
+names) never matters. `tools/deps/key.sh` hashes them with the rest of `patches/`, so a change
+rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Android one
+`tools/android/build_apk.sh` takes its media from) keeps the old OGRE until `build_ogre.sh` or
+`windows.ps1` is run again.
+
+- `ogre-rtss-skinning-blend-without-array-copy.patch`: from torchlight-rekindled (its patch 0024,
+  commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), unchanged. The RTSS's linear skinning blend
+  (`blendBonesMat3x4`, SGXLib_DualQuaternion.glsl) took the whole bone palette as an `in`
+  parameter; Mali's compiler copies it to the stack for every vertex. The blend becomes a macro
+  that indexes the uniform in place, the same arithmetic in the same order. The file is shared by
+  GLSL, GLSL ES and HLSL.
+- `ogre-gles2-discard-depth-on-swap.patch`: ours. On GLES 3, a render texture's
+  `swapBuffers` (a no-op for a frame buffer object before) invalidates its depth and stencil
+  attachments (`glInvalidateFramebuffer`), restoring the frame buffer bound before; multisampled
+  targets keep their resolve, GLES 2 does nothing. The backend calls it when the frontend's plan
+  says no pass reads that depth again (`frontend/depth_discard.h`, `tl_backend_discard_depth`), so
+  a tile GPU does not write it back to memory. GLES only (Android, and CI's GLES test build).
+- `ogre-gles2-sampler-once-per-texture.patch`: from torchlight-rekindled (its patch 0020 and the
+  sampler-state resets of its 0018, commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), Switch
+  guards removed. GLES2 writes a texture's sampler parameters only when they change (remembered on
+  the texture object, forgotten when its GL texture is made or freed). GLES only: Android, and
+  CI's GLES test build.

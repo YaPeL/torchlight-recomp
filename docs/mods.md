@@ -1408,7 +1408,8 @@ or Nintendo (`src/mods/pad_prompts.h`).
   (Linux, write access to `/dev/uinput`) follows the game's log and, after the first capture of
   `tools/input_scripts/pad-live-switch.txt`, creates a DualSense (`--kind ps5`; also `ps4`,
   `switch`) and presses R3 on it; after the second it removes it, and it removes it on any exit.
-  Run it with the game log folder (`~/.local/state/TorchlightRecomp/logs`) and start the game with
+  Run it with the game log folder (`~/.local/state/TorchlightRecomp/logs`, or `<root>/logs` with
+  `--user_data_root`) and start the game with
   `pad_prompts = "auto"` and `--dev_input_script tools/input_scripts/pad-live-switch.txt`. The log
   then shows "pad prompts: the pad changed; playstation5" and "...; xbox", and the three captures
   show the main menu's prompts as Xbox, PS5, Xbox. Validated with an 8BitDo pad in Xbox mode as

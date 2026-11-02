@@ -1,0 +1,38 @@
+OGRE patch (ours): GLES render textures discard their depth and stencil when the application swaps
+them.
+
+OGRE 14.6's GLES2FrameBufferObject::swapBuffers only acts on a multisampled FBO (resolve blit, then
+glInvalidateFramebuffer of the multisample FB); for a plain render texture it does nothing, so
+outside iOS (EAGL2Window) OGRE gives no way to tell a tile GPU that a pass's depth and stencil need
+not be written back to memory. With this patch RenderTexture::swapBuffers() on a GLES 3 render
+texture invalidates its depth and stencil attachments. RenderTarget::update() calls swapBuffers()
+only for auto-updated targets with swap = true; the backend's targets are not auto-updated and
+call it explicitly (tl_backend_discard_depth). GL3+ and Direct3D 11 render textures do nothing on
+swapBuffers without multisampling, unchanged.
+
+diff --git a/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp b/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
+index 6ad49ce..0df618d 100644
+--- a/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
++++ b/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
+@@ -260,6 +260,21 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+ 
+     void GLES2FrameBufferObject::swapBuffers()
+     {
++        GLRenderSystemCommon* rs = static_cast<GLRenderSystemCommon*>(Root::getSingleton().getRenderSystem());
++        if (!mMultisampleFB && rs->hasMinGLVersion(3, 0))
++        {
++            // The application says the pass is over and its depth and stencil are not needed
++            // again: a tile GPU then does not write them back to memory.
++            GLint oldfb = 0;
++            OGRE_CHECK_GL_ERROR(glGetIntegerv(GL_FRAMEBUFFER_BINDING, &oldfb));
++            if (GLuint(oldfb) != mFB)
++                OGRE_CHECK_GL_ERROR(glBindFramebuffer(GL_FRAMEBUFFER, mFB));
++            const GLenum attachments[] = {GL_DEPTH_ATTACHMENT, GL_STENCIL_ATTACHMENT};
++            OGRE_CHECK_GL_ERROR(glInvalidateFramebuffer(GL_FRAMEBUFFER, 2, attachments));
++            if (GLuint(oldfb) != mFB)
++                OGRE_CHECK_GL_ERROR(glBindFramebuffer(GL_FRAMEBUFFER, oldfb));
++            return;
++        }
+         if (mMultisampleFB)
+         {
+             GLint oldfb = 0;

@@ -8,7 +8,7 @@ game_root = "../360tools/extracted/extracted"
 [entrypoint]
 file_path = "../360tools/extracted/extracted/default.xex"
 out_directory_path = "generated/default"
-includes = ["config/torchlight_functions.toml"]
+includes = ["config/torchlight_functions.toml", "config/torchlight_hooks.toml"]
 # Codegen options (docs/guest-hot-paths.md, "Codegen options"): these registers live in C++ locals
 # of each function instead of the context. Validated with the game; non_argument_as_local, skip_lr
 # and skip_msr stay off (see there). With non_volatile_as_local no hook may read r14-r31, f14-f31

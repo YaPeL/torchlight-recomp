@@ -32,9 +32,9 @@ class FrameSeries {
   // A frame that ended at `now`, `dropped` frames skipped before it (counted, not timed). The
   // first call only starts the series. Returns the frame's time (ms), if there was one.
   std::optional<double> Add(Clock::time_point now, size_t dropped = 0);
-  // Every kSummaryPeriod: the period's summary ("N frames, mean ... ms (... fps), p95 ..., p99 ...,
-  // max ..., over 33 ms N, over 50 ms N"), and the frames dropped in it; then the period starts
-  // over.
+  // Every kSummaryPeriod: the period's summary ("N frames, mean ... ms (... fps), p50 ..., p95 ...,
+  // p99 ..., max ..., over 33 ms N, over 50 ms N"), and the frames dropped in it; then the period
+  // starts over.
   std::optional<std::string> TakeSummary(Clock::time_point now, size_t* dropped = nullptr);
   // The frame times (ms) of the last kRecent, oldest first, and the frames dropped in them.
   std::vector<float> Recent(size_t* dropped = nullptr);
@@ -67,6 +67,12 @@ struct LatencyMeans {
 };
 LatencyMeans MeanLatency(const std::vector<PresentLatency>& frames);
 
+// Called on the guest's render thread right after each "frame time (guest swap to swap)" summary
+// (every 10 s), for diagnostics that report on the same windows (hooks/census_hooks.cpp,
+// hooks/queue_census_hooks.cpp). Up to four, added once; false when there is no room.
+using SummaryHook = void (*)();
+bool AddSummaryHook(SummaryHook hook);
+
 class FrameTiming {
  public:
   static FrameTiming& Get();
@@ -85,10 +91,12 @@ class FrameTiming {
   // mode.
   LatencyMeans RecentLatency(std::chrono::milliseconds window);
   // Backend thread: a frame reached the screen `ms` after the guest's swap that cut it (the window
-  // system's presentation time, platform/presentation_time.h; development builds on Wayland).
-  // `gap_ms`: since the screen's previous frame (0 for the first); past one refresh and a half, a
-  // refresh showed the previous frame again (a stutter).
-  void OnScreen(double ms, double gap_ms = 0);
+  // system's presentation time, platform/presentation_time.h; development builds on Wayland and
+  // Android). `gap_ms`: since the screen's previous frame (0 for the first, or after frames not
+  // measured); past one refresh and a half, a refresh showed the previous frame again (a stutter).
+  // `refresh_ms`: the display's refresh period (0 if unknown), for the even-frames count
+  // (live/frame_pacing.h).
+  void OnScreen(double ms, double gap_ms = 0, double refresh_ms = 0);
   // The mean swap-to-screen latency over the last `window` and how many frames; 0 when unknown.
   double RecentScreenLatency(std::chrono::milliseconds window, size_t* frames = nullptr);
 
@@ -122,7 +130,7 @@ class FrameObserver {
   virtual void OnGuestFrame(double ms) = 0;
   virtual void OnPresentedFrame(double ms, size_t dropped, const PresentLatency& latency) = 0;
   // A frame reached the screen `ms` after its guest swap (FrameTiming::OnScreen).
-  virtual void OnScreenFrame(double /*ms*/, double /*gap_ms*/) {}
+  virtual void OnScreenFrame(double /*ms*/, double /*gap_ms*/, double /*refresh_ms*/) {}
   virtual void OnLevelLoaded() = 0;
 };
 // Before the guest runs; null removes it.

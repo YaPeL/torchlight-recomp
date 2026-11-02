@@ -19,6 +19,7 @@
 #include "live/busy_notice.h"
 #include "platform/display_refresh.h"
 #include "live/frame_reclaimer.h"
+#include "live/frame_pacing.h"
 #include "live/frame_step.h"
 #include "live/frame_timing.h"
 #include "live/live_content_source.h"
@@ -45,8 +46,8 @@ struct Series {
     for (double v : values) sum += v;
     auto pct = [&](double p) { return values[std::min(values.size() - 1, size_t(p * values.size()))]; };
     char buf[128];
-    std::snprintf(buf, sizeof(buf), "mean %.2f ms, p95 %.2f, p99 %.2f, max %.2f", sum / values.size(),
-                  pct(0.95), pct(0.99), values.back());
+    std::snprintf(buf, sizeof(buf), "mean %.2f ms, p50 %.2f, p95 %.2f, p99 %.2f, max %.2f",
+                  sum / values.size(), pct(0.5), pct(0.95), pct(0.99), values.back());
     values.clear();
     return buf;
   }
@@ -114,6 +115,7 @@ void LiveMode::Start(const LiveOptions& options) {
   queue_.SetCapacity(FrameQueueDepth(options.frame_queue, options.vsync));
   running_ = true;
   capture::Session::Get().SetProducerTiming(options.producer_timing);
+  capture::Session::Get().SetShadowIndex(options.shadow_index, options.shadow_index_check);
   capture::Session::Get().EnableLive(&queue_, &store_);
   finished_ = false;
   thread_ = std::thread([this] {
@@ -152,9 +154,10 @@ void LiveMode::RunWithoutDrawing() {
   Series consume_ms;
   auto last_summary = Clock::now();
   while (running_) {
-    auto frame = queue_.Pop(std::chrono::milliseconds(100));
+    auto frame = queue_.Pop(std::chrono::milliseconds(100), false);
     if (!frame) continue;
     auto start = Clock::now();
+    frame->MergeAbsorbed();
     frames_dropped += frame->dropped_before;
     content.Apply(*frame);
     for (const auto& cmd : frame->commands) draws += std::holds_alternative<commands::Draw>(cmd.payload);
@@ -245,7 +248,6 @@ void LiveMode::Run() {
   std::unique_ptr<platform::PresentationClock> presentation =
       parent.system != platform::NativeWindow::kNone ? platform::CreatePresentationClock(parent)
                                                      : nullptr;
-  if (presentation) REXLOG_INFO("live: presentation times from the window system");
   // Where the swap interval does not pace the presents (macOS, display_refresh.h): the display's
   // refresh does, waited for before each present while vsync is on, with the swap interval left off
   // so the two never wait together.
@@ -254,6 +256,8 @@ void LiveMode::Run() {
   if (refresh) tl_backend_set_vsync(backend, 0);
   std::deque<std::pair<uint64_t, Clock::time_point>> cuts;  // presented frames awaiting the screen
   Clock::time_point last_shown{};  // the screen's previous frame
+  PacingCounter pacing;            // refreshes each shown frame stayed, for the 10 s summary
+  bool presentation_logged = false;  // the first frame the window system said it showed
   // Internal render scale for the current window size (LiveOptions::render_resolution).
   settings::Resolution window_size{options_.window_width, options_.window_height};
   auto apply_render_scale = [&] {
@@ -277,6 +281,8 @@ void LiveMode::Run() {
   }
   LiveContentSource content(pak);
   frontend::Frontend frontend(backend, content);
+  frontend.SetDepthDiscard(options_.depth_discard);
+  REXLOG_INFO("live: depth discard {} (--diag_depth_discard)", options_.depth_discard ? "on" : "off");
 
   // Session recording (--live_record): every consumed frame, before it is run.
   SessionWriter recorder;
@@ -334,7 +340,8 @@ void LiveMode::Run() {
     // between slices.
     const bool idle_start = last_present.time_since_epoch().count() == 0;
     const bool precompiling = !precompile_done && (LevelLoading() || idle_start);
-    auto frame = queue_.Pop(std::chrono::milliseconds(precompiling ? 0 : 100));
+    // Unmerged: the frames dropped into it are merged below, inside this frame's timed work.
+    auto frame = queue_.Pop(std::chrono::milliseconds(precompiling ? 0 : 100), false);
     if (!frame && precompiling) {
       const size_t left = tl_backend_precompile_programs(backend, 50.0);
       tl_backend_counters counters;
@@ -374,6 +381,7 @@ void LiveMode::Run() {
       continue;
     }
     auto start = Clock::now();
+    frame->MergeAbsorbed();
     frames_dropped += frame->dropped_before;
     dropped_since_present += frame->dropped_before;
     FrameRecord record;
@@ -441,14 +449,24 @@ void LiveMode::Run() {
         if (presentation) {
           cuts.emplace_back(frame->swap, frame->cut);
           for (const auto& shown : presentation->TakeShown()) {
+            if (!presentation_logged) {
+              REXLOG_INFO("live: presentation times from the window system");
+              presentation_logged = true;
+            }
             while (!cuts.empty() && cuts.front().first < shown.id) cuts.pop_front();
+            // After frames the measurement lost, the time since the previous frame shown is not
+            // this one's time on screen.
+            const Clock::duration since = last_shown.time_since_epoch().count() && !shown.after_loss
+                                              ? shown.time - last_shown
+                                              : Clock::duration{};
+            last_shown = shown.time;
+            pacing.AddShown(since, shown.refresh);
+            // The perf steps (OnScreen) see only the frames still followed from their cut.
             if (cuts.empty() || cuts.front().first != shown.id) continue;
             const double ms = Ms(shown.time - cuts.front().second);
             screen_ms.Add(ms);
-            const double gap =
-                last_shown.time_since_epoch().count() ? Ms(shown.time - last_shown) : 0.0;
-            last_shown = shown.time;
-            FrameTiming::Get().OnScreen(ms, gap);
+            const double gap = Ms(since);
+            FrameTiming::Get().OnScreen(ms, gap, Ms(shown.refresh));
           }
           while (cuts.size() > 64) cuts.pop_front();
         }
@@ -502,6 +520,14 @@ void LiveMode::Run() {
     record.program_generate_ms = counters.program_generate_ms;
     record.gpu_buffers_created = counters.gpu_buffers_created;
     record.vertex_layouts_created = counters.vertex_layouts_created;
+    record.uploads = counters.textures_uploaded;
+    record.uploads_rgba8 = counters.textures_rgba8;
+    record.uploads_rgb8 = counters.textures_rgb8;
+    record.uploads_compressed = counters.textures_compressed;
+    record.uploads_other = counters.textures_other;
+    record.upload_bytes = counters.texture_bytes;
+    record.dxt_decoded = counters.dxt_decoded;
+    record.dxt_decode_ms = counters.dxt_decode_ms;
     if (auto line = slow_frames.Add(record)) REXLOG_INFO("live: {}", *line);
 
     if (end - last_summary >= std::chrono::seconds(10)) {
@@ -512,17 +538,22 @@ void LiveMode::Run() {
           "\n  backend frame: {}\n  present (vsync wait included): {}"
           "\n  swap-to-presented latency: {}\n    of it waiting in the frame queue: {}"
           "\n  swap-to-screen latency (window system's presentation times): {}"
+          "\n  refreshes each frame stayed on screen: {}"
           "\n  texture preparation per "
           "frame: {}\n  live content held: {:.1f} MiB (store {:.1f} MiB)"
           "\n  skipped:{}\n  degraded:{}\n  texture problems:{}",
           frames, frames_dropped, s.draws_total - draws_before, s.draws_drawn - drawn_before,
           s.textures_not_ready - not_ready_before, textures_created, slow_texture_frames,
           backend_ms.Summary(), present_ms.Summary(), latency_ms.Summary(), queue_ms.Summary(),
-          screen_ms.Summary(),
+          screen_ms.Summary(), PacingCounter::Describe(pacing.Take()),
           texture_ms.Summary(),
           content.content_bytes() / 1048576.0, store_.bytes() / 1048576.0,
           Delta(s.skipped, skipped_before), Delta(s.degraded, degraded_before),
           Delta(s.texture_problems, problems_before));
+      if (options_.shadow_index_check) {
+        const auto [lookups, mismatches] = capture::Session::Get().ShadowIndexChecks();
+        REXLOG_INFO("diag shadow index: {} lookups checked, {} mismatches", lookups, mismatches);
+      }
       const double per = double(std::max<size_t>(frames, 1));
       REXLOG_INFO("live consumer (backend thread, ms per frame): content and textures {:.2f}, "
                   "commands {:.2f} (frontend {:.2f}, backend draws {:.2f}), frame end {:.2f}, "

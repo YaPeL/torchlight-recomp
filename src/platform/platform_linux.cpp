@@ -247,6 +247,10 @@ std::string ExecutableDir() {
   return exe.parent_path().string() + "/";
 }
 
+void PrintStartupError(const std::string& message) {
+  std::fprintf(stderr, "ERROR: %s\n", message.c_str());
+}
+
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
 
 std::string DataDir() { return UserDir(UserFolderKind::kData); }
@@ -257,7 +261,7 @@ std::string GameDataDir() {
 }
 
 std::string LogDir() {
-  return UserDir(UserFolderKind::kState, "logs");
+  return UserDir(UserFolderKind::kState, LogsSubfolder());
 }
 
 void BringToFront() {}
@@ -323,6 +327,8 @@ void RunOnWindowThread(const std::function<void()>& work) { work(); }
 void WaitServingWindowThread(const std::function<bool()>&) {}
 
 // The window system never takes the backend's surface away here.
+uint64_t SurfaceAwayCount() { return 0; }
+
 bool ServeSurfaceChanges(const std::function<void()>&,
                          const std::function<bool(const NativeWindow&)>&) {
   return true;
@@ -340,6 +346,8 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 float ContentScaleDpi() { return 96.0f; }  // the desktop's nominal
 
 bool TouchControlsByDefault() { return false; }
+
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
 
 bool HasSystemBackButton() { return false; }
 

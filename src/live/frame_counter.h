@@ -31,6 +31,10 @@ FrameCounterStats SummarizeFrames(const std::vector<float>& frame_ms);
 
 // UI thread, once the runtime exists: F3 (bind_frame_counter) shows and hides the counter.
 void InstallFrameCounter(rex::Runtime* runtime);
+// UI thread, once the runtime's UI drawer exists (ReXApp::OnCreateDialogs; in only mode, the live
+// mode's drawer): the counter shown from the start with --frame_counter, where there is no F3 to
+// press (a tablet).
+void ShowFrameCounterIfAsked();
 // The counter's dialog while it is shown, else null (only mode draws it but keeps it out of "a
 // dialog is open", which would cut the guest's input).
 rex::ui::ImGuiDialog* FrameCounterDialog();

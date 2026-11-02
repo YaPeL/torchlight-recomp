@@ -1,0 +1,7 @@
+# The pages in a language, for their texts' fit: no install, the game asked first.
+page game 5
+shot setup-game
+press a
+page browser 5
+shot setup-browser
+quit

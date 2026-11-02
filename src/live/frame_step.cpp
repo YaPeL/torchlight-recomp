@@ -42,6 +42,7 @@ FrameStep RunFrameStep(LiveFrame& frame, LiveContentSource& content, frontend::F
   step.content_ms = since();
   const double draws_before = frontend.stats().draw_ms;
   frontend.BeginFrame();
+  frontend.PlanTargets(frame.commands);
   for (const auto& cmd : frame.commands) {
     step.commands_by_opcode[commands::OpcodeOf(cmd.payload) - 1]++;
     frontend.Execute(cmd);

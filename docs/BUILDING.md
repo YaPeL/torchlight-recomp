@@ -1,13 +1,17 @@
 # Building and running from source
 
 Requirements: the ReXGlue SDK with the patches from `patches/` (in the order of `patches/series`),
-OGRE 14.6.0, and the game's files (the first start installs them from your package, see below; for
-development they can also be passed with `--game_data_root`). All commands are run from
-the repository's root.
+OGRE 14.6.0, Python 3 for any build of the game (every platform: it checks the generated code the
+host wardrobe blend loop relies on, `tools/wardrobe_blend/check_generated.py`), and the game's
+files (the first start installs them from your package, see below; for development they can also
+be passed with `--game_data_root`). All commands are run from the repository's root.
 
 The SDK and OGRE are built with the same scripts CI uses (`tools/deps/`; Release; CI publishes them
 as `deps-<key>` downloads, `tools/deps/key.sh`). On Ubuntu 22.04, `tools/deps/ubuntu_toolchain.sh`
-(as root) installs the toolchain CI uses: clang 21, libstdc++ 13, a recent CMake:
+(as root) installs the toolchain CI uses: clang 21, libstdc++ 13, a recent CMake. Every configure
+also needs LLVM's `llvm-nm` and `llvm-objdump` (package `llvm-21`; on Windows LLVM's installer,
+on macOS Xcode's): after each game link, `tools/android/check_guest_call_binding.py` checks that the
+generated code's calls reach the hooks, which adds about 20 s to the link:
 
 ```sh
 tools/deps/build_sdk.sh ~/rexglue-sdk/out/install/linux-amd64 "" all
@@ -117,7 +121,9 @@ found by itself).
 Without `--game_data_root` the game uses its own copy of the game files in
 `~/.local/share/TorchlightRecomp/game/`: on the first start it asks for your Torchlight XBLA package
 (or an extracted folder), checks it against the supported version (1.0.140.0) and installs it
-there. `game_setup_test PACKAGE` checks a package the same way without starting the game. The game
+there; restart the game after adding files to that folder, which it reads as unchanging while it
+runs (`hooks/missing_file_cache.h`). `game_setup_test PACKAGE` checks a package the same way
+without starting the game. The game
 runs as the full game (`license_mask` 1); `--license_mask=0` gives the demo.
 
 The first configure downloads miniz 3.0.2 (for the save import, `src/save_import/CMakeLists.txt`,
@@ -226,23 +232,34 @@ The user's folders are named `TorchlightRecomp` (so they do not collide with the
 `~/.local/share/TorchlightRecomp/` (saves, `save-backups`, profiles; the runtime's default
 `--user_data_root`), or under the `XDG_*_HOME` directories. At startup, each folder still named
 `torchlight` is renamed to `TorchlightRecomp` when the new one does not exist yet and the old one
-holds this project's files; with both, nothing is touched. The log says what moved.
+holds this project's files; with both, nothing is touched. The log says what moved. A run with
+`--user_data_root`, `--game_data_root` or `--cache_root` moves nothing.
 
-With `--user_data_root` (or `--cache_root`), everything the player's mods and their progress
-use moves below it (`settings/user_folders_in_use.h`): `mods/`, `mod_set.txt`, `replacements/`, the
-PC achievement progress (`achievements/`) and the generated caches (`unitdata/`, `atlases/`,
-`prompts/`, below the runtime's cache root, `<user_data_root>/cache/` unless `--cache_root` came).
-Without them nothing moves. The settings (`settings.toml`, the config folder), the shader cache and
-the widened layouts do not follow these flags: a test run that must not touch them also needs its
-own `XDG_CONFIG_HOME` and `XDG_CACHE_HOME` (Linux).
+A run with `--user_data_root` touches nothing outside it (`platform/user_folders.h`, `SetRunRoots`):
+`<root>/config/` (settings, and the runtime's `torchlight.toml`), `logs/`, `cache/` (shaders, layouts,
+atlases, prompts, `unitdata/`), `game/` (with `import/`), and in the root itself the saves, `mods/`,
+`mod_set.txt`, `replacements/` and `achievements/`. To run with given settings, put a
+`settings.toml` in `<root>/config/` first; without one the defaults apply and the achievements
+question is not asked. The game is read from `<root>/game/`, so a root is normally used with
+`--game_data_root`: without it and with no game there, the run stops at once with an error on stderr
+(logcat on Android; `platform::PrintStartupError`) and exit code 1, never the first-start setup's question. `--cache_root` moves the cache, alone or
+with `--user_data_root`. `--game_data_root` alone only says where to read the game from: that run
+uses the player's saves and settings. A measurement brings its own `<root>/config/settings.toml`
+with the frame rate cap, the vsync and the achievement set explicit, and its shader cache starts
+empty in a fresh root (`--cache_root` keeps one between runs). Outside the project's reach: the
+graphics and audio libraries' own caches, and on Android the APK's resources, which the app copies
+to its internal storage.
 
-Pending (isolation): on Windows and macOS there is no such variable, so a test run with
-`--user_data_root` still reads and writes the real shader cache folder
-(`%LOCALAPPDATA%\TorchlightRecomp\ogre`, with Direct3D 11's program cache in it, and
-`~/Library/Caches/TorchlightRecomp/ogre`) and the real settings. Making them follow
-`--user_data_root` / `--cache_root` is still to do.
+Packages keep all of this in a portable folder, `TorchlightRecomp-data/` beside the AppImage, the
+`.exe` or the `.app` (`platform/storage_mode.h`), with `config/`, `logs/`, `cache/`, `data/` and
+`game/`. The CMake option `TORCHLIGHT_PORTABLE_DEFAULT` turns it on, which `release.yml` does. On the
+first start the setup wizard shows where the files will go and offers copying them from the user's
+folders or another portable folder (never moving or deleting the originals; `platform/portable_copy.h`),
+or using the user's folders. Where the folder cannot be created or written, it warns and offers only
+the user's folders. A build without the option, a run with `--user_data_root` or `--game_data_root` and
+the tests never use one. Android keeps its app's storage.
 
-The logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
+Without `--user_data_root`, the logs go to `~/.local/state/TorchlightRecomp/logs/`, shared by every build and worktree: the
 runtime's as `torchlight_NNN.log` and OGRE's next to it as `torchlight_NNN_ogre.log`. The game
 prints the log's path at startup, and the first line of each log has the executable's path and the
 build's commit (`git describe`, `-dirty` with local changes). `--log_file=PATH` puts the runtime's

@@ -67,7 +67,9 @@ if [ ! -d "$src/.git" ]; then
 fi
 git -C "$src" checkout --quiet --force "$SDK_COMMIT"
 git -C "$src" clean -fdxq -e out
-git -C "$src" submodule update --init --recursive --quiet
+# --force: a reused WORK_DIR keeps what patches changed inside submodules (thirdparty/sdl3), which
+# a plain update leaves in place; the patches below would then not apply again.
+git -C "$src" submodule update --init --recursive --force --quiet
 
 # The patches, in order; the Windows-only ones are skipped.
 grep -vE '^(#|$)' "$root/patches/series" | while read -r patch kind; do
