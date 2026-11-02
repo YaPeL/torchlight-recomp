@@ -382,6 +382,14 @@ struct Segment {
   }
 };
 
+// Milliseconds since the program started: the keystrokes' clock, as the touch controls' (from 0, so
+// it does not wrap for 49 days).
+uint32_t NowMs() {
+  static const auto start = std::chrono::steady_clock::now();
+  return static_cast<uint32_t>(
+      std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count());
+}
+
 // The script's controller: one synthetic device, which the SDK feeds to guest user 0 together with
 // any real controller (rex::input::SlotAssignment / SharedAssignment).
 class ScriptInputDriver : public rex::input::InputDriver {
@@ -446,14 +454,17 @@ class ScriptInputDriver : public rex::input::InputDriver {
                               rex::input::X_INPUT_KEYSTROKE* out) override {
     if (id != kDevice || !connected_) return X_ERROR_DEVICE_NOT_CONNECTED;
     std::lock_guard lock(mutex_);
-    // Not read while the input is inactive: the keystrokes wait (and expire) as they would.
-    if (!is_active()) return X_ERROR_EMPTY;
-    const auto key = keys_.Pop(input::KeystrokeQueue::Clock::now());
+    // As the SDK's SDL pad driver makes them for a real pad (input::PadKeystrokeSource), the
+    // sticks' directions (VK_PAD_LTHUMB_*) and the repeat included: the menus that move with the
+    // stick (the inventory's filter, the skills' cursor) move with a script's stick too.
+    const auto key = keys_.Next(is_active(), NowMs());
     if (!key) return X_ERROR_EMPTY;
     if (out) {
       std::memset(out, 0, sizeof(*out));
       out->virtual_key = key->virtual_key;
-      out->flags = key->down ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN : rex::input::X_INPUT_KEYSTROKE_KEYUP;
+      out->flags = !key->down     ? rex::input::X_INPUT_KEYSTROKE_KEYUP
+                   : key->repeat ? rex::input::X_INPUT_KEYSTROKE_KEYDOWN | rex::input::X_INPUT_KEYSTROKE_REPEAT
+                                 : rex::input::X_INPUT_KEYSTROKE_KEYDOWN;
     }
     return X_ERROR_SUCCESS;
   }
@@ -462,7 +473,7 @@ class ScriptInputDriver : public rex::input::InputDriver {
   void Set(const PadState& pad) {
     std::lock_guard lock(mutex_);
     if (pad == pad_) return;
-    keys_.Push(pad_, pad, input::KeystrokeQueue::Clock::now());
+    keys_.Changed(pad, NowMs());
     pad_ = pad;
     ++packet_;
   }
@@ -473,7 +484,7 @@ class ScriptInputDriver : public rex::input::InputDriver {
   std::mutex mutex_;
   PadState pad_;
   uint32_t packet_ = 1;
-  input::KeystrokeQueue keys_;
+  input::PadKeystrokeSource keys_;
   std::atomic<bool> connected_{true};
 };
 
