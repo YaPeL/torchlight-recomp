@@ -19,6 +19,9 @@ inline bool WriteSyntheticPackage(const std::filesystem::path& path,
   constexpr size_t kBlock = 0x1000, kHeader = 0xA000;
   constexpr uint32_t kEndOfChain = 0xFFFFFF;
   size_t blocks = 1;  // the file table
+  for (const auto& [name, data] : files) {
+    if (name.size() > 40) return false;
+  }
   for (const auto& [name, data] : files) blocks += std::max<size_t>(1, (data.size() + kBlock - 1) / kBlock);
   if (blocks >= 170 || files.size() > 64) return false;
 
@@ -47,7 +50,7 @@ inline bool WriteSyntheticPackage(const std::filesystem::path& path,
   for (const auto& [name, data] : files) {
     const size_t count = std::max<size_t>(1, (data.size() + kBlock - 1) / kBlock);
     const size_t entry = block_at(0) + index++ * 0x40;
-    out.replace(entry, std::min<size_t>(name.size(), 40), name);
+    out.replace(entry, name.size(), name);
     out[entry + 0x28] = char(name.size());
     le24(entry + 0x29, uint32_t(count));
     le24(entry + 0x2C, uint32_t(count));
