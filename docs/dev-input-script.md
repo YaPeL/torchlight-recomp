@@ -121,14 +121,18 @@ A `dump_ui` that cannot be written (no `--capture_dir`, no game UI yet) fails th
 
 The script's controller gives the menus that read keystrokes the same ones a real pad gives, as the
 touch controls do (`input::PadKeystrokeSource`, the SDK's SDL pad driver's rules): the buttons, the
-triggers and the sticks' directions (`VK_PAD_LTHUMB_*`, past the SDK's dead zone), with a held key
-repeated after 400 ms and then every 100 ms. So `stick left 1 0 for 0.3s` is one step right in a
-menu that moves with the stick (the inventory's filter, the skills' cursor); a longer push repeats.
+triggers past the SDK's threshold (`0x1F`), and both sticks' directions and diagonals
+(`VK_PAD_LTHUMB_*`, `VK_PAD_RTHUMB_*`, past the SDK's dead zone), with a held key repeated after
+400 ms and then every 100 ms. So `stick left 1 0 for 0.3s` is one step right in a menu that moves
+with the stick (the inventory's filter, the skills' cursor); a longer push repeats. A `replay`
+recording gives these keystrokes too, during play as well as in menus: replays and hero traces
+recorded before 2026-11-02 (when sticks gave none and any trigger value did) may differ.
 A button pressed and released before the game reads keystrokes is still reported if it reads within
 200 ms; one the game has not read by then is dropped, as a screen that does not read keystrokes (the
-title) would otherwise leave its presses to the next screen. A press during a long stall (a level
-load) may therefore reach the game as a held button only. While a host dialog has the controller,
-nothing is reported, and the keys held then are released.
+title) would otherwise leave its presses to the next screen. A press that is also released during a
+long stall (a level load) may therefore not reach the game as a keystroke; one still held when the
+game reads gets its key down. While a host dialog has the controller, only the releases of the keys
+held then are reported.
 
 The dumps run on the game's thread at the frame's swap (CGameUI::Update does not run on every
 screen). Host dialogs (the achievement list, the runtime's message boxes) are ImGui, not CEGUI:
