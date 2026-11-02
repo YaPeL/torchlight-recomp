@@ -312,12 +312,14 @@ bool ServeSurfaceChanges(const std::function<void()>& lost,
   }
 }
 
-void SurfaceTaken() {
+void SurfaceTaken(uint64_t window) {
   Surface& s = TheSurface();
   std::lock_guard lock(s.mutex);
-  // A surface destroyed while no backend drew in it, and given back since: the backend's window
-  // was just made on it through SDL's window, so it is present, not one to restore.
+  // A surface destroyed while no backend drew in it, and given back since: when the backend's
+  // window was just made on that one (through SDL's window; Android gives the same ANativeWindow
+  // for the same surface), it is present, not one to restore.
   if (s.state != SurfaceState::kGone || !s.new_window) return;
+  if (uint64_t(uintptr_t(s.new_window)) != window) return;
   SDL_Log("surface: back before the backend existed; its window is made on it");
   ANativeWindow_release(s.new_window);
   s.new_window = nullptr;
@@ -327,7 +329,7 @@ void SurfaceTaken() {
 bool GameWindowMayGetSurface() {
   Surface& s = TheSurface();
   std::lock_guard lock(s.mutex);
-  return s.state != SurfaceState::kEnding;
+  return s.state == SurfaceState::kGoing || s.state == SurfaceState::kGone;
 }
 
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {

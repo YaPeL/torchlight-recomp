@@ -250,7 +250,7 @@ bool ServeSurfaceChanges(const std::function<void()>&,
   return true;
 }
 
-void SurfaceTaken() {}
+void SurfaceTaken(uint64_t) {}
 
 bool GameWindowMayGetSurface() { return false; }
 

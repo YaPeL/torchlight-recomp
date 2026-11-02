@@ -6,7 +6,6 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
-#include <thread>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
@@ -14,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include <rex/cvar.h>
 #include <rex/graphics/graphics_system.h>
