@@ -39,7 +39,7 @@ sed "s/@VERSION@/$version/g" "$here/Info.plist.in" > "$contents/Info.plist"
 plutil -lint "$contents/Info.plist" >/dev/null
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
-swift "$here/make_icon.swift" "$here/../linux/torchlight-recomp.svg" "$work/icon.iconset"
+swift "$here/make_icon.swift" "$here/../../data/icon/torchlight-recomp-256.png" "$work/icon.iconset"
 iconutil -c icns "$work/icon.iconset" -o "$contents/Resources/torchlight-recomp.icns"
 
 # Inside out: every library and plugin, then the bundle (its executable and the resources' seal).

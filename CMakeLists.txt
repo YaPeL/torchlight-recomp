@@ -430,6 +430,16 @@ add_dependencies(torchlight torchlight_build_info)
 target_include_directories(torchlight PRIVATE "${TORCHLIGHT_BUILD_INFO_DIR}")
 endif()
 
+# The game's icon in the Windows executable (data/icon/README.md). The path is generated: rc files
+# have no way to name a folder of the build's own.
+if(WIN32 AND TORCHLIGHT_GAME)
+    enable_language(RC)
+    set(_icon "${CMAKE_SOURCE_DIR}/data/icon/torchlight-recomp.ico")
+    file(WRITE "${CMAKE_BINARY_DIR}/torchlight_icon.rc" "1 ICON \"${_icon}\"\n")
+    target_sources(torchlight PRIVATE "${CMAKE_BINARY_DIR}/torchlight_icon.rc")
+    set_source_files_properties("${CMAKE_BINARY_DIR}/torchlight_icon.rc" PROPERTIES OBJECT_DEPENDS "${_icon}")
+endif()
+
 # Every Windows executable (game, replay, tests):
 # - Windows has no rpath: they share one directory (set above), and the DLLs they link (OGRE's, the
 #   SDK's; the replay links them all) are copied there once, before any of them builds;

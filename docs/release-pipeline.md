@@ -296,7 +296,8 @@ researched: whether any recomp has received a takedown.
 - Wording that does not overstate: "The releases contain no game assets and no original game files.
   The executable is built from the game's code and only runs with files from your own copy of
   Torchlight (Xbox LIVE Arcade)." Plus "unofficial, not affiliated with" the rights holders.
-- Our own icon and name for the AppImage/`.desktop`, not the game's `TitleIcon.png` or logo.
+- Our own icon (the owner's cat, `data/icon/README.md`) and name for the packages, not the game's
+  `TitleIcon.png` or logo.
 - Nothing from the game or from third party translations in the repo or in the packages (already a
   project rule).
 - The repo's license: GPL-3.0 for the project (`LICENSE`) and BSD-3-Clause for the SDK patches
@@ -409,14 +410,16 @@ the game's code is published on purpose, from a tag.
 ### 5.5 What the user does
 
 1. Download the AppImage (the zip on Windows, after the beta), mark it executable.
-2. First launch without game data: the game asks for the Torchlight XBLA package (the `LIVE` file)
-   or an already extracted folder, checks the title ID and the SHA-256 of `default.xex` and the data
-   files, and extracts/copies into a writable data folder (`~/.local/share/torchlight/game/` on
-   Linux; `%LOCALAPPDATA%` on Windows, after the beta), where `import/` can also live.
-   `game_data_root` is stored in the config so it does not ask again. The SDK already reads STFS
-   packages (`StfsContainerDevice`), so extraction needs no external tool. `--game_data_root` keeps
-   working for developers.
-3. Steam Deck: do step 2 in Desktop Mode, then "Add to Steam" and play from Game Mode.
+2. First launch: the setup wizard, one window played with a pad, a mouse or a keyboard
+   (`src/wizard/`, `src/game_setup/setup_pages.h`). It shows where the files will go, the portable
+   folder `TorchlightRecomp-data/` beside the package, and offers copying them from the user's folders
+   or another portable folder, or using the user's folders. Then it asks for the Torchlight XBLA
+   package (the `LIVE` file) or an already extracted folder, checks the title ID and the SHA-256 of
+   `default.xex` and the data files, extracts or copies them, and asks for the achievement set. The
+   SDK already reads STFS packages (`StfsContainerDevice`), so extraction needs no external tool.
+   `--game_data_root` keeps working for developers.
+3. Steam Deck: the same in Game Mode, where the wizard's own browser replaces the system's picker
+   (the Deck itself has not been tested yet).
 
 ### 5.6 Tasks, by area
 

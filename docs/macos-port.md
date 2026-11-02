@@ -812,7 +812,8 @@ finds no dependency outside the bundle and the system.
   (`LiveMode::Stop()`, `live_mode.cpp:132`).
 - Xenos is not in the package: the SDK looks for MoltenVK in `Contents/lib`, which a signed bundle
   cannot hold. The emulated GPU stays a build-tree diagnostic on macOS (MAC.10).
-- The message-box dialogs (the achievements choice, errors, the package picker) activate the
+- Since the setup wizard, the first start is its window, which also comes to the front. The
+  message-box dialogs (errors) activate the
   application first (`platform::BringToFront`), so they no longer open behind the terminal or
   Finder.
 - Quarantine test: no second account; instead, `com.apple.quarantine` set on the `.dmg` as a
