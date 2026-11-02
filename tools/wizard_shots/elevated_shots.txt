@@ -1,5 +1,9 @@
-# The warning of a run as administrator, beside a place it can write.
+# The warning of a run as administrator, beside a place it can write: shown whole from its title,
+# with the focus on the user's folders, which A then takes.
 page storage 5
 detail unless you will always start it as administrator.
+view
 shot storage-elevated
+press a
+page game 5
 quit

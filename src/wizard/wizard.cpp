@@ -84,8 +84,8 @@ void ApplyTheme(ImGuiStyle& style, float scale) {
 // A script: one step per line, `#` for a comment. wait FRAMES, press BUTTON (a b x y up down left
 // right start back), key KEY (enter escape tab up down left right space backspace), shot NAME,
 // page NAME [SECONDS] (waits for it, or fails), detail TEXT (waits up to 5 s for Pages::Detail to end
-// in it), finished (the pages must end by themselves within 5 s), quit. A script fails unless it
-// reaches `quit` or its pages end at `finished`.
+// in it), view (waits up to 5 s for Pages::InView), finished (the pages must end by themselves
+// within 5 s), quit. A script fails unless it reaches `quit` or its pages end at `finished`.
 struct Step {
   std::string op, arg;
   double seconds = 30;
@@ -350,6 +350,14 @@ int Run(const Options& options, Pages& pages) {
         } else if (SDL_GetTicks() - page_since > 5000) {
           error = "the detail is " + detail + ", not " + step.arg;
         }
+      } else if (step.op == "view") {
+        if (!page_since) page_since = SDL_GetTicks();
+        if (pages.InView()) {
+          page_since = 0;
+          next++;
+        } else if (SDL_GetTicks() - page_since > 5000) {
+          error = "the page's notice or its focused item is out of view";
+        }
       } else if (step.op == "finished") {
         if (!page_since) page_since = SDL_GetTicks();
         if (SDL_GetTicks() - page_since > 5000) error = "the pages did not end";
@@ -366,6 +374,9 @@ int Run(const Options& options, Pages& pages) {
 
     ImGui_ImplSDLRenderer3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
+    // A script counts frames: ImGui's own time (a held button's repeat) follows them, not the
+    // clock, so a slow machine plays it the same.
+    if (!steps.empty()) io.DeltaTime = 1.0f / 60.0f;
     ImGui::NewFrame();
     if (pages.Frame()) {
       quit = true;

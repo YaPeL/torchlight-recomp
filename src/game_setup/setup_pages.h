@@ -50,6 +50,7 @@ class SetupPages : public wizard::Pages {
   bool Frame() override;
   std::string Name() const override;
   std::string Detail() const override;
+  bool InView() const override { return ui_.in_view(); }
   bool Busy() const override;
 
   // Every question answered and the player chose to start.

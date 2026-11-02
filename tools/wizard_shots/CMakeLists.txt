@@ -71,8 +71,13 @@ if(NOT ANDROID)
   endforeach()
   add_test(NAME wizard_shots_elevated COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/elevated_shots.txt" --shots "${shots}/windows"
-           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/elevated" --storage ask --elevated 1 --os windows)
-  list(APPEND setup_tests wizard_shots_elevated)
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/elevated" --storage ask --elevated 1 --os windows
+           --expect user-folders)
+  add_test(NAME wizard_shots_elevated_large COMMAND wizard_shots ${setup}
+           --script "${CMAKE_CURRENT_SOURCE_DIR}/elevated_large.txt" --shots "${shots}/windows"
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/elevated-large" --storage ask --elevated 1
+           --os windows --user_data 1 --scale 1.5 --expect user-folders)
+  list(APPEND setup_tests wizard_shots_elevated wizard_shots_elevated_large)
   set_tests_properties(${setup_tests} PROPERTIES FIXTURES_REQUIRED wizard_shots_sample TIMEOUT 60)
   # The Steam Deck's size.
   add_test(NAME wizard_shots_deck COMMAND wizard_shots --script
