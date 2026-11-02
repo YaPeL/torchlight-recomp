@@ -361,6 +361,12 @@ mode (`live/guest_events.h`): the guest's file existence checks (missing ones, t
 reads and `XMemAlloc` calls in that frame, and the rest of it. In the native mode the live mode's
 `slow frame` line has the backend's side (textures, RTSS programs, now with the generation time
 apart, buffers, present).
+Since 2026-10-23 the threshold is `--long_frame_ms` (30 by default) and the line ends with the
+resources the guest's checks asked for in that frame, each once whatever the location and form it
+was asked in (`looked up N: 'MEDIA\...'`, the first 16, `(found)` when found loose): the game
+looks every resource up as a loose file before it reads it from its pak, so these are the
+resources it loaded then. A resource already loaded is not looked up again. The 10 s summary still
+counts frames over 33 and 50 ms.
 
 What they showed, native and Xenos, on the fixed-floor saved game:
 
