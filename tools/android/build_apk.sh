@@ -63,6 +63,7 @@ if [ "$release" = 1 ] && [ "$version_given" != 3 ]; then
   exit 2
 fi
 case "$version_code" in ''|*[!0-9]*) echo "build_apk: --version-code must be a number" >&2; exit 2 ;; esac
+[ -n "$version_name" ] || { echo "build_apk: --version-name is empty" >&2; exit 2; }
 
 tools="$sdk/build-tools/$build_tools"
 android_jar="$sdk/platforms/$platform/android.jar"
@@ -78,6 +79,10 @@ libcxx=$(ls "$ndk"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/aarch64-linux-andr
 [ -n "$llvm" ] && [ -n "$libcxx" ] || { echo "build_apk: no NDK toolchain in $ndk" >&2; exit 2; }
 main_name=$(basename "$main" .so)
 main_name=${main_name#lib}
+if [ "$release" = 1 ] && [ "$main_name" != torchlight ]; then
+  echo "build_apk: --release packages the game (libtorchlight.so), not lib$main_name.so" >&2
+  exit 2
+fi
 
 # SDL's Java and the SDL in librexruntime.so call each other: the same version (README there).
 sdl_version() {
@@ -142,8 +147,9 @@ cp "$work/base.apk" "$work/unaligned.apk"
 (cd "$work/apk" && zip -q -X -0 -r "$work/unaligned.apk" lib)
 
 # 16 KB alignment of the stored libraries (-P 16, for when they are read in place again), then the
-# development signature; a release stays unsigned, for the owner's apksigner (which keeps the
-# alignment: it signs with the v2/v3 schemes, outside the entries).
+# development signature; a release stays unsigned, for the owner's apksigner (build-tools 36.1.0
+# page-aligns the stored libraries again when it rewrites the APK, as the development signature
+# shows; --alignment-preserved keeps this alignment whatever its version; check with zipalign -c).
 "$tools/zipalign" -f -P 16 4 "$work/unaligned.apk" "$work/aligned.apk"
 if [ "$release" = 1 ]; then
   cp "$work/aligned.apk" "$out"
