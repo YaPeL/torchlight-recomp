@@ -15,6 +15,10 @@
 #   SDK_PREFIX    the ReXGlue SDK's Android install (lib/librexruntime.so, include/SDL3)
 #   --version-code N, --version-name S   (default 1 and 0.0.0-dev)
 #   --keep-debug  keep the libraries' debug information (default: stripped, as a release)
+#   --release     the app's own package, io.github.yapel.tlrecomp, not debuggable, aligned and
+#                 unsigned: the owner signs it with the release key, which no script or agent sees.
+#                 Needs --version-code and --version-name (major*10000 + minor*100 + patch, so a
+#                 later version's code is always higher: 1.0.0 is 10000).
 #   --android-sdk DIR  (default ~/android-sdk: platforms/android-36, build-tools/36.1.0, jdk/)
 #   --ndk DIR     (default ~/android-sdk/ndk/30.0.16248370)
 #   --ogre-media DIR  OGRE's media, whose Main and RTShaderLib the backend reads (default
@@ -22,25 +26,27 @@
 # The APK's assets also carry OGRE's media and data/ui, under resources/ and listed in
 # resources.txt after a stamp of their content; the app copies them to internal storage when the
 # stamp changes (platform_android.cpp).
-# Development builds only, until stage A6: the package is io.github.yapel.tlrecomp.dev (it installs
+# Without --release, a development build: the package is io.github.yapel.tlrecomp.dev (it installs
 # next to the app and is debuggable), signed with the development key (~/.android/debug.keystore,
 # made by keytool if missing). The app's own package, io.github.yapel.tlrecomp, is only ever signed
-# with the release key, by the release job (docs/android-port.md, A6): an app signed with another
-# key would block the real one on the device until it is uninstalled, with the saves.
+# with the release key (--release leaves it unsigned for that; docs/android-port.md, A6): an app
+# signed with another key would block the real one on the device until it is uninstalled, with the
+# saves.
 # Linux and macOS (GNU or BSD tools).
 set -eu
 
 root=$(cd "$(dirname "$0")/../.." && pwd)
-version_code=1 version_name=0.0.0-dev keep_debug=0
+version_code=1 version_name=0.0.0-dev keep_debug=0 release=0 version_given=0
 sdk="$HOME/android-sdk" ndk="$HOME/android-sdk/ndk/30.0.16248370"
 ogre_media="$HOME/android-work/ogre-install/share/OGRE-14.6/Media"
 platform=android-36 build_tools=36.1.0 min_sdk=30 target_sdk=36
-usage() { sed -n '9,19p' "$0" >&2; exit 2; }
+usage() { sed -n '/^# Usage:/,/^# The APK/p' "$0" | sed '$d' >&2; exit 2; }
 while [ $# -gt 0 ]; do
   case "$1" in
-    --version-code) version_code=$2; shift ;;
-    --version-name) version_name=$2; shift ;;
+    --version-code) version_code=$2; version_given=$((version_given | 1)); shift ;;
+    --version-name) version_name=$2; version_given=$((version_given | 2)); shift ;;
     --keep-debug) keep_debug=1 ;;
+    --release) release=1 ;;
     --android-sdk) sdk=$2; shift ;;
     --ndk) ndk=$2; shift ;;
     --ogre-media) ogre_media=$2; shift ;;
@@ -52,6 +58,12 @@ while [ $# -gt 0 ]; do
 done
 [ $# -eq 3 ] || usage
 main=$1 prefix=$2 out=$3
+if [ "$release" = 1 ] && [ "$version_given" != 3 ]; then
+  echo "build_apk: --release needs --version-code and --version-name" >&2
+  exit 2
+fi
+case "$version_code" in ''|*[!0-9]*) echo "build_apk: --version-code must be a number" >&2; exit 2 ;; esac
+[ -n "$version_name" ] || { echo "build_apk: --version-name is empty" >&2; exit 2; }
 
 tools="$sdk/build-tools/$build_tools"
 android_jar="$sdk/platforms/$platform/android.jar"
@@ -67,6 +79,10 @@ libcxx=$(ls "$ndk"/toolchains/llvm/prebuilt/*/sysroot/usr/lib/aarch64-linux-andr
 [ -n "$llvm" ] && [ -n "$libcxx" ] || { echo "build_apk: no NDK toolchain in $ndk" >&2; exit 2; }
 main_name=$(basename "$main" .so)
 main_name=${main_name#lib}
+if [ "$release" = 1 ] && [ "$main_name" != torchlight ]; then
+  echo "build_apk: --release packages the game (libtorchlight.so), not lib$main_name.so" >&2
+  exit 2
+fi
 
 # SDL's Java and the SDL in librexruntime.so call each other: the same version (README there).
 sdl_version() {
@@ -94,13 +110,19 @@ cp -R "$root/data/ui" "$work/assets/resources/data/"
  stamp=$(while IFS= read -r f; do $sha "$f"; done < "$work/files.txt" | $sha | cut -c1-16)
  { echo "$stamp"; cat "$work/files.txt"; } > "$work/assets/resources.txt")
 "$tools/aapt2" compile --dir "$root/packaging/android/res" -o "$work/res.zip"
-# Debuggable: `adb shell run-as` reads a development build's internal storage.
+# A development build is io.github.yapel.tlrecomp.dev and debuggable (`adb shell run-as` reads its
+# internal storage); a release keeps the manifest's own package and is not.
+if [ "$release" = 1 ]; then
+  package_options=""
+else
+  package_options="--rename-manifest-package io.github.yapel.tlrecomp.dev --debug-mode"
+fi
+# shellcheck disable=SC2086  # package_options: separate words, or none
 "$tools/aapt2" link -o "$work/base.apk" -I "$android_jar" \
   --manifest "$root/packaging/android/AndroidManifest.xml" \
   --min-sdk-version "$min_sdk" --target-sdk-version "$target_sdk" \
   --version-code "$version_code" --version-name "$version_name" \
-  --rename-manifest-package io.github.yapel.tlrecomp.dev --debug-mode \
-  -A "$work/assets" "$work/res.zip"
+  $package_options -A "$work/assets" "$work/res.zip"
 
 # Java: SDL's classes and ours, to dex.
 mkdir -p "$work/classes" "$work/dex"
@@ -125,8 +147,18 @@ cp "$work/base.apk" "$work/unaligned.apk"
 (cd "$work/apk" && zip -q -X -0 -r "$work/unaligned.apk" lib)
 
 # 16 KB alignment of the stored libraries (-P 16, for when they are read in place again), then the
-# development signature.
+# development signature; a release stays unsigned, for the owner's apksigner (build-tools 36.1.0
+# page-aligns the stored libraries again when it rewrites the APK, as the development signature
+# shows; --alignment-preserved keeps this alignment whatever its version; check with zipalign -c).
 "$tools/zipalign" -f -P 16 4 "$work/unaligned.apk" "$work/aligned.apk"
+if [ "$release" = 1 ]; then
+  cp "$work/aligned.apk" "$out"
+  "$tools/zipalign" -c -P 16 4 "$out"
+  sum=$(command -v sha256sum || echo "shasum -a 256")
+  echo "build_apk: $out ($(du -h "$out" | cut -f1); main library lib$main_name.so; io.github.yapel.tlrecomp $version_name ($version_code), unsigned)"
+  echo "build_apk: SHA-256 $($sum "$out" | cut -d' ' -f1)"
+  exit 0
+fi
 keystore="$HOME/.android/debug.keystore"
 if [ ! -f "$keystore" ]; then
   mkdir -p "$HOME/.android"
