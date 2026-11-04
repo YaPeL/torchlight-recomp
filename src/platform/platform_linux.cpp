@@ -271,7 +271,9 @@ void PrepareSoftwareWindows() {
   // offscreen driver) have a framebuffer of their own, used as before.
   const std::string driver = VideoDriver();
   if (driver == "x11" || driver == "offscreen") {
-    SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0");
+    // Over the environment's SDL_FRAMEBUFFER_ACCELERATION too: GPU choice needs no graphics
+    // library loaded before the backend (SelectGpu).
+    SDL_SetHintWithPriority(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0", SDL_HINT_OVERRIDE);
   }
 }
 

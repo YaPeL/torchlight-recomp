@@ -270,6 +270,7 @@ int Run(const Options& options, Pages& pages) {
   bool script_done = false;
   Uint64 frame_start = SDL_GetTicksNS();
   std::vector<SDL_Event> others;
+  bool shown = false;
   while (!quit) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -395,7 +396,11 @@ int Run(const Options& options, Pages& pages) {
         quit = true;
       }
     }
-    SDL_RenderPresent(renderer);
+    if (SDL_RenderPresent(renderer) && !shown) {
+      // Once, for the log and for packaging/linux/check_setup_window.sh: the window shows frames.
+      shown = true;
+      std::fprintf(stderr, "wizard: window shown (%s)\n", SDL_GetCurrentVideoDriver());
+    }
     const Uint64 spent = SDL_GetTicksNS() - frame_start;
     if (spent < kFrameNanoseconds) SDL_DelayPrecise(kFrameNanoseconds - spent);
     frame_start = SDL_GetTicksNS();

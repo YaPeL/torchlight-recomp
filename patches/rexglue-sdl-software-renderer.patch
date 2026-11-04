@@ -1,5 +1,5 @@
 diff --git a/thirdparty/CMakeLists.txt b/thirdparty/CMakeLists.txt
-index f102b56..acea127 100644
+index f102b56..126d31c 100644
 --- a/thirdparty/CMakeLists.txt
 +++ b/thirdparty/CMakeLists.txt
 @@ -251,7 +251,7 @@ set(SDL_TEST OFF CACHE BOOL "" FORCE)
@@ -11,14 +11,14 @@ index f102b56..acea127 100644
  set(SDL_VIDEO ON CACHE BOOL "" FORCE)
  if(APPLE)
      # macOS uses SDL for windowing + Metal/Vulkan surface creation.
-@@ -267,7 +267,31 @@ else()
+@@ -267,7 +267,22 @@ else()
          set(SDL_VULKAN OFF CACHE BOOL "" FORCE)
      endif()
  endif()
 -set(SDL_RENDER OFF CACHE BOOL "" FORCE)
 +# SDL_Renderer with its software driver only, for windows a title draws before the runtime starts
 +# (a launcher, a progress bar): no graphics library is loaded before the presenter picks the GPU.
-+# The GPU render drivers stay off.
++# The GPU render drivers stay off (but OpenGL ES 2's on desktop Linux, with SDL_OPENGLES below).
 +set(SDL_RENDER ON CACHE BOOL "" FORCE)
 +set(SDL_RENDER_D3D OFF CACHE BOOL "" FORCE)
 +set(SDL_RENDER_D3D11 OFF CACHE BOOL "" FORCE)
@@ -31,26 +31,22 @@ index f102b56..acea127 100644
 +else()
 +    set(SDL_RENDER_METAL OFF CACHE BOOL "" FORCE)
 +endif()
-+# Desktop Linux: Wayland has no window framebuffer either, so the same texture goes through
-+# OpenGL ES 2 there (EGL, opened only when a software renderer's window needs it). X11 keeps its
-+# own framebuffer when the title asks for it (SDL_HINT_FRAMEBUFFER_ACCELERATION).
-+set(SDL_RENDER_GL OFF CACHE BOOL "" FORCE)
-+if(UNIX AND NOT APPLE AND NOT ANDROID)
-+    set(SDL_RENDER_GLES2 ON CACHE BOOL "" FORCE)
-+else()
-+    set(SDL_RENDER_GLES2 OFF CACHE BOOL "" FORCE)
-+endif()
 +set(SDL_RENDER_VULKAN OFF CACHE BOOL "" FORCE)
  set(SDL_HAPTIC OFF CACHE BOOL "" FORCE)
  set(SDL_SENSOR OFF CACHE BOOL "" FORCE)
  set(SDL_POWER OFF CACHE BOOL "" FORCE)
-@@ -281,7 +305,11 @@ set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
+@@ -281,7 +296,16 @@ set(SDL_CAMERA OFF CACHE BOOL "" FORCE)
  
  # Disable graphics APIs (unused without video) — only on non-Apple
  set(SDL_OPENGL OFF CACHE BOOL "" FORCE)
 -set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
 +if(UNIX AND NOT APPLE AND NOT ANDROID)
-+    set(SDL_OPENGLES ON CACHE BOOL "" FORCE)  # for SDL_RENDER_GLES2 above
++    # Desktop Linux: Wayland has no window framebuffer either, so SDL shows a software renderer's
++    # frames through a GPU texture there too: OpenGL ES (EGL) builds SDL's GLES2 render driver for
++    # it, opened only when such a window needs it. X11 keeps its own framebuffer when the title asks
++    # (SDL_HINT_FRAMEBUFFER_ACCELERATION). KMSDRM, which EGL would also bring in, stays off.
++    set(SDL_OPENGLES ON CACHE BOOL "" FORCE)
++    set(SDL_KMSDRM OFF CACHE BOOL "" FORCE)
 +else()
 +    set(SDL_OPENGLES OFF CACHE BOOL "" FORCE)
 +endif()

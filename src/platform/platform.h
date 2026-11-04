@@ -116,7 +116,9 @@ void BringToFront();
 // Before the first window drawn with SDL's software renderer (the setup window, the progress
 // window), once SDL's video is up. Linux under X11 keeps showing its frames through X11's own
 // framebuffer, so no graphics library is loaded before the backend's; under Wayland, which has
-// none, SDL shows them through an OpenGL ES 2 texture (SDK patch 21). The other platforms: nothing.
+// none, SDL shows them through an OpenGL ES 2 texture (SDK patch 21) and closes its libraries with
+// the window (checked with Mesa's and NVIDIA's EGL installed: nothing stays mapped, so SelectGpu's
+// check still passes). The other platforms: nothing.
 void PrepareSoftwareWindows();
 // Windows: this process runs elevated (as administrator), so what it creates belongs to the
 // administrators. False elsewhere.
