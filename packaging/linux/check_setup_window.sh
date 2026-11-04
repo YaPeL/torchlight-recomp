@@ -5,16 +5,15 @@
 # v1.0.0-rc1's setup window could not open under Wayland ("Window framebuffer support not
 # available") and that check passed.
 #
-# "Opens" means: after the wait, the game is still running (waiting on the window's first page)
-# and printed no "no window" line. A game that cannot open the window says so and stops, so a
-# failure shows either way. Nothing of the machine's user is read or written: HOME, the XDG
+# "Opens" means: the game logs "wizard: window shown" (its first frame presented) within the wait.
+# A game that stops first, or never shows a frame, fails the check. Nothing of the machine's user is read or written: HOME, the XDG
 # folders and the runtime folder are temporary, the image runs extracted there (its portable
 # folder, beside it, too) and the run is stopped before any choice.
 # Usage: check_setup_window.sh IMAGE.AppImage
 set -eu
 [ $# -eq 1 ] || { echo "usage: $0 IMAGE.AppImage" >&2; exit 2; }
 image=$(readlink -f "$1")
-wait_seconds=20
+wait_seconds=60
 work=$(mktemp -d)
 server=
 game=
@@ -43,23 +42,29 @@ check() {
     "$work/squashfs-root/AppRun" > "$log" 2>&1 &
   game=$!
   elapsed=0
-  while [ "$elapsed" -lt "$wait_seconds" ]; do
+  until grep -q 'wizard: window shown' "$log"; do
+    if grep -q 'no window' "$log"; then
+      cat "$log"
+      echo "check_setup_window: $name: no setup window" >&2
+      exit 1
+    fi
     if ! kill -0 "$game" 2> /dev/null; then
       cat "$log"
       echo "check_setup_window: $name: the game stopped instead of showing the setup window" >&2
       exit 1
     fi
+    if [ "$elapsed" -ge "$wait_seconds" ]; then
+      cat "$log"
+      echo "check_setup_window: $name: no frame shown in $wait_seconds s" >&2
+      exit 1
+    fi
     sleep 1
     elapsed=$((elapsed + 1))
   done
-  if grep -q 'no window' "$log"; then
-    cat "$log"
-    echo "check_setup_window: $name: no setup window" >&2
-    exit 1
-  fi
-  kill -9 "$game"
+  kill -9 "$game" 2> /dev/null || true
   wait "$game" 2> /dev/null || true
   game=
+  grep 'wizard: window shown' "$log"
   echo "check_setup_window: $name: the setup window opened"
 }
 
@@ -81,7 +86,11 @@ wait "$server" 2> /dev/null || true
 # X11: Xvfb on a display nobody else uses here.
 Xvfb :87 -screen 0 1280x800x24 -nolisten tcp > "$work/xvfb.log" 2>&1 &
 server=$!
-sleep 2
-kill -0 "$server" 2> /dev/null || {
-  cat "$work/xvfb.log"; echo "check_setup_window: Xvfb did not start" >&2; exit 2; }
+elapsed=0
+until [ -S /tmp/.X11-unix/X87 ]; do
+  [ "$elapsed" -lt 10 ] && kill -0 "$server" 2> /dev/null || {
+    cat "$work/xvfb.log"; echo "check_setup_window: Xvfb did not start" >&2; exit 2; }
+  sleep 1
+  elapsed=$((elapsed + 1))
+done
 check x11 WAYLAND_DISPLAY DISPLAY=:87 SDL_VIDEO_DRIVER=x11
