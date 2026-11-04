@@ -177,6 +177,19 @@ jobs:
         run: |
           chmod +x Torchlight-Recomp-*-x86_64.AppImage
           packaging/linux/check_appimage.sh Torchlight-Recomp-*-x86_64.AppImage
+      # The first start's setup window, under Wayland (weston, headless) and X11 (Xvfb): resolving
+      # the libraries above did not show that v1.0.0-rc1's could not open under Wayland. Mesa is
+      # what a desktop has; weston and Xvfb are the test's own.
+      - name: Setup window packages
+        run: |
+          if command -v apt-get > /dev/null; then
+            DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+              libegl-mesa0 libgles2 libgl1-mesa-dri weston xvfb
+          else
+            pacman -S --noconfirm --needed weston xorg-server-xvfb
+          fi
+      - name: Setup window
+        run: packaging/linux/check_setup_window.sh Torchlight-Recomp-*-x86_64.AppImage
 
   # Windows: the same rules (no cache, nothing of the game uploaded but the zip). The dependencies
   # are CI's, from the store (tools/deps/store.sh); LLVM comes from windows_toolchain.ps1, MSVC from the runner.
