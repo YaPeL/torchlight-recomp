@@ -190,6 +190,7 @@ int Run(const Options& options, Pages& pages) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
     return 2;
   }
+  platform::PrepareSoftwareWindows();
   float scale = options.scale > 0 ? options.scale
                                   : SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
   if (scale <= 0) scale = 1;

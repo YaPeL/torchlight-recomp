@@ -209,6 +209,8 @@ std::string ExecutableDir() {
 
 void BringToFront() {}
 
+void PrepareSoftwareWindows() {}
+
 std::string ResourceDir() { return ExecutableDir(); }
 
 std::string OgrePluginDir() {

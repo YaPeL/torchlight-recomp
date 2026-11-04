@@ -266,6 +266,15 @@ std::string LogDir() {
 
 void BringToFront() {}
 
+void PrepareSoftwareWindows() {
+  // SDL would otherwise prefer a GPU texture wherever one can be made; X11 (and the tests'
+  // offscreen driver) have a framebuffer of their own, used as before.
+  const std::string driver = VideoDriver();
+  if (driver == "x11" || driver == "offscreen") {
+    SDL_SetHint(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0");
+  }
+}
+
 std::string ResourceDir() { return ExecutableDir(); }
 
 std::string OgrePluginDir() {
