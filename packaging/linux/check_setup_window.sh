@@ -5,7 +5,8 @@
 # v1.0.0-rc1's setup window could not open under Wayland ("Window framebuffer support not
 # available") and that check passed.
 #
-# "Opens" means: the game logs "wizard: window shown" (its first frame presented) within the wait.
+# "Opens" means: the game logs "wizard: window shown" within the wait: its window and renderer exist
+# (where rc1 failed) and its first frame went to SDL. SDL does not report whether the screen showed it.
 # A game that stops first, or never shows a frame, fails the check. Nothing of the machine's user is read or written: HOME, the XDG
 # folders and the runtime folder are temporary, the image runs extracted there (its portable
 # folder, beside it, too) and the run is stopped before any choice.

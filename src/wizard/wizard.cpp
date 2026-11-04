@@ -397,7 +397,8 @@ int Run(const Options& options, Pages& pages) {
       }
     }
     if (SDL_RenderPresent(renderer) && !shown) {
-      // Once, for the log and for packaging/linux/check_setup_window.sh: the window shows frames.
+      // Once, for the log and for packaging/linux/check_setup_window.sh: the window and its renderer
+      // exist and the first frame went to SDL (which does not report whether the screen showed it).
       shown = true;
       std::fprintf(stderr, "wizard: window shown (%s)\n", SDL_GetCurrentVideoDriver());
     }
