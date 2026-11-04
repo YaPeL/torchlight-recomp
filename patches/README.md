@@ -337,6 +337,18 @@ in number order; a branch adds its own line at its number's place.
     the two apply in either order.
     In the `bd833a2` series since 2026-10-09, as its last line, taken from `feature/launcher-imgui`
     (`5a98b6f`): it applies after 1-29 on Linux and macOS, and after the two Windows patches.
+    **Wayland (2026-11-04).** Wayland has no window framebuffer either, so the same failure hit the
+    setup window on GNOME Wayland and the Steam Deck in `v1.0.0-rc1`'s AppImage ("Window
+    framebuffer support not available"). On desktop Linux the patch now also turns on OpenGL ES
+    (`SDL_OPENGLES`, EGL), which builds SDL's GLES2 render driver; SDL opens it only when a
+    software renderer's window needs a texture, and closes its libraries with the window. KMSDRM,
+    which EGL would also bring in, stays off. The project sets `SDL_HINT_FRAMEBUFFER_ACCELERATION`
+    to 0 under X11 (`platform::PrepareSoftwareWindows`), so X11 keeps its own framebuffer and loads
+    nothing new. Windows, macOS and Android build SDL as before (OpenGL ES stays off there).
+    Checked with SDL 3.4.14 built with these options: a software renderer's window on a headless
+    GNOME Wayland fails without them and draws and reads back with them, with EGL and GLES mapped
+    while it is open and nothing of them mapped after it closes (Mesa's and NVIDIA's EGL
+    installed); under Xvfb without a GPU it works either way.
 
 22. `rexglue-tests-portable.patch`: the SDK's tests did not build on ARM64 or macOS.
     `tests/ppc/CMakeLists.txt` passed `-msse4.1 -mssse3` to `ppc_tests` on every architecture; now

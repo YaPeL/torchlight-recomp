@@ -429,6 +429,7 @@ std::vector<std::string> PreferredLanguages() {
 }
 
 std::unique_ptr<ProgressWindow> ProgressWindow::Open(const std::string& title) {
+  PrepareSoftwareWindows();
   SDL_Window* window = SDL_CreateWindow(title.c_str(), 560, 120, 0);
   if (!window) return nullptr;
   SDL_Renderer* renderer = SDL_CreateRenderer(window, SDL_SOFTWARE_RENDERER);

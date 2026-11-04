@@ -190,6 +190,7 @@ int Run(const Options& options, Pages& pages) {
     std::fprintf(stderr, "wizard: no window: %s\n", SDL_GetError());
     return 2;
   }
+  platform::PrepareSoftwareWindows();
   float scale = options.scale > 0 ? options.scale
                                   : SDL_GetDisplayContentScale(SDL_GetPrimaryDisplay());
   if (scale <= 0) scale = 1;
@@ -269,6 +270,7 @@ int Run(const Options& options, Pages& pages) {
   bool script_done = false;
   Uint64 frame_start = SDL_GetTicksNS();
   std::vector<SDL_Event> others;
+  bool shown = false;
   while (!quit) {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -394,7 +396,12 @@ int Run(const Options& options, Pages& pages) {
         quit = true;
       }
     }
-    SDL_RenderPresent(renderer);
+    if (SDL_RenderPresent(renderer) && !shown) {
+      // Once, for the log and for packaging/linux/check_setup_window.sh: the window and its renderer
+      // exist and the first frame went to SDL (which does not report whether the screen showed it).
+      shown = true;
+      std::fprintf(stderr, "wizard: window shown (%s)\n", SDL_GetCurrentVideoDriver());
+    }
     const Uint64 spent = SDL_GetTicksNS() - frame_start;
     if (spent < kFrameNanoseconds) SDL_DelayPrecise(kFrameNanoseconds - spent);
     frame_start = SDL_GetTicksNS();

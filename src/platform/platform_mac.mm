@@ -71,6 +71,8 @@ void BringToFront() {
   [NSApp activateIgnoringOtherApps:YES];
 }
 
+void PrepareSoftwareWindows() {}
+
 std::string EmbeddingVideoError() {
   if (VideoDriver() == "cocoa") return "";
   return "SDL video driver " + VideoDriver() + ": the backend draws only in cocoa windows";

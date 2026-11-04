@@ -180,6 +180,8 @@ std::string OgreMediaDir() {
 
 void BringToFront() {}
 
+void PrepareSoftwareWindows() {}
+
 void BlackGameWindowBackground() {}
 
 std::vector<std::pair<std::string, std::string>> OgreWindowParams(const NativeWindow& window) {

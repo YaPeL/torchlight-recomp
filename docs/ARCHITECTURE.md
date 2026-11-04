@@ -75,7 +75,7 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   log names the executable and the build's commit (`cmake/build_info.cmake`).
 - Setup wizard (`src/wizard/`, its first-start pages in `src/game_setup/setup_pages.h`): one window
   for the first start, on desktop,
-  with a pad, a mouse or a keyboard. SDL's software renderer (forced; on Linux and Windows the SDK's SDL has no other), Dear
+  with a pad, a mouse or a keyboard. SDL's software renderer (forced; its frames reach the screen through the window system's own framebuffer, or through a GPU texture on macOS (Metal) and Wayland (OpenGL ES), SDK patch 21), Dear
   ImGui with the SDK's green palette, Noto Sans, the owner's cat as its icon (`data/icon/README.md`)
   and its own folder browser for where the system's picker does not show. `tools/wizard_shots` plays
   its parts on sample pages from a script, offscreen, and keeps the screenshots in `wizard-shots/`
