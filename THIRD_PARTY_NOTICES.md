@@ -147,9 +147,10 @@ rebuild it with a modified libfuse and repack the image with it: `--appimage-ext
 Library Exception 3.1). Conveying the libraries themselves is under GPL-3.0-or-later: this file
 carries the license and the exception, and every release carries their complete source, the exact
 source package they were built from, as a release asset:
-`gcc-16-source-16-20260315-1ubuntu1~22~ppa1.tar` (the `.dsc`, `.orig.tar.gz` and `.debian.tar.xz`
+`gcc-16-source-16-20260315-1ubuntu1.22.ppa1.tar` (the `.dsc`, `.orig.tar.gz` and `.debian.tar.xz`
 of source package `gcc-16`, version `16-20260315-1ubuntu1~22~ppa1`, from
-`ppa:ubuntu-toolchain-r/test`; the release workflow names the asset after the version it bundles).
+`ppa:ubuntu-toolchain-r/test`; the release workflow names the asset after the version it bundles,
+with each `~` as `.`, the name GitHub gives it).
 
 ## Microsoft Distributable Code (Windows)
 

@@ -126,7 +126,9 @@ jobs:
           apt-get update
           mkdir -p "/tmp/$package-source" && cd "/tmp/$package-source"
           apt-get source --download-only "$package=$version"
-          tar -cf "$GITHUB_WORKSPACE/$package-source-$version.tar" -C /tmp "$package-source"
+          # GitHub turns "~" into "." in asset names; the tar takes that name from the start, so
+          # SHA256SUMS lists it as the release shows it.
+          tar -cf "$GITHUB_WORKSPACE/$package-source-${version//\~/.}.tar" -C /tmp "$package-source"
       - name: Symbols (private repository)
         env:
           SYMBOLS_KEY: ${{ secrets.SYMBOLS_DEPLOY_KEY }}
