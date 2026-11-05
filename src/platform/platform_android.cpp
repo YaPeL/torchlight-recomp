@@ -424,10 +424,9 @@ void ForgetPickedFiles() {
 
 bool HasDirect3D11(const std::string&) { return false; }
 
-// Stage A1 (the auto fps cap reads it): unknown, so false.
 // SDL's power information (the SDK builds SDL's power subsystem for Android only): Android's
-// sticky battery broadcast, read through JNI. Charging or full counts as plugged in; unknown
-// (no battery, or no answer) as not on battery.
+// sticky battery broadcast, read through JNI. Charging or full counts as plugged in; anything
+// else (no battery while powered, or no answer) as not on battery.
 bool OnBattery() { return SDL_GetPowerInfo(nullptr, nullptr) == SDL_POWERSTATE_ON_BATTERY; }
 
 bool IsSteamDeck() { return false; }
