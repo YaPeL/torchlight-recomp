@@ -73,7 +73,8 @@ cmake --preset linux-amd64-debug
 cmake --build --preset linux-amd64-debug -j"$(nproc)"
 ```
 
-Optimized build with symbols (RelWithDebInfo; the one used to measure performance):
+Optimized build with symbols (RelWithDebInfo; measurements use `linux-amd64-release` or an SDK with
+patch 53, `docs/perf/pgo.md`, Measurement builds):
 
 ```sh
 cmake --preset linux-amd64-relwithdebinfo

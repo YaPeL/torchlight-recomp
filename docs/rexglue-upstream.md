@@ -1332,11 +1332,10 @@ eight); no patch touches those files. The patches' own tests (`[vfs]`, `[keystro
 the unit tests and every game build below start only when it says the machine is free. At the time
 of writing it asked for no build during its measurement runs.
 
-**The SDK's install registered its prefix in CMake's user package registry**
-(`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`; since patch 54
-only with `REXGLUE_REGISTER_PACKAGE=ON`). Our `CMakeLists.txt` finds the SDK with
-`find_package(rexglue)` and the presets give no `CMAKE_PREFIX_PATH`, so with two installs
-registered, a fresh configure can pick either one. After
+**The SDK's install registers its prefix in CMake's user package registry**
+(`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`, no option to turn
+it off). Our `CMakeLists.txt` finds the SDK with `find_package(rexglue)` and the presets give no
+`CMAKE_PREFIX_PATH`, so with two installs registered, a fresh configure can pick either one. After
 every install into `~/rexglue-sdk-next`, delete its entry; builds against it pass
 `-DCMAKE_PREFIX_PATH=~/rexglue-sdk-next/install`. (Done after the first build, 2026-10-08: the
 entry was there from the end of the install until it was noticed; no build tree was configured

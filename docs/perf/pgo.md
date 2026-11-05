@@ -31,6 +31,38 @@ the base 21.0-22.2) and the rest from 11.7 to 9.9 ms (-16 %); frames over 50 ms 
 12-14 to 1-5. `-march=armv8.2-a` on top gave nothing measurable (17.8 against 17.3 ms), so the
 hardware floor stays armv8-a. PGO is integrated for Android (the owner's decision, 2026-10-31).
 
+## Measurement builds
+
+Measurements are built with the `*-release` presets (the release's build type), or with an SDK
+that has patch 53. Before patch 53, every configuration but Release counted each indirect call of
+the generated code for the debug overlay (`rex::perf::IncrementCounter`, an atomic add in a call
+that is not inlined): about 8 % of the guest main thread's cycles in the fight. RelWithDebInfo and
+Debug builds measured that cost and the release does not have it.
+
+Desktop (i7-8750H, `fight.txt` offscreen under Xvfb, fps cap 0, vsync off, no PGO, both builds
+`-O2 -g`, develop `b704701`; `perf stat` on the guest main thread over the fight step, per frame;
+A B B A twice, 2026-11-05):
+
+| SDK | RelWithDebInfo cycles/frame | Release cycles/frame | Fight mean ms | CPU at each start |
+| --- | --- | --- | --- | --- |
+| Series up to 52 | 35.53 M (34.6-36.9) | 32.36 M (31.6-33.0), -8.9 % | 13.39 / 12.14 | 2.3-3.4 GHz, 63-84 C |
+| Series up to 54 (patch 53) | 32.09 M (30.7-32.8) | 32.27 M (31.3-33.4), +0.6 % | 12.19 / 12.33 | 2.4-3.5 GHz, 62-75 C |
+
+So a RelWithDebInfo measurement on an SDK before patch 53 has its absolute times about 9 % high on
+the desktop, gains look smaller than in the release, and a change that removes indirect calls
+looks larger. Comparisons between two such builds stay comparable with each other, not with the
+release. The count can still be had for a profiling session, with
+`REXGLUE_PROFILE_INDIRECT_DISPATCH` defined in the game's build (patches/README.md, 53).
+
+The profiles were not affected: every training build was Release (Linux and Android here: their
+training trees' `CMAKE_BUILD_TYPE`; Windows and macOS: the release's presets), where the count was
+compiled out before patch 53 too. Patch 53 changes `codegen_id`, but not what Release compiles, so
+the profiles still match without training again. Checked on Linux: develop `b704701` built as
+the release (`linux-amd64-release`, `-O3 -g`, x86-64-v3) with `pgo/linux-x86_64.profdata` against
+an SDK with the series up to 54 links (the generated code is compiled with
+`-Werror=profile-instr-out-of-date`), and `tools/pgo/check_profile_match.py` gave 4 of 19665 functions mismatched, all in the
+game's own code (v1.0.0's build: 5).
+
 ## Making a profile
 
 1. Build with `-DTORCHLIGHT_PGO_GENERATE=ON` (the same compiler as the release: the profile format
