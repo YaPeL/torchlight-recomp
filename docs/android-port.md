@@ -960,17 +960,20 @@ What to keep:
   install over a version already installed: users would have to uninstall, and their saves live
   in the app's storage (A1, A3). Leaked, anyone can publish an APK that installs over ours.
 - The alias (`torchlight`) and the certificate's SHA-256 fingerprint, which is not secret: the
-  README publishes it so users can check a download (`apksigner verify --print-certs`), and
+  release notes publish it so users can check a download (`apksigner verify --print-certs`), and
   Android's developer verification (2027) registers the package name with it.
 
 **The release certificate** (since v1.0.0, 2026-11-05): SHA-256
-`57713e0267a358b26abc0c46f3fc82f86eb2e6430ce9a1e9692f473033ee2824`. Every release APK must show it
-(`apksigner verify --print-certs`, "Signer #1 certificate SHA-256 digest"); one signed with
-another key cannot update an installed copy. v1.0.0 was built by an agent from the tag
-(`tools/android/build_apk.sh --release`: aligned, unsigned) and signed by the owner on their own
-machine (`apksigner sign --alignment-preserved --v4-signing-enabled false`, v3 scheme), since the
-release job below did not exist yet; its SHA-256 and this certificate's are in the release notes
-and the APK's in `SHA256SUMS`, added by hand.
+`57713e0267a358b26abc0c46f3fc82f86eb2e6430ce9a1e9692f473033ee2824`, subject `CN=YaPeL` (the
+`keytool` command above is the recipe; the owner's own key has its own name). Every release APK
+must show it (`apksigner verify --print-certs`, "Signer #1 certificate SHA-256 digest"); one
+signed with another key cannot update an installed copy, whatever signature schemes either uses.
+v1.0.0 was built by an agent from the tag (`tools/android/build_apk.sh --release`: aligned,
+unsigned) and signed by the owner on their own machine (`apksigner sign --alignment-preserved
+--v4-signing-enabled false`: the v3 scheme only, enough from Android 11), since the release job
+below did not exist yet. It was published as `Torchlight-Recomp-1.0.0-arm64.apk`. Until that job
+exists, each release adds the APK by hand: its SHA-256 and this certificate's in the release notes,
+and the APK's line in `SHA256SUMS`, which the job otherwise writes for the desktop files only.
 
 The secrets of the `release` environment (Settings, Environments, `release`), set by the owner:
 `ANDROID_KEYSTORE_BASE64` (the file, `base64 -i torchlight-release.p12`),
