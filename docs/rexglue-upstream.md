@@ -1481,8 +1481,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 50 | `rexglue-thread-dump.patch` | `develop` | `bd833a2`, after 49 |
 | 51 | `rexglue-android-sdl-power.patch` | `develop` | `bd833a2`, after 50 |
 | 52 | `rexglue-phys-host-offset-no-compare.patch` | `develop` | `bd833a2`, after 51 |
-| 53 | `rexglue-indirect-dispatch-count-opt-in.patch` | `sdk/indirect-dispatch-opt-in` | `bd833a2`, after 52 |
-| 54 | `rexglue-no-package-registry.patch` | `sdk/indirect-dispatch-opt-in` | `bd833a2`, after 53 |
+| 53 | `rexglue-indirect-dispatch-count-opt-in.patch` | `develop` | `bd833a2`, after 52 |
+| 54 | `rexglue-no-package-registry.patch` | `develop` | `bd833a2`, after 53 |
 | 55 | next free (`patches/README.md`, "Numbers", is the table kept up to date) | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.

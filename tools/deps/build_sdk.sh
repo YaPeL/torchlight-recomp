@@ -102,7 +102,7 @@ cmake --preset "$preset" $platform_options $compilers $tests_on \
   ${ppc_test_data:+"-DREXGLUE_PPC_TEST_BIN_DIR=$ppc_test_data"} \
   -DCMAKE_CONFIGURATION_TYPES="$configs" -DCMAKE_DEFAULT_BUILD_TYPE=Release \
   -DCMAKE_CROSS_CONFIGS="$configs" -DCMAKE_DEFAULT_CONFIGS="$configs" \
-  -DCMAKE_INSTALL_PREFIX="$prefix"
+  -DCMAKE_INSTALL_PREFIX="$prefix" -DREXGLUE_REGISTER_PACKAGE=OFF
 cmake --build "out/build/$preset" --target install --parallel
 echo "SDK installed in $prefix"
 

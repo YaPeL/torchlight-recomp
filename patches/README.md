@@ -631,8 +631,8 @@ in number order; a branch adds its own line at its number's place.
 
 36. `rexglue-cross-no-package-registry.patch`: an install registered itself in the CMake user
     package registry, where a desktop configure could take an Android install. The option
-    `REXGLUE_REGISTER_PACKAGE` is ON in native builds (as before) and OFF in cross builds.
-    Verified: an Android install leaves `~/.cmake/packages/rexglue` as it was.
+    `REXGLUE_REGISTER_PACKAGE` is ON in native builds (as before) and OFF in cross builds; patch 54
+    makes it OFF everywhere. Verified: an Android install leaves `~/.cmake/packages/rexglue` as it was.
 
 37. `rexglue-android-physical-host-offset.patch`: the 0xE0000000 heap's 0x1000 host offset is a
     compile-time constant in recompiled code and was chosen at run time by the heap. Android
@@ -769,14 +769,18 @@ in number order; a branch adds its own line at its number's place.
     call the compiler cannot inline: about 8 % of the guest main thread's cycles in the fight, so
     Release measured 8.9 % fewer cycles per frame than RelWithDebInfo. The count now also needs
     `REXGLUE_PROFILE_INDIRECT_DISPATCH` defined (as the guest function zones need
-    `REXGLUE_PROFILE_GUEST_FUNCTIONS`). Release compiles to the same code, so its PGO profiles
+    `REXGLUE_PROFILE_GUEST_FUNCTIONS`): a non-Release game build configured with
+    `-DCMAKE_CXX_FLAGS=-DREXGLUE_PROFILE_INDIRECT_DISPATCH`, against an SDK with Tracy and the perf
+    counters on (their defaults). Release compiles to the same code, so its PGO profiles
     still match; `codegen_id` changes (the template is one of its inputs).
 
 54. `rexglue-no-package-registry.patch`: no install registers itself in the CMake user package
     registry unless configured with `REXGLUE_REGISTER_PACKAGE=ON` (patch 36 only kept cross builds
     out). Installs of one SDK version are indistinguishable there whatever their series or
     configurations, so a consumer's `find_package` could take any of them. Verified: a native
-    install leaves `~/.cmake/packages/rexglue` as it was.
+    install leaves `~/.cmake/packages/rexglue` as it was. `tools/deps/build_sdk.sh` and
+    `tools/build-deps/windows.ps1` also pass the option OFF, for a reused work folder whose
+    CMake cache still holds the old default.
 
 The observation and diagnostic patches there were before remain in the git history.
 

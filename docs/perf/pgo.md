@@ -52,8 +52,11 @@ Both columns are `-O2 -g` without PGO: the table compares the build types, not t
 (`-O3`, with its profile). So a RelWithDebInfo measurement on an SDK before patch 53 has its absolute times about 9 % high on
 the desktop, gains look smaller than in the release, and a change that removes indirect calls
 looks larger. Comparisons between two such builds stay comparable with each other, not with the
-release. The count can still be had for a profiling session, with
-`REXGLUE_PROFILE_INDIRECT_DISPATCH` defined in the game's build (patches/README.md, 53).
+release. The count can still be had for a profiling session: a Debug or RelWithDebInfo build
+against an SDK with Tracy and the perf counters (`REXGLUE_ENABLE_TRACY`,
+`REXGLUE_ENABLE_PERF_COUNTERS`, both on by default), configured with
+`-DCMAKE_CXX_FLAGS=-DREXGLUE_PROFILE_INDIRECT_DISPATCH` (patches/README.md, 53); the overlay's
+Dispatch line shows it.
 
 The profiles were not affected: every training build was Release (Linux and Android here: their
 training trees' `CMAKE_BUILD_TYPE`; Windows and macOS: the release's presets), where the count was
