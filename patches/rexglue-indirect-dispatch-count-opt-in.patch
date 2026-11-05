@@ -20,7 +20,7 @@ vsync off, no PGO, both builds -O2 -g. perf stat --per-thread on the guest main 
 fight step, divided by its frames. A B B A twice, CPU at 2.3-3.4 GHz and 63-84 C at each start
 (power profile "performance"), 2026-11-05. Without this patch, RelWithDebInfo against Release:
 
-    cycles/frame  RelWithDebInfo 35.53 M, Release 32.36 M (-8.9 %)
+    cycles/frame  RelWithDebInfo 35.53 M, Release 32.36 M (Release -8.9 %)
     instructions  RelWithDebInfo 32.99 M, Release 31.06 M (-5.8 %)
     fight mean    13.39 ms against 12.14 ms
 
@@ -29,7 +29,7 @@ perf record of a RelWithDebInfo fight: IncrementCounter, 8 % of the main thread'
 With this patch, the same method and machine, both builds against an SDK with the series up to 54
 (A B B A twice, 2.4-3.5 GHz and 62-75 C at each start, 2026-11-05):
 
-    cycles/frame  RelWithDebInfo 32.09 M, Release 32.27 M (-0.6 %, RelWithDebInfo the lower)
+    cycles/frame  RelWithDebInfo 32.09 M, Release 32.27 M (Release +0.6 %)
     instructions  RelWithDebInfo 30.62 M, Release 31.15 M
     fight mean    12.19 ms against 12.33 ms
 

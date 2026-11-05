@@ -767,7 +767,7 @@ in number order; a branch adds its own line at its number's place.
 53. `rexglue-indirect-dispatch-count-opt-in.patch`: every configuration but Release counted each
     indirect call of the generated code for the debug overlay's Dispatch line, an atomic add in a
     call the compiler cannot inline: about 8 % of the guest main thread's cycles in the fight, so
-    RelWithDebInfo measured 9 % more cycles per frame than Release. The count now also needs
+    Release measured 8.9 % fewer cycles per frame than RelWithDebInfo. The count now also needs
     `REXGLUE_PROFILE_INDIRECT_DISPATCH` defined (as the guest function zones need
     `REXGLUE_PROFILE_GUEST_FUNCTIONS`). Release compiles to the same code, so its PGO profiles
     still match; `codegen_id` changes (the template is one of its inputs).

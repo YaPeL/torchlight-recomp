@@ -43,12 +43,13 @@ Desktop (i7-8750H, `fight.txt` offscreen under Xvfb, fps cap 0, vsync off, no PG
 `-O2 -g`, develop `b704701`; `perf stat` on the guest main thread over the fight step, per frame;
 A B B A twice, 2026-11-05):
 
-| SDK | RelWithDebInfo cycles/frame | Release cycles/frame | Fight mean ms | CPU at each start |
+| SDK | RelWithDebInfo cycles/frame | Release cycles/frame (against RelWithDebInfo) | Fight mean ms | CPU at each start |
 | --- | --- | --- | --- | --- |
 | Series up to 52 | 35.53 M (34.6-36.9) | 32.36 M (31.6-33.0), -8.9 % | 13.39 / 12.14 | 2.3-3.4 GHz, 63-84 C |
 | Series up to 54 (patch 53) | 32.09 M (30.7-32.8) | 32.27 M (31.3-33.4), +0.6 % | 12.19 / 12.33 | 2.4-3.5 GHz, 62-75 C |
 
-So a RelWithDebInfo measurement on an SDK before patch 53 has its absolute times about 9 % high on
+Both columns are `-O2 -g` without PGO: the table compares the build types, not the release's build
+(`-O3`, with its profile). So a RelWithDebInfo measurement on an SDK before patch 53 has its absolute times about 9 % high on
 the desktop, gains look smaller than in the release, and a change that removes indirect calls
 looks larger. Comparisons between two such builds stay comparable with each other, not with the
 release. The count can still be had for a profiling session, with
