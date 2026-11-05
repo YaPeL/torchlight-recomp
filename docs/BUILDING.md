@@ -30,7 +30,7 @@ The Linux and macOS presets take the SDK from `~/rexglue-sdk/out/install/<platfo
 with `-Drexglue_DIR=<install>/lib/cmake/rexglue` (a `-DCMAKE_PREFIX_PATH` does not override the
 preset's `rexglue_DIR`). The configure never takes an SDK from CMake's package registry: every
 install of one SDK version looks the same there, whatever its patches or configurations. It prints
-the one it took, `ReXGlue SDK: <path>, codegen_id <id>`.
+the one it took, `ReXGlue SDK: <version> at <path>, codegen_id <id>`.
 
 The SDK's own tests: `tools/deps/build_sdk.sh --tests PREFIX WORK` also builds them and runs them
 one at a time with ctest; it fails if one fails, does not run, or is skipped where

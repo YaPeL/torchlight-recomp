@@ -39,13 +39,18 @@ if(TORCHLIGHT_GAME)
 else()
     # What generated/rexglue.cmake does for the SDK, without the game's code.
     find_package(rexglue 0.10.0 REQUIRED CONFIG)
-    message(STATUS "Found ReXGlue SDK ${REXGLUE_VERSION_STRING} at ${rexglue_DIR} (no game)")
 endif()
-set(_rexglue_codegen_id "none (an SDK before the codegen_id)")
-if(EXISTS "${REXGLUE_SHARE_DIR}/codegen_id")
-    file(STRINGS "${REXGLUE_SHARE_DIR}/codegen_id" _rexglue_codegen_id LIMIT_COUNT 1)
+if(REXSDK_DIR)
+    # generated/rexglue.cmake builds the SDK from its source tree (add_subdirectory): no install.
+    message(STATUS "ReXGlue SDK: source tree ${REXSDK_DIR}")
+else()
+    set(_rexglue_codegen_id "none (an SDK before the codegen_id)")
+    if(EXISTS "${REXGLUE_SHARE_DIR}/codegen_id")
+        file(STRINGS "${REXGLUE_SHARE_DIR}/codegen_id" _rexglue_codegen_id LIMIT_COUNT 1)
+    endif()
+    message(STATUS "ReXGlue SDK: ${REXGLUE_VERSION_STRING} at ${rexglue_DIR}, "
+        "codegen_id ${_rexglue_codegen_id}")
 endif()
-message(STATUS "ReXGlue SDK: ${rexglue_DIR}, codegen_id ${_rexglue_codegen_id}")
 
 include(cmake/guest_host_offset.cmake)
 
