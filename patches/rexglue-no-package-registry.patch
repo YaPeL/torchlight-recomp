@@ -1,0 +1,42 @@
+Patch 54. After patch 53.
+
+Every native install registered its prefix in the CMake user package registry
+(~/.cmake/packages/rexglue, HKCU on Windows); patch 36 only kept cross builds out. All installs of
+one SDK version carry the same version number whatever their patches, so find_package(rexglue)
+can take any registered one: an install with an older series (another codegen_id), or one with
+only Release installed, which a RelWithDebInfo or Debug consumer then links without a word
+(CMake maps the missing configuration). On one desktop there were four, three of them other
+tools' private installs, one in a temporary folder.
+
+REXGLUE_REGISTER_PACKAGE is now OFF by default everywhere; an install that should be found that way
+is configured with it ON. Consumers name the install (rexglue_DIR or CMAKE_PREFIX_PATH).
+
+Test: a native install leaves ~/.cmake/packages/rexglue as it was; with the option ON it adds its
+entry, as before.
+
+Upstream: not proposed.
+
+diff --git a/cmake/rexglue_install.cmake b/cmake/rexglue_install.cmake
+index 08240d4..c664f52 100644
+--- a/cmake/rexglue_install.cmake
++++ b/cmake/rexglue_install.cmake
+@@ -154,15 +154,11 @@ install(EXPORT rexglueTargets
+ # Windows: HKCU\Software\Kitware\CMake\Packages\rexglue  (REG_SZ, value name = MD5 hash)
+ # Unix:    ~/.cmake/packages/rexglue/<hash>               (file containing prefix path)
+ #
+-# A cross build (Android) is not registered by default: a native configure of a consumer would
+-# otherwise find it there and take the target's libraries.
+-if(CMAKE_CROSSCOMPILING)
+-    set(_rexglue_register_default OFF)
+-else()
+-    set(_rexglue_register_default ON)
+-endif()
++# Not registered unless asked for (REXGLUE_REGISTER_PACKAGE=ON): every install of the same version
++# is an equal candidate there, so a consumer's configure could take any of them, an older patch
++# level, one with other configurations installed, or a cross build's target libraries.
+ option(REXGLUE_REGISTER_PACKAGE
+-    "Register the install in the CMake user package registry" ${_rexglue_register_default})
++    "Register the install in the CMake user package registry" OFF)
+ if(REXGLUE_REGISTER_PACKAGE)
+ install(CODE [[
+     # Normalize path casing on Windows before hashing to avoid duplicate entries

@@ -69,7 +69,8 @@ in number order; a branch adds its own line at its number's place.
 | 51 | `rexglue-android-sdl-power.patch` | `develop` | In the series (after 50); Android only |
 | 52 | `rexglue-phys-host-offset-no-compare.patch` | `develop` | In the series (after 51); changes Windows' and macOS arm64's generated code too (the owner's OK) |
 | 53 | `rexglue-indirect-dispatch-count-opt-in.patch` | `develop` | In the series (after 52); changes the generated code of every configuration but Release |
-| 54 | | | Next free number |
+| 54 | `rexglue-no-package-registry.patch` | `develop` | In the series (after 53) |
+| 55 | | | Next free number |
 
 ## The patches
 
@@ -770,6 +771,12 @@ in number order; a branch adds its own line at its number's place.
     `REXGLUE_PROFILE_INDIRECT_DISPATCH` defined (as the guest function zones need
     `REXGLUE_PROFILE_GUEST_FUNCTIONS`). Release compiles to the same code, so its PGO profiles
     still match; `codegen_id` changes (the template is one of its inputs).
+
+54. `rexglue-no-package-registry.patch`: no install registers itself in the CMake user package
+    registry unless configured with `REXGLUE_REGISTER_PACKAGE=ON` (patch 36 only kept cross builds
+    out). Installs of one SDK version are indistinguishable there whatever their series or
+    configurations, so a consumer's `find_package` could take any of them. Verified: a native
+    install leaves `~/.cmake/packages/rexglue` as it was.
 
 The observation and diagnostic patches there were before remain in the git history.
 

@@ -1332,10 +1332,11 @@ eight); no patch touches those files. The patches' own tests (`[vfs]`, `[keystro
 the unit tests and every game build below start only when it says the machine is free. At the time
 of writing it asked for no build during its measurement runs.
 
-**The SDK's install registers its prefix in CMake's user package registry**
-(`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`, no option to turn
-it off). Our `CMakeLists.txt` finds the SDK with `find_package(rexglue)` and the presets give no
-`CMAKE_PREFIX_PATH`, so with two installs registered, a fresh configure can pick either one. After
+**The SDK's install registered its prefix in CMake's user package registry**
+(`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`; since patch 54
+only with `REXGLUE_REGISTER_PACKAGE=ON`). Our `CMakeLists.txt` finds the SDK with
+`find_package(rexglue)` and the presets give no `CMAKE_PREFIX_PATH`, so with two installs
+registered, a fresh configure can pick either one. After
 every install into `~/rexglue-sdk-next`, delete its entry; builds against it pass
 `-DCMAKE_PREFIX_PATH=~/rexglue-sdk-next/install`. (Done after the first build, 2026-10-08: the
 entry was there from the end of the install until it was noticed; no build tree was configured
@@ -1400,10 +1401,11 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
 - The shared SDK copies on the Linux machine (2026-10-31). The live SDK is `bd833a2` with
-  develop's series, up to patch 52. One older copy stays next to it: `rexglue-sdk-bd833a2-51`, the
-  same series up to patch 51, to roll back the last swap (two `mv`; its install is inside it). It
-  goes at the next swap, when the copy it replaces becomes the rollback. The old base
-  `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as planned.
+  develop's series, up to patch 52 (53 and 54 are in the series, not yet in this copy). One
+  older copy stays next to it: `rexglue-sdk-bd833a2-51`, the same series up to patch 51, to roll
+  back the last swap (two `mv`; its install is inside it). It goes at the next swap, when the copy
+  it replaces becomes the rollback. The old base `rexglue-sdk-0c7b01a` was deleted after the
+  `v0.7.6-beta` release, as planned.
 - The SDK copies on the Windows machine (2026-10-15). The live SDK is `D:\rexglue-sdk-33\install`:
   `bd833a2` with develop's series up to 33, built by `tools\build-deps\windows.ps1 -SdkPrefix`
   (its checkout in the script's work folder, `D:\ogre-build\rexglue-sdk`), every configuration.
@@ -1420,9 +1422,10 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
 
 - The swap, step by step. The new SDK is built apart with
   `tools/deps/build_sdk.sh ~/rexglue-sdk-swapNN-install ~/rexglue-sdk-swapNN all`, from a worktree
-  of `develop` so the series cannot change during the build; the registry entry the install adds
-  for that prefix is deleted. After a go from every agent that uses `~/rexglue-sdk`, and with no
-  game running (binaries load `librexruntimerd.so` from it):
+  of `develop` so the series cannot change during the build. Since patch 54 the install adds no
+  registry entry; with an older series in the worktree, delete the one it adds. After a go from
+  every agent that uses `~/rexglue-sdk`, and with no game running (binaries load
+  `librexruntimerd.so` from it):
   1. Delete the build trees (`out/build` and `out/linux-amd64`) of the new checkout and of the
      live one. A build tree keeps the absolute paths it was configured in (`CMakeCache.txt`), its
      install prefix among them: moved, a rebuild in it would install into the old prefix and
@@ -1431,7 +1434,8 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   2. Move the live `~/rexglue-sdk` to `~/rexglue-sdk-bd833a2-NN` (the series it carries), the
      new checkout to `~/rexglue-sdk`, and the new install to
      `~/rexglue-sdk/out/install/linux-amd64`; delete the previous rollback copy.
-  3. Check that the CMake registry holds only the entry for `~/rexglue-sdk/out/install/linux-amd64`.
+  3. Check that the CMake registry holds at most the entry for
+     `~/rexglue-sdk/out/install/linux-amd64` (an install with patch 54 adds none).
   4. Verify on `develop`: `rexglue codegen`, a clean RelWithDebInfo build and `ctest`; then tell
      the agents to rebuild.
 
@@ -1556,9 +1560,9 @@ these agents lives here and in `patches/README.md`.
   16 KB emulator image is the minimum; both devices if there is time.
   1. A host SDK of the same series: its `rexglue` runs the codegen of the Android build
      (patch 35). Either the desktop SDK after its update to this series, or one apart with
-     `tools/deps/build_sdk.sh <host prefix> <host work dir>` (then delete the registry entry the
-     install adds, `~/.cmake/packages/rexglue/`, as in section 6). An older series fails the
-     configure below with "does not generate what this SDK expects".
+     `tools/deps/build_sdk.sh <host prefix> <host work dir>` (with a series before patch 54, delete
+     the registry entry the install adds, `~/.cmake/packages/rexglue/`, as in section 6). An
+     older series fails the configure below with "does not generate what this SDK expects".
   2. A second checkout with the same series, for Android, with the tests. Run
      `tools/deps/build_sdk.sh` with a work dir to get the patched checkout, or apply `series`
      by hand on `bd833a2`. Then, from that checkout:
