@@ -4,11 +4,11 @@
 [![Release](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-recomp?include_prereleases&filter=v*&sort=semver)](https://github.com/YaPeL/torchlight-recomp/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![Platforms: Linux | Windows | macOS](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)](#installing)
+[![Platforms: Linux | Windows | macOS | Android (experimental)](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android%20%28experimental%29-lightgrey)](#installing)
 
 An unofficial native PC port of Torchlight for Xbox LIVE Arcade (Xbox 360), made by static
 recompilation with the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk). The game's PowerPC
-code is translated to C++ and compiled for x86-64 and, on macOS, ARM64 (Apple Silicon); instead of
+code is translated to C++ and compiled for x86-64 and, on macOS and Android, ARM64; instead of
 emulating the Xbox 360 GPU, every draw is rebuilt with [OGRE 14](https://www.ogre3d.org/) on OpenGL 3.3 (or Direct3D 11 on Windows).
 
 > [!IMPORTANT]
@@ -97,6 +97,20 @@ open -a "Torchlight Recomp" --args --mnk_mode=true
 On Apple keyboards the function keys control the Mac by default: press **fn** with them, **fn+F3**
 for the frame counter and **fn+F9** for a capture (or turn on "Use F1, F2, etc. keys as standard
 function keys" in System Settings, Keyboard).
+
+### Android (highly experimental)
+
+Requirements: a 64-bit ARM phone or tablet with Android 11 or later. It has been tested mostly on
+one phone (POCO X7); performance and compatibility on other devices are unknown, so expect bugs.
+
+Download `Torchlight-Recomp-*-arm64.apk` on the device and open it. Android asks to allow
+installing apps from the browser or file manager you opened it with: allow it for that app, then
+install. To check a download, compare its SHA-256 with the one in the release notes.
+
+On the first start, choose your Torchlight XBLA package with the system's file picker (copy it to
+the device first, e.g. to Downloads) and the achievement set; later starts go straight to the
+game. Touch controls laid out as a gamepad show while no controller is connected; a connected
+controller works as on the desktop.
 
 ## First start
 
