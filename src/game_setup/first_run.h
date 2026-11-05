@@ -15,6 +15,7 @@ namespace torchlight::game_setup {
 enum class GameData {
   kReady,          // the game is there and nothing is left to ask
   kQuit,           // the player closed the setup: nothing more was written
+  kSetUp,          // everything answered and saved, but not to start now (a Steam Deck with no pad)
   kMissingInRoot,  // no game, and this run may not ask: it says so and stops
   kFailed,         // the setup's window could not open: it says so and stops
 };

@@ -33,7 +33,13 @@ if(NOT ANDROID)
   add_test(NAME wizard_shots_setup_package COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_package.txt" --shots "${shots}"
            --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-package" --install_delay 200 --expect installed)
-  set(setup_tests wizard_shots_setup_tour wizard_shots_setup_cancel wizard_shots_setup_package)
+  # As a Steam Deck with no pad: fails on a machine with a real pad connected (CI has none).
+  add_test(NAME wizard_shots_setup_deck COMMAND wizard_shots ${setup}
+           --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_deck.txt" --shots "${shots}"
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-deck" --install_delay 200
+           --width 1280 --height 800 --deck 1 --expect deck-closed)
+  set(setup_tests wizard_shots_setup_tour wizard_shots_setup_cancel wizard_shots_setup_package
+      wizard_shots_setup_deck)
   # The storage pages, over invented folders.
   foreach(case "ask|1|copied-user" "other|1|copied-other" "parent_unwritable|0|user-folders"
           "portable_unwritable|0|user-folders" "cancel|0|no-portable")

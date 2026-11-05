@@ -36,6 +36,7 @@ struct StorageQuestion {
 struct FirstStartAnswers {
   std::optional<settings::AchievementSet> achievement;
   std::optional<bool> portable;  // the storage answer: true portable, false the user's folders
+  bool start_game = true;        // false: everything answered, but the player closed the setup
 };
 
 // `questions` holds what is open with the storage as it is now; `after_storage` applies an answer and

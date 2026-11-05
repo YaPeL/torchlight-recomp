@@ -92,6 +92,12 @@ class TorchlightApp : public rex::ReXApp {
       switch (torchlight::game_setup::FirstStart(facts, startup_log())) {
         case GameData::kReady: break;
         case GameData::kQuit: std::exit(EXIT_SUCCESS);  // nothing is running yet
+        case GameData::kSetUp:
+          // Answers were saved (or failed to be): say so on the console, as the run's log would.
+          for (const auto& message : startup_log()) {
+            std::printf("torchlight: %s\n", message.text.c_str());
+          }
+          std::exit(EXIT_SUCCESS);
         case GameData::kMissingInRoot:
         case GameData::kFailed: std::exit(EXIT_FAILURE);
       }

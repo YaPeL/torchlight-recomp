@@ -39,6 +39,9 @@ struct SetupConfig {
   bool own_browser_only = false;       // never the system's picker (a script's run)
   std::filesystem::path browse_from;   // the browser's first folder; empty: the home folder
   int test_install_delay_ms = 0;       // a test's slower work, to see its page
+  // A Steam Deck: with no pad the game would hear, the Ready page says how to play and closes
+  // instead of starting the game (completed(), start_game() false).
+  bool steam_deck = false;
 };
 
 class SetupPages : public wizard::Pages {
@@ -55,6 +58,8 @@ class SetupPages : public wizard::Pages {
 
   // Every question answered and the player chose to start.
   bool completed() const { return completed_; }
+  // Completed with the game to start now; false: answered and closed (SetupConfig::steam_deck).
+  bool start_game() const { return start_game_; }
   bool installed() const { return installed_; }
   std::optional<settings::AchievementSet> achievements() const { return achievements_; }
   std::optional<bool> portable() const { return portable_; }
@@ -102,7 +107,7 @@ class SetupPages : public wizard::Pages {
   std::string from_;
 
   bool quit_ = false;
-  bool completed_ = false, installed_ = false;
+  bool completed_ = false, installed_ = false, start_game_ = true;
   std::optional<settings::AchievementSet> achievements_;
   std::vector<platform::StartupMessage> log_;
 };

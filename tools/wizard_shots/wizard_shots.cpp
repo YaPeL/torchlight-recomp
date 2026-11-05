@@ -100,7 +100,8 @@ class SamplePages : public Pages {
 
 // The first start's real pages, over invented game files with a table made here: --pages setup
 // --sample_root DIR [--language CODE --strings FILE] [--no_game] [--install_delay MS]
-// [--expect installed|none]. The exit code also says whether the install ended as expected.
+// [--expect installed|none|deck-closed] [--deck 1]. The exit code also says whether the install
+// ended as expected.
 struct SetupRun {
   fs::path sample_root;
   std::string language, strings;
@@ -111,6 +112,7 @@ struct SetupRun {
   bool user_data = false;  // invented user folders holding files to copy
   bool elevated = false;   // as a Windows run as administrator shows it
   std::string os;          // the texts of windows, macos or linux; empty: this one
+  bool deck = false;       // as on a Steam Deck (the script's pad is not one the game hears)
 };
 
 int RunSetup(const Options& options, const SetupRun& run) {
@@ -139,6 +141,7 @@ int RunSetup(const Options& options, const SetupRun& run) {
   config.own_browser_only = true;
   config.browse_from = run.sample_root;
   config.test_install_delay_ms = run.install_delay;
+  config.steam_deck = run.deck;
   if (!run.storage.empty()) {
     fs::create_directories(portable.parent_path());
     // Another portable folder, and files in the tests' user folders, to copy from.
@@ -204,7 +207,13 @@ int RunSetup(const Options& options, const SetupRun& run) {
     std::fprintf(stderr, "wizard_shots: the user's folders were not chosen\n");
     return 4;
   }
-  if (run.expect == "installed" && (!pages.completed() || !gs::XexMatches(game, files))) {
+  if (run.expect == "deck-closed" &&
+      (!pages.completed() || pages.start_game() || !gs::XexMatches(game, files))) {
+    std::fprintf(stderr, "wizard_shots: not installed and closed without starting\n");
+    return 4;
+  }
+  if (run.expect == "installed" &&
+      (!pages.completed() || !pages.start_game() || !gs::XexMatches(game, files))) {
     std::fprintf(stderr, "wizard_shots: the game was not installed\n");
     return 4;
   }
@@ -296,6 +305,7 @@ int main(int argc, char** argv) {
     else if (key == "--user_data") setup.user_data = value == "1";
     else if (key == "--elevated") setup.elevated = value == "1";
     else if (key == "--os") setup.os = value;
+    else if (key == "--deck") setup.deck = value == "1";
     else if (key == "--video") options.video = value;
     else if (key == "--width") options.width = std::atoi(value.c_str());
     else if (key == "--height") options.height = std::atoi(value.c_str());

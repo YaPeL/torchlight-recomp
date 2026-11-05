@@ -97,7 +97,10 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   `data/ui/tl_setup_strings.txt` (de, fr, es; written for this project in the register of the game's
   translations) in the host settings' language, else `--user_language`'s, else the system's
   preferred one, else English; `setup_text_test` fails when a text lacks a line in any language. New
-  first-start texts go the same way. After the game's files, when `settings.toml` has no
+  first-start texts go the same way. On a Steam Deck with no pad SDL lists (Desktop Mode, the program
+  not started by Steam, which keeps the Deck's controls for its desktop layout), the last page says to
+  add the program to Steam and play from Game Mode, and its button saves the answers and closes
+  instead of starting the game (`GameData::kSetUp`). After the game's files, when `settings.toml` has no
   `achievements` yet, the wizard asks which set to earn, Xbox 360 or PC, and saves the answer (closing it saves nothing and
   ends the start; on Android, a message box whose closing saves Xbox 360); `FirstStart`, before the
   runtime starts.
