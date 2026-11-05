@@ -25,8 +25,10 @@ OGRE path: cache variable `TORCHLIGHT_OGRE_INSTALL`. `all` builds the SDK's Debu
 RelWithDebInfo libraries, which the debug and relwithdebinfo presets link; without it, Release only
 (what CI and the published game use).
 
-The Linux and macOS presets take the SDK from `~/rexglue-sdk/out/install/<platform>` (their
-`rexglue_DIR`: `linux-amd64`, `linux-arm64`, `mac-arm64`, `mac-amd64`). Another install is named
+The Linux and macOS presets take the SDK from
+`~/rexglue-sdk/out/install/<platform>/lib/cmake/rexglue` (their `rexglue_DIR`; `<platform>` is
+`linux-amd64`, `linux-arm64`, `mac-arm64` or `mac-amd64`). Where that folder does not exist, the
+configure warns and searches `CMAKE_PREFIX_PATH` and the system paths. Another install is named
 with `-Drexglue_DIR=<install>/lib/cmake/rexglue` (a `-DCMAKE_PREFIX_PATH` does not override the
 preset's `rexglue_DIR`). The configure never takes an SDK from CMake's package registry: every
 install of one SDK version looks the same there, whatever its patches or configurations. It prints
