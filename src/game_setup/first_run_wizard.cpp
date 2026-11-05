@@ -5,6 +5,7 @@
 #include "game_setup/first_run_steps.h"
 #include "game_setup/game_files.h"
 #include "game_setup/setup_pages.h"
+#include "platform/os_kind.h"
 #include "platform/platform.h"
 
 #ifdef TORCHLIGHT_DEV_INPUT
@@ -31,7 +32,8 @@ GameData AskFirstStart(const OpenQuestions& questions,
   config.after_storage = after_storage;
   config.files = GameFiles();
   config.translate = translate;
-  config.steam_deck = platform::IsSteamDeck();
+  // SteamOS only: Windows on a Deck has no Desktop and Game Modes to send the player to.
+  config.steam_deck = platform::ThisOs() == platform::OsKind::kLinux && platform::IsSteamDeck();
   wizard::Options options;
   options.title = Render({std::string(kTextRendererTitle), {}}, translate);
 #ifdef TORCHLIGHT_DEV_INPUT

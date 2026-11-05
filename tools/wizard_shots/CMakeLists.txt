@@ -33,6 +33,7 @@ if(NOT ANDROID)
   add_test(NAME wizard_shots_setup_package COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_package.txt" --shots "${shots}"
            --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-package" --install_delay 200 --expect installed)
+  # As a Steam Deck with no pad: fails on a machine with a real pad connected (CI has none).
   add_test(NAME wizard_shots_setup_deck COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_deck.txt" --shots "${shots}"
            --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-deck" --install_delay 200

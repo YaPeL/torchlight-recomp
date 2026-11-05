@@ -192,8 +192,9 @@ Other languages can be added as language packs, including translations made for 
   ([Where files are kept](#where-files-are-kept)).
 - **PC achievements** are covered by tests, but only a few have been earned in actual play so far.
 - **Xbox LIVE** features (sign-in, leaderboards) are not available.
-- **Steam Deck**: the AppImage is meant to work in Desktop Mode but has not been tested on the
-  device yet.
+- **Steam Deck**: do the first setup in Desktop Mode, then add the AppImage to Steam as a non-Steam
+  game and play from Game Mode. Started outside Steam in Desktop Mode, the game gets nothing from
+  the Deck's controls (Steam keeps them for the desktop), so the setup ends there without starting it.
 - **macOS**: the app is not signed or notarized (see Gatekeeper, above), and started from Finder
   it has no keyboard controls: without a gamepad, start it from Terminal as shown there.
 - **Ultrawide**: at 32:9, the story screens shown inside a level can show a few rows of the level at

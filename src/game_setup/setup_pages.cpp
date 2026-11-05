@@ -482,7 +482,9 @@ void SetupPages::ReadyPage() {
   const bool no_pad = config_.steam_deck && !RealPadConnected();
   ui_.Wrapped(Tr(no_pad ? kTextReadyDeck : kTextReady));
   ImGui::EndChild();
-  if (ui_.Footer(Tr(no_pad ? kTextClose : kTextStart).c_str(), true, ui_.can_go_back(), true)) {
+  // One button whichever its label, so a pad plugged in or out here keeps its focus.
+  const std::string label = Tr(no_pad ? kTextClose : kTextStart) + "###ready";
+  if (ui_.Footer(label.c_str(), true, ui_.can_go_back(), true)) {
     completed_ = true;
     start_game_ = !no_pad;
   }

@@ -103,8 +103,10 @@ bool Ui::Footer(const char* next_label, bool next_enabled, bool back_enabled, bo
   if (!back_enabled) ImGui::EndDisabled();
   bool chosen = false;
   if (next_label) {
-    const float width = std::max(ImGui::GetFontSize() * 7, ImGui::CalcTextSize(next_label).x +
-                                                               ImGui::GetStyle().FramePadding.x * 2);
+    // The label's shown text: a "###id" suffix keeps the button's identity when the label changes.
+    const float width =
+        std::max(ImGui::GetFontSize() * 7, ImGui::CalcTextSize(next_label, nullptr, true).x +
+                                               ImGui::GetStyle().FramePadding.x * 2);
     ImGui::SameLine(ImGui::GetWindowWidth() - width - ImGui::GetStyle().WindowPadding.x);
     if (!next_enabled) ImGui::BeginDisabled();
     if (focus_next && entered_ && next_enabled) FocusNext();
