@@ -1332,10 +1332,10 @@ eight); no patch touches those files. The patches' own tests (`[vfs]`, `[keystro
 the unit tests and every game build below start only when it says the machine is free. At the time
 of writing it asked for no build during its measurement runs.
 
-**The SDK is named, never found in CMake's package registry.** The SDK's install registers its
-prefix there (`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`), and
-installs of one version look the same to `find_package`; our configure does not read the registry
-(2026-11-05). The Linux and macOS presets set `rexglue_DIR` to the shared SDK, and that wins over a
+**The SDK is named, never found in CMake's package registry.** The SDK's install registered its
+prefix there (`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`; not
+since patch 54), and installs of one version look the same to `find_package`; our configure does
+not read the registry (2026-11-05). The Linux and macOS presets set `rexglue_DIR` to the shared SDK, and that wins over a
 `-DCMAKE_PREFIX_PATH`, so builds against `~/rexglue-sdk-next` pass
 `-Drexglue_DIR=~/rexglue-sdk-next/install/lib/cmake/rexglue`; the configure's
 `ReXGlue SDK: <version> at <path>, codegen_id <id>` line shows which one it took. (On 2026-10-08,
