@@ -22,6 +22,12 @@ endif()
 option(TORCHLIGHT_GAME
     "Build the game executable (needs generated/, the recompiled code); OFF: libraries, tests and tools only"
     ON)
+# Every install of one SDK version looks the same to find_package, whatever its patches and
+# configurations: the SDK is named (rexglue_DIR: the Linux and macOS presets give the shared one,
+# CI and the release jobs their own; or CMAKE_PREFIX_PATH), never taken from CMake's package
+# registries, and the configure says which one it took (docs/BUILDING.md).
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
+set(CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY OFF)
 if(TORCHLIGHT_GAME)
     if(NOT EXISTS "${CMAKE_SOURCE_DIR}/generated/rexglue.cmake")
         message(FATAL_ERROR
@@ -35,6 +41,11 @@ else()
     find_package(rexglue 0.10.0 REQUIRED CONFIG)
     message(STATUS "Found ReXGlue SDK ${REXGLUE_VERSION_STRING} at ${rexglue_DIR} (no game)")
 endif()
+set(_rexglue_codegen_id "none (an SDK before the codegen_id)")
+if(EXISTS "${REXGLUE_SHARE_DIR}/codegen_id")
+    file(STRINGS "${REXGLUE_SHARE_DIR}/codegen_id" _rexglue_codegen_id LIMIT_COUNT 1)
+endif()
+message(STATUS "ReXGlue SDK: ${rexglue_DIR}, codegen_id ${_rexglue_codegen_id}")
 
 include(cmake/guest_host_offset.cmake)
 

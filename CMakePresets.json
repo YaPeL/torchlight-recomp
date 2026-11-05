@@ -28,7 +28,8 @@
             "binaryDir": "${sourceDir}/out/build/${presetName}",
             "cacheVariables": {
                 "CMAKE_C_COMPILER": "clang",
-                "CMAKE_CXX_COMPILER": "clang++"
+                "CMAKE_CXX_COMPILER": "clang++",
+                "rexglue_DIR": "$env{HOME}/rexglue-sdk/out/install/linux-amd64/lib/cmake/rexglue"
             },
             "condition": {
                 "type": "equals",
@@ -45,6 +46,7 @@
                 "CMAKE_C_COMPILER": "clang",
                 "CMAKE_CXX_COMPILER": "clang++",
                 "CMAKE_OSX_ARCHITECTURES": "x86_64",
+                "rexglue_DIR": "$env{HOME}/rexglue-sdk/out/install/mac-amd64/lib/cmake/rexglue",
                 "CMAKE_OSX_SYSROOT": "macosx",
                 "CMAKE_OSX_DEPLOYMENT_TARGET": "13.3"
             },
@@ -69,7 +71,8 @@
             "inherits": "linux-base",
             "cacheVariables": {
                 "CMAKE_C_FLAGS": "-march=armv8-a",
-                "CMAKE_CXX_FLAGS": "-march=armv8-a"
+                "CMAKE_CXX_FLAGS": "-march=armv8-a",
+                "rexglue_DIR": "$env{HOME}/rexglue-sdk/out/install/linux-arm64/lib/cmake/rexglue"
             }
         },
         {
@@ -79,7 +82,8 @@
             "cacheVariables": {
                 "CMAKE_C_FLAGS": "-march=armv8-a",
                 "CMAKE_CXX_FLAGS": "-march=armv8-a",
-                "CMAKE_OSX_ARCHITECTURES": "arm64"
+                "CMAKE_OSX_ARCHITECTURES": "arm64",
+                "rexglue_DIR": "$env{HOME}/rexglue-sdk/out/install/mac-arm64/lib/cmake/rexglue"
             }
         },
         {
