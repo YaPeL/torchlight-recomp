@@ -68,7 +68,18 @@ case "$version_code" in ''|*[!0-9]*) echo "build_apk: --version-code must be a n
 [ -n "$version_name" ] || { echo "build_apk: --version-name is empty" >&2; exit 2; }
 if [ "$release" = 1 ]; then
   [ -d "$out" ] || { echo "build_apk: --release writes into a folder; $out is not one" >&2; exit 2; }
+  # The name goes into the file name after the "v": digits first, then only [0-9A-Za-z.+-].
+  case "$version_name" in
+    [0-9]*) case "$version_name" in *[!0-9A-Za-z.+-]*) bad_name=1 ;; *) bad_name=0 ;; esac ;;
+    *) bad_name=1 ;;
+  esac
+  [ "$bad_name" = 0 ] || {
+    echo "build_apk: --version-name must start with a digit and hold only [0-9A-Za-z.+-]" >&2
+    exit 2
+  }
   out="${out%/}/Torchlight-Recomp-v$version_name-arm64.apk"
+  # Never replace an APK of that name: the owner may have signed it in place.
+  [ ! -e "$out" ] || { echo "build_apk: $out exists; move it away first" >&2; exit 2; }
 fi
 
 tools="$sdk/build-tools/$build_tools"
