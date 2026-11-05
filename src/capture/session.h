@@ -165,6 +165,17 @@ class Session {
     measure_frame_.store(on, std::memory_order_relaxed);
   }
   bool producer_timing() const { return producer_timing_; }
+  // Before the guest runs: the shadow's direct index used (--native_shadow_index; off, the map
+  // alone, to measure it) and every lookup checked against the map (--diag_shadow_index).
+  void SetShadowIndex(bool use, bool check) {
+    use_shadow_index_ = use;
+    check_shadow_index_ = check;
+  }
+  // Lookups checked and mismatches found since the start.
+  std::pair<uint64_t, uint64_t> ShadowIndexChecks() const {
+    return {shadow_index_lookups_.load(std::memory_order_relaxed),
+            shadow_index_mismatches_.load(std::memory_order_relaxed)};
+  }
   // Recording, on a frame whose recording cost is timed (kMeasureEveryFrames).
   bool measuring() const {
     return recording() && measure_frame_.load(std::memory_order_relaxed);
@@ -303,6 +314,53 @@ class Session {
   bool LiveTextureDescribed(const commands::ResourceId& id) const;
   bool LiveDeclarationDescribed(const commands::ResourceId& id, commands::Hash content) const;
 
+  // Diagnostics (diag/store_trace.cpp, --diag_store_compare): what one guest call does to the
+  // command stream, for comparing two runs of it from the same state. While a log is set (render
+  // thread), every state the hooks set is kept with the shadow's value before the call's first
+  // write, and the events and draws are listed, each draw with the states the call had set by
+  // then. With `divert` (the run that is compared and then undone) nothing reaches the shadow,
+  // the early out's memos or the streams; resource descriptions still do (they are idempotent,
+  // and the run kept would not send them again). The constants are listed whole, by the hook
+  // (CompareConstants), not as the live stream's filtered ranges.
+  struct CompareValue {
+    std::optional<commands::CommandPayload> payload;  // none: absent
+    uint32_t object = 0;
+    bool operator==(const CompareValue&) const = default;
+  };
+  struct CompareLog {
+    struct Key {
+      CompareValue before, now;
+    };
+    struct Item {
+      commands::CommandPayload payload;
+      std::vector<commands::Hash> live_keys;  // a draw's
+      std::map<uint32_t, CompareValue> state;  // a draw's: the keys the call set, as they were
+    };
+    bool divert = false;
+    std::map<uint32_t, Key> keys;
+    std::vector<Item> items;
+    // With `divert`, every call in order, to replay into the session when the run is kept
+    // (ReplayDiverted).
+    struct Op {
+      enum Kind : uint8_t { kState, kErase, kEvent, kDraw, kConstants } kind;
+      uint32_t key = 0, object = 0;
+      std::optional<commands::CommandPayload> payload;
+      std::vector<commands::Hash> live_keys;
+    };
+    std::vector<Op> ops;
+  };
+  void SetCompareLog(CompareLog* log) { compare_ = log; }
+  CompareLog* compare_log() const { return compare_; }
+  void CompareConstants(commands::SetConstants constants) {
+    if (compare_->divert) compare_->ops.push_back({CompareLog::Op::kConstants, 0, 0, constants, {}});
+    compare_->items.push_back({std::move(constants), {}, {}});
+  }
+  // A diverted run that is kept after all (its effects could not be undone): its calls, as if
+  // they had not been diverted. No log may be set. The constants go through the live stream's
+  // mirror as the hook would have sent them.
+  void ReplayDiverted(const CompareLog& log);
+  // (Only TORCHLIGHT_DIAGNOSTICS builds compile the code that reads compare_ in session.cpp.)
+
  private:
   Session() = default;
   void Start();
@@ -321,16 +379,31 @@ class Session {
 
   // Render thread only.
   // Entries are never removed (EraseState marks them absent), so a pointer to one stays valid for
-  // the early out; `version` changes with every write.
+  // the early out and the direct index; `version` changes with every write.
   struct ShadowEntry {
     commands::CommandPayload payload;
     uint32_t object = 0;
     uint64_t version = 0;
     bool present = true;
   };
-  // A hash map (looked up on every state hook); its node-based entries keep their address, which
-  // the early out's memos rely on. Walked in key order where order shows (ShadowKeysInOrder).
+  // A hash map whose node-based entries keep their address, which the early out's memos and the
+  // direct index rely on. Walked in key order where order shows (ShadowKeysInOrder).
   std::unordered_map<uint32_t, ShadowEntry> shadow_;
+  // The same entries by direct index for the keys the hooks use (an opcode, a sub under
+  // kShadowIndexSubs): one array read per state hook instead of a hash lookup. Other keys, and the
+  // walks, go through shadow_. Only AddShadow inserts into shadow_, and fills the index.
+  static constexpr uint32_t kShadowIndexSubs = 512;
+  std::vector<ShadowEntry*> shadow_index_ =
+      std::vector<ShadowEntry*>(commands::kOpcodeCount * kShadowIndexSubs);
+  ShadowEntry* FindShadow(uint32_t key);
+  ShadowEntry& AddShadow(uint32_t key);
+  // --native_shadow_index; off, State and the rest look up shadow_ as before the index (to measure
+  // it in the same build).
+  bool use_shadow_index_ = true;
+  // --diag_shadow_index: every indexed lookup checked against shadow_ (ShadowIndexChecks). Render
+  // thread writes, the backend thread reads the counts.
+  bool check_shadow_index_ = false;
+  std::atomic<uint64_t> shadow_index_lookups_{0}, shadow_index_mismatches_{0};
   std::vector<uint32_t> ShadowKeysInOrder() const;
   struct ArgsMemo {
     const ShadowEntry* entry = nullptr;
@@ -340,6 +413,11 @@ class Session {
   };
   std::vector<ArgsMemo> memos_ = std::vector<ArgsMemo>(kRenderSystemSlotCount * kMemoSubs);
   const uint8_t* membase_ = nullptr;
+  // The comparison's log, for the thread that set it only (the store trace compares on the render
+  // thread; other threads' state and events, a loader's for instance, are not part of the call and
+  // must not reach the log).
+  static inline thread_local CompareLog* compare_ = nullptr;
+  void CompareState(uint32_t key, CompareValue value);
   ConstantMirror constant_mirror_;
   uint64_t swap_number_ = 0;
   bool producer_timing_ = true;  // SetProducerTiming

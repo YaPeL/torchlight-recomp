@@ -351,6 +351,7 @@ int main(int argc, char** argv) {
 
   frontend.BeginFrame();
   for (const auto& frame : c.frames) {
+    frontend.PlanTargets(frame.commands);
     for (const auto& cmd : frame.commands) {
       frontend.Execute(cmd);
       if (frames_png && std::holds_alternative<Present>(cmd.payload)) {

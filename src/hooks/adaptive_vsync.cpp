@@ -1,0 +1,22 @@
+#include "hooks/adaptive_vsync.h"
+
+#include <atomic>
+
+#include "guest_abi/adaptive_vsync.h"
+
+namespace torchlight::hooks {
+
+namespace {
+std::atomic<uint32_t> g_fps_cap{0};
+}  // namespace
+
+void SetAdaptiveVsyncCap(uint32_t fps_cap) { g_fps_cap.store(fps_cap, std::memory_order_relaxed); }
+uint32_t AdaptiveVsyncCap() { return g_fps_cap.load(std::memory_order_relaxed); }
+
+uint32_t AdaptiveVsyncInterval(uint32_t game_interval, uint32_t fps_cap) {
+  namespace abi = guest_abi::adaptive_vsync;
+  if (fps_cap == 0 || float(fps_cap) > abi::kThresholdFps) return game_interval;
+  return abi::kIntervalDefault;
+}
+
+}  // namespace torchlight::hooks

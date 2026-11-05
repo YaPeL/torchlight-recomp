@@ -806,13 +806,14 @@ finds no dependency outside the bundle and the system.
   `MacOS/` (the executable and the null GPU plugin), `Frameworks/` (OGRE, `librexruntime`),
   `PlugIns/ogre/`, `Resources/` (`6bfe7d3`, `d784784`).
 - `packaging/macos/`: `make_app.sh` (rpaths, `Info.plist` with `io.github.yapel.torchlight-recomp`
-  and macOS 13.3, the icon from the Linux SVG, ad-hoc signatures), `check_app.sh`,
+  and macOS 13.3, the icon from `data/icon/`, ad-hoc signatures), `check_app.sh`,
   `split_symbols.sh`, `make_dmg.sh` (`c465b3f`). The Release `.dmg` is 31 MB. With `-g`, the
   executable's `.dSYM` is 116 MB; its UUID matches the signed binary and `atos` resolves addresses
   (`LiveMode::Stop()`, `live_mode.cpp:132`).
 - Xenos is not in the package: the SDK looks for MoltenVK in `Contents/lib`, which a signed bundle
   cannot hold. The emulated GPU stays a build-tree diagnostic on macOS (MAC.10).
-- The message-box dialogs (the achievements choice, errors, the package picker) activate the
+- Since the setup wizard, the first start is its window, which also comes to the front. The
+  message-box dialogs (errors) activate the
   application first (`platform::BringToFront`), so they no longer open behind the terminal or
   Finder.
 - Quarantine test: no second account; instead, `com.apple.quarantine` set on the `.dmg` as a

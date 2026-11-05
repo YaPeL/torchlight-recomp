@@ -4,12 +4,13 @@
 [![Release](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml/badge.svg)](https://github.com/YaPeL/torchlight-recomp/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/YaPeL/torchlight-recomp?include_prereleases&filter=v*&sort=semver)](https://github.com/YaPeL/torchlight-recomp/releases)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
-[![Platforms: Linux | Windows | macOS](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey)](#installing)
+[![Platforms: Linux | Windows | macOS | Android (experimental)](https://img.shields.io/badge/platforms-Linux%20%7C%20Windows%20%7C%20macOS%20%7C%20Android%20%28experimental%29-lightgrey)](#installing)
 
 An unofficial native PC port of Torchlight for Xbox LIVE Arcade (Xbox 360), made by static
 recompilation with the [ReXGlue SDK](https://github.com/rexglue/rexglue-sdk). The game's PowerPC
-code is translated to C++ and compiled for x86-64 and, on macOS, ARM64 (Apple Silicon); instead of
-emulating the Xbox 360 GPU, every draw is rebuilt with [OGRE 14](https://www.ogre3d.org/) on OpenGL 3.3 (or Direct3D 11 on Windows).
+code is translated to C++ and compiled for x86-64 and, on macOS and Android, ARM64; instead of
+emulating the Xbox 360 GPU, every draw is rebuilt with [OGRE 14](https://www.ogre3d.org/) on
+OpenGL 3.3 (Direct3D 11 on Windows, OpenGL ES 3 on Android).
 
 > [!IMPORTANT]
 > The releases contain no game assets and no original game files. The executable is built from the
@@ -34,12 +35,16 @@ This is a **beta**. See [Known limitations](#known-limitations).
 
 Download only from this repository's
 [Releases](https://github.com/YaPeL/torchlight-recomp/releases) page. Each release has a
-`SHA256SUMS` file with the checksum of every download.
+`SHA256SUMS` file with the checksum of every desktop download; the Android APK's SHA-256, and its
+signing certificate's, are in the release notes.
 
 ### Linux
 
-Requirements: x86-64, glibc 2.35 or newer (Ubuntu 22.04 or later, or any current distribution), a
-GPU driver with OpenGL 3.3. X11 and Wayland both work.
+Requirements: an x86-64 processor with x86-64-v3 (AVX2 and FMA): the Steam Deck, Intel Core 4th
+generation (Haswell) or later, AMD Zen (or Excavator) or later; many Intel Pentium, Celeron and Atom
+processors lack it, and the game says so and exits on them,
+glibc 2.35 or newer (Ubuntu 22.04 or later, or any current distribution), a GPU driver with OpenGL
+3.3. X11 and Wayland both work.
 
 ```sh
 chmod +x Torchlight-Recomp-*-x86_64.AppImage
@@ -95,17 +100,35 @@ On Apple keyboards the function keys control the Mac by default: press **fn** wi
 for the frame counter and **fn+F9** for a capture (or turn on "Use F1, F2, etc. keys as standard
 function keys" in System Settings, Keyboard).
 
+### Android (highly experimental)
+
+Requirements: a 64-bit ARM phone or tablet with Android 11 or later. It has been tested mostly on
+one phone (POCO X7); performance and compatibility on other devices are unknown, so expect bugs.
+
+Download `Torchlight-Recomp-*-arm64.apk` on the device and open it. Android asks to allow
+installing apps from the browser or file manager you opened it with: allow it for that app, then
+install. To check a download, compare its SHA-256 with the one in the release notes.
+
+On the first start, choose your Torchlight XBLA package with the system's file picker (copy it to
+the device first, e.g. to Downloads) and the achievement set; later starts go straight to the
+game. Touch controls laid out as a gamepad are shown when no controller is connected at start; a
+touch on the screen brings them back and a controller's input hides them. A controller works as on
+the desktop.
+
 ## First start
 
-1. A dialog asks for your Torchlight XBLA package: the file copied from your console's storage, or
-   a folder with its contents already extracted. The package is checked (it must be Torchlight's,
-   version 1.0.140.0, with every file intact) and its files, about 200 MB, are copied to the game's
-   data folder ([Where files are kept](#where-files-are-kept)). Your package is only read.
-2. A second dialog asks which achievement set to use, Xbox 360 or PC
-   ([Achievements](#achievements)). It can be changed later in the settings.
+A setup window opens, played with a gamepad, a mouse or a keyboard:
 
-After that the game starts; later starts go straight to it. These dialogs follow your system's
-language (English, German, French or Spanish).
+1. It asks for your Torchlight XBLA package: the file copied from your console's storage, or a folder
+   with its contents already extracted. The package is checked (it must be Torchlight's, version
+   1.0.140.0, with every file intact) and its files, about 200 MB, are copied to the game's data
+   folder ([Where files are kept](#where-files-are-kept)). Your package is only read.
+2. It asks which achievement set to use, Xbox 360 or PC ([Achievements](#achievements)). It can be
+   changed later in the settings.
+
+After that the game starts; later starts go straight to it. The window follows your system's language
+(English, German, French or Spanish). On Android, these are dialogs, and only the package file can
+be chosen.
 
 A gamepad is recommended. A keyboard can play through ReXGlue's controller emulation: start the game
 with `--mnk_mode=true`.
@@ -187,8 +210,9 @@ Other languages can be added as language packs, including translations made for 
   ([Where files are kept](#where-files-are-kept)).
 - **PC achievements** are covered by tests, but only a few have been earned in actual play so far.
 - **Xbox LIVE** features (sign-in, leaderboards) are not available.
-- **Steam Deck**: the AppImage is meant to work in Desktop Mode but has not been tested on the
-  device yet.
+- **Steam Deck**: do the first setup in Desktop Mode, then add the AppImage to Steam as a non-Steam
+  game and play from Game Mode. Started outside Steam in Desktop Mode, the game gets nothing from
+  the Deck's controls (Steam keeps them for the desktop), so the setup ends there without starting it.
 - **macOS**: the app is not signed or notarized (see Gatekeeper, above), and started from Finder
   it has no keyboard controls: without a gamepad, start it from Terminal as shown there.
 - **Ultrawide**: at 32:9, the story screens shown inside a level can show a few rows of the level at
@@ -196,11 +220,33 @@ Other languages can be added as language packs, including translations made for 
 - **Mods**: new affixes and new level pieces from mods are not loaded yet, mods must be unpacked
   folders, and the first start with a new set of mods takes longer (a "Preparing mods" notice shows
   its progress). The details are in [docs/mods-guide.md](docs/mods-guide.md).
+- **Game files**: restart the game after adding files to the game's own folder (the installed
+  game, not the `mods` folder): files added while it runs are not seen until it starts again.
 - **Languages**: language packs for scripts written right to left (Arabic) are not supported, and
   Chinese and Japanese not yet.
 - The Windows zip is not code-signed (see SmartScreen, above).
+- **Android** is highly experimental: tested mostly on one phone, with performance and
+  compatibility on other devices unknown. Its log is in `Android/data/io.github.yapel.tlrecomp/`,
+  which Android 11 and later hide from most file managers.
 
 ## Where files are kept
+
+The released game keeps everything in one folder beside it: `TorchlightRecomp-data/`, next to the
+AppImage, the `.exe` or the `.app`. Move the two together to take your saves, settings and mods with
+you.
+
+| | In `TorchlightRecomp-data/` |
+|---|---|
+| Settings (`settings.toml`) | `config/` |
+| Saves | `data/` |
+| Mods (with `mods.dat`) and replacements | `data/mods/`, `data/replacements/` |
+| Game data, with `import` for PC saves | `game/` |
+| Logs | `logs/` |
+| Shader cache | `cache/` |
+
+The first start offers copying files from an earlier install, which stay where they were. If you
+chose the user folders there, or the game cannot write beside itself, or you built the game yourself,
+these are used instead:
 
 | | Linux | Windows |
 |---|---|---|
@@ -222,6 +268,10 @@ On macOS, in `~/Library/`:
 | Game data, with `import` for PC saves | `Application Support/TorchlightRecomp/game/` |
 | Logs | `Logs/TorchlightRecomp/` |
 | Shader cache | `Caches/TorchlightRecomp/ogre/` |
+
+On Android everything is in the app's own storage: settings, saves and the installed game in its
+private storage, the log in `Android/data/io.github.yapel.tlrecomp/files/TorchlightRecomp/logs/`.
+Uninstalling the app deletes your saves.
 
 ## Building
 

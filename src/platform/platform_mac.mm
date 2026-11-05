@@ -24,6 +24,7 @@
 #import <CoreGraphics/CoreGraphics.h>
 
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
@@ -69,6 +70,8 @@ void BringToFront() {
   [NSApplication sharedApplication];
   [NSApp activateIgnoringOtherApps:YES];
 }
+
+void PrepareSoftwareWindows() {}
 
 std::string EmbeddingVideoError() {
   if (VideoDriver() == "cocoa") return "";
@@ -121,6 +124,10 @@ std::string ExecutableDir() {
   const std::filesystem::path exe = std::filesystem::canonical(path.c_str(), ec);
   if (ec) return "";
   return exe.parent_path().string() + "/";
+}
+
+void PrintStartupError(const std::string& message) {
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
 }
 
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
@@ -245,6 +252,10 @@ bool ServeSurfaceChanges(const std::function<void()>&,
   return true;
 }
 
+void SurfaceTaken(uint64_t) {}
+
+bool GameWindowMayGetSurface() { return false; }
+
 bool OgreWindowFollowsGameWindow() { return true; }
 
 namespace {
@@ -294,12 +305,16 @@ float ContentScaleDpi() { return 72.0f; }  // points
 
 bool TouchControlsByDefault() { return false; }
 
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
+
 bool HasSystemBackButton() { return false; }
 
 // The picker's paths are files the program opens as they are.
 PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
   return PickResult::kChosen;
 }
+
+bool RunningElevated() { return false; }
 
 bool CanPickFolder() { return true; }
 

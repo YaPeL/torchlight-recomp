@@ -1,0 +1,6 @@
+# The explanation of this system, in the warning for the place beside the game.
+page storage 5
+detail Move it to Applications or another folder first.
+view
+shot storage-parent-unwritable
+quit

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstdlib>
 #include <cstdio>
 
 #include <rex/cvar.h>
@@ -25,6 +26,9 @@
 #include "mods/unit_index_install.h"
 #include "game_menu/video_menu.h"
 #include "hooks/guest_copy_hooks.h"
+#include "hooks/native_skeleton.h"
+#include "hooks/pixel_util_hooks.h"
+#include "hooks/wardrobe_blend_hooks.h"
 #include "hooks/guest_d3d_skip.h"
 #include "hooks/bucket_cull_hooks.h"
 #include "hooks/frustum_hooks.h"
@@ -33,6 +37,8 @@
 #include "live/install.h"
 #include "dev/script_input.h"
 #include "game_setup/first_run.h"
+#include "platform/storage_mode.h"
+#include "live/frame_counter.h"
 #include "live/system_back_button.h"
 #include "live/touch_input.h"
 #include "platform/platform.h"
@@ -60,20 +66,42 @@ class TorchlightApp : public rex::ReXApp {
 
   static std::unique_ptr<rex::ui::WindowedApp> Create(
       rex::ui::WindowedAppContext& ctx) {
-    // First of all, before anything opens or creates the user's folders: the ones with the old
-    // name move to the new one (logged once logging is up).
-    startup_log() = torchlight::platform::MigrateUserFolders();
-    // The game's files: installed from the user's package on the first start (REL.4), unless
-    // --game_data_root points at them.
-    if (rex::cvar::Query<std::string>("game_data_root").empty()) {
-      const std::string game_dir = torchlight::platform::GameDataDir();
-      if (!game_dir.empty() &&
-          !torchlight::game_setup::EnsureGameData(game_dir, startup_log())) {
-        std::exit(EXIT_SUCCESS);  // the user quit the setup; nothing is running yet
+    // First of all, before anything opens or creates the user's folders: where this run keeps the
+    // player's files. A portable run leaves the user's folders alone; otherwise the ones with the
+    // old name move to the new one (logged once logging is up), never in a run with its own roots.
+    const std::string appimage = rex::cvar::Query<std::string>("appimage_path");
+    const torchlight::platform::StorageMode storage = torchlight::platform::SetUpFolders(
+        torchlight::platform::ExecutableDir(), appimage,
+        rex::cvar::Query<std::string>("user_data_root"),
+        rex::cvar::Query<std::string>("game_data_root"),
+        rex::cvar::Query<std::string>("cache_root"), startup_log());
+    // The questions still open: where to keep the files (kAsk, kPortableUnwritable), the game's
+    // files unless --game_data_root points at them, and the achievement set, before the host
+    // settings are read. A test run's fresh settings never stop it with a question.
+    {
+      using torchlight::game_setup::GameData;
+      torchlight::game_setup::FirstStartFacts facts;
+      facts.storage = storage;
+      if (const auto application = torchlight::platform::ApplicationFolder(
+              torchlight::platform::ExecutableDir(), appimage);
+          !application.empty()) {
+        facts.portable_folder = application / torchlight::platform::kPortableFolderName;
+      }
+      facts.game_given = !rex::cvar::Query<std::string>("game_data_root").empty();
+      facts.own_user_root = !rex::cvar::Query<std::string>("user_data_root").empty();
+      switch (torchlight::game_setup::FirstStart(facts, startup_log())) {
+        case GameData::kReady: break;
+        case GameData::kQuit: std::exit(EXIT_SUCCESS);  // nothing is running yet
+        case GameData::kSetUp:
+          // Answers were saved (or failed to be): say so on the console, as the run's log would.
+          for (const auto& message : startup_log()) {
+            std::printf("torchlight: %s\n", message.text.c_str());
+          }
+          std::exit(EXIT_SUCCESS);
+        case GameData::kMissingInRoot:
+        case GameData::kFailed: std::exit(EXIT_FAILURE);
       }
     }
-    // The achievement set, asked once (before the host settings are read).
-    torchlight::game_setup::EnsureAchievementChoice(startup_log());
     torchlight::live::PreCreate();
     return std::unique_ptr<TorchlightApp>(new TorchlightApp(ctx, "torchlight",
         PPCImageConfig));
@@ -122,6 +150,9 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::live::ApplyAspect();
     torchlight::hooks::InstallVideoMode();
     torchlight::hooks::LogGuestCopyMode();
+    torchlight::hooks::LogNativeSkeletonMode();
+    torchlight::hooks::LogPixelUtilMode();
+    torchlight::hooks::LogWardrobeBlendMode();
     torchlight::hooks::InstallFrustumTest();
     torchlight::hooks::InstallGuestD3DSkip(torchlight::live::OnlyMode());
     torchlight::hooks::InstallBucketCull(torchlight::live::OnlyMode());
@@ -268,7 +299,9 @@ class TorchlightApp : public rex::ReXApp {
   // Override virtual hooks for customization:
   // void OnLoadXexImage(std::string& xex_image) override {}
   // void OnPostLoadXexImage() override {}
-  // void OnCreateDialogs(rex::ui::ImGuiDrawer* drawer) override {}
+  void OnCreateDialogs(rex::ui::ImGuiDrawer*) override {
+    torchlight::live::ShowFrameCounterIfAsked();
+  }
   // std::unique_ptr<rex::ui::ImGuiDialog> CreateAchievementsOverlay() override;
   // void OnConfigurePaths(rex::PathConfig& paths) override {}
 };

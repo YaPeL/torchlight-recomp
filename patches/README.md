@@ -66,7 +66,9 @@ in number order; a branch adds its own line at its number's place.
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | In the series (after 47); changes desktop too (the owner's OK) |
 | 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | In the series (after 48); changes desktop too (the owner's OK) |
 | 50 | `rexglue-thread-dump.patch` | `develop` | In the series (after 49); diagnostics only |
-| 51 | | | Next free number |
+| 51 | `rexglue-android-sdl-power.patch` | `develop` | In the series (after 50); Android only |
+| 52 | `rexglue-phys-host-offset-no-compare.patch` | `develop` | In the series (after 51); changes Windows' and macOS arm64's generated code too (the owner's OK) |
+| 53 | | | Next free number |
 
 ## The patches
 
@@ -335,6 +337,18 @@ in number order; a branch adds its own line at its number's place.
     the two apply in either order.
     In the `bd833a2` series since 2026-10-09, as its last line, taken from `feature/launcher-imgui`
     (`5a98b6f`): it applies after 1-29 on Linux and macOS, and after the two Windows patches.
+    **Wayland (2026-11-04).** Wayland has no window framebuffer either, so the same failure hit the
+    setup window on GNOME Wayland and the Steam Deck in `v1.0.0-rc1`'s AppImage ("Window
+    framebuffer support not available"). On desktop Linux the patch now also turns on OpenGL ES
+    (`SDL_OPENGLES`, EGL), which builds SDL's GLES2 render driver; SDL opens it only when a
+    software renderer's window needs a texture, and closes its libraries with the window. KMSDRM,
+    which EGL would also bring in, stays off. The project sets `SDL_HINT_FRAMEBUFFER_ACCELERATION`
+    to 0 under X11 (`platform::PrepareSoftwareWindows`), so X11 keeps its own framebuffer and loads
+    nothing new. Windows, macOS and Android build SDL as before (OpenGL ES stays off there).
+    Checked with SDL 3.4.14 built with these options: a software renderer's window on a headless
+    GNOME Wayland fails without them and draws and reads back with them, with EGL and GLES mapped
+    while it is open and nothing of them mapped after it closes (Mesa's and NVIDIA's EGL
+    installed); under Xvfb without a GPU it works either way.
 
 22. `rexglue-tests-portable.patch`: the SDK's tests did not build on ARM64 or macOS.
     `tests/ppc/CMakeLists.txt` passed `-msse4.1 -mssse3` to `ppc_tests` on every architecture; now
@@ -738,6 +752,16 @@ in number order; a branch adds its own line at its number's place.
     record's writer and the pending calls' lock on other threads and check that the dump
     returns.
 
+51. `rexglue-android-sdl-power.patch` (Android only): SDL was built with its power subsystem off
+    everywhere, so on Android `SDL_GetPowerInfo` always said unknown and an app could not tell
+    it ran on battery. `SDL_POWER` is on when `ANDROID` is set (SDL reads the battery through the
+    app's Java side); the desktop platforms keep it off.
+
+52. `rexglue-phys-host-offset-no-compare.patch`: the generated code's physical heap offset is
+    computed with shifts and an add instead of a comparison, with the same value for every address;
+    the runtime's `PhysicalHostOffset` keeps the comparison. Android arm64, Windows and macOS arm64
+    only.
+
 The observation and diagnostic patches there were before remain in the git history.
 
 ## OGRE
@@ -758,3 +782,14 @@ rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Andr
   parameter; Mali's compiler copies it to the stack for every vertex. The blend becomes a macro
   that indexes the uniform in place, the same arithmetic in the same order. The file is shared by
   GLSL, GLSL ES and HLSL.
+- `ogre-gles2-discard-depth-on-swap.patch`: ours. On GLES 3, a render texture's
+  `swapBuffers` (a no-op for a frame buffer object before) invalidates its depth and stencil
+  attachments (`glInvalidateFramebuffer`), restoring the frame buffer bound before; multisampled
+  targets keep their resolve, GLES 2 does nothing. The backend calls it when the frontend's plan
+  says no pass reads that depth again (`frontend/depth_discard.h`, `tl_backend_discard_depth`), so
+  a tile GPU does not write it back to memory. GLES only (Android, and CI's GLES test build).
+- `ogre-gles2-sampler-once-per-texture.patch`: from torchlight-rekindled (its patch 0020 and the
+  sampler-state resets of its 0018, commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), Switch
+  guards removed. GLES2 writes a texture's sampler parameters only when they change (remembered on
+  the texture object, forgotten when its GL texture is made or freed). GLES only: Android, and
+  CI's GLES test build.

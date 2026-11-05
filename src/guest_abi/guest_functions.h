@@ -239,6 +239,38 @@ inline constexpr GuestFunction kMemcpy{0x82860A50, Confidence::kConfirmed};
 // @0x821A71D8). Its one direct caller (0x821A71E8 @0x821A7270) copies into a buffer it has just
 // locked.
 inline constexpr GuestFunction kLargeCopy{0x821A7138, Confidence::kConfirmed};
+// [confirmed] XDK vector copy 0x821C28D8 (dst r3, src r4, size r5; returns dst: mr r3,r26 before
+// every return): below 16 bytes doubleword, word (sub_82860ED8) and byte copies; else an unaligned
+// head, then dcbzl of at most one whole 128-byte destination line ahead ((dst + 127) & ~127 when
+// at least 128 bytes remain, @0x821C2A48) and, in the loop, the next line while more than 256
+// bytes remain (@0x821C2AE0), each line filled by the vector stores that follow; a source that is
+// not 16-byte aligned goes through sub_828853C0, whose dcbzl also stays inside the destination;
+// then the tail. Every dcbzl lies inside [dst, dst + size), so with no overlap the result is
+// memcpy's. The byte loop counts down by the word at kVectorCopyStep (lwz -5040 from 0x83050000),
+// which is 1 (static data, checked once at the first copy; a host copy only when it is). The
+// constant writers use it (sub_821C2868, sub_82467DE0). None of its 254 call sites (251 bl, 3 tail
+// calls) reads a register other than r3 after it returns before writing it (checked over
+// generated/default, 2026-10-31).
+inline constexpr GuestFunction kVectorCopy{0x821C28D8, Confidence::kConfirmed};
+inline constexpr uint32_t kVectorCopyStep = 0x8304EC50;
+// [confirmed] OGRE 1.7's Node and Bone transform updates (hooks/native_skeleton.cpp, ported from
+// torchlight-nx 1.0.3, which identified them on this executable; the evidence from the recompiled
+// functions, their fields and the vtable slots they are reached through, is in guest_abi
+// ogre_node.h).
+inline constexpr GuestFunction kNodeUpdateFromParentImpl{0x821C9770, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeUpdateFromParent{0x821C9F08, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedOrientation{0x821C9BB0, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedPosition{0x821C8518, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeDerivedScale{0x821C99D0, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeUpdate{0x821C9F68, Confidence::kConfirmed};
+inline constexpr GuestFunction kNodeNeedUpdate{0x821CA0B8, Confidence::kConfirmed};
+inline constexpr GuestFunction kBoneNeedUpdate{0x821CA140, Confidence::kConfirmed};
+// [confirmed] Skeleton::_notifyManualBonesDirty: sets +0x108 only (the Skeleton's vtable +0x12C,
+// called by Bone::needUpdate for a manually controlled bone; guest_abi ogre_node.h).
+inline constexpr GuestFunction kSkeletonNotifyManualBonesDirty{0x824E8F60, Confidence::kConfirmed};
+// [confirmed] std::set<Node*>::clear on a Node's mChildrenToUpdate (r3 = the set), called by
+// Node::_update and Node::needUpdate (guest_abi ogre_node.h).
+inline constexpr GuestFunction kSetClear{0x8246CA80, Confidence::kConfirmed};
 
 // Xbox D3D device calls of the D3D9 render system's _render (0x821C4058) that only feed the Xenos
 // GPU (hooks/guest_d3d_skip.h; evidence in docs/native-skip-guest-d3d.md, "Draw and bindings").
@@ -272,5 +304,47 @@ inline constexpr GuestFunction kFileAttributes{0x8287E0C8, Confidence::kConfirme
 // 0x8287F090 (MmAllocatePhysicalMemoryEx) by the attribute bits (@0x8287D658..@0x8287D6CC).
 // Every buffer and texture the guest D3D creates allocates here (0x8276AF40, 0x8276AE78).
 inline constexpr GuestFunction kXMemAlloc{0x8287D640, Confidence::kConfirmed};
+
+// Constructors and destructors of some game and OGRE classes, for the object census
+// (hooks/census_hooks.cpp, diagnostics). [confirmed] Each class's vtable comes from its MSVC RTTI
+// (tools/guest_re/rtti_vtable.py; type descriptor names below); a constructor calls its base's
+// constructor and then stores the vtable; a destructor stores it before any call. For the game's
+// classes it is also what the vtable's slot 0 (the deleting destructor) calls before operator
+// delete 0x821CD9A8; the OGRE vtables' slot 0 is not their deleting destructor.
+// One constructor per class unless two are listed (OGRE's named and unnamed ones).
+namespace census {
+// .?AVCCharacter@@, vtable 0x820C060C (slot 0 0x82283940 calls the destructor). The constructor
+// calls CBaseUnit's (@0x822833AC) and stores the secondary vtable +400 @0x822833FC.
+inline constexpr GuestFunction kCharacterCtor{0x82283398, Confidence::kConfirmed};
+inline constexpr GuestFunction kCharacterDtor{0x82284290, Confidence::kConfirmed};
+// .?AVCBaseUnit@@, vtable 0x820BE414 (slot 0 0x8227FD60).
+inline constexpr GuestFunction kBaseUnitCtor{0x8227FB98, Confidence::kConfirmed};
+inline constexpr GuestFunction kBaseUnitDtor{0x8227FDB8, Confidence::kConfirmed};
+// .?AVCItem@@, vtable 0x820C1A7C (slot 0 0x822C7AF0).
+inline constexpr GuestFunction kItemCtor{0x822C7A48, Confidence::kConfirmed};
+inline constexpr GuestFunction kItemDtor{0x822C7B48, Confidence::kConfirmed};
+// .?AVCLevel@@, vtable 0x820C35F8 (slot 0 0x822E9220).
+inline constexpr GuestFunction kLevelCtor{0x822E8E30, Confidence::kConfirmed};
+inline constexpr GuestFunction kLevelDtor{0x822E9278, Confidence::kConfirmed};
+// .?AVSceneNode@Ogre@@, vtable 0x820DD494: two constructors (@0x82450A6C, @0x82450BB0, each after a
+// base constructor's call), the destructor stores it @0x82450C84 before any call.
+inline constexpr GuestFunction kSceneNodeCtor{0x82450A40, Confidence::kConfirmed};
+inline constexpr GuestFunction kSceneNodeCtorNamed{0x82450B80, Confidence::kConfirmed};
+inline constexpr GuestFunction kSceneNodeDtor{0x82450C68, Confidence::kConfirmed};
+// .?AVEntity@Ogre@@, vtable 0x82002EBC.
+inline constexpr GuestFunction kEntityCtor{0x82458400, Confidence::kConfirmed};
+inline constexpr GuestFunction kEntityDtor{0x82458AC0, Confidence::kConfirmed};
+// .?AVParticleSystem@Ogre@@, vtable 0x820EDFAC (slot 0 0x824F99D0 calls the destructor).
+inline constexpr GuestFunction kParticleSystemCtor{0x824F9A28, Confidence::kConfirmed};
+inline constexpr GuestFunction kParticleSystemDtor{0x824F9D68, Confidence::kConfirmed};
+// .?AVLight@Ogre@@, vtable 0x8200313C: two constructors (each after a base constructor's call),
+// the destructor stores it @0x82456230 before any call.
+inline constexpr GuestFunction kLightCtor{0x82455E68, Confidence::kConfirmed};
+inline constexpr GuestFunction kLightCtorNamed{0x82456078, Confidence::kConfirmed};
+inline constexpr GuestFunction kLightDtor{0x82456210, Confidence::kConfirmed};
+// .?AVBillboardSet@Ogre@@, vtable 0x82004B6C.
+inline constexpr GuestFunction kBillboardSetCtor{0x824798C0, Confidence::kConfirmed};
+inline constexpr GuestFunction kBillboardSetDtor{0x82479B08, Confidence::kConfirmed};
+}  // namespace census
 
 }  // namespace torchlight::guest_abi::functions

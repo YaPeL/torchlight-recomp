@@ -16,7 +16,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   `docs/native-skip-guest-d3d.md`). Xenos and `parallel` run every implementation. Also here, native
   mode only and on by default: bucket culling (`bucket_cull.h`, `--native_bucket_cull`: each
   StaticGeometry bucket tested with its own boxes against the main camera) and the guest's memory
-  copies run as host `memcpy` where that is the same copy (`guest_copy.h`, `--native_guest_copy`).
+  copies run as host `memcpy` where that is the same copy (`guest_copy.h`, `--native_guest_copy`;
+  the XDK vector copy the constant writers use, `--native_vector_copy`).
   Two pieces of the guest's render submission also run as host code there
   (`docs/game-thread-parallelism.md`, section 11): `_setTextureBlendMode`'s member writes
   (`native_render_system.h`, `--native_render_system_members`) and the RTSS per-object listener's
@@ -72,11 +73,20 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   achievement progress follow `--user_data_root` / `--cache_root` when they come
   (`settings/user_folders_in_use.h`, resolved by `live::UserFoldersInUse`). The first line of each
   log names the executable and the build's commit (`cmake/build_info.cmake`).
+- Setup wizard (`src/wizard/`, its first-start pages in `src/game_setup/setup_pages.h`): one window
+  for the first start, on desktop,
+  with a pad, a mouse or a keyboard. SDL's software renderer (forced; its frames reach the screen through the window system's own framebuffer, or through a GPU texture on macOS (Metal) and Wayland (OpenGL ES), SDK patch 21), Dear
+  ImGui with the SDK's green palette, Noto Sans, the owner's cat as its icon (`data/icon/README.md`)
+  and its own folder browser for where the system's picker does not show. `tools/wizard_shots` plays
+  its parts on sample pages from a script, offscreen, and keeps the screenshots in `wizard-shots/`
+  of the build folder; CI uploads them for Linux, Windows and macOS.
 - First start (REL.4, `src/game_setup/`): without `--game_data_root`, the game's files live in
   `platform::GameDataDir()` (`~/.local/share/TorchlightRecomp/game/`; its `import/` is where saves
   to import go). At every start its `default.xex` is checked (size and SHA-256); when it does not
-  check out, before the runtime's window exists, a message box asks for the user's Torchlight XBLA
-  package or an extracted folder (the system's pickers, SDL3; on the Steam Deck in Desktop Mode). A
+  check out, a run with `--user_data_root` stops with an error, and any other, before the runtime's
+  window exists, gets the setup wizard (on Android, message boxes) that asks for the user's Torchlight
+  XBLA package or an extracted folder (the system's pickers, SDL3; where there is none, as in the
+  Steam Deck's Game Mode, the wizard's own browser). A
   package's header must say LIVE/CON/PIRS, Arcade Title, title `0x58410A7E`; it is extracted with
   the runtime's STFS reader (a folder is copied, never linked) into `game.partial/`, every file
   checked by size and SHA-256 against `game_files_table.inc` (the one supported version, 1.0.140.0;
@@ -87,9 +97,13 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   `data/ui/tl_setup_strings.txt` (de, fr, es; written for this project in the register of the game's
   translations) in the host settings' language, else `--user_language`'s, else the system's
   preferred one, else English; `setup_text_test` fails when a text lacks a line in any language. New
-  first-start texts go the same way. After the game's files, when `settings.toml` has no
-  `achievements` yet, a message box asks which set to earn, Xbox 360 or PC, and saves
-  the answer (closing it saves Xbox 360); `EnsureAchievementChoice`, before the runtime starts.
+  first-start texts go the same way. On a Steam Deck with no pad SDL lists (Desktop Mode, the program
+  not started by Steam, which keeps the Deck's controls for its desktop layout), the last page says to
+  add the program to Steam and play from Game Mode, and its button saves the answers and closes
+  instead of starting the game (`GameData::kSetUp`). After the game's files, when `settings.toml` has no
+  `achievements` yet, the wizard asks which set to earn, Xbox 360 or PC, and saves the answer (closing it saves nothing and
+  ends the start; on Android, a message box whose closing saves Xbox 360); `FirstStart`, before the
+  runtime starts.
   `license_mask` is 1 by default (the full game; decision 1 of
   `docs/release-pipeline.md`), `--license_mask` on the command line wins.
 - Release (REL.5-REL.7, `docs/release-pipeline.md`): the SDK (`patches/series`) and OGRE are built

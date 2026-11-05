@@ -58,6 +58,19 @@ int main() {
     Check(Has(summary, ": 6 (guest 4, backend 2, present interval only 1), 0 not reported"),
           "period summary counts");
     Check(d.TakePeriodSummary().empty(), "the summary starts a new period");
+    FrameRecord uploads = Frame(8, 10, 40, 40);
+    uploads.uploads = 5;
+    uploads.uploads_rgba8 = 2;
+    uploads.uploads_rgb8 = 2;
+    uploads.uploads_other = 1;
+    uploads.upload_bytes = 3 * 1024 * 1024;
+    uploads.dxt_decoded = 4;
+    uploads.dxt_decode_ms = 21.5;
+    line = d.Add(uploads);
+    Check(line && Has(*line, "uploads=5 (rgba8 2 rgb8 2 compressed 0 other 1, 3072KB) "
+                             "dxt_cpu=4/21.50ms"),
+          "the frame's texture uploads and CPU DXT decodes");
+    d.TakePeriodSummary();
   }
   {
     SlowFrameDetector d;

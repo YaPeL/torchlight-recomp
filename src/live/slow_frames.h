@@ -37,6 +37,13 @@ struct FrameRecord {
   uint32_t programs_generated = 0;
   double program_ms = 0, program_generate_ms = 0;  // the draws that generated programs; RTSS
   uint32_t gpu_buffers_created = 0, vertex_layouts_created = 0;
+  // Textures uploaded (tl_backend_counters): by the format on the GPU, their bytes, and the DXT
+  // files decoded on the CPU with the time of those loads.
+  uint32_t uploads = 0, uploads_rgba8 = 0, uploads_rgb8 = 0, uploads_compressed = 0,
+           uploads_other = 0;
+  uint64_t upload_bytes = 0;
+  uint32_t dxt_decoded = 0;
+  double dxt_decode_ms = 0;
 };
 
 class SlowFrameDetector {

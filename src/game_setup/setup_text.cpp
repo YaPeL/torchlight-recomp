@@ -12,10 +12,25 @@ constexpr std::string_view kInterfaceTexts[] = {
     kTextPickedCopyFailed,
     kTextExtracting,    kTextCopying,        kTextChecking,      kTextAchievementsChoice,
     kTextAchievementsXbox, kTextAchievementsPc,
+    kTextPageGame, kTextPageWorking, kTextPageAchievements, kTextPageReady, kTextReady, kTextStart,
+    kTextReadyDeck, kTextClose,
+    kTextBrowsePad, kTextBrowseTitle, kTextCancel, kTextBack, kTextHint, kTextHintNext,
+    kTextFolderAbove, kTextThisComputer, kTextUseFolder, kTextFolderMark, kTextNoWindow,
+    kTextPageStorage, kTextStorageIntro, kTextKeepHere, kTextCopyUser, kTextCopyUserNote, kTextCopyPortable, kTextUseUser, kTextParentUnwritableTitle, kTextParentUnwritable, kTextPortableUnwritableTitle, kTextPortableUnwritable, kTextNotPortable, kTextPlaceReasonLinux, kTextPlaceReasonWindows, kTextPlaceReasonMac, kTextFolderReasonLinux, kTextFolderReasonWindows, kTextFolderReasonMac, kTextElevatedTitle, kTextElevated, kTextPortableSource, kTextPageCopying, kTextCannotCopyData,
 };
 }  // namespace
 
 std::span<const std::string_view> InterfaceTexts() { return kInterfaceTexts; }
+
+std::string_view UnwritableReason(platform::OsKind os, bool existing) {
+  switch (os) {
+    case platform::OsKind::kWindows: return existing ? kTextFolderReasonWindows : kTextPlaceReasonWindows;
+    case platform::OsKind::kMacOS: return existing ? kTextFolderReasonMac : kTextPlaceReasonMac;
+    case platform::OsKind::kLinux:
+    case platform::OsKind::kAndroid: break;
+  }
+  return existing ? kTextFolderReasonLinux : kTextPlaceReasonLinux;
+}
 
 std::string Render(const Message& message, const Translate& translate) {
   std::string text = translate ? translate(message.text) : message.text;

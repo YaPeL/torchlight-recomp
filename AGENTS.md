@@ -11,6 +11,12 @@ not count.
 - Work goes to `develop` on a branch, and `develop` stays green on all three platforms' CI.
   Nothing goes to `main` except a freeze merge or a hotfix the owner approved
   (`docs/release-pipeline.md` 5.9).
+- **Branches:** a pushed branch lives only while it has an open pull request (a draft is fine)
+  that says what it is, what it waits for and in what state it is; without one it is not a
+  branch. Work that is discarded, or kept only as a record, becomes an annotated tag
+  `archive/<name>` whose message says what it is, why it is kept and what it gave, and its branch
+  is deleted (with the owner's OK, as any deletion). A merged branch is deleted on merge (the
+  repository does it).
 - **Integrated without asking (report afterwards):**
   - fixes with tests;
   - changes with no visible effect and no changed default;
@@ -55,7 +61,15 @@ not count.
   - performance integrations are decided by hand runs, blind (order A B B A) whenever possible;
   - synthetic runs and replay benches only narrow down the choice;
   - every measurement records the machine's thermal state next to its numbers
-    (`docs/performance-profile.md`).
+    (`docs/performance-profile.md`);
+  - every measurement names the commit it was built from, and that commit is reachable from
+    `develop`, from a branch with an open pull request or from an `archive/` tag (a week of
+    Android measurements was once built on branches nobody could find).
+  - the combat benchmark comes in two lengths that are not comparable: `fight.txt` (20 s at rest,
+    then 21 enemies and 30 s of fight) and `fight5.txt` (ten waves of the same 21, 30 s each, about
+    5 minutes; the guest's frame time grows from wave to wave). Every measurement names the one it
+    used (on the POCO X7 the same build gives ~21 ms and ~48 fps in the first, ~28 ms and ~36 fps
+    in the second).
 - **Game runs:**
   - unattended runs go through `tools/run_capped` and need no notice;
   - runs that need someone at the controller only with the owner's OK and their steps given first;
@@ -66,7 +80,9 @@ not count.
 - Behaviour is generic, decided by capability or state. A draw, file or unit is never treated
   differently by hash, signature, mesh, material or other content name (`CONTRIBUTING.md`).
 - No environment variables in the project. If configuration is needed, ask; it goes in the settings
-  or a command-line option.
+  or a command-line option. One documented exception: the AppImage's `AppRun` reads `$APPIMAGE`,
+  which AppImage's runtime sets (it is not configuration of ours), and passes it to the game as
+  `--appimage_path`; nothing in the code reads it.
 - Generated code (`generated/`) and the ReXGlue SDK are not edited by hand.
 - Guest (OGRE 1.7) and host (OGRE 14) enums are never assumed equal: each is mapped explicitly
   (`src/guest_abi/`).

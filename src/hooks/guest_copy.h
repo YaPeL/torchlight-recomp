@@ -1,7 +1,9 @@
-// The guest's memory copies on the host (guest_abi functions::kMemcpy, kLargeCopy).
+// The guest's memory copies on the host (guest_abi functions::kMemcpy, kLargeCopy, kVectorCopy).
 //
 // The guest copies front to back with plain loads and stores, so between ranges that do not
-// overlap it is a host memcpy. Everything else runs the guest's own copy, unchanged:
+// overlap it is a host memcpy. The XDK vector copy (kVectorCopy) also zeroes 128-byte lines with
+// dcbzl, but only lines inside the destination that it then fills, so its result is the same
+// (evidence in guest_abi/guest_functions.h). Everything else runs the guest's own copy, unchanged:
 // - overlapping ranges: a front-to-back copy and memmove differ there (and the guest's loops move
 //   8 to 1024 bytes at a time, which a byte model would not match either);
 // - a range touching the device registers (guest_abi xbox_memory::kMmio*): the SDK serves those

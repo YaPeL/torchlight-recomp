@@ -18,15 +18,34 @@ fails when:
 
 A branch through a linker range thunk counts as a branch to the thunk's target. A branch from a
 function to its own start is not a bypass (a loop or a recursive call made by the compiler), and
-the hooks' (host code's) calls to __imp__X are what they are for. Indirect guest calls go through
-the function table, whose entries the static linker resolves to X too.
+the hooks' (host code's) calls to __imp__X are what they are for. An outlined piece
+(OUTLINED_FUNCTION_*) is judged by who reaches it: one whose every caller is the hook X itself, or
+another outlined piece only X reaches, holds X's own call to __imp__X, which the machine outliner
+moved there (AppleClang with a PGO profile, docs/regressions.md), and is no bypass. A piece split
+off the hook X itself (X.cold.N; a generated body's are __imp__X.cold.N) counts as X. A piece
+reached through a range thunk is the piece of the thunk's name; an ambiguous name (the outliner
+reuses names in every module) counts as reached from elsewhere, and a name with no piece is a
+problem. A map keeps one address per name, so on Windows only one of several same-named pieces is
+seen (LLVM outlines by default on AArch64 only). Indirect guest calls go through the function
+table, whose entries the static linker resolves to X too.
 
-Usage: tools/android/check_guest_call_binding.py LIBRARY [--nm LLVM_NM] [--objdump LLVM_OBJDUMP]
+On the desktop the game is an executable, whose direct calls the static linker binds: the same
+bypass check runs on Linux (ELF x86-64), macOS (Mach-O arm64: symbols carry a leading underscore,
+a weak X is a thunk of its own rather than at its __imp__'s address, and the generated code calls
+it through dyld's stubs, which bind weak definitions at load) and Windows (PE x86-64: the
+executable has no symbol table, so the names and addresses come from the linker's map, --map, of
+the code sections only; a hooked X is one at another address than its __imp__X, and an X the map
+does not list is taken as not hooked). ThinLTO bypassed 1492 hooks
+this way on Android and some on the desktop before it was taken out (docs/regressions.md).
+
+Usage: tools/android/check_guest_call_binding.py BINARY [--nm LLVM_NM] [--objdump LLVM_OBJDUMP]
+                                                 [--map LINKER_MAP]
 Exit status: 0 when every call is bound as expected, 1 when not (problems printed, at most 20
 of each kind), 2 on bad input.
 """
 
 import argparse
+import bisect
 import re
 import subprocess
 import sys
@@ -34,25 +53,95 @@ import sys
 LABEL = re.compile(r"^([0-9a-f]+) <(.+)>:$")
 # "  39e6770:      \tbl\t0x3acef18 <_Unwind_Resume>": every direct branch (bl, b, b.cond,
 # cbz/cbnz, tbz/tbnz) names its target this way.
-BRANCH = re.compile(r"^\s*([0-9a-f]+):\s+(bl|b|b\.\w+|cbn?z|tbn?z)\t(?:.*, )?0x([0-9a-f]+) <(.+)>$")
+# A target without a name (a Mach-O stub, a PE without symbols) is looked up by its address.
+BRANCH = re.compile(
+    r"^\s*([0-9a-f]+):\s+(bl|b|b\.\w+|cbn?z|tbn?z)\t(?:.*, )?0x([0-9a-f]+)(?: <(.+)>)?$")
+# x86-64: "  4a1b2c: \tcall\t0x4a2000 <sub_82100000>" (jmp and jcc for tail calls); on Windows,
+# with no symbols, the target has no name: "call\t0x140001010".
+BRANCH_X86 = re.compile(r"^\s*([0-9a-f]+):\s+(call\w*|jmp\w*|j[a-z]{1,3})\s+0x([0-9a-f]+)(?: <(.+)>)?$")
 # lld's range extension thunks: __AArch64ADRPThunk_<target>, __AArch64AbsLongThunk_<target>.
 THUNK = re.compile(r"__AArch64\w*Thunk_(.+)$")
 # Code the compiler or linker split off or made, which may belong to a generated function.
 PIECE = re.compile(r"OUTLINED_FUNCTION_|\.cold|\.llvm\.|__AArch64\w*Thunk_")
+# The machine outliner's pieces. The check relies on the outliner's guarantee that they are reached
+# only by direct branches (or a range thunk to one), never through their address.
+OUTLINED = re.compile(r"OUTLINED_FUNCTION_")
+# "OUTLINED_FUNCTION_7+0x4": a branch into a function names it with an offset.
+OFFSET = re.compile(r"^(.*)\+0x([0-9a-f]+)$")
 SHOWN = 20
 
 
-def symbols(nm, library):
-    """{name: (type, address)} of the library's guest functions: each __imp__X and its X."""
-    out = subprocess.run([nm, "--defined-only", library], check=True, capture_output=True,
-                         text=True).stdout
+def file_format(binary):
+    """("elf" | "mach-o" | "pe", is x86-64) from the binary's first bytes (llvm-objdump -f fails
+    on a Mach-O executable)."""
+    with open(binary, "rb") as f:
+        head = f.read(1024)
+    if head[:4] == b"\x7fELF":
+        return "elf", int.from_bytes(head[18:20], "little") == 62  # EM_X86_64
+    if head[:4] == b"\xcf\xfa\xed\xfe":  # MH_MAGIC_64, little-endian
+        return "mach-o", int.from_bytes(head[4:8], "little") == 0x01000007  # CPU_TYPE_X86_64
+    if head[:2] == b"MZ":
+        pe = int.from_bytes(head[0x3c:0x40], "little")
+        return "pe", int.from_bytes(head[pe + 4:pe + 6], "little") == 0x8664
+    raise OSError(f"{binary}: not an ELF, Mach-O or PE file")
+
+
+def map_symbols(map_path):
+    """{name: ("T", address)} from an MSVC / lld-link map ("0001:00000010  sub_82100000
+    0000000140001010  obj"): the publics' Rva+Base, of the CODE sections only (the import
+    table's __imp_ entries are data). The thunks of functions imported from Windows DLLs (their
+    object column names the DLL, "kernel32:KERNEL32.dll") are left out: one named like a kernel
+    export the SDK implements (RtlCaptureContext beside __imp__RtlCaptureContext) is not its hook."""
     defined = {}
-    for line in out.splitlines():
-        fields = line.split()
-        if len(fields) == 3:
-            defined[fields[2]] = (fields[1], int(fields[0], 16))
+    section_re = re.compile(r"^\s*([0-9a-f]{4}):[0-9a-f]{8}\s+[0-9a-f]+H\s+\S+\s+(\w+)", re.I)
+    line_re = re.compile(r"^\s*([0-9a-f]{4}):[0-9a-f]{8}\s+(\S+)\s+([0-9a-f]{16})\b(.*)$", re.I)
+    code = set()
+    with open(map_path, encoding="utf-8", errors="replace") as f:
+        for line in f:
+            m = section_re.match(line)
+            if m:
+                if m.group(2).upper() == "CODE":
+                    code.add(m.group(1))
+                continue
+            m = line_re.match(line)
+            if m and m.group(1) in code:
+                rest = m.group(4).split()
+                if rest and rest[-1].lower().endswith(".dll"):
+                    continue  # an import thunk
+                defined[m.group(2)] = ("T", int(m.group(3), 16))
+    return defined
+
+
+def symbols(nm, library, macho=False, map_path=None, defined=None):
+    """{name: (type, address)} of the library's guest functions: each __imp__X and its X (not the
+    pieces the compiler split off a body)."""
+    if map_path:
+        defined = defined if defined is not None else map_symbols(map_path)
+    elif macho:
+        defined = {}
+        # llvm-nm prints a Mach-O weak definition as T; -m spells it out:
+        # "00000001000003d8 (__TEXT,__text) weak external _sub_1".
+        out = subprocess.run([nm, "-m", "--defined-only", library], check=True,
+                             capture_output=True, text=True).stdout
+        for line in out.splitlines():
+            fields = line.split()
+            if len(fields) >= 3 and fields[-1].startswith("_"):
+                kind = "W" if "weak" in fields[2:-1] else "T"
+                defined[fields[-1][1:]] = (kind, int(fields[0], 16))
+    else:
+        defined = {}
+        out = subprocess.run([nm, "--defined-only", library], check=True, capture_output=True,
+                             text=True).stdout
+        for line in out.splitlines():
+            fields = line.split()
+            if len(fields) == 3:
+                defined[fields[2]] = (fields[1], int(fields[0], 16))
     found = {}
     for name, value in defined.items():
+        # A piece the compiler split off a body (__imp__X.cold.1, an .llvm. clone) is not a guest
+        # function: it has no X of its own. Its branches are still checked (PIECE in check()).
+        if PIECE.search(name):
+            continue
         if name.startswith("__imp__"):
             found[name] = value
             guest = name[len("__imp__"):]
@@ -61,8 +150,20 @@ def symbols(nm, library):
     return found
 
 
-def check(library, nm, objdump):
-    syms = symbols(nm, library)
+def check(library, nm, objdump, map_path=None):
+    fmt, x86 = file_format(library)
+    macho = fmt == "mach-o"
+    publics = map_symbols(map_path) if map_path else None
+    syms = symbols(nm, library, macho, map_path, publics)
+    by_address = {address: name for name, (_, address) in syms.items()}
+    # With a map (no symbols in the disassembly), each branch's function is the nearest code
+    # public below it, host functions included (so a host call is never pinned on a guest body).
+    function_at = {}
+    if map_path:
+        for name, (_, address) in publics.items():
+            function_at.setdefault(address, name)
+        function_at.update({address: name for address, name in by_address.items()})
+    starts = sorted(function_at)
     problems = {}
 
     def problem(kind, text):
@@ -76,11 +177,17 @@ def check(library, nm, objdump):
         guest = name[len("__imp__"):]
         imp_addresses[address] = guest
         if guest not in syms:
+            if map_path:
+                continue  # the map leaves out what the link dropped or folded
             problem("missing", f"{guest}: __imp__{guest} has no {guest}")
             continue
         alias_kind, alias_address = syms[guest]
-        if alias_kind == "W":
+        if map_path:
+            # A map tells no binding: a hook is an X at another address than its __imp__X.
             if alias_address != address:
+                hooked[address] = guest
+        elif alias_kind in ("W", "w"):
+            if alias_address != address and not macho:
                 problem("alias", f"{guest}: weak, at {alias_address:#x}, not at its __imp__ "
                         f"({address:#x})")
         elif alias_address == address:
@@ -90,6 +197,15 @@ def check(library, nm, objdump):
 
     calls = 0
     function_start, function_name = None, None
+    # Outlined pieces, judged after the pass by who reaches them: their starts and names, every
+    # branch that may reach one (target, target name, caller's start and name), and the pieces'
+    # branches to a hooked __imp__X. Range thunks to a piece are not pieces themselves.
+    def is_piece(name):
+        return OUTLINED.search(name) and not THUNK.search(name)
+
+    piece_names = {address: name for address, name in function_at.items() if is_piece(name)}
+    piece_edges = []
+    piece_bypasses = []
     with subprocess.Popen([objdump, "-d", "--no-show-raw-insn", library],
                           stdout=subprocess.PIPE, text=True, bufsize=1 << 20) as dump:
         for line in dump.stdout:
@@ -97,16 +213,38 @@ def check(library, nm, objdump):
                 label = LABEL.match(line)
                 if label:
                     function_start, function_name = int(label.group(1), 16), label.group(2)
+                    if macho and function_name.startswith("_"):
+                        function_name = function_name[1:]
+                    if is_piece(function_name):
+                        piece_names[function_start] = function_name
                 continue
-            branch = BRANCH.match(line)
+            branch = (BRANCH_X86 if x86 else BRANCH).match(line)
             if not branch:
                 continue
-            target_name, target = branch.group(4), int(branch.group(3), 16)
+            target = int(branch.group(3), 16)
+            if starts:
+                site = int(branch.group(1), 16)
+                k = bisect.bisect_right(starts, site) - 1
+                if k >= 0:
+                    function_start, function_name = starts[k], function_at[starts[k]]
+            # With a map the disassembly's names are section offsets ("<.text+0x70>").
+            target_name = ((by_address.get(target) if map_path else None) or branch.group(4)
+                           or by_address.get(target, ""))
+            if macho and target_name.startswith("_"):
+                target_name = target_name[1:]
             if target_name.endswith("@plt"):
                 if target_name[:-len("@plt")] in syms:
                     problem("plt", f"{function_name} at {branch.group(1)}: "
                             f"{branch.group(2)} {target_name}")
                 continue
+            if OUTLINED.search(target_name):
+                piece_edges.append((target, target_name, function_start, function_name))
+            elif map_path:
+                # With a map a branch names no symbol: the function holding its target.
+                k = bisect.bisect_right(starts, target) - 1
+                if k >= 0 and starts[k] in piece_names:
+                    piece_edges.append((starts[k], piece_names[starts[k]], function_start,
+                                        function_name))
             thunk = THUNK.match(target_name)
             if thunk and thunk.group(1) in syms:
                 target_name, target = thunk.group(1), syms[thunk.group(1)][1]
@@ -115,10 +253,65 @@ def check(library, nm, objdump):
             if target in hooked and target != function_start and (
                     function_start in imp_addresses or PIECE.search(function_name)):
                 guest = hooked[target]
-                problem("bypass", f"{function_name} at {branch.group(1)}: "
+                text = (f"{function_name} at {branch.group(1)}: "
                         f"{branch.group(2)} to __imp__{guest}, past the hook {guest}")
+                if function_start in imp_addresses:
+                    problem("bypass", text)
+                elif function_name.startswith(guest + ".cold"):
+                    pass  # the hook's own piece (X.cold.N): its call to __imp__X
+                elif not OUTLINED.search(function_name):
+                    problem("bypass", text)
+                else:
+                    piece_bypasses.append((function_start, guest, text))
     if dump.returncode:
         raise subprocess.CalledProcessError(dump.returncode, objdump)
+
+    # Each edge pinned on the piece it reaches: through a range thunk, the piece of that name (the
+    # outliner reuses a name in every module: an ambiguous one taints them all, a caller of None);
+    # into a piece, its start.
+    starts_by_name = {}
+    for address, name in piece_names.items():
+        starts_by_name.setdefault(name, []).append(address)
+    piece_callers = {}  # piece start -> {(caller start, caller name)}
+    for target, target_name, caller_start, caller_name in piece_edges:
+        thunk = THUNK.search(target_name)
+        if thunk:
+            pieces = starts_by_name.get(thunk.group(1), [])
+            if not pieces:  # e.g. two names on one address: not judged, so not accepted
+                problem("bypass", f"{caller_name}: branch to {target_name}, whose piece is not "
+                        "in the disassembly")
+            caller = (caller_start, caller_name) if len(pieces) == 1 else (None, target_name)
+        else:
+            offset = OFFSET.match(target_name)
+            pieces = [target - int(offset.group(2), 16) if offset else target]
+            caller = (caller_start, caller_name)
+        for piece in pieces:
+            if piece != caller_start:
+                piece_callers.setdefault(piece, set()).add(caller)
+
+    def reached_only_from(piece, guest):
+        """Whether the hook X (guest) reaches the outlined piece and nothing else does, directly,
+        from a piece split off it (X.cold.N, which only X can have), or through other outlined
+        pieces only it reaches."""
+        hook_start = syms[guest][1]
+        seen, todo, from_hook = {piece}, [piece], False
+        while todo:
+            for caller_start, caller_name in piece_callers.get(todo.pop(), ()):
+                if caller_start == hook_start or (caller_start is not None
+                                                  and caller_start not in imp_addresses
+                                                  and caller_name.startswith(guest + ".cold")):
+                    from_hook = True
+                elif caller_start in piece_names:
+                    if caller_start not in seen:
+                        seen.add(caller_start)
+                        todo.append(caller_start)
+                else:
+                    return False
+        return from_hook
+
+    for piece, guest, text in piece_bypasses:
+        if not reached_only_from(piece, guest):
+            problem("bypass", text)
 
     if not hooked:
         problem("vacuous", "no hooked guest function (a strong X beside its __imp__X)")
@@ -139,9 +332,10 @@ def main():
     parser.add_argument("library")
     parser.add_argument("--nm", default="llvm-nm")
     parser.add_argument("--objdump", default="llvm-objdump")
+    parser.add_argument("--map", default=None)
     args = parser.parse_args()
     try:
-        return check(args.library, args.nm, args.objdump)
+        return check(args.library, args.nm, args.objdump, args.map)
     except (OSError, subprocess.CalledProcessError) as error:
         print(f"check_guest_call_binding: {error}", file=sys.stderr)
         return 2

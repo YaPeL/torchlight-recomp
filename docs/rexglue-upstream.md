@@ -1399,12 +1399,11 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
   pointing the builds at the new prefix) happens then, agreed with the agents that share it.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
-- The shared SDK copies on the Linux machine (2026-10-14). The live SDK is `bd833a2` with
-  develop's series: 1-30 (21 included), then 20, 31 and 33. One older copy stays next to it:
-  `rexglue-sdk-bd833a2-31`, the same series without 33, to roll back the last swap (two `mv`;
-  its install is inside it). It goes at the next swap, when the copy it replaces becomes the
-  rollback. The old base `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as
-  planned.
+- The shared SDK copies on the Linux machine (2026-10-31). The live SDK is `bd833a2` with
+  develop's series, up to patch 52. One older copy stays next to it: `rexglue-sdk-bd833a2-51`, the
+  same series up to patch 51, to roll back the last swap (two `mv`; its install is inside it). It
+  goes at the next swap, when the copy it replaces becomes the rollback. The old base
+  `rexglue-sdk-0c7b01a` was deleted after the `v0.7.6-beta` release, as planned.
 - The SDK copies on the Windows machine (2026-10-15). The live SDK is `D:\rexglue-sdk-33\install`:
   `bd833a2` with develop's series up to 33, built by `tools\build-deps\windows.ps1 -SdkPrefix`
   (its checkout in the script's work folder, `D:\ogre-build\rexglue-sdk`), every configuration.
@@ -1477,7 +1476,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 48 | `rexglue-command-processor-spin-backoff.patch` | `develop` | `bd833a2`, after 47 |
 | 49 | `rexglue-command-processor-pending-calls-lock.patch` | `develop` | `bd833a2`, after 48 |
 | 50 | `rexglue-thread-dump.patch` | `develop` | `bd833a2`, after 49 |
-| 51 | next free | | |
+| 51 | `rexglue-android-sdl-power.patch` | `develop` | `bd833a2`, after 50 |
+| 52 | next free | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 

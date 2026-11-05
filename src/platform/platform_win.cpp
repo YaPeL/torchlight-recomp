@@ -19,6 +19,7 @@
 #include <system_error>
 #include <vector>
 
+#include <SDL3/SDL_log.h>
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
@@ -169,6 +170,18 @@ std::string CacheDir(const std::string& name) {
                  std::filesystem::path(std::u8string(name.begin(), name.end())));
 }
 
+void PrintStartupError(const std::string& message) {
+  // SDL's log would skip an inherited stderr when the parent has no console.
+  const std::string line = "ERROR: " + message + "\n";
+  const HANDLE handle = GetStdHandle(STD_ERROR_HANDLE);
+  DWORD written = 0;
+  if (handle && handle != INVALID_HANDLE_VALUE &&
+      WriteFile(handle, line.data(), static_cast<DWORD>(line.size()), &written, nullptr)) {
+    return;
+  }
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
+}
+
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
 
 std::string DataDir() { return UserDir(UserFolderKind::kData); }
@@ -178,7 +191,7 @@ std::string GameDataDir() {
   return folder.empty() ? "" : Utf8(folder.wstring()) + "\\";
 }
 
-std::string LogDir() { return UserDir(UserFolderKind::kState, "logs"); }
+std::string LogDir() { return UserDir(UserFolderKind::kState, LogsSubfolder()); }
 
 std::string ExecutableDir() {
   std::wstring path(MAX_PATH, L'\0');
@@ -195,6 +208,8 @@ std::string ExecutableDir() {
 }
 
 void BringToFront() {}
+
+void PrepareSoftwareWindows() {}
 
 std::string ResourceDir() { return ExecutableDir(); }
 
@@ -258,6 +273,10 @@ bool ServeSurfaceChanges(const std::function<void()>&,
   return true;
 }
 
+void SurfaceTaken(uint64_t) {}
+
+bool GameWindowMayGetSurface() { return false; }
+
 bool OgreWindowFollowsGameWindow() { return false; }
 
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
@@ -298,11 +317,24 @@ float ContentScaleDpi() { return 96.0f; }  // Windows' nominal
 
 bool TouchControlsByDefault() { return false; }
 
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
+
 bool HasSystemBackButton() { return false; }
 
 // The picker's paths are files the program opens as they are.
 PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
   return PickResult::kChosen;
+}
+
+bool RunningElevated() {
+  HANDLE token = nullptr;
+  if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token)) return false;
+  TOKEN_ELEVATION elevation{};
+  DWORD size = 0;
+  const bool elevated = GetTokenInformation(token, TokenElevation, &elevation, sizeof(elevation), &size) &&
+                        elevation.TokenIsElevated != 0;
+  CloseHandle(token);
+  return elevated;
 }
 
 bool CanPickFolder() { return true; }

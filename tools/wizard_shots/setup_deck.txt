@@ -1,0 +1,16 @@
+# On a Steam Deck with no pad the game hears (Desktop Mode, not started by Steam): the package as in
+# setup_package.txt, then the Ready page says how to play and its button closes the setup.
+page game 5
+press a
+page browser 5
+press down
+press down
+press down
+press a
+page working 5
+page achievements 20
+press a
+page ready 5
+shot setup-deck-ready
+press a
+finished

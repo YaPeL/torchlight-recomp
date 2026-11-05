@@ -247,6 +247,10 @@ std::string ExecutableDir() {
   return exe.parent_path().string() + "/";
 }
 
+void PrintStartupError(const std::string& message) {
+  std::fprintf(stderr, "ERROR: %s\n", message.c_str());
+}
+
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
 
 std::string DataDir() { return UserDir(UserFolderKind::kData); }
@@ -257,10 +261,21 @@ std::string GameDataDir() {
 }
 
 std::string LogDir() {
-  return UserDir(UserFolderKind::kState, "logs");
+  return UserDir(UserFolderKind::kState, LogsSubfolder());
 }
 
 void BringToFront() {}
+
+void PrepareSoftwareWindows() {
+  // SDL would otherwise prefer a GPU texture wherever one can be made; X11 (and the tests'
+  // offscreen driver) have a framebuffer of their own, used as before.
+  const std::string driver = VideoDriver();
+  if (driver == "x11" || driver == "offscreen") {
+    // Over the environment's SDL_FRAMEBUFFER_ACCELERATION too: GPU choice needs no graphics
+    // library loaded before the backend (SelectGpu).
+    SDL_SetHintWithPriority(SDL_HINT_FRAMEBUFFER_ACCELERATION, "0", SDL_HINT_OVERRIDE);
+  }
+}
 
 std::string ResourceDir() { return ExecutableDir(); }
 
@@ -330,6 +345,10 @@ bool ServeSurfaceChanges(const std::function<void()>&,
   return true;
 }
 
+void SurfaceTaken(uint64_t) {}
+
+bool GameWindowMayGetSurface() { return false; }
+
 bool OgreWindowFollowsGameWindow() { return false; }
 
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow* window) {
@@ -343,12 +362,16 @@ float ContentScaleDpi() { return 96.0f; }  // the desktop's nominal
 
 bool TouchControlsByDefault() { return false; }
 
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
+
 bool HasSystemBackButton() { return false; }
 
 // The picker's paths are files the program opens as they are.
 PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
   return PickResult::kChosen;
 }
+
+bool RunningElevated() { return false; }
 
 bool CanPickFolder() { return true; }
 

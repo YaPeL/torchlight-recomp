@@ -95,8 +95,9 @@ std::vector<float> AutoData(const SetConstants& sc, const AutoConstant& a) {
     if (a.physical_index >= r.physical_index &&
         a.physical_index < r.physical_index + r.element_count) {
       uint32_t offset = a.physical_index - r.physical_index;
-      for (uint32_t i = offset; i < r.data.size() && out.size() < a.element_count; ++i) {
-        out.push_back(std::bit_cast<float>(r.data[i]));
+      const auto data = sc.Data(r);
+      for (uint32_t i = offset; i < data.size() && out.size() < a.element_count; ++i) {
+        out.push_back(std::bit_cast<float>(data[i]));
       }
     }
   }
@@ -304,7 +305,7 @@ int main(int argc, char** argv) {
               if (p.mask == 0xFFFF || sc.floats.empty()) {
                 sc = p;
               } else {
-                for (const auto& r : p.floats) sc.floats.push_back(r);
+                for (const auto& r : p.floats) sc.Add(sc.floats, r, p.Data(r).data(), r.data_count);
               }
             } else if constexpr (std::is_same_v<T, SetBlend>) {
               st.blend = p;
@@ -483,8 +484,10 @@ int main(int argc, char** argv) {
               named, dynamic, dumped, render_targets);
   for (const auto& t : c.textures) {
     if (!t.render_target && !t.name.empty() && !t.manual) continue;
-    std::printf("  %#x '%s' %ux%u usage=%#x%s%s\n", t.id.guest_address, t.name.c_str(), t.width,
+    std::printf("  %#x '%s' %ux%u usage=%#x%s%s", t.id.guest_address, t.name.c_str(), t.width,
                 t.height, t.usage, t.render_target ? " RT" : "", t.manual ? " manual" : "");
+    if (t.content) std::printf(" content=%016llx", static_cast<unsigned long long>(t.content));
+    std::printf("\n");
   }
 
   std::map<std::string, const ProgramSource*> sources;

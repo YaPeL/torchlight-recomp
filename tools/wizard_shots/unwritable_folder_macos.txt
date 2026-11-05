@@ -1,0 +1,6 @@
+# The explanation of this system, in the warning for an existing portable folder.
+page storage 5
+detail Applications or another folder, then start again.
+view
+shot storage-portable-unwritable
+quit

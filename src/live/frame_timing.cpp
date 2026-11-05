@@ -4,9 +4,14 @@
 #include <atomic>
 
 #include <fmt/format.h>
+#include <rex/cvar.h>
 #include <rex/logging.h>
 
 #include "live/guest_events.h"
+
+REXCVAR_DEFINE_DOUBLE(long_frame_ms, 30.0, "Torchlight",
+                      "A guest frame (swap to swap) longer than this many ms gets a 'long frame:' "
+                      "line in the log with what the guest did in it");
 
 namespace torchlight::live {
 
@@ -38,10 +43,10 @@ std::optional<std::string> FrameSeries::TakeSummary(Clock::time_point now, size_
     return period_ms_.end() - std::upper_bound(period_ms_.begin(), period_ms_.end(), ms);
   };
   std::string line = fmt::format(
-      "{} frames, mean {:.2f} ms ({:.1f} fps), p95 {:.2f}, p99 {:.2f}, max {:.2f}, over 33 ms {}, "
-      "over 50 ms {}",
+      "{} frames, mean {:.2f} ms ({:.1f} fps), p50 {:.2f}, p95 {:.2f}, p99 {:.2f}, max {:.2f}, "
+      "over 33 ms {}, over 50 ms {}",
       period_ms_.size(), sum / double(period_ms_.size()), 1000.0 * double(period_ms_.size()) / sum,
-      pct(0.95), pct(0.99), period_ms_.back(), over(33.0), over(50.0));
+      pct(0.5), pct(0.95), pct(0.99), period_ms_.back(), over(33.0), over(50.0));
   if (dropped) *dropped = period_dropped_;
   period_ms_.clear();
   period_dropped_ = 0;
@@ -71,6 +76,20 @@ std::atomic<FrameObserver*> g_observer{nullptr};
 
 void SetFrameObserver(FrameObserver* observer) { g_observer.store(observer); }
 
+namespace {
+// Added at static initialisation (before the guest runs), read on the guest's render thread.
+constexpr int kMaxSummaryHooks = 4;
+std::atomic<SummaryHook> g_summary_hooks[kMaxSummaryHooks];
+}  // namespace
+
+bool AddSummaryHook(SummaryHook hook) {
+  for (auto& slot : g_summary_hooks) {
+    SummaryHook empty = nullptr;
+    if (slot.compare_exchange_strong(empty, hook)) return true;
+  }
+  return false;
+}
+
 FrameTiming& FrameTiming::Get() {
   static FrameTiming timing;
   return timing;
@@ -81,10 +100,14 @@ void FrameTiming::OnSwap() {
   // The guest's events of the frame ending now (guest_events.h), logged when it was long.
   const GuestFrameEvents events = GuestEvents::Get().Take();
   const auto ms = guest_.Add(now);
-  if (ms && *ms > kLongFrameMs) REXLOG_INFO("long frame: {}", DescribeLongFrame(*ms, events));
+  if (ms && *ms > REXCVAR_GET(long_frame_ms))
+    REXLOG_INFO("long frame: {}", DescribeLongFrame(*ms, events));
   if (FrameObserver* observer = g_observer.load()) observer->OnGuestFrame(ms.value_or(0.0));
-  if (auto summary = guest_.TakeSummary(now))
+  if (auto summary = guest_.TakeSummary(now)) {
     REXLOG_INFO("frame time (guest swap to swap): {}", *summary);
+    for (auto& slot : g_summary_hooks)
+      if (SummaryHook hook = slot.load()) hook();
+  }
 }
 
 LatencyMeans MeanLatency(const std::vector<PresentLatency>& frames) {
@@ -114,14 +137,14 @@ LatencyMeans FrameTiming::RecentLatency(std::chrono::milliseconds window) {
   return MeanLatency(frames);
 }
 
-void FrameTiming::OnScreen(double ms, double gap_ms) {
+void FrameTiming::OnScreen(double ms, double gap_ms, double refresh_ms) {
   const auto now = FrameSeries::Clock::now();
   {
     std::lock_guard lock(latency_mutex_);
     screen_.emplace_back(now, ms);
     while (!screen_.empty() && now - screen_.front().first > kRecent) screen_.pop_front();
   }
-  if (FrameObserver* observer = g_observer.load()) observer->OnScreenFrame(ms, gap_ms);
+  if (FrameObserver* observer = g_observer.load()) observer->OnScreenFrame(ms, gap_ms, refresh_ms);
 }
 
 double FrameTiming::RecentScreenLatency(std::chrono::milliseconds window, size_t* frames) {

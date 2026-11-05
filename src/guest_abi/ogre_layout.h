@@ -25,6 +25,7 @@
 #pragma once
 
 #include <bit>
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <string>
@@ -99,18 +100,28 @@ inline float ReadF32(const uint8_t* membase, uint32_t addr) {
 
 inline bool ReadBool(const uint8_t* membase, uint32_t addr) { return ReadU8(membase, addr) != 0; }
 
+// Who is told of every write below before it is made (the store trace, diag/store_trace.cpp, in
+// diagnostics builds; null otherwise): the guest address, the size and the bytes as they will be in
+// guest memory. Atomic: it is set while other threads write (one relaxed load per write).
+using GuestWriteObserver = void (*)(const uint8_t* membase, uint32_t addr, const void* bytes,
+                                    size_t size);
+inline std::atomic<GuestWriteObserver> g_guest_write_observer{nullptr};
+
 // Big-endian guest memory write (for the few hooks that adjust guest data before the original
 // function reads it).
+inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
+  if (GuestWriteObserver observer = g_guest_write_observer.load(std::memory_order_relaxed)) {
+    observer(membase, addr, data, size);
+  }
+  std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
+}
 inline void WriteU32(uint8_t* membase, uint32_t addr, uint32_t value) {
   if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
-  std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
+  WriteBytes(membase, addr, &value, sizeof(value));
 }
 inline void WriteU16(uint8_t* membase, uint32_t addr, uint16_t value) {
   if constexpr (std::endian::native != std::endian::big) value = std::byteswap(value);
-  std::memcpy(xbox_memory::HostAddress(membase, addr), &value, sizeof(value));
-}
-inline void WriteBytes(uint8_t* membase, uint32_t addr, const void* data, size_t size) {
-  std::memcpy(xbox_memory::HostAddress(membase, addr), data, size);
+  WriteBytes(membase, addr, &value, sizeof(value));
 }
 
 inline uint8_t ReadU8(const uint8_t* membase, uint32_t obj, Field f) {
@@ -184,6 +195,8 @@ inline constexpr Field kNodeLeft{0x00, Confidence::kConfirmed};
 inline constexpr Field kNodeParent{0x04, Confidence::kConfirmed};
 inline constexpr Field kNodeRight{0x08, Confidence::kConfirmed};
 inline constexpr Field kNodeKey{0x0C, Confidence::kConfirmed};
+// _Isnil of a set<ptr> node (key 4 bytes; the comment above, @0x824213F0).
+inline constexpr Field kSetNodeIsNil{0x11, Confidence::kConfirmed};
 // Value of a map whose key is <= 4 bytes and whose value is 4-byte aligned.
 inline constexpr Field kNodeValue{0x10, Confidence::kConfirmed};
 }  // namespace stl_tree
@@ -560,6 +573,19 @@ inline constexpr Field kDeriveDepthBiasSlopeScale{0x2AC, Confidence::kConfirmed}
 // Runic's build has no device call in that function (docs/native-skip-guest-d3d.md, step a).
 inline constexpr Field kManualBlendColours{0x90, Confidence::kConfirmed};
 inline constexpr uint32_t kManualBlendColoursUnitStride = 32;
+// One depth surface for every target. [confirmed] Runic's _setRenderTarget (0x821A7620; a Runic
+// difference from OgreD3D9RenderSystem.cpp:2700-2760, which binds the target's own depth): it
+// returns at once for the target already active (@0x821A762C..0x821A763C); a window with
+// anti-aliasing ("AA_GET", 0x820008CC), while the byte at 0x8355A2E8 is 0 (@0x821A76E4..0x821A76F0),
+// binds its "AA_GETRT" (0x8200094C) and "AA_GETDT"
+// (0x82000960) surfaces, SetRenderTarget (@0x821A7788) then SetDepthStencilSurface (0x821F9118,
+// @0x821A7794; it stores the surface at device+0x31A0); every other target binds only its colour
+// surfaces ("DDBACKBUFFER", 0x82000B10; SetRenderTarget per surface, loop @0x821A7810..0x821A7828)
+// and keeps whatever depth surface the device has. The window's attribute handler (0x821BF180)
+// answers AA_GET from window+0x120, AA_GETRT from +0x114 and AA_GETDT from +0x118. Every pass starts with its
+// viewport's clear (SceneManager::_renderScene 0x821B07F0: clearFrameBuffer when the viewport's
+// clear-every-frame byte (+0x54) is set, with its buffers (+0x58), @0x821B0DF8..0x821B0E24): so a
+// target's depth is not seen again once another pass has cleared the shared one.
 }  // namespace render_system
 
 namespace matrix4 {

@@ -13,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <thread>
 
 #include <rex/cvar.h>
 #include <rex/graphics/graphics_system.h>
@@ -21,6 +22,7 @@
 #include <rex/logging.h>
 #include <rex/ui/presenter.h>
 
+#include "hooks/adaptive_vsync.h"
 #include "hooks/video_mode.h"
 #include "live/deferred_check.h"
 #include "live/live_mode.h"
@@ -30,6 +32,10 @@
 #include "platform/platform.h"
 #include "settings/host_settings.h"
 
+// Not configuration: AppRun.in passes AppImage's own $APPIMAGE, the only way to know the folder the
+// image is in (the executable runs from its temporary mount). platform/storage_mode.h.
+REXCVAR_DEFINE_STRING(appimage_path, "", "Torchlight",
+                      "The AppImage this run started from (set by the image's AppRun)");
 REXCVAR_DEFINE_STRING(native_live, "only", "Torchlight",
                       "Renderer: only (the default: the native OGRE backend is the only renderer, "
                       "Xenos off, GPU plugin rexgpu-null); off (the emulated Xenos GPU; also chosen "
@@ -49,6 +55,16 @@ REXCVAR_DEFINE_BOOL(native_producer_timing, false, "Torchlight",
                     "Live mode: time the recording cost per hook and section and log it (live "
                     "producer, live measurements); off by default, it costs the guest's render "
                     "thread about 2 %. The frame time statistics are always on");
+REXCVAR_DEFINE_BOOL(diag_depth_discard, true, "Torchlight",
+                    "Diagnostics: on GLES, drop a render texture's depth when the next pass clears "
+                    "it (frontend/depth_discard.h); =false to measure without it in the same build");
+REXCVAR_DEFINE_BOOL(native_shadow_index, true, "Torchlight",
+                    "Live mode: find the session's last value of each state by direct index, not "
+                    "through its map; =false to measure without it in the same build");
+REXCVAR_DEFINE_BOOL(diag_shadow_index, false, "Torchlight",
+                    "Diagnostics, live mode: check each lookup of the session's direct shadow "
+                    "index against the shadow map (an entry added or moved past the index) and "
+                    "log the mismatches in the live summary; it does not compare commands");
 REXCVAR_DEFINE_UINT32(live_record_max_mb, 4096, "Torchlight",
                       "Live mode: the session recording stops (well formed) at this size in MiB");
 
@@ -114,6 +130,7 @@ void InstallDialogs(const DialogHost& host) {
     input->SetActiveCallback([] { return !g_guest_input_blocked.load(); });
   }
   REXLOG_INFO("live: only mode, runtime dialogs drawn by the native backend");
+  ShowFrameCounterIfAsked();  // --frame_counter, now that the drawer exists
 }
 
 // Consumer thread, once per presented frame: the UI thread draws the dialogs into the overlay (or
@@ -321,9 +338,12 @@ void ApplyFpsCap(uint32_t fps_cap, rex::Runtime* runtime) {
   if (flag->source == rex::cvar::Source::kCommandLine) {
     REXLOG_INFO("settings: fps cap left to --vsync={} from the command line",
                 rex::cvar::Query<bool>("vsync"));
+    hooks::SetAdaptiveVsyncCap(0);
     return;
   }
   graphics->SetGuestVblankRate(fps_cap);
+  // The game's own adaptive vsync would drop the vsync at a cap of 30 (hooks/adaptive_vsync.h).
+  hooks::SetAdaptiveVsyncCap(fps_cap);
   rex::cvar::SetFlagByName("vsync", fps_cap == 0 ? "false" : "true");
 }
 
@@ -335,6 +355,8 @@ void InitRunningSettings(const std::filesystem::path& game_data_root, rex::Runti
   const platform::DisplayInfo display = platform::GameDisplay();
   caps.display = {display.width, display.height};
   for (const auto& [w, h] : display.modes) caps.display_modes.push_back({w, h});
+  const auto [preferred_w, preferred_h] = platform::PreferredRenderResolution();
+  caps.preferred_render = {preferred_w, preferred_h};
   caps.display_hz = display.refresh_hz;
   caps.on_battery = platform::OnBattery();
   caps.steam_deck = platform::IsSteamDeck();
@@ -558,6 +580,9 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   options.only = Only();
   options.record_path = REXCVAR_GET(live_record);
   options.producer_timing = REXCVAR_GET(native_producer_timing);
+  options.depth_discard = REXCVAR_GET(diag_depth_discard);
+  options.shadow_index = REXCVAR_GET(native_shadow_index);
+  options.shadow_index_check = REXCVAR_GET(diag_shadow_index);
   options.on_backend_failed = dialogs.renderer_failed;
   options.frame_queue = size_t(std::max(0, REXCVAR_GET(native_frame_queue)));
   // OGRE's log next to the runtime's (ConfigurePaths): <log>_ogre.log.
@@ -573,11 +598,20 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
   if (Only()) {
     // The backend draws inside the game window, which keeps focus, input and window management.
     std::string error;
-    if (!platform::FindGameWindow(options.parent_window, options.window_width,
-                                  options.window_height, error)) {
-      REXLOG_ERROR("live: only mode needs the game window ({}); live mode not started", error);
-      return;
+    bool waited = false;
+    while (!platform::FindGameWindow(options.parent_window, options.window_width,
+                                     options.window_height, error)) {
+      if (!platform::GameWindowMayGetSurface()) {
+        REXLOG_ERROR("live: only mode needs the game window ({}); live mode not started", error);
+        return;
+      }
+      // Android: the app went to the background before the renderer started; the window gets its
+      // surface when the app is in front again.
+      if (!waited) REXLOG_INFO("live: the game window has no surface yet ({}); waiting for it", error);
+      waited = true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
+    if (waited) REXLOG_INFO("live: the game window has its surface");
     // The guest's vblank is the frame rate cap (with Xenos, the runtime's own presentation keeps
     // its --vsync).
     InitRunningSettings(game_data_root, dialogs.runtime);
@@ -594,7 +628,8 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
     }
     // The game's display: vertical sync and internal resolution from the host settings.
     options.vsync = g_host_settings.values.vsync;
-    options.render_resolution = g_host_settings.values.render_resolution;
+    options.render_resolution = settings::EffectiveRenderResolution(
+        g_host_settings.values.render_resolution, g_running.caps);
     // The render system chosen in the Video column; empty: the first one offered. One this machine
     // cannot run gives way to the first that can for this session, and stays the saved choice.
     std::string render_system =
@@ -655,7 +690,8 @@ void ChangeHostSettings(const settings::HostSettings& changed) {
   const settings::HostSettings before = g_running.current;
   g_running.current = changed;
   if (changed.render_resolution != before.render_resolution || changed.vsync != before.vsync) {
-    LiveMode::Get().SetVideo(changed.render_resolution, changed.vsync);
+    LiveMode::Get().SetVideo(
+        settings::EffectiveRenderResolution(changed.render_resolution, g_running.caps), changed.vsync);
   }
   const uint32_t fps_cap = settings::EffectiveFpsCap(changed, g_running.caps);
   if (fps_cap != settings::EffectiveFpsCap(before, g_running.caps)) {

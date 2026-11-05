@@ -1,0 +1,3 @@
+# Must fail: the page does not exist. The test checks a script can fail.
+page nowhere 1
+quit

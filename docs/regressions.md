@@ -6,6 +6,85 @@ what happened, which layer should have caught it, and what catches it now (a tes
 checklist item of the pre-release passes). A new entry is added when a bug is found that late; the
 lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
+## The macOS outliner's piece taken for a bypass by the binding check (caught before a release)
+
+- **What happened:** with the PGO profile, AppleClang's machine outliner moved the hook
+  `sub_8276A858`'s own call to its original, `__imp__sub_8276A858`, into a shared piece,
+  `OUTLINED_FUNCTION_7`, reached only from that hook. The check counted every compiler piece as
+  possibly generated code, so the macOS release link with the profile failed. Found by the macOS
+  agent's check build of its PGO profile, 2026-11-01.
+- **Should have been caught by:** the fixtures, which had no outlined piece; no-game CI builds
+  without a profile, where the outliner leaves the hooks alone.
+- **Caught by:** the check build of the macOS profile on the owner's Mac (kit step 4).
+- **Covered now:** the check judges an `OUTLINED_FUNCTION_*` piece by its callers: it is accepted
+  when the hook X is all that reaches it (directly or through other outlined pieces only X
+  reaches), and still a bypass when anything else does. The fixtures' hook calls its `__imp__`
+  through two outlined pieces (OK must pass; the old check failed it with this exact message), and
+  the BYPASS fixture's generated function also reaches them (reported).
+
+## Windows game builds stopped at the binding check's fixture test (caught before a release)
+
+- **What happened:** since e3984aa (2026-10-30) the game appended Windows' `--map torchlight.map`
+  to `_binding_tools`; 420a927 (2026-10-31, the desktop fixtures) made `tests/guest_call_binding`
+  pass that same list to its test script, which takes each fixture's map apart (`--ok-map`,
+  `--bypass-map`) and refused `--map`. From then every full Windows build of the game failed at that
+  test (the release job builds everything). Found by the Windows agent training PGO, 2026-11-01; no
+  release was built since.
+- **Should have been caught by:** CI, which builds Windows without the game (no XEX), so the
+  game's block of CMakeLists.txt never ran there.
+- **Caught by:** a full build on the owner's Windows PC.
+- **Covered now:** the game keeps its own list (`_game_binding_tools`), and
+  `tests/guest_call_binding/CMakeLists.txt` stops the configure with a clear error if `--map` is
+  ever in `_binding_tools` again (a game build only; no-game CI still cannot see game-only code, so a
+  full Windows build runs on the Windows PC or in the freeze's candidate tag before a release).
+
+## Windows import thunks taken for hooks by the binding check (caught before a release)
+
+- **What happened:** with the linker's map, the check paired each `__imp__X` with any public `X`
+  in a code section; the thunk of KERNEL32's `RtlCaptureContext`, which the executable imports,
+  shares its name with the kernel export the SDK implements as `__imp__RtlCaptureContext`, so the
+  game's `sub_8287C570` calling it read as a bypass and failed the Windows link. Found by the
+  Windows agent, 2026-11-01, right after the `--map` entry above.
+- **Should have been caught by:** the fixtures, which had no import named like a kernel export.
+- **Caught by:** a full build on the owner's Windows PC.
+- **Covered now:** `map_symbols` leaves out the publics whose object column names a DLL; the
+  Windows fixtures import `RtlCaptureContext` and call an `__imp__RtlCaptureContext` from guest-style
+  code (the fixture failed Windows CI before the fix, with this exact message).
+
+## A flag-switched optimisation measured against a profile trained without it (caught before the default changed)
+
+- **What happened:** the skeleton port (`--native_skeleton`, PR #85, 2026-11-01) was measured with
+  PGO profiles trained with the flag off, so its code had never run in training and the compiler
+  treated it as cold (optimised for size, out of the hot path). On the Steam Deck it measured +2 %
+  cycles a frame with the release's v3 profile, against −5.9 % with a profile trained with the port
+  off and on; on the POCO the first A B B A showed no gain and was nearly taken as a reason to drop
+  the port.
+- **Should have been caught by:** the measuring procedure: a flag's optimisation needs a profile
+  that saw the flag on.
+- **Caught by:** the owner's hypothesis, confirmed on the Deck (on the POCO neither test, without
+  PGO or with a profile trained with the port on, showed a clear gain).
+- **Covered now:** docs/perf/pgo.md: any optimisation behind a flag is measured with a profile
+  trained with it on, and a release profile for a build where the flag may be either way is trained
+  with both (the Linux profile, for `--native_skeleton`).
+
+## ThinLTO bound the generated code's calls past the hooks (caught before any merge)
+
+- **What happened:** with `TORCHLIGHT_LTO` (ThinLTO for the generated code and the game's own,
+  branch `perf/pgo-lto`, 2026-10-30), calls of the generated code to hooked guest functions went
+  straight to their `__imp__` bodies, past the hooks: 1492 such branches on Android, 1454 on Linux
+  (the guest's memcpy hook among them). A hook is a strong `sub_X` over the generated weak alias
+  `sub_X` of `__imp__sub_X`; under ThinLTO the alias, losing to the hook, was replaced by its
+  aliasee instead of becoming a reference to the hook. The desktop measurements taken with it are
+  void: ThinLTO alone -4.5 % and PGO + ThinLTO -13 % in `fight.txt` (docs/perf/pgo.md); PGO alone,
+  linked normally, was not affected (-3.7 %).
+- **Should have been caught by:** the binding check on every platform; it ran only on Android
+  (the shared library's `-Bsymbolic-functions`).
+- **Caught by:** the Android build's binding check, which failed the link.
+- **Covered now:** `tools/android/check_guest_call_binding.py` runs after every game link, Linux
+  (ELF x86-64), macOS (Mach-O) and Windows (PE, from the linker's map) as on Android, and fails the
+  build on a bypass. ThinLTO stays out until the codegen makes `sub_X` a weak function calling
+  `__imp__sub_X` rather than an alias (the request to ReXGlue's owner).
+
 ## The town lamps' light missing on Direct3D 11 (fixed in 0338b58)
 
 - **What happened:** after the backend's per-draw cuts (daeaa8b, constants bound only when they
@@ -139,5 +218,54 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   20 without it and with perf ready to record) all reached the menu and quit normally.
 - **Should be caught by:** a log line that says, at the moment it happens, where every thread is
   and what it waits for, so a single occurrence (on a player's machine too) is enough to find it.
-- **Covered now:** nothing in the repository yet. The desktop benches (local scripts) record a perf
-  profile and every thread's state when a start waits like this before the first menu.
+- **Covered now:** a guest GPU wait over 10 s is logged ("guest GPU wait: ... without reaching its
+  target", with the waiting thread's host tid and the GPU's progress word at its start and now),
+  followed by the SDK's dump of every guest thread's wait (the waiting thread shows as running
+  there: it waits in our hook, not in the kernel) and the command processor's state (patch 50,
+  `LogThreadDump`), once and then once a minute; quiet while Android's surface is away
+  (`hooks/gpu_wait_watch.h`). The desktop
+  benches (local scripts) also record a perf profile when a start waits like this before the
+  first menu.
+
+## `develop` never drew on Android: the A2 branch was never merged
+
+- **What happened:** the backend's GLES programs (`android/a2-gles`, b197117: the backend's
+  programs in GLSL ES, RGBA where BGRA cannot be sampled) and A2's start near 1280x800 (9485d9d)
+  stayed on their branch. Every Android APK measured from 2026-10-17 to 2026-10-22 was built from
+  branches on top of it, so they drew; `develop` itself compiled its desktop GLSL on GLES, every
+  program failed to link ("Link failed because of missing shader") and the screen stayed black,
+  at the display's full resolution (render scale 1.69 on the POCO X7 instead of ~1280x800). The
+  frame and present counters looked normal: the backend presents whether or not its programs
+  linked. Found on 2026-10-22, when a build from `develop` was run on the phone for the first time.
+- **Should have been caught by:** CI. Its Android job only builds; nothing ran the backend on a
+  GLES render system, so a program that does not link, or an image that is all black, passed.
+- **Caught by:** the owner, looking at the phone during a benchmark series.
+- **Covered now:** A2's commits are in `develop`. A CI job on OGRE's GLES2 render system over Mesa
+  (EGL, llvmpipe) runs the backend's drawing tests, which check pixels, and replays a synthetic
+  capture; it fails on a crash, a program that does not compile or link, a black image or one
+  that differs from its reference (`ci/gles-replay`). The RTSS's generated programs need the
+  game's files and are not covered there. And every measurement names the commit it was built
+  from, reachable from `develop`, from a branch with an open pull request or from an `archive/`
+  tag (`AGENTS.md`); what was measured from 2026-10-17 to 2026-10-22 is tagged
+  `archive/tl-a4-2026-10-22/*`.
+
+## Profiles of the fight taken on the rest mark (2026-10-21/22)
+
+- **What happened:** the POCO X7 profiling scripts (local, `profile-poco*.sh` and the fight5
+  census runs) waited for the fight with `adb shell grep -q "perf step 1" LOG`. adb joins its
+  arguments into one command line, so the quotes were lost on the device: `grep -q perf step 1 LOG`
+  looked for "perf" alone (in the files "step", "1" and the log) and matched the input script's
+  rest mark, 20 s before the fight. The 25-second "fight" profiles held about 18 s of rest. That
+  affected the render queue split of 2026-10-22, the fight5 wave 1 against wave 10 profile and its
+  spawn windows, and five places of docs/perf/2026-10-22-overnight.md (each with a correction
+  note). The frame A/Bs, read from each run's log, were not affected.
+- **Should have been caught by:** a check that the profile's window lies inside the step it is
+  meant to measure, made by the script itself; and reading the scripts' error output ("grep: step:
+  No such file or directory" was printed on every run).
+- **Caught by:** the agent, reading a run's output while waiting for a series.
+- **Covered now:** the scripts (local, not in the repo) quote the remote command whole (`adb shell
+  "grep -q 'perf step 1: fight' LOG"`), record the device's time before and after each profile, and
+  check the window with `tools/profile_window/profile_window.py` (`profile_window_test`), which
+  fails the run and renames the data `.invalid` unless the profile lies entirely inside the fight.
+  Checked on the run's real log: the old window comes out 17.7 s before the mark and fails. The
+  repo's guard is the check itself: a profiling script protects its run only if it calls it.

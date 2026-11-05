@@ -125,6 +125,24 @@ int tl_backend_set_guest_size(tl_backend* b, uint32_t width, uint32_t height);
  * of the target black. The camera keeps its vertical field of view, so that strip is the scene's
  * 16:9 view. No effect when the frame is not wider than 16:9. */
 void tl_backend_set_scene_clip(tl_backend* b, int enabled);
+/* The current target's depth and stencil are not needed again: the next pass clears them before
+ * it draws (the guest has one depth surface for all its targets: guest_abi/ogre_layout.h,
+ * render_system; the frontend decides, depth_discard.h). A tile GPU then need not write them back
+ * to memory. Every target has a depth buffer of its own, so no other target's is touched. The
+ * stencil goes with the depth: the backend never tests it. Through OGRE's
+ * RenderTexture::swapBuffers, which only GLES acts on
+ * (patches/ogre-gles2-discard-depth-on-swap.patch). Call before tl_backend_set_target binds the
+ * next target. */
+void tl_backend_discard_depth(tl_backend* b);
+/* 1 when tl_backend_discard_depth acts: OGRE's GLES render system (Android) only. Elsewhere the
+ * targets keep OGRE's shared depth pool and nothing is discarded. On GLES every target has a depth
+ * buffer of its own whether or not discards happen (--diag_depth_discard off included), where
+ * OGRE's shared pool let the smaller targets use the main target's: a target bound again without
+ * a depth clear sees its own old depth (no game frame captured does that). */
+int tl_backend_discards_depth(const tl_backend* b);
+/* The guest size of the target bound now (the main target when none was bound): what
+ * tl_backend_discard_depth would discard. */
+void tl_backend_current_target_size(const tl_backend* b, uint32_t* width, uint32_t* height);
 /* Target 0 is the main colour target. */
 /* Binding a target (or reading one back) may reset the render system's device state: Direct3D
  * 11's target bind clears every binding (ClearState) while OGRE keeps its blend, depth and texture
@@ -313,7 +331,10 @@ uint32_t tl_backend_probe_samples(tl_backend* b);
  * programs generated and the time of the draws that generated them (generation, compilation and
  * the driver's work on first use, as far as it happens inside the draw), of which the RTSS
  * generation itself (its material, pass and shader source; program_generate_ms), GPU buffers and
- * vertex layouts created. Resets the counts. */
+ * vertex layouts created; textures uploaded (file and linear ones), by the format they have on the
+ * GPU, with their GPU bytes, and of them the DXT files decoded on the CPU because the render system
+ * has no DXT (OGRE's DDS codec, inside the image load), with the time of those loads. Resets the
+ * counts. */
 typedef struct tl_backend_counters {
   uint32_t programs_generated;
   double program_ms;
@@ -322,6 +343,11 @@ typedef struct tl_backend_counters {
   uint32_t vertex_layouts_created;
   uint32_t programs_precompiled;  /* by tl_backend_precompile_programs */
   double precompile_ms;
+  uint32_t textures_uploaded;
+  uint32_t textures_rgba8, textures_rgb8, textures_compressed, textures_other;
+  uint64_t texture_bytes;
+  uint32_t dxt_decoded;
+  double dxt_decode_ms;
 } tl_backend_counters;
 void tl_backend_take_counters(tl_backend* b, tl_backend_counters* out);
 

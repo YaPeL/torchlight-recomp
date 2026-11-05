@@ -90,6 +90,10 @@ std::string ShaderCompilerVersion() { return {}; }
 
 std::string CacheDir(const std::string& name) { return UserDir(UserFolderKind::kCache, name); }
 
+void PrintStartupError(const std::string& message) {
+  SDL_LogError(SDL_LOG_CATEGORY_APPLICATION, "%s", message.c_str());
+}
+
 std::string ConfigDir() { return UserDir(UserFolderKind::kConfig); }
 
 std::string DataDir() { return UserDir(UserFolderKind::kData); }
@@ -99,7 +103,7 @@ std::string GameDataDir() {
   return folder.empty() ? "" : folder.string() + "/";
 }
 
-std::string LogDir() { return UserDir(UserFolderKind::kState, "logs"); }
+std::string LogDir() { return UserDir(UserFolderKind::kState, LogsSubfolder()); }
 
 // The app is a library inside the APK, not a file the game's data sits next to.
 std::string ExecutableDir() { return ""; }
@@ -176,6 +180,8 @@ std::string OgreMediaDir() {
 }
 
 void BringToFront() {}
+
+void PrepareSoftwareWindows() {}
 
 void BlackGameWindowBackground() {}
 
@@ -309,6 +315,26 @@ bool ServeSurfaceChanges(const std::function<void()>& lost,
   }
 }
 
+void SurfaceTaken(uint64_t window) {
+  Surface& s = TheSurface();
+  std::lock_guard lock(s.mutex);
+  // A surface destroyed while no backend drew in it, and given back since: when the backend's
+  // window was just made on that one (through SDL's window; Android gives the same ANativeWindow
+  // for the same surface), it is present, not one to restore.
+  if (s.state != SurfaceState::kGone || !s.new_window) return;
+  if (uint64_t(uintptr_t(s.new_window)) != window) return;
+  SDL_Log("surface: back before the backend existed; its window is made on it");
+  ANativeWindow_release(s.new_window);
+  s.new_window = nullptr;
+  SetState(s, SurfaceState::kPresent);
+}
+
+bool GameWindowMayGetSurface() {
+  Surface& s = TheSurface();
+  std::lock_guard lock(s.mutex);
+  return s.state == SurfaceState::kGoing || s.state == SurfaceState::kGone;
+}
+
 std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindow*) {
   return plugin_dir;
 }
@@ -316,6 +342,8 @@ std::string OgreRenderSystemDir(const std::string& plugin_dir, const NativeWindo
 float ContentScaleDpi() { return 160.0f; }  // Android's density baseline
 
 bool TouchControlsByDefault() { return true; }
+
+std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {1280, 800}; }
 
 bool HasSystemBackButton() { return true; }
 
@@ -382,6 +410,8 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
   path = copy;
   return PickResult::kChosen;
 }
+
+bool RunningElevated() { return false; }
 
 bool CanPickFolder() { return false; }
 

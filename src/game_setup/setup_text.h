@@ -14,6 +14,8 @@
 #include <utility>
 #include <vector>
 
+#include "platform/os_kind.h"
+
 namespace torchlight::game_setup {
 
 // An English template and the values of its {placeholders}; an empty text means no message.
@@ -77,6 +79,81 @@ inline constexpr std::string_view kTextAchievementsChoice =
     "this later in the settings (restart required).";
 inline constexpr std::string_view kTextAchievementsXbox = "Xbox 360";
 inline constexpr std::string_view kTextAchievementsPc = "PC";
+// The wizard's pages (setup_pages.h).
+inline constexpr std::string_view kTextPageGame = "The game's files";
+inline constexpr std::string_view kTextPageWorking = "Installing the game's files";
+inline constexpr std::string_view kTextPageAchievements = "Achievements";
+inline constexpr std::string_view kTextPageReady = "Ready";
+inline constexpr std::string_view kTextReady = "Everything is set. The game starts now.";
+inline constexpr std::string_view kTextStart = "Start the game";
+// The Ready page on a Steam Deck with no pad the game would hear: Desktop Mode, the program not
+// started by Steam, which keeps the Deck's controls for its desktop layout.
+inline constexpr std::string_view kTextReadyDeck =
+    "Everything is set. In Desktop Mode the Deck's controls do not reach the game. Add this "
+    "program to Steam as a non-Steam game and play it from Game Mode.";
+inline constexpr std::string_view kTextClose = "Close";
+inline constexpr std::string_view kTextBrowsePad = "Browse with the pad...";
+inline constexpr std::string_view kTextBrowseTitle = "Choose the package, or a folder extracted from it";
+inline constexpr std::string_view kTextCancel = "Cancel";
+inline constexpr std::string_view kTextBack = "Back";
+inline constexpr std::string_view kTextHint = "A: choose     B: back     D-pad or arrows: move";
+inline constexpr std::string_view kTextHintNext =
+    "A: choose     B: back     Start: next     D-pad or arrows: move";
+inline constexpr std::string_view kTextFolderAbove = "..  (the folder above)";
+inline constexpr std::string_view kTextThisComputer = "This computer";
+inline constexpr std::string_view kTextUseFolder = "Use this folder";
+inline constexpr std::string_view kTextFolderMark = "Folder:";
+inline constexpr std::string_view kTextNoWindow =
+    "The setup window could not open, and the game's files are not installed yet.";
+inline constexpr std::string_view kTextPageStorage =
+    "Where to keep your files";
+inline constexpr std::string_view kTextStorageIntro =
+    "Your saves, your settings and the game's files are kept in this folder, beside the game:\n{folder}\n\nMove the game and this folder together to take everything with you.";
+inline constexpr std::string_view kTextKeepHere =
+    "Keep them here";
+inline constexpr std::string_view kTextCopyUser =
+    "Copy them from this computer's user folders";
+inline constexpr std::string_view kTextCopyUserNote =
+    "Files from an earlier install were found in this computer's user folders. They are copied, never moved or deleted.";
+inline constexpr std::string_view kTextCopyPortable =
+    "Copy them from another portable folder...";
+inline constexpr std::string_view kTextUseUser =
+    "Use this computer's user folders instead";
+inline constexpr std::string_view kTextParentUnwritableTitle =
+    "The game cannot write beside itself";
+inline constexpr std::string_view kTextParentUnwritable =
+    "It cannot create its folder here:\n{folder}\n\n{reason}\n\nYou can also keep your files in this computer's user folders.";
+inline constexpr std::string_view kTextPortableUnwritableTitle =
+    "The portable folder cannot be written";
+inline constexpr std::string_view kTextPortableUnwritable =
+    "The folder exists, but nothing can be written in it:\n{folder}\n\n{reason}\n\nOr use this computer's user folders; the portable folder is left as it is.";
+inline constexpr std::string_view kTextPlaceReasonLinux =
+    "The disk may be read-only, or the folder may belong to another user. Move the game to a folder of yours first.";
+inline constexpr std::string_view kTextPlaceReasonWindows =
+    "Folders such as Program Files can only be written by an administrator. Move the game to a folder of yours (in Documents, or on another drive) first. The disk may also be read-only.";
+inline constexpr std::string_view kTextPlaceReasonMac =
+    "The disk may be read-only (a disk image), or macOS may be running the game from a temporary place. Move it to Applications or another folder first.";
+inline constexpr std::string_view kTextFolderReasonLinux =
+    "It may belong to another user, or be on a read-only disk: check its permissions and its disk, then start again.";
+inline constexpr std::string_view kTextFolderReasonWindows =
+    "If it is in a place such as Program Files and was made while the game ran as administrator, only administrators can write in it: move the game and this folder to a folder of yours, or give your account write access in its Properties (Security tab), then start again. It may also be on a read-only disk.";
+inline constexpr std::string_view kTextFolderReasonMac =
+    "It may be on a read-only disk (a disk image), or macOS may be running the game from a temporary place: move the game and this folder to Applications or another folder, then start again.";
+inline constexpr std::string_view kTextElevatedTitle =
+    "Running as administrator";
+inline constexpr std::string_view kTextElevated =
+    "The game is running as administrator, so the folder made now will belong to the administrators. In a place such as Program Files, the game started normally will then not be able to write in it. Close it and start it normally, unless you will always start it as administrator.";
+inline constexpr std::string_view kTextNotPortable =
+    "That folder is not a portable folder of this game: it has no config, data or game folder.";
+inline constexpr std::string_view kTextPortableSource =
+    "Choose the other portable folder";
+inline constexpr std::string_view kTextPageCopying =
+    "Copying your files";
+inline constexpr std::string_view kTextCannotCopyData =
+    "The files could not be copied: {error}\n\nThe originals are as they were.";
+// Why a place cannot be written, as this operating system makes it likely: `existing` for a portable
+// folder that is there already, else for the folder it is in.
+std::string_view UnwritableReason(platform::OsKind os, bool existing);
 std::span<const std::string_view> InterfaceTexts();
 
 }  // namespace torchlight::game_setup

@@ -507,10 +507,17 @@ a resource location is named exactly as the game asks for it: in upper case when
 it through the data loader (the unit index), with the game's own spelling when it asks by its own
 name through CEGUI or OGRE (our video layout on `tlhost:`, which we load by our own name; the
 widened layouts on `tllayouts:`, which keep the pak's names). guest_abi `game_ui.h` has the lookup
-and the rule. **[to verify]** with a mod whose files are named in lower case, as PC mods often
-are (Windows ignores case): the mods' file maps, which the game fills from the folder listing and
-looks up in upper case, and the mods' assets that OGRE finds through the mod folders' locations.
-Those are the player's files, so the fix, if needed, cannot be renaming them.
+and the rule. **Mods with files named in lower case, as PC mods often are (Windows ignores case),
+checked (2026-10-14):** both ways the game reaches a mod's file work with them.
+- **The data loader** (the mods' file maps, filled from the folder listing and looked up in upper
+  case): class units in `valkyrie.dat` and `enchanter.dat` (Enhanced Edition) are offered at
+  creation and made, and the Kensai's skills in `kensaibase/explorer.dat`, `ritual.dat`,
+  `titanic.dat` show in his tree (hand runs of 2026-10-13); a lower-case axe mod changed its data
+  (2026-10-09).
+- **OGRE** (the mods' assets, found through the mod folders' locations): the Enchantress's
+  `eyes.png` and `body.png` load as `MEDIA/MODELS/ENCHANTRESS/EYES.PNG` and `BODY.PNG` (run logs)
+  and she is drawn with them (captures).
+**[observed in runs]**
 
 **Rule: folders we mount, and files created in them later.** A host folder mounted as a device
 (`HostPathDevice`) is read into memory when it is mounted. Opening a file by its path still finds
@@ -1408,7 +1415,8 @@ or Nintendo (`src/mods/pad_prompts.h`).
   (Linux, write access to `/dev/uinput`) follows the game's log and, after the first capture of
   `tools/input_scripts/pad-live-switch.txt`, creates a DualSense (`--kind ps5`; also `ps4`,
   `switch`) and presses R3 on it; after the second it removes it, and it removes it on any exit.
-  Run it with the game log folder (`~/.local/state/TorchlightRecomp/logs`) and start the game with
+  Run it with the game log folder (`~/.local/state/TorchlightRecomp/logs`, or `<root>/logs` with
+  `--user_data_root`) and start the game with
   `pad_prompts = "auto"` and `--dev_input_script tools/input_scripts/pad-live-switch.txt`. The log
   then shows "pad prompts: the pad changed; playstation5" and "...; xbox", and the three captures
   show the main menu's prompts as Xbox, PS5, Xbox. Validated with an 8BitDo pad in Xbox mode as

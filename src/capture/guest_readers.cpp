@@ -495,8 +495,20 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
   c.parameters_guest_address = parameters;
   if (parameters == 0) return c;
   c.transpose_matrices = abi::ReadBool(m, parameters, gpp::kTransposeMatrices);
-  auto read_ranges = [&](abi::Field logical, abi::Field values, bool floats,
-                         std::vector<commands::ConstantRange>& out) {
+  // The ranges kept and their values go to scratch first (a range the backend already holds is
+  // left out without allocating, live commands, `filter`), then into the command with exactly the
+  // room they need: one buffer of values, not one per range (the frames are freed on another
+  // thread, where every allocation of the capture costs again).
+  struct Kept {
+    commands::ConstantRange range;
+    bool floats;
+    uint32_t begin;  // in `kept_values`
+  };
+  thread_local std::vector<Kept> kept;
+  thread_local std::vector<uint32_t> kept_values;
+  kept.clear();
+  kept_values.clear();
+  auto read_ranges = [&](abi::Field logical, abi::Field values, bool floats) {
     uint32_t data = U32(m, parameters + values.offset + ogre::stl_vector::kFirst.offset);
     uint32_t structure = U32(m, parameters + logical.offset + ogre::shared_ptr::kPRep.offset);
     if (structure == 0 || data == 0) return;
@@ -511,21 +523,30 @@ commands::SetConstants ReadConstants(const uint8_t* m, uint32_t parameters, uint
       uint32_t physical = abi::ReadU32(m, n, node::kPhysicalIndex);
       r.physical_index = physical;
       if (r.element_count > 4096) return;
-      // Read into a scratch buffer first: a range the backend already holds is left out without
-      // allocating (live commands, `filter`).
-      thread_local std::vector<uint32_t> values;
-      values.resize(r.element_count);
+      const uint32_t begin = uint32_t(kept_values.size());
+      kept_values.resize(begin + r.element_count);
+      uint32_t* values = kept_values.data() + begin;
       for (uint32_t i = 0; i < r.element_count; ++i) values[i] = U32(m, data + 4 * (physical + i));
       const uint8_t stage = c.stage.value;
-      if (mirror && filter && mirror->Holds(floats, stage, physical, values.data(), r.element_count))
+      if (mirror && filter && mirror->Holds(floats, stage, physical, values, r.element_count)) {
+        kept_values.resize(begin);
         return;
-      if (mirror) mirror->Store(floats, stage, physical, values.data(), r.element_count);
-      r.data.assign(values.begin(), values.end());
-      out.push_back(std::move(r));
+      }
+      if (mirror) mirror->Store(floats, stage, physical, values, r.element_count);
+      kept.push_back({r, floats, begin});
     });
   };
-  read_ranges(gpp::kFloatLogicalToPhysical, gpp::kFloatConstants, true, c.floats);
-  read_ranges(gpp::kIntLogicalToPhysical, gpp::kIntConstants, false, c.ints);
+  read_ranges(gpp::kFloatLogicalToPhysical, gpp::kFloatConstants, true);
+  read_ranges(gpp::kIntLogicalToPhysical, gpp::kIntConstants, false);
+  size_t float_ranges = 0;
+  for (const Kept& k : kept) float_ranges += k.floats;
+  c.floats.reserve(float_ranges);
+  c.ints.reserve(kept.size() - float_ranges);
+  c.values.reserve(kept_values.size());
+  for (const Kept& k : kept) {
+    c.Add(k.floats ? c.floats : c.ints, k.range, kept_values.data() + k.begin,
+          k.range.element_count);
+  }
 
   uint32_t first = U32(m, parameters + gpp::kAutoConstants.offset + ogre::stl_vector::kFirst.offset);
   uint32_t last = U32(m, parameters + gpp::kAutoConstants.offset + ogre::stl_vector::kLast.offset);

@@ -1,21 +1,23 @@
 #include "game_setup/first_run.h"
 
-#include <atomic>
-#include <chrono>
-#include <mutex>
+#include <fstream>
 #include <optional>
-#include <thread>
+#include <system_error>
 
 #include <rex/cvar.h>
 
 #include "game_menu/menu_strings.h"
 #include "game_setup/game_files.h"
-#include "game_setup/install.h"
+#include "game_setup/first_run_steps.h"
 #include "game_setup/setup_text.h"
 #include "platform/platform.h"
+#include "platform/portable_copy.h"
+#include "platform/storage_mode.h"
 #include "settings/host_settings.h"
 
 namespace torchlight::game_setup {
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -34,10 +36,11 @@ Translate SetupTranslate(std::vector<platform::StartupMessage>& log) {
   }
   for (const std::string& warning : warnings) log.push_back({true, "game setup: " + warning});
   settings::HostSettings host;
-  if (const std::string dir = platform::ConfigDir(); !dir.empty()) {
+  // UserFolder, which creates nothing: the storage question may still be open.
+  if (const fs::path dir = platform::UserFolder(platform::UserFolderKind::kConfig); !dir.empty()) {
     std::vector<std::string> ignored;
     std::string load_error;
-    settings::Load(dir + std::string(settings::kFileName), host, ignored, load_error);
+    settings::Load((dir / settings::kFileName).string(), host, ignored, load_error);
   }
   std::optional<std::string> console;
   if (const auto* flag = rex::cvar::GetFlagInfo("user_language");
@@ -57,136 +60,112 @@ std::string Text(const Translate& tr, std::string_view english,
   return Render({std::string(english), std::move(values)}, tr);
 }
 
-// Runs Install on a thread while the progress window is drawn here; the window's close button
-// cancels.
-InstallResult InstallWithProgress(Source source, const std::filesystem::path& from,
-                                  const std::filesystem::path& game_dir, const Translate& tr) {
-  auto window = platform::ProgressWindow::Open(Text(tr, kTextTitle));
-  std::atomic<bool> cancel{false}, finished{false};
-  std::mutex mutex;
-  Phase phase = Phase::kCopying;
-  uint64_t done = 0, total = 0;
-  InstallResult result;
-  std::thread worker([&] {
-    result = Install(source, from, game_dir, GameFiles(),
-                     [&](Phase p, uint64_t d, uint64_t t) {
-                       std::lock_guard lock(mutex);
-                       phase = p, done = d, total = t;
-                       return !cancel.load();
-                     });
-    finished = true;
-  });
-  const std::string copying =
-      Text(tr, source == Source::kPackage ? kTextExtracting : kTextCopying);
-  const std::string checking = Text(tr, kTextChecking);
-  while (!finished) {
-    double fraction = 0;
-    bool is_checking = false;
-    {
-      std::lock_guard lock(mutex);
-      if (total) fraction = double(done) / double(total);
-      is_checking = phase == Phase::kChecking;
-    }
-    if (window && !window->Show(fraction, is_checking ? checking : copying)) cancel = true;
-    std::this_thread::sleep_for(std::chrono::milliseconds(16));
-  }
-  worker.join();
-  return result;
-}
-
 }  // namespace
 
-bool EnsureGameData(const std::filesystem::path& game_dir,
-                    std::vector<platform::StartupMessage>& log) {
-  const auto info = [&](std::string text) { log.push_back({false, std::move(text)}); };
-  if (XexMatches(game_dir, GameFiles())) return true;
-  const Translate tr = SetupTranslate(log);
-  const std::string title = Text(tr, kTextTitle);
-  const std::string where = game_dir.string();
-  // Where no folder can be picked (Android), the package is the only choice.
-  const bool folders = platform::CanPickFolder();
-  struct ForgetCopies {
-    ~ForgetCopies() { platform::ForgetPickedFiles(); }
-  } forget_copies;
-  while (true) {
-    const int choice =
-        folders ? platform::AskChoice(title, Text(tr, kTextIntro, {{"where", where}}),
-                                      {Text(tr, kTextChoosePackage), Text(tr, kTextChooseFolder),
-                                       Text(tr, kTextQuit)})
-                : platform::AskChoice(title, Text(tr, kTextIntroPackageOnly, {{"where", where}}),
-                                      {Text(tr, kTextChoosePackage), Text(tr, kTextQuit)});
-    if (choice != 0 && !(folders && choice == 1)) {
-      info("game setup: no game files; quit by the user");
-      return false;
+GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupMessage>& log) {
+  // Nothing is created until an answer needs it (a copy or an install): the player may still close
+  // the window, and what a copy or an install finished then stays, for the next start.
+  settings::HostSettings host;
+  const auto open_questions = [&] {
+    OpenQuestions open;
+    if (!facts.game_given) {
+      open.game_dir = platform::UserFolder(platform::UserFolderKind::kGameData);
+      open.ask_game = !open.game_dir.empty() && !XexMatches(open.game_dir, GameFiles());
     }
-    const Source source = choice == 0 ? Source::kPackage : Source::kFolder;
-    std::string path, error;
-    const platform::PickResult picked =
-        source == Source::kPackage ? platform::PickFile(Text(tr, kTextPackagePicker), path, error)
-                                   : platform::PickFolder(Text(tr, kTextFolderPicker), path, error);
-    if (picked == platform::PickResult::kCancelled) continue;
-    if (picked == platform::PickResult::kFailed) {
-      platform::ShowError(title, Text(tr, kTextPickerFailed, {{"error", error}}));
-      continue;
-    }
-    if (picked == platform::PickResult::kUncopied) {
-      platform::ShowError(title, Text(tr, kTextPickedCopyFailed, {{"error", error}}));
-      info("game setup: the chosen file was not copied: " + error);
-      continue;
-    }
-    if (source == Source::kPackage) {
-      const auto facts = ReadPackageFacts(path);
-      const Message problem =
-          facts ? CheckPackage(*facts) : Message{std::string(kTextNotPackage), {}};
-      if (!problem.empty()) {
-        platform::ShowError(title, Render(problem, tr));
-        info("game setup: " + path + " rejected: " + Render(problem));
-        continue;
+    const fs::path config = platform::UserFolder(platform::UserFolderKind::kConfig);
+    if (!facts.own_user_root && !config.empty()) {
+      std::vector<std::string> warnings;
+      std::string error;
+      if (!settings::Load((config / settings::kFileName).string(), host, warnings, error)) {
+        log.push_back({true, "achievements choice: " + error + "; not asked"});
+      } else {
+        open.ask_achievements = !host.achievements.has_value();
       }
     }
-    const InstallResult result = InstallWithProgress(source, path, game_dir, tr);
-    if (Cancelled(result.error)) {
-      info("game setup: install from " + path + " cancelled");
-      continue;
-    }
-    if (!result.error.empty()) {
-      platform::ShowError(title, Render(result.error, tr));
-      log.push_back(
-          {true, "game setup: install from " + path + " failed: " + Render(result.error)});
-      continue;
-    }
-    if (!result.moved_to.empty()) {
-      info("game setup: the previous " + where + " was moved to " + result.moved_to);
-    }
-    info("game setup: installed the game files from " + path + " to " + where);
-    return true;
+    return open;
+  };
+  std::optional<StorageQuestion> storage;
+  if (facts.storage == platform::StorageMode::kAsk ||
+      facts.storage == platform::StorageMode::kPortableUnwritable) {
+    StorageQuestion question;
+    question.mode = facts.storage;
+    question.portable_folder = facts.portable_folder;
+    std::string ignored;
+    question.parent_writable = platform::CanWriteFolder(facts.portable_folder.parent_path(), ignored);
+    question.elevated = platform::RunningElevated();
+    question.user_sources = platform::UserFolderSources();
+    question.user_data = platform::SourcesHoldFiles(question.user_sources);
+    storage = question;
   }
-}
-
-void EnsureAchievementChoice(std::vector<platform::StartupMessage>& log) {
-  const std::string dir = platform::ConfigDir();
-  if (dir.empty()) return;
-  const std::string path = dir + std::string(settings::kFileName);
-  settings::HostSettings host;
-  std::vector<std::string> warnings;
-  std::string error;
-  if (!settings::Load(path, host, warnings, error)) {
-    log.push_back({true, "achievements choice: " + error + "; not asked"});
-    return;
+  OpenQuestions open;
+  if (!storage) {
+    open = open_questions();
+    if (open.ask_game && facts.own_user_root) {
+      platform::PrintStartupError("--user_data_root given, but no valid game in " +
+                                  open.game_dir.string() +
+                                  ": pass --game_data_root=<the game's folder>, or put the game there");
+      return GameData::kMissingInRoot;
+    }
+    if (!open.ask_game && !open.ask_achievements) return GameData::kReady;
   }
-  if (host.achievements) return;  // chosen before
-  const Translate tr = SetupTranslate(log);
-  const int choice = platform::AskChoice(
-      Text(tr, kTextTitle), Text(tr, kTextAchievementsChoice),
-      {Text(tr, kTextAchievementsXbox), Text(tr, kTextAchievementsPc)});
-  host.achievements = choice == 1 ? settings::AchievementSet::kPc : settings::AchievementSet::kXbox;
-  if (!settings::Save(path, host, error)) {
-    log.push_back({true, "achievements choice: cannot save " + path + ": " + error});
-    return;
+  const auto after_storage = [&](bool portable) {
+    if (portable) {
+      platform::SetPortableRoot(facts.portable_folder);
+    } else {
+      platform::SetPortableRoot({});
+      const auto migrated = platform::MigrateUserFolders(false);
+      log.insert(log.end(), migrated.begin(), migrated.end());
+    }
+    return open_questions();
+  };
+  FirstStartAnswers answers;
+  const GameData answer =
+      AskFirstStart(open, storage, after_storage, SetupTranslate(log), answers, log);
+  if (answer != GameData::kReady) return answer;
+  const GameData done = answers.start_game ? GameData::kReady : GameData::kSetUp;
+  if (answers.portable) {
+    std::error_code ec;
+    if (*answers.portable) {
+      fs::create_directories(facts.portable_folder, ec);
+      if (ec) {
+        const std::string reason = "Cannot create " + facts.portable_folder.string() + ": " + ec.message();
+        platform::PrintStartupError(reason);
+        platform::ShowError("Torchlight Recomp", reason);  // a player with no console
+        return GameData::kFailed;
+      }
+      log.push_back({false, "storage: portable, " + facts.portable_folder.string()});
+    } else {
+      log.push_back({false, "storage: the user's folders, by the player's choice"});
+      // Asked once. A portable folder that exists but cannot be written is asked again every start:
+      // it may work next time, and then it is the player's again.
+      if (facts.storage == platform::StorageMode::kAsk) {
+        const fs::path config = platform::PlainUserFolder(platform::UserFolderKind::kConfig);
+        fs::create_directories(config, ec);
+        std::ofstream choice(config / platform::kUserFoldersChoiceFile);
+        choice.close();
+        if (config.empty() || ec || !choice) {
+          log.push_back({true, "storage: cannot save the choice; it will be asked again"});
+        }
+      }
+    }
   }
-  log.push_back({false, "achievements choice: " +
-                            std::string(settings::AchievementSetName(*host.achievements)) +
-                            (choice < 0 ? " (the box was closed: the default)" : "")});
+  if (answers.achievement) {
+    const std::string dir = platform::ConfigDir();
+    if (dir.empty()) {
+      log.push_back({true, "achievements choice: no settings folder; not saved"});
+      return done;
+    }
+    const std::string path = dir + std::string(settings::kFileName);
+    host.achievements = answers.achievement;
+    std::string error;
+    if (settings::Save(path, host, error)) {
+      log.push_back({false, "achievements choice: " +
+                                std::string(settings::AchievementSetName(*answers.achievement))});
+    } else {
+      log.push_back({true, "achievements choice: cannot save " + path + ": " + error});
+    }
+  }
+  return done;
 }
 
 void ShowRendererError(const std::string& error) {

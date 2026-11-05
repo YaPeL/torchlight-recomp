@@ -273,7 +273,18 @@ as before. It compares the two with one binary, and rules the change out if some
 (a report of corrupted data, a crash in a copy).
 
 The log's first lines say which: `guest copies: host memcpy where it is the same copy
-(--native_guest_copy=true)` or `... the recompiled guest code (--native_guest_copy=false)`.
+(--native_guest_copy=true); vector copy: ...` or `... the recompiled guest code
+(--native_guest_copy=false); ...`.
+
+**The XDK vector copy** (`0x821C28D8`, the copy the constant writers use, about 0.2 ms a frame of
+the POCO's fight) runs the same way, behind its own **`--native_vector_copy`** (on by default). It
+also zeroes 128-byte lines with `dcbzl`, but only lines inside the destination that it then fills,
+so between ranges that do not overlap its result is `memcpy`'s (evidence in
+`guest_abi/guest_functions.h`). It routes only while its byte loop's step word (`0x8304EC50`) is 1,
+as the image ships it; otherwise the log warns and the guest copy runs. The log line ends with
+`vector copy: host memcpy where it is the same copy (...) (--native_vector_copy=true)`. A
+diagnostics build's `--diag_vector_copy_check` runs every routed copy both ways and logs
+differences: 0 in 11 million copies of `fight.txt` and 101 million of the ten waves of `fight5`.
 
 **Measured** (2026-10-07; same machine, flags, warm shader caches and release build as above; the
 steps of each run start from one saved game on the first floor of the mine, so the dungeon is the
@@ -295,9 +306,24 @@ No step changed its long frames (0-3 over 33 ms in any run). A profile of a run 
 as above) no longer has the guest's block copy loop.
 
 **x86-64-v3** (the game built with `-march=x86-64-v3`: AVX2, BMI2, FMA; the SDK and OGRE unchanged)
-was measured too and dropped: 0-2 % in the dungeon (within the noise), +4 % in the main menu, and
-the town, still, is the noisy step. Not worth requiring AVX2 (CPUs from about 2013 on), two builds
-or a launcher choosing one; the release stays x86-64-v2.
+was measured too and dropped at first: 0-2 % in the dungeon (within the noise), +4 % in the main
+menu, and the town, still, is the noisy step; the release stayed x86-64-v2.
+
+Revised on 2026-11-01 (the owner's decision: the Steam Deck, Zen 2, is Linux's target; Windows stays
+on x86-64-v2): Linux builds for x86-64-v3 (`TORCHLIGHT_X86_64_V3`, with the CPU check of
+`src/platform/cpu_check.cpp`). Measured with counters on the guest main thread over `fight.txt`'s
+fight step (i7-8750H, offscreen x11, power profile performance, CPU at 2.4-3.0 GHz and 62-71 °C at
+each run's start; perf/native-skeleton + this branch, local f5284af and later; PGO with each build's
+own profile, the v3 one trained on the v3 build, 0 of 19633 mismatched), A B B A:
+
+| | v2 | v3 | v3 against v2 |
+|---|---|---|---|
+| cycles a frame, skeleton port off | 33.97, 34.91 | 31.91, 33.60 | −4.9 % |
+| instructions a frame, port off | 34.40, 35.81 | 31.26, 32.95 | −8.6 % |
+| cycles a frame, `--native_skeleton` on | 34.85, 34.02 | 30.65, 30.96 | −10.5 % |
+
+The fused multiply-adds become instructions instead of libm calls; the skeleton port (#85) gains
+about 6 % on v3 and nothing on v2, where its own fma calls go to libm too.
 
 **Where the frame rate drops** (same profile): below 100 fps, in the dungeon with several enemies and
 an NPC on screen and in the town walking, the game issues about twice the draws (about 340 per frame
@@ -335,6 +361,14 @@ mode (`live/guest_events.h`): the guest's file existence checks (missing ones, t
 reads and `XMemAlloc` calls in that frame, and the rest of it. In the native mode the live mode's
 `slow frame` line has the backend's side (textures, RTSS programs, now with the generation time
 apart, buffers, present).
+Since 2026-10-23 the threshold is `--long_frame_ms` (30 by default; it was a fixed 33.3 ms, so
+older logs' long frame lines are not comparable) and the line ends with the resources the guest's
+checks asked for in that frame, each once whatever the location and form it was asked in
+(`looked up N: 'MEDIA\...'`, the first 16, `(found)` when found loose; past 16, `(+K more)` counts
+the further lookups, a resource asked in several locations counting once each): the game
+looks every resource up as a loose file before it reads it from its pak, so these are the
+resources it loaded then. A resource already loaded is not looked up again. The 10 s summary still
+counts frames over 33 and 50 ms.
 
 What they showed, native and Xenos, on the fixed-floor saved game:
 
@@ -852,8 +886,8 @@ more gaps) was not met, so the display's clock is not pursued on other platforms
 the branch keeps the code (presentation-time measurement aside, which is in `develop`).
 
 Pending: Windows (Direct3D 11 queues up to three frames in DXGI by default; one is a candidate,
-`--native_frame_latency` on `feature/d3d11-frame-latency`, draft pull request 1, measured by the
-Windows agent) and macOS.
+`--native_frame_latency`, archived as the tag `archive/d3d11-frame-latency`: still to be measured
+on Windows by the Windows agent, from that tag) and macOS.
 
 ### The buffer bindings and OGRE 14's interface: evaluated (2026-10-13)
 
