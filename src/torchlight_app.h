@@ -91,7 +91,8 @@ class TorchlightApp : public rex::ReXApp {
       facts.own_user_root = !rex::cvar::Query<std::string>("user_data_root").empty();
       switch (torchlight::game_setup::FirstStart(facts, startup_log())) {
         case GameData::kReady: break;
-        case GameData::kQuit: std::exit(EXIT_SUCCESS);  // nothing is running yet
+        case GameData::kQuit:
+        case GameData::kSetUp: std::exit(EXIT_SUCCESS);  // nothing is running yet
         case GameData::kMissingInRoot:
         case GameData::kFailed: std::exit(EXIT_FAILURE);
       }

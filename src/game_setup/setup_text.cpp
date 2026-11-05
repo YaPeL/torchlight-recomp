@@ -13,6 +13,7 @@ constexpr std::string_view kInterfaceTexts[] = {
     kTextExtracting,    kTextCopying,        kTextChecking,      kTextAchievementsChoice,
     kTextAchievementsXbox, kTextAchievementsPc,
     kTextPageGame, kTextPageWorking, kTextPageAchievements, kTextPageReady, kTextReady, kTextStart,
+    kTextReadyDeck, kTextClose,
     kTextBrowsePad, kTextBrowseTitle, kTextCancel, kTextBack, kTextHint, kTextHintNext,
     kTextFolderAbove, kTextThisComputer, kTextUseFolder, kTextFolderMark, kTextNoWindow,
     kTextPageStorage, kTextStorageIntro, kTextKeepHere, kTextCopyUser, kTextCopyUserNote, kTextCopyPortable, kTextUseUser, kTextParentUnwritableTitle, kTextParentUnwritable, kTextPortableUnwritableTitle, kTextPortableUnwritable, kTextNotPortable, kTextPlaceReasonLinux, kTextPlaceReasonWindows, kTextPlaceReasonMac, kTextFolderReasonLinux, kTextFolderReasonWindows, kTextFolderReasonMac, kTextElevatedTitle, kTextElevated, kTextPortableSource, kTextPageCopying, kTextCannotCopyData,

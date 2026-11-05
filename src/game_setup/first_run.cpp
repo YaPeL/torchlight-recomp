@@ -122,6 +122,7 @@ GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupM
   const GameData answer =
       AskFirstStart(open, storage, after_storage, SetupTranslate(log), answers, log);
   if (answer != GameData::kReady) return answer;
+  const GameData done = answers.start_game ? GameData::kReady : GameData::kSetUp;
   if (answers.portable) {
     std::error_code ec;
     if (*answers.portable) {
@@ -152,7 +153,7 @@ GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupM
     const std::string dir = platform::ConfigDir();
     if (dir.empty()) {
       log.push_back({true, "achievements choice: no settings folder; not saved"});
-      return GameData::kReady;
+      return done;
     }
     const std::string path = dir + std::string(settings::kFileName);
     host.achievements = answers.achievement;
@@ -164,7 +165,7 @@ GameData FirstStart(const FirstStartFacts& facts, std::vector<platform::StartupM
       log.push_back({true, "achievements choice: cannot save " + path + ": " + error});
     }
   }
-  return GameData::kReady;
+  return done;
 }
 
 void ShowRendererError(const std::string& error) {

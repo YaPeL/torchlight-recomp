@@ -31,6 +31,7 @@ GameData AskFirstStart(const OpenQuestions& questions,
   config.after_storage = after_storage;
   config.files = GameFiles();
   config.translate = translate;
+  config.steam_deck = platform::IsSteamDeck();
   wizard::Options options;
   options.title = Render({std::string(kTextRendererTitle), {}}, translate);
 #ifdef TORCHLIGHT_DEV_INPUT
@@ -75,6 +76,10 @@ GameData AskFirstStart(const OpenQuestions& questions,
   }
   answers.achievement = pages.achievements();
   answers.portable = pages.portable();
+  answers.start_game = pages.start_game();
+  if (!answers.start_game) {
+    log.push_back({false, "game setup: done; closed without starting (Steam Deck with no pad)"});
+  }
   return GameData::kReady;
 }
 

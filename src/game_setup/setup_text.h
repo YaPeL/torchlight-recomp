@@ -86,6 +86,12 @@ inline constexpr std::string_view kTextPageAchievements = "Achievements";
 inline constexpr std::string_view kTextPageReady = "Ready";
 inline constexpr std::string_view kTextReady = "Everything is set. The game starts now.";
 inline constexpr std::string_view kTextStart = "Start the game";
+// The Ready page on a Steam Deck with no pad the game would hear: Desktop Mode, the program not
+// started by Steam, which keeps the Deck's controls for its desktop layout.
+inline constexpr std::string_view kTextReadyDeck =
+    "Everything is set. In Desktop Mode the Deck's controls do not reach the game. Add this "
+    "program to Steam as a non-Steam game and play it from Game Mode.";
+inline constexpr std::string_view kTextClose = "Close";
 inline constexpr std::string_view kTextBrowsePad = "Browse with the pad...";
 inline constexpr std::string_view kTextBrowseTitle = "Choose the package, or a folder extracted from it";
 inline constexpr std::string_view kTextCancel = "Cancel";

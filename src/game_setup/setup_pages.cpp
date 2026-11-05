@@ -17,6 +17,16 @@ std::string Utf8(const fs::path& path) {
 
 fs::path FromUtf8(const std::string& text) { return fs::path(std::u8string(text.begin(), text.end())); }
 
+// A pad on the machine; a script's simulated one (SDL's virtual joystick) is not.
+bool RealPadConnected() {
+  int count = 0;
+  SDL_JoystickID* ids = SDL_GetGamepads(&count);
+  bool found = false;
+  for (int i = 0; ids && i < count; ++i) found = found || !SDL_IsJoystickVirtual(ids[i]);
+  SDL_free(ids);
+  return found;
+}
+
 }  // namespace
 
 // The system's picker answers on its own thread, maybe after the player went on: the answer is kept
@@ -468,9 +478,14 @@ void SetupPages::AchievementsPage() {
 void SetupPages::ReadyPage() {
   ui_.Heading(Tr(kTextPageReady), "");
   ImGui::BeginChild("body", ImVec2(0, ui_.BodyHeight()), ImGuiChildFlags_NavFlattened);
-  ui_.Wrapped(Tr(kTextReady));
+  // Asked every frame: a pad plugged in now gives the start back.
+  const bool no_pad = config_.steam_deck && !RealPadConnected();
+  ui_.Wrapped(Tr(no_pad ? kTextReadyDeck : kTextReady));
   ImGui::EndChild();
-  if (ui_.Footer(Tr(kTextStart).c_str(), true, ui_.can_go_back(), true)) completed_ = true;
+  if (ui_.Footer(Tr(no_pad ? kTextClose : kTextStart).c_str(), true, ui_.can_go_back(), true)) {
+    completed_ = true;
+    start_game_ = !no_pad;
+  }
 }
 
 }  // namespace torchlight::game_setup
