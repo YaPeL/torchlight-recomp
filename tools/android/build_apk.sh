@@ -9,10 +9,12 @@
 # name (the ReXGlue agent's patch 42) and extraction is turned off again; the libraries themselves
 # are linked for 16 KB pages.
 #
-# Usage: tools/android/build_apk.sh [options] MAIN_LIBRARY SDK_PREFIX OUT.apk
+# Usage: tools/android/build_apk.sh [options] MAIN_LIBRARY SDK_PREFIX OUT
 #   MAIN_LIBRARY  the .so whose SDL_main the activity calls (out/build/.../libtorchlight.so, or
 #                 libreplay.so from the replay's Android build)
 #   SDK_PREFIX    the ReXGlue SDK's Android install (lib/librexruntime.so, include/SDL3)
+#   OUT           the APK to write; with --release, an existing folder, where the APK is named
+#                 like the other release files: Torchlight-Recomp-v<version name>-arm64.apk
 #   --version-code N, --version-name S   (default 1 and 0.0.0-dev)
 #   --keep-debug  keep the libraries' debug information (default: stripped, as a release)
 #   --release     the app's own package, io.github.yapel.tlrecomp, not debuggable, aligned and
@@ -64,6 +66,21 @@ if [ "$release" = 1 ] && [ "$version_given" != 3 ]; then
 fi
 case "$version_code" in ''|*[!0-9]*) echo "build_apk: --version-code must be a number" >&2; exit 2 ;; esac
 [ -n "$version_name" ] || { echo "build_apk: --version-name is empty" >&2; exit 2; }
+if [ "$release" = 1 ]; then
+  [ -d "$out" ] || { echo "build_apk: --release writes into a folder; $out is not one" >&2; exit 2; }
+  # The name goes into the file name after the "v": digits first, then only [0-9A-Za-z.+-].
+  case "$version_name" in
+    [0-9]*) case "$version_name" in *[!0-9A-Za-z.+-]*) bad_name=1 ;; *) bad_name=0 ;; esac ;;
+    *) bad_name=1 ;;
+  esac
+  [ "$bad_name" = 0 ] || {
+    echo "build_apk: --version-name must start with a digit and hold only [0-9A-Za-z.+-]" >&2
+    exit 2
+  }
+  out="${out%/}/Torchlight-Recomp-v$version_name-arm64.apk"
+  # Never replace an APK of that name: the owner may have signed it in place.
+  [ ! -e "$out" ] || { echo "build_apk: $out exists; move it away first" >&2; exit 2; }
+fi
 
 tools="$sdk/build-tools/$build_tools"
 android_jar="$sdk/platforms/$platform/android.jar"
