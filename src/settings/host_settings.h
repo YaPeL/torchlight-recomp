@@ -63,6 +63,11 @@ struct HostSettings {
   // created with "FSAA" = "2" (@0x8220970C). More than the device does falls back to its most when
   // applied (EffectiveMsaa); the stored choice stays.
   uint32_t msaa = 2;
+  // Size of the game's two projector shadow textures (its SHADOWRESOLUTION): 512, as on the 360
+  // (its first-start defaults, sub_823E1040 @0x823E1224), or 1024, the PC's highest detail. The
+  // game reads it once when it creates them at startup (sub_82210148 @0x8221081C): takes effect
+  // after a restart.
+  uint32_t shadow_resolution = 512;
   // Game language code ("en", "de", "fr", "es"...); empty = the runtime's default.
   std::string language;
   // Aspect ratio of the game's frame (only mode).
@@ -124,7 +129,7 @@ struct Capabilities {
 // Settings the menu shows. Changing one of these takes effect after restarting the game.
 enum class Setting {
   kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements, kPadPrompts,
-  kSwapConfirmCancel, kMsaa
+  kSwapConfirmCancel, kMsaa, kShadowResolution
 };
 bool RequiresRestart(Setting setting);
 // The achievement set in effect: the setting, or Xbox when it is missing or invalid.
@@ -195,6 +200,8 @@ Choices<uint32_t> MsaaChoices(const Capabilities& caps);
 // The samples a setting asks the backend for: the choice, limited to the device's most when known
 // (0: off).
 uint32_t EffectiveMsaa(const HostSettings& settings, const Capabilities& caps);
+// The 360's 512 and the PC's 1024; every device offers both.
+Choices<uint32_t> ShadowResolutionChoices();
 // Automatic first, then the fixed aspects no wider than the display, narrowest first (all of them
 // when the display's size is unknown).
 Choices<Aspect> AspectChoices(const Capabilities& caps);
@@ -221,7 +228,8 @@ std::string LanguageCode(uint32_t console_language_id);
 
 // The settings with every value this machine does not offer replaced by its automatic value (the
 // frame rate cap falls back to 60). A multisampling count other than 0, 2 or 4 becomes the default;
-// a valid one above the device's most is kept (EffectiveMsaa limits it).
+// a valid one above the device's most is kept (EffectiveMsaa limits it). A shadow resolution other
+// than 512 or 1024 becomes 512.
 HostSettings Normalize(const HostSettings& settings, const Capabilities& caps);
 
 // The backend's internal render scale for a chosen render resolution (0x0: the window's size): the

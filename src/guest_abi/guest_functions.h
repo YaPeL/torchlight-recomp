@@ -347,4 +347,24 @@ inline constexpr GuestFunction kBillboardSetCtor{0x824798C0, Confidence::kConfir
 inline constexpr GuestFunction kBillboardSetDtor{0x82479B08, Confidence::kConfirmed};
 }  // namespace census
 
+// The game's settings table (Runic's, not OGRE's): an object whose +108 / +112 are the start and end
+// of a vector of 32-bit values, one per setting index; the index of each setting is a global the
+// settings' constructor sub_823DEF18 fills when it registers the key.
+namespace game_settings {
+// [confirmed] setInt(table r3, index r4, value r5): if index < (end - start) / 4 (@0x821FA040..
+// @0x821FA054) stores value at start[index] (@0x821FA068..@0x821FA070), then calls the index's
+// listeners (sub_821FA090 @0x821FA074) and returns 1; else returns 0.
+inline constexpr GuestFunction kSetInt{0x821FA030, Confidence::kConfirmed};
+// [confirmed] The global holding SHADOWRESOLUTION's index: the key is registered with it
+// (sub_823DEF18 @0x823DFDF4 'SHADOWRESOLUTION', @0x823DFE1C), the first-start defaults set 512
+// through it (sub_823E1040 @0x823E122C), and the projector setup reads it (sub_82210148
+// @0x8221081C). No other code loads it.
+inline constexpr uint32_t kShadowResolutionIndex = 0x83558E88;
+// [confirmed] Runic's projector setup: creates ProjectorRTT (@0x822108BC) and ProjectorRTTLight
+// (@0x82210B08), each SHADOWRESOLUTION x SHADOWRESOLUTION, from the settings table it gets in r4
+// (kept at this+40, @0x822101B0; read back @0x82210810). Its only caller is sub_8220A750
+// (@0x8220A7AC), during the game's startup; the size is read nowhere else.
+inline constexpr GuestFunction kProjectorSetup{0x82210148, Confidence::kConfirmed};
+}  // namespace game_settings
+
 }  // namespace torchlight::guest_abi::functions

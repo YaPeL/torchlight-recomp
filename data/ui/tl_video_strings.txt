@@ -26,6 +26,9 @@ Controls = Steuerung
 Extras = Extras
 Antialiasing = Kantenglättung
 Off = Aus
+Shadows = Schatten
+360 (512) on restart = 360 (512) nach Neustart
+PC (1024) on restart = PC (1024) nach Neustart
 
 [fr]
 Video = Vidéo
@@ -50,6 +53,9 @@ Controls = Commandes
 Extras = Extras
 Antialiasing = Anticrénelage
 Off = Désactivé
+Shadows = Ombres
+360 (512) on restart = 360 (512) après relance
+PC (1024) on restart = PC (1024) après relance
 
 [es]
 Video = Video
@@ -74,3 +80,6 @@ Controls = Controles
 Extras = Extras
 Antialiasing = Suavizado de bordes
 Off = Desactivado
+Shadows = Sombras
+360 (512) on restart = 360 (512) al reiniciar
+PC (1024) on restart = PC (1024) al reiniciar

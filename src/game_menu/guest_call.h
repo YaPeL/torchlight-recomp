@@ -5,7 +5,8 @@
 // and puts every register back when done, so the caller sees them as the hooked function returned
 // them. The calls get a frame of their own below the caller's stack pointer: a scratch area for the
 // arguments that live in memory (strings, out structures), and below it the stack the callees use.
-// The hooked function has returned by then, so nothing below the caller's stack pointer is live.
+// Nothing below the caller's stack pointer is live: the hooked function has returned by then, or
+// has not started yet (a call at its entry, before the original runs).
 
 #pragma once
 

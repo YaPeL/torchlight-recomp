@@ -200,8 +200,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   `.uilayout` layouts (CEGUI XML), the `onClick` commands and pad navigation.
 - `src/game_menu/`: the host's settings inside the game's settings menu (only mode), as a column to
   the right of its rows, in its style, in three sections picked by red buttons on top (Video:
-  resolution, aspect, frame rate cap, antialiasing, vsync; Controls: button prompts and the A/B swap;
-  Extras: language, achievements, renderer and GPU). It is all the game's own UI:
+  resolution, aspect, frame rate cap, antialiasing, shadows, vsync; Controls: button prompts and the
+  A/B swap; Extras: language, achievements, renderer and GPU). It is all the game's own UI:
   - the layout is ours (`data/ui/tl_video_settings.uilayout`, copied next to the executable) and only
     references widget types, fonts and imagesets from the pak; the guest sees it through a VFS device
     (`tlhost:`) added as an OGRE `FileSystem` location after `resources.cfg`;
@@ -219,10 +219,18 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     defaults, `sub_823E1040`, turn its FSAA on; its window gets "FSAA" = "2" at `0x8220970C`). The
     row offers only what the device applies (`tl_backend_max_msaa`, read again whenever the column
     is used); a saved count above it is kept and applied as the device's most;
+  - shadows (`shadow_resolution`: 512, the 360's, by default, or 1024, the PC's highest) is the
+    size of the game's two projector textures (`ProjectorRTT`, `ProjectorRTTLight`). The game reads
+    its `SHADOWRESOLUTION` only when it creates them at startup, before its own settings files can
+    be read (`SAVE:\` is not mounted yet), so its first-start defaults always set 512. A hook on
+    that setup (`hooks/shadow_resolution_hooks.cpp`) sets the host's size through the game's own
+    setter first; 512 leaves the game alone. Two 1024 targets do not fit in the guest D3D's EDRAM
+    next to the frame and are created aliased (EDRAM aliasing, below), so only mode. A change
+    applies after a restart, and the row says so until then;
   - changes apply immediately (scale, vsync and multisampling through a request to the backend
     thread, the cap
     through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button
-    prompts and the A/B swap show the restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
+    prompts, the A/B swap and shadows show the restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
   - the labels and the word values are translated with `data/ui/tl_video_strings.txt` (de, fr, es;
     written by us: the game does not have those texts) into the language the runtime reports;
   - the GPU (Linux only for now) is chosen before GL is loaded: the driver variables
@@ -296,7 +304,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     A render target refused for lack of EDRAM is created again aliased at EDRAM base 0
     (`D3DSURFACE_PARAMETERS`, which does not allocate). Its release then frees no EDRAM, because the
     owned bit is not set. With the null GPU there is no EDRAM, and the GPU commands that would use
-    the base are discarded. That is why this is only mode.
+    the base are discarded. That is why this is only mode. The PC's 1024 shadow textures (the Video
+    column's shadows) use the same aliasing, so they too apply only there.
   - Layout bands (`game_menu/wide_layout.h`, `WidenBands`): menus and loading screens build their
     top and bottom bands from a centred image of fixed width plus two end pieces anchored to the
     screen's edges. At 1280 they overlap into one band; wider, they leave gaps. The end pieces are

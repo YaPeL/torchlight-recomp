@@ -7,6 +7,10 @@ namespace torchlight::hooks {
 // After the guest image is loaded, before it runs: renames the game's 16:9 video mode for the frame
 // of the configured video mode, which lets the mode hooks resize it. Does nothing for 16:9 or 4:3.
 void InstallVideoMode();
+// From now on, a render target the guest D3D refuses for lack of EDRAM is created again aliased at
+// EDRAM base 0 (only mode: no EDRAM exists there). Before the guest creates the larger targets;
+// false when not in only mode or out of guest memory.
+bool AliasRenderTargets();
 // Whether the guest draws a frame wider than 16:9 (InstallVideoMode succeeded for one).
 bool WiderThan16x9();
 // The viewport whose draws the native backend limits to the centred 16:9 strip (SetSceneClip): the

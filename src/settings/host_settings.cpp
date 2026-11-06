@@ -147,6 +147,8 @@ bool RequiresRestart(Setting setting) {
     case Setting::kVsync:
     case Setting::kMsaa:
       return false;
+    case Setting::kShadowResolution:
+      return true;
   }
   return false;
 }
@@ -271,6 +273,13 @@ Choices<uint32_t> MsaaChoices(const Capabilities& caps) {
   return choices;
 }
 
+Choices<uint32_t> ShadowResolutionChoices() {
+  Choices<uint32_t> choices;
+  choices.values = {512, 1024};
+  choices.enabled = true;
+  return choices;
+}
+
 uint32_t EffectiveMsaa(const HostSettings& settings, const Capabilities& caps) {
   if (settings.msaa < 2) return 0;
   if (!caps.max_msaa) return settings.msaa;
@@ -380,6 +389,9 @@ HostSettings Normalize(const HostSettings& settings, const Capabilities& caps) {
   if (!Contains(caps.languages, out.language)) out.language.clear();
   if (!Contains(AspectChoices(caps).values, out.aspect)) out.aspect = Aspect::kAuto;
   if (out.msaa != 0 && out.msaa != 2 && out.msaa != 4) out.msaa = HostSettings{}.msaa;
+  if (!Contains(ShadowResolutionChoices().values, out.shadow_resolution)) {
+    out.shadow_resolution = HostSettings{}.shadow_resolution;
+  }
   return out;
 }
 
@@ -515,6 +527,10 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
       uint32_t samples = 0;
       ok = ParseUint(value, samples) && (samples == 0 || samples == 2 || samples == 4);
       if (ok) settings.msaa = samples;
+    } else if (key == "shadow_resolution") {
+      uint32_t size = 0;
+      ok = ParseUint(value, size) && Contains(ShadowResolutionChoices().values, size);
+      if (ok) settings.shadow_resolution = size;
     } else {
       warn(line_number, "unknown key \"" + std::string(key) + "\"");
       continue;
@@ -546,6 +562,9 @@ std::string Serialize(const HostSettings& settings) {
       << "# Multisampling (antialiasing) of the game's frame: 0 (off), 2 (the Xbox 360's, the\n"
       << "# default) or 4 samples.\n"
       << "msaa = " << settings.msaa << "\n"
+      << "# Size of the game's shadow textures: 512 (the Xbox 360's, the default) or 1024 (the PC's\n"
+      << "# highest); takes effect after a restart.\n"
+      << "shadow_resolution = " << settings.shadow_resolution << "\n"
       << "# Game language (\"en\", \"de\", \"fr\", \"es\"...); takes effect after a restart.\n"
       << "language = " << Quote(settings.language) << "\n"
       << "# Aspect ratio of the game's frame: \"auto\" (the display's), \"4:3\", \"16:10\",\n"
