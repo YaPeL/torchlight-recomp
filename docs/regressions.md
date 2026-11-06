@@ -236,7 +236,10 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   go on without sound, while the stalled run's guest thread logs nothing more. The render thread
   went on (its last line, `live: depth discard on`, is not where the guest stopped). run_capped
   killed it after 300 s. No stack was taken.
-- **Hypothesis:** the guest thread blocked inside SDL 3.4's audio open, here ALSA's default device
+- **Hypothesis:** the guest thread blocked inside SDL 3.4's audio open. The open runs on the guest
+  thread at the APU's start: in the passing runs the `[apu]` line comes from the same thread id as
+  the guest's `ResolvePath(SAVE:\)` lines and the input script's, and the stalled run's guest
+  thread stops right before that line. Here the open goes to ALSA's default device
   through `99-pipewire-default.conf` with no PipeWire to reach. The SDK opens the device
   synchronously on the guest thread with no timeout (`SDL_InitSubSystem(SDL_INIT_AUDIO)` and
   `SDL_OpenAudioDeviceStream` in `src/audio/sdl/sdl_audio_driver.cpp`, `SDLAudioDriver::Initialize`),
@@ -252,7 +255,10 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   a late result is dropped without SDL's audio ever being used from two threads. Kept out for now
   because it adds threads to the SDK's audio start for a case not seen again. To take up if a
   player reports a start that hangs with no sound.
-- **Covered now:** offscreen runs set `SDL_AUDIO_DRIVER=dummy`, so they never open a real device.
+- **Covered now:** nothing in the repository. The agents' own offscreen recipe (not in the
+  repository, like the rest of that recipe: `env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR
+  SDL_VIDEO_DRIVER=x11 GDK_BACKEND=x11` under xvfb) now also sets `SDL_AUDIO_DRIVER=dummy`, so those
+  runs never open a real device.
 
 ## `develop` never drew on Android: the A2 branch was never merged
 
