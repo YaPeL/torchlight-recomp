@@ -21,6 +21,7 @@
 #include "game_setup/setup_pages.h"
 #include "game_setup/synthetic_package.h"
 #include "platform/storage_mode.h"
+#include "platform/test_user_folders.h"
 #include "wizard/browser_page.h"
 #include "wizard/wizard.h"
 #include "wizard/wizard_ui.h"
@@ -291,6 +292,10 @@ int main(int argc, char** argv) {
   std::string browse_from, pages_kind;
   SetupRun setup;
   for (int i = 1; i + 1 < argc; i += 2) {
+    if (torchlight::platform::IsRealUserFoldersFlag(argv[i])) {  // test_user_folders.h's
+      --i;
+      continue;
+    }
     const std::string key = argv[i], value = argv[i + 1];
     if (key == "--script") options.script = value;
     else if (key == "--shots") options.shots = value;
