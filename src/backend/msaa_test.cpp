@@ -95,16 +95,17 @@ uint32_t Between(const std::vector<uint8_t>& rgba) {
   return n;
 }
 
-// Pixels that differ from the image without multisampling where that image has no edge within a
-// pixel (all its 3x3 neighbourhood black, or all white).
+// Pixels that differ from the image without multisampling where that image has no edge within two
+// pixels (all its 5x5 neighbourhood black, or all white): a triangle's sharp tip can put a sample
+// on a pixel whose direct neighbours missed it, depending on the driver's sample pattern.
 uint32_t ChangedAwayFromEdges(const std::vector<uint8_t>& off, const std::vector<uint8_t>& msaa) {
   uint32_t n = 0;
-  for (uint32_t y = 1; y + 1 < kHeight; ++y) {
-    for (uint32_t x = 1; x + 1 < kWidth; ++x) {
+  for (uint32_t y = 2; y + 2 < kHeight; ++y) {
+    for (uint32_t x = 2; x + 2 < kWidth; ++x) {
       if (std::abs(int(Grey(off, x, y)) - int(Grey(msaa, x, y))) <= 4) continue;
       bool edge = false;
-      for (int dy = -1; dy <= 1; ++dy) {
-        for (int dx = -1; dx <= 1; ++dx) {
+      for (int dy = -2; dy <= 2; ++dy) {
+        for (int dx = -2; dx <= 2; ++dx) {
           if (Grey(off, x + dx, y + dy) != Grey(off, x, y)) edge = true;
         }
       }
@@ -142,6 +143,8 @@ int main(int argc, char** argv) {
   Check(Between(off) == 0, "without multisampling the edges are hard");
   Check(probe_off > 0, "the probe counts the triangle");
 
+  // Direct3D 11 always multisamples 8-bit colour targets (WARP included): not getting it is a bug.
+  if (args.render_system == TL_RENDER_SYSTEM_D3D11) Check(max >= 4, "Direct3D 11 offers 4x");
   if (max < 2) {
     std::printf("msaa test (%s): no multisampling on this device; only the off path checked\n",
                 args.name);
@@ -154,6 +157,13 @@ int main(int argc, char** argv) {
                  "edges, probe %u\n", applied, between, away, probe_msaa);
     Check(between > 0, "multisampled edges get the values between");
     Check(away == 0, "nothing away from the edges changes");
+    // The main target made again at another render scale and back keeps its multisampling (and
+    // on Direct3D 11 its resolve target).
+    Check(tl_backend_set_render_scale(b, 1.5f) == 0 && tl_backend_set_render_scale(b, 1.0f) == 0,
+          "render scale changed with multisampling on");
+    uint32_t probe_rescaled = 0;
+    const std::vector<uint8_t> rescaled = Frame(b, &probe_rescaled);
+    Check(rescaled == msaa, "after a render scale change, the same multisampled image");
     if (max >= 4 && tl_backend_set_msaa(b, 4) == 4) {
       uint32_t probe4 = 0;
       Frame(b, &probe4);

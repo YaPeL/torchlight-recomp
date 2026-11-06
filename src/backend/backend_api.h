@@ -329,11 +329,13 @@ uint32_t tl_backend_probe_samples(tl_backend* b);
 
 /* Multisampling of the main target (the guest's window target, which the 360 drew with 2x MSAA);
  * the guest's other render targets and the output stay single-sample. tl_backend_max_msaa: the
- * most this device applies, up to 4 (1: none). tl_backend_set_msaa: 0 or 1 off, 2 or 4 asked
- * (limited to the maximum); remakes the main target (its content is lost) and returns the count
- * applied (0: none). Resolved before the display gamma pass: in tile memory on GLES with
- * EXT_multisampled_render_to_texture, by a blit on other GL, by ResolveSubresource on Direct3D 11.
- * Off by default. */
+ * most this device applies, 1 (none), 2 or 4. tl_backend_set_msaa: 0 or 1 off, 2 or 4 (above the
+ * maximum, the most available); remakes the main target (its content is lost), so it is called on
+ * the backend's thread between frames; returns the count the render system reports (0: none),
+ * which a driver may round up (Mesa's llvmpipe runs 2x as 4 samples). If the multisampled target
+ * cannot be made, the main target is made again without, and 0 is returned. Resolved before the
+ * display gamma pass: in tile memory on GLES with EXT_multisampled_render_to_texture, by a blit on
+ * other GL, by ResolveSubresource on Direct3D 11. Off by default. */
 uint32_t tl_backend_max_msaa(tl_backend* b);
 uint32_t tl_backend_set_msaa(tl_backend* b, uint32_t samples);
 

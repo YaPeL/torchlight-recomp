@@ -7,7 +7,8 @@ TEXTURE2DMS, which a plain 2D sampler cannot read. With this patch a whole-textu
 multisample texture into a single-sample one of the same size is a ResolveSubresource, so the
 backend can resolve its multisampled main target into a texture its display-gamma pass samples
 (src/backend/backend.cpp, MSAA). D3D11Texture gains two read accessors for that. Other blits are
-unchanged.
+unchanged. A D3D11 render texture also reports its effective sample count in
+RenderTarget::getFSAA() (it stayed 0, unlike GL's), so the backend sees the multisampling it got.
 
 diff --git a/RenderSystems/Direct3D11/include/OgreD3D11Texture.h b/RenderSystems/Direct3D11/include/OgreD3D11Texture.h
 index b505702..08bb83f 100644
@@ -55,3 +56,18 @@ index 745b219..35d4f21 100644
  
          if(mDevice.isError())
          {
+diff --git a/RenderSystems/Direct3D11/src/OgreD3D11Texture.cpp b/RenderSystems/Direct3D11/src/OgreD3D11Texture.cpp
+index 78e633d..7c75258 100644
+--- a/RenderSystems/Direct3D11/src/OgreD3D11Texture.cpp
++++ b/RenderSystems/Direct3D11/src/OgreD3D11Texture.cpp
+@@ -581,6 +581,10 @@ namespace Ogre
+         mBuffer = buffer;
+         mWidth = (unsigned int) mBuffer->getWidth();
+         mHeight = (unsigned int) mBuffer->getHeight();
++        // The multisampling the texture really got, as GL's render textures report it
++        // (RenderTarget::getFSAA() stayed 0 here).
++        const UINT samples = buffer->getParentTexture()->getFSAADesc().Count;
++        mFSAA = samples > 1 ? samples : 0;
+         
+         ID3D11Resource * pBackBuffer = buffer->getParentTexture()->getTextureResource();
+ 

@@ -41,7 +41,7 @@ index c41c470..a46af99 100644
              /// Upload a box of pixels to this buffer on the card
              void upload(const PixelBox &data, const Box &dest) override;
 diff --git a/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp b/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
-index 0df618d..d55c344 100644
+index 0df618d..cb37ea3 100644
 --- a/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
 +++ b/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
 @@ -32,6 +32,7 @@ THE SOFTWARE.
@@ -52,24 +52,30 @@ index 0df618d..d55c344 100644
  #include "OgreGLES2RenderSystem.h"
  #include "OgreGLNativeSupport.h"
  #include <sstream>
-@@ -130,8 +131,14 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+@@ -130,8 +131,20 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
                      OGRE_EXCEPT(Exception::ERR_INVALIDPARAMS, ss.str(), "GLES2FrameBufferObject::initialise");
                  }
  
 -                mColour[x].buffer->bindToFramebuffer(
 -                    isDepth ? GL_DEPTH_ATTACHMENT : (GL_COLOR_ATTACHMENT0 + x), mColour[x].zoffset);
-+                auto* texture = mImplicitMultisample && !isDepth
-+                                    ? dynamic_cast<GLES2TextureBuffer*>(mColour[x].buffer)
-+                                    : nullptr;
-+                if (texture)
-+                    texture->bindToFramebufferImplicitMultisample(GL_COLOR_ATTACHMENT0 + x, mNumSamples);
++                if (mImplicitMultisample && !isDepth)
++                {
++                    // EXT_multisampled_render_to_texture covers colour attachment 0 of a texture
++                    // only (more needs ..._texture2): anything else would mix sample counts.
++                    auto* texture = dynamic_cast<GLES2TextureBuffer*>(mColour[x].buffer);
++                    if (x != 0 || !texture)
++                        OGRE_EXCEPT(Exception::ERR_INVALIDPARAMS,
++                                    "multisampling in tile memory takes one texture colour attachment",
++                                    "GLES2FrameBufferObject::initialise");
++                    texture->bindToFramebufferImplicitMultisample(GL_COLOR_ATTACHMENT0, mNumSamples);
++                }
 +                else
 +                    mColour[x].buffer->bindToFramebuffer(
 +                        isDepth ? GL_DEPTH_ATTACHMENT : (GL_COLOR_ATTACHMENT0 + x), mColour[x].zoffset);
              }
              else
              {
-@@ -224,8 +231,18 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+@@ -224,8 +237,18 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
              // Generate framebuffer object
              OGRE_CHECK_GL_ERROR(glGenFramebuffers(1, &mFB));
  
@@ -90,7 +96,7 @@ index 0df618d..d55c344 100644
              {
                  // Check samples supported
                  GLint maxSamples;
-@@ -238,7 +255,7 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+@@ -238,7 +261,7 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
              }
  
              // Will we need a second FBO to do multisampling?
@@ -99,7 +105,7 @@ index 0df618d..d55c344 100644
              {
                  OGRE_CHECK_GL_ERROR(glGenFramebuffers(1, &mMultisampleFB));
              }
-@@ -247,6 +264,12 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+@@ -247,6 +270,12 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
                  mMultisampleFB = 0;
              }
              

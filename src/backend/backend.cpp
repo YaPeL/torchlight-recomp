@@ -596,10 +596,14 @@ void MsaaFollowMain(tl_backend* b) {
   }
   const char* how;
   if (b->d3d11) {
+    // Not counted as multisampled until its resolve target exists (DisplayGammaPass blits into it).
+    const uint32_t applied_count = b->msaa_applied;
+    b->msaa_applied = 0;
     if (!MakeTarget(b, "tl_main_resolve", b->main.guest_width, b->main.guest_height, true,
                     b->main_resolve))
       OGRE_EXCEPT(Ogre::Exception::ERR_RENDERINGAPI_ERROR, "cannot create tl_main_resolve",
                   "MsaaFollowMain");
+    b->msaa_applied = applied_count;
     how = "resolved into a texture (ResolveSubresource)";
   } else {
     uint32_t multisample_fbo = 0;
@@ -3046,15 +3050,26 @@ uint32_t tl_backend_max_msaa(tl_backend* b) {
 }
 
 uint32_t tl_backend_set_msaa(tl_backend* b, uint32_t samples) {
-  const uint32_t asked = samples > 1 ? std::min(samples, tl_backend_max_msaa(b)) : 0;
+  // 0, 2 or 4, within what the device applies.
+  const uint32_t max = tl_backend_max_msaa(b);
+  uint32_t asked = samples >= 4 ? 4 : samples >= 2 ? 2 : 0;
+  if (asked > max) asked = max >= 2 ? 2 : 0;
   if (asked == b->main.fsaa) return b->msaa_applied;
-  b->main.fsaa = asked > 1 ? asked : 0;
+  b->main.fsaa = asked;
+  b->rs->_disableTextureUnitsFrom(0);  // nothing may keep the old main target alive
+  b->enabled_units = 0;
   try {
-    b->rs->_disableTextureUnitsFrom(0);  // nothing may keep the old main target alive
-    b->enabled_units = 0;
     RemakeMain(b);
   } catch (Ogre::Exception& e) {
-    Ogre::LogManager::getSingleton().logError("multisampling: " + e.getDescription());
+    // The old main target is gone: without multisampling again, so a frame always has one.
+    Ogre::LogManager::getSingleton().logError("multisampling: " + e.getDescription() +
+                                              "; main target without it");
+    b->main.fsaa = 0;
+    try {
+      RemakeMain(b);
+    } catch (Ogre::Exception& again) {
+      Ogre::LogManager::getSingleton().logError("main target: " + again.getDescription());
+    }
   }
   b->active = nullptr;
   b->current = &b->main;
