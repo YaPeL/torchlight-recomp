@@ -74,6 +74,35 @@ not count.
   - unattended runs go through `tools/run_capped` and need no notice;
   - runs that need someone at the controller only with the owner's OK and their steps given first;
   - nobody runs the game while another agent is using the machine (Communication).
+- **Offscreen runs on Linux** (unattended runs that must not open a window on the owner's
+  desktop):
+
+  ```sh
+  env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR \
+      SDL_VIDEO_DRIVER=x11 GDK_BACKEND=x11 SDL_AUDIO_DRIVER=dummy \
+      xvfb-run -a tools/run_capped/run_capped.py --timeout 600 --max-log-mb 20 \
+          --output RUN/run.log --watch ~/.local/state/TorchlightRecomp/logs -- \
+      env XDG_CONFIG_HOME=RUN/config XDG_DATA_HOME=RUN/data XDG_CACHE_HOME=RUN/cache \
+      BUILD/torchlight --game_data_root GAME --user_data_root RUN/data/TorchlightRecomp \
+          --capture_dir RUN/captures --dev_input_script SCRIPT
+  ```
+
+  - `RUN` is a new folder per run. The profile in it is a copy (never the owner's saves), and the
+    run's settings go in `RUN/data/TorchlightRecomp/config/settings.toml`, which is where the game
+    reads them with `--user_data_root`.
+  - The variables in the recipe belong to SDL, GTK and the platform, set for the test run only;
+    none is configuration of the project (Code: no environment variables). SDL and GTK read their
+    own; the `XDG_*` ones are Linux's standard user folders, which `src/platform/` follows like any
+    Linux program:
+    - unsetting `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR`, with `SDL_VIDEO_DRIVER=x11` and
+      `GDK_BACKEND=x11`, keeps SDL and GTK on xvfb's display instead of the desktop's Wayland
+      session;
+    - `SDL_AUDIO_DRIVER=dummy` keeps SDL from opening a real audio device: the SDK opens it on the
+      guest's thread with no timeout, and one such run once hung there (`docs/regressions.md`);
+    - the `XDG_*` folders keep the run's config, data and shader cache out of the owner's.
+  - Always `--capture_dir`, so an F9 press is never lost, and always the 20 MB log cap. The logs
+    still go to `~/.local/state/TorchlightRecomp/logs`: watch that folder, and take the files
+    written after the run's start.
 
 ## Code
 
