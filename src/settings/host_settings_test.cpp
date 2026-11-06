@@ -475,6 +475,18 @@ void TestGpuLogLabel() {
   Check(GpuLogLabel(s, gpus) == "? (0000:02:00.0)", "absent GPU without a stored name");
 }
 
+void TestLowQuality() {
+  std::vector<std::string> warnings;
+  Check(!Parse("", &warnings).low_quality && warnings.empty(), "no key: off, as the 360");
+  Check(Parse("low_quality = true\n").low_quality, "on read");
+  HostSettings bad = Parse("low_quality = 1\n", &warnings);
+  Check(!bad.low_quality && !warnings.empty(), "not a boolean: reported, off kept");
+  HostSettings low;
+  low.low_quality = true;
+  Check(Parse(Serialize(low)).low_quality, "written and read back");
+  Check(RequiresRestart(Setting::kLowQuality), "the game reads it with its settings");
+}
+
 void TestShadowResolution() {
   std::vector<std::string> warnings;
   Check(Parse("", &warnings).shadow_resolution == 512 && warnings.empty(), "no key: 512, as the 360");
@@ -524,6 +536,7 @@ void TestMsaa() {
 int main() {
   TestMsaa();
   TestShadowResolution();
+  TestLowQuality();
   TestAspect();
   TestRoundTrip();
   TestAchievementSet();
