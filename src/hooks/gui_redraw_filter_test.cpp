@@ -21,10 +21,22 @@ void Check(bool ok, const char* what) {
   }
 }
 
-// Guest memory as a sparse map of bytes and words (unwritten reads are zero).
+// Guest memory as a sparse map of bytes and words (unwritten reads are zero). refresh() stands for
+// the rect getters: when `computable`, it sets the window's two cache flags (the rects stay as
+// written, as if computed to those values).
 struct Memory {
   std::map<uint32_t, uint8_t> bytes;
   std::map<uint32_t, uint32_t> words;
+  bool computable = false;
+  mutable int refreshes = 0;
+  bool refresh(uint32_t w) const {
+    ++refreshes;
+    if (!computable) return false;
+    auto& b = const_cast<std::map<uint32_t, uint8_t>&>(bytes);
+    b[w + ui::kWindowUnclippedRectValid.offset] = 1;
+    b[w + ui::kWindowClippedRectValid.offset] = 1;
+    return true;
+  }
   uint8_t u8(uint32_t a) const {
     auto it = bytes.find(a);
     return it == bytes.end() ? 0 : it->second;
@@ -156,6 +168,16 @@ int main() {
   Check(Step(t, last, have) == Reason::kRectStale, "still stale (the fake does not compute it)");
   t.m.bytes[0x12000 + ui::kWindowClippedRectValid.offset] = 1;
   Check(Step(t, last, have) == Reason::kNoSnapshot, "valid again, after a stale snapshot: rebuild");
+  // Stale, and computed by the getters: compared like any rect.
+  t.m.computable = true;
+  t.m.bytes[0x12000 + ui::kWindowClippedRectValid.offset] = 0;
+  Check(Step(t, last, have) == Reason::kSkip, "stale, computed to the same rect: skip");
+  Check(t.m.refreshes > 0, "the getters were called");
+  t.m.bytes[0x13000 + ui::kWindowUnclippedRectValid.offset] = 0;
+  t.m.words[0x13000 + ui::kWindowUnclippedRect.offset] = 0x42000000;  // what they compute now
+  Check(Step(t, last, have) == Reason::kChanged, "stale, computed to another rect: rebuild");
+  Check(Step(t, last, have) == Reason::kSkip, "then: skip");
+  t.m.computable = false;
   t.m.words[0x12000 + ui::kWindowUnclippedRect.offset + 8] = 0x41200000;  // computed elsewhere
   Check(Step(t, last, have) == Reason::kChanged, "a rect differs: rebuild");
   Check(Step(t, last, have) == Reason::kSkip, "then: skip");

@@ -88,6 +88,10 @@ inline constexpr Field kWindowUnclippedRectValid{624, Confidence::kConfirmed};
 inline constexpr Field kWindowClippedRect{648, Confidence::kConfirmed};
 inline constexpr Field kWindowClippedRectValid{664, Confidence::kConfirmed};
 inline constexpr uint32_t kRectBytes = 16;
+// [confirmed] The getters (r3 = the Rect to fill, r4 = the window; they return r3): drawSelf calls
+// both before RenderCache::render (`bl 0x821b00f8`, `bl 0x821afb68`, @0x821B0030 / @0x821B0050).
+inline constexpr GuestFunction kWindowGetUnclippedPixelRect{0x821B00F8, Confidence::kConfirmed};
+inline constexpr GuestFunction kWindowGetPixelRect{0x821AFB68, Confidence::kConfirmed};
 
 // ---------------------------------------------------------------------------------------------
 // The OGRE renderer (OgreCEGUIRenderer, OGRE 1.6's, Runic's build).

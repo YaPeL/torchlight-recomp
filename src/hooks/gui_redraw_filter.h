@@ -10,10 +10,14 @@
 // again only when its d_needsRedraw is set); its two rect caches (when the cache holds anything:
 // drawSelf reads them only then); and the renderer's display area and texel offset (addQuad). The
 // rule collects these as the last rebuild left them and rebuilds when any differs, when a drawn
-// window asks to be filled again or has a stale rect cache (moved or resized: the cache's flag is
-// cleared and the getter would compute it again), when a window's render slots are not CEGUI's
-// own, or when the tree cannot be walked within bounds. Otherwise the rebuild would queue the same
-// quads.
+// window asks to be filled again, when a window's render slots are not CEGUI's own, or when the
+// tree cannot be walked within bounds. Otherwise the rebuild would queue the same quads.
+//
+// A stale rect cache (its flag cleared: Window::setArea_impl clears all four on every call, moved
+// or not, and some HUD windows are set every frame) is computed by the reader's refresh(window),
+// which in the game calls the same two getters drawSelf calls (they fill the caches as the rebuild
+// would at that point of the frame), and then compared like any other; a reader that cannot
+// refresh makes it a rebuild.
 //
 // The idea (rebuild only when a drawn window changed) is torchlight-nx's mode 3, whose method of
 // validation (mode 2: rebuild always and compare the quad lists byte for byte) the shadow mode
@@ -21,8 +25,8 @@
 // src/torchlight_ogre_natif.cpp; GPL-3.0). No code of theirs is used: they hook Window::onMoved to
 // see a drawn window move, this rule compares the rect caches the draw reads.
 //
-// Pure over a reader of guest memory (u8(address), u32(address)); tested by
-// gui_redraw_filter_test.
+// Pure over a reader of guest memory (u8(address), u32(address), refresh(window): true when it
+// computed the window's two rect caches); tested by gui_redraw_filter_test.
 
 #pragma once
 
@@ -39,7 +43,7 @@ enum class Reason : uint8_t {
   kSkip,
   kNoSnapshot,    // no rebuild seen yet, or the last one's state could not be collected
   kNeedsRedraw,   // a drawn window's render cache is to be filled again
-  kRectStale,     // a drawn window with content has a rect cache to compute again
+  kRectStale,     // a drawn window with content has a rect cache that could not be computed
   kOverridden,    // a drawn window's render slots are not CEGUI's own
   kUnwalkable,    // too deep, too many windows, or a child count out of bounds
   kChanged,       // the drawn windows, their caches or rects, or the display differ
@@ -113,10 +117,11 @@ Reason Window(const Reader& r, uint32_t w, Drawn& out) {
                r.u32(w + ui::kWindowCacheTextsBegin.offset),
                r.u32(w + ui::kWindowCacheTextsEnd.offset)};
   if (out.cache[0] == out.cache[1] && out.cache[2] == out.cache[3]) return Reason::kSkip;
-  if (r.u8(w + ui::kWindowUnclippedRectValid.offset) == 0 ||
-      r.u8(w + ui::kWindowClippedRectValid.offset) == 0) {
-    return Reason::kRectStale;
-  }
+  auto valid = [&] {
+    return r.u8(w + ui::kWindowUnclippedRectValid.offset) != 0 &&
+           r.u8(w + ui::kWindowClippedRectValid.offset) != 0;
+  };
+  if (!valid() && (!r.refresh(w) || !valid())) return Reason::kRectStale;
   for (uint32_t i = 0; i < 4; ++i) {
     out.rects[i] = r.u32(w + ui::kWindowUnclippedRect.offset + 4 * i);
     out.rects[4 + i] = r.u32(w + ui::kWindowClippedRect.offset + 4 * i);

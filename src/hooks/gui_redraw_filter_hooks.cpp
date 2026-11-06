@@ -36,6 +36,7 @@
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 
+#include "game_menu/guest_call.h"
 #include "guest_abi/cegui.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/ogre_layout.h"
@@ -62,10 +63,22 @@ namespace abi = torchlight::guest_abi;
 namespace ui = torchlight::guest_abi::cegui;
 namespace gr = torchlight::hooks::gui_redraw;
 
+// The rule's reader: guest memory, and the rect getters for a stale cache (called as drawSelf
+// calls them, on the game's thread below the hooked call's stack pointer; null `ctx`: no refresh).
 struct GuestReader {
-  const uint8_t* base;
+  uint8_t* base;
+  PPCContext* ctx;
   uint8_t u8(uint32_t a) const { return abi::ReadU8(base, a); }
   uint32_t u32(uint32_t a) const { return abi::ReadU32(base, a); }
+  bool refresh(uint32_t window) const {
+    if (ctx == nullptr) return false;
+    torchlight::game_menu::GuestCall call(*ctx, base, 0x40);
+    const uint32_t rect = call.Reserve(ui::kRectBytes);
+    if (rect == 0) return false;
+    call.Call(ui::kWindowGetUnclippedPixelRect.address, {rect, window});
+    call.Call(ui::kWindowGetPixelRect.address, {rect, window});
+    return true;
+  }
 };
 
 bool FilterEnabled() {
@@ -479,7 +492,7 @@ REX_FUNC(sub_821FBC60) {
     return;
   }
   Filter& f = g_filter;
-  const GuestReader reader{base};
+  const GuestReader reader{base, &ctx};
   uint32_t culprit = 0;
   const gr::Reason collected = gr::Collect(reader, system, f.now, &culprit);
   const gr::Reason reason = gr::Decide(f.have_last ? &f.last : nullptr, f.now, collected);
@@ -508,7 +521,8 @@ REX_FUNC(sub_821FBC60) {
     return __imp__sub_821FBC60(ctx, base);
   }
   __imp__sub_821FBC60(ctx, base);
-  f.have_last = gr::Collect(reader, system, f.last) == gr::Reason::kSkip;
+  // After the rebuild: drawSelf computed every rect it reads, so no refresh.
+  f.have_last = gr::Collect(GuestReader{base, nullptr}, system, f.last) == gr::Reason::kSkip;
 #if TORCHLIGHT_DIAGNOSTICS
   if (shadow) {
     g_shadow.have_kept = ReadQuads(base, f.last.renderer, &g_shadow.kept, nullptr);
