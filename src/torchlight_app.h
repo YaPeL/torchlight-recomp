@@ -26,6 +26,7 @@
 #include "mods/unit_index_install.h"
 #include "game_menu/video_menu.h"
 #include "hooks/guest_copy_hooks.h"
+#include "hooks/gui_redraw_filter_hooks.h"
 #include "hooks/native_skeleton.h"
 #include "hooks/pixel_util_hooks.h"
 #include "hooks/wardrobe_blend_hooks.h"
@@ -151,6 +152,7 @@ class TorchlightApp : public rex::ReXApp {
     torchlight::hooks::InstallVideoMode();
     torchlight::hooks::LogGuestCopyMode();
     torchlight::hooks::LogNativeSkeletonMode();
+    torchlight::hooks::LogGuiRedrawFilterMode();
     torchlight::hooks::LogPixelUtilMode();
     torchlight::hooks::LogWardrobeBlendMode();
     torchlight::hooks::InstallFrustumTest();
