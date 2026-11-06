@@ -70,7 +70,9 @@ REX_FUNC(sub_82397C28) {
   const bool hide = SettingsTable(base, table) && LowQuality();
   if (hide) SetNetbookMode(ctx, base, table, false);
   __imp__sub_82397C28(ctx, base);
-  if (hide) SetNetbookMode(ctx, base, table, true);
+  if (hide && !SetNetbookMode(ctx, base, table, true)) {
+    REXLOG_ERROR("settings: low quality could not be set again after the game saved its settings");
+  }
 }
 
 FUNCTION_ADDRESS_CHECK(kFirstStartDefaults, 823E1040);
