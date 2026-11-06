@@ -80,29 +80,30 @@ not count.
   ```sh
   env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR \
       SDL_VIDEO_DRIVER=x11 GDK_BACKEND=x11 SDL_AUDIO_DRIVER=dummy \
+      XDG_CONFIG_HOME=RUN/xdg/config XDG_DATA_HOME=RUN/xdg/data \
+      XDG_STATE_HOME=RUN/xdg/state XDG_CACHE_HOME=RUN/xdg/cache \
       xvfb-run -a tools/run_capped/run_capped.py --timeout 600 --max-log-mb 20 \
-          --output RUN/run.log --watch ~/.local/state/TorchlightRecomp/logs -- \
-      env XDG_CONFIG_HOME=RUN/config XDG_DATA_HOME=RUN/data XDG_CACHE_HOME=RUN/cache \
-      BUILD/torchlight --game_data_root GAME --user_data_root RUN/data/TorchlightRecomp \
+          --output RUN/run.log --watch RUN/user/logs -- \
+      BUILD/torchlight --game_data_root GAME --user_data_root RUN/user \
           --capture_dir RUN/captures --dev_input_script SCRIPT
   ```
 
-  - `RUN` is a new folder per run. The profile in it is a copy (never the owner's saves), and the
-    run's settings go in `RUN/data/TorchlightRecomp/config/settings.toml`, which is where the game
-    reads them with `--user_data_root`.
+  - `RUN` is a new folder per run, and `RUN/user` holds a copy of the profile (never the owner's
+    saves). `--user_data_root` moves all of the game's folders under it
+    (`src/platform/user_folders.cpp`, `SetRunRoots`): the settings are read from
+    `RUN/user/config/settings.toml`, the logs go to `RUN/user/logs` (watch that folder, or the
+    20 MB cap covers only `run.log`) and the shader cache to `RUN/user/cache`. A run never counts
+    against the log budget of the owner's own folder.
   - The variables in the recipe belong to SDL, GTK and the platform, set for the test run only;
-    none is configuration of the project (Code: no environment variables). SDL and GTK read their
-    own; the `XDG_*` ones are Linux's standard user folders, which `src/platform/` follows like any
-    Linux program:
+    none is configuration of the project (Code: no environment variables):
     - unsetting `WAYLAND_DISPLAY` and `XDG_RUNTIME_DIR`, with `SDL_VIDEO_DRIVER=x11` and
       `GDK_BACKEND=x11`, keeps SDL and GTK on xvfb's display instead of the desktop's Wayland
       session;
     - `SDL_AUDIO_DRIVER=dummy` keeps SDL from opening a real audio device: the SDK opens it on the
       guest's thread with no timeout, and one such run once hung there (`docs/regressions.md`);
-    - the `XDG_*` folders keep the run's config, data and shader cache out of the owner's.
-  - Always `--capture_dir`, so an F9 press is never lost, and always the 20 MB log cap. The logs
-    still go to `~/.local/state/TorchlightRecomp/logs`: watch that folder, and take the files
-    written after the run's start.
+    - the `XDG_*` folders (Linux's standard user folders) keep whatever does not follow
+      `--user_data_root`, such as the libraries' own caches, out of the owner's.
+  - Always `--capture_dir`, so an F9 press is never lost, and always the 20 MB log cap.
 
 ## Code
 
