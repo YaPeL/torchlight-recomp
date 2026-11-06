@@ -69,7 +69,7 @@ struct HostSettings {
   // after a restart.
   uint32_t shadow_resolution = 512;
   // The game's NETBOOK MODE, a lighter frame for weak devices: off as on the 360 (its first-start
-  // defaults set it only for Intel integrated GPUs, sub_823E1040 @0x823E1138). On: far clip and
+  // defaults set it to 0, sub_823E1040 @0x823E1130). On: far clip and
   // object distance 45 instead of 90, fog factor 1.0 instead of 1.3, a closer camera, and lighter
   // per-unit and per-level drawing (hooks/low_quality_hooks.cpp). The host sets it every time the
   // game reads its settings: takes effect after a restart.

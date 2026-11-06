@@ -376,8 +376,9 @@ inline constexpr uint32_t kTableVtable = 0x820D6FE0;
 // is entered or shown (sub_82387580 @0x82387854).
 inline constexpr GuestFunction kLoad{0x823981C8, Confidence::kConfirmed};
 // [confirmed] The first-start defaults (table r3), run when the boot load fails (always on the
-// recomp: SAVE:\ is not mounted at boot): sets NETBOOK MODE from the GPU's name (@0x823E1138), FSAA,
-// SHADOWRESOLUTION 512 and others through kSetInt.
+// recomp: SAVE:\ is not mounted at boot): sets NETBOOK MODE 0 (li r5,0 @0x823E1130, the index
+// @0x823E1138; the GPU name compares before it do not reach it), FSAA, SHADOWRESOLUTION 512 and
+// others through kSetInt.
 inline constexpr GuestFunction kFirstStartDefaults{0x823E1040, Confidence::kConfirmed};
 // [confirmed] The global holding NETBOOK MODE's index (registered by sub_823DEF18 at 0x823DF72C).
 // Read live: every frame by the camera follow (sub_821E5910: object distance in sub_821FF080
