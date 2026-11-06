@@ -259,6 +259,7 @@ struct tl_backend {
   std::string renderer;
 
   struct Target {
+    std::string name;  // of its texture (MakeTarget), kept when a remake fails half-way
     Ogre::TexturePtr texture;
     Ogre::RenderTexture* rt = nullptr;
     Ogre::Viewport* viewport = nullptr;
@@ -531,11 +532,24 @@ bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, 
   t.guest_height = h;
   t.viewport_width = int32_t(w);
   t.viewport_height = int32_t(h);
-  t.texture = Ogre::TextureManager::getSingleton().createManual(
-      name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, Ogre::TEX_TYPE_2D,
-      scaled ? b->scale.Host(w) : w, scaled ? b->scale.Host(h) : h, 0, Ogre::PF_A8R8G8B8,
-      Ogre::TU_RENDERTARGET, nullptr, false, fsaa);
-  t.rt = t.texture->getBuffer()->getRenderTarget();
+  t.name = name;
+  t.rt = nullptr;
+  t.viewport = nullptr;
+  try {
+    t.texture = Ogre::TextureManager::getSingleton().createManual(
+        name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, Ogre::TEX_TYPE_2D,
+        scaled ? b->scale.Host(w) : w, scaled ? b->scale.Host(h) : h, 0, Ogre::PF_A8R8G8B8,
+        Ogre::TU_RENDERTARGET, nullptr, false, fsaa);
+    t.rt = t.texture->getBuffer()->getRenderTarget();
+  } catch (Ogre::Exception&) {
+    // createManual registers the name before it makes the GPU texture: unregistered here, so the
+    // same name can be made again (the fallback without multisampling, tl_backend_set_msaa).
+    t.texture.reset();
+    t.rt = nullptr;
+    Ogre::TextureManager::getSingleton().remove(
+        name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
+    throw;
+  }
   t.rt->setAutoUpdated(false);
   // On GLES a depth buffer of its own: OGRE's default pool shares one buffer among targets it fits
   // (a 512x512 render texture takes the main target's), and tl_backend_discard_depth must not drop
@@ -560,7 +574,7 @@ bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, 
 // A scaled target again at the current render scale (its content is lost: it is drawn every
 // frame).
 void RemakeTarget(tl_backend* b, tl_backend::Target& t) {
-  const std::string name = t.texture->getName();
+  const std::string name = t.name;  // t.texture is empty when a previous remake failed
   const uint32_t w = t.guest_width, h = t.guest_height;
   t.texture.reset();
   Ogre::TextureManager::getSingleton().remove(
@@ -572,7 +586,7 @@ void RemakeTarget(tl_backend* b, tl_backend::Target& t) {
 // Destroys a target the backend made for itself (not the guest's), giving back its depth pool.
 void DropTarget(tl_backend* b, tl_backend::Target& t) {
   if (!t.texture) return;
-  const std::string name = t.texture->getName();
+  const std::string name = t.name;
   t.texture.reset();
   Ogre::TextureManager::getSingleton().remove(
       name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
@@ -1578,9 +1592,8 @@ void DisplayGammaPass(tl_backend* b) {
       b->main_resolve.texture->getBuffer()->blit(b->main.texture->getBuffer());
       scene = b->main_resolve.texture;
     } else {
-      // GL's blit; in tile memory, only its depth discarded. Either way main's depth and samples
-      // do not carry into the next frame: every pass the guest starts clears its depth first
-      // (frontend/depth_discard.h; all 962 returns to main in 330 captures, 2026-11-06).
+      // GL's blit; in tile memory the colour is resolved whenever main's tiles are flushed, and
+      // this only discards its depth (tl_backend_discard_depth).
       b->main.rt->swapBuffers();
     }
   }
@@ -2415,7 +2428,10 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
 
 void tl_backend_discard_depth(tl_backend* b) {
   if (!b->discards_depth || !b->current || !b->current->rt) return;
-  // A main target with its own multisample framebuffer would resolve it here, mid-frame.
+  // A main target with its own multisample framebuffer would resolve it here, mid-frame. In tile
+  // memory every flush of main (leaving it for another target mid-frame too) resolves its colour
+  // and loses its samples and depth: harmless, every pass the guest starts on main clears its
+  // depth first (frontend/depth_discard.h; all 962 returns to main in 330 captures, 2026-11-06).
   if (b->current == &b->main && b->msaa_blit_resolve) return;
   b->current->rt->swapBuffers();
 }
