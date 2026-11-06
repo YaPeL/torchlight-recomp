@@ -808,6 +808,19 @@ rebuilds the cached OGRE in CI; a local OGRE install (the desktop's, or the Andr
   targets keep their resolve, GLES 2 does nothing. The backend calls it when the frontend's plan
   says no pass reads that depth again (`frontend/depth_discard.h`, `tl_backend_discard_depth`), so
   a tile GPU does not write it back to memory. GLES only (Android, and CI's GLES test build).
+- `ogre-d3d11-resolve-multisample-blit.patch`: ours. A Direct3D 11 blit from a multisample
+  texture into a single-sample one of the same size is a `ResolveSubresource` (OGRE's
+  `CopySubresourceRegion` refuses different sample counts, and a multisample render texture's
+  shader view is a `TEXTURE2DMS` a 2D sampler cannot read). The backend resolves its multisampled
+  main target with it before the display gamma (`tl_backend_set_msaa`). Direct3D 11 only.
+- `ogre-gles2-msaa-render-to-texture.patch`: ours. Where the driver has
+  `GL_EXT_multisampled_render_to_texture` (Mali, Adreno, PowerVR), a multisample render texture
+  attaches the texture itself with `glFramebufferTexture2DMultisampleEXT` (depth with that
+  extension's renderbuffer storage) instead of OGRE's second framebuffer of multisample
+  renderbuffers resolved by `glBlitFramebuffer`: the samples stay in tile memory and are resolved
+  as each tile is written out, never stored. Without the extension OGRE's path is unchanged; the
+  log says which. Checked on the POCO X7 (Mali-G615, 2026-11-06): "resolved in tile memory".
+  GLES only.
 - `ogre-gles2-sampler-once-per-texture.patch`: from torchlight-rekindled (its patch 0020 and the
   sampler-state resets of its 0018, commit `42e9bac`, GPL-3.0; THIRD_PARTY_NOTICES.md), Switch
   guards removed. GLES2 writes a texture's sampler parameters only when they change (remembered on

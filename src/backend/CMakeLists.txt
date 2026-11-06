@@ -206,8 +206,8 @@ add_test(NAME program_cache_file_test COMMAND program_cache_file_test)
 # The Direct3D 11 runs need no GPU (Windows' software adapter, WARP) and run there too.
 # The host UI pass on an offscreen backend; the internal render scale and the guest's frame size;
 # a stage's constants across render target binds; draws sharing a vertex layout with different
-# buffers.
-foreach(_test ui_pass_test render_scale_test draw_constants_test vertex_rebind_test)
+# buffers; the main target's multisampling.
+foreach(_test ui_pass_test render_scale_test draw_constants_test vertex_rebind_test msaa_test)
     add_executable(${_test} ${_test}.cpp)
     target_link_libraries(${_test} PRIVATE torchlight_backend)
     target_compile_options(${_test} PRIVATE -Wall -Wextra -Werror)
