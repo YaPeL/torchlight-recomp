@@ -215,6 +215,12 @@ default) and replay it offline with the accumulated state:
   [--session_frame N] [--session_frames A-B] [--region X0,Y0,X1,Y1] [--dump_targets]
 ```
 
+The replay never writes to the user's folders: every run (the packaged replay's and CI's too) gets
+user folders of its own in a temporary folder, removed when it exits, so its shader cache
+(`programs.txt`, the RTSS cache) starts empty each run and nothing carries over between runs.
+`--real_user_folders` makes it use the real ones, shader cache included (`replay --help` says which
+folders a run gets). Its OGRE log, `tl_backend_ogre.log`, is written to the current folder either way.
+
 To validate a change that must not alter the image (resource handling, caches), compare two replay
 builds on one session: every sampled frame has to come out identical, and each one's time is
 reported.
@@ -235,6 +241,12 @@ them to `out/build/<preset>/test_home/`, below which every user folder then live
 platform; nothing else uses that variable), created empty before the suite and removed after it, and
 `test_home_check` fails if the real `TorchlightRecomp` folders gained anything meanwhile (their
 `logs/` aside, which a running game writes to).
+
+Run by hand, outside ctest, a test executable still keeps away from them: every one (each `*_test`
+executable, `wizard_shots` and the `replay` tool) links `platform/test_user_folders.cpp`, which
+before `main` points `TORCHLIGHT_TEST_USER_FOLDERS` at a new temporary folder of its own, removed
+when it exits. Only `--real_user_folders` on its command line makes it use the real folders
+(`test_user_folders_test` and `replay_user_folders` check both).
 
 The user's folders are named `TorchlightRecomp` (so they do not collide with the PC game's):
 `~/.config/TorchlightRecomp/` (settings, the runtime's `torchlight.toml`),

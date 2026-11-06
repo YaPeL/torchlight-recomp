@@ -12,6 +12,7 @@
 #include <memory>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <optional>
 #include <sstream>
@@ -25,6 +26,8 @@
 #include "frontend/zip_archive.h"
 #include "live/live_content_source.h"
 #include "platform/platform.h"
+#include "platform/test_user_folders.h"
+#include "platform/user_folders.h"
 #include "png.h"
 #include "session_replay.h"
 
@@ -41,7 +44,7 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
        such as synthetic_capture's)
               [--region X0,Y0,X1,Y1] [--dump_targets] [--window] [--loop] [--via_live]
               [--frames_png] [--live_content] [--render_scale S] [--host_size] [--msaa N]
-              [--render_system NAME] [--gpu ID]
+              [--render_system NAME] [--gpu ID] [--real_user_folders]
        replay --session RECORDING.tlses --game_data_root DIR [--out DIR] [--session_frame N]
               [--session_frames A-B] [--draws LIST] [--region ...] [--dump_targets]
               [--render_system NAME] [--gpu ID]
@@ -82,6 +85,12 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
   per-phase means, frame time percentiles and the 1 % low, printed and in bench.txt, every frame
   in bench.csv. For backend measurements without the game; the window is a top-level one, not
   the live mode's child of the game window.
+  The user's folders: on the desktop a replay never uses the real ones. Each run gets user folders
+  of its own in a temporary folder, removed when it exits (platform/test_user_folders.h), so the
+  shader cache (programs.txt, the RTSS cache) starts empty every run and nothing is kept between
+  runs: the price of not touching the player's files. --real_user_folders uses the real ones
+  instead (the shader cache then persists); a TORCHLIGHT_TEST_USER_FOLDERS already set (ctest's)
+  is used as it is.
 )";
 
 int UsageError(const std::string& message) {
@@ -185,7 +194,12 @@ int main(int argc, char** argv) {
       out_dir = argv[++i];
     } else if (a == "--help" || a == "-h") {
       std::fputs(kUsage, stdout);
+      const char* own = std::getenv(torchlight::platform::kTestUserFoldersVariable);
+      std::printf("This run's user folders: %s\n",
+                  own && *own ? own : "the real ones (--real_user_folders)");
       return 0;
+    } else if (torchlight::platform::IsRealUserFoldersFlag(a.c_str())) {
+      // test_user_folders.h's, read before main.
     } else if (a.rfind("-", 0) == 0) {
       return UsageError("unknown option or missing value: " + a);
     } else if (!capture_path.empty()) {

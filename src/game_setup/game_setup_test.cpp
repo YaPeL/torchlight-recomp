@@ -14,6 +14,7 @@
 #include "game_setup/game_files.h"
 #include "game_setup/install.h"
 #include "game_setup/synthetic_package.h"
+#include "platform/test_user_folders.h"
 
 namespace {
 
@@ -203,7 +204,9 @@ void TestMissingGameInRoot() {
 }
 
 int main(int argc, char** argv) {
-  if (argc > 1) return CheckRealPackage(argv[1]);
+  for (int i = 1; i < argc; ++i) {
+    if (!torchlight::platform::IsRealUserFoldersFlag(argv[i])) return CheckRealPackage(argv[i]);
+  }
   TestCheckPackage();
   TestReadPackageFacts();
   TestVerifyFolder();

@@ -21,6 +21,7 @@
 #include "game_setup/setup_pages.h"
 #include "game_setup/synthetic_package.h"
 #include "platform/storage_mode.h"
+#include "platform/test_user_folders.h"
 #include "wizard/browser_page.h"
 #include "wizard/wizard.h"
 #include "wizard/wizard_ui.h"
@@ -99,14 +100,14 @@ class SamplePages : public Pages {
 };
 
 // The first start's real pages, over invented game files with a table made here: --pages setup
-// --sample_root DIR [--language CODE --strings FILE] [--no_game] [--install_delay MS]
+// --sample_root DIR [--language CODE --strings FILE] [--no_game] [--install_frames N]
 // [--expect installed|none|deck-closed] [--deck 1]. The exit code also says whether the install
 // ended as expected.
 struct SetupRun {
   fs::path sample_root;
   std::string language, strings;
   bool ask_game = true;
-  int install_delay = 0;
+  int install_frames = 0;  // per install step, frames of the working page
   std::string expect;
   std::string storage;     // ask, parent_unwritable, portable_unwritable
   bool user_data = false;  // invented user folders holding files to copy
@@ -140,8 +141,9 @@ int RunSetup(const Options& options, const SetupRun& run) {
   config.files = files;
   config.own_browser_only = true;
   config.browse_from = run.sample_root;
-  config.test_install_delay_ms = run.install_delay;
+  config.test_install_frames = run.install_frames;
   config.steam_deck = run.deck;
+  config.real_pad_connected = [] { return false; };  // a pad on this machine is not the Deck's
   if (!run.storage.empty()) {
     fs::create_directories(portable.parent_path());
     // Another portable folder, and files in the tests' user folders, to copy from.
@@ -235,7 +237,9 @@ bool WatchCounts(void* count, SDL_Event*) {
 }
 
 int RunWithSdlUp(const Options& options, const std::function<int()>& run) {
-  if (!options.video.empty()) SDL_SetHint(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
+  // Over the environment's SDL_VIDEO_DRIVER: --video offscreen must not open windows.
+  if (!options.video.empty())
+    SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, options.video.c_str(), SDL_HINT_OVERRIDE);
   if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
     std::fprintf(stderr, "wizard_shots: no SDL: %s\n", SDL_GetError());
     return 2;
@@ -290,6 +294,10 @@ int main(int argc, char** argv) {
   std::string browse_from, pages_kind;
   SetupRun setup;
   for (int i = 1; i + 1 < argc; i += 2) {
+    if (torchlight::platform::IsRealUserFoldersFlag(argv[i])) {  // test_user_folders.h's
+      --i;
+      continue;
+    }
     const std::string key = argv[i], value = argv[i + 1];
     if (key == "--script") options.script = value;
     else if (key == "--shots") options.shots = value;
@@ -299,7 +307,7 @@ int main(int argc, char** argv) {
     else if (key == "--language") setup.language = value;
     else if (key == "--strings") setup.strings = value;
     else if (key == "--no_game") setup.ask_game = value != "1";
-    else if (key == "--install_delay") setup.install_delay = std::atoi(value.c_str());
+    else if (key == "--install_frames") setup.install_frames = std::atoi(value.c_str());
     else if (key == "--expect") setup.expect = value;
     else if (key == "--storage") setup.storage = value;
     else if (key == "--user_data") setup.user_data = value == "1";

@@ -146,6 +146,15 @@ void SetupPages::ApplyStorage(bool portable, bool way_back) {
   }
 }
 
+// On the worker: a test's slower step (SetupConfig::test_install_frames). A cancel, the pages'
+// end included, stops the wait.
+void SetupPages::WaitTestFrames() {
+  if (!config_.test_install_frames) return;
+  const int until = working_frames_.load() + config_.test_install_frames;
+  while (!cancel_.load() && working_frames_.load() < until)
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+}
+
 void SetupPages::StartCopy(std::vector<platform::CopySource> sources) {
   copying_ = true;
   cancel_ = false;
@@ -159,9 +168,7 @@ void SetupPages::StartCopy(std::vector<platform::CopySource> sources) {
         [this](uint64_t done, uint64_t total) {
           done_ = done;
           total_ = total;
-          if (config_.test_install_delay_ms) {
-            std::this_thread::sleep_for(std::chrono::milliseconds(config_.test_install_delay_ms));
-          }
+          WaitTestFrames();
           return !cancel_.load();
         },
         copy_error_);
@@ -368,10 +375,7 @@ void SetupPages::Chosen(const fs::path& path, Source source) {
                         phase_ = int(phase);
                         done_ = done;
                         total_ = total;
-                        if (config_.test_install_delay_ms) {
-                          std::this_thread::sleep_for(
-                              std::chrono::milliseconds(config_.test_install_delay_ms));
-                        }
+                        WaitTestFrames();
                         return !cancel_.load();
                       });
     finished_ = true;
@@ -389,6 +393,7 @@ void SetupPages::BrowserPage() {
 }
 
 void SetupPages::WorkingPage() {
+  ++working_frames_;
   if (finished_ && copying_) {
     worker_.join();
     if (copy_result_ == platform::CopyResult::kDone) {
@@ -479,7 +484,9 @@ void SetupPages::ReadyPage() {
   ui_.Heading(Tr(kTextPageReady), "");
   ImGui::BeginChild("body", ImVec2(0, ui_.BodyHeight()), ImGuiChildFlags_NavFlattened);
   // Asked every frame: a pad plugged in now gives the start back.
-  const bool no_pad = config_.steam_deck && !RealPadConnected();
+  const bool no_pad = config_.steam_deck && !(config_.real_pad_connected
+                                                  ? config_.real_pad_connected()
+                                                  : RealPadConnected());
   ui_.Wrapped(Tr(no_pad ? kTextReadyDeck : kTextReady));
   ImGui::EndChild();
   // One button whichever its label, so a pad plugged in or out here keeps its focus.

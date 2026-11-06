@@ -139,16 +139,18 @@ ImGuiKey KeyOf(const std::string& name) {
 // A hint for this window only: on leaving, the value it had before, or none.
 class ScopedHint {
  public:
-  ScopedHint(const char* name, const char* value) : name_(name) {
+  // SDL_HINT_OVERRIDE wins over the environment's variable of the same name (SDL_VIDEO_DRIVER=x11
+  // in the offscreen runs would otherwise turn an asked "offscreen" into windows).
+  ScopedHint(const char* name, const char* value, SDL_HintPriority priority = SDL_HINT_NORMAL)
+      : name_(name) {
     if (const char* before = SDL_GetHint(name)) before_ = before;
-    SDL_SetHint(name, value);
+    SDL_SetHintWithPriority(name, value, priority);
   }
   ~ScopedHint() {
-    if (before_) {
-      SDL_SetHint(name_, before_->c_str());
-    } else {
-      SDL_ResetHint(name_);
-    }
+    SDL_ResetHint(name_);  // back to the environment's value, and to the normal priority
+    if (!before_) return;
+    const char* now = SDL_GetHint(name_);
+    if (!now || *before_ != now) SDL_SetHint(name_, before_->c_str());
   }
 
  private:
@@ -179,7 +181,9 @@ int Run(const Options& options, Pages& pages) {
   // The runtime's SDL may be up already, with its event watches and hints: left as it was found, so
   // no SDL_Quit, which would take them all down whatever the count of who uses it.
   std::optional<ScopedHint> video_hint;
-  if (!options.video.empty()) video_hint.emplace(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
+  // Asked explicitly (wizard_shots' --video), over the environment's SDL_VIDEO_DRIVER.
+  if (!options.video.empty())
+    video_hint.emplace(SDL_HINT_VIDEO_DRIVER, options.video.c_str(), SDL_HINT_OVERRIDE);
   const ScopedHint render_hint(SDL_HINT_RENDER_DRIVER, "software");
   const ScopedHint name_hint(SDL_HINT_APP_NAME, options.title.c_str());
   // Linux: the desktop portal's pickers only; where there is none (the Steam Deck's Game Mode), the

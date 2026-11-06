@@ -10,6 +10,7 @@
 #include <string>
 
 #include "backend/backend_api.h"
+#include "platform/test_user_folders.h"
 
 namespace torchlight::backend_test {
 
@@ -31,6 +32,8 @@ inline bool ParseRenderSystemArgs(int argc, char** argv, RenderSystemArgs& out) 
       out.name = "d3d11";
     } else if (std::strncmp(arg, "--gpu=", 6) == 0) {
       out.gpu = arg + 6;
+    } else if (torchlight::platform::IsRealUserFoldersFlag(arg)) {
+      // test_user_folders.h's.
     } else {
       std::fprintf(stderr, "unknown argument %s (--render_system=gl3plus|d3d11, --gpu=ID)\n", arg);
       return false;

@@ -33,7 +33,8 @@ enum class UserFolderKind {
 // CMakeLists.txt), every user folder lives below it, in config/, state/, cache/, data/ and
 // game_data/, so no test writes to the user's real folders. Checked first, on every platform,
 // before the platform's own folders (which on Windows are known folders that ignore the
-// environment). Nothing else sets it; it is the project's only environment variable of its own, and
+// environment). Otherwise only a test executable run by hand sets it, for itself
+// (test_user_folders.h); it is the project's only environment variable of its own, and
 // only for that (AppRun.in reads AppImage's $APPIMAGE, the documented exception in AGENTS.md).
 inline constexpr const char* kTestUserFoldersVariable = "TORCHLIGHT_TEST_USER_FOLDERS";
 
