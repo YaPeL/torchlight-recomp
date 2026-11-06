@@ -99,6 +99,10 @@ void InstallVideoMode() {
                  fn::kWideModeName, original);
     return;
   }
+  if (!AliasRenderTargets()) {
+    REXLOG_ERROR("video mode: no guest memory for surface parameters; the guest keeps 16:9");
+    return;
+  }
   // Read-only data: open the page for the write, then restore its protection.
   auto* heap = memory->LookupHeap(fn::kWideModeName);
   uint32_t old_protect = 0;
@@ -107,10 +111,6 @@ void InstallVideoMode() {
                               &old_protect)) {
     REXLOG_ERROR("video mode: cannot open {:08X} for writing; the guest keeps 16:9",
                  fn::kWideModeName);
-    return;
-  }
-  if (!AliasRenderTargets()) {
-    REXLOG_ERROR("video mode: no guest memory for surface parameters; the guest keeps 16:9");
     return;
   }
   abi::WriteBytes(membase, fn::kWideModeName, name, original.size());

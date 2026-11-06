@@ -224,7 +224,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     its `SHADOWRESOLUTION` only when it creates them at startup, before its own settings files can
     be read (`SAVE:\` is not mounted yet), so its first-start defaults always set 512. A hook on
     that setup (`hooks/shadow_resolution_hooks.cpp`) sets the host's size through the game's own
-    setter first; 512 leaves the game alone. A change applies after a restart, and the row says so
+    setter first; 512 leaves the game alone. Two 1024 targets do not fit in the guest D3D's EDRAM
+    next to the frame and are created aliased (EDRAM aliasing, below), so only mode. A change applies after a restart, and the row says so
     until then;
   - changes apply immediately (scale, vsync and multisampling through a request to the backend
     thread, the cap
@@ -303,7 +304,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     A render target refused for lack of EDRAM is created again aliased at EDRAM base 0
     (`D3DSURFACE_PARAMETERS`, which does not allocate). Its release then frees no EDRAM, because the
     owned bit is not set. With the null GPU there is no EDRAM, and the GPU commands that would use
-    the base are discarded. That is why this is only mode.
+    the base are discarded. That is why this is only mode. The PC's 1024 shadow textures (the Video
+    column's shadows) use the same aliasing, so they too apply only there.
   - Layout bands (`game_menu/wide_layout.h`, `WidenBands`): menus and loading screens build their
     top and bottom bands from a centred image of fixed width plus two end pieces anchored to the
     screen's edges. At 1280 they overlap into one band; wider, they leave gaps. The end pieces are
