@@ -66,10 +66,10 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 - **Covered now:** docs/perf/pgo.md: any optimisation behind a flag is measured with a profile
   trained with it on, and a release profile for a build where the flag may be either way is trained
   with both (the Linux profile, for `--native_skeleton`).
-- **The POCO's numbers** (2026-11-01, `fight.txt` from a fresh bench save, fps cap unlimited, vsync off,
-  A B B A, guest main thread counters over the whole fight step; the files are in the local bench
-  folder): four series, all neutral within the phone's run-to-run noise (up to about ±6 % between two runs of one mode),
-  none a clear loss.
+- **The POCO's numbers** (2026-11-01, `fight.txt` from a fresh bench save, fps cap unlimited,
+  vsync off, A B B A, guest main thread counters over the whole fight step; the files are in the
+  local bench folder): four series, all neutral within the phone's run-to-run noise (up to about
+  ±6 % between two runs of one mode), none a clear loss.
   - The first two (`skel`, `skel2`, about 02:00 and 03:30), as far as the record goes with the profile
     of the time, trained with the port off: fight 21.80 → 21.64 ms (−0.7 %, cycles −1.2 %), and
     20.40 → 22.19 ms (+8.8 %, cycles 48.7 → 52.0 M, +7.0 %), the second one's last run without the
