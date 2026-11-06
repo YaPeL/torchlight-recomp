@@ -1332,14 +1332,14 @@ eight); no patch touches those files. The patches' own tests (`[vfs]`, `[keystro
 the unit tests and every game build below start only when it says the machine is free. At the time
 of writing it asked for no build during its measurement runs.
 
-**The SDK's install registers its prefix in CMake's user package registry**
-(`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`, no option to turn
-it off). Our `CMakeLists.txt` finds the SDK with `find_package(rexglue)` and the presets give no
-`CMAKE_PREFIX_PATH`, so with two installs registered, a fresh configure can pick either one. After
-every install into `~/rexglue-sdk-next`, delete its entry; builds against it pass
-`-DCMAKE_PREFIX_PATH=~/rexglue-sdk-next/install`. (Done after the first build, 2026-10-08: the
-entry was there from the end of the install until it was noticed; no build tree was configured
-from scratch meanwhile.)
+**The SDK is named, never found in CMake's package registry.** The SDK's install registered its
+prefix there (`~/.cmake/packages/rexglue/<md5 of the prefix>`, `cmake/rexglue_install.cmake`; not
+since patch 54), and installs of one version look the same to `find_package`; our configure does
+not read the registry (2026-11-05). The Linux and macOS presets set `rexglue_DIR` to the shared SDK, and that wins over a
+`-DCMAKE_PREFIX_PATH`, so builds against `~/rexglue-sdk-next` pass
+`-Drexglue_DIR=~/rexglue-sdk-next/install/lib/cmake/rexglue`; the configure's
+`ReXGlue SDK: <version> at <path>, codegen_id <id>` line shows which one it took. (On 2026-10-08,
+before this, the registry entry of each install into `~/rexglue-sdk-next` was deleted by hand.)
 
 Windows: `tools/build-deps/windows.ps1 -SdkPrefix ...` from the same branch on the Windows machine
 (patches 17 and 18 only build there). Not possible from this machine.
@@ -1347,9 +1347,10 @@ Windows: `tools/build-deps/windows.ps1 -SdkPrefix ...` from the same branch on t
 ### 3. Build the game against it
 
 A separate worktree of the branch (codegen writes `generated/` in the source tree, so a shared tree
-would mix the two bases), with `-DCMAKE_PREFIX_PATH=~/rexglue-sdk-next/install` and the codegen
-of the new SDK (`~/rexglue-sdk-next/install/bin/rexglue codegen torchlight_manifest.toml`), using
-the manifest options the codegen task settled on. The project's tests (`ctest`) and the replays of
+would mix the two bases), with `-Drexglue_DIR=~/rexglue-sdk-next/install/lib/cmake/rexglue` and
+the codegen of the new SDK
+(`~/rexglue-sdk-next/install/bin/rexglue codegen torchlight_manifest.toml`), using the manifest
+options the codegen task settled on. The project's tests (`ctest`) and the replays of
 the capture set, compared with the same replays on the old base.
 
 ### 4. Overlaps to check in our code

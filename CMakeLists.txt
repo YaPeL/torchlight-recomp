@@ -22,6 +22,18 @@ endif()
 option(TORCHLIGHT_GAME
     "Build the game executable (needs generated/, the recompiled code); OFF: libraries, tests and tools only"
     ON)
+# Every install of one SDK version looks the same to find_package, whatever its patches and
+# configurations: the SDK is named (rexglue_DIR: the Linux and macOS presets give the shared one,
+# CI and the release jobs their own; where the preset's folder does not exist, or on Windows,
+# CMAKE_PREFIX_PATH), never taken from CMake's package registries, and the configure says which
+# one it took (docs/BUILDING.md).
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY OFF)
+set(CMAKE_FIND_USE_SYSTEM_PACKAGE_REGISTRY OFF)
+if(rexglue_DIR AND NOT REXSDK_DIR AND NOT EXISTS "${rexglue_DIR}/rexglueConfig.cmake")
+    message(WARNING "rexglue_DIR (${rexglue_DIR}) holds no rexglueConfig.cmake: the SDK is "
+        "searched for in CMAKE_PREFIX_PATH and the system paths instead (the 'ReXGlue SDK:' "
+        "line below says which one was taken)")
+endif()
 if(TORCHLIGHT_GAME)
     if(NOT EXISTS "${CMAKE_SOURCE_DIR}/generated/rexglue.cmake")
         message(FATAL_ERROR
@@ -33,7 +45,17 @@ if(TORCHLIGHT_GAME)
 else()
     # What generated/rexglue.cmake does for the SDK, without the game's code.
     find_package(rexglue 0.10.0 REQUIRED CONFIG)
-    message(STATUS "Found ReXGlue SDK ${REXGLUE_VERSION_STRING} at ${rexglue_DIR} (no game)")
+endif()
+if(REXSDK_DIR)
+    # generated/rexglue.cmake builds the SDK from its source tree (add_subdirectory): no install.
+    message(STATUS "ReXGlue SDK: source tree ${REXSDK_DIR}")
+else()
+    set(_rexglue_codegen_id "none (an SDK before the codegen_id)")
+    if(EXISTS "${REXGLUE_SHARE_DIR}/codegen_id")
+        file(STRINGS "${REXGLUE_SHARE_DIR}/codegen_id" _rexglue_codegen_id LIMIT_COUNT 1)
+    endif()
+    message(STATUS "ReXGlue SDK: ${REXGLUE_VERSION_STRING} at ${rexglue_DIR}, "
+        "codegen_id ${_rexglue_codegen_id}")
 endif()
 
 include(cmake/guest_host_offset.cmake)
@@ -270,8 +292,14 @@ add_custom_target(torchlight_gpu_plugins ALL DEPENDS ${TORCHLIGHT_STAGED_GPU_PLU
 add_dependencies(torchlight torchlight_gpu_plugins)
 endif()
 
-# ReXGlue SDK include root (the SDK package's gpu target carries no include directories).
-get_filename_component(TORCHLIGHT_REX_INCLUDE "${rexglue_DIR}/../../../include" ABSOLUTE)
+# ReXGlue SDK include root (the SDK package's gpu target carries no include directories): the
+# source tree's when generated/rexglue.cmake builds the SDK from it (REXSDK_DIR), whatever
+# rexglue_DIR the preset gives.
+if(REXSDK_DIR)
+    set(TORCHLIGHT_REX_INCLUDE "${REXSDK_DIR}/include")
+else()
+    get_filename_component(TORCHLIGHT_REX_INCLUDE "${rexglue_DIR}/../../../include" ABSOLUTE)
+endif()
 enable_testing()
 # The project logs only through the SDK's REXLOG_* macros, never spdlog directly (on Windows the
 # executable has its own, empty copy of spdlog's registry): cmake/check_no_spdlog.cmake.
