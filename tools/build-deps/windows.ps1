@@ -167,7 +167,8 @@ function Build-Sdk {
         Invoke-Native 'cmake' (@('--preset', 'win-amd64',
             "-DCMAKE_CONFIGURATION_TYPES=$sdkConfigList",
             "-DCMAKE_DEFAULT_BUILD_TYPE=$($SdkConfigs[0])", "-DCMAKE_CROSS_CONFIGS=$sdkConfigList",
-            "-DCMAKE_DEFAULT_CONFIGS=$sdkConfigList", "-DCMAKE_INSTALL_PREFIX=$SdkPrefix") +
+            "-DCMAKE_DEFAULT_CONFIGS=$sdkConfigList", "-DCMAKE_INSTALL_PREFIX=$SdkPrefix",
+            '-DREXGLUE_REGISTER_PACKAGE=OFF') +
             $(if ($SdkTests) { @('-DREXGLUE_BUILD_TESTS=ON') } else { @() }))
         Invoke-Native 'cmake' @('--build', 'out/build/win-amd64', '--target', 'install',
             '--parallel')

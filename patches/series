@@ -48,3 +48,5 @@ rexglue-command-processor-pending-calls-lock.patch
 rexglue-thread-dump.patch
 rexglue-android-sdl-power.patch
 rexglue-phys-host-offset-no-compare.patch
+rexglue-indirect-dispatch-count-opt-in.patch
+rexglue-no-package-registry.patch

@@ -1101,7 +1101,7 @@ against `develop`:
 
 | Component | What it did | Decision and reason |
 | --- | --- | --- |
-| G: no indirect-dispatch counter | Removed the SDK's per-indirect-call counter from the generated code | Discarded: the counter only exists in non-Release builds; the Release builds we ship and profile have none. Much of the package's combat gain may have been this, which would not carry over to a release |
+| G: no indirect-dispatch counter | Removed the SDK's per-indirect-call counter from the generated code | Discarded: the counter only exists in non-Release builds; the Release builds we ship and profile have none. Much of the package's combat gain may have been this, which would not carry over to a release. Since SDK patch 53 non-Release builds leave it out too (it measured about 9 % of the fight's cycles per frame: docs/perf/pgo.md, Measurement builds) |
 | X: skip the Xbox draw calls | Skipped `DrawIndexedPrimitive`/`DrawPrimitive` under `_render` | Already in `develop`, wider: `--native_skip_guest_d3d` (on by default, native mode only) skips those and `SetIndices`/`SetStreamSource` (docs/native-skip-guest-d3d.md) |
 | M: mutexes without measurement | Skipped the two clock reads per lock | Already covered: `develop`'s `MeasuredMutex` times the hold on one acquisition in 64 and the wait only when contended; what is left is one relaxed atomic add per lock |
 | D: declaration memo | Reused a declaration's hash when its guest bytes are unchanged | Already in `develop`: `LiveDeclarationBytesSent` and the declaration slots compare the bytes the same way |

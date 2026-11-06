@@ -1,0 +1,55 @@
+Patch 53. After patch 52.
+
+With REXGLUE_ENABLE_PROFILING (every configuration but Release), REX_CALL_INDIRECT_FUNC counted
+each indirect call into the perf counter kFunctionsDispatched: rex::perf::IncrementCounter, a call
+into the runtime library that is not inlined, doing a relaxed atomic add. The only reader is the
+debug overlay's Dispatch line. In Torchlight's fight (fight.txt) that call is about 8 % of the
+guest main thread's cycles, so RelWithDebInfo and Debug builds measured a dispatch cost the
+release does not have.
+
+The count now needs REXGLUE_PROFILE_INDIRECT_DISPATCH defined as well, as the guest function
+zones need REXGLUE_PROFILE_GUEST_FUNCTIONS. Without it the overlay's Dispatch line only counts
+FunctionDispatcher::Execute (guest entries from the host). The other counters are unchanged.
+
+Release: REXGLUE_ENABLE_PROFILING is not defined there, so the generated code compiles to the same
+thing as before; PGO profiles trained on Release builds still match. The template is one of
+codegen_id's inputs, so the id changes and a cross build's host tool must have this patch too.
+
+Measurement: i7-8750H desktop, Torchlight develop b704701, fight.txt offscreen (Xvfb), fps cap 0,
+vsync off, no PGO, both builds -O2 -g. perf stat --per-thread on the guest main thread over the
+fight step, divided by its frames. A B B A twice, CPU at 2.3-3.4 GHz and 63-84 C at each start
+(power profile "performance"), 2026-11-05. Without this patch, RelWithDebInfo against Release:
+
+    cycles/frame  RelWithDebInfo 35.53 M, Release 32.36 M (Release -8.9 %)
+    instructions  RelWithDebInfo 32.99 M, Release 31.06 M (-5.8 %)
+    fight mean    13.39 ms against 12.14 ms
+
+perf record of a RelWithDebInfo fight: IncrementCounter, 8 % of the main thread's samples.
+
+With this patch, the same method and machine, both builds against an SDK with the series up to 54
+(A B B A twice, 2.4-3.5 GHz and 62-75 C at each start, 2026-11-05):
+
+    cycles/frame  RelWithDebInfo 32.09 M, Release 32.27 M (Release +0.6 %)
+    instructions  RelWithDebInfo 30.62 M, Release 31.15 M
+    fight mean    12.19 ms against 12.33 ms
+
+The two builds' runs overlap (cycles 30.7-32.8 M against 31.3-33.4 M): within the runs' spread.
+
+Upstream: not proposed.
+
+diff --git a/resources/templates/codegen/_indirect_call.inja b/resources/templates/codegen/_indirect_call.inja
+index d4b1830..3d4de9f 100644
+--- a/resources/templates/codegen/_indirect_call.inja
++++ b/resources/templates/codegen/_indirect_call.inja
+@@ -9,7 +9,10 @@
+ // which queries the global FunctionDispatcher across every loaded module.
+ //=============================================================================
+ 
+-#ifdef REXGLUE_ENABLE_PROFILING
++// Counting every indirect call (the overlay's Dispatch line) is an atomic add in a call that is not
++// inlined, about 8 % of the main thread's cycles in a dispatch-heavy game: only on request, with
++// REXGLUE_PROFILE_INDIRECT_DISPATCH defined, as REXGLUE_PROFILE_GUEST_FUNCTIONS for the prologue.
++#if defined(REXGLUE_PROFILE_INDIRECT_DISPATCH) && defined(REXGLUE_ENABLE_PROFILING)
+ #include <rex/perf/counter.h>
+ #define REX_PROFILE_INDIRECT_DISPATCH() PROFILE_FUNCTION_DISPATCHED()
+ #else

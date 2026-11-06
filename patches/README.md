@@ -68,7 +68,9 @@ in number order; a branch adds its own line at its number's place.
 | 50 | `rexglue-thread-dump.patch` | `develop` | In the series (after 49); diagnostics only |
 | 51 | `rexglue-android-sdl-power.patch` | `develop` | In the series (after 50); Android only |
 | 52 | `rexglue-phys-host-offset-no-compare.patch` | `develop` | In the series (after 51); changes Windows' and macOS arm64's generated code too (the owner's OK) |
-| 53 | | | Next free number |
+| 53 | `rexglue-indirect-dispatch-count-opt-in.patch` | `develop` | In the series (after 52); changes the generated code of every configuration but Release |
+| 54 | `rexglue-no-package-registry.patch` | `develop` | In the series (after 53) |
+| 55 | | | Next free number |
 
 ## The patches
 
@@ -629,8 +631,8 @@ in number order; a branch adds its own line at its number's place.
 
 36. `rexglue-cross-no-package-registry.patch`: an install registered itself in the CMake user
     package registry, where a desktop configure could take an Android install. The option
-    `REXGLUE_REGISTER_PACKAGE` is ON in native builds (as before) and OFF in cross builds.
-    Verified: an Android install leaves `~/.cmake/packages/rexglue` as it was.
+    `REXGLUE_REGISTER_PACKAGE` is ON in native builds (as before) and OFF in cross builds; patch 54
+    makes it OFF everywhere. Verified: an Android install leaves `~/.cmake/packages/rexglue` as it was.
 
 37. `rexglue-android-physical-host-offset.patch`: the 0xE0000000 heap's 0x1000 host offset is a
     compile-time constant in recompiled code and was chosen at run time by the heap. Android
@@ -761,6 +763,24 @@ in number order; a branch adds its own line at its number's place.
     computed with shifts and an add instead of a comparison, with the same value for every address;
     the runtime's `PhysicalHostOffset` keeps the comparison. Android arm64, Windows and macOS arm64
     only.
+
+53. `rexglue-indirect-dispatch-count-opt-in.patch`: every configuration but Release counted each
+    indirect call of the generated code for the debug overlay's Dispatch line, an atomic add in a
+    call the compiler cannot inline: about 8 % of the guest main thread's cycles in the fight, so
+    Release measured 8.9 % fewer cycles per frame than RelWithDebInfo. The count now also needs
+    `REXGLUE_PROFILE_INDIRECT_DISPATCH` defined (as the guest function zones need
+    `REXGLUE_PROFILE_GUEST_FUNCTIONS`): a non-Release game build configured with
+    `-DCMAKE_CXX_FLAGS=-DREXGLUE_PROFILE_INDIRECT_DISPATCH`, against an SDK with Tracy and the perf
+    counters on (their defaults). Release compiles to the same code, so its PGO profiles
+    still match; `codegen_id` changes (the template is one of its inputs).
+
+54. `rexglue-no-package-registry.patch`: no install registers itself in the CMake user package
+    registry unless configured with `REXGLUE_REGISTER_PACKAGE=ON` (patch 36 only kept cross builds
+    out). Installs of one SDK version are indistinguishable there whatever their series or
+    configurations, so a consumer's `find_package` could take any of them. Verified: a native
+    install leaves `~/.cmake/packages/rexglue` as it was. `tools/deps/build_sdk.sh` and
+    `tools/build-deps/windows.ps1` also pass the option OFF, for a reused work folder whose
+    CMake cache still holds the old default.
 
 The observation and diagnostic patches there were before remain in the git history.
 
