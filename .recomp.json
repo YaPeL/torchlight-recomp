@@ -2,13 +2,13 @@
   "game": "Torchlight",
   "system": "Xbox 360",
   "type": "recomp",
-  "status": "playable",
-  "targets": ["Linux", "Windows", "macOS"],
+  "status": "released",
+  "targets": ["Windows", "Linux", "macOS", "Steam Deck", "Android"],
   "toolchain": "Rexglue",
   "project": "Torchlight Recomp",
   "approach": "Static recompilation of the XBLA version with ReXGlue, with a native OGRE 14 renderer",
-  "notes": "Beta. Needs your own copy of the game. Supports Torchlight PC mods (items, monsters, classes, textures) and texture packs. Android is planned.",
-  "help": ["Testing achievements", "Testing PC mods", "Testing on Android consoles once the port lands", "Artists: PlayStation and Nintendo button icons in the game's own style (today they are Kenney's CC0 set)"],
+  "notes": "v1.0 out. Requires your own copy of the XBLA game. Native OGRE renderer, portable by default, gamepad-friendly setup. Supports Torchlight PC mods (items, monsters, classes, textures) and texture packs, PC saves (experimental), and imported PC languages. Android build is highly experimental: tested mostly on a POCO X7 and a Galaxy A07. macOS is Apple Silicon only; Linux needs an x86-64-v3 CPU.",
+  "help": ["Testing achievements", "Testing PC mods", "Testing on more Android phones and tablets", "Artists: PlayStation and Nintendo button icons in the game's own style (today they are Kenney's CC0 set)"],
   "maintainers": [{ "name": "YaPeL", "link": "https://github.com/YaPeL" }],
   "links": [{ "label": "Releases", "url": "https://github.com/YaPeL/torchlight-recomp/releases" }]
 }
