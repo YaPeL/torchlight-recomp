@@ -68,11 +68,11 @@ unsigned long ProcessId() {
 #endif
 }
 
-void SetVariable(const char* name, const std::string& value) {
+bool SetVariable(const char* name, const std::string& value) {
 #if defined(_WIN32)
-  _putenv_s(name, value.c_str());
+  return _putenv_s(name, value.c_str()) == 0;
 #else
-  setenv(name, value.c_str(), 1);
+  return setenv(name, value.c_str(), 1) == 0;
 #endif
 }
 
@@ -94,12 +94,20 @@ class TestUserFolders {
       std::_Exit(1);
     }
     root_ = root;
-    SetVariable(kTestUserFoldersVariable, root.string());
+    if (!SetVariable(kTestUserFoldersVariable, root.string())) {
+      std::fprintf(stderr, "test user folders: cannot set %s; run with %s to use the real user "
+                   "folders\n", kTestUserFoldersVariable, kRealUserFoldersFlag);
+      std::filesystem::remove_all(root_, error);
+      std::_Exit(1);
+    }
   }
   ~TestUserFolders() {
     if (root_.empty()) return;
     std::error_code error;
     std::filesystem::remove_all(root_, error);
+    // A file still open (a log on Windows) keeps it: said, so it can be removed by hand.
+    if (error || std::filesystem::exists(root_, error))
+      std::fprintf(stderr, "test user folders: %s left behind\n", root_.string().c_str());
   }
 
  private:
