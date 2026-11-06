@@ -524,6 +524,14 @@ Ogre::PixelFormat SampledTextureFormat(const tl_backend* b, Ogre::PixelFormat fo
   return format;
 }
 
+// Unregisters a backend texture by name if it is registered (OGRE_RESOURCEMANAGER_STRICT makes
+// remove() of an unknown name throw).
+void RemoveTextureIfRegistered(const std::string& name) {
+  Ogre::TextureManager& tm = Ogre::TextureManager::getSingleton();
+  if (tm.resourceExists(name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME))
+    tm.remove(name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
+}
+
 bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, bool scaled,
                 tl_backend::Target& t, uint32_t fsaa = 0) {
   t.scaled = scaled;
@@ -546,8 +554,7 @@ bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, 
     // same name can be made again (the fallback without multisampling, tl_backend_set_msaa).
     t.texture.reset();
     t.rt = nullptr;
-    Ogre::TextureManager::getSingleton().remove(
-        name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
+    RemoveTextureIfRegistered(name);
     throw;
   }
   t.rt->setAutoUpdated(false);
@@ -577,8 +584,7 @@ void RemakeTarget(tl_backend* b, tl_backend::Target& t) {
   const std::string name = t.name;  // t.texture is empty when a previous remake failed
   const uint32_t w = t.guest_width, h = t.guest_height;
   t.texture.reset();
-  Ogre::TextureManager::getSingleton().remove(
-      name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
+  RemoveTextureIfRegistered(name);
   if (!MakeTarget(b, name, w, h, t.scaled, t, t.fsaa)) OGRE_EXCEPT(Ogre::Exception::ERR_RENDERINGAPI_ERROR,
                                                  "cannot recreate " + name, "RemakeTarget");
 }
@@ -588,8 +594,7 @@ void DropTarget(tl_backend* b, tl_backend::Target& t) {
   if (!t.texture) return;
   const std::string name = t.name;
   t.texture.reset();
-  Ogre::TextureManager::getSingleton().remove(
-      name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
+  RemoveTextureIfRegistered(name);
   if (t.depth_pool) b->free_depth_pools.push_back(t.depth_pool);
   t = tl_backend::Target();
 }
