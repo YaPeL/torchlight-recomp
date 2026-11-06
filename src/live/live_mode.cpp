@@ -133,9 +133,9 @@ void LiveMode::ResizeWindow(uint32_t width, uint32_t height) {
   if (width && height) pending_window_size_ = uint64_t(width) << 32 | height;
 }
 
-void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync) {
+void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync, uint32_t msaa) {
   std::lock_guard lock(pending_video_mutex_);
-  pending_video_ = PendingVideo{render_resolution, vsync};
+  pending_video_ = PendingVideo{render_resolution, vsync, msaa};
 }
 
 void LiveMode::Stop() {
@@ -272,6 +272,25 @@ void LiveMode::Run() {
     }
   };
   apply_render_scale();
+  // Multisampling of the main target (LiveOptions::msaa), limited to what the device applies.
+  max_msaa_ = tl_backend_max_msaa(backend);
+  uint32_t msaa_applied = 0;
+  auto apply_msaa = [&] {
+    const uint32_t applied = tl_backend_set_msaa(backend, options_.msaa);
+    // The multisampled target could not be made although the device reported samples: the menu
+    // then offers none (MaxMsaa), instead of showing a count that does not apply.
+    if (options_.msaa > 1 && applied == 0) max_msaa_ = 1;
+    if (applied == msaa_applied) return;
+    msaa_applied = applied;
+    const std::string shown = applied > 1 ? std::to_string(applied) + "x" : std::string("off");
+    if (options_.msaa > 1 && applied < options_.msaa) {
+      REXLOG_INFO("live: multisampling {} ({}x asked, device maximum {}x)", shown, options_.msaa,
+                  max_msaa_.load());
+    } else {
+      REXLOG_INFO("live: multisampling {}", shown);
+    }
+  };
+  if (options_.msaa > 1) apply_msaa();
   frontend::ZipArchive pak;
   std::string error;
   if (!pak.Open((options_.game_data_root / "pak.zip").string(), error)) {
@@ -427,6 +446,10 @@ void LiveMode::Run() {
         if (video->render_resolution != options_.render_resolution) {
           options_.render_resolution = video->render_resolution;
           apply_render_scale();
+        }
+        if (video->msaa != options_.msaa) {
+          options_.msaa = video->msaa;
+          apply_msaa();
         }
       }
       if (window_open) {

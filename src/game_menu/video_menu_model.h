@@ -11,10 +11,10 @@
 namespace torchlight::game_menu {
 
 enum class Row {
-  kResolution, kAspect, kFpsCap, kLanguage, kAchievements, kPadPrompts, kVsync, kSwapConfirmCancel,
-  kRenderer, kGpu
+  kResolution, kAspect, kFpsCap, kMsaa, kLanguage, kAchievements, kPadPrompts, kVsync,
+  kSwapConfirmCancel, kRenderer, kGpu
 };
-inline constexpr int kRowCount = 10;
+inline constexpr int kRowCount = 11;
 // The rows shown as a checkbox (A toggles them) instead of a value moved with left and right.
 inline bool IsCheckbox(Row row) { return row == Row::kVsync || row == Row::kSwapConfirmCancel; }
 
@@ -47,6 +47,9 @@ class VideoMenuModel {
   bool RestartNeeded() const;
 
   const settings::HostSettings& settings() const { return current_; }
+  // The device's most multisampling once the backend reports it (Capabilities::max_msaa; the
+  // column may be built before the backend started).
+  void SetMaxMsaa(uint32_t max_msaa) { caps_.max_msaa = max_msaa; }
 
  private:
   std::string DefaultGpu() const;

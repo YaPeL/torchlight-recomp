@@ -52,6 +52,9 @@ struct LiveOptions {
   // render scale that fits the guest's frame in it (settings::RenderScaleFor), recomputed when the
   // window's size changes.
   settings::Resolution render_resolution;
+  // Multisampling of the game's frame (host settings; 0: off): the samples asked of the backend
+  // (tl_backend_set_msaa), which limits them to the device's most.
+  uint32_t msaa = 0;
   // Host UI (only mode): the runtime's dialogs recorded by `ui`, drawn over the window when
   // presenting; request_ui_frame asks for the next UI frame after each present.
   UiOverlay* ui = nullptr;
@@ -85,9 +88,12 @@ class LiveMode {
   void Stop();
   // The game window's new size in pixels (any thread); a child backend window follows it.
   void ResizeWindow(uint32_t width, uint32_t height);
-  // New internal render resolution and vertical sync (any thread), applied by the backend thread
-  // between frames.
-  void SetVideo(settings::Resolution render_resolution, bool vsync);
+  // New internal render resolution, vertical sync and multisampling (any thread), applied by the
+  // backend thread between frames.
+  void SetVideo(settings::Resolution render_resolution, bool vsync, uint32_t msaa);
+  // The most multisampling the backend applies (tl_backend_max_msaa); 0 before it started, 1 also
+  // once a multisampled main target could not be made.
+  uint32_t MaxMsaa() const { return max_msaa_; }
 
  private:
   LiveMode() = default;
@@ -102,9 +108,11 @@ class LiveMode {
   std::atomic<bool> running_{false};
   std::atomic<bool> finished_{false};  // Run() has returned (Stop)
   std::atomic<uint64_t> pending_window_size_{0};  // width << 32 | height, 0 when none
+  std::atomic<uint32_t> max_msaa_{0};
   struct PendingVideo {
     settings::Resolution render_resolution;
     bool vsync = true;
+    uint32_t msaa = 0;
   };
   std::mutex pending_video_mutex_;
   std::optional<PendingVideo> pending_video_;  // guarded by pending_video_mutex_

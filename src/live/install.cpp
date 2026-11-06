@@ -630,6 +630,8 @@ void Install(const std::filesystem::path& game_data_root, const DialogHost& dial
     options.vsync = g_host_settings.values.vsync;
     options.render_resolution = settings::EffectiveRenderResolution(
         g_host_settings.values.render_resolution, g_running.caps);
+    // The device's most is not known before the backend runs: the backend limits the count.
+    options.msaa = settings::EffectiveMsaa(g_host_settings.values, g_running.caps);
     // The render system chosen in the Video column; empty: the first one offered. One this machine
     // cannot run gives way to the first that can for this session, and stays the saved choice.
     std::string render_system =
@@ -669,8 +671,11 @@ settings::Capabilities HostCapabilities() {
   const bool gl33 = g_gl33.Result();
   std::lock_guard lock(g_running.mutex);
   if (!gl33) g_running.caps.unavailable_render_systems = {kGl3PlusRenderSystemName};
+  g_running.caps.max_msaa = LiveMode::Get().MaxMsaa();
   return g_running.caps;
 }
+
+uint32_t MaxMsaa() { return LiveMode::Get().MaxMsaa(); }
 
 rex::ui::ImmediateDrawer* DialogImmediateDrawer() { return g_dialogs ? g_dialogs->overlay.get() : nullptr; }
 
@@ -687,11 +692,14 @@ settings::HostSettings StartupHostSettings() {
 void ChangeHostSettings(const settings::HostSettings& changed) {
   std::lock_guard lock(g_running.mutex);
   if (!g_running.ready) return;
+  g_running.caps.max_msaa = LiveMode::Get().MaxMsaa();
   const settings::HostSettings before = g_running.current;
   g_running.current = changed;
-  if (changed.render_resolution != before.render_resolution || changed.vsync != before.vsync) {
+  if (changed.render_resolution != before.render_resolution || changed.vsync != before.vsync ||
+      changed.msaa != before.msaa) {
     LiveMode::Get().SetVideo(
-        settings::EffectiveRenderResolution(changed.render_resolution, g_running.caps), changed.vsync);
+        settings::EffectiveRenderResolution(changed.render_resolution, g_running.caps), changed.vsync,
+        settings::EffectiveMsaa(changed, g_running.caps));
   }
   const uint32_t fps_cap = settings::EffectiveFpsCap(changed, g_running.caps);
   if (fps_cap != settings::EffectiveFpsCap(before, g_running.caps)) {

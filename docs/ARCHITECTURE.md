@@ -200,8 +200,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   `.uilayout` layouts (CEGUI XML), the `onClick` commands and pad navigation.
 - `src/game_menu/`: the host's settings inside the game's settings menu (only mode), as a column to
   the right of its rows, in its style, in three sections picked by red buttons on top (Video:
-  resolution, aspect, frame rate cap, vsync, renderer, GPU; Controls: button prompts and the A/B
-  swap; Extras: language and achievements). It is all the game's own UI:
+  resolution, aspect, frame rate cap, antialiasing, vsync; Controls: button prompts and the A/B swap;
+  Extras: language, achievements, renderer and GPU). It is all the game's own UI:
   - the layout is ours (`data/ui/tl_video_settings.uilayout`, copied next to the executable) and only
     references widget types, fonts and imagesets from the pak; the guest sees it through a VFS device
     (`tlhost:`) added as an OGRE `FileSystem` location after `resources.cfg`;
@@ -214,7 +214,13 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   - a hook on the menu's navigation handler (by identity of the menu and of our rows): A on a
     section button shows its rows, left/right change a value, A a checkbox; the rest follows the
     game. "Reset Defaults" also resets the column;
-  - changes apply immediately (scale and vsync through a request to the backend thread, the cap
+  - antialiasing (`msaa` in `settings.toml`: 0, 2 or 4 samples) multisamples the main target
+    (`tl_backend_set_msaa`); 2 by default, as the 360 drew its frame (the game's first-start
+    defaults, `sub_823E1040`, turn its FSAA on; its window gets "FSAA" = "2" at `0x8220970C`). The
+    row offers only what the device applies (`tl_backend_max_msaa`, read again whenever the column
+    is used); a saved count above it is kept and applied as the device's most;
+  - changes apply immediately (scale, vsync and multisampling through a request to the backend
+    thread, the cap
     through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button
     prompts and the A/B swap show the restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
   - the labels and the word values are translated with `data/ui/tl_video_strings.txt` (de, fr, es;

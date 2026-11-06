@@ -82,8 +82,8 @@ struct Column {
 Column g_column;
 
 // Row names in the layout (tl_video_settings.uilayout), in Row order.
-constexpr const char* kRowNames[kRowCount] = {"resolution", "aspect",      "fps_cap", "language", "achievements",
-                                              "pad_prompts", "vsync",      "swap",    "renderer", "gpu"};
+constexpr const char* kRowNames[kRowCount] = {"resolution", "aspect", "fps_cap",  "msaa",     "language", "achievements",
+                                              "pad_prompts", "vsync", "swap",     "renderer", "gpu"};
 // Section button names in the layout, in Section order.
 constexpr const char* kSectionNames[kSectionCount] = {"video", "controls", "extras"};
 // The menu's yellow, for values and the chosen section's button; white for the others.
@@ -129,6 +129,8 @@ void SetProperty(GuestCall& call, uint32_t window, const char* name, const std::
 // navigation passes over, as it passes over disabled windows), values, checkboxes and the restart
 // notice.
 void Refresh(GuestCall& call) {
+  // The column may have been built before the backend reported what it applies.
+  if (const uint32_t max_msaa = live::MaxMsaa()) g_column.model->SetMaxMsaa(max_msaa);
   const VideoMenuModel& model = *g_column.model;
   for (int i = 0; i < kSectionCount; ++i) {
     SetProperty(call, g_column.section_text[i], "TextColour", Section(i) == g_column.section ? kYellow : kWhite);
@@ -393,6 +395,7 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
       {"tl_video/resolution/label", "Resolution"},
       {"tl_video/aspect/label", "Aspect Ratio"},
       {"tl_video/fps_cap/label", "Frame Rate Limit"},
+      {"tl_video/msaa/label", "Antialiasing"},
       {"tl_video/language/label", "Language"},
       {"tl_video/achievements/label", "Achievements"},
       {"tl_video/vsync/label", "Vertical Sync"},
@@ -439,6 +442,7 @@ bool OnSettingsNavigation(PPCContext& ctx, uint8_t* base, uint32_t handler, uint
     if (window && window == g_column.focus[i]) row = i;
   }
   if (row < 0) return false;
+  if (const uint32_t max_msaa = live::MaxMsaa()) g_column.model->SetMaxMsaa(max_msaa);
   bool changed = false;
   if (action == ui::navigation::kActionLeft || action == ui::navigation::kActionRight) {
     changed = g_column.model->Step(Row(row), action == ui::navigation::kActionLeft ? -1 : +1);

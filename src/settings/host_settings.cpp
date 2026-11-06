@@ -145,6 +145,7 @@ bool RequiresRestart(Setting setting) {
     case Setting::kRenderResolution:
     case Setting::kFpsCap:
     case Setting::kVsync:
+    case Setting::kMsaa:
       return false;
   }
   return false;
@@ -261,6 +262,21 @@ Choices<uint32_t> FpsCapChoices(const Capabilities& caps) {
   return choices;
 }
 
+Choices<uint32_t> MsaaChoices(const Capabilities& caps) {
+  Choices<uint32_t> choices;
+  for (const uint32_t samples : {0u, 2u, 4u}) {
+    if (!caps.max_msaa || samples <= caps.max_msaa) choices.values.push_back(samples);
+  }
+  choices.enabled = choices.values.size() > 1;
+  return choices;
+}
+
+uint32_t EffectiveMsaa(const HostSettings& settings, const Capabilities& caps) {
+  if (settings.msaa < 2) return 0;
+  if (!caps.max_msaa) return settings.msaa;
+  return caps.max_msaa < 2 ? 0 : std::min(settings.msaa, caps.max_msaa);
+}
+
 uint32_t EffectiveFpsCap(const HostSettings& settings, const Capabilities& caps) {
   if (settings.fps_cap != kFpsCapAuto) return settings.fps_cap;
   if (!caps.any_vblank_rate || caps.steam_deck || caps.on_battery || caps.display_hz <= 60) {
@@ -363,6 +379,7 @@ HostSettings Normalize(const HostSettings& settings, const Capabilities& caps) {
   if (!Contains(FpsCapChoices(caps).values, out.fps_cap)) out.fps_cap = HostSettings{}.fps_cap;
   if (!Contains(caps.languages, out.language)) out.language.clear();
   if (!Contains(AspectChoices(caps).values, out.aspect)) out.aspect = Aspect::kAuto;
+  if (out.msaa != 0 && out.msaa != 2 && out.msaa != 4) out.msaa = HostSettings{}.msaa;
   return out;
 }
 
@@ -494,6 +511,10 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
     } else if (key == "vsync") {
       ok = value == "true" || value == "false";
       if (ok) settings.vsync = value == "true";
+    } else if (key == "msaa") {
+      uint32_t samples = 0;
+      ok = ParseUint(value, samples) && (samples == 0 || samples == 2 || samples == 4);
+      if (ok) settings.msaa = samples;
     } else {
       warn(line_number, "unknown key \"" + std::string(key) + "\"");
       continue;
@@ -522,6 +543,9 @@ std::string Serialize(const HostSettings& settings) {
                                           : std::to_string(settings.fps_cap))
       << "\n"
       << "vsync = " << (settings.vsync ? "true" : "false") << "\n"
+      << "# Multisampling (antialiasing) of the game's frame: 0 (off), 2 (the Xbox 360's, the\n"
+      << "# default) or 4 samples.\n"
+      << "msaa = " << settings.msaa << "\n"
       << "# Game language (\"en\", \"de\", \"fr\", \"es\"...); takes effect after a restart.\n"
       << "language = " << Quote(settings.language) << "\n"
       << "# Aspect ratio of the game's frame: \"auto\" (the display's), \"4:3\", \"16:10\",\n"
