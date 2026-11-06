@@ -227,6 +227,33 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   benches (local scripts) also record a perf profile when a start waits like this before the
   first menu.
 
+## Known, open: a start stalled inside SDL's audio open (offscreen, not reproduced)
+
+- **What happened:** one of 11 offscreen runs of the low quality branch (2026-11-06; xvfb, x11
+  forced, `XDG_RUNTIME_DIR` unset, no audio server reachable) never got past the guest's startup.
+  Its log matches the passing runs line for line up to the APU's start; there the passing runs log
+  `[apu] SDL_OpenAudioDeviceStream() failed: ALSA: Couldn't open audio device: Host is down` and
+  go on without sound, while the stalled run's guest thread logs nothing more. The render thread
+  went on (its last line, `live: depth discard on`, is not where the guest stopped). run_capped
+  killed it after 300 s. No stack was taken.
+- **Hypothesis:** the guest thread blocked inside SDL 3.4's audio open, here ALSA's default device
+  through `99-pipewire-default.conf` with no PipeWire to reach. The SDK opens the device
+  synchronously on the guest thread with no timeout (`SDL_InitSubSystem(SDL_INIT_AUDIO)` and
+  `SDL_OpenAudioDeviceStream` in `src/audio/sdl/sdl_audio_driver.cpp`, `SDLAudioDriver::Initialize`),
+  so an open that never returns stops the game's start. Not a full `/tmp`: the run had no write
+  error.
+- **Not reproduced:** 20 starts in a row under gdb, in the same conditions, with a watchdog ready
+  to dump every thread: all failed the open in milliseconds and reached the menu. A player's
+  desktop has its audio server and `XDG_RUNTIME_DIR`, where a missing server fails as fast; the
+  case left is a server that is up but hung, which leaves the whole system without sound.
+- **Fix proposed, not done (the owner's call, 2026-11-06):** an SDK patch that opens the device on a
+  helper thread and waits for it with a timeout (about 5 s); when it runs out the game goes on
+  without sound and logs it ("audio device did not answer in 5 s; continuing without sound"), and
+  a late result is dropped without SDL's audio ever being used from two threads. Kept out for now
+  because it adds threads to the SDK's audio start for a case not seen again. To take up if a
+  player reports a start that hangs with no sound.
+- **Covered now:** offscreen runs set `SDL_AUDIO_DRIVER=dummy`, so they never open a real device.
+
 ## `develop` never drew on Android: the A2 branch was never merged
 
 - **What happened:** the backend's GLES programs (`android/a2-gles`, b197117: the backend's
