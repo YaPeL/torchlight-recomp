@@ -479,7 +479,9 @@ void SetupPages::ReadyPage() {
   ui_.Heading(Tr(kTextPageReady), "");
   ImGui::BeginChild("body", ImVec2(0, ui_.BodyHeight()), ImGuiChildFlags_NavFlattened);
   // Asked every frame: a pad plugged in now gives the start back.
-  const bool no_pad = config_.steam_deck && !RealPadConnected();
+  const bool no_pad = config_.steam_deck && !(config_.real_pad_connected
+                                                  ? config_.real_pad_connected()
+                                                  : RealPadConnected());
   ui_.Wrapped(Tr(no_pad ? kTextReadyDeck : kTextReady));
   ImGui::EndChild();
   // One button whichever its label, so a pad plugged in or out here keeps its focus.

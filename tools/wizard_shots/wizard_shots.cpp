@@ -142,6 +142,7 @@ int RunSetup(const Options& options, const SetupRun& run) {
   config.browse_from = run.sample_root;
   config.test_install_delay_ms = run.install_delay;
   config.steam_deck = run.deck;
+  config.real_pad_connected = [] { return false; };  // a pad on this machine is not the Deck's
   if (!run.storage.empty()) {
     fs::create_directories(portable.parent_path());
     // Another portable folder, and files in the tests' user folders, to copy from.

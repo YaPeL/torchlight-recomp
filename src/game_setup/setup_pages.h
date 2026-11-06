@@ -42,6 +42,9 @@ struct SetupConfig {
   // A Steam Deck: with no pad the game would hear, the Ready page says how to play and closes
   // instead of starting the game (completed(), start_game() false).
   bool steam_deck = false;
+  // Whether a pad the game would hear is connected; empty: SDL's gamepads, the script's simulated
+  // one left out. A test's own answer, so a pad on the machine running it does not change the page.
+  std::function<bool()> real_pad_connected;
 };
 
 class SetupPages : public wizard::Pages {
