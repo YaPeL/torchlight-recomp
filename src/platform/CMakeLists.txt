@@ -93,6 +93,15 @@ target_compile_definitions(torchlight_user_folders PRIVATE
 target_include_directories(torchlight_user_folders PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(torchlight_user_folders PUBLIC cxx_std_23)
 target_compile_options(torchlight_user_folders PRIVATE -Wall -Wextra)
+# Every test executable's own temporary user folders when run outside ctest (test_user_folders.h);
+# the top CMakeLists.txt links it into each of them.
+add_library(torchlight_test_user_folders OBJECT test_user_folders.cpp)
+target_include_directories(torchlight_test_user_folders PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_test_user_folders PUBLIC cxx_std_23)
+target_compile_options(torchlight_test_user_folders PRIVATE -Wall -Wextra -Werror)
+if(WIN32)
+    target_link_libraries(torchlight_test_user_folders INTERFACE shell32)  # CommandLineToArgvW
+endif()
 target_include_directories(torchlight_platform PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_include_directories(torchlight_platform PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_features(torchlight_platform PUBLIC cxx_std_23)
@@ -141,6 +150,16 @@ add_executable(user_folders_test user_folders_test.cpp)
 target_link_libraries(user_folders_test PRIVATE torchlight_user_folders)
 target_compile_options(user_folders_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME user_folders_test COMMAND user_folders_test)
+
+# A test executable run by hand gets folders of its own (test_user_folders.h): the probe run
+# outside ctest's folders, with and without --real_user_folders (cmake/check_test_user_folders.cmake).
+add_executable(test_user_folders_test test_user_folders_test.cpp)
+target_link_libraries(test_user_folders_test PRIVATE torchlight_user_folders)
+target_compile_options(test_user_folders_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME test_user_folders_test COMMAND ${CMAKE_COMMAND}
+         -DPROBE=$<TARGET_FILE:test_user_folders_test>
+         -DWORK=${CMAKE_CURRENT_BINARY_DIR}/test-user-folders
+         -P ${CMAKE_SOURCE_DIR}/cmake/check_test_user_folders.cmake)
 
 add_executable(storage_mode_test storage_mode_test.cpp)
 target_link_libraries(storage_mode_test PRIVATE torchlight_user_folders)

@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "commands/serialize.h"
+#include "platform/test_user_folders.h"
 
 namespace {
 
@@ -104,7 +105,9 @@ void TestCaptureFile(const char* path) {
 int main(int argc, char** argv) {
   TestOwnership();
   TestWire();
-  for (int i = 1; i < argc; ++i) TestCaptureFile(argv[i]);
+  for (int i = 1; i < argc; ++i) {
+    if (!torchlight::platform::IsRealUserFoldersFlag(argv[i])) TestCaptureFile(argv[i]);
+  }
   std::printf("command_storage_test: Command %zu bytes, SetGammaRamp %zu; %s\n", sizeof(Command),
               sizeof(SetGammaRamp), failures ? "FAILED" : "OK");
   return failures ? 1 : 0;

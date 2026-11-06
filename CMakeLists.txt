@@ -615,6 +615,38 @@ elseif(WIN32)
     install(TARGETS replay RUNTIME DESTINATION . COMPONENT tools EXCLUDE_FROM_ALL)
 endif()
 
+# Every test executable (an executable named *_test, and the tools run as tests listed here) links
+# torchlight_test_user_folders (platform/test_user_folders.h): run by hand, outside ctest, it still
+# gets user folders of its own, in a temporary folder, unless --real_user_folders is on its command
+# line. Added here to every one of them, so a new test cannot leave it out.
+set(TORCHLIGHT_TEST_TOOLS wizard_shots)
+function(torchlight_collect_executables directory out)
+    get_property(targets DIRECTORY "${directory}" PROPERTY BUILDSYSTEM_TARGETS)
+    set(executables)
+    foreach(target IN LISTS targets)
+        get_target_property(type ${target} TYPE)
+        if(type STREQUAL "EXECUTABLE")
+            list(APPEND executables ${target})
+        endif()
+    endforeach()
+    get_property(subdirectories DIRECTORY "${directory}" PROPERTY SUBDIRECTORIES)
+    foreach(subdirectory IN LISTS subdirectories)
+        # The project's own folders, not a dependency built from source (the SDK's own tests).
+        if(NOT subdirectory MATCHES "^${CMAKE_SOURCE_DIR}/(src|tools|tests)/")
+            continue()
+        endif()
+        torchlight_collect_executables("${subdirectory}" sub_executables)
+        list(APPEND executables ${sub_executables})
+    endforeach()
+    set(${out} "${executables}" PARENT_SCOPE)
+endfunction()
+torchlight_collect_executables("${CMAKE_SOURCE_DIR}" _executables)
+foreach(_executable IN LISTS _executables)
+    if(_executable MATCHES "_test$" OR _executable IN_LIST TORCHLIGHT_TEST_TOOLS)
+        target_link_libraries(${_executable} PRIVATE torchlight_test_user_folders)
+    endif()
+endforeach()
+
 # No test writes to the user's folders: every test runs with TORCHLIGHT_TEST_USER_FOLDERS pointing
 # to a folder of the build tree (platform/user_folders.h puts every user folder below it, on every
 # platform), created empty before the suite and removed after it. The cleanup also fails if the

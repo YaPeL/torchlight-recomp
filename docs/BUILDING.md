@@ -236,6 +236,12 @@ platform; nothing else uses that variable), created empty before the suite and r
 `test_home_check` fails if the real `TorchlightRecomp` folders gained anything meanwhile (their
 `logs/` aside, which a running game writes to).
 
+Run by hand, outside ctest, a test executable still keeps away from them: every one (each `*_test`
+executable, and `wizard_shots`) links `platform/test_user_folders.cpp`, which before `main` points
+`TORCHLIGHT_TEST_USER_FOLDERS` at a new temporary folder of its own, removed when it exits. Only
+`--real_user_folders` on its command line makes it use the real folders
+(`test_user_folders_test` checks both).
+
 The user's folders are named `TorchlightRecomp` (so they do not collide with the PC game's):
 `~/.config/TorchlightRecomp/` (settings, the runtime's `torchlight.toml`),
 `~/.local/state/TorchlightRecomp/logs/`, `~/.cache/TorchlightRecomp/` (shaders, layouts) and
