@@ -29,6 +29,10 @@ Off = Aus
 Shadows = Schatten
 360 (512) on restart = 360 (512) nach Neustart
 PC (1024) on restart = PC (1024) nach Neustart
+Performance (weak devices) = Leistung (schwache Geräte)
+Low = Niedrig
+Low on restart = Niedrig nach Neustart
+Xbox 360 on restart = Xbox 360 nach Neustart
 
 [fr]
 Video = Vidéo
@@ -56,6 +60,10 @@ Off = Désactivé
 Shadows = Ombres
 360 (512) on restart = 360 (512) après relance
 PC (1024) on restart = PC (1024) après relance
+Performance (weak devices) = Performances (petites machines)
+Low = Bas
+Low on restart = Bas après relance
+Xbox 360 on restart = Xbox 360 après relance
 
 [es]
 Video = Video
@@ -83,3 +91,7 @@ Off = Desactivado
 Shadows = Sombras
 360 (512) on restart = 360 (512) al reiniciar
 PC (1024) on restart = PC (1024) al reiniciar
+Performance (weak devices) = Rendimiento (equipos modestos)
+Low = Bajo
+Low on restart = Bajo al reiniciar
+Xbox 360 on restart = Xbox 360 al reiniciar

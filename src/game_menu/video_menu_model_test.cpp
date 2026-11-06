@@ -190,8 +190,8 @@ void TestPadPrompts() {
 void TestSections() {
   int count[kSectionCount] = {};
   for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
-  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 4,
-        "six video rows, two controls, four extras");
+  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 5,
+        "six video rows, two controls, five extras");
   Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
             SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
         "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
@@ -342,11 +342,31 @@ void TestShadowResolution() {
         "back to 512 also on restart");
 }
 
+void TestLowQuality() {
+  VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
+  Check(m.Text(Row::kLowQuality) == "Xbox 360" && m.Enabled(Row::kLowQuality), "off by default");
+  Check(SectionOf(Row::kLowQuality) == Section::kExtras, "in the extras section");
+  Check(!m.Step(Row::kLowQuality, -1), "Xbox 360 is first");
+  Check(m.Step(Row::kLowQuality, +1) && m.settings().low_quality, "right: low");
+  Check(m.Text(Row::kLowQuality) == "Low on restart" && m.RestartNeeded(),
+        "not in effect until a restart, and the row says so");
+  Check(!m.Step(Row::kLowQuality, +1), "low is last");
+  Check(m.Step(Row::kLowQuality, -1) && m.Text(Row::kLowQuality) == "Xbox 360" && !m.RestartNeeded(),
+        "back to what runs: no restart");
+  HostSettings low;
+  low.low_quality = true;
+  VideoMenuModel running(Desktop(), low, low);
+  Check(running.Text(Row::kLowQuality) == "Low", "low in effect");
+  Check(running.Step(Row::kLowQuality, -1) && running.Text(Row::kLowQuality) == "Xbox 360 on restart",
+        "back to the 360's also on restart");
+}
+
 }  // namespace
 
 int main() {
   TestMsaa();
   TestShadowResolution();
+  TestLowQuality();
   TestResolution();
   TestResolutionWithPreferredStart();
   TestFpsAndVsync();

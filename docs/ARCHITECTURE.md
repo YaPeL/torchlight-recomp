@@ -201,7 +201,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
 - `src/game_menu/`: the host's settings inside the game's settings menu (only mode), as a column to
   the right of its rows, in its style, in three sections picked by red buttons on top (Video:
   resolution, aspect, frame rate cap, antialiasing, shadows, vsync; Controls: button prompts and the
-  A/B swap; Extras: language, achievements, renderer and GPU). It is all the game's own UI:
+  A/B swap; Extras: language, achievements, renderer, GPU and the low quality mode). It is all the
+  game's own UI:
   - the layout is ours (`data/ui/tl_video_settings.uilayout`, copied next to the executable) and only
     references widget types, fonts and imagesets from the pak; the guest sees it through a VFS device
     (`tlhost:`) added as an OGRE `FileSystem` location after `resources.cfg`;
@@ -225,12 +226,19 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     be read (`SAVE:\` is not mounted yet), so its first-start defaults always set 512. A hook on
     that setup (`hooks/shadow_resolution_hooks.cpp`) sets the host's size through the game's own
     setter first; 512 leaves the game alone. Two 1024 targets do not fit in the guest D3D's EDRAM
-    next to the frame and are created aliased (EDRAM aliasing, below), so only mode. A change applies after a restart, and the row says so
+    next to the frame and are created aliased (EDRAM aliasing, below), so only mode;
+  - low quality (`low_quality`, off by default as on the 360) is the game's NETBOOK MODE, offered
+    for weak devices: far clip and object distance 45 instead of 90, fog factor 1.0 instead of 1.3,
+    a closer camera and lighter per-unit and per-level drawing (on the POCO X7, `fight.txt`: 9 %
+    less of the game thread's work per frame). The game keeps it in its settings table, set by its
+    first-start defaults and read again from `local_settings.txt` each time the main menu is
+    entered, and saves it; a hook after both (`hooks/low_quality_hooks.cpp`) sets the host's value,
+    on or off. It applies after a restart, and the row says so until then. A change applies after a restart, and the row says so
     until then;
   - changes apply immediately (scale, vsync and multisampling through a request to the backend
     thread, the cap
     through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button
-    prompts, the A/B swap and shadows show the restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
+    prompts, the A/B swap, shadows and low quality show the restart notice. The model (`video_menu_model`) does not depend on the guest and has tests;
   - the labels and the word values are translated with `data/ui/tl_video_strings.txt` (de, fr, es;
     written by us: the game does not have those texts) into the language the runtime reports;
   - the GPU (Linux only for now) is chosen before GL is loaded: the driver variables

@@ -365,6 +365,26 @@ inline constexpr uint32_t kShadowResolutionIndex = 0x83558E88;
 // (kept at this+40, @0x822101B0; read back @0x82210810). Its only caller is sub_8220A750
 // (@0x8220A7AC), during the game's startup; the size is read nowhere else.
 inline constexpr GuestFunction kProjectorSetup{0x82210148, Confidence::kConfirmed};
+// [confirmed] The settings table's vtable (stored by its constructor sub_823DEF18 @0x823DEFD8):
+// slot 1 save (0x82397C28), slot 2 load (kLoad). The load function is shared with other tables
+// (resourceconfig.dat's vtable 0x820C7694), so a hook on it tells the settings table by this.
+inline constexpr uint32_t kTableVtable = 0x820D6FE0;
+// [confirmed] load(table r3, path r4): reads settings.txt (this+36 for an empty path), then
+// local_settings.txt (this+64) if this+80 is set (sub_82397EB8 @0x823981DC, @0x82398200); returns
+// 1/0 with plain blr (@0x82398214, @0x8239822C, @0x82398244). Called through the vtable at boot
+// (sub_823DD110 @0x823DD218) and, once SAVE:\ is mounted, by the save menu each time the main menu
+// is entered or shown (sub_82387580 @0x82387854).
+inline constexpr GuestFunction kLoad{0x823981C8, Confidence::kConfirmed};
+// [confirmed] The first-start defaults (table r3), run when the boot load fails (always on the
+// recomp: SAVE:\ is not mounted at boot): sets NETBOOK MODE from the GPU's name (@0x823E1138), FSAA,
+// SHADOWRESOLUTION 512 and others through kSetInt.
+inline constexpr GuestFunction kFirstStartDefaults{0x823E1040, Confidence::kConfirmed};
+// [confirmed] The global holding NETBOOK MODE's index (registered by sub_823DEF18 at 0x823DF72C).
+// Read live: every frame by the camera follow (sub_821E5910: object distance in sub_821FF080
+// @0x821FF260, camera distance in sub_821F0720 @0x821F138C) and by the per-unit update
+// (sub_821AF868 @0x821AF878); at level load by the camera's far clip and fog (sub_8221A130), the
+// level's generation (sub_822F0058 @0x822F0E1C) and population (sub_822ED030 @0x822ED704).
+inline constexpr uint32_t kNetbookModeIndex = 0x83558EEC;
 }  // namespace game_settings
 
 }  // namespace torchlight::guest_abi::functions

@@ -83,7 +83,8 @@ Column g_column;
 
 // Row names in the layout (tl_video_settings.uilayout), in Row order.
 constexpr const char* kRowNames[kRowCount] = {"resolution",   "aspect",      "fps_cap", "msaa", "shadows",  "language",
-                                              "achievements", "pad_prompts", "vsync",   "swap", "renderer", "gpu"};
+                                              "achievements", "pad_prompts", "vsync",   "swap", "renderer", "gpu",
+                                              "low_quality"};
 // Section button names in the layout, in Section order.
 constexpr const char* kSectionNames[kSectionCount] = {"video", "controls", "extras"};
 // The menu's yellow, for values and the chosen section's button; white for the others.
@@ -397,6 +398,7 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
       {"tl_video/fps_cap/label", "Frame Rate Limit"},
       {"tl_video/msaa/label", "Antialiasing"},
       {"tl_video/shadows/label", "Shadows"},
+      {"tl_video/low_quality/label", "Performance (weak devices)"},
       {"tl_video/language/label", "Language"},
       {"tl_video/achievements/label", "Achievements"},
       {"tl_video/vsync/label", "Vertical Sync"},

@@ -68,6 +68,12 @@ struct HostSettings {
   // game reads it once when it creates them at startup (sub_82210148 @0x8221081C): takes effect
   // after a restart.
   uint32_t shadow_resolution = 512;
+  // The game's NETBOOK MODE, a lighter frame for weak devices: off as on the 360 (its first-start
+  // defaults set it only for Intel integrated GPUs, sub_823E1040 @0x823E1138). On: far clip and
+  // object distance 45 instead of 90, fog factor 1.0 instead of 1.3, a closer camera, and lighter
+  // per-unit and per-level drawing (hooks/low_quality_hooks.cpp). The host sets it every time the
+  // game reads its settings: takes effect after a restart.
+  bool low_quality = false;
   // Game language code ("en", "de", "fr", "es"...); empty = the runtime's default.
   std::string language;
   // Aspect ratio of the game's frame (only mode).
@@ -129,7 +135,7 @@ struct Capabilities {
 // Settings the menu shows. Changing one of these takes effect after restarting the game.
 enum class Setting {
   kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements, kPadPrompts,
-  kSwapConfirmCancel, kMsaa, kShadowResolution
+  kSwapConfirmCancel, kMsaa, kShadowResolution, kLowQuality
 };
 bool RequiresRestart(Setting setting);
 // The achievement set in effect: the setting, or Xbox when it is missing or invalid.

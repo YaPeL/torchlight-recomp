@@ -104,6 +104,10 @@ bool VideoMenuModel::Step(Row row, int direction) {
     }
     case Row::kShadowResolution:
       return StepIn(settings::ShadowResolutionChoices().values, current_.shadow_resolution, direction);
+    case Row::kLowQuality:
+      if (current_.low_quality == (direction > 0)) return false;
+      current_.low_quality = direction > 0;
+      return true;
     case Row::kAchievements: {
       // An explicit choice from here on, also when it was the default.
       settings::AchievementSet shown = settings::EffectiveAchievements(current_);
@@ -210,6 +214,12 @@ std::string VideoMenuModel::Text(Row row) const {
       if (current_.shadow_resolution != startup_.shadow_resolution) text += " on restart";
       return text;
     }
+    case Row::kLowQuality: {
+      // Read by the game when it loads its settings: a choice not yet in effect says so.
+      std::string text = current_.low_quality ? "Low" : "Xbox 360";
+      if (current_.low_quality != startup_.low_quality) text += " on restart";
+      return text;
+    }
     case Row::kAchievements:
       return settings::EffectiveAchievements(current_) == settings::AchievementSet::kPc
                  ? "PC"
@@ -261,6 +271,7 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kFpsCap: return settings::FpsCapChoices(caps_).enabled;
     case Row::kMsaa: return settings::MsaaChoices(caps_).enabled;
     case Row::kShadowResolution: return settings::ShadowResolutionChoices().enabled;
+    case Row::kLowQuality: return true;
     case Row::kAchievements: return true;
     case Row::kLanguage: return settings::LanguageChoices(caps_).enabled;
     case Row::kRenderer:
@@ -301,6 +312,7 @@ bool VideoMenuModel::RestartNeeded() const {
          current_.render_system != startup_.render_system || current_.gpu != startup_.gpu ||
          current_.aspect != startup_.aspect ||
          current_.shadow_resolution != startup_.shadow_resolution ||
+         current_.low_quality != startup_.low_quality ||
          settings::EffectiveAchievements(current_) != settings::EffectiveAchievements(startup_) ||
          current_.pad_prompts != startup_.pad_prompts ||
          current_.swap_confirm_cancel != startup_.swap_confirm_cancel;
@@ -315,6 +327,7 @@ Section SectionOf(Row row) {
     case Row::kAchievements:
     case Row::kRenderer:
     case Row::kGpu:
+    case Row::kLowQuality:
       return Section::kExtras;
     default:
       return Section::kVideo;
