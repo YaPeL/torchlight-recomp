@@ -237,7 +237,9 @@ bool WatchCounts(void* count, SDL_Event*) {
 }
 
 int RunWithSdlUp(const Options& options, const std::function<int()>& run) {
-  if (!options.video.empty()) SDL_SetHint(SDL_HINT_VIDEO_DRIVER, options.video.c_str());
+  // Over the environment's SDL_VIDEO_DRIVER: --video offscreen must not open windows.
+  if (!options.video.empty())
+    SDL_SetHintWithPriority(SDL_HINT_VIDEO_DRIVER, options.video.c_str(), SDL_HINT_OVERRIDE);
   if (!SDL_InitSubSystem(SDL_INIT_VIDEO)) {
     std::fprintf(stderr, "wizard_shots: no SDL: %s\n", SDL_GetError());
     return 2;
