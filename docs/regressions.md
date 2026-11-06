@@ -6,6 +6,28 @@ what happened, which layer should have caught it, and what catches it now (a tes
 checklist item of the pre-release passes). A new entry is added when a bug is found that late; the
 lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
 
+## The hero stood still in the town's first cutscene (a bug of the original 360 game, fixed)
+
+- **What happened:** in the cutscene after the first fight, the town layout walks the hero to Syl
+  with two Pathing nodes (`PlayerWalksHalfway`, then `PlayerWalksOverToSyl` when Syl's collapse
+  animation stops). On the PC game he walks; on the recomp, as in a video of the original 360 game,
+  he stood still. Reported by the owner; reproduced in a hand run (2026-11-06).
+- **Cause:** the cutscene starts when the hero enters a trigger, usually while the player still
+  holds the attack. The pad's attack sets the hero's hold-position flag (unit +0x1FE); the client
+  update sets that flag from the held input on unlocked frames only, and the cutscene locks the
+  input, so it stays set. The game's moveTo refuses to move a unit with the flag set, so each path
+  is dropped the frame it starts. PC Torchlight has the same flag and the same moveTo test, but only
+  its stand-in-place key sets it, so a mouse player never meets it. Addresses in
+  `src/guest_abi/guest_functions.h` (`player_input`).
+- **Should have been caught by:** nothing of ours: the original 360 game does the same.
+- **Covered now:** `hooks/held_input_hooks.cpp` clears the flag after the client update while the
+  game's own input lock answers locked, as the game's own input release does, and logs
+  `input: the hero's hold position released while the input is locked`. Checked offscreen with the
+  same pad recording on develop and on the fix (attack held when the trigger fires, and not): with
+  the attack held, the hero stood still through both paths on develop and walked both on the fix;
+  without it, both builds walk the same route and the hook stays silent; with the attack held until
+  the input came back, the hero held position as usual and walked when it was released.
+
 ## The macOS outliner's piece taken for a bypass by the binding check (caught before a release)
 
 - **What happened:** with the PGO profile, AppleClang's machine outliner moved the hook
