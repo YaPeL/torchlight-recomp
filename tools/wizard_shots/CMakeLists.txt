@@ -17,6 +17,8 @@ if(NOT ANDROID)
   add_test(NAME wizard_shots_setup_file COMMAND ${CMAKE_COMMAND} -E touch "${sample}/A file.txt")
   set_tests_properties(wizard_shots_setup wizard_shots_setup_file PROPERTIES
                        FIXTURES_SETUP wizard_shots_sample)
+  # The file goes into a folder the first one makes: never before it under ctest -j.
+  set_tests_properties(wizard_shots_setup_file PROPERTIES DEPENDS wizard_shots_setup)
   set(common --video offscreen --shots "${shots}" --browse_from "${sample}" --scale 1)
   add_test(NAME wizard_shots_tour COMMAND wizard_shots --script
            "${CMAKE_CURRENT_SOURCE_DIR}/tour.txt" ${common})
@@ -26,17 +28,17 @@ if(NOT ANDROID)
   set(setup --pages setup --video offscreen --scale 1)
   add_test(NAME wizard_shots_setup_tour COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_tour.txt" --shots "${shots}"
-           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-tour" --install_delay 200 --expect installed)
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-tour" --install_frames 12 --expect installed)
   add_test(NAME wizard_shots_setup_cancel COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_cancel.txt" --shots "${shots}"
-           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-cancel" --install_delay 2000 --expect none)
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-cancel" --install_frames 120 --expect none)
   add_test(NAME wizard_shots_setup_package COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_package.txt" --shots "${shots}"
-           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-package" --install_delay 200 --expect installed)
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-package" --install_frames 12 --expect installed)
   # As a Steam Deck with no pad (a pad on the machine running it is not counted).
   add_test(NAME wizard_shots_setup_deck COMMAND wizard_shots ${setup}
            --script "${CMAKE_CURRENT_SOURCE_DIR}/setup_deck.txt" --shots "${shots}"
-           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-deck" --install_delay 200
+           --sample_root "${CMAKE_CURRENT_BINARY_DIR}/setup-deck" --install_frames 12
            --width 1280 --height 800 --deck 1 --expect deck-closed)
   set(setup_tests wizard_shots_setup_tour wizard_shots_setup_cancel wizard_shots_setup_package
       wizard_shots_setup_deck)
@@ -54,7 +56,7 @@ if(NOT ANDROID)
     add_test(NAME wizard_shots_storage_${name} COMMAND wizard_shots ${setup}
              --script "${CMAKE_CURRENT_SOURCE_DIR}/storage_${name}.txt" --shots "${shots}"
              --sample_root "${CMAKE_CURRENT_BINARY_DIR}/storage-${name}" --storage ${mode}
-             --user_data ${user_data} --expect ${expect} --install_delay 300)
+             --user_data ${user_data} --expect ${expect} --install_frames 18)
     list(APPEND setup_tests wizard_shots_storage_${name})
   endforeach()
   foreach(language es de fr)

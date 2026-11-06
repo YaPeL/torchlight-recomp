@@ -38,7 +38,9 @@ struct SetupConfig {
   Translate translate;
   bool own_browser_only = false;       // never the system's picker (a script's run)
   std::filesystem::path browse_from;   // the browser's first folder; empty: the home folder
-  int test_install_delay_ms = 0;       // a test's slower work, to see its page
+  // A test's slower work, to see its page: each step of it waits until the working page has been
+  // drawn this many more frames (frames, not time: a loaded machine cannot skip the page).
+  int test_install_frames = 0;
   // A Steam Deck: with no pad the game would hear, the Ready page says how to play and closes
   // instead of starting the game (completed(), start_game() false).
   bool steam_deck = false;
@@ -77,6 +79,7 @@ class SetupPages : public wizard::Pages {
   void StoragePage();
   void SourceBrowserPage();
   void StartCopy(std::vector<platform::CopySource> sources);
+  void WaitTestFrames();
   void ApplyStorage(bool portable, bool way_back);
   void GamePage();
   void BrowserPage();
@@ -101,6 +104,7 @@ class SetupPages : public wizard::Pages {
   std::thread worker_;
   std::atomic<bool> cancel_{false}, finished_{false};
   std::atomic<int> phase_{0};
+  std::atomic<int> working_frames_{0};  // frames the working page drew (test_install_frames)
   std::atomic<uint64_t> done_{0}, total_{0};
   InstallResult result_;
   bool copying_ = false;  // the work is the copy, not the install
