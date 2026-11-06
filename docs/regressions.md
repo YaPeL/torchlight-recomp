@@ -255,10 +255,8 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   a late result is dropped without SDL's audio ever being used from two threads. Kept out for now
   because it adds threads to the SDK's audio start for a case not seen again. To take up if a
   player reports a start that hangs with no sound.
-- **Covered now:** nothing in the repository. The agents' own offscreen recipe (not in the
-  repository, like the rest of that recipe: `env -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR
-  SDL_VIDEO_DRIVER=x11 GDK_BACKEND=x11` under xvfb) now also sets `SDL_AUDIO_DRIVER=dummy`, so those
-  runs never open a real device.
+- **Covered now:** in the code, nothing. The agents' offscreen recipe (`AGENTS.md`, Game runs)
+  sets `SDL_AUDIO_DRIVER=dummy`, so those runs never open a real device.
 
 ## `develop` never drew on Android: the A2 branch was never merged
 
