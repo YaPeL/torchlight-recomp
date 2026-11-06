@@ -249,6 +249,46 @@ int main() {
     Check(gr::Collect(c.m, kSystem, s) == Reason::kUnwalkable, "a negative count: unwalkable");
   }
 
+  // Deep trees: a chain of visible windows as deep as the walk's bound is collected; one deeper is
+  // not decided and rebuilds (a window past the bound must never count as hidden).
+  for (const int length : {gr::kMaxDepth, gr::kMaxDepth + 1, gr::kMaxDepth + 6}) {
+    Tree c;
+    uint32_t parent = 0;
+    for (int i = 0; i < length; ++i) {
+      const uint32_t w = 0x100000 + 0x1000 * uint32_t(i);
+      c.Window(w, parent, true);
+      parent = w;
+    }
+    c.Sheet(0x100000);
+    gr::State s;
+    const Reason r = gr::Collect(c.m, kSystem, s);
+    if (length <= gr::kMaxDepth) {
+      Check(r == Reason::kSkip && s.drawn.size() == size_t(length),
+            "a chain as deep as the bound: every window collected");
+    } else {
+      Check(r == Reason::kUnwalkable, "a chain deeper than the bound: unwalkable, so rebuilt");
+    }
+  }
+  {
+    // The sheet itself under a parent chain longer than the bound.
+    Tree c;
+    uint32_t parent = 0;
+    for (int i = 0; i < gr::kMaxDepth + 2; ++i) {
+      const uint32_t w = 0x100000 + 0x1000 * uint32_t(i);
+      c.Window(w, parent, false);
+      parent = w;
+    }
+    c.Sheet(parent);
+    gr::State s;
+    Check(gr::Collect(c.m, kSystem, s) == Reason::kUnwalkable,
+          "a sheet under a chain deeper than the bound: unwalkable");
+  }
+
+  // The quad list's size is part of the state.
+  t.m.words[kRenderer + ui::kRendererQuadListSize.offset] = 7;
+  Check(Step(t, last, have) == Reason::kChanged, "the quad list's size differs: rebuild");
+  Check(Step(t, last, have) == Reason::kSkip, "then: skip");
+
   // No active sheet, or a hidden one: nothing drawn, which is a state too.
   t.Sheet(0);
   Check(Step(t, last, have) == Reason::kChanged, "the sheet gone: rebuild (the list clears)");

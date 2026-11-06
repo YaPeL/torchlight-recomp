@@ -19,6 +19,24 @@
 // would at that point of the frame), and then compared like any other; a reader that cannot
 // refresh makes it a rebuild.
 //
+// What the rule assumes. The render cache holds pointers the draw follows on every rebuild: each
+// image's CEGUI Image (Image::draw reads its area and offset, scaled by its Imageset), each text's
+// Font (its glyphs' Images), and through them the CEGUI texture (addQuad reads its +29) and the
+// Ogre texture it shares. A change of a texture's content (pixels written in place, a render
+// target drawn again) is drawn the same without a rebuild: the quads only reference the texture.
+// What would need a rebuild is a change of the quads themselves (their UVs, geometry or colours)
+// coming from those objects without the game asking for a redraw: an Image's area or offset, an
+// Imageset's native resolution or auto-scaling, a Font's glyph layout re-packed. The rule does not
+// compare them; the game changes them together with a redraw request (a resolution change goes
+// through the display area, which is compared), and the shadow mode compares the queued quads byte
+// for byte (UVs, positions, colours, texture) against the kept list, which found no such change in
+// any scene (gui_redraw_filter_hooks.cpp). torchlight-nx's mode 3 makes the same assumption. A
+// font's glyphs are rasterised on demand, a 256-code-point page at a time: Font::getGlyphData
+// (sub_821B3C88) tests the page in the loaded-pages bitmap (font +720), sets it and calls the
+// font's slot 3 (rasterise, `ori r5,r4,255` then `lwz r11,12(r6)`), which in CEGUI 0.6 adds
+// imagesets for the new page and leaves the glyphs already drawn where they are; new code points
+// come with new text, which is a redraw.
+//
 // The idea (rebuild only when a drawn window changed) is torchlight-nx's mode 3, whose method of
 // validation (mode 2: rebuild always and compare the quad lists byte for byte) the shadow mode
 // follows: torchlight-nx 1.0.5 (https://github.com/liartes/torchlight-nx, commit 27b6b20,
@@ -45,7 +63,8 @@ enum class Reason : uint8_t {
   kNeedsRedraw,   // a drawn window's render cache is to be filled again
   kRectStale,     // a drawn window with content has a rect cache that could not be computed
   kOverridden,    // a drawn window's render slots are not CEGUI's own
-  kUnwalkable,    // too deep, too many windows, or a child count out of bounds
+  kUnwalkable,    // too deep (a parent chain or the walk), too many windows, a child count out of
+                  // bounds, or a null child
   kChanged,       // the drawn windows, their caches or rects, or the display differ
   kCount,
 };
@@ -76,6 +95,7 @@ struct State {
   uint32_t renderer = 0;
   uint32_t sheet = 0;
   std::array<uint32_t, 6> display{};  // the display area (4 floats) and texel offset (2)
+  uint32_t quads = 0;                  // the quad list's size
   std::vector<Drawn> drawn;
   bool operator==(const State&) const = default;
 };
@@ -89,15 +109,17 @@ namespace detail {
 
 namespace ui = guest_abi::cegui;
 
-// Window::isVisible(false): the window's flag and its parents'.
+// Window::isVisible(false): the window's flag and its parents'. A parent chain longer than the
+// walk's bound (or a cycle) is not decided: the rule then rebuilds.
+enum class Visibility { kHidden, kVisible, kTooDeep };
 template <typename Reader>
-bool Visible(const Reader& r, uint32_t w) {
+Visibility Visible(const Reader& r, uint32_t w) {
   for (int depth = 0; w != 0; ++depth) {
-    if (depth >= kMaxDepth) return false;
-    if (r.u8(w + ui::kWindowVisible.offset) == 0) return false;
+    if (depth >= kMaxDepth) return Visibility::kTooDeep;
+    if (r.u8(w + ui::kWindowVisible.offset) == 0) return Visibility::kHidden;
     w = r.u32(w + ui::kWindowParent.offset);
   }
-  return true;
+  return Visibility::kVisible;
 }
 
 template <typename Reader>
@@ -144,7 +166,13 @@ Reason Collect(const Reader& r, uint32_t system, State& out, uint32_t* culprit =
     out.display[i] = r.u32(out.renderer + ui::kRendererDisplayArea.offset + 4 * i);
   for (uint32_t i = 0; i < 2; ++i)
     out.display[4 + i] = r.u32(out.renderer + ui::kRendererTexelOffset.offset + 4 * i);
-  if (out.sheet == 0 || !detail::Visible(r, out.sheet)) return Reason::kSkip;  // nothing drawn
+  out.quads = r.u32(out.renderer + ui::kRendererQuadListSize.offset);
+  if (out.sheet == 0) return Reason::kSkip;  // nothing drawn
+  switch (detail::Visible(r, out.sheet)) {
+    case detail::Visibility::kHidden: return Reason::kSkip;  // nothing drawn
+    case detail::Visibility::kTooDeep: return Reason::kUnwalkable;
+    case detail::Visibility::kVisible: break;
+  }
 
   // Window::render's recursion, in its order: a window, then its draw list's visible windows.
   struct Frame {
@@ -177,7 +205,12 @@ Reason Collect(const Reader& r, uint32_t system, State& out, uint32_t* culprit =
     const uint32_t child =
         r.u32(r.u32(f.window + ui::kWindowDrawListBegin.offset) + 4 * f.next++);
     if (child == 0) return Reason::kUnwalkable;
-    if (!detail::Visible(r, child)) continue;
+    const detail::Visibility visible = detail::Visible(r, child);
+    if (visible == detail::Visibility::kTooDeep) {
+      if (culprit) *culprit = child;
+      return Reason::kUnwalkable;
+    }
+    if (visible == detail::Visibility::kHidden) continue;
     if (Reason why = enter(child); why != Reason::kSkip) return why;
   }
   return Reason::kSkip;

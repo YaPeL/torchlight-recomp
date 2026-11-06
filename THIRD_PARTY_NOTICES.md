@@ -168,7 +168,7 @@ Microsoft documents (`https://learn.microsoft.com/cpp/windows/deployment-in-visu
 
 ## Notices and license texts
 
-### torchlight-nx (code adapted into this project)
+### torchlight-nx (code adapted, and a design followed)
 
 `src/hooks/native_skeleton.cpp` adapts native implementations of OGRE's node and bone updates from
 [torchlight-nx](https://github.com/liartes/torchlight-nx) by liartes (tag `v1.0.3`, commit

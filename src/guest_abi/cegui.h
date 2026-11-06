@@ -19,15 +19,15 @@ using functions::GuestFunction;
 // ---------------------------------------------------------------------------------------------
 // CEGUI::System.
 // [confirmed] The singleton pointer: Window::render loads it to reach the renderer's z
-// (`lwz r11,26572(r6)` with r6 = 0x83500000, @0x821AFED0).
+// (`lwz r11,26572(r6)` with r6 = 0x83500000, @0x821AFF08).
 inline constexpr uint32_t kSystemGlobal = 0x835067CC;
 // [confirmed] System::renderGUI (sub_821FBC60), as CEGUI 0.6.2's: when the redraw flag is set
-// (`lbz r11,40(r3)`, @0x821FBC70) it resets the renderer's z (`stfs f0,24(r10)`, @0x821FBC8C),
+// (`lbz r11,40(r3)`, @0x821FBC70) it resets the renderer's z (`stfs f0,24(r10)`, @0x821FBC94),
 // enables queueing (renderer slot 9, `lwz r7,36(r8)`), clears the quad list (slot 8,
 // `lwz r5,32(r6)`), renders the active sheet (`lwz r3,48(r31)` then `bl 0x821afea0`, @0x821FBCC0)
 // and clears the flag (`stb r11,40(r31)`, @0x821FBCD4). Then always: doRender (slot 7,
-// `lwz r10,28(r11)`), queueing off, the mouse cursor (sub_82201050) and a Runic addition
-// (sub_821FE020).
+// `lwz r10,28(r11)`), queueing off, the mouse cursor (sub_82201050) and
+// WindowManager::cleanDeadPool (sub_821FE020, `bl 0x821fe020` @0x821FBD18), as CEGUI 0.6.2's.
 inline constexpr GuestFunction kSystemRenderGui{0x821FBC60, Confidence::kConfirmed};
 inline constexpr Field kSystemRenderer{28, Confidence::kConfirmed};  // `lwz r10,28(r3)`
 inline constexpr Field kSystemGuiRedraw{40, Confidence::kConfirmed};
@@ -38,7 +38,7 @@ inline constexpr Field kSystemActiveSheet{48, Confidence::kConfirmed};
 // [confirmed] Window::render (sub_821AFEA0), as CEGUI 0.6.2's: returns unless isVisible(false)
 // (`bl 0x821afe28` with r4 = 0); calls onRenderingStarted (vtable slot 27, `lwz r7,108(r10)`),
 // drawSelf with the renderer's z (slot 58, `lwz r4,232(r5)`, f1 = `lfs f1,24(r30)`), steps the z
-// down (`stfs f12,24(r30)`, @0x821AFF38), renders the children of the draw list in order and calls
+// down (`stfs f12,24(r30)`, @0x821AFF34), renders the children of the draw list in order and calls
 // onRenderingEnded (slot 28, `lwz r10,112(r11)`). The loop's count is the child list's size
 // (`lwz r10,48(r31)`, `lwz r9,44(r31)`, `srawi. r30,r8,2`) and its elements the draw list's
 // (`lwz r11,60(r31)`, `lwzx r3,r11,r29`): both vectors hold the same windows.
@@ -47,7 +47,7 @@ inline constexpr Field kWindowChildrenBegin{44, Confidence::kConfirmed};
 inline constexpr Field kWindowChildrenEnd{48, Confidence::kConfirmed};
 inline constexpr Field kWindowDrawListBegin{60, Confidence::kConfirmed};
 // [confirmed] Window::isVisible(local_only) (sub_821AFE28): the window's flag (`lbz r11,353(r31)`,
-// @0x821AFE64) and, unless local_only, the parent's isVisible (`lwz r3,80(r3)`, @0x821AFE38).
+// @0x821AFE64) and, unless local_only, the parent's isVisible (`lwz r3,80(r3)`, @0x821AFE3C).
 // Also guest_abi game_ui kWindowVisible and kWindowParent.
 inline constexpr Field kWindowParent{80, Confidence::kConfirmed};
 inline constexpr Field kWindowVisible{353, Confidence::kConfirmed};

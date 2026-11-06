@@ -10,12 +10,15 @@
 //
 // The shadow mode (--diag_gui_redraw_shadow, diagnostics builds; torchlight-nx's mode 2): the rule
 // runs on every request and nothing is skipped. When it would skip, the rebuild runs anyway, and
-// is checked twice: the quad list it queues is compared byte for byte with the list of the
-// rebuild the filter would have kept (the last one the rule did not skip; the three padding bytes
-// of each quad left out), and its guest writes, recorded by the store trace from renderGUI's entry
-// to doRender's, must change nothing but the quad list's nodes and the renderer's fields a
-// rebuild sets (diag/store_trace_api.h BeginSection). Every 10 s it logs the frames, requests,
-// those it would skip, lists that differ and unexpected writes; the criterion is zero of both.
+// is checked twice. The quad list it queues is compared byte for byte with the list of the rebuild
+// the filter would have kept (the last one the rule did not skip; the three padding bytes of each
+// quad left out). Its guest writes, recorded by the store trace from renderGUI's entry to
+// doRender's (diag/store_trace_api.h BeginSection), may change only: the chunks of the list nodes
+// the rebuild allocated (the nodes of the final list) and the list's head node, the renderer's
+// fields a rebuild sets and the System's flag, heap blocks the rebuild freed and did not allocate
+// again (dead memory), and the heap allocator's own state; and every block it allocates and keeps
+// must be a node of the list. Every 10 s it logs the frames, requests, those it would skip, lists
+// that differ and unexpected writes; the criterion is zero of both.
 //
 // renderGUI runs on the guest's render thread only: the state here is that thread's.
 
@@ -23,10 +26,12 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <map>
 #include <set>
 #include <string>
+#include <string_view>
 #include <thread>
 #include <vector>
 
@@ -39,6 +44,7 @@
 #include "game_menu/guest_call.h"
 #include "guest_abi/cegui.h"
 #include "guest_abi/game_ui.h"
+#include "guest_abi/guest_heap.h"
 #include "guest_abi/ogre_layout.h"
 #include "hooks/gui_redraw_filter.h"
 #include "hooks/gui_redraw_filter_hooks.h"
@@ -61,6 +67,7 @@ namespace {
 
 namespace abi = torchlight::guest_abi;
 namespace ui = torchlight::guest_abi::cegui;
+namespace heap = torchlight::guest_abi::guest_heap;
 namespace gr = torchlight::hooks::gui_redraw;
 
 // The rule's reader: guest memory, and the rect getters for a stale cache (called as drawSelf
@@ -86,13 +93,23 @@ bool FilterEnabled() {
   return enabled;
 }
 
-// The state after the last rebuild the rule did not skip.
+// The state after the last rebuild the rule did not skip, collected at doRender's entry: what the
+// rebuild queued from (what renderGUI does after it, the cursor and cleanDeadPool, does not count).
 struct Filter {
   gr::State last;
   bool have_last = false;
+  bool collect_at_render = false;  // set for the rebuild under way
+  uint32_t system = 0;
   gr::State now;  // reused
 };
 Filter g_filter;
+
+// The state the rebuild queued from (drawSelf computed every rect it reads: no refresh).
+void CollectLast(uint8_t* base) {
+  Filter& f = g_filter;
+  f.collect_at_render = false;
+  f.have_last = gr::Collect(GuestReader{base, nullptr}, f.system, f.last) == gr::Reason::kSkip;
+}
 
 #if TORCHLIGHT_DIAGNOSTICS
 
@@ -102,8 +119,8 @@ bool ShadowEnabled() {
 }
 
 // The renderer's quad list in order (the multiset's in-order walk), each QuadInfo's bytes with the
-// padding zeroed, and the nodes' addresses (the head's included). False when the walk does not
-// match the list's size.
+// padding zeroed, and the nodes' addresses (the head's first). False when the walk does not match
+// the list's size.
 bool ReadQuads(const uint8_t* base, uint32_t renderer, std::vector<uint8_t>* quads,
                std::vector<uint32_t>* nodes) {
   namespace qn = ui::quad_node;
@@ -148,24 +165,27 @@ bool ReadQuads(const uint8_t* base, uint32_t renderer, std::vector<uint8_t>* qua
 struct Shadow {
   std::vector<uint8_t> kept;  // the quads of the last rebuild the rule did not skip
   bool have_kept = false;
-  // The rebuild being checked: the nodes before it, and what doRender's entry found.
+  // The rebuild being checked.
   bool section = false;
   uint32_t system = 0, renderer = 0, sp = 0;
   std::thread::id thread;
   // Guest heap blocks (their dlmalloc chunks, header included) freed on this thread during the
   // checked rebuild and not allocated again: start -> end.
   std::map<uint32_t, uint32_t> freed;
-  // Blocks allocated on this thread during the checked rebuild and still allocated: start -> end
-  // (to tell, for an unexpected write, a block the rebuild made and kept from older memory).
+  // Blocks allocated on this thread during the checked rebuild and still allocated: start -> end,
+  // and kAlloc's caller.
   std::map<uint32_t, uint32_t> allocated;
-  std::map<uint32_t, uint32_t> allocated_by;  // start -> kAlloc's caller
+  std::map<uint32_t, uint32_t> allocated_by;
   // After the checked rebuild, until renderGUI returns: frees of blocks it allocated and kept.
   bool after = false;
   std::set<uint32_t> freed_after;
-  std::vector<uint32_t> old_nodes, new_nodes;
-  // Their heap chunks (start -> end): a node's allocation is larger than the node (the thread
-  // cache serves 92 bytes from its 128-byte bin) and its slack belongs to the list too.
-  std::map<uint32_t, uint32_t> old_chunks, new_chunks;
+  // The final list's nodes (the head's first); the chunks of the head node and of the nodes the
+  // rebuild allocated (start -> end: a node's allocation is larger than the node, the thread cache
+  // serving 92 bytes from its 128-byte bin, and its slack belongs to the list too).
+  std::vector<uint32_t> new_nodes;
+  std::map<uint32_t, uint32_t> list_chunks;
+  // Blocks the rebuild allocated and kept that are not nodes of the list (their chunk starts).
+  std::vector<uint32_t> kept_not_nodes;
   std::vector<uint8_t> quads;
   bool quads_read = false;
   std::vector<torchlight::diag::store_trace::ChangedRun> runs;
@@ -173,13 +193,15 @@ struct Shadow {
   // Counted since the last log.
   uint64_t frames = 0, requests = 0, would_skip = 0, compared = 0, lists_differ = 0,
            unreadable = 0, not_traced = 0, unexpected = 0, unexpected_frames = 0, node_bytes = 0,
-           renderer_bytes = 0, freed_bytes = 0, allocator_bytes = 0, allocs = 0, frees = 0;
+           renderer_bytes = 0, freed_bytes = 0, allocator_bytes = 0, allocs = 0, frees = 0,
+           kept_blocks = 0;
   std::array<uint64_t, size_t(gr::Reason::kCount)> reasons{};
   std::map<std::string, uint64_t> unexpected_by_function;
   // Shown in detail for the whole run: the first unexpected write of each writer.
   uint32_t shown = 0;
   std::set<std::string> shown_writers;
   uint32_t detailed_frames = 0;  // frames whose unexpected runs were all logged
+  uint32_t kept_logged = 0;
   std::chrono::steady_clock::time_point last_log = std::chrono::steady_clock::now();
 };
 Shadow g_shadow;
@@ -219,9 +241,9 @@ std::string WindowName(const uint8_t* base, uint32_t window) {
   return name;
 }
 
-bool InRanges(const std::map<uint32_t, uint32_t>& freed, uint32_t address) {
-  auto it = freed.upper_bound(address);
-  return it != freed.begin() && address < std::prev(it)->second;
+bool InRanges(const std::map<uint32_t, uint32_t>& ranges, uint32_t address) {
+  auto it = ranges.upper_bound(address);
+  return it != ranges.begin() && address < std::prev(it)->second;
 }
 
 // Takes [begin, end) out of the ranges, keeping what is left of each on either side (dlmalloc
@@ -237,50 +259,58 @@ void Subtract(std::map<uint32_t, uint32_t>& ranges, uint32_t begin, uint32_t end
   }
 }
 
-// A heap block's dlmalloc chunk (guest_abi game_ui kFree reads it: the size at -4, `& ~7`), its
-// header included; [ptr - 8, ptr + 8) when the size word is not that of a chunk in use.
+// A heap block's dlmalloc chunk (guest_abi guest_heap), its header included; the header and 8
+// bytes when the size word is not that of a chunk in use.
 std::pair<uint32_t, uint32_t> Chunk(const uint8_t* base, uint32_t ptr) {
-  const uint32_t head = abi::ReadU32(base, ptr - 4);
-  const uint32_t size = (head & 2) ? (head & ~7u) : 16;
-  return {ptr - 8, ptr - 8 + size};
+  const uint32_t word = abi::ReadU32(base, ptr - heap::kSizeWordBelow);
+  const uint32_t size =
+      (word & heap::kChunkInUse) ? (word & heap::kChunkSizeMask) : 2 * heap::kChunkHeaderBytes;
+  return {ptr - heap::kChunkHeaderBytes, ptr - heap::kChunkHeaderBytes + size};
 }
 
-// The guest heap's allocator (nedmalloc over dlmalloc, behind guest_abi game_ui kAlloc / kFree):
-// the functions those two reach (their calls followed four deep), less the C runtime's shared
-// ones (critical sections, abort). Among them nedmalloc's thread cache: threadcache_malloc
-// sub_8241F6F8 (its counters at +8, +16, +20, its bins from +24, a popped block's neighbour's link)
-// and threadcache_free sub_8241F820 (its counter at +12, the freed block's first 16 bytes, its
-// bins); dlmalloc's mspace_malloc sub_8241EEC0 and tmalloc_large sub_8241DC98 (the treebins from
-// the mspace's +304). They write only the allocator's own state and the headers and links of
-// chunks.
+// A write by the guest heap's allocator (guest_abi guest_heap kAllocatorFunctions), from the store
+// trace's writer name (the generated function's, "__imp__sub_" and its address).
 bool AllocatorWriter(const char* function) {
-  static constexpr const char* kFunctions[] = {
-      "__imp__sub_821CD7F8", "__imp__sub_821CD9A8", "__imp__sub_821CCF30", "__imp__sub_8241C870",
-      "__imp__sub_8241D308", "__imp__sub_8241DC98", "__imp__sub_8241E228", "__imp__sub_8241EBE0",
-      "__imp__sub_8241ED08", "__imp__sub_8241EDC0", "__imp__sub_8241EEC0", "__imp__sub_8241F310",
-      "__imp__sub_8241F3B0", "__imp__sub_8241F450", "__imp__sub_8241F4C0", "__imp__sub_8241F6F8",
-      "__imp__sub_8241F7D8", "__imp__sub_8241F820", "__imp__sub_8241F8F8", "__imp__sub_8241FAB8",
-  };
-  if (!function) return false;
-  for (const char* f : kFunctions) {
-    if (std::strcmp(function, f) == 0) return true;
+  constexpr std::string_view kPrefix = "__imp__sub_";
+  if (!function || std::strncmp(function, kPrefix.data(), kPrefix.size()) != 0) return false;
+  const uint32_t address = uint32_t(std::strtoul(function + kPrefix.size(), nullptr, 16));
+  for (uint32_t f : heap::kAllocatorFunctions) {
+    if (f == address) return true;
   }
   return false;
 }
 
-// The checked rebuild's writes, against what a rebuild may change: the quad list's nodes (old and
-// new), the renderer's fields a rebuild sets, the System's redraw flag (cleared in either path),
-// heap blocks freed during the rebuild and still free (dead memory: temporary strings and the old
-// nodes' neighbours), and the heap allocator's own state.
+bool Allowed(const Shadow& s, uint32_t a, const char* function) {
+  return InRanges(s.list_chunks, a) || InRendererFields(s.renderer, a) ||
+         a == s.system + ui::kSystemGuiRedraw.offset || InRanges(s.freed, a) ||
+         AllocatorWriter(function);
+}
+
+// The checked rebuild's writes, against what a rebuild may change: the chunks of the list nodes it
+// allocated and the head node (list_chunks), the renderer's fields a rebuild sets, the System's
+// redraw flag (cleared in either path), heap blocks freed during the rebuild and still free (dead
+// memory: the old nodes, temporary strings), and the heap allocator's own state. A write into an
+// old node's chunk that the rebuild allocated again for something else falls in none of them: it
+// is unexpected. So is every block the rebuild allocated and kept that is not a node of the list.
 void Classify(const uint8_t* base, Shadow& s) {
-  bool unexpected = false;
+  bool unexpected = !s.kept_not_nodes.empty();
+  s.kept_blocks += s.kept_not_nodes.size();
+  for (uint32_t begin : s.kept_not_nodes) {
+    if (s.kept_logged >= 20) break;
+    ++s.kept_logged;
+    REXLOG_WARN("gui redraw shadow: the rebuild allocated and kept a block that is not a node of "
+                "the list ({:08X}, {} bytes, allocated from {:08X}, {} before renderGUI returned)",
+                begin + heap::kChunkHeaderBytes,
+                s.allocated[begin] - begin - heap::kChunkHeaderBytes, s.allocated_by[begin],
+                s.freed_after.count(begin) ? "freed" : "not freed");
+  }
+  bool unexpected_write = false;
   for (const auto& run : s.runs) {
     for (uint32_t i = 0; i < run.size; ++i) {
       const uint32_t a = run.address + i;
-      if (InRanges(s.old_chunks, a) || InRanges(s.new_chunks, a)) {
+      if (InRanges(s.list_chunks, a)) {
         ++s.node_bytes;
-      } else if (InRendererFields(s.renderer, a) ||
-                 a == s.system + ui::kSystemGuiRedraw.offset) {
+      } else if (InRendererFields(s.renderer, a) || a == s.system + ui::kSystemGuiRedraw.offset) {
         ++s.renderer_bytes;
       } else if (InRanges(s.freed, a)) {
         ++s.freed_bytes;
@@ -290,7 +320,7 @@ void Classify(const uint8_t* base, Shadow& s) {
         ++s.unexpected;
         const std::string writer = run.function ? run.function : "?";
         ++s.unexpected_by_function[writer];
-        if (!unexpected && s.shown < 60 && s.shown_writers.insert(writer).second) {
+        if (!unexpected_write && s.shown < 60 && s.shown_writers.insert(writer).second) {
           ++s.shown;
           auto in = s.allocated.upper_bound(a);
           const bool kept = in != s.allocated.begin() && a < std::prev(in)->second;
@@ -300,32 +330,29 @@ void Classify(const uint8_t* base, Shadow& s) {
                       kept ? fmt::format("in a block the rebuild allocated and kept ({:08X}, {} "
                                          "bytes, allocated from {:08X}, {} before renderGUI "
                                          "returned)",
-                                         std::prev(in)->first + 8,
-                                         std::prev(in)->second - std::prev(in)->first - 8,
+                                         std::prev(in)->first + heap::kChunkHeaderBytes,
+                                         std::prev(in)->second - std::prev(in)->first -
+                                             heap::kChunkHeaderBytes,
                                          s.allocated_by[std::prev(in)->first],
-                                         s.freed_after.count(std::prev(in)->first)
-                                             ? "freed"
-                                             : "not freed")
+                                         s.freed_after.count(std::prev(in)->first) ? "freed"
+                                                                                   : "not freed")
                            : fmt::format("in memory older than the rebuild (its stack pointer "
                                          "{:08X})",
                                          s.sp));
         }
-        unexpected = true;
+        unexpected_write = true;
       }
     }
   }
+  unexpected = unexpected || unexpected_write;
   s.unexpected_frames += unexpected;
   // The first frames with unexpected writes: every such run, with the 48 bytes around it as they
-  // are now (hex, and as UTF-16 text).
-  if (unexpected && s.detailed_frames < 3) {
+  // are now (hex, and as UTF-16 text), and the bytes it had before.
+  if (unexpected_write && s.detailed_frames < 3) {
     ++s.detailed_frames;
     for (const auto& run : s.runs) {
       const uint32_t a = run.address;
-      if (InRanges(s.old_chunks, a) || InRanges(s.new_chunks, a) || InRendererFields(s.renderer, a) ||
-          a == s.system + ui::kSystemGuiRedraw.offset || InRanges(s.freed, a) ||
-          AllocatorWriter(run.function)) {
-        continue;
-      }
+      if (Allowed(s, a, run.function)) continue;
       const uint32_t from = (a & ~15u) - 16;
       std::string hex, text;
       for (uint32_t i = 0; i < 48; ++i) hex += fmt::format("{:02X}", abi::ReadU8(base, from + i));
@@ -368,31 +395,25 @@ void LogShadow(Shadow& s) {
     writers += fmt::format("{}{} {}", writers.empty() ? "" : ", ", function, n);
   }
   REXLOG_INFO("gui redraw shadow: {} frames, {} requests, {} would skip ({} compared, {} lists "
-              "differ, {} unreadable, {} not traced), {} frames with unexpected writes ({} bytes{}{}); "
-              "rebuilds: {}; bytes written to quad nodes {}, renderer and System fields {}, "
-              "freed blocks {}, allocator state {}; heap calls tracked {} allocations, {} frees",
+              "differ, {} unreadable, {} not traced), {} frames with unexpected writes ({} "
+              "bytes{}{}, {} kept blocks not list nodes); rebuilds: {}; bytes written to list "
+              "nodes {}, renderer and System fields {}, freed blocks {}, allocator state {}; heap "
+              "calls tracked {} allocations, {} frees",
               s.frames, s.requests, s.would_skip, s.compared, s.lists_differ, s.unreadable,
               s.not_traced, s.unexpected_frames, s.unexpected, writers.empty() ? "" : ": ",
-              writers, reasons.empty() ? "none" : reasons, s.node_bytes, s.renderer_bytes,
-              s.freed_bytes, s.allocator_bytes, s.allocs, s.frees);
+              writers, s.kept_blocks, reasons.empty() ? "none" : reasons, s.node_bytes,
+              s.renderer_bytes, s.freed_bytes, s.allocator_bytes, s.allocs, s.frees);
   s.frames = s.requests = s.would_skip = s.compared = s.lists_differ = s.unreadable =
       s.not_traced = s.unexpected = s.unexpected_frames = s.node_bytes = s.renderer_bytes =
-          s.freed_bytes = s.allocator_bytes = s.allocs = s.frees = 0;
+          s.freed_bytes = s.allocator_bytes = s.allocs = s.frees = s.kept_blocks = 0;
   s.reasons = {};
   s.unexpected_by_function.clear();
   s.last_log = now;
 }
 
-std::map<uint32_t, uint32_t> NodeChunks(const uint8_t* base, const std::vector<uint32_t>& nodes) {
-  std::map<uint32_t, uint32_t> chunks;
-  for (uint32_t node : nodes) {
-    auto [begin, end] = Chunk(base, node);
-    chunks[begin] = std::max(end, node + ui::quad_node::kBytes);
-  }
-  return chunks;
-}
-
-// At doRender's entry: the checked rebuild ends there.
+// At doRender's entry: the checked rebuild ends there. The list's chunks are the head node's and
+// those of the nodes the rebuild allocated, which must be every other node (the list was cleared);
+// every other block it allocated and kept is reported.
 void EndShadowSection(const uint8_t* base) {
   Shadow& s = g_shadow;
   if (!s.section) return;
@@ -400,7 +421,26 @@ void EndShadowSection(const uint8_t* base) {
   s.after = true;  // until renderGUI returns: frees of the blocks the rebuild kept
   s.runs = torchlight::diag::store_trace::EndSection(base);
   s.quads_read = ReadQuads(base, s.renderer, &s.quads, &s.new_nodes);
-  s.new_chunks = NodeChunks(base, s.new_nodes);
+  s.list_chunks.clear();
+  std::set<uint32_t> nodes;
+  for (size_t i = 0; i < s.new_nodes.size(); ++i) {
+    const uint32_t node = s.new_nodes[i];
+    const auto [begin, end] = Chunk(base, node);
+    if (i == 0) {  // the head node, kept by the list
+      s.list_chunks[begin] = std::max(end, node + ui::quad_node::kBytes);
+      continue;
+    }
+    // A node this rebuild did not allocate, or not through addQuad's node allocation, is not
+    // allowed (and reported below if the rebuild allocated it).
+    auto it = s.allocated.find(begin);
+    if (it == s.allocated.end() || s.allocated_by[begin] != heap::kQuadNodeAllocReturn) continue;
+    s.list_chunks[begin] = it->second;
+    nodes.insert(begin);
+  }
+  s.kept_not_nodes.clear();
+  for (const auto& [begin, end] : s.allocated) {
+    if (!nodes.count(begin)) s.kept_not_nodes.push_back(begin);
+  }
 }
 
 // A request the rule would skip: rebuild anyway and check it.
@@ -415,8 +455,8 @@ void ShadowRebuild(PPCContext& ctx, uint8_t* base, uint32_t system,
   s.allocated.clear();
   s.allocated_by.clear();
   s.freed_after.clear();
-  const bool old_read = ReadQuads(base, s.renderer, nullptr, &s.old_nodes);
-  s.old_chunks = NodeChunks(base, s.old_nodes);
+  s.kept_not_nodes.clear();
+  s.list_chunks.clear();
   s.section = torchlight::diag::store_trace::BeginSection(ui::kSystemRenderGui.address,
                                                           ctx.r1.u32);
   const bool traced = s.section;
@@ -426,7 +466,7 @@ void ShadowRebuild(PPCContext& ctx, uint8_t* base, uint32_t system,
   s.after = false;
   EndShadowSection(base);  // when doRender was not reached
   if (!traced) ++s.not_traced;
-  if (!old_read || !s.quads_read || !s.have_kept) {
+  if (!s.quads_read || !s.have_kept) {
     ++s.unreadable;
   } else {
     ++s.compared;
@@ -504,8 +544,8 @@ REX_FUNC(sub_821FBC60) {
     if (culprit != 0) {
       static std::set<std::pair<uint32_t, int>> seen;
       if (seen.size() < 100 && seen.insert({culprit, int(reason)}).second) {
-        REXLOG_INFO("gui redraw shadow: rebuild ({}) for window {:08X} '{}'", gr::ReasonName(reason),
-                    culprit, WindowName(base, culprit));
+        REXLOG_INFO("gui redraw shadow: rebuild ({}) for window {:08X} '{}'",
+                    gr::ReasonName(reason), culprit, WindowName(base, culprit));
       }
     }
     if (reason == gr::Reason::kSkip) {
@@ -520,9 +560,10 @@ REX_FUNC(sub_821FBC60) {
     Clear8(base, system + ui::kSystemGuiRedraw.offset);
     return __imp__sub_821FBC60(ctx, base);
   }
+  f.collect_at_render = true;
+  f.system = system;
   __imp__sub_821FBC60(ctx, base);
-  // After the rebuild: drawSelf computed every rect it reads, so no refresh.
-  f.have_last = gr::Collect(GuestReader{base, nullptr}, system, f.last) == gr::Reason::kSkip;
+  if (f.collect_at_render) CollectLast(base);  // doRender was not reached
 #if TORCHLIGHT_DIAGNOSTICS
   if (shadow) {
     g_shadow.have_kept = ReadQuads(base, f.last.renderer, &g_shadow.kept, nullptr);
@@ -533,21 +574,20 @@ REX_FUNC(sub_821FBC60) {
 
 #if TORCHLIGHT_DIAGNOSTICS
 // The guest heap's free (guest_abi game_ui kFree) and allocation (kAlloc), while a checked rebuild
-// runs on this thread: a freed block is dead memory until allocated again. Its chunk from dlmalloc's
-// header (`lwz r11,-4(r29)`: the size `& ~7`, in use when bit 1 is set, @0x821CDA34..), header
-// included.
+// runs on this thread: a freed block is dead memory until allocated again; an allocated one is
+// tracked until freed. Each by its dlmalloc chunk (guest_abi guest_heap), header included.
 REX_EXTERN(__imp__sub_821CD9A8);
 REX_FUNC(sub_821CD9A8) {
   static_assert(abi::game_ui::kFree.address == 0x821CD9A8u);
   Shadow& s = g_shadow;
+  const uint32_t chunk = ctx.r3.u32 - heap::kChunkHeaderBytes;
   if (s.after && ctx.r3.u32 != 0 && s.thread == std::this_thread::get_id() &&
-      s.allocated.count(ctx.r3.u32 - 8)) {
-    s.freed_after.insert(ctx.r3.u32 - 8);
+      s.allocated.count(chunk)) {
+    s.freed_after.insert(chunk);
   }
   if (s.section && ctx.r3.u32 != 0 && s.thread == std::this_thread::get_id()) {
-    const uint32_t head = abi::ReadU32(base, ctx.r3.u32 - 4);
     ++s.frees;
-    if (head & 2) {
+    if (abi::ReadU32(base, ctx.r3.u32 - heap::kSizeWordBelow) & heap::kChunkInUse) {
       const auto [begin, end] = Chunk(base, ctx.r3.u32);
       Subtract(s.allocated, begin, end);
       Subtract(s.freed, begin, end);
@@ -571,14 +611,18 @@ REX_FUNC(sub_821CD7F8) {
   s.allocated[begin] = end;
   s.allocated_by[begin] = caller;
 }
+#endif
 
-// OgreCEGUIRenderer::doRender: the shadow mode's checked rebuild ends at its entry.
+// OgreCEGUIRenderer::doRender: at its entry the rebuild has queued everything. The filter takes its
+// state there, and the shadow mode's checked rebuild ends there.
 REX_EXTERN(__imp__sub_821D2F80);
 REX_FUNC(sub_821D2F80) {
   static_assert(ui::kRendererDoRender.address == 0x821D2F80u);
+#if TORCHLIGHT_DIAGNOSTICS
   if (g_shadow.section) EndShadowSection(base);
+#endif
+  if (g_filter.collect_at_render) CollectLast(base);
   __imp__sub_821D2F80(ctx, base);
 }
-#endif
 
 }  // extern "C"
