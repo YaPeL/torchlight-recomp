@@ -1578,7 +1578,10 @@ void DisplayGammaPass(tl_backend* b) {
       b->main_resolve.texture->getBuffer()->blit(b->main.texture->getBuffer());
       scene = b->main_resolve.texture;
     } else {
-      b->main.rt->swapBuffers();  // GL's blit; in tile memory, only its depth discarded
+      // GL's blit; in tile memory, only its depth discarded. Either way main's depth and samples
+      // do not carry into the next frame: every pass the guest starts clears its depth first
+      // (frontend/depth_discard.h; all 962 returns to main in 330 captures, 2026-11-06).
+      b->main.rt->swapBuffers();
     }
   }
   b->output.viewport->setDimensions(0, 0, 1, 1);
