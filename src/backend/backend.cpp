@@ -336,6 +336,10 @@ struct tl_backend {
   // GL3+ keeps a vertex array object per declaration and re-specifies it only when the bound
   // buffers' addresses change; a freed buffer whose address a new one reuses would go unnoticed,
   // so each layout remembers the serials it had bound and forces the update when they change.
+  // Only where the render system has vertex array objects (RSC_VAO): the forced update marks the
+  // declaration changed, and Direct3D 11, which binds the streams per draw, drops the input
+  // layouts it keeps per declaration then (D3D11VertexDeclaration::notifyChanged) and creates
+  // them again, validating the vertex program's signature, at the next draw.
   struct VertexLayout {
     std::unique_ptr<Ogre::VertexData> data;
     std::vector<uint64_t> bound;  // HostVertex serial per stream, 0 = none
@@ -2605,7 +2609,7 @@ static int Draw(tl_backend* b, const tl_draw* d) {
     if (bound != layout.bound) {
       layout.bound = bound;
       Ogre::VertexDeclaration* decl = vertex_data.vertexDeclaration;
-      if (decl->getElementCount() > 0) {
+      if (b->rs->getCapabilities()->hasCapability(Ogre::RSC_VAO) && decl->getElementCount() > 0) {
         const Ogre::VertexElement e = *decl->getElement(0);
         decl->modifyElement(0, e.getSource(), e.getOffset(), e.getType(), e.getSemantic(),
                             e.getIndex());  // unchanged: only marks the VAO for re-specification
