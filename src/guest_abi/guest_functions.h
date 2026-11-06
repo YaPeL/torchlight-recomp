@@ -375,6 +375,11 @@ inline constexpr uint32_t kTableVtable = 0x820D6FE0;
 // (sub_823DD110 @0x823DD218) and, once SAVE:\ is mounted, by the save menu each time the main menu
 // is entered or shown (sub_82387580 @0x82387854).
 inline constexpr GuestFunction kLoad{0x823981C8, Confidence::kConfirmed};
+// [confirmed] save(table r3, path r4): writes settings.txt, then local_settings.txt if this+80 is set
+// (sub_823976E0 @0x82397C40, @0x82397C68, its only callers); returns 1/0 with plain blr
+// (@0x82397C7C, @0x82397C94, @0x82397CAC). Slot 1 of the settings table's vtable (and of the
+// other tables', 0x820C7694 and 0x820D2B8C); no direct callers.
+inline constexpr GuestFunction kSave{0x82397C28, Confidence::kConfirmed};
 // [confirmed] The first-start defaults (table r3), run when the boot load fails (always on the
 // recomp: SAVE:\ is not mounted at boot): sets NETBOOK MODE 0 (li r5,0 @0x823E1130, the index
 // @0x823E1138; the GPU name compares before it do not reach it), FSAA, SHADOWRESOLUTION 512 and

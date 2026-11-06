@@ -233,8 +233,10 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     a closer camera and lighter per-unit and per-level drawing (on the POCO X7, `fight.txt`: 9 %
     less of the game thread's work per frame). The game keeps it in its settings table, set by its
     first-start defaults and read again from `local_settings.txt` each time the main menu is
-    entered, and saves it; a hook after both (`hooks/low_quality_hooks.cpp`) sets the host's value,
-    on or off. It applies after a restart, and the row says so until then;
+    entered; a hook after both (`hooks/low_quality_hooks.cpp`) sets the host's value, on or off.
+    The game also saves the table: while the mode is on, it is 0 for the save, so
+    `local_settings.txt` never carries it to another installation or the PC version. It applies
+    after a restart, and the row says so until then;
   - changes apply immediately (scale, vsync and multisampling through a request to the backend
     thread, the cap
     through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button

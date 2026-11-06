@@ -72,7 +72,7 @@ struct HostSettings {
   // defaults set it to 0, sub_823E1040 @0x823E1130). On: far clip and
   // object distance 45 instead of 90, fog factor 1.0 instead of 1.3, a closer camera, and lighter
   // per-unit and per-level drawing (hooks/low_quality_hooks.cpp). The host sets it every time the
-  // game reads its settings: takes effect after a restart.
+  // game reads its settings (takes effect after a restart) and keeps it out of the game's save.
   bool low_quality = false;
   // Game language code ("en", "de", "fr", "es"...); empty = the runtime's default.
   std::string language;
