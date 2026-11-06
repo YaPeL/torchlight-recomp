@@ -25,6 +25,15 @@ OGRE path: cache variable `TORCHLIGHT_OGRE_INSTALL`. `all` builds the SDK's Debu
 RelWithDebInfo libraries, which the debug and relwithdebinfo presets link; without it, Release only
 (what CI and the published game use).
 
+The Linux and macOS presets take the SDK from
+`~/rexglue-sdk/out/install/<platform>/lib/cmake/rexglue` (their `rexglue_DIR`; `<platform>` is
+`linux-amd64`, `linux-arm64`, `mac-arm64` or `mac-amd64`). Where that folder does not exist, the
+configure warns and searches `CMAKE_PREFIX_PATH` and the system paths. Another install is named
+with `-Drexglue_DIR=<install>/lib/cmake/rexglue` (a `-DCMAKE_PREFIX_PATH` does not override the
+preset's `rexglue_DIR`). The configure never takes an SDK from CMake's package registry: every
+install of one SDK version looks the same there, whatever its patches or configurations. It prints
+the one it took, `ReXGlue SDK: <version> at <path>, codegen_id <id>`.
+
 The SDK's own tests: `tools/deps/build_sdk.sh --tests PREFIX WORK` also builds them and runs them
 one at a time with ctest; it fails if one fails, does not run, or is skipped where
 `tools/deps/sdk_test_skips.txt` does not list it (Windows: `windows.ps1 ... -SdkTests`; the
@@ -115,8 +124,8 @@ installed to a folder, its symbols split, then
 OUT.AppImage`; `packaging/linux/check_appimage.sh OUT.AppImage` checks it.
 
 Without the game (libraries, tests and tools only, no `generated/`; what CI builds):
-`cmake --preset linux-amd64-nogame` (with `-DCMAKE_PREFIX_PATH=<SDK install>` when the SDK is not
-found by itself).
+`cmake --preset linux-amd64-nogame` (with `-Drexglue_DIR=<SDK install>/lib/cmake/rexglue` for an
+SDK elsewhere than the preset's).
 
 Without `--game_data_root` the game uses its own copy of the game files in
 `~/.local/share/TorchlightRecomp/game/`: on the first start it asks for your Torchlight XBLA package
