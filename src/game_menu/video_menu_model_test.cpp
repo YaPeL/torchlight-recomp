@@ -190,8 +190,8 @@ void TestPadPrompts() {
 void TestSections() {
   int count[kSectionCount] = {};
   for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
-  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 2,
-        "six video rows, two controls, two extras");
+  Check(count[int(Section::kVideo)] == 7 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 2,
+        "seven video rows, two controls, two extras");
   Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
             SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
         "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
@@ -292,7 +292,31 @@ void TestRendererUnavailable() {
 
 }  // namespace
 
+void TestMsaa() {
+  VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
+  Check(m.Text(Row::kMsaa) == "2x (Xbox 360)" && m.Enabled(Row::kMsaa), "2x by default");
+  Check(m.Step(Row::kMsaa, +1) && m.settings().msaa == 4 && m.Text(Row::kMsaa) == "4x", "right: 4x");
+  Check(!m.Step(Row::kMsaa, +1), "4x is last");
+  m.Step(Row::kMsaa, -1);
+  Check(m.Step(Row::kMsaa, -1) && m.settings().msaa == 0 && m.Text(Row::kMsaa) == "Off", "off");
+  Check(!m.RestartNeeded(), "applied live, no restart");
+  Check(SectionOf(Row::kMsaa) == Section::kVideo, "in the video section");
+  Capabilities two = Desktop();
+  two.max_msaa = 2;
+  HostSettings four;
+  four.msaa = 4;
+  VideoMenuModel limited(two, four, four);
+  Check(limited.Text(Row::kMsaa) == "2x (Xbox 360)", "a saved 4x on a 2x device shows what applies");
+  Check(!limited.Step(Row::kMsaa, +1), "no 4x to move to");
+  Check(limited.Step(Row::kMsaa, -1) && limited.settings().msaa == 0, "left from what applies");
+  Capabilities none = Desktop();
+  none.max_msaa = 1;
+  VideoMenuModel off(none, HostSettings{}, HostSettings{});
+  Check(!off.Enabled(Row::kMsaa) && off.Text(Row::kMsaa) == "Off", "no multisampling: off, disabled");
+}
+
 int main() {
+  TestMsaa();
   TestResolution();
   TestResolutionWithPreferredStart();
   TestFpsAndVsync();

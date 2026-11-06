@@ -95,6 +95,13 @@ bool VideoMenuModel::Step(Row row, int direction) {
       return StepIn(settings::AspectChoices(caps_).values, current_.aspect, direction);
     case Row::kFpsCap:
       return StepIn(settings::FpsCapChoices(caps_).values, current_.fps_cap, direction);
+    case Row::kMsaa: {
+      // From what is applied: a saved count above the device's most moves from the most.
+      uint32_t shown = settings::EffectiveMsaa(current_, caps_);
+      if (!StepIn(settings::MsaaChoices(caps_).values, shown, direction)) return false;
+      current_.msaa = shown;
+      return true;
+    }
     case Row::kAchievements: {
       // An explicit choice from here on, also when it was the default.
       settings::AchievementSet shown = settings::EffectiveAchievements(current_);
@@ -186,6 +193,15 @@ std::string VideoMenuModel::Text(Row row) const {
         return "Auto (" + std::to_string(settings::EffectiveFpsCap(current_, caps_)) + ")";
       }
       return current_.fps_cap ? std::to_string(current_.fps_cap) : "Unlimited";
+    case Row::kMsaa:
+      switch (settings::EffectiveMsaa(current_, caps_)) {
+        case 0:
+          return "Off";
+        case 2:
+          return "2x (Xbox 360)";
+        default:
+          return std::to_string(settings::EffectiveMsaa(current_, caps_)) + "x";
+      }
     case Row::kAchievements:
       return settings::EffectiveAchievements(current_) == settings::AchievementSet::kPc
                  ? "PC"
@@ -235,6 +251,7 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kResolution: return settings::ResolutionChoices(caps_).enabled;
     case Row::kAspect: return settings::AspectChoices(caps_).enabled;
     case Row::kFpsCap: return settings::FpsCapChoices(caps_).enabled;
+    case Row::kMsaa: return settings::MsaaChoices(caps_).enabled;
     case Row::kAchievements: return true;
     case Row::kLanguage: return settings::LanguageChoices(caps_).enabled;
     case Row::kRenderer:

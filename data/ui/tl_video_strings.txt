@@ -24,6 +24,8 @@ Button Prompts = Tastensymbole
 Swap A/B = A/B tauschen
 Controls = Steuerung
 Extras = Extras
+Antialiasing = Kantenglättung
+Off = Aus
 
 [fr]
 Video = Vidéo
@@ -46,6 +48,8 @@ Button Prompts = Icônes des boutons
 Swap A/B = Inverser A/B
 Controls = Commandes
 Extras = Extras
+Antialiasing = Anticrénelage
+Off = Désactivé
 
 [es]
 Video = Video
@@ -68,3 +72,5 @@ Button Prompts = Iconos de botones
 Swap A/B = Cambiar A/B
 Controls = Controles
 Extras = Extras
+Antialiasing = Suavizado de bordes
+Off = Desactivado

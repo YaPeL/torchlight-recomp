@@ -133,9 +133,9 @@ void LiveMode::ResizeWindow(uint32_t width, uint32_t height) {
   if (width && height) pending_window_size_ = uint64_t(width) << 32 | height;
 }
 
-void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync) {
+void LiveMode::SetVideo(settings::Resolution render_resolution, bool vsync, uint32_t msaa) {
   std::lock_guard lock(pending_video_mutex_);
-  pending_video_ = PendingVideo{render_resolution, vsync};
+  pending_video_ = PendingVideo{render_resolution, vsync, msaa};
 }
 
 void LiveMode::Stop() {
@@ -272,6 +272,19 @@ void LiveMode::Run() {
     }
   };
   apply_render_scale();
+  // Multisampling of the main target (LiveOptions::msaa), limited to what the device applies.
+  max_msaa_ = tl_backend_max_msaa(backend);
+  auto apply_msaa = [&] {
+    const uint32_t applied = tl_backend_set_msaa(backend, options_.msaa);
+    if (options_.msaa > 1 && applied < options_.msaa) {
+      REXLOG_WARN("live: {}x multisampling asked, {} applied (device maximum {}x)", options_.msaa,
+                  applied > 1 ? std::to_string(applied) + "x" : std::string("none"),
+                  max_msaa_.load());
+    } else {
+      REXLOG_INFO("live: multisampling {}", applied > 1 ? std::to_string(applied) + "x" : "off");
+    }
+  };
+  if (options_.msaa > 1) apply_msaa();
   frontend::ZipArchive pak;
   std::string error;
   if (!pak.Open((options_.game_data_root / "pak.zip").string(), error)) {
@@ -427,6 +440,10 @@ void LiveMode::Run() {
         if (video->render_resolution != options_.render_resolution) {
           options_.render_resolution = video->render_resolution;
           apply_render_scale();
+        }
+        if (video->msaa != options_.msaa) {
+          options_.msaa = video->msaa;
+          apply_msaa();
         }
       }
       if (window_open) {

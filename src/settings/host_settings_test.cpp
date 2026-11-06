@@ -475,7 +475,36 @@ void TestGpuLogLabel() {
   Check(GpuLogLabel(s, gpus) == "? (0000:02:00.0)", "absent GPU without a stored name");
 }
 
+void TestMsaa() {
+  std::vector<std::string> warnings;
+  Check(Parse("", &warnings).msaa == 2 && warnings.empty(), "no key: 2x, as the 360");
+  Check(Parse("msaa = 0\n").msaa == 0 && Parse("msaa = 4\n").msaa == 4, "off and 4x read");
+  HostSettings bad = Parse("msaa = 3\n", &warnings);
+  Check(bad.msaa == 2 && !warnings.empty(), "an odd count: reported, the default kept");
+  HostSettings four;
+  four.msaa = 4;
+  Check(Parse(Serialize(four)) == four, "round trip");
+  Check(!RequiresRestart(Setting::kMsaa), "applied live");
+  Capabilities unknown;
+  Check(MsaaChoices(unknown).values == std::vector<uint32_t>{0, 2, 4} && MsaaChoices(unknown).enabled,
+        "the device's most unknown: every choice");
+  Check(EffectiveMsaa(four, unknown) == 4, "unknown: asked as chosen (the backend limits it)");
+  Capabilities two;
+  two.max_msaa = 2;
+  Check(MsaaChoices(two).values == std::vector<uint32_t>{0, 2}, "a 2x device: no 4x");
+  Check(EffectiveMsaa(four, two) == 2, "a saved 4x on a 2x device: 2x applied");
+  Check(Normalize(four, two).msaa == 4, "and the saved choice stays");
+  Capabilities none;
+  none.max_msaa = 1;
+  Check(!MsaaChoices(none).enabled && EffectiveMsaa(HostSettings{}, none) == 0,
+        "no multisampling here: off, the row disabled");
+  HostSettings odd;
+  odd.msaa = 8;
+  Check(Normalize(odd, unknown).msaa == 2, "an invalid count normalizes to the default");
+}
+
 int main() {
+  TestMsaa();
   TestAspect();
   TestRoundTrip();
   TestAchievementSet();

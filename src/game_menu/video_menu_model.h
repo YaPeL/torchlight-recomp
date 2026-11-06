@@ -11,10 +11,10 @@
 namespace torchlight::game_menu {
 
 enum class Row {
-  kResolution, kAspect, kFpsCap, kLanguage, kAchievements, kPadPrompts, kVsync, kSwapConfirmCancel,
-  kRenderer, kGpu
+  kResolution, kAspect, kFpsCap, kMsaa, kLanguage, kAchievements, kPadPrompts, kVsync,
+  kSwapConfirmCancel, kRenderer, kGpu
 };
-inline constexpr int kRowCount = 10;
+inline constexpr int kRowCount = 11;
 // The rows shown as a checkbox (A toggles them) instead of a value moved with left and right.
 inline bool IsCheckbox(Row row) { return row == Row::kVsync || row == Row::kSwapConfirmCancel; }
 

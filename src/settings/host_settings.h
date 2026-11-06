@@ -58,6 +58,10 @@ struct HostSettings {
   uint32_t fps_cap = kFpsCapAuto;
   // Vertical sync of the backend's window.
   bool vsync = true;
+  // Multisampling of the game's frame: 0 (off), 2 or 4 samples. 2 by default, as the 360 drew it
+  // (the game turns its FSAA on at the first start). More than the device does falls back to its
+  // most when applied (EffectiveMsaa); the stored choice stays.
+  uint32_t msaa = 2;
   // Game language code ("en", "de", "fr", "es"...); empty = the runtime's default.
   std::string language;
   // Aspect ratio of the game's frame (only mode).
@@ -111,12 +115,15 @@ struct Capabilities {
   bool any_vblank_rate = false;
   // Languages the user's game data has (InstalledLanguages).
   std::vector<std::string> languages;
+  // The most multisampling the backend applies here (tl_backend_max_msaa): 1 none, 2 or 4; 0 while
+  // not known yet (the backend has not started).
+  uint32_t max_msaa = 0;
 };
 
 // Settings the menu shows. Changing one of these takes effect after restarting the game.
 enum class Setting {
   kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements, kPadPrompts,
-  kSwapConfirmCancel
+  kSwapConfirmCancel, kMsaa
 };
 bool RequiresRestart(Setting setting);
 // The achievement set in effect: the setting, or Xbox when it is missing or invalid.
@@ -181,6 +188,12 @@ Choices<uint32_t> FpsCapChoices(const Capabilities& caps);
 // unknown rate, or when the guest's vblank cannot run at other rates.
 uint32_t EffectiveFpsCap(const HostSettings& settings, const Capabilities& caps);
 Choices<std::string> LanguageChoices(const Capabilities& caps);
+// Off (0), 2 and 4 samples, up to the device's most (all of them while it is not known); disabled
+// when the device has none.
+Choices<uint32_t> MsaaChoices(const Capabilities& caps);
+// The samples a setting asks the backend for: the choice, limited to the device's most when known
+// (0: off).
+uint32_t EffectiveMsaa(const HostSettings& settings, const Capabilities& caps);
 // Automatic first, then the fixed aspects no wider than the display, narrowest first (all of them
 // when the display's size is unknown).
 Choices<Aspect> AspectChoices(const Capabilities& caps);
@@ -206,7 +219,8 @@ std::optional<uint32_t> ConsoleLanguageId(std::string_view code);
 std::string LanguageCode(uint32_t console_language_id);
 
 // The settings with every value this machine does not offer replaced by its automatic value (the
-// frame rate cap falls back to 60).
+// frame rate cap falls back to 60). A multisampling count other than 0, 2 or 4 becomes the default;
+// a valid one above the device's most is kept (EffectiveMsaa limits it).
 HostSettings Normalize(const HostSettings& settings, const Capabilities& caps);
 
 // The backend's internal render scale for a chosen render resolution (0x0: the window's size): the
