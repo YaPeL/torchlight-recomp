@@ -126,7 +126,10 @@ Linux release profile (`pgo/linux-x86_64.profdata`, x86-64-v3) is trained that w
 `--native_skeleton` (on by default there): `fight.txt`, `fight5.txt` and `measure-fight-town.txt`
 with `--native_skeleton=false`, then the three again with `--native_skeleton=true`, each from a
 fresh bench save, offscreen on the desktop (the first one, 2026-11-01, on the i7-8750H; the Steam
-Deck measured with it, it did not train it).
+Deck measured with it, it did not train it). The Windows release profile
+(`pgo/windows-x86_64.profdata`, `fce8f9b9...`, 2026-11-01) was trained the same way by the desktop
+kit (`fight.txt`, `fight5.txt`, `town.txt`, off then on); the port is on by default there too since
+2026-11-06.
 
 The profiles written before 2026-10-31 summed every minute's copy of the counts (the runtime
 appended each write to the file), which weighed the start of each run more: trained again.
