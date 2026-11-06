@@ -220,8 +220,15 @@ if(TORCHLIGHT_X86_64_V3 AND UNIX AND NOT APPLE AND NOT ANDROID AND
     set_source_files_properties(src/platform/cpu_check.cpp PROPERTIES
         COMPILE_OPTIONS "-march=x86-64;-mno-sse4.1;-mno-sse4.2;-mno-popcnt"
         COMPILE_DEFINITIONS TORCHLIGHT_X86_64_V3=1)
-    # The skeleton port (hooks/native_skeleton.cpp) on by default here only: it gains with fma as an
+    # The skeleton port (hooks/native_skeleton.cpp) on by default here: it gains with fma as an
     # instruction (measured on the Steam Deck and the desktop, 2026-11-01).
+    set_property(SOURCE src/hooks/native_skeleton.cpp APPEND PROPERTY COMPILE_DEFINITIONS
+                 TORCHLIGHT_NATIVE_SKELETON_DEFAULT=1)
+endif()
+# And in the Windows x86-64 build (x86-64-v2): measured there with a PGO profile trained with the
+# port off and on, 5.9 % more frames a second in fight.txt's fight (2026-11-06,
+# docs/performance-profile.md). Not on macOS or Android (ARM64: no clear gain on the POCO).
+if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set_property(SOURCE src/hooks/native_skeleton.cpp APPEND PROPERTY COMPILE_DEFINITIONS
                  TORCHLIGHT_NATIVE_SKELETON_DEFAULT=1)
 endif()

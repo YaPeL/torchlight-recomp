@@ -1,5 +1,5 @@
 // OGRE's node and bone transforms as host code (--native_skeleton; on by default in the Linux
-// x86-64-v3 build only): Node::_update, Node::needUpdate, Bone::needUpdate, Node::_updateFromParent,
+// x86-64-v3 and Windows x86-64 builds): Node::_update, Node::needUpdate, Bone::needUpdate, Node::_updateFromParent,
 // Node::updateFromParentImpl and the derived orientation/position/scale getters, under
 // Entity::cacheBoneMatrices and the scene graph.
 //
@@ -51,10 +51,12 @@
 
 #pragma clang fp contract(off)
 
-// On by default in the Linux x86-64-v3 build only (TORCHLIGHT_NATIVE_SKELETON_DEFAULT, CMakeLists.txt;
+// On by default in the Linux x86-64-v3 build (TORCHLIGHT_NATIVE_SKELETON_DEFAULT, CMakeLists.txt;
 // the owner's decision of 2026-11-01): measured there −5.9 % cycles a frame on the Steam Deck and
-// −6 % on the desktop with a PGO profile trained with it on; on x86-64-v2 (Windows) its fma calls go
-// to libm as the recompiled code's and it gains nothing, and on ARM64 (the POCO) no clear gain.
+// −6 % on the desktop with a PGO profile trained with it on. On by default in the Windows x86-64
+// build too (x86-64-v2, its fma calls go to the CRT as the recompiled code's): +5.9 % frames a
+// second in fight.txt's fight with a profile trained with it off and on (2026-11-06; Linux on v2
+// found no gain, docs/performance-profile.md). On ARM64 (the POCO) no clear gain.
 #ifndef TORCHLIGHT_NATIVE_SKELETON_DEFAULT
 #define TORCHLIGHT_NATIVE_SKELETON_DEFAULT 0
 #endif

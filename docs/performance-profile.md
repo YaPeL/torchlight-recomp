@@ -325,6 +325,25 @@ own profile, the v3 one trained on the v3 build, 0 of 19633 mismatched), A B B A
 The fused multiply-adds become instructions instead of libm calls; the skeleton port (#85) gains
 about 6 % on v3 and nothing on v2, where its own fma calls go to libm too.
 
+**The skeleton port on Windows** (x86-64-v2, 2026-11-06): on by default there too since this
+measurement. Windows 11, NVIDIA GPU, Direct3D 11; develop at 68ad815, release preset with symbols,
+dev input and dev commands; PGO with a profile trained on that build by the desktop kit's six runs
+(`fight.txt`, `fight5.txt`, `town.txt` with `--native_skeleton=false`, then `=true`), 0 of 19679
+functions mismatched. One binary, `fight.txt` from a fresh bench save each run, the kit's settings
+(no cap, no vsync), audio muted, A B B A A B B A; the game's step summaries (frames presented):
+
+| Step | port off, fps | port on, fps | mean |
+| --- | --- | --- | --- |
+| rest | 317.1, 319.2, 311.7, 318.5 | 326.4, 324.7, 327.2, 329.8 | +3.3 % |
+| fight | 165.3, 175.4, 162.7, 163.2 | 180.3, 173.5, 173.3, 178.6 | +5.9 % (6.01 to 5.67 ms) |
+
+In the rest the ranges do not touch; in the fight one run without the port (175.4) falls among the
+runs with it. Parity on the same tree with `TORCHLIGHT_DIAGNOSTICS` (no PGO), `fight.txt` with the
+port on: `--diag_store_compare --diag_store_compare_native`, 7,074,174 calls compared (the port's
+seven entries and `renderSingleObject`), 0 differing, 0 not verified; and `fight5.txt` with
+`--diag_skeleton_check` alone, 13,000,000 `updateFromParentImpl` calls compared bit for bit, 0
+differing.
+
 **Where the frame rate drops** (same profile): below 100 fps, in the dungeon with several enemies and
 an NPC on screen and in the town walking, the game issues about twice the draws (about 340 per frame
 against 180 in the dungeon, still) at about the same main thread cost per draw (33-37 us), so the
