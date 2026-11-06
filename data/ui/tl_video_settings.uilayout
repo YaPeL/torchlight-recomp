@@ -427,7 +427,7 @@
         </Window>
         <Window Type="ceguiWidget/StaticText" Name="tl_video/low_quality/label" >
             <Property Name="Font" Value="Serif14" />
-            <Property Name="Text" Value="Performance (weak devices)" />
+            <Property Name="Text" Value="Low-End Devices" />
             <Property Name="Visible" Value="False" />
             <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
             <Property Name="ClippedByParent" Value="False" />

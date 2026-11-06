@@ -398,7 +398,7 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
       {"tl_video/fps_cap/label", "Frame Rate Limit"},
       {"tl_video/msaa/label", "Antialiasing"},
       {"tl_video/shadows/label", "Shadows"},
-      {"tl_video/low_quality/label", "Performance (weak devices)"},
+      {"tl_video/low_quality/label", "Low-End Devices"},
       {"tl_video/language/label", "Language"},
       {"tl_video/achievements/label", "Achievements"},
       {"tl_video/vsync/label", "Vertical Sync"},
