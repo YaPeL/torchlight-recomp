@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <vector>
 
 struct PPCContext;
 
@@ -52,6 +53,22 @@ bool RenderSingleObject(PPCContext& ctx, uint8_t* base, GuestFunction candidate,
 enum CompareRegisters : uint32_t { kCompareR3 = 1, kCompareF1 = 2, kCompareResults = 3 };
 bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
                        GuestFunction original, uint32_t registers = kCompareResults);
+
+// A section of this thread's guest code traced outside the recorder's own entries (the GUI redraw
+// filter's shadow mode, hooks/gui_redraw_filter_hooks.cpp): BeginSection with the stack pointer
+// at its start, then EndSection gives the guest bytes the section left different from what they
+// were before its first write to them, merged into runs, each with the recompiled function (or
+// "host", "kernel:...") that last wrote into it. The stack below `sp` is left out. BeginSection is
+// false (and nothing is traced) when the thread is already inside a traced call. Not counted in
+// the --diag_store_trace summary.
+struct ChangedRun {
+  uint32_t address;
+  uint32_t size;
+  const char* function;
+  uint64_t before;  // the run's first (up to) 8 bytes before the section, as memory held them
+};
+bool BeginSection(uint32_t entry, uint32_t sp);
+std::vector<ChangedRun> EndSection(const uint8_t* base);
 
 }  // namespace torchlight::diag::store_trace
 

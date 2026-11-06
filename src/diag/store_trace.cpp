@@ -901,6 +901,69 @@ void CompareCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction c
 
 }  // namespace
 
+bool BeginSection(uint32_t entry, uint32_t sp) {
+  if (t_call.depth != 0) return false;
+  Begin(entry, sp);
+  return true;
+}
+
+std::vector<ChangedRun> EndSection(const uint8_t* base) {
+  std::vector<ChangedRun> runs;
+  if (t_call.depth == 0) return runs;
+  t_call.depth = 0;
+  g_threads_inside.fetch_sub(1, std::memory_order_relaxed);
+  const uint32_t sp = t_call.sp;
+  auto on_stack = [sp](uint32_t a) { return a < sp && sp - a <= kStackWindow; };
+  // Every byte written: its value before the section's first write to it, and the last writer.
+  struct Byte {
+    uint8_t before;
+    const char* function;
+  };
+  std::unordered_map<uint32_t, Byte> bytes;
+  auto note = [&](uint32_t address, uint8_t before, const char* function) {
+    if (on_stack(address)) return;
+    auto [it, inserted] = bytes.try_emplace(address, Byte{before, function});
+    if (!inserted) it->second.function = function;
+  };
+  for (const Write& w : t_call.writes) {
+    if (w.size == 0) {  // a host write's byte run (up to 8 bytes, as memory holds them)
+      uint8_t b[8], a[8];
+      std::memcpy(b, &w.before, 8);
+      std::memcpy(a, &w.after, 8);
+      for (uint32_t i = 0; i < 8; ++i) {
+        if (b[i] != a[i]) note(w.address + i, b[i], w.function);
+      }
+    } else {  // a store: the value as the guest sees it, big-endian in memory
+      for (uint32_t i = 0; i < w.size; ++i)
+        note(w.address + i, uint8_t(w.before >> (8 * (w.size - 1 - i))), w.function);
+    }
+  }
+  // Raw lines (vector stores, dcbz, atomics): the bytes that differ from the first touch.
+  for (const auto& [line, before] : t_call.lines) {
+    const uint8_t* now = abi::xbox_memory::HostAddress(base, line);
+    for (uint32_t i = 0; i < kLine; ++i) {
+      if (now[i] != before[i]) note(line + i, before[i], t_call.line_function[line]);
+    }
+  }
+  std::vector<uint32_t> changed;
+  for (const auto& [address, b] : bytes) {
+    if (*abi::xbox_memory::HostAddress(base, address) != b.before) changed.push_back(address);
+  }
+  std::sort(changed.begin(), changed.end());
+  for (uint32_t address : changed) {
+    const char* function = bytes[address].function;
+    const uint8_t before = bytes[address].before;
+    if (!runs.empty() && runs.back().address + runs.back().size == address &&
+        runs.back().function == function) {
+      if (runs.back().size < 8) reinterpret_cast<uint8_t*>(&runs.back().before)[runs.back().size] = before;
+      ++runs.back().size;
+    } else {
+      runs.push_back({address, 1, function, before});
+    }
+  }
+  return runs;
+}
+
 bool CompareNativeCall(PPCContext& ctx, uint8_t* base, uint32_t entry, GuestFunction candidate,
                        GuestFunction original, uint32_t registers) {
   static const bool native = REXCVAR_GET(diag_store_compare_native);

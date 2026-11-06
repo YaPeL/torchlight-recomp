@@ -168,7 +168,7 @@ Microsoft documents (`https://learn.microsoft.com/cpp/windows/deployment-in-visu
 
 ## Notices and license texts
 
-### torchlight-nx (code adapted into this project)
+### torchlight-nx (code adapted, and a design followed)
 
 `src/hooks/native_skeleton.cpp` adapts native implementations of OGRE's node and bone updates from
 [torchlight-nx](https://github.com/liartes/torchlight-nx) by liartes (tag `v1.0.3`, commit
@@ -178,6 +178,13 @@ same license as this project (its text is this project's LICENSE); adapted on 20
 [NFSMW Recompiled](https://github.com/madelrandel-blip/NFSMW-Recompiled) by madelrandel-blip. The
 adaptation reads and writes guest memory through this project's helpers, calls guest functions
 through the image's function table (else the SDK's resolver) and adds this project's checks; it is compiled into the game executable.
+
+The GUI redraw filter (`src/hooks/gui_redraw_filter.h`, `--native_gui_redraw_filter`) follows the
+design of torchlight-nx 1.0.5 (commit `27b6b20`, `src/torchlight_ogre_natif.cpp`): its interface
+mode 3 (rebuild CEGUI's quads only when a drawn window changed) and mode 2 (rebuild always and
+compare the quad lists byte for byte), which this project's shadow mode follows to validate it. No
+code of it is copied: the rule here is written anew over this project's guest layout and compares
+the windows' rect caches where torchlight-nx hooks `Window::onMoved`.
 
 ### ReXGlue SDK
 
