@@ -99,14 +99,14 @@ class SamplePages : public Pages {
 };
 
 // The first start's real pages, over invented game files with a table made here: --pages setup
-// --sample_root DIR [--language CODE --strings FILE] [--no_game] [--install_delay MS]
+// --sample_root DIR [--language CODE --strings FILE] [--no_game] [--install_frames N]
 // [--expect installed|none|deck-closed] [--deck 1]. The exit code also says whether the install
 // ended as expected.
 struct SetupRun {
   fs::path sample_root;
   std::string language, strings;
   bool ask_game = true;
-  int install_delay = 0;
+  int install_frames = 0;  // per install step, frames of the working page
   std::string expect;
   std::string storage;     // ask, parent_unwritable, portable_unwritable
   bool user_data = false;  // invented user folders holding files to copy
@@ -140,8 +140,9 @@ int RunSetup(const Options& options, const SetupRun& run) {
   config.files = files;
   config.own_browser_only = true;
   config.browse_from = run.sample_root;
-  config.test_install_delay_ms = run.install_delay;
+  config.test_install_frames = run.install_frames;
   config.steam_deck = run.deck;
+  config.real_pad_connected = [] { return false; };  // a pad on this machine is not the Deck's
   if (!run.storage.empty()) {
     fs::create_directories(portable.parent_path());
     // Another portable folder, and files in the tests' user folders, to copy from.
@@ -299,7 +300,7 @@ int main(int argc, char** argv) {
     else if (key == "--language") setup.language = value;
     else if (key == "--strings") setup.strings = value;
     else if (key == "--no_game") setup.ask_game = value != "1";
-    else if (key == "--install_delay") setup.install_delay = std::atoi(value.c_str());
+    else if (key == "--install_frames") setup.install_frames = std::atoi(value.c_str());
     else if (key == "--expect") setup.expect = value;
     else if (key == "--storage") setup.storage = value;
     else if (key == "--user_data") setup.user_data = value == "1";
