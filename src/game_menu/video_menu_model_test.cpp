@@ -290,14 +290,12 @@ void TestRendererUnavailable() {
   Check(m.RestartNeeded(), "a renderer change needs a restart");
 }
 
-}  // namespace
-
 void TestMsaa() {
   VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
   Check(m.Text(Row::kMsaa) == "2x (Xbox 360)" && m.Enabled(Row::kMsaa), "2x by default");
   Check(m.Step(Row::kMsaa, +1) && m.settings().msaa == 4 && m.Text(Row::kMsaa) == "4x", "right: 4x");
   Check(!m.Step(Row::kMsaa, +1), "4x is last");
-  m.Step(Row::kMsaa, -1);
+  Check(m.Step(Row::kMsaa, -1) && m.settings().msaa == 2, "left: back to 2x");
   Check(m.Step(Row::kMsaa, -1) && m.settings().msaa == 0 && m.Text(Row::kMsaa) == "Off", "off");
   Check(!m.RestartNeeded(), "applied live, no restart");
   Check(SectionOf(Row::kMsaa) == Section::kVideo, "in the video section");
@@ -313,7 +311,15 @@ void TestMsaa() {
   none.max_msaa = 1;
   VideoMenuModel off(none, HostSettings{}, HostSettings{});
   Check(!off.Enabled(Row::kMsaa) && off.Text(Row::kMsaa) == "Off", "no multisampling: off, disabled");
+  // Built before the backend reported: every choice, until the device's most arrives.
+  VideoMenuModel early(Desktop(), four, four);
+  Check(early.Text(Row::kMsaa) == "4x", "unknown most: the saved choice");
+  early.SetMaxMsaa(2);
+  Check(early.Text(Row::kMsaa) == "2x (Xbox 360)" && !early.Step(Row::kMsaa, +1),
+        "once reported: what applies, no 4x");
 }
+
+}  // namespace
 
 int main() {
   TestMsaa();

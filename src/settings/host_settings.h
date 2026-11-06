@@ -58,9 +58,10 @@ struct HostSettings {
   uint32_t fps_cap = kFpsCapAuto;
   // Vertical sync of the backend's window.
   bool vsync = true;
-  // Multisampling of the game's frame: 0 (off), 2 or 4 samples. 2 by default, as the 360 drew it
-  // (the game turns its FSAA on at the first start). More than the device does falls back to its
-  // most when applied (EffectiveMsaa); the stored choice stays.
+  // Multisampling of the game's frame: 0 (off), 2 or 4 samples. 2 by default, as the 360 drew it:
+  // the game's first-start defaults (sub_823E1040) turn its FSAA setting on, and its window is
+  // created with "FSAA" = "2" (@0x8220970C). More than the device does falls back to its most when
+  // applied (EffectiveMsaa); the stored choice stays.
   uint32_t msaa = 2;
   // Game language code ("en", "de", "fr", "es"...); empty = the runtime's default.
   std::string language;

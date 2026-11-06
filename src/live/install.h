@@ -76,6 +76,8 @@ rex::ui::ImmediateDrawer* DialogImmediateDrawer();
 // (~150-180 ms with a GPU driver): the video column, built with the game's settings menu while the
 // title screen loads.
 settings::Capabilities HostCapabilities();
+// The most multisampling the backend applies here (tl_backend_max_msaa); 0 before it started.
+uint32_t MaxMsaa();
 // The settings in effect, and as they were at startup (what needs a restart compares to these).
 settings::HostSettings CurrentHostSettings();
 settings::HostSettings StartupHostSettings();

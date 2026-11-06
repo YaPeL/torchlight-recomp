@@ -47,6 +47,9 @@ class VideoMenuModel {
   bool RestartNeeded() const;
 
   const settings::HostSettings& settings() const { return current_; }
+  // The device's most multisampling once the backend reports it (Capabilities::max_msaa; the
+  // column may be built before the backend started).
+  void SetMaxMsaa(uint32_t max_msaa) { caps_.max_msaa = max_msaa; }
 
  private:
   std::string DefaultGpu() const;

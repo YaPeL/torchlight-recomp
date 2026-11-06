@@ -274,14 +274,17 @@ void LiveMode::Run() {
   apply_render_scale();
   // Multisampling of the main target (LiveOptions::msaa), limited to what the device applies.
   max_msaa_ = tl_backend_max_msaa(backend);
+  uint32_t msaa_applied = 0;
   auto apply_msaa = [&] {
     const uint32_t applied = tl_backend_set_msaa(backend, options_.msaa);
+    if (applied == msaa_applied) return;
+    msaa_applied = applied;
+    const std::string shown = applied > 1 ? std::to_string(applied) + "x" : std::string("off");
     if (options_.msaa > 1 && applied < options_.msaa) {
-      REXLOG_WARN("live: {}x multisampling asked, {} applied (device maximum {}x)", options_.msaa,
-                  applied > 1 ? std::to_string(applied) + "x" : std::string("none"),
+      REXLOG_INFO("live: multisampling {} ({}x asked, device maximum {}x)", shown, options_.msaa,
                   max_msaa_.load());
     } else {
-      REXLOG_INFO("live: multisampling {}", applied > 1 ? std::to_string(applied) + "x" : "off");
+      REXLOG_INFO("live: multisampling {}", shown);
     }
   };
   if (options_.msaa > 1) apply_msaa();

@@ -129,6 +129,8 @@ void SetProperty(GuestCall& call, uint32_t window, const char* name, const std::
 // navigation passes over, as it passes over disabled windows), values, checkboxes and the restart
 // notice.
 void Refresh(GuestCall& call) {
+  // The column may have been built before the backend reported what it applies.
+  if (const uint32_t max_msaa = live::MaxMsaa()) g_column.model->SetMaxMsaa(max_msaa);
   const VideoMenuModel& model = *g_column.model;
   for (int i = 0; i < kSectionCount; ++i) {
     SetProperty(call, g_column.section_text[i], "TextColour", Section(i) == g_column.section ? kYellow : kWhite);
@@ -440,6 +442,7 @@ bool OnSettingsNavigation(PPCContext& ctx, uint8_t* base, uint32_t handler, uint
     if (window && window == g_column.focus[i]) row = i;
   }
   if (row < 0) return false;
+  if (const uint32_t max_msaa = live::MaxMsaa()) g_column.model->SetMaxMsaa(max_msaa);
   bool changed = false;
   if (action == ui::navigation::kActionLeft || action == ui::navigation::kActionRight) {
     changed = g_column.model->Step(Row(row), action == ui::navigation::kActionLeft ? -1 : +1);
