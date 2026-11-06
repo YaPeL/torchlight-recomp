@@ -125,6 +125,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/rtss_listener_hooks.cpp
     src/hooks/resource_hooks.cpp
     src/hooks/video_mode_hooks.cpp
+    src/hooks/shadow_resolution_hooks.cpp
     src/hooks/find_file_hooks.cpp
     # The video menu inside the game's UI (hooks on the game's menus).
     src/game_menu/guest_call.cpp

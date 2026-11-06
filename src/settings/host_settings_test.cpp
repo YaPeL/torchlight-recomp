@@ -475,6 +475,24 @@ void TestGpuLogLabel() {
   Check(GpuLogLabel(s, gpus) == "? (0000:02:00.0)", "absent GPU without a stored name");
 }
 
+void TestShadowResolution() {
+  std::vector<std::string> warnings;
+  Check(Parse("", &warnings).shadow_resolution == 512 && warnings.empty(), "no key: 512, as the 360");
+  Check(Parse("shadow_resolution = 1024\n").shadow_resolution == 1024, "1024 read");
+  HostSettings bad = Parse("shadow_resolution = 2048\n", &warnings);
+  Check(bad.shadow_resolution == 512 && !warnings.empty(), "another size: reported, the default kept");
+  HostSettings pc;
+  pc.shadow_resolution = 1024;
+  Check(Parse(Serialize(pc)).shadow_resolution == 1024, "written and read back");
+  Check(RequiresRestart(Setting::kShadowResolution), "read by the game only at startup");
+  Check(ShadowResolutionChoices().values == std::vector<uint32_t>{512, 1024} &&
+            ShadowResolutionChoices().enabled,
+        "512 and 1024 everywhere");
+  HostSettings odd;
+  odd.shadow_resolution = 768;
+  Check(Normalize(odd, Capabilities{}).shadow_resolution == 512, "an invalid size normalizes to 512");
+}
+
 void TestMsaa() {
   std::vector<std::string> warnings;
   Check(Parse("", &warnings).msaa == 2 && warnings.empty(), "no key: 2x, as the 360");
@@ -505,6 +523,7 @@ void TestMsaa() {
 
 int main() {
   TestMsaa();
+  TestShadowResolution();
   TestAspect();
   TestRoundTrip();
   TestAchievementSet();

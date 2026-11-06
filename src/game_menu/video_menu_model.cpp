@@ -102,6 +102,8 @@ bool VideoMenuModel::Step(Row row, int direction) {
       current_.msaa = shown;
       return true;
     }
+    case Row::kShadowResolution:
+      return StepIn(settings::ShadowResolutionChoices().values, current_.shadow_resolution, direction);
     case Row::kAchievements: {
       // An explicit choice from here on, also when it was the default.
       settings::AchievementSet shown = settings::EffectiveAchievements(current_);
@@ -202,6 +204,12 @@ std::string VideoMenuModel::Text(Row row) const {
         default:
           return std::to_string(settings::EffectiveMsaa(current_, caps_)) + "x";
       }
+    case Row::kShadowResolution: {
+      // The game reads it only at startup: a choice not yet in effect says so on its row.
+      std::string text = current_.shadow_resolution == 1024 ? "PC (1024)" : "360 (512)";
+      if (current_.shadow_resolution != startup_.shadow_resolution) text += " on restart";
+      return text;
+    }
     case Row::kAchievements:
       return settings::EffectiveAchievements(current_) == settings::AchievementSet::kPc
                  ? "PC"
@@ -252,6 +260,7 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kAspect: return settings::AspectChoices(caps_).enabled;
     case Row::kFpsCap: return settings::FpsCapChoices(caps_).enabled;
     case Row::kMsaa: return settings::MsaaChoices(caps_).enabled;
+    case Row::kShadowResolution: return settings::ShadowResolutionChoices().enabled;
     case Row::kAchievements: return true;
     case Row::kLanguage: return settings::LanguageChoices(caps_).enabled;
     case Row::kRenderer:
@@ -291,6 +300,7 @@ bool VideoMenuModel::RestartNeeded() const {
   return Language(current_.language) != Language(startup_.language) ||
          current_.render_system != startup_.render_system || current_.gpu != startup_.gpu ||
          current_.aspect != startup_.aspect ||
+         current_.shadow_resolution != startup_.shadow_resolution ||
          settings::EffectiveAchievements(current_) != settings::EffectiveAchievements(startup_) ||
          current_.pad_prompts != startup_.pad_prompts ||
          current_.swap_confirm_cancel != startup_.swap_confirm_cancel;

@@ -190,8 +190,8 @@ void TestPadPrompts() {
 void TestSections() {
   int count[kSectionCount] = {};
   for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
-  Check(count[int(Section::kVideo)] == 5 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 4,
-        "five video rows, two controls, four extras");
+  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 4,
+        "six video rows, two controls, four extras");
   Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
             SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
         "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
@@ -319,10 +319,34 @@ void TestMsaa() {
         "once reported: what applies, no 4x");
 }
 
+void TestShadowResolution() {
+  VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
+  Check(m.Text(Row::kShadowResolution) == "360 (512)" && m.Enabled(Row::kShadowResolution),
+        "the 360's 512 by default");
+  Check(SectionOf(Row::kShadowResolution) == Section::kVideo, "in the video section");
+  Check(!m.Step(Row::kShadowResolution, -1), "512 is first");
+  Check(m.Step(Row::kShadowResolution, +1) && m.settings().shadow_resolution == 1024,
+        "right: the PC's 1024");
+  Check(m.Text(Row::kShadowResolution) == "PC (1024) on restart" && m.RestartNeeded(),
+        "not in effect until a restart, and the row says so");
+  Check(!m.Step(Row::kShadowResolution, +1), "1024 is last");
+  Check(m.Step(Row::kShadowResolution, -1) && m.Text(Row::kShadowResolution) == "360 (512)" &&
+            !m.RestartNeeded(),
+        "back to what runs: no restart");
+  HostSettings pc;
+  pc.shadow_resolution = 1024;
+  VideoMenuModel running(Desktop(), pc, pc);
+  Check(running.Text(Row::kShadowResolution) == "PC (1024)", "1024 in effect");
+  Check(running.Step(Row::kShadowResolution, -1) &&
+            running.Text(Row::kShadowResolution) == "360 (512) on restart",
+        "back to 512 also on restart");
+}
+
 }  // namespace
 
 int main() {
   TestMsaa();
+  TestShadowResolution();
   TestResolution();
   TestResolutionWithPreferredStart();
   TestFpsAndVsync();

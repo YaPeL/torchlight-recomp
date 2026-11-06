@@ -42,7 +42,8 @@ void TestShippedFile() {
   const char* texts[] = {"Video", "Resolution", "Aspect Ratio", "Frame Rate Limit", "Language",
                          "Achievements", "Vertical Sync", "Renderer", "GPU",
                          "Some changes need a restart", "Unlimited", "Window", "Default", "Auto",
-                         "PC", "Antialiasing", "Off"};
+                         "PC", "Antialiasing", "Off", "Shadows", "360 (512) on restart",
+                         "PC (1024) on restart"};
   for (const char* language : {"de", "fr", "es"}) {
     for (const char* text : texts) {
       if (!s.Has(language, text)) {
