@@ -127,9 +127,10 @@ Reason Window(const Reader& r, uint32_t w, Drawn& out) {
 }  // namespace detail
 
 // What the next rebuild would read, from the System at `system`, into `out`; kSkip when it could
-// all be collected, else why the rebuild cannot be skipped (`out` is then partial).
+// all be collected, else why the rebuild cannot be skipped (`out` is then partial, and `culprit`,
+// if given, the window that stopped it).
 template <typename Reader>
-Reason Collect(const Reader& r, uint32_t system, State& out) {
+Reason Collect(const Reader& r, uint32_t system, State& out, uint32_t* culprit = nullptr) {
   namespace ui = guest_abi::cegui;
   out.drawn.clear();
   out.renderer = r.u32(system + ui::kSystemRenderer.offset);
@@ -150,7 +151,10 @@ Reason Collect(const Reader& r, uint32_t system, State& out) {
   auto enter = [&](uint32_t w) -> Reason {
     if (depth >= kMaxDepth || out.drawn.size() >= kMaxDrawn) return Reason::kUnwalkable;
     Drawn d;
-    if (Reason why = detail::Window(r, w, d); why != Reason::kSkip) return why;
+    if (Reason why = detail::Window(r, w, d); why != Reason::kSkip) {
+      if (culprit) *culprit = w;
+      return why;
+    }
     out.drawn.push_back(d);
     const int32_t bytes = int32_t(r.u32(w + ui::kWindowChildrenEnd.offset) -
                                   r.u32(w + ui::kWindowChildrenBegin.offset));

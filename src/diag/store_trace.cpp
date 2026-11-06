@@ -952,11 +952,13 @@ std::vector<ChangedRun> EndSection(const uint8_t* base) {
   std::sort(changed.begin(), changed.end());
   for (uint32_t address : changed) {
     const char* function = bytes[address].function;
+    const uint8_t before = bytes[address].before;
     if (!runs.empty() && runs.back().address + runs.back().size == address &&
         runs.back().function == function) {
+      if (runs.back().size < 8) reinterpret_cast<uint8_t*>(&runs.back().before)[runs.back().size] = before;
       ++runs.back().size;
     } else {
-      runs.push_back({address, 1, function});
+      runs.push_back({address, 1, function, before});
     }
   }
   return runs;

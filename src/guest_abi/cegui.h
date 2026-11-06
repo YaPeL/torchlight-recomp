@@ -105,6 +105,9 @@ inline constexpr Field kRendererQuadList{200, Confidence::kConfirmed};
 inline constexpr Field kRendererQuadListHead{204, Confidence::kConfirmed};
 inline constexpr Field kRendererQuadListSize{208, Confidence::kConfirmed};
 inline constexpr Field kRendererSorted{536, Confidence::kConfirmed};
+// [confirmed] d_queueing: setQueueingEnabled (renderer slot 9, sub_821FBD30) is `stb r4,216(r3)`;
+// renderGUI sets it before the rebuild and clears it after doRender.
+inline constexpr Field kRendererQueueing{216, Confidence::kConfirmed};
 // [runic_difference] clearRenderList (renderer slot 8, sub_821FDFB0) sets d_sorted (`stb
 // r11,536(r31)`), erases the nodes (sub_821BA388), resets the head (`stw r8,4(r8)`, `stw r7,0(r7)`,
 // `stw r6,8(r6)`) and the size (`stw r9,208(r31)`), and flips the index of the vertex buffer pair

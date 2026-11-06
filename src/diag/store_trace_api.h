@@ -65,6 +65,7 @@ struct ChangedRun {
   uint32_t address;
   uint32_t size;
   const char* function;
+  uint64_t before;  // the run's first (up to) 8 bytes before the section, as memory held them
 };
 bool BeginSection(uint32_t entry, uint32_t sp);
 std::vector<ChangedRun> EndSection(const uint8_t* base);
