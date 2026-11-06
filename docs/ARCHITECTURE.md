@@ -226,15 +226,15 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     be read (`SAVE:\` is not mounted yet), so its first-start defaults always set 512. A hook on
     that setup (`hooks/shadow_resolution_hooks.cpp`) sets the host's size through the game's own
     setter first; 512 leaves the game alone. Two 1024 targets do not fit in the guest D3D's EDRAM
-    next to the frame and are created aliased (EDRAM aliasing, below), so only mode;
+    next to the frame and are created aliased (EDRAM aliasing, below), so only mode. A change
+    applies after a restart, and the row says so until then;
   - low quality (`low_quality`, off by default as on the 360) is the game's NETBOOK MODE, offered
     for weak devices: far clip and object distance 45 instead of 90, fog factor 1.0 instead of 1.3,
     a closer camera and lighter per-unit and per-level drawing (on the POCO X7, `fight.txt`: 9 %
     less of the game thread's work per frame). The game keeps it in its settings table, set by its
     first-start defaults and read again from `local_settings.txt` each time the main menu is
     entered, and saves it; a hook after both (`hooks/low_quality_hooks.cpp`) sets the host's value,
-    on or off. It applies after a restart, and the row says so until then. A change applies after a restart, and the row says so
-    until then;
+    on or off. It applies after a restart, and the row says so until then;
   - changes apply immediately (scale, vsync and multisampling through a request to the backend
     thread, the cap
     through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button
