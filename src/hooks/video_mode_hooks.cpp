@@ -11,6 +11,7 @@
 // the base are discarded. With Xenos the game keeps its 16:9. The same aliasing serves other
 // render targets larger than the 360's (AliasRenderTargets: the PC's shadow resolution).
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -61,7 +62,8 @@ const std::optional<FrameSize>& TargetFrame() {
 bool name_rewritten = false;
 // D3DSURFACE_PARAMETERS in guest memory for aliased render targets (all fields 0: base 0); set
 // once render targets the guest D3D refuses for lack of EDRAM are aliased (AliasRenderTargets).
-uint32_t aliased_parameters = 0;
+// Written once on the game thread; CreateRenderTarget may read it on another.
+std::atomic<uint32_t> aliased_parameters{0};
 // Set when CreateRenderTarget, on this thread, was refused EDRAM.
 thread_local bool edram_refused = false;
 
@@ -120,14 +122,14 @@ void InstallVideoMode() {
 }
 
 bool AliasRenderTargets() {
-  if (aliased_parameters) return true;
+  if (aliased_parameters.load(std::memory_order_relaxed)) return true;
   if (!torchlight::live::OnlyMode()) return false;
   auto* memory = REX_KERNEL_MEMORY();
   const uint32_t parameters = memory->SystemHeapAlloc(fn::kSurfaceParametersSize);
   if (!parameters) return false;
   std::memset(abi::xbox_memory::HostAddress(memory->virtual_membase(), parameters), 0,
               fn::kSurfaceParametersSize);
-  aliased_parameters = parameters;
+  aliased_parameters.store(parameters, std::memory_order_relaxed);
   return true;
 }
 
@@ -196,7 +198,8 @@ REX_FUNC(sub_827769B0) {
 FUNCTION_ADDRESS_CHECK(kD3DCreateRenderTarget, 8276A858);
 REX_EXTERN(__imp__sub_8276A858);
 REX_FUNC(sub_8276A858) {
-  if (!aliased_parameters || ctx.r7.u32 != 0) {
+  const uint32_t parameters = aliased_parameters.load(std::memory_order_relaxed);
+  if (!parameters || ctx.r7.u32 != 0) {
     __imp__sub_8276A858(ctx, base);
     return;
   }
@@ -211,7 +214,7 @@ REX_FUNC(sub_8276A858) {
   ctx.r4.u64 = height;
   ctx.r5.u64 = format;
   ctx.r6.u64 = multisample;
-  ctx.r7.u64 = aliased_parameters;
+  ctx.r7.u64 = parameters;
   ctx.lr = lr;
   __imp__sub_8276A858(ctx, base);
   REXLOG_INFO("render target {}x{} (D3D format {:08X}) aliased in EDRAM: {}", width,

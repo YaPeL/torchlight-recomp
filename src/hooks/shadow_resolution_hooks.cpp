@@ -31,6 +31,7 @@ void SetShadowResolution(PPCContext& ctx, uint8_t* base, uint32_t table) {
   const uint32_t size = torchlight::live::StartupHostSettings().shadow_resolution;
   if (size == 512 || !table) return;
   if (!torchlight::hooks::AliasRenderTargets()) {
+    // The menu still shows the choice; only this line says it did not apply.
     REXLOG_ERROR("settings: shadow resolution {} needs the native renderer; the game keeps 512", size);
     return;
   }
