@@ -277,6 +277,9 @@ void LiveMode::Run() {
   uint32_t msaa_applied = 0;
   auto apply_msaa = [&] {
     const uint32_t applied = tl_backend_set_msaa(backend, options_.msaa);
+    // The multisampled target could not be made although the device reported samples: the menu
+    // then offers none (MaxMsaa), instead of showing a count that does not apply.
+    if (options_.msaa > 1 && applied == 0) max_msaa_ = 1;
     if (applied == msaa_applied) return;
     msaa_applied = applied;
     const std::string shown = applied > 1 ? std::to_string(applied) + "x" : std::string("off");

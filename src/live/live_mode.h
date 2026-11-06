@@ -91,7 +91,8 @@ class LiveMode {
   // New internal render resolution, vertical sync and multisampling (any thread), applied by the
   // backend thread between frames.
   void SetVideo(settings::Resolution render_resolution, bool vsync, uint32_t msaa);
-  // The most multisampling the backend applies (tl_backend_max_msaa); 0 before it started.
+  // The most multisampling the backend applies (tl_backend_max_msaa); 0 before it started, 1 also
+  // once a multisampled main target could not be made.
   uint32_t MaxMsaa() const { return max_msaa_; }
 
  private:

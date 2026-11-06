@@ -200,8 +200,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   `.uilayout` layouts (CEGUI XML), the `onClick` commands and pad navigation.
 - `src/game_menu/`: the host's settings inside the game's settings menu (only mode), as a column to
   the right of its rows, in its style, in three sections picked by red buttons on top (Video:
-  resolution, aspect, frame rate cap, antialiasing, vsync, renderer, GPU; Controls: button prompts and the A/B
-  swap; Extras: language and achievements). It is all the game's own UI:
+  resolution, aspect, frame rate cap, antialiasing, vsync; Controls: button prompts and the A/B swap;
+  Extras: language, achievements, renderer and GPU). It is all the game's own UI:
   - the layout is ours (`data/ui/tl_video_settings.uilayout`, copied next to the executable) and only
     references widget types, fonts and imagesets from the pak; the guest sees it through a VFS device
     (`tlhost:`) added as an OGRE `FileSystem` location after `resources.cfg`;

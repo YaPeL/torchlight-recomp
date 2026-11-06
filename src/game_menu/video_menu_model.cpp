@@ -303,6 +303,8 @@ Section SectionOf(Row row) {
       return Section::kControls;
     case Row::kLanguage:
     case Row::kAchievements:
+    case Row::kRenderer:
+    case Row::kGpu:
       return Section::kExtras;
     default:
       return Section::kVideo;

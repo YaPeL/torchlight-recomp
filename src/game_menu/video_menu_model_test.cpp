@@ -190,8 +190,8 @@ void TestPadPrompts() {
 void TestSections() {
   int count[kSectionCount] = {};
   for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
-  Check(count[int(Section::kVideo)] == 7 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 2,
-        "seven video rows, two controls, two extras");
+  Check(count[int(Section::kVideo)] == 5 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 4,
+        "five video rows, two controls, four extras");
   Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
             SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
         "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
