@@ -1,0 +1,148 @@
+OGRE patch (ours): GLES render textures multisample in tile memory with
+EXT_multisampled_render_to_texture.
+
+OGRE 14.6's GLES2 multisample render texture is a second framebuffer of multisample renderbuffers,
+resolved by glBlitFramebuffer in swapBuffers. On a tile GPU (Mali, Adreno, PowerVR) that writes
+every sample to memory before the blit reads them back, several times the bandwidth of the
+single-sample target. Where the driver has GL_EXT_multisampled_render_to_texture this patch
+attaches the texture itself with glFramebufferTexture2DMultisampleEXT (and gives multisample depth
+renderbuffers that extension's storage): the samples live in tile memory and are resolved into the
+texture as each tile is written out, never stored. There is no second framebuffer, so swapBuffers
+takes the single-sample path (ogre-gles2-discard-depth-on-swap.patch: depth and stencil
+invalidated). The sample count is limited by GL_MAX_SAMPLES_EXT. Without the extension OGRE's blit
+path is unchanged. The log says which path a multisample framebuffer takes.
+
+diff --git a/RenderSystems/GLES2/include/OgreGLES2FrameBufferObject.h b/RenderSystems/GLES2/include/OgreGLES2FrameBufferObject.h
+index 4909614..926783b 100644
+--- a/RenderSystems/GLES2/include/OgreGLES2FrameBufferObject.h
++++ b/RenderSystems/GLES2/include/OgreGLES2FrameBufferObject.h
+@@ -59,6 +59,8 @@ namespace Ogre {
+         
+     private:
+         void initialise() override;
++        /// Multisampled through EXT_multisampled_render_to_texture (no mMultisampleFB).
++        bool mImplicitMultisample = false;
+     };
+ 
+ }
+diff --git a/RenderSystems/GLES2/include/OgreGLES2HardwarePixelBuffer.h b/RenderSystems/GLES2/include/OgreGLES2HardwarePixelBuffer.h
+index c41c470..a46af99 100644
+--- a/RenderSystems/GLES2/include/OgreGLES2HardwarePixelBuffer.h
++++ b/RenderSystems/GLES2/include/OgreGLES2HardwarePixelBuffer.h
+@@ -42,6 +42,10 @@ namespace Ogre {
+             virtual ~GLES2TextureBuffer();
+ 
+             void bindToFramebuffer(uint32 attachment, uint32 zoffset) override;
++            /** Attaches the texture with EXT_multisampled_render_to_texture: rendering is
++                multisampled in tile memory and resolved into the texture as the tile is written
++                out, so the samples are never stored. */
++            void bindToFramebufferImplicitMultisample(uint32 attachment, GLsizei samples);
+ 
+             /// Upload a box of pixels to this buffer on the card
+             void upload(const PixelBox &data, const Box &dest) override;
+diff --git a/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp b/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
+index 0df618d..d55c344 100644
+--- a/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
++++ b/RenderSystems/GLES2/src/OgreGLES2FrameBufferObject.cpp
+@@ -32,6 +32,7 @@ THE SOFTWARE.
+ #include "OgreGLDepthBufferCommon.h"
+ #include "OgreGLUtil.h"
+ #include "OgreRoot.h"
++#include "OgreLogManager.h"
+ #include "OgreGLES2RenderSystem.h"
+ #include "OgreGLNativeSupport.h"
+ #include <sstream>
+@@ -130,8 +131,14 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+                     OGRE_EXCEPT(Exception::ERR_INVALIDPARAMS, ss.str(), "GLES2FrameBufferObject::initialise");
+                 }
+ 
+-                mColour[x].buffer->bindToFramebuffer(
+-                    isDepth ? GL_DEPTH_ATTACHMENT : (GL_COLOR_ATTACHMENT0 + x), mColour[x].zoffset);
++                auto* texture = mImplicitMultisample && !isDepth
++                                    ? dynamic_cast<GLES2TextureBuffer*>(mColour[x].buffer)
++                                    : nullptr;
++                if (texture)
++                    texture->bindToFramebufferImplicitMultisample(GL_COLOR_ATTACHMENT0 + x, mNumSamples);
++                else
++                    mColour[x].buffer->bindToFramebuffer(
++                        isDepth ? GL_DEPTH_ATTACHMENT : (GL_COLOR_ATTACHMENT0 + x), mColour[x].zoffset);
+             }
+             else
+             {
+@@ -224,8 +231,18 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+             // Generate framebuffer object
+             OGRE_CHECK_GL_ERROR(glGenFramebuffers(1, &mFB));
+ 
+-            // Check if multisampling supported
+-            if(rs->hasMinGLVersion(3, 0))
++            // Check if multisampling supported. With EXT_multisampled_render_to_texture (tile
++            // GPUs) the samples live in tile memory and are resolved as the tile is written out:
++            // no second framebuffer, no blit, no stored samples.
++            mImplicitMultisample = false;
++            if(mNumSamples && rs->checkExtension("GL_EXT_multisampled_render_to_texture"))
++            {
++                GLint maxSamples;
++                OGRE_CHECK_GL_ERROR(glGetIntegerv(GL_MAX_SAMPLES_EXT, &maxSamples));
++                mNumSamples = std::min(mNumSamples, maxSamples);
++                mImplicitMultisample = mNumSamples > 0;
++            }
++            else if(rs->hasMinGLVersion(3, 0))
+             {
+                 // Check samples supported
+                 GLint maxSamples;
+@@ -238,7 +255,7 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+             }
+ 
+             // Will we need a second FBO to do multisampling?
+-            if (mNumSamples)
++            if (mNumSamples && !mImplicitMultisample)
+             {
+                 OGRE_CHECK_GL_ERROR(glGenFramebuffers(1, &mMultisampleFB));
+             }
+@@ -247,6 +264,12 @@ GLES2FrameBufferObject::GLES2FrameBufferObject()
+                 mMultisampleFB = 0;
+             }
+             
++            if (mNumSamples)
++                LogManager::getSingleton().stream()
++                    << "GLES2 FBO: " << mNumSamples << "x multisampling, "
++                    << (mImplicitMultisample ? "resolved in tile memory (EXT_multisampled_render_to_texture)"
++                                             : "resolved by a blit from a multisample framebuffer");
++
+             // Re-initialise
+             if(mColour[0].buffer)
+                 initialise();
+diff --git a/RenderSystems/GLES2/src/OgreGLES2HardwarePixelBuffer.cpp b/RenderSystems/GLES2/src/OgreGLES2HardwarePixelBuffer.cpp
+index 531b1f8..d72b7a3 100644
+--- a/RenderSystems/GLES2/src/OgreGLES2HardwarePixelBuffer.cpp
++++ b/RenderSystems/GLES2/src/OgreGLES2HardwarePixelBuffer.cpp
+@@ -305,6 +305,13 @@ namespace Ogre {
+         OGRE_CHECK_GL_ERROR(glFramebufferTexture2D(GL_FRAMEBUFFER, attachment,
+                                                    mFaceTarget, mTextureID, mLevel));
+     }
++
++    void GLES2TextureBuffer::bindToFramebufferImplicitMultisample(uint32 attachment, GLsizei samples)
++    {
++        OGRE_CHECK_GL_ERROR(glFramebufferTexture2DMultisampleEXT(GL_FRAMEBUFFER, attachment,
++                                                                 mFaceTarget, mTextureID, mLevel,
++                                                                 samples));
++    }
+     
+     void GLES2TextureBuffer::copyFromFramebuffer(size_t zoffset)
+     {
+@@ -428,7 +435,14 @@ namespace Ogre {
+         // Allocate storage for depth buffer
+         if (mNumSamples > 0)
+         {
+-            if(rs->hasMinGLVersion(3, 0) || rs->checkExtension("GL_APPLE_framebuffer_multisample"))
++            // With EXT_multisampled_render_to_texture every multisample framebuffer uses it
++            // (GLES2FrameBufferObject::bind), and its depth must be storage of the same extension.
++            if (rs->checkExtension("GL_EXT_multisampled_render_to_texture"))
++            {
++                OGRE_CHECK_GL_ERROR(glRenderbufferStorageMultisampleEXT(GL_RENDERBUFFER,
++                                                                        mNumSamples, mGLInternalFormat, mWidth, mHeight));
++            }
++            else if(rs->hasMinGLVersion(3, 0) || rs->checkExtension("GL_APPLE_framebuffer_multisample"))
+             {
+                 OGRE_CHECK_GL_ERROR(glRenderbufferStorageMultisampleAPPLE(GL_RENDERBUFFER,
+                                                                           mNumSamples, mGLInternalFormat, mWidth, mHeight));

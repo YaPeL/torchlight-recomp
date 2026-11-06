@@ -327,6 +327,16 @@ void tl_backend_set_probe(tl_backend* b, int enabled, uint32_t left, uint32_t to
                           uint32_t bottom);
 uint32_t tl_backend_probe_samples(tl_backend* b);
 
+/* Multisampling of the main target (the guest's window target, which the 360 drew with 2x MSAA);
+ * the guest's other render targets and the output stay single-sample. tl_backend_max_msaa: the
+ * most this device applies, up to 4 (1: none). tl_backend_set_msaa: 0 or 1 off, 2 or 4 asked
+ * (limited to the maximum); remakes the main target (its content is lost) and returns the count
+ * applied (0: none). Resolved before the display gamma pass: in tile memory on GLES with
+ * EXT_multisampled_render_to_texture, by a blit on other GL, by ResolveSubresource on Direct3D 11.
+ * Off by default. */
+uint32_t tl_backend_max_msaa(tl_backend* b);
+uint32_t tl_backend_set_msaa(tl_backend* b, uint32_t samples);
+
 /* Work the backend did since the previous call, for the live mode's slow frame report: RTSS
  * programs generated and the time of the draws that generated them (generation, compilation and
  * the driver's work on first use, as far as it happens inside the draw), of which the RTSS

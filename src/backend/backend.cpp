@@ -266,8 +266,17 @@ struct tl_backend {
     bool scaled = false;  // drawn at the render scale (RenderScale): the main target and output
     int32_t viewport_width = 0, viewport_height = 0;  // the current viewport, guest pixels
     uint16_t depth_pool = 0;  // its own depth pool on GLES (MakeTarget), kept when it is remade
+    uint32_t fsaa = 0;  // multisampling asked for (the main target only, tl_backend_set_msaa)
   };
   Target main;
+  // Multisampling of the main target (tl_backend_set_msaa), as the 360 drew its window: the count
+  // OGRE applied (0: none), how it is resolved before the display gamma, and on Direct3D 11 the
+  // single-sample texture it is resolved into (a multisample texture is not sampled as a 2D one).
+  uint32_t msaa_applied = 0;
+  uint32_t msaa_max = 0;  // tl_backend_max_msaa, probed once (0: not yet)
+  bool msaa_blit_resolve = false;  // GL with a separate multisample framebuffer (no tile resolve)
+  bool d3d11 = false;
+  Target main_resolve;
   Target output;  // main after the display gamma (DisplayGammaPass)
   std::map<uint64_t, Target> targets;
   Ogre::TexturePtr gamma_lut;  // 256 x 1, one texel per 8-bit value
@@ -515,8 +524,9 @@ Ogre::PixelFormat SampledTextureFormat(const tl_backend* b, Ogre::PixelFormat fo
 }
 
 bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, bool scaled,
-                tl_backend::Target& t) {
+                tl_backend::Target& t, uint32_t fsaa = 0) {
   t.scaled = scaled;
+  t.fsaa = fsaa;
   t.guest_width = w;
   t.guest_height = h;
   t.viewport_width = int32_t(w);
@@ -524,7 +534,7 @@ bool MakeTarget(tl_backend* b, const std::string& name, uint32_t w, uint32_t h, 
   t.texture = Ogre::TextureManager::getSingleton().createManual(
       name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME, Ogre::TEX_TYPE_2D,
       scaled ? b->scale.Host(w) : w, scaled ? b->scale.Host(h) : h, 0, Ogre::PF_A8R8G8B8,
-      Ogre::TU_RENDERTARGET);
+      Ogre::TU_RENDERTARGET, nullptr, false, fsaa);
   t.rt = t.texture->getBuffer()->getRenderTarget();
   t.rt->setAutoUpdated(false);
   // On GLES a depth buffer of its own: OGRE's default pool shares one buffer among targets it fits
@@ -555,8 +565,57 @@ void RemakeTarget(tl_backend* b, tl_backend::Target& t) {
   t.texture.reset();
   Ogre::TextureManager::getSingleton().remove(
       name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
-  if (!MakeTarget(b, name, w, h, t.scaled, t)) OGRE_EXCEPT(Ogre::Exception::ERR_RENDERINGAPI_ERROR,
+  if (!MakeTarget(b, name, w, h, t.scaled, t, t.fsaa)) OGRE_EXCEPT(Ogre::Exception::ERR_RENDERINGAPI_ERROR,
                                                  "cannot recreate " + name, "RemakeTarget");
+}
+
+// Destroys a target the backend made for itself (not the guest's), giving back its depth pool.
+void DropTarget(tl_backend* b, tl_backend::Target& t) {
+  if (!t.texture) return;
+  const std::string name = t.texture->getName();
+  t.texture.reset();
+  Ogre::TextureManager::getSingleton().remove(
+      name, Ogre::ResourceGroupManager::DEFAULT_RESOURCE_GROUP_NAME);
+  if (t.depth_pool) b->free_depth_pools.push_back(t.depth_pool);
+  t = tl_backend::Target();
+}
+
+// After the main target was made: the multisampling OGRE gave it and how it is resolved before the
+// display gamma. GLES with EXT_multisampled_render_to_texture resolves in tile memory (no separate
+// multisample framebuffer: ogre-gles2-msaa-render-to-texture.patch); GL otherwise by a blit in
+// swapBuffers; Direct3D 11 into main_resolve (ogre-d3d11-resolve-multisample-blit.patch).
+void MsaaFollowMain(tl_backend* b) {
+  const uint32_t applied = b->main.fsaa > 1 ? b->main.rt->getFSAA() : 0;
+  const uint32_t before = b->msaa_applied;
+  b->msaa_applied = applied > 1 ? applied : 0;
+  b->msaa_blit_resolve = false;
+  DropTarget(b, b->main_resolve);
+  if (!b->msaa_applied) {
+    if (before) Ogre::LogManager::getSingleton().logMessage("backend: main target without multisampling");
+    return;
+  }
+  const char* how;
+  if (b->d3d11) {
+    if (!MakeTarget(b, "tl_main_resolve", b->main.guest_width, b->main.guest_height, true,
+                    b->main_resolve))
+      OGRE_EXCEPT(Ogre::Exception::ERR_RENDERINGAPI_ERROR, "cannot create tl_main_resolve",
+                  "MsaaFollowMain");
+    how = "resolved into a texture (ResolveSubresource)";
+  } else {
+    uint32_t multisample_fbo = 0;
+    b->main.rt->getCustomAttribute("GL_MULTISAMPLEFBOID", &multisample_fbo);
+    b->msaa_blit_resolve = multisample_fbo != 0;
+    how = multisample_fbo ? "resolved by a blit" : "resolved in tile memory";
+  }
+  if (applied != before)
+    Ogre::LogManager::getSingleton().stream()
+        << "backend: main target " << b->msaa_applied << "x multisampled (asked "
+        << b->main.fsaa << "x), " << how;
+}
+
+void RemakeMain(tl_backend* b) {
+  RemakeTarget(b, b->main);
+  MsaaFollowMain(b);
 }
 
 // Reads a target as RGBA8 at its guest size, top row first (filtered down when the render scale
@@ -1507,10 +1566,21 @@ void ClearViewport(tl_backend* b, unsigned int buffers, const Ogre::ColourValue&
 
 void DisplayGammaPass(tl_backend* b) {
   Ogre::RenderSystem* rs = b->rs;
+  // The multisampled main target resolved first: the gamma pass reads one sample per pixel, and
+  // nothing after it (the output, the host UI) is multisampled.
+  Ogre::TexturePtr scene = b->main.texture;
+  if (b->msaa_applied) {
+    if (b->d3d11) {
+      b->main_resolve.texture->getBuffer()->blit(b->main.texture->getBuffer());
+      scene = b->main_resolve.texture;
+    } else {
+      b->main.rt->swapBuffers();  // GL's blit; in tile memory, only its depth discarded
+    }
+  }
   b->output.viewport->setDimensions(0, 0, 1, 1);
   SetViewport(b, b->output.viewport);
   FullScreenPassState(b, b->gamma_program, b->gamma_params);
-  Ogre::TexturePtr inputs[2] = {b->main.texture, b->gamma_lut};
+  Ogre::TexturePtr inputs[2] = {scene, b->gamma_lut};
   Ogre::SamplerPtr point = GetSampler(b, Ogre::FO_POINT, Ogre::FO_POINT, Ogre::FO_NONE,
                                       Ogre::TAM_CLAMP, Ogre::TAM_CLAMP, Ogre::TAM_CLAMP, 1);
   for (size_t u = 0; u < 2; ++u) {
@@ -1792,6 +1862,7 @@ tl_backend* CreateBackend(tl_render_system render_system, const char* gpu, uint3
     b->plugins = torchlight::backend::OgrePlugins::Load(*b->root, render_system,
                                                         parent ? &parent_window : nullptr);
     if (render_system == TL_RENDER_SYSTEM_D3D11) b->depth_bias_factor = conv::kD3D11DepthBiasFactor;
+    b->d3d11 = render_system == TL_RENDER_SYSTEM_D3D11;
     const Ogre::RenderSystemList& list = b->root->getAvailableRenderers();
     if (list.empty()) {
       SetError(error, error_size, "no OGRE render system available");
@@ -1922,6 +1993,7 @@ void tl_backend_destroy(tl_backend* b) {
   b->targets.clear();
   b->samplers.clear();
   b->main.texture.reset();
+  b->main_resolve.texture.reset();
   b->output.texture.reset();
   b->quad.reset();
   b->ui_textures.clear();
@@ -2128,7 +2200,7 @@ int tl_backend_set_render_scale(tl_backend* b, float scale) {
     // as the new one, and destroying it later would take the new one down with it.
     b->rs->_disableTextureUnitsFrom(0);
     b->enabled_units = 0;
-    RemakeTarget(b, b->main);
+    RemakeMain(b);
     RemakeTarget(b, b->output);
   } catch (Ogre::Exception& e) {
     Ogre::LogManager::getSingleton().logError("render scale: " + e.getDescription());
@@ -2152,7 +2224,7 @@ int tl_backend_set_guest_size(tl_backend* b, uint32_t width, uint32_t height) {
     // As in tl_backend_set_render_scale: nothing may keep an old target alive.
     b->rs->_disableTextureUnitsFrom(0);
     b->enabled_units = 0;
-    RemakeTarget(b, b->main);
+    RemakeMain(b);
     RemakeTarget(b, b->output);
   } catch (Ogre::Exception& e) {
     Ogre::LogManager::getSingleton().logError("guest size: " + e.getDescription());
@@ -2335,7 +2407,10 @@ void tl_backend_set_gamma_ramp(tl_backend* b, int pwl, const uint16_t values[768
 }
 
 void tl_backend_discard_depth(tl_backend* b) {
-  if (b->discards_depth && b->current && b->current->rt) b->current->rt->swapBuffers();
+  if (!b->discards_depth || !b->current || !b->current->rt) return;
+  // A main target with its own multisample framebuffer would resolve it here, mid-frame.
+  if (b->current == &b->main && b->msaa_blit_resolve) return;
+  b->current->rt->swapBuffers();
 }
 
 int tl_backend_discards_depth(const tl_backend* b) { return b->discards_depth ? 1 : 0; }
@@ -2762,7 +2837,8 @@ static int Draw(tl_backend* b, const tl_draw* d) {
       b->query->endOcclusionQuery();
       unsigned int samples = 0;
       b->query->pullOcclusionQuery(&samples);
-      b->probe_samples = samples;
+      // The query counts samples; the probe reports pixels, multisampled or not.
+      b->probe_samples = b->msaa_applied ? samples / b->msaa_applied : samples;
       b->rs->setScissorTest(false);
       tl_backend_set_state(b, &b->state);
     }
@@ -2951,6 +3027,39 @@ void tl_backend_set_probe(tl_backend* b, int enabled, uint32_t left, uint32_t to
 }
 
 uint32_t tl_backend_probe_samples(tl_backend* b) { return b->probe_samples; }
+
+uint32_t tl_backend_max_msaa(tl_backend* b) {
+  if (b->msaa_max) return b->msaa_max;
+  // Asked of a small render texture: what OGRE applies of 4x (the most the options offer).
+  b->msaa_max = 1;
+  try {
+    tl_backend::Target probe;
+    if (MakeTarget(b, "tl_msaa_probe", 16, 16, false, probe, 4)) {
+      const uint32_t applied = probe.rt->getFSAA();
+      b->msaa_max = applied > 1 ? applied : 1;
+    }
+    DropTarget(b, probe);
+  } catch (Ogre::Exception& e) {
+    Ogre::LogManager::getSingleton().logError("multisampling probe: " + e.getDescription());
+  }
+  return b->msaa_max;
+}
+
+uint32_t tl_backend_set_msaa(tl_backend* b, uint32_t samples) {
+  const uint32_t asked = samples > 1 ? std::min(samples, tl_backend_max_msaa(b)) : 0;
+  if (asked == b->main.fsaa) return b->msaa_applied;
+  b->main.fsaa = asked > 1 ? asked : 0;
+  try {
+    b->rs->_disableTextureUnitsFrom(0);  // nothing may keep the old main target alive
+    b->enabled_units = 0;
+    RemakeMain(b);
+  } catch (Ogre::Exception& e) {
+    Ogre::LogManager::getSingleton().logError("multisampling: " + e.getDescription());
+  }
+  b->active = nullptr;
+  b->current = &b->main;
+  return b->msaa_applied;
+}
 
 int tl_backend_read_rgba(tl_backend* b, void* rgba, uint32_t stride) {
   try {

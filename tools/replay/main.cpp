@@ -40,7 +40,7 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
        (without --game_data_root, the game's files are not read: for captures that load none,
        such as synthetic_capture's)
               [--region X0,Y0,X1,Y1] [--dump_targets] [--window] [--loop] [--via_live]
-              [--frames_png] [--live_content] [--render_scale S] [--host_size]
+              [--frames_png] [--live_content] [--render_scale S] [--host_size] [--msaa N]
               [--render_system NAME] [--gpu ID]
        replay --session RECORDING.tlses --game_data_root DIR [--out DIR] [--session_frame N]
               [--session_frames A-B] [--draws LIST] [--region ...] [--dump_targets]
@@ -55,6 +55,8 @@ constexpr const char kUsage[] = R"(Usage: replay CAPTURE.tlcap [--game_data_root
   --dump_targets writes every render target's final content as target_<name>.png.
   --render_scale draws at S times the guest's size (tl_backend_set_render_scale); images are
   still written at the guest's size.
+  --msaa multisamples the main target N times (2 or 4, tl_backend_set_msaa; default off), as
+  the game's MSAA setting does; the count applied is printed.
   --host_size also writes the output at the size it is drawn (the guest's size times
   --render_scale), unfiltered, as render_host.png; with --frames_png the frames are written at
   that size. The metric and render.png stay at the guest's size.
@@ -102,6 +104,7 @@ int main(int argc, char** argv) {
   bool bench = false;
   std::optional<std::pair<uint64_t, uint64_t>> bench_frames;
   float render_scale = 1;
+  uint32_t msaa = 0;
   tl_render_system render_system = TL_RENDER_SYSTEM_GL3PLUS;
   std::string gpu;
   for (int i = 1; i < argc; ++i) {
@@ -136,6 +139,8 @@ int main(int argc, char** argv) {
       bench_frames = std::make_pair(uint64_t(first), uint64_t(last));
     } else if (a == "--render_scale" && i + 1 < argc) {
       render_scale = std::stof(argv[++i]);
+    } else if (a == "--msaa" && i + 1 < argc) {
+      msaa = uint32_t(std::stoul(argv[++i]));
     } else if (a == "--live_content") {
       use_live_content = true;
     } else if (a == "--host_size") {
@@ -288,6 +293,10 @@ int main(int argc, char** argv) {
   if (tl_backend_set_render_scale(backend, render_scale) != 0) {
     std::fprintf(stderr, "error: render scale %g not accepted\n", render_scale);
     return 1;
+  }
+  if (msaa > 1) {
+    std::printf("msaa: %ux asked, %u applied (device maximum %u)\n", msaa,
+                tl_backend_set_msaa(backend, msaa), tl_backend_max_msaa(backend));
   }
   ZipArchive pak;
   if (!data_root.empty() && !pak.Open(data_root + "/pak.zip", error)) {

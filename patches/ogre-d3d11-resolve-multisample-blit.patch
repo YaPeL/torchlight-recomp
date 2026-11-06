@@ -1,0 +1,57 @@
+OGRE patch (ours): a Direct3D 11 blit from a multisample texture into a single-sample one resolves.
+
+OGRE 14.6's D3D11HardwarePixelBuffer::blit copies with CopySubresourceRegion, which Direct3D 11
+refuses between textures of different sample counts; OGRE resolves a multisample render texture
+only when it is read back to memory. A multisample render texture's shader view is a
+TEXTURE2DMS, which a plain 2D sampler cannot read. With this patch a whole-texture blit from a
+multisample texture into a single-sample one of the same size is a ResolveSubresource, so the
+backend can resolve its multisampled main target into a texture its display-gamma pass samples
+(src/backend/backend.cpp, MSAA). D3D11Texture gains two read accessors for that. Other blits are
+unchanged.
+
+diff --git a/RenderSystems/Direct3D11/include/OgreD3D11Texture.h b/RenderSystems/Direct3D11/include/OgreD3D11Texture.h
+index b505702..08bb83f 100644
+--- a/RenderSystems/Direct3D11/include/OgreD3D11Texture.h
++++ b/RenderSystems/Direct3D11/include/OgreD3D11Texture.h
+@@ -54,6 +54,9 @@ namespace Ogre {
+ 		void copyToTexture(TexturePtr& target);
+ 
+ 		ID3D11Resource *getTextureResource() { assert(mpTex); return mpTex.Get(); }
++		/// The effective multisampling and pixel format (a blit resolves a multisample source).
++		const DXGI_SAMPLE_DESC& getFSAADesc() const { return mFSAAType; }
++		DXGI_FORMAT getD3DFormat() const { return mD3DFormat; }
+ 		/// retrieves a pointer to the actual texture
+ 		ID3D11ShaderResourceView *getSrvView() { assert(mpShaderResourceView); return mpShaderResourceView.Get(); }
+ 		D3D11_SHADER_RESOURCE_VIEW_DESC getShaderResourceViewDesc() const { return mSRVDesc; }
+diff --git a/RenderSystems/Direct3D11/src/OgreD3D11HardwarePixelBuffer.cpp b/RenderSystems/Direct3D11/src/OgreD3D11HardwarePixelBuffer.cpp
+index 745b219..35d4f21 100644
+--- a/RenderSystems/Direct3D11/src/OgreD3D11HardwarePixelBuffer.cpp
++++ b/RenderSystems/Direct3D11/src/OgreD3D11HardwarePixelBuffer.cpp
+@@ -259,9 +259,24 @@ namespace Ogre {
+         D3D11_BOX dstBoxDx11 = getSubresourceBox(dstBox);
+         UINT dstSubresource = getSubresourceIndex(dstBox.front);
+ 
+-        mDevice.GetImmediateContext()->CopySubresourceRegion(
+-            mParentTexture->getTextureResource(), dstSubresource, dstBoxDx11.left, dstBoxDx11.top, dstBoxDx11.front,
+-            srcDx11->mParentTexture->getTextureResource(), srcSubresource, &srcBoxDx11);
++        // A multisample texture into a single-sample one of the same size: a resolve, as
++        // CopySubresourceRegion cannot copy between different sample counts.
++        if (srcDx11->mParentTexture->getFSAADesc().Count > 1 &&
++            mParentTexture->getFSAADesc().Count == 1 && srcBox.left == 0 && srcBox.top == 0 &&
++            dstBox.left == 0 && dstBox.top == 0 && srcBox.getWidth() == srcDx11->getWidth() &&
++            srcBox.getHeight() == srcDx11->getHeight())
++        {
++            mDevice.GetImmediateContext()->ResolveSubresource(
++                mParentTexture->getTextureResource(), dstSubresource,
++                srcDx11->mParentTexture->getTextureResource(), srcSubresource,
++                mParentTexture->getD3DFormat());
++        }
++        else
++        {
++            mDevice.GetImmediateContext()->CopySubresourceRegion(
++                mParentTexture->getTextureResource(), dstSubresource, dstBoxDx11.left, dstBoxDx11.top, dstBoxDx11.front,
++                srcDx11->mParentTexture->getTextureResource(), srcSubresource, &srcBoxDx11);
++        }
+ 
+         if(mDevice.isError())
+         {
