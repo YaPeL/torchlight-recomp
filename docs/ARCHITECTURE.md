@@ -225,8 +225,8 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
     be read (`SAVE:\` is not mounted yet), so its first-start defaults always set 512. A hook on
     that setup (`hooks/shadow_resolution_hooks.cpp`) sets the host's size through the game's own
     setter first; 512 leaves the game alone. Two 1024 targets do not fit in the guest D3D's EDRAM
-    next to the frame and are created aliased (EDRAM aliasing, below), so only mode. A change applies after a restart, and the row says so
-    until then;
+    next to the frame and are created aliased (EDRAM aliasing, below), so only mode. A change
+    applies after a restart, and the row says so until then;
   - changes apply immediately (scale, vsync and multisampling through a request to the backend
     thread, the cap
     through `SetGuestVblankRate`) and `settings.toml` is saved; language, renderer, GPU, button
