@@ -1,5 +1,5 @@
-// The hero's hold-position flag is released while the game locks the player's input (a cutscene, a
-// dialog). The game's client update sets the flag from the held input on every unlocked frame
+// The hero's hold-position flag is released while the game locks the hero's input: cutscenes, among
+// other states (guest_abi player_input::kInputLocked lists them). The game's client update sets the flag from the held input on every unlocked frame
 // (guest_abi player_input::kClientUpdate), but on a locked frame it returns before that, after
 // releasing only its own held-input fields; so a flag set by the attack held when a cutscene starts
 // stays set for the whole cutscene. The game's moveTo refuses to move a unit with the flag set, so a
