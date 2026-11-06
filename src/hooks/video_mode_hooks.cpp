@@ -8,7 +8,8 @@
 // D3D's EDRAM bookkeeping (10 MB) has no room for a wider back buffer next to the game's render
 // targets, so a render target it rejects for lack of EDRAM is created again aliased at EDRAM base
 // 0 (D3DSURFACE_PARAMETERS); with the null GPU no EDRAM exists and the GPU commands that would use
-// the base are discarded. With Xenos the game keeps its 16:9.
+// the base are discarded. With Xenos the game keeps its 16:9. The same aliasing serves other
+// render targets larger than the 360's (AliasRenderTargets: the PC's shadow resolution).
 
 #include <cstdint>
 #include <cstdio>
@@ -58,7 +59,8 @@ const std::optional<FrameSize>& TargetFrame() {
 
 // Set by InstallVideoMode once the mode's name was rewritten: the descriptors follow only then.
 bool name_rewritten = false;
-// D3DSURFACE_PARAMETERS in guest memory for aliased render targets (all fields 0: base 0).
+// D3DSURFACE_PARAMETERS in guest memory for aliased render targets (all fields 0: base 0); set
+// once render targets the guest D3D refuses for lack of EDRAM are aliased (AliasRenderTargets).
 uint32_t aliased_parameters = 0;
 // Set when CreateRenderTarget, on this thread, was refused EDRAM.
 thread_local bool edram_refused = false;
@@ -107,17 +109,26 @@ void InstallVideoMode() {
                  fn::kWideModeName);
     return;
   }
-  aliased_parameters = memory->SystemHeapAlloc(fn::kSurfaceParametersSize);
-  if (!aliased_parameters) {
+  if (!AliasRenderTargets()) {
     REXLOG_ERROR("video mode: no guest memory for surface parameters; the guest keeps 16:9");
     return;
   }
-  std::memset(abi::xbox_memory::HostAddress(membase, aliased_parameters), 0,
-              fn::kSurfaceParametersSize);
   abi::WriteBytes(membase, fn::kWideModeName, name, original.size());
   heap->Protect(fn::kWideModeName, uint32_t(original.size()), old_protect);
   name_rewritten = true;
   REXLOG_INFO("video mode: '{}' renamed '{}'", original, name);
+}
+
+bool AliasRenderTargets() {
+  if (aliased_parameters) return true;
+  if (!torchlight::live::OnlyMode()) return false;
+  auto* memory = REX_KERNEL_MEMORY();
+  const uint32_t parameters = memory->SystemHeapAlloc(fn::kSurfaceParametersSize);
+  if (!parameters) return false;
+  std::memset(abi::xbox_memory::HostAddress(memory->virtual_membase(), parameters), 0,
+              fn::kSurfaceParametersSize);
+  aliased_parameters = parameters;
+  return true;
 }
 
 bool WiderThan16x9() {
@@ -185,7 +196,7 @@ REX_FUNC(sub_827769B0) {
 FUNCTION_ADDRESS_CHECK(kD3DCreateRenderTarget, 8276A858);
 REX_EXTERN(__imp__sub_8276A858);
 REX_FUNC(sub_8276A858) {
-  if (!name_rewritten || ctx.r7.u32 != 0) {
+  if (!aliased_parameters || ctx.r7.u32 != 0) {
     __imp__sub_8276A858(ctx, base);
     return;
   }
@@ -203,7 +214,7 @@ REX_FUNC(sub_8276A858) {
   ctx.r7.u64 = aliased_parameters;
   ctx.lr = lr;
   __imp__sub_8276A858(ctx, base);
-  REXLOG_INFO("video mode: {}x{} render target (D3D format {:08X}) aliased in EDRAM: {}", width,
+  REXLOG_INFO("render target {}x{} (D3D format {:08X}) aliased in EDRAM: {}", width,
               height, format, ctx.r3.u32 ? "created" : "failed");
 }
 
