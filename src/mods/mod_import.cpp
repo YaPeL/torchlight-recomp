@@ -17,7 +17,6 @@ namespace {
 
 namespace fs = std::filesystem;
 
-constexpr const char* kPartialSuffix = ".partial";
 constexpr size_t kChunk = 1 << 20;
 
 // One file or folder of the source, by its path's components (UTF-8).
@@ -442,7 +441,7 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   const std::vector<FoundMod> mods = FindMods(entries, root_name, result.skipped);
   if (mods.empty()) return fail({ImportStatus::kNoModFound, ""});
   for (const FoundMod& mod : mods) {
-    const std::string_view suffix(kPartialSuffix);
+    const std::string_view suffix(kImportPartialSuffix);
     const bool partial_name = mod.name.size() > suffix.size() &&
                               EqualNoCase(mod.name.substr(mod.name.size() - suffix.size()), suffix);
     if (!IsPlainComponent(mod.name) || EqualNoCase(mod.name, kListFile) || partial_name) {
@@ -492,7 +491,7 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   Writer writer{progress, cancel, totals};
   writer.Report();
   for (size_t m = 0; m < mods.size(); ++m) {
-    const fs::path partial = mods_folder / PathOf(mods[m].name + kPartialSuffix);
+    const fs::path partial = mods_folder / PathOf(mods[m].name + kImportPartialSuffix);
     // A .partial is only ever ours: what an interrupted import left.
     fs::remove_all(partial, ec);
     partials.push_back(partial);

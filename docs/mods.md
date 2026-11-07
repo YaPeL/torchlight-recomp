@@ -1343,7 +1343,8 @@ folder), top-level folders that hold them (one mod or a pack, each named after i
 top-level files are left out), or the same one level down below a single folder (a zipped `mods`
 folder). A `mods.dat` in the source is never copied. Each mod is written to `<name>.partial` and
 renamed without replacing anything, so a name already there fails the import, and a failure or a
-cancel leaves nothing behind. Zip entries with unsafe names (absolute, `..`, drive letters,
+cancel leaves nothing behind (a `.partial` an interrupted run left is never loaded as a mod, and the
+next import of that name replaces it). Zip entries with unsafe names (absolute, `..`, drive letters,
 colons), symbolic links or encryption are refused; names are taken as UTF-8 only with the entry's
 UTF-8 flag, otherwise they must be ASCII (the format's CP437 agrees with ASCII only).
 
