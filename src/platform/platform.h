@@ -139,7 +139,14 @@ enum class PickResult { kChosen, kCancelled, kFailed, kUncopied };
 // The file's `path` is one the program can open: on Android the picker gives a document URI, which
 // is copied first (with a progress window) to the app's cache; ForgetPickedFiles removes those
 // copies once they are used.
-PickResult PickFile(const std::string& title, std::string& path, std::string& error);
+// `filters` limit the files offered (none: any file); Android turns each pattern into its MIME
+// type (SDL's SDLActivity.showFileDialog).
+struct FileFilter {
+  std::string name;     // "Zip archives"
+  std::string pattern;  // extensions without the dot, ';' between them: "zip"
+};
+PickResult PickFile(const std::string& title, std::string& path, std::string& error,
+                    const std::vector<FileFilter>& filters = {});
 PickResult PickFolder(const std::string& title, std::string& path, std::string& error);
 // Whether PickFolder can show a picker here (Android's, through SDL, picks files only).
 bool CanPickFolder();

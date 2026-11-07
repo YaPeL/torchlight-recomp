@@ -13,6 +13,7 @@ if(ANDROID)
     # The app's storage comes from the activity, through SDL (user_folders_android.cpp).
     target_link_libraries(torchlight_user_folders PRIVATE SDL3::SDL3)
     add_library(torchlight_platform STATIC platform_sdl.cpp platform_android.cpp text_wrap.cpp
+                document_name.cpp
                 display_refresh_none.cpp)
     # android: ANativeWindow from the Java surface (the surface's lifecycle).
     target_link_libraries(torchlight_platform PUBLIC rex::runtime torchlight_user_folders
@@ -135,6 +136,12 @@ target_compile_options(gpu_adapters_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME gpu_adapters_test COMMAND gpu_adapters_test)
 
 # The first start dialogs' line breaks: pure, tested on every platform.
+# The name of a picked document's copy (document_name.h): Android's, tested everywhere.
+add_executable(document_name_test document_name_test.cpp document_name.cpp)
+target_include_directories(document_name_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(document_name_test PRIVATE cxx_std_23)
+target_compile_options(document_name_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME document_name_test COMMAND document_name_test)
 add_executable(text_wrap_test text_wrap_test.cpp text_wrap.cpp)
 target_include_directories(text_wrap_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/..")
 target_compile_features(text_wrap_test PRIVATE cxx_std_23)

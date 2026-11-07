@@ -2,9 +2,10 @@
 # calls (video_menu.cpp, guest_call.cpp) are part of the executable.
 add_library(torchlight_game_menu_model STATIC video_menu_model.cpp menu_strings.cpp
     text_conversion.cpp wide_layout.cpp mod_scripts.cpp
-    skill_tree_model.cpp class_selector_model.cpp)
+    skill_tree_model.cpp class_selector_model.cpp mod_import_message.cpp)
 target_include_directories(torchlight_game_menu_model PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
-target_link_libraries(torchlight_game_menu_model PUBLIC torchlight_settings)
+# torchlight_mod_import: Import Mod's result (mod_import_message.h) and the import itself.
+target_link_libraries(torchlight_game_menu_model PUBLIC torchlight_settings torchlight_mod_import)
 target_compile_features(torchlight_game_menu_model PUBLIC cxx_std_23)
 target_compile_options(torchlight_game_menu_model PRIVATE -Wall -Wextra)
 
