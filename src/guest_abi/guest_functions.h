@@ -394,4 +394,32 @@ inline constexpr GuestFunction kFirstStartDefaults{0x823E1040, Confidence::kConf
 inline constexpr uint32_t kNetbookModeIndex = 0x83558EEC;
 }  // namespace game_settings
 
+namespace player_input {
+// [confirmed] The client's frame update (r3 = the game client, hero_motion::Client), called once per
+// frame by sub_821EF318 (@0x821EF5D0). On a frame whose input is locked (kInputLocked, @0x821EBCC0)
+// it clears the client's own held-input fields (+0xF7C, +0xF60..+0xF65, +0x55..+0x57,
+// @0x821EBCC8..@0x821EBD08), may put the hero in state 2 (@0x821EBD74) and returns without reading
+// the pad. On the other frames it sets the hero's kUnitHoldPosition to 1 while the held input asks
+// for it and to 0 otherwise (@0x821EC1E4, @0x821EC218, @0x821EC254), except when sub_821E8638
+// answers non-zero (the branch to 0x821EC258 skips that block).
+inline constexpr GuestFunction kClientUpdate{0x821EBA48, Confidence::kConfirmed};
+// [confirmed] The input lock (r3 = the client's kClientGame; returns 1 when locked). A query: it
+// only reads fields and calls the hero's vtable slot 8 (+0x20), and writes nothing
+// (@0x821ED810..@0x821ED9D4). Locked when the hero has +0x102C set or +0x1460 == 1, the game's
+// +0x3C8 has +0x18 or +0x19 set, the hero's slot 8 answers 0, the hero follows a path controller
+// (+0x66C) and moves (+0x1FC), or the game's +0x15EC is above 0 (signed).
+inline constexpr GuestFunction kInputLocked{0x821ED810, Confidence::kConfirmed};
+// [confirmed] The client's game: the frame update passes +0x3C to kInputLocked (@0x821EBCBC).
+inline constexpr Field kClientGame{0x3C, Confidence::kConfirmed};
+// [confirmed] The unit's hold-position flag. moveTo sub_8228F8C8 reads it (@0x8228F94C) and refuses
+// the move while it is set (@0x8228F9DC), unless [unit+0x2C4]+0x40 is set (@0x8228F95C..
+// @0x8228F970). The game's own input release sub_8221AAB8 (r4 = 0) clears it with the rest of the
+// held input, and also stops the hero (+0x1FC = 0) (@0x8221AB08, @0x8221AB1C). PC Torchlight.exe
+// has the same flag at unit+0x20A: its moveTo 0x492AD0 refuses the move the same way (@0x492B95),
+// its client update sets it only for one held input action (@0x415151, otherwise 0 @0x41518F) and
+// its release 0x40D9D0 clears it. [inferred] On the 360 the pad's attack sets it; on PC only the
+// stand-in-place key does.
+inline constexpr Field kUnitHoldPosition{0x1FE, Confidence::kConfirmed};
+}  // namespace player_input
+
 }  // namespace torchlight::guest_abi::functions
