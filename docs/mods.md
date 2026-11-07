@@ -1321,7 +1321,7 @@ What the launcher would add on top, kept in the launcher (a thin layer over the 
   ones -1 (any negative value), then `WriteModList` to `mods.dat`. Write it whole, to a temporary
   file renamed over the old one.
 - **Install a mod:** copy its folder into the mods folder as it is; it shows up at the end at the
-  next scan. The launcher should not unpack archives itself unless asked to later.
+  next scan. A .zip or a folder the player picks goes through `mods/mod_import.h` (8c).
 
 What the game does at its next start with a changed set (nothing for the launcher to do): it copies
 the saves before using it (`save-backups/...-mods`), rebuilds its unit table when the mods' units
@@ -1332,6 +1332,28 @@ starts; your saves are copied first" covers it.
 Not decided, for the launcher's author and the user: whether a mod with a `mod.dat` that does not
 read (skipped by the scan) is shown as broken, and whether `COMPRESSED` is shown at all (it is kept as
 read; this build loads only unpacked folders).
+
+## 8c. Importing a mod from a .zip or a folder (2026-11-06)
+
+`mods/mod_import.h` installs a mod the player picked, a `.zip` or a folder, into the mods folder:
+the zip is **extracted on import** into `mods/<name>/`, the layout of section 8, and from then on it
+is a mod like any copied in by hand (the next start adds it to `mods.dat` and builds what it needs).
+Accepted layouts: `mod.dat` or `media/` at the source's root (one mod, named after the zip or the
+folder), top-level folders that hold them (one mod or a pack, each named after its folder; other
+top-level files are left out), or the same one level down below a single folder (a zipped `mods`
+folder). A `mods.dat` in the source is never copied. Each mod is written to `<name>.partial` and
+renamed without replacing anything, so a name already there fails the import, and a failure or a
+cancel leaves nothing behind. Zip entries with unsafe names (absolute, `..`, drive letters,
+colons), symbolic links or encryption are refused; names are taken as UTF-8 only with the entry's
+UTF-8 flag, otherwise they must be ASCII (the format's CP437 agrees with ASCII only).
+
+Why not mount the zip instead: the game's data loader lists and opens a mod's files by path through
+the runtime's file system (`.DAT` units, the mod file map, `mod.dat`) and writes its compiled `.ADM`
+files into the mod's folder, and our host side reads the same files (unit index and cache, texture
+resolver, the replacements' walk, atlases and class lists). Mounting would need a zip device with a
+write overlay and zip-aware readers in all of those, several days at medium-high risk, and the zip
+would still have to be copied into the app's storage on Android; extracting reuses the folder
+pipeline unchanged.
 
 ## 9. Future work: UI and input crossover
 
