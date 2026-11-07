@@ -1356,6 +1356,19 @@ write overlay and zip-aware readers in all of those, several days at medium-high
 would still have to be copied into the app's storage on Android; extracting reuses the folder
 pipeline unchanged.
 
+**In the game** (only mode): Settings, Extras, **Import Mod**, a button below the other rows
+(`game_menu/video_menu.cpp`, texts in `game_menu/mod_import_message.h`). Where both pickers work
+(desktop, `platform::CanPickFolder`) a box asks for a zip or a folder; on Android the system's
+document picker (SAF) opens for a `.zip`, and the document is copied to the app's cache before the
+import (`platform::PickFile`, removed afterwards with `platform::ForgetPickedFiles`), under the
+document's own name where its URI shows it (`platform/document_name.h`; otherwise `picked_file`,
+which a mod at the zip's root is then named after). SDL has a single window on Android, so that
+copy shows no progress window in the game and cannot be cancelled. The pickers
+run on the UI thread, the import on a thread of its own with the busy notice showing its progress
+while the game goes on; then the game's message box says what was installed or why nothing was, and
+the column shows "Some changes need a restart". Not done: a folder picker on Android
+(`ACTION_OPEN_DOCUMENT_TREE`, Java), and a way to cancel a running import from the UI.
+
 ## 9. Future work: UI and input crossover
 
 Two ideas, outside the mods task, recorded for later:

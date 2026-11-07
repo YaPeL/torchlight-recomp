@@ -6,12 +6,18 @@
 
 #pragma once
 
+#include <cstdint>
 #include <filesystem>
 #include <string>
 
+#include <rex/ppc/context.h>
+
 namespace rex {
 class Runtime;
-}
+namespace ui {
+class WindowedAppContext;
+}  // namespace ui
+}  // namespace rex
 
 namespace torchlight::game_menu {
 
@@ -21,7 +27,13 @@ class GuestCall;
 // the hooks. Without it (or when the layouts are missing) the hooks only call the originals. On a
 // frame wider than 16:9 it also serves the game's framed layouts with their bands re-anchored
 // (wide_layout.h), generated from the user's pak into the local cache.
-void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root);
+// `app_context`: the UI thread, where Import Mod shows the system's pickers.
+void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
+             rex::ui::WindowedAppContext* app_context);
+
+// Every frame of the game UI (CGameUI::Update, achievements/toast.cpp), game's thread: shows the
+// result of an Import Mod once it is ready, with the game's message box.
+void OnGameUiFrame(PPCContext& ctx, uint8_t* base);
 
 // One OGRE FileSystem resource location in the default group, added through the guest (game's
 // thread); false on failure. Also used for the player's mods (mods_install.h).

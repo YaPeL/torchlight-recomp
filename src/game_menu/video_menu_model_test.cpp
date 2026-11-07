@@ -1,15 +1,18 @@
 // Tests for the video settings column's model: texts, steps through the choices, the checkbox,
 // and the restart notice.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 
+#include "game_menu/mod_import_message.h"
 #include "game_menu/video_menu_model.h"
 
 namespace {
 
 using namespace torchlight::game_menu;
 using namespace torchlight::settings;
+namespace mods = torchlight::mods;
 
 void Check(bool ok, const char* what) {
   if (!ok) {
@@ -197,8 +200,8 @@ void TestPadPrompts() {
 void TestSections() {
   int count[kSectionCount] = {};
   for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
-  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 5,
-        "six video rows, two controls, five extras");
+  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 6,
+        "six video rows, two controls, six extras");
   Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
             SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
         "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
@@ -368,6 +371,85 @@ void TestLowQuality() {
         "back to the 360's also on restart");
 }
 
+void TestImportMod() {
+  VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
+  Check(SectionOf(Row::kImportMod) == Section::kExtras, "Import Mod in the extras section");
+  Check(IsAction(Row::kImportMod) && !IsCheckbox(Row::kImportMod) && !IsAction(Row::kVsync),
+        "Import Mod is the action row");
+  Check(!m.Enabled(Row::kImportMod) && !m.Activate(Row::kImportMod),
+        "without a picker or a mods folder: disabled, A does nothing");
+  m.SetImportAvailable(true);
+  Check(m.Enabled(Row::kImportMod) && m.Activate(Row::kImportMod) &&
+            m.Text(Row::kImportMod) == "Import Mod",
+        "available: enabled, A starts it");
+  Check(!m.Step(Row::kImportMod, +1) && !m.Toggle(Row::kImportMod), "no value to move or toggle");
+  Check(!m.Activate(Row::kVsync), "a checkbox is not an action");
+  m.SetImportRunning(true);
+  Check(!m.Enabled(Row::kImportMod) && !m.Activate(Row::kImportMod) &&
+            m.Text(Row::kImportMod) == "Importing...",
+        "running: disabled, says so");
+  m.SetImportRunning(false);
+  Check(!m.RestartNeeded(), "nothing imported: no restart");
+  m.NoteModImported();
+  Check(m.RestartNeeded(), "a mod imported: restart notice");
+  m.Reset();
+  Check(m.RestartNeeded(), "Reset Defaults does not undo an import");
+}
+
+// Brackets around each text, to see the translation applied before the values are filled in.
+std::string Bracket(const std::string& english) { return "[" + english + "]"; }
+
+void TestImportMessages() {
+  mods::ImportResult installed;
+  installed.status = mods::ImportStatus::kInstalled;
+  installed.mods = {"A", "B"};
+  const MenuMessage box = ModImportMessage(installed, Bracket);
+  Check(box.title == "[Import Mod]" && box.buttons == std::vector<std::string>{"[OK]"},
+        "title and OK translated");
+  Check(box.text.starts_with("[Installed: A, B.") && box.text.find("{mods}") == std::string::npos,
+        "installed: the names filled in after translating");
+
+  mods::ImportResult existing;
+  existing.status = mods::ImportStatus::kAlreadyInstalled;
+  existing.mods = {"Mine"};
+  Check(ModImportMessage(existing, Bracket).text.find("named Mine is already installed") !=
+            std::string::npos,
+        "already installed: names the mod");
+
+  mods::ImportResult space;
+  space.status = mods::ImportStatus::kNotEnoughSpace;
+  space.bytes_needed = (3u << 20) + 1;
+  space.bytes_free = 1u << 20;
+  Check(ModImportMessage(space, Bracket).text.find("needs 4 MB and 1 MB are free") !=
+            std::string::npos,
+        "no space: megabytes, rounded up");
+
+  mods::ImportResult unsafe;
+  unsafe.status = mods::ImportStatus::kUnsafeName;
+  unsafe.detail = "../evil";
+  Check(ModImportMessage(unsafe, Bracket).text.find("(../evil)") != std::string::npos,
+        "the detail shown");
+
+  Check(ModPickMessage(PickProblem::kNotCopied, "disk full", Bracket).text ==
+            "[The chosen file could not be copied: disk full]",
+        "the picker's copy failed");
+  // Every status has a text of its own.
+  using mods::ImportStatus;
+  std::vector<std::string> texts;
+  for (ImportStatus status :
+       {ImportStatus::kInstalled, ImportStatus::kCancelled, ImportStatus::kNoModFound,
+        ImportStatus::kAlreadyInstalled, ImportStatus::kUnreadable, ImportStatus::kUnsafeName,
+        ImportStatus::kUnsupportedEntry, ImportStatus::kNonAsciiName,
+        ImportStatus::kNotEnoughSpace, ImportStatus::kCannotWrite}) {
+    mods::ImportResult result;
+    result.status = status;
+    const std::string text =
+        ModImportMessage(result, [](const std::string& english) { return english; }).text;
+    Check(std::find(texts.begin(), texts.end(), text) == texts.end(), "a text per status");
+    texts.push_back(text);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -388,6 +470,8 @@ int main() {
   TestAchievements();
   TestPadPrompts();
   TestSections();
+  TestImportMod();
+  TestImportMessages();
   std::printf("video_menu_model_test: ok\n");
   return 0;
 }
