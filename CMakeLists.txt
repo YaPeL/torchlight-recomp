@@ -131,6 +131,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/find_file_hooks.cpp
     # The video menu inside the game's UI (hooks on the game's menus).
     src/game_menu/guest_call.cpp
+    src/game_menu/guest_message_box.cpp
     src/game_menu/language_pack.cpp
     src/game_menu/mods_install.cpp
     # The mods' units in the game's unit index (guest calls; the format and cache are torchlight_mods).
