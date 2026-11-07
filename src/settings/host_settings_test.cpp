@@ -136,6 +136,19 @@ void TestPadPrompts() {
     Check(!Parse("touch_controls = \"sometimes\"\n", &w).touch_controls && !w.empty(),
           "an unknown touch mode warns and stays unset");
   }
+  {
+    // The touch d-pad moving the hero: off by default, live, round trips, a bad value warns.
+    std::vector<std::string> w;
+    Check(!Parse("", &w).touch_dpad_moves && w.empty(), "the touch d-pad switches skill sets by default");
+    Check(!RequiresRestart(Setting::kTouchDpadMoves), "the touch d-pad option takes effect live");
+    HostSettings one;
+    one.touch_dpad_moves = true;
+    const HostSettings back = Parse(Serialize(one), &w);
+    Check(back.touch_dpad_moves && back == one && w.empty(), "touch_dpad_moves round trip");
+    Check(Parse("touch_dpad_moves = true\n", &w).touch_dpad_moves && w.empty(), "touch_dpad_moves = true");
+    Check(!Parse("touch_dpad_moves = yes\n", &w).touch_dpad_moves && !w.empty(),
+          "a bad touch_dpad_moves value warns and stays off");
+  }
   Check(s.pad_prompts == PadPrompts::kAuto && !s.swap_confirm_cancel && warnings.empty(),
         "no keys: automatic prompts, no swap");
   s = Parse("pad_prompts = \"nintendo\"\nswap_confirm_cancel = true\n", &warnings);

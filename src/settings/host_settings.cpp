@@ -146,6 +146,7 @@ bool RequiresRestart(Setting setting) {
     case Setting::kFpsCap:
     case Setting::kVsync:
     case Setting::kMsaa:
+    case Setting::kTouchDpadMoves:
       return false;
     case Setting::kShadowResolution:
     case Setting::kLowQuality:
@@ -521,6 +522,9 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
     } else if (key == "swap_confirm_cancel") {
       ok = value == "true" || value == "false";
       if (ok) settings.swap_confirm_cancel = value == "true";
+    } else if (key == "touch_dpad_moves") {
+      ok = value == "true" || value == "false";
+      if (ok) settings.touch_dpad_moves = value == "true";
     } else if (key == "vsync") {
       ok = value == "true" || value == "false";
       if (ok) settings.vsync = value == "true";
@@ -599,6 +603,9 @@ std::string Serialize(const HostSettings& settings) {
   } else {
     out << "# touch_controls = \"auto\"\n";
   }
+  out << "# With the touch controls: the d-pad moves the hero instead of switching skill sets; false\n"
+      << "# by default.\n"
+      << "touch_dpad_moves = " << (settings.touch_dpad_moves ? "true" : "false") << "\n";
   return out.str();
 }
 
