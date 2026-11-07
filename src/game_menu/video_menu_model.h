@@ -50,6 +50,9 @@ class VideoMenuModel {
   // The device's most multisampling once the backend reports it (Capabilities::max_msaa; the
   // column may be built before the backend started).
   void SetMaxMsaa(uint32_t max_msaa) { caps_.max_msaa = max_msaa; }
+  // Whether the pad connected now is a Nintendo one: the automatic style follows it, so the A/B
+  // swap applies with it only (mods::EffectivePadStyle).
+  void SetNintendoPadConnected(bool connected) { nintendo_pad_ = connected; }
 
  private:
   std::string DefaultGpu() const;
@@ -61,6 +64,8 @@ class VideoMenuModel {
   }
 
   settings::Capabilities caps_;
+
+  bool nintendo_pad_ = false;
   settings::HostSettings current_, startup_;
   std::string default_language_;
 };
