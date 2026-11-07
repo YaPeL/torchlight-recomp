@@ -1,0 +1,317 @@
+// The mods' import (mod_import.h) on synthetic zips and folders written by the test into a
+// temporary folder: the layouts, the refused names and entries, the existing names, damaged zips,
+// the cancel and the .partial cleanup.
+#include <miniz.h>
+
+#include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
+#include <vector>
+
+#include "mods/mod_import.h"
+
+namespace fs = std::filesystem;
+using namespace torchlight::mods;
+using Names = std::vector<std::string>;
+
+namespace {
+int failures = 0;
+void Check(bool ok, const std::string& what) {
+  if (!ok) {
+    ++failures;
+    std::fprintf(stderr, "FAIL: %s\n", what.c_str());
+  }
+}
+
+struct ZipEntry {
+  std::string name, content;
+  bool ascii_name = false;  // no UTF-8 flag (the name is CP437 as the format says)
+  bool symlink = false;     // a Unix symbolic link in the external attributes
+  bool encrypted = false;   // the general purpose flag's bit 0
+};
+
+std::vector<uint8_t> ZipBytes(const std::vector<ZipEntry>& entries) {
+  mz_zip_archive zip{};
+  Check(mz_zip_writer_init_heap(&zip, 0, 0), "zip writer");
+  for (const ZipEntry& e : entries) {
+    const mz_uint flags = MZ_DEFAULT_COMPRESSION | (e.ascii_name ? MZ_ZIP_FLAG_ASCII_FILENAME : 0);
+    Check(mz_zip_writer_add_mem_ex(&zip, e.name.c_str(), e.content.data(), e.content.size(),
+                                   nullptr, 0, flags, 0, 0),
+          "zip add " + e.name);
+  }
+  void* buffer = nullptr;
+  size_t size = 0;
+  mz_zip_writer_finalize_heap_archive(&zip, &buffer, &size);
+  std::vector<uint8_t> bytes(static_cast<uint8_t*>(buffer), static_cast<uint8_t*>(buffer) + size);
+  mz_zip_writer_end(&zip);
+  // The central directory's headers (signature PK\1\2): what miniz's writer cannot set.
+  for (size_t at = 0; at + 46 <= bytes.size(); ++at) {
+    if (std::memcmp(&bytes[at], "PK\1\2", 4) != 0) continue;
+    const size_t name_length = bytes[at + 28] | bytes[at + 29] << 8;
+    const std::string name(reinterpret_cast<const char*>(&bytes[at + 46]), name_length);
+    for (const ZipEntry& e : entries) {
+      if (e.name != name) continue;
+      if (e.symlink) {
+        bytes[at + 5] = 3;  // made by: Unix
+        const uint32_t mode = 0120777u << 16;
+        for (int b = 0; b < 4; ++b) bytes[at + 38 + b] = static_cast<uint8_t>(mode >> (8 * b));
+      }
+      if (e.encrypted) bytes[at + 8] |= 1;
+    }
+  }
+  return bytes;
+}
+
+void WriteBytes(const fs::path& path, const std::vector<uint8_t>& bytes) {
+  fs::create_directories(path.parent_path());
+  std::ofstream(path, std::ios::binary)
+      .write(reinterpret_cast<const char*>(bytes.data()),
+             static_cast<std::streamsize>(bytes.size()));
+}
+void WriteText(const fs::path& path, const std::string& text) {
+  WriteBytes(path, std::vector<uint8_t>(text.begin(), text.end()));
+}
+std::string ReadText(const fs::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  return std::string(std::istreambuf_iterator<char>(in), {});
+}
+
+// What the mods folder holds, names only.
+std::vector<std::string> Listing(const fs::path& mods) {
+  std::vector<std::string> names;
+  std::error_code ec;
+  for (const auto& entry : fs::directory_iterator(mods, ec)) {
+    names.push_back(entry.path().filename().string());
+  }
+  std::sort(names.begin(), names.end());
+  return names;
+}
+
+const std::string kModDat = "[MOD]\r\n\t<STRING>NAME:Synthetic\r\n[/MOD]\r\n";
+}  // namespace
+
+int main() {
+  const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+  const fs::path root = fs::temp_directory_path() / ("tl_mod_import_test_" + std::to_string(now));
+  int run = 0;
+  // A fresh data folder per case.
+  auto fresh = [&]() {
+    const fs::path data = root / ("data" + std::to_string(++run));
+    fs::create_directories(data);
+    return data;
+  };
+  auto zip = [&](const std::string& name, const std::vector<ZipEntry>& entries) {
+    const fs::path path = root / "sources" / name;
+    WriteBytes(path, ZipBytes(entries));
+    return path;
+  };
+
+  // mod.dat at the root: one mod named after the zip; a mods.dat beside it is not copied.
+  {
+    const fs::path data = fresh();
+    const auto result = ImportMod(zip("RootMod.zip", {{"mod.dat", kModDat},
+                                                       {"mods.dat", "list"},
+                                                       {"media/units/a.dat", "unit"},
+                                                       {"media\\units\\b.dat", "unit b"}}),
+                                  data);
+    Check(result.ok() && result.mods == Names{"RootMod"}, "root: " + result.message());
+    Check(ReadText(data / "mods/RootMod/mod.dat") == kModDat, "root: mod.dat copied");
+    Check(ReadText(data / "mods/RootMod/media/units/a.dat") == "unit", "root: file copied");
+    Check(ReadText(data / "mods/RootMod/media/units/b.dat") == "unit b",
+          "root: backslash name as folders");
+    Check(!fs::exists(data / "mods/RootMod/mods.dat"), "root: mods.dat left out");
+    Check(Listing(data / "mods") == Names{"RootMod"}, "root: nothing else in mods");
+  }
+
+  // One top-level folder that is a mod (media/ only, no mod.dat), with a readme beside it.
+  {
+    const fs::path data = fresh();
+    const auto result = ImportMod(zip("download-v2.zip", {{"readme.txt", "hello"},
+                                                           {"FolderMod/", ""},
+                                                           {"FolderMod/media/x.dds", "dds"}}),
+                                  data);
+    Check(result.ok() && result.mods == Names{"FolderMod"},
+          "top folder: " + result.message());
+    Check(ReadText(data / "mods/FolderMod/media/x.dds") == "dds", "top folder: file copied");
+    Check(result.skipped == Names{"readme.txt"}, "top folder: readme skipped");
+  }
+
+  // A pack of two, with PC's mods.dat and a folder that is not a mod; and a zip of a mods folder.
+  {
+    const fs::path data = fresh();
+    const auto result = ImportMod(zip("pack.zip", {{"mods.dat", "list"},
+                                                    {"A/mod.dat", kModDat},
+                                                    {"B/media/b.txt", "b"},
+                                                    {"notes/n.txt", "n"}}),
+                                  data);
+    Check(result.ok() && result.mods == Names{"A", "B"}, "pack: " + result.message());
+    Check(Listing(data / "mods") == Names{"A", "B"}, "pack: two folders, no mods.dat");
+    Check(ReadText(data / "mods/B/media/b.txt") == "b", "pack: B's file");
+
+    const fs::path data2 = fresh();
+    const auto nested =
+        ImportMod(zip("mods.zip", {{"mods/C/mod.dat", kModDat}, {"mods/D/media/d", "d"}}), data2);
+    Check(nested.ok() && nested.mods == Names{"C", "D"},
+          "mods folder zipped: " + nested.message());
+  }
+
+  // No mod.
+  {
+    const fs::path data = fresh();
+    const auto result =
+        ImportMod(zip("nothing.zip", {{"readme.txt", "x"}, {"pics/a.png", "p"}}), data);
+    Check(result.status == ImportStatus::kNoModFound, "no mod: " + result.message());
+    Check(Listing(data / "mods").empty(), "no mod: nothing written");
+  }
+
+  // Refused names and entries; nothing written for any.
+  {
+    const struct {
+      const char* zip;
+      ZipEntry bad;
+      ImportStatus status;
+    } cases[] = {
+        {"slip.zip", {"Mod/../../evil.txt", "x"}, ImportStatus::kUnsafeName},
+        {"slip2.zip", {"Mod\\..\\..\\evil.txt", "x"}, ImportStatus::kUnsafeName},
+        {"drive.zip", {"C:/evil.txt", "x"}, ImportStatus::kUnsafeName},
+        {"stream.zip", {"Mod/media/a.dds:hidden", "x"}, ImportStatus::kUnsafeName},
+        {"link.zip", {"Mod/media/link", "/etc/passwd", false, true},
+         ImportStatus::kUnsupportedEntry},
+        {"locked.zip", {"Mod/media/secret", "x", false, false, true},
+         ImportStatus::kUnsupportedEntry},
+        {"cp437.zip", {"Mod/media/caf\xE9.dds", "x", true}, ImportStatus::kNonAsciiName},
+        {"badutf8.zip", {"Mod/media/caf\xE9.dds", "x"}, ImportStatus::kNonAsciiName},
+    };
+    for (const auto& c : cases) {
+      const fs::path data = fresh();
+      const auto result = ImportMod(zip(c.zip, {{"Mod/mod.dat", kModDat}, c.bad}), data);
+      Check(result.status == c.status, std::string(c.zip) + ": " + result.message());
+      Check(Listing(data / "mods").empty(), std::string(c.zip) + ": nothing written");
+      Check(!fs::exists(data / "evil.txt") && !fs::exists(root / "evil.txt"),
+            std::string(c.zip) + ": nothing outside");
+    }
+    // UTF-8 names with the flag are kept.
+    const fs::path data = fresh();
+    const auto result =
+        ImportMod(zip("utf8.zip", {{"Mod/mod.dat", kModDat}, {"Mod/media/caf\xC3\xA9.dds", "x"}}),
+                  data);
+    Check(result.ok() && fs::exists(data / "mods/Mod/media" / fs::path(u8"café.dds")),
+          "utf-8 name: " + result.message());
+  }
+
+  // A name already installed (in another case): nothing replaced, nothing of the pack installed.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/b/mine.txt", "mine");
+    const auto result =
+        ImportMod(zip("pack2.zip", {{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}}), data);
+    Check(result.status == ImportStatus::kAlreadyInstalled && result.mods == Names{"B"},
+          "existing: " + result.message());
+    Check(Listing(data / "mods") == Names{"b"} &&
+              ReadText(data / "mods/b/mine.txt") == "mine",
+          "existing: untouched, A not installed");
+  }
+
+  // Damaged zips: truncated (no central directory), not a zip, and an entry whose data is
+  // damaged after the first was written (its .partial removed).
+  {
+    const fs::path data = fresh();
+    auto bytes = ZipBytes({{"Mod/mod.dat", kModDat}, {"Mod/media/a", std::string(4000, 'a')}});
+    auto truncated = bytes;
+    truncated.resize(truncated.size() / 2);
+    WriteBytes(root / "sources/truncated.zip", truncated);
+    auto result = ImportMod(root / "sources/truncated.zip", data);
+    Check(result.status == ImportStatus::kUnreadable, "truncated: " + result.message());
+    WriteText(root / "sources/text.zip", "not a zip at all");
+    result = ImportMod(root / "sources/text.zip", data);
+    Check(result.status == ImportStatus::kUnreadable, "not a zip: " + result.message());
+    // The second entry's data: flip bytes in the middle of the file (after mod.dat's local entry).
+    auto damaged =
+        ZipBytes({{"Mod/mod.dat", kModDat}, {"Mod/media/a", std::string(4000, 'a') + "end"}});
+    const size_t second = [&] {
+      size_t found = 0, count = 0;
+      for (size_t at = 0; at + 4 <= damaged.size(); ++at) {
+        if (std::memcmp(&damaged[at], "PK\3\4", 4) == 0 && ++count == 2) found = at;
+      }
+      return found;
+    }();
+    Check(second > 0, "damaged: second entry found");
+    const size_t data_at = second + 30 + std::strlen("Mod/media/a");
+    for (size_t i = data_at; i < data_at + 4 && i < damaged.size(); ++i) damaged[i] ^= 0x5A;
+    WriteBytes(root / "sources/damaged.zip", damaged);
+    result = ImportMod(root / "sources/damaged.zip", data);
+    Check(result.status == ImportStatus::kUnreadable, "damaged entry: " + result.message());
+    Check(Listing(data / "mods").empty(), "damaged entry: no mod and no .partial left");
+  }
+
+  // A folder as the source: copied as it is; a symbolic link in it is refused.
+  {
+    const fs::path data = fresh();
+    const fs::path source = root / "sources/Plain Folder Mod";
+    WriteText(source / "MOD.DAT", kModDat);
+    WriteText(source / "media/units/u.dat", "u");
+    fs::create_directories(source / "media/empty");
+    ImportProgress last;
+    const auto result = ImportMod(source, data, [&](const ImportProgress& p) { last = p; });
+    Check(result.ok() && result.mods == Names{"Plain Folder Mod"},
+          "folder: " + result.message());
+    Check(ReadText(data / "mods/Plain Folder Mod/media/units/u.dat") == "u", "folder: file copied");
+    Check(fs::is_directory(data / "mods/Plain Folder Mod/media/empty"),
+          "folder: empty folder kept");
+    Check(last.files_done == 2 && last.files_total == 2 && last.bytes_done == last.bytes_total &&
+              last.bytes_total == kModDat.size() + 1,
+          "folder: progress counts files and bytes");
+
+    std::error_code ec;
+    fs::create_symlink("/etc/hostname", source / "media/link", ec);
+    if (!ec) {
+      const fs::path data2 = fresh();
+      const auto linked = ImportMod(source, data2);
+      Check(linked.status == ImportStatus::kUnsupportedEntry, "folder link: " + linked.message());
+      Check(Listing(data2 / "mods").empty(), "folder link: nothing written");
+    }
+  }
+
+  // Cancel after the first file: nothing left, not even the .partial. A stale .partial from an
+  // interrupted import is replaced by the next one.
+  {
+    const fs::path data = fresh();
+    const fs::path source =
+        zip("Cancel.zip", {{"mod.dat", kModDat}, {"media/a", "a"}, {"media/b", "b"}});
+    std::atomic<bool> cancel{false};
+    const auto result = ImportMod(
+        source, data, [&](const ImportProgress& p) { cancel = p.files_done >= 1; }, &cancel);
+    Check(result.status == ImportStatus::kCancelled && result.mods.empty(),
+          "cancel: " + result.message());
+    Check(Listing(data / "mods").empty(), "cancel: nothing left");
+
+    WriteText(data / "mods/Cancel.partial/stale.txt", "old");
+    const auto again = ImportMod(source, data);
+    Check(again.ok(), "after cancel: " + again.message());
+    Check(Listing(data / "mods") == Names{"Cancel"} &&
+              !fs::exists(data / "mods/Cancel/stale.txt"),
+          "after cancel: the stale .partial is not part of the mod");
+  }
+
+  // Names the mod cannot take.
+  {
+    const fs::path data = fresh();
+    const auto result = ImportMod(zip("x.partial.zip", {{"mod.dat", kModDat}}), data);
+    Check(result.status == ImportStatus::kUnsafeName, "partial name: " + result.message());
+  }
+
+  std::error_code ec;
+  fs::remove_all(root, ec);
+  if (failures) {
+    std::fprintf(stderr, "%d failure(s)\n", failures);
+    return 1;
+  }
+  std::puts("mod_import_test: ok");
+  return 0;
+}
