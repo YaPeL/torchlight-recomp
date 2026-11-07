@@ -293,6 +293,24 @@
                 <Property Name="MousePassThroughEnabled" Value="True" />
             </Window>
         </Window>
+        <Window Type="ceguiWidget/Checkbox" Name="tl_video/dpad_moves" >
+            <Property Name="tabOrder" Value="28" />
+            <Property Name="Visible" Value="False" />
+            <Property Name="Selected" Value="False" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,16},{0,217},{0,66},{0,257}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/dpad_moves/label" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="D-pad Moves Hero" />
+                <Property Name="TextColour" Value="FFFCD615" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="ClippedByParent" Value="False" />
+                <Property Name="UnifiedAreaRect" Value="{{0,47},{0,9},{0,274},{0,32.0788}}" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
         <Window Type="ceguiWidget/StaticText" Name="tl_video/language/label" >
             <Property Name="Font" Value="Serif14" />
             <Property Name="Text" Value="Language" />

@@ -156,6 +156,7 @@ bool VideoMenuModel::Step(Row row, int direction) {
     }
     case Row::kVsync:
     case Row::kSwapConfirmCancel:
+    case Row::kTouchDpadMoves:
       return false;
   }
   return false;
@@ -169,6 +170,10 @@ bool VideoMenuModel::Toggle(Row row) {
   }
   if (row == Row::kSwapConfirmCancel) {
     current_.swap_confirm_cancel = !current_.swap_confirm_cancel;
+    return true;
+  }
+  if (row == Row::kTouchDpadMoves) {
+    current_.touch_dpad_moves = !current_.touch_dpad_moves;
     return true;
   }
   return false;
@@ -260,6 +265,8 @@ std::string VideoMenuModel::Text(Row row) const {
       return current_.vsync ? "On" : "Off";
     case Row::kSwapConfirmCancel:
       return current_.swap_confirm_cancel ? "On" : "Off";
+    case Row::kTouchDpadMoves:
+      return current_.touch_dpad_moves ? "On" : "Off";
   }
   return "";
 }
@@ -287,6 +294,8 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kSwapConfirmCancel:
       return current_.pad_prompts == settings::PadPrompts::kNintendo ||
              (current_.pad_prompts == settings::PadPrompts::kAuto && nintendo_pad_);
+    // Only where the touch controls are installed (live: the controls are laid out again).
+    case Row::kTouchDpadMoves: return caps_.touch_controls;
   }
   return false;
 }
@@ -305,7 +314,8 @@ bool VideoMenuModel::RendererUnavailable() const {
 }
 
 bool VideoMenuModel::Checked(Row row) const {
-  return (row == Row::kVsync && current_.vsync) || (row == Row::kSwapConfirmCancel && current_.swap_confirm_cancel);
+  return (row == Row::kVsync && current_.vsync) || (row == Row::kSwapConfirmCancel && current_.swap_confirm_cancel) ||
+         (row == Row::kTouchDpadMoves && current_.touch_dpad_moves);
 }
 
 bool VideoMenuModel::RestartNeeded() const {
@@ -323,6 +333,7 @@ Section SectionOf(Row row) {
   switch (row) {
     case Row::kPadPrompts:
     case Row::kSwapConfirmCancel:
+    case Row::kTouchDpadMoves:
       return Section::kControls;
     case Row::kLanguage:
     case Row::kAchievements:

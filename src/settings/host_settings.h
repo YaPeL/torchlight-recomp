@@ -89,6 +89,9 @@ struct HostSettings {
   // The touch controls' visibility; empty when the file has no valid "touch_controls" key (the
   // platform's default). Not written back while empty.
   std::optional<TouchControls> touch_controls;
+  // With the touch controls: the touch d-pad moves the hero (as the left stick) instead of switching
+  // skill sets, and is drawn bigger in the stick's corner (input::TouchLayoutOptions). Live.
+  bool touch_dpad_moves = false;
   bool operator==(const HostSettings&) const = default;
 };
 
@@ -130,12 +133,14 @@ struct Capabilities {
   // The most multisampling the backend applies here (tl_backend_max_msaa): 1 none, 2 or 4; 0 while
   // not known yet (the backend has not started).
   uint32_t max_msaa = 0;
+  // Touch controls are installed (EffectiveTouchControls is not "never"): their options apply.
+  bool touch_controls = false;
 };
 
 // Settings the menu shows. Changing one of these takes effect after restarting the game.
 enum class Setting {
   kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements, kPadPrompts,
-  kSwapConfirmCancel, kMsaa, kShadowResolution, kLowQuality
+  kSwapConfirmCancel, kMsaa, kShadowResolution, kLowQuality, kTouchDpadMoves
 };
 bool RequiresRestart(Setting setting);
 // The achievement set in effect: the setting, or Xbox when it is missing or invalid.

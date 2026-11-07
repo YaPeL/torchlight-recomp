@@ -914,6 +914,21 @@ ImGui's foreground draw list.
 - **Validated on desktop:** a window grab during an unattended run shows the controls at rest and
   with the stick and X held. There is no unit test of the drawing itself.
 
+**A4.5, the d-pad moving the hero** (a player's request, 2026-11-06). `settings.toml`
+`touch_dpad_moves` (off by default; the "D-pad Moves Hero" checkbox in the settings menu's
+Controls section, enabled only where the touch controls are installed; it takes effect at once).
+- **Touch only:** while it is on, the touch d-pad's eight directions are the left stick at full
+  tilt (`input/touch_pad.h`, `DpadStick`), and the touch stick wins while its finger is down too.
+  A physical pad is not changed: its d-pad still switches skill sets.
+- **What is lost:** the touch d-pad no longer presses the pad's d-pad, so the skill sets cannot be
+  switched by touch while the option is on.
+- **Bigger, in the stick's corner:** the d-pad grows to 11 mm of radius (less only on a screen too
+  short for it, never below 8) and sits on the side and bottom margins; the stick's resting base
+  keeps mid height, above the d-pad on a tablet and just inward of it on a phone (about 34-38 mm
+  from the left edge), and its zone widens to hold it. The drawing lights the d-pad's arms and
+  leaves the stick's knob still while the d-pad moves the hero. Without the option the layout is
+  unchanged (`touch_test` checks it against the earlier numbers).
+
 *Steps* (each validated before the next):
 
 | Step | What | Validated by |

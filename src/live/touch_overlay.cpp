@@ -119,7 +119,7 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
       const ImVec2 c(b.x * k, b.y * k);
       const float r = b.radius * k;
       if (b.shape == input::TouchShape::kDpad) {
-        DrawDpad(list, c, r, snap.state.buttons);
+        DrawDpad(list, c, r, snap.dpad);
         continue;
       }
       const bool wide = b.shape == input::TouchShape::kWide;
@@ -148,10 +148,11 @@ class OverlayDialog : public rex::ui::ImGuiDialog {
       const ImVec2 extent = font->CalcTextSizeA(size, FLT_MAX, 0.0f, label.c_str());
       list->AddText(font, size, ImVec2(c.x - extent.x / 2, c.y - extent.y / 2), ink, label.c_str());
     }
-    // The stick: its base where it rests or where the thumb landed, the knob where the thumb is.
+    // The stick: its base where it rests or where the thumb landed, the knob where the thumb is (its
+    // own deflection: the d-pad moving the hero does not move it).
     const float sr = snap.layout.stick_radius * k;
     const ImVec2 base(snap.stick_base_x * k, snap.stick_base_y * k);
-    const ImVec2 knob(base.x + snap.state.left_x / 32767.0f * sr, base.y - snap.state.left_y / 32767.0f * sr);
+    const ImVec2 knob(base.x + snap.knob_x / 32767.0f * sr, base.y - snap.knob_y / 32767.0f * sr);
     // Fainter while it rests, so the resting place is a hint, not a control in the way.
     const float a = (snap.stick_held ? 1.0f : 0.6f) * kOpacity;
     if (pad_ && nub_) {

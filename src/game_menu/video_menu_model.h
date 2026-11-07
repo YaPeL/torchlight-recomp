@@ -12,14 +12,16 @@ namespace torchlight::game_menu {
 
 enum class Row {
   kResolution, kAspect, kFpsCap, kMsaa, kShadowResolution, kLanguage, kAchievements, kPadPrompts,
-  kVsync, kSwapConfirmCancel, kRenderer, kGpu, kLowQuality
+  kVsync, kSwapConfirmCancel, kRenderer, kGpu, kLowQuality, kTouchDpadMoves
 };
-inline constexpr int kRowCount = 13;
+inline constexpr int kRowCount = 14;
 // The rows shown as a checkbox (A toggles them) instead of a value moved with left and right.
-inline bool IsCheckbox(Row row) { return row == Row::kVsync || row == Row::kSwapConfirmCancel; }
+inline bool IsCheckbox(Row row) {
+  return row == Row::kVsync || row == Row::kSwapConfirmCancel || row == Row::kTouchDpadMoves;
+}
 
-// The column's sections, one shown at a time under their buttons: the video rows, the pad's
-// (button prompts and the A/B swap) and the rest (language, achievements).
+// The column's sections, one shown at a time under their buttons: the video rows, the controls'
+// (button prompts, the A/B swap, the touch d-pad) and the rest (language, achievements).
 enum class Section { kVideo, kControls, kExtras };
 inline constexpr int kSectionCount = 3;
 Section SectionOf(Row row);

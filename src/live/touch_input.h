@@ -20,14 +20,21 @@ class Runtime;
 namespace torchlight::live {
 
 // Before the guest runs (with the other input drivers), the game window open. Installs nothing with
-// "never".
-void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode);
+// "never". `options`: the layout's (settings.toml "touch_dpad_moves").
+void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode, input::TouchLayoutOptions options);
+// The d-pad moves the hero or not (the settings menu, live): the controls are laid out again (the
+// fingers on them are dropped, as on a resize). Nothing without touch controls.
+void SetTouchDpadMoves(bool dpad_moves);
 
 // What the drawing needs (A4.2): whether they are shown, the layout and what is pressed.
 struct TouchSnapshot {
   bool visible = false;
   input::TouchLayout layout;
   input::PadState state;
+  // The d-pad's pressed directions and the stick finger's own deflection (as the left stick's):
+  // with the d-pad moving the hero, the state's left stick is the d-pad's, not the knob's.
+  uint16_t dpad = 0;
+  int16_t knob_x = 0, knob_y = 0;
   float stick_base_x = 0, stick_base_y = 0;
   bool stick_held = false;
   float width = 0, height = 0;  // the window's pixels the layout is for
