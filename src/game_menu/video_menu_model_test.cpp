@@ -182,9 +182,16 @@ void TestPadPrompts() {
             m.Checked(Row::kSwapConfirmCancel) && m.settings().swap_confirm_cancel,
         "the swap toggles with Nintendo's style");
   VideoMenuModel automatic(Desktop(), HostSettings{}, HostSettings{});
+  Check(!automatic.Enabled(Row::kSwapConfirmCancel) && !automatic.Toggle(Row::kSwapConfirmCancel),
+        "automatic without a Nintendo pad: the swap is off");
+  automatic.SetNintendoPadConnected(true);
   Check(automatic.Enabled(Row::kSwapConfirmCancel) && automatic.Toggle(Row::kSwapConfirmCancel) &&
             automatic.RestartNeeded(),
-        "automatic: the swap can be set (a Nintendo pad may be connected), restart");
+        "automatic with a Nintendo pad connected: the swap can be set, restart");
+  automatic.SetNintendoPadConnected(false);
+  Check(!automatic.Enabled(Row::kSwapConfirmCancel), "the pad unplugged: off again");
+  m.SetNintendoPadConnected(false);
+  Check(m.Enabled(Row::kSwapConfirmCancel), "Nintendo's style chosen: on without the pad");
 }
 
 void TestSections() {

@@ -282,10 +282,11 @@ bool VideoMenuModel::Enabled(Row row) const {
              settings::GpuChoiceApplies(caps_, current_.render_system);
     case Row::kPadPrompts: return true;
     case Row::kVsync: return true;
-    // Nintendo pads only (mods/pad_prompts.h SwapsConfirmCancel): with their style or automatic.
+    // Nintendo pads only (mods/pad_prompts.h SwapsConfirmCancel): with their style, or automatic
+    // while a Nintendo pad is connected.
     case Row::kSwapConfirmCancel:
-      return current_.pad_prompts == settings::PadPrompts::kAuto ||
-             current_.pad_prompts == settings::PadPrompts::kNintendo;
+      return current_.pad_prompts == settings::PadPrompts::kNintendo ||
+             (current_.pad_prompts == settings::PadPrompts::kAuto && nintendo_pad_);
   }
   return false;
 }
