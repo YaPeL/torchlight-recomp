@@ -9,6 +9,7 @@
 // (ServeSurfaceChanges, with TorchlightSurface.java). The input is the rest of stage A1 of
 // docs/android-port.md.
 
+#include "platform/document_name.h"
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
 #include "platform/user_folders.h"
@@ -349,7 +350,9 @@ bool HasSystemBackButton() { return true; }
 
 // Android's picker (SDL's, through the Storage Access Framework) gives a document URI
 // (content://...), which SDL opens but plain file I/O does not: the document is copied to the
-// app's cache first, with a progress window (docs/android-port.md, A1.2: the player's game).
+// app's cache first, with a progress window (docs/android-port.md, A1.2: the player's game). SDL
+// has one window on Android (SDL_androidwindow.c, "Android only supports one window"): once the
+// game's is up (Import Mod), the copy goes on without the progress window and cannot be cancelled.
 PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error) {
   if (path.rfind("content://", 0) != 0) return PickResult::kChosen;
   const std::string dir = CacheDir("picked");
@@ -363,7 +366,7 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
     return PickResult::kUncopied;
   }
   const Sint64 size = SDL_GetIOSize(in);
-  const std::string copy = dir + "picked_file";
+  const std::string copy = dir + PickedDocumentName(path);
   std::ofstream out(copy, std::ios::binary | std::ios::trunc);
   if (!out.is_open()) {
     SDL_CloseIO(in);
