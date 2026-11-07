@@ -1,5 +1,6 @@
 #include "live/install.h"
 #include "live/busy_notice.h"
+#include "live/touch_input.h"
 #include "live/touch_overlay.h"
 #include "live/frame_counter.h"
 
@@ -385,6 +386,8 @@ void InitRunningSettings(const std::filesystem::path& game_data_root, rex::Runti
   caps.gpu_selectable = g_gpu_error.empty();
   caps.any_vblank_rate = true;
   caps.languages = settings::InstalledLanguages(game_data_root);
+  caps.touch_controls = settings::EffectiveTouchControls(g_host_settings.values, platform::TouchControlsByDefault()) !=
+                        settings::TouchControls::kNever;
   std::lock_guard lock(g_running.mutex);
   g_running.caps = caps;
   g_running.startup = settings::Normalize(g_host_settings.values, caps);
@@ -705,6 +708,7 @@ void ChangeHostSettings(const settings::HostSettings& changed) {
   if (fps_cap != settings::EffectiveFpsCap(before, g_running.caps)) {
     ApplyFpsCap(fps_cap, g_running.runtime);
   }
+  if (changed.touch_dpad_moves != before.touch_dpad_moves) SetTouchDpadMoves(changed.touch_dpad_moves);
   if (g_host_settings.path.empty()) return;
   std::string error;
   if (!settings::Save(g_host_settings.path, changed, error)) {

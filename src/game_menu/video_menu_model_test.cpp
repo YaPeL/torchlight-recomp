@@ -197,11 +197,34 @@ void TestPadPrompts() {
 void TestSections() {
   int count[kSectionCount] = {};
   for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
-  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 5,
-        "six video rows, two controls, five extras");
+  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 3 && count[int(Section::kExtras)] == 5,
+        "six video rows, three controls, five extras");
   Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
             SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
         "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
+}
+
+void TestTouchDpadMoves() {
+  // Without touch controls (a desktop): shown, disabled, does not toggle.
+  VideoMenuModel desktop(Desktop(), HostSettings{}, HostSettings{});
+  Check(SectionOf(Row::kTouchDpadMoves) == Section::kControls && IsCheckbox(Row::kTouchDpadMoves),
+        "the touch d-pad: a checkbox in Controls");
+  Check(!desktop.Enabled(Row::kTouchDpadMoves) && !desktop.Toggle(Row::kTouchDpadMoves) &&
+            !desktop.settings().touch_dpad_moves,
+        "no touch controls: disabled");
+  Capabilities caps = Desktop();
+  caps.touch_controls = true;
+  VideoMenuModel m(caps, HostSettings{}, HostSettings{});
+  Check(m.Enabled(Row::kTouchDpadMoves) && !m.Checked(Row::kTouchDpadMoves) && m.Text(Row::kTouchDpadMoves) == "Off",
+        "touch controls: enabled, off by default");
+  Check(!m.Step(Row::kTouchDpadMoves, +1), "a checkbox does not step");
+  Check(m.Toggle(Row::kTouchDpadMoves) && m.Checked(Row::kTouchDpadMoves) && m.settings().touch_dpad_moves &&
+            m.Text(Row::kTouchDpadMoves) == "On",
+        "toggled on");
+  Check(!m.RestartNeeded(), "live: no restart");
+  Check(m.Reset() && !m.settings().touch_dpad_moves, "Reset Defaults: off");
+  Check(m.Toggle(Row::kTouchDpadMoves) && m.Toggle(Row::kTouchDpadMoves) && !m.Checked(Row::kTouchDpadMoves),
+        "toggled back off");
 }
 
 void TestReset() {
@@ -388,6 +411,7 @@ int main() {
   TestAchievements();
   TestPadPrompts();
   TestSections();
+  TestTouchDpadMoves();
   std::printf("video_menu_model_test: ok\n");
   return 0;
 }
