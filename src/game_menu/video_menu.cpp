@@ -132,7 +132,8 @@ void SetProperty(GuestCall& call, uint32_t window, const char* name, const std::
 void Refresh(GuestCall& call) {
   // The column may have been built before the backend reported what it applies.
   if (const uint32_t max_msaa = live::MaxMsaa()) g_column.model->SetMaxMsaa(max_msaa);
-  g_column.model->SetNintendoPadConnected(platform::ConnectedGamepadKind() == platform::GamepadKind::kNintendo);
+  const bool nintendo = platform::ConnectedGamepadKind() == platform::GamepadKind::kNintendo;
+  g_column.model->SetNintendoPadConnected(nintendo);
   const VideoMenuModel& model = *g_column.model;
   for (int i = 0; i < kSectionCount; ++i) {
     SetProperty(call, g_column.section_text[i], "TextColour", Section(i) == g_column.section ? kYellow : kWhite);
