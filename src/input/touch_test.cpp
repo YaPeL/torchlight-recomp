@@ -1,6 +1,7 @@
 // Tests for the touch controls' pure parts (docs/android-port.md, A4.1): the gameplay layout on the
-// two test devices, the finger rules (held buttons, sliding, the stick, several fingers at once),
-// Auto / Always / Never, and the keystroke queue the touch driver shares with the input scripts.
+// two test devices (with and without the d-pad moving the hero), the finger rules (held buttons,
+// sliding, the stick, several fingers at once, the d-pad as the stick), Auto / Always / Never, and
+// the keystroke queue the touch driver shares with the input scripts.
 
 #include <cmath>
 #include <cstdio>
@@ -52,17 +53,23 @@ float Gap(const TouchButton& a, const TouchButton& b) {
   return std::max(gx, gy);
 }
 
-void TestLayout(const TouchScreen& screen, const char* device) {
-  const TouchLayout layout = GameplayLayout(screen);
-  const std::string d = device;
+void TestLayout(const TouchScreen& screen, const char* device, TouchLayoutOptions options = {}) {
+  const TouchLayout layout = GameplayLayout(screen, options);
+  const std::string d = std::string(device) + (options.dpad_moves ? " (d-pad moves)" : "");
   const float mm = screen.px_per_mm;
   const float slack = 0.01f * mm;  // float rounding
   Check(layout.buttons.size() == 11, d + ": A, B, X, Y, the d-pad, four shoulders, Back, Start");
   for (const auto& b : layout.buttons) {
     const std::string n = d + " " + std::string(b.name);
     Check(b.radius * 2 >= touch_mm::kSmall * mm - slack, n + ": at least 9 mm (48 dp)");
-    if (b.shape == TouchShape::kDpad) {
+    if (b.shape == TouchShape::kDpad && !options.dpad_moves) {
       Check(std::abs(b.radius - touch_mm::kDpadRadius * mm) < slack, n + ": the d-pad's cross, 16 mm");
+    } else if (b.shape == TouchShape::kDpad) {
+      Check(b.radius >= touch_mm::kDpadRadius * mm - slack && b.radius <= touch_mm::kMoveDpadRadius * mm + slack,
+            n + ": the moving d-pad, 8 to 11 mm");
+      Check(std::abs(b.x - b.radius - touch_mm::kSideMargin * mm) < slack &&
+                std::abs(screen.height - b.y - b.radius - touch_mm::kLongMargin * mm) < slack,
+            n + ": in the stick's corner, on the margins");
     }
     Check(b.x - HalfW(b) >= touch_mm::kSideMargin * mm - slack &&
               b.x + HalfW(b) <= screen.width - touch_mm::kSideMargin * mm + slack,
@@ -99,9 +106,117 @@ void TestLayout(const TouchScreen& screen, const char* device) {
         d + ": the stick as high as mid height or the shoulders' row allows");
   const float diamond = (from_bottom(Find(layout, "X").y));
   Check(diamond >= std::min(0.5f * h_mm, h_mm - 27.5f) - 0.01f, d + ": the diamond as high as allowed");
-  Check(Find(layout, "D-pad").y > layout.stick_y && Find(layout, "D-pad").x > layout.stick_x, d + ": the d-pad below and inward");
+  if (!options.dpad_moves) {
+    Check(Find(layout, "D-pad").y > layout.stick_y && Find(layout, "D-pad").x > layout.stick_x,
+          d + ": the d-pad below and inward");
+  } else {
+    Check(Find(layout, "D-pad").y > layout.stick_y && Find(layout, "D-pad").x <= layout.stick_x + slack,
+          d + ": the d-pad below the stick, in its corner");
+  }
+  Check(layout.dpad_moves == options.dpad_moves, d + ": the layout says whether the d-pad moves");
+  // The stick's resting base inside its zone, with the gap to the zone's inner edge.
+  Check(layout.stick_x - layout.stick_radius >= layout.zone_x0 &&
+            layout.stick_x + layout.stick_radius + touch_mm::kMinGap * mm <= layout.zone_x1 + slack &&
+            layout.stick_y - layout.stick_radius >= layout.zone_y0 &&
+            layout.stick_y + layout.stick_radius <= layout.zone_y1,
+        d + ": the stick's base inside its zone");
   // The pad's diamond: Y above A, X left of B.
   Check(Find(layout, "Y").y < Find(layout, "A").y && Find(layout, "X").x < Find(layout, "B").x, d + ": the diamond");
+}
+
+// The layout without the option, as it was before the option existed (develop 2fe156d): the d-pad,
+// the stick and its zone in pixels, so the option cannot change the default layout by accident.
+void TestTodayLayout() {
+  struct Today {
+    TouchScreen screen;
+    float dpad_x, dpad_y, dpad_r, stick_x, stick_y, stick_r, zone_y0, zone_x1;
+  };
+  const Today today[] = {
+      {Poco(), 537.007874f, 942.834656f, 138.582672f, 346.456665f, 610, 190.551178f, 366, 1084.80005f},
+      {PocoMeasured(), 721.586304f, 892, 164, 410, 610, 225.5f, 366, 1084.80005f},
+      {ShortPhone(), 683.907471f, 777.637817f, 151.181107f, 377.952759f, 540, 207.874023f, 324, 960},
+      {Narrow169(), 683.907471f, 777.637817f, 151.181107f, 377.952759f, 540, 207.874023f, 324, 768},
+      {Tab(), 351.496063f, 1418.58264f, 90.7086639f, 226.771667f, 799.999939f, 124.724411f, 480.000031f, 1024},
+  };
+  const auto near = [](float a, float b) { return std::abs(a - b) < 0.001f; };
+  for (const Today& t : today) {
+    const TouchLayout l = GameplayLayout(t.screen, {});
+    const TouchButton& dp = Find(l, "D-pad");
+    Check(near(dp.x, t.dpad_x) && near(dp.y, t.dpad_y) && near(dp.radius, t.dpad_r), "the default d-pad as before");
+    Check(near(l.stick_x, t.stick_x) && near(l.stick_y, t.stick_y) && near(l.stick_radius, t.stick_r),
+          "the default stick as before");
+    Check(l.zone_x0 == 0 && near(l.zone_y0, t.zone_y0) && near(l.zone_x1, t.zone_x1) && l.zone_y1 == t.screen.height,
+          "the default zone as before");
+    Check(!l.dpad_moves, "the d-pad presses the pad's d-pad by default");
+    // Everything but the d-pad, the stick and its zone is the same with the option.
+    const TouchLayout on = GameplayLayout(t.screen, {.dpad_moves = true});
+    Check(on.buttons.size() == l.buttons.size(), "the same controls with the option");
+    for (size_t i = 0; i < l.buttons.size(); ++i) {
+      const TouchButton &a = l.buttons[i], &b = on.buttons[i];
+      if (a.shape == TouchShape::kDpad) continue;
+      Check(a.name == b.name && a.x == b.x && a.y == b.y && a.radius == b.radius && a.half_width == b.half_width,
+            std::string(a.name) + ": where it was, with the option");
+    }
+    Check(on.stick_y == l.stick_y && on.zone_y0 == l.zone_y0, "the stick at the same height with the option");
+  }
+  // The tablet has room above the d-pad: the stick's base right over it.
+  const TouchLayout tab = GameplayLayout(Tab(), {.dpad_moves = true});
+  Check(std::abs(Find(tab, "D-pad").x - tab.stick_x) < 0.01f, "the tablet: the stick above the d-pad");
+}
+
+void TestDpadMoves() {
+  int16_t x = 1, y = 1;
+  DpadStick(0, x, y);
+  Check(x == 0 && y == 0, "no direction: centred");
+  DpadStick(pad::kUp, x, y);
+  Check(x == 0 && y == 32767, "up: the stick up (XInput's y up)");
+  DpadStick(pad::kDown | pad::kLeft, x, y);
+  Check(x == -23170 && y == -23170, "down and left: the diagonal at full tilt");
+
+  for (const TouchScreen& screen : {Poco(), Tab()}) {
+    TouchPad pad(GameplayLayout(screen, {.dpad_moves = true}));
+    const TouchButton dp = Find(pad.layout(), "D-pad");
+    const float dr = dp.radius;
+    pad.Down(1, dp.x, dp.y - dr * 0.6f);
+    PadState s = pad.State();
+    Check(s.left_x == 0 && s.left_y == 32767 && s.buttons == 0, "up: the stick up, no d-pad bit");
+    Check(pad.dpad_directions() == pad::kUp, "the drawing still sees the d-pad's up");
+    int16_t kx = 1, ky = 1;
+    pad.stick_deflection(kx, ky);
+    Check(kx == 0 && ky == 0, "no stick finger: the knob stays");
+    // As a pad's stick for the menus that read keystrokes: the left stick's up, not the d-pad's.
+    Check(PadKeyBits(s) == (uint64_t(1) << 18), "the keystroke is the left stick's up");
+    pad.Move(1, dp.x + dr * 0.6f, dp.y - dr * 0.6f);
+    s = pad.State();
+    Check(s.left_x == 23170 && s.left_y == 23170 && s.buttons == 0, "up and right: the diagonal");
+    pad.Move(1, dp.x - dr * 0.6f, dp.y);
+    s = pad.State();
+    Check(s.left_x == -32767 && s.left_y == 0, "left");
+    pad.Move(1, dp.x, dp.y);
+    Check(pad.State() == PadState{}, "at the centre: still");
+    // The stick's finger down too: the stick wins.
+    pad.Move(1, dp.x + dr * 0.6f, dp.y);
+    const float r = pad.layout().stick_radius;
+    const float sx = pad.layout().stick_x, sy = pad.layout().stick_y;
+    pad.Down(2, sx, sy);
+    pad.Move(2, sx, sy + r);
+    s = pad.State();
+    Check(s.left_x == 0 && s.left_y == -32767 && s.buttons == 0, "the stick wins over the d-pad");
+    pad.stick_deflection(kx, ky);
+    Check(kx == 0 && ky == -32767, "the knob follows the stick's finger");
+    pad.Up(2);
+    s = pad.State();
+    Check(s.left_x == 32767 && s.left_y == 0, "the stick lifted: the d-pad moves again");
+    pad.Up(1);
+    Check(pad.State() == PadState{} && pad.dpad_directions() == 0, "all lifted");
+  }
+  // Without the option the d-pad's bits, and no stick.
+  TouchPad pad(GameplayLayout(Poco()));
+  const TouchButton dp = Find(pad.layout(), "D-pad");
+  pad.Down(1, dp.x, dp.y - dp.radius * 0.6f);
+  const PadState s = pad.State();
+  Check(s.buttons == pad::kUp && s.left_x == 0 && s.left_y == 0, "the option off: the d-pad's up");
+  Check(PadKeyBits(s) == pad::kUp, "the option off: the d-pad's up keystroke");
 }
 
 void TestHeldButton() {
@@ -358,6 +473,13 @@ int main() {
   TestKeystrokeSource();
   Check(1920 / Narrow169().px_per_mm >= kMinWidthMm, "the 16:9 phone is the narrowest supported");
   TestLayout(Tab(), "Tab S5e");
+  TestLayout(Poco(), "POCO X7", {.dpad_moves = true});
+  TestLayout(PocoMeasured(), "POCO X7 as measured", {.dpad_moves = true});
+  TestLayout(ShortPhone(), "a short phone", {.dpad_moves = true});
+  TestLayout(Narrow169(), "a 16:9 phone at the minimum height", {.dpad_moves = true});
+  TestLayout(Tab(), "Tab S5e", {.dpad_moves = true});
+  TestTodayLayout();
+  TestDpadMoves();
   TestHeldButton();
   TestSliding();
   TestStick();

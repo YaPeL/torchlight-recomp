@@ -52,6 +52,15 @@ struct TouchLayout {
   // lands in to take it (x0, y0, x1, y1: pixels, y down).
   float stick_x = 0, stick_y = 0, stick_radius = 0;
   float zone_x0 = 0, zone_y0 = 0, zone_x1 = 0, zone_y1 = 0;
+  // The d-pad moves the hero (TouchLayoutOptions::dpad_moves): its directions are the left stick's.
+  bool dpad_moves = false;
+};
+
+// The choices the player makes about the layout (settings.toml).
+struct TouchLayoutOptions {
+  // The d-pad moves the hero, as the left stick at full tilt, instead of pressing the pad's d-pad
+  // (which switches skill sets); it is then bigger and takes the stick's corner (GameplayLayout).
+  bool dpad_moves = false;
 };
 
 // The sizes, in millimetres (docs/android-port.md, A4: Android's 48 dp target is about 9 mm).
@@ -62,6 +71,7 @@ constexpr float kStickRadius = 11;
 constexpr float kFaceSpread = 10;  // the face buttons' centres from the diamond's centre
 constexpr float kDpadRadius = 8;   // the d-pad's cross, half its width (the owner: much smaller
                                    // than four 9 mm buttons)
+constexpr float kMoveDpadRadius = 11;  // the d-pad that moves the hero: as big as the stick
 constexpr float kSideMargin = 6;   // left and right edges
 constexpr float kLongMargin = 8;   // the bottom: the POCO's curved long edge in landscape
 constexpr float kTopRowMargin = 2;  // the top row (the shoulders, Back, Start): almost at the top,
@@ -77,14 +87,22 @@ constexpr float kMinGap = 1.5f;    // Android's 8 dp between targets
 // (as high as the shoulders' row leaves room for: the owner wanted them higher, 2026-10-18)
 // - the shoulders in the top corners, wide: LT and LB on the left, RB and RT on the right;
 // - Back and Start at the top centre, wide.
+// With TouchLayoutOptions::dpad_moves the d-pad is a second way to move, so it grows and takes the
+// stick's corner: kMoveDpadRadius (less if the screen is too short for it, never below
+// kDpadRadius) from the side and bottom margins; the stick's resting base keeps its height, above
+// the d-pad when there is room (tablets), else just inward enough to keep the gap (phones); its
+// zone widens to hold it. Without the option the layout is the one above.
 // It fits screens at least kMinHeightMm tall and kMinWidthMm wide in landscape (phones and tablets
 // are: a 20:9 phone about 57-60 x 127-132 mm, a 16:9 one at 57 mm about 101 mm wide).
-TouchLayout GameplayLayout(const TouchScreen& screen);
+TouchLayout GameplayLayout(const TouchScreen& screen, const TouchLayoutOptions& options = {});
 
 // The d-pad's directions (pad::kUp...) for a point on it: by its angle from the centre, a
 // diagonal pressing both sides (one component counts when it is at least half the other); none
 // within a fifth of the radius of the centre.
 uint16_t DpadDirections(const TouchButton& dpad, float x, float y);
+// The left stick's values for d-pad directions: full tilt, ±32767 straight and ±23170 (32767 /
+// sqrt 2) on a diagonal, XInput's y up; 0 for none.
+void DpadStick(uint16_t directions, int16_t& x, int16_t& y);
 
 constexpr float kMinHeightMm = 57;  // the shortest devices expected; the geometry fits down to ~55
 constexpr float kMinWidthMm = 100;
@@ -110,7 +128,13 @@ class TouchPad {
   // Whether a finger is on the screen as far as the pad knows (a new layout drops them).
   bool tracks(uint64_t finger) const { return fingers_.contains(finger); }
 
+  // With the layout's dpad_moves, the d-pad's directions are the left stick's, unless the stick's
+  // finger is down too (the stick wins), and no d-pad bit is pressed.
   PadState State() const;
+  // What the drawing shows apart from the state: the directions the d-pad's fingers press (with
+  // dpad_moves too), and the stick finger's own deflection (0 without one), as the left stick's.
+  uint16_t dpad_directions() const;
+  void stick_deflection(int16_t& x, int16_t& y) const;
   // Where the stick's base and knob are now (the resting base while no finger holds it).
   float stick_base_x() const;
   float stick_base_y() const;
@@ -125,6 +149,7 @@ class TouchPad {
     float x = 0, y = 0;
   };
   int ButtonAt(float x, float y) const;
+  void StickOf(const Finger& f, int16_t& x, int16_t& y) const;
 
   TouchLayout layout_;
   std::map<uint64_t, Finger> fingers_;
