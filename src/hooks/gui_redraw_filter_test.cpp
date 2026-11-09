@@ -228,6 +228,16 @@ int main() {
 
   // A cycle, a null child, a child count out of bounds: not walked.
   {
+    // A cycle through the parent pointers (each the other's parent, both visible): isVisible's walk
+    // never reaches a root, so the bound stops it and the tree is not decided.
+    Tree c = t;
+    c.m.words[0x13000 + ui::kWindowParent.offset] = 0x14000;
+    c.m.words[0x14000 + ui::kWindowParent.offset] = 0x13000;
+    c.m.bytes[0x14000 + ui::kWindowVisible.offset] = 1;
+    gr::State s;
+    Check(gr::Collect(c.m, kSystem, s) == Reason::kUnwalkable, "a parent cycle: unwalkable");
+  }
+  {
     Tree c = t;
     c.children[0x13000].push_back(0x11000);
     c.Lists(0x13000);

@@ -7,6 +7,9 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ### Faster
 
+- The menus run about 20–28 % faster: the game no longer rebuilds its interface when nothing on it
+  changed. If you ever see a menu or the HUD not updating, set `native_gui_redraw_filter = false` in
+  `torchlight.toml` (or start with `--native_gui_redraw_filter=false`).
 - Every desktop build is now optimized with a profile of real play (profile-guided optimization)
   on Linux, Windows and macOS. In the benchmark fight, the game's main thread needs 6.4 % fewer CPU
   cycles per frame than v0.12.5 (Linux, i7-8750H; frame 10.9 to 10.1 ms).
