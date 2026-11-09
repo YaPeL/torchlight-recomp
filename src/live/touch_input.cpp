@@ -70,9 +70,11 @@ input::TouchMode ModeOf(settings::TouchControls mode) {
 class TouchState {
  public:
   // Under install, UI thread.
-  void Start(input::TouchMode mode, bool pad_at_start, bool touch_screen, bool mouse_finger, SDL_WindowID window,
-             float width, float height, float points_w, float points_h, float px_per_mm) {
+  void Start(input::TouchMode mode, input::TouchLayoutOptions options, bool pad_at_start, bool touch_screen,
+             bool mouse_finger, SDL_WindowID window, float width, float height, float points_w, float points_h,
+             float px_per_mm) {
     std::lock_guard lock(mutex_);
+    options_ = options;
     visibility_ = input::TouchVisibility(mode, pad_at_start, touch_screen);
     mouse_finger_ = mouse_finger;
     window_ = window;
@@ -81,7 +83,7 @@ class TouchState {
     points_w_ = points_w;
     points_h_ = points_h;
     px_per_mm_ = px_per_mm;
-    pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
+    pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}, options_));
     ignored_.clear();
     state_ = {};
     keys_.Reset();
@@ -159,6 +161,13 @@ class TouchState {
     points_w_ = width;
     points_h_ = height;
   }
+  // The settings menu changed the layout's options.
+  void Options(input::TouchLayoutOptions options) {
+    std::lock_guard lock(mutex_);
+    if (!installed_ || options.style == options_.style) return;
+    options_ = options;
+    Relayout();
+  }
   void Density(SDL_WindowID window, float px_per_mm) {
     std::lock_guard lock(mutex_);
     if (!installed_ || window != window_ || px_per_mm <= 0 || px_per_mm == px_per_mm_) return;
@@ -172,6 +181,8 @@ class TouchState {
     out.visible = visibility_.visible();
     out.layout = pad_.layout();
     out.state = state_;
+    out.dpad = pad_.dpad_directions();
+    pad_.stick_deflection(out.knob_x, out.knob_y);
     out.stick_base_x = pad_.stick_base_x();
     out.stick_base_y = pad_.stick_base_y();
     out.stick_held = pad_.stick_held();
@@ -224,7 +235,7 @@ class TouchState {
   // A new layout drops the fingers (as if lifted); those still on the screen act again when they
   // land anew.
   void Relayout() {
-    pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}));
+    pad_.SetLayout(input::GameplayLayout({width_, height_, px_per_mm_}, options_));
     ignored_.clear();
     Update();
   }
@@ -240,6 +251,7 @@ class TouchState {
   std::mutex mutex_;
   bool installed_ = false;
   input::TouchPad pad_;
+  input::TouchLayoutOptions options_;
   input::TouchVisibility visibility_{input::TouchMode::kNever, false, false};
   input::PadState state_;
   input::PadKeystrokeSource keys_;
@@ -378,7 +390,7 @@ class TouchInputDriver : public rex::input::InputDriver {
 
 }  // namespace
 
-void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode) {
+void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode, input::TouchLayoutOptions options) {
   if (mode == settings::TouchControls::kNever) {
     REXLOG_INFO("touch: controls off (touch_controls \"never\", or not set off Android)");
     return;
@@ -411,14 +423,25 @@ void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode) {
   }
   // The real pad's events reach the watch only with SDL's gamepad support on.
   SDL_InitSubSystem(SDL_INIT_GAMEPAD);
-  State().Start(ModeOf(mode), gamepads > 0, touch_screen, mouse_finger, window_id, float(w), float(h), float(pw),
-                float(ph), px_per_mm);
+  State().Start(ModeOf(mode), options, gamepads > 0, touch_screen, mouse_finger, window_id, float(w), float(h),
+                float(pw), float(ph), px_per_mm);
   input->AddDriver(std::make_unique<TouchInputDriver>());
   TouchSnapshot snap;
   ReadTouchControls(snap);
-  REXLOG_INFO("touch: controls {} (mode {}, {} touch screen(s){}, {} pad(s) at start, {:.1f} px/mm, {}x{})",
+  REXLOG_INFO("touch: controls {} (mode {}, {} touch screen(s){}, {} pad(s) at start, {:.1f} px/mm, {}x{}{})",
               snap.visible ? "shown" : "hidden", settings::TouchControlsName(mode), touch_devices,
-              mouse_finger ? ", the mouse as a finger" : "", gamepads, px_per_mm, w, h);
+              mouse_finger ? ", the mouse as a finger" : "", gamepads, px_per_mm, w, h,
+              options.style == input::TouchStyle::kPlayStation ? ", the PlayStation layout" : "");
+}
+
+input::TouchLayoutOptions TouchLayoutOptionsOf(const settings::HostSettings& settings) {
+  return {.style = settings.touch_layout == settings::TouchStyle::kPlayStation ? input::TouchStyle::kPlayStation
+                                                                               : input::TouchStyle::kXbox};
+}
+
+void SetTouchLayout(input::TouchLayoutOptions options) {
+  State().Options(options);
+  REXLOG_INFO("touch: the {} layout", options.style == input::TouchStyle::kPlayStation ? "PlayStation" : "Xbox");
 }
 
 bool TouchControlCentre(std::string_view name, float& x, float& y) {
@@ -441,6 +464,13 @@ bool TouchControlCentre(std::string_view name, float& x, float& y) {
       return true;
     }
     return false;
+  }
+  // The stick's resting base.
+  if (lowered == "stick") {
+    if (snap.width <= 0 || snap.height <= 0 || snap.layout.stick_radius <= 0) return false;
+    x = snap.layout.stick_x / snap.width;
+    y = snap.layout.stick_y / snap.height;
+    return true;
   }
   for (const auto& b : snap.layout.buttons) {
     if (b.name.size() != name.size()) continue;
