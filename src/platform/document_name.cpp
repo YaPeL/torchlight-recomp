@@ -13,7 +13,18 @@ int HexDigit(char c) {
   return -1;
 }
 
+// A file name with an extension that cannot be read as a path, hidden or a control character.
+bool Plain(const std::string& name) {
+  return name.find('.') != std::string::npos && name.front() != '.' && name.find('\\') == std::string::npos &&
+         std::none_of(name.begin(), name.end(), [](char c) { return static_cast<unsigned char>(c) < 0x20; });
+}
+
 }  // namespace
+
+std::string PickedDocumentName(const std::string& uri, const std::string& display_name) {
+  if (display_name.find_first_of("/:") == std::string::npos && Plain(display_name)) return display_name;
+  return PickedDocumentName(uri);
+}
 
 std::string PickedDocumentName(const std::string& uri) {
   std::string segment = uri.substr(uri.find_last_of('/') + 1);
@@ -29,11 +40,7 @@ std::string PickedDocumentName(const std::string& uri) {
     }
   }
   const std::string name = decoded.substr(decoded.find_last_of("/:") + 1);
-  const bool plain = name.find('.') != std::string::npos && name.front() != '.' &&
-                     name.find('\\') == std::string::npos &&
-                     std::none_of(name.begin(), name.end(),
-                                  [](char c) { return static_cast<unsigned char>(c) < 0x20; });
-  return plain ? name : "picked_file";
+  return Plain(name) ? name : "picked_file";
 }
 
 }  // namespace torchlight::platform

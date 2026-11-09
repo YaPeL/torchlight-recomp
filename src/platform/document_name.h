@@ -13,5 +13,10 @@ namespace torchlight::platform {
 // names no file with an extension ("msf:1234") or the name could be read as a path. The mods'
 // import names a mod at a zip's root after it (mods/mod_import.h).
 std::string PickedDocumentName(const std::string& uri);
+// The same, preferring the name the document's provider gives (OpenableColumns.DISPLAY_NAME,
+// platform_android.cpp; empty when it gave none): a URI like "msf:1234" (the downloads provider,
+// once the file is in the media store: the POCO, 2026-11-09) names no file. The display name must
+// pass the same checks, and must not hold a '/' or ':' either; else the URI's name.
+std::string PickedDocumentName(const std::string& uri, const std::string& display_name);
 
 }  // namespace torchlight::platform

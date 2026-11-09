@@ -348,6 +348,33 @@ std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {1280, 800}; 
 
 bool HasSystemBackButton() { return true; }
 
+// The name the document's provider gives (TorchlightActivity.documentDisplayName); empty when it
+// gives none or the call fails.
+std::string DocumentDisplayName(const std::string& uri) {
+  auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+  auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+  if (!env || !activity) return {};
+  std::string name;
+  jclass cls = env->GetObjectClass(activity);
+  jmethodID method = env->GetStaticMethodID(cls, "documentDisplayName", "(Ljava/lang/String;)Ljava/lang/String;");
+  if (method) {
+    jstring juri = env->NewStringUTF(uri.c_str());
+    auto result = static_cast<jstring>(env->CallStaticObjectMethod(cls, method, juri));
+    if (result && !env->ExceptionCheck()) {
+      if (const char* chars = env->GetStringUTFChars(result, nullptr)) {
+        name = chars;
+        env->ReleaseStringUTFChars(result, chars);
+      }
+    }
+    if (result) env->DeleteLocalRef(result);
+    env->DeleteLocalRef(juri);
+  }
+  if (env->ExceptionCheck()) env->ExceptionClear();
+  env->DeleteLocalRef(cls);
+  env->DeleteLocalRef(activity);
+  return name;
+}
+
 // Android's picker (SDL's, through the Storage Access Framework) gives a document URI
 // (content://...), which SDL opens but plain file I/O does not: the document is copied to the
 // app's cache first, with a progress window (docs/android-port.md, A1.2: the player's game). SDL
@@ -366,7 +393,7 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
     return PickResult::kUncopied;
   }
   const Sint64 size = SDL_GetIOSize(in);
-  const std::string copy = dir + PickedDocumentName(path);
+  const std::string copy = dir + PickedDocumentName(path, DocumentDisplayName(path));
   std::ofstream out(copy, std::ios::binary | std::ios::trunc);
   if (!out.is_open()) {
     SDL_CloseIO(in);

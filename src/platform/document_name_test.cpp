@@ -16,6 +16,14 @@ void Check(const std::string& uri, const std::string& expected) {
                  expected.c_str());
   }
 }
+void CheckNamed(const std::string& uri, const std::string& display, const std::string& expected) {
+  const std::string got = torchlight::platform::PickedDocumentName(uri, display);
+  if (got != expected) {
+    ++failures;
+    std::fprintf(stderr, "FAIL: %s, \"%s\" -> %s (expected %s)\n", uri.c_str(), display.c_str(), got.c_str(),
+                 expected.c_str());
+  }
+}
 }  // namespace
 
 int main() {
@@ -32,6 +40,15 @@ int main() {
   Check(external + "primary%3AMod.zip?x=1", "Mod.zip");
   Check(external + "primary%3A%E2%9C%93.zip", "\xE2\x9C\x93.zip");
   Check("", "picked_file");
+  // The provider's display name first (a media store id names no file), checked as strictly.
+  CheckNamed(downloads + "msf%3A1234", "MyMod.zip", "MyMod.zip");
+  CheckNamed(downloads + "msf%3A1234", "", "picked_file");
+  CheckNamed(external + "primary%3AOther.zip", "", "Other.zip");
+  CheckNamed(downloads + "msf%3A1234", "../evil.zip", "picked_file");
+  CheckNamed(downloads + "msf%3A1234", "a:b.zip", "picked_file");
+  CheckNamed(downloads + "msf%3A1234", ".hidden.zip", "picked_file");
+  CheckNamed(external + "primary%3AOther.zip", "..", "Other.zip");
+  CheckNamed(downloads + "msf%3A1234", "a\\b.zip", "picked_file");
   if (failures) return 1;
   std::puts("document_name_test: ok");
   return 0;
