@@ -1,4 +1,4 @@
-// The GUI redraw filter (--native_gui_redraw_filter, off by default): System::renderGUI
+// The GUI redraw filter (--native_gui_redraw_filter, on by default): System::renderGUI
 // (sub_821FBC60, guest_abi cegui) wrapped so that a redraw CEGUI asks for, which would queue the
 // same quads the renderer holds (the rule in hooks/gui_redraw_filter.h), is skipped: the System's
 // flag is cleared before the guest's function runs, which then only draws the list it has (doRender
@@ -53,7 +53,7 @@
 #include "diag/store_trace_api.h"
 #endif
 
-REXCVAR_DEFINE_BOOL(native_gui_redraw_filter, false, "Torchlight",
+REXCVAR_DEFINE_BOOL(native_gui_redraw_filter, true, "Torchlight",
                     "Skip the GUI's redraws that would queue the same quads it already draws "
                     "(after torchlight-nx; false: every redraw CEGUI asks for)");
 #if TORCHLIGHT_DIAGNOSTICS

@@ -129,7 +129,7 @@ fresh bench save, offscreen on the desktop (the first one, 2026-11-01, on the i7
 Deck measured with it, it did not train it). The Windows release profile
 (`pgo/windows-x86_64.profdata`, `fce8f9b9...`, 2026-11-01) was trained the same way by the desktop
 kit (`fight.txt`, `fight5.txt`, `town.txt`, off then on); the port is on by default there too since
-2026-11-06. From the GUI redraw filter on (`--native_gui_redraw_filter`, off by default), the "on"
+2026-11-06. From the GUI redraw filter on (`--native_gui_redraw_filter`, on by default since 2026-11-09), the "on"
 half of every desktop training sets both flags: the three scripts with `--native_skeleton=false
 --native_gui_redraw_filter=false`, then the three with `--native_skeleton=true
 --native_gui_redraw_filter=true` (the desktop kit's `run_pgo.py` since 2026-11-06; the Linux runs

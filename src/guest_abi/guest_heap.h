@@ -7,7 +7,6 @@
 
 #include <cstdint>
 
-#include "guest_abi/ogre_layout.h"
 
 namespace torchlight::guest_abi::guest_heap {
 

@@ -25,10 +25,10 @@ guest RenderSystem hooks -> Session (command stream) -> Frontend -> OGRE 14 back
   (`rtss_listener_hooks.cpp`, `--native_rtss_listener`). The culling's `Frustum::isVisible(box)`
   runs as host code in every mode (`frustum_test.h`, `--native_frustum_test`: the same SIMDe
   operations as the recompiled function, the guest's result bit for bit; section 12 of the same
-  document). Off by default, in every mode: the GUI redraw filter (`gui_redraw_filter.h`,
+  document). On by default, in every mode: the GUI redraw filter (`gui_redraw_filter.h`,
   `--native_gui_redraw_filter`, after torchlight-nx's interface mode 3) skips a CEGUI redraw that
-  would queue the same quads the renderer holds; `--diag_gui_redraw_shadow` (diagnostics builds)
-  checks its rule against every rebuild. `TORCHLIGHT_FRAME_POINTERS` (off; profiling
+  would queue the same quads the renderer holds (`=false` turns it off); `--diag_gui_redraw_shadow`
+  (diagnostics builds) checks its rule against every rebuild. `TORCHLIGHT_FRAME_POINTERS` (off; profiling
   builds only) keeps frame pointers in every target for `perf --call-graph fp`.
   The game is built with the default code model on Linux x86-64 and the generated code keeps the
   non-volatile registers in locals, so no hook touches r12, r14-r31, f14-f31 or v14 and up through
