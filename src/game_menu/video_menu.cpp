@@ -618,7 +618,7 @@ void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
   // times, and then the log keeps the result.
   if (g_import.show_attempts++ % 60 != 0) return;
   const MenuMessage& message = *g_import.to_show;
-  if (g_import.box.Show(ctx, base, message.title, message.text, message.buttons, 0)) {
+  if (g_import.box.Show(ctx, base, message.title, WrapText(message.text, kBoxLineLength), message.buttons, 0)) {
     g_import.to_show.reset();
   } else if (g_import.show_attempts > 10 * 60) {
     REXLOG_WARN("mod import: the result box could not be shown: {}", message.text);

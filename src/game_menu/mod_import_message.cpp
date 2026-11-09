@@ -1,5 +1,6 @@
 #include "game_menu/mod_import_message.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace torchlight::game_menu {
@@ -8,6 +9,10 @@ namespace {
 
 constexpr const char* kInstalled =
     "Installed: {mods}. Mods are loaded when the game starts: restart it to play with them.";
+// More than kListedMods: the first ones named, the rest counted.
+constexpr const char* kInstalledMany =
+    "Installed {count} mods: {mods} and {more} more. Mods are loaded when the game starts: restart "
+    "it to play with them.";
 constexpr const char* kAlreadyInstalled =
     "A mod named {mods} is already installed, so nothing was changed. Remove or rename it in the "
     "mods folder to import this one.";
@@ -46,24 +51,64 @@ std::string Text(const Translate& tr, const std::string& english,
 
 std::string Megabytes(uint64_t bytes) { return std::to_string((bytes + (1 << 20) - 1) >> 20); }
 
-MenuMessage Box(const Translate& tr, std::string text) {
-  return {Text(tr, kImportTitle), std::move(text), {Text(tr, kImportOk)}};
+MenuMessage Box(const Translate& tr, const std::string& text) {
+  return {Text(tr, kImportTitle), text, {Text(tr, kImportOk)}};
 }
 
 }  // namespace
 
+std::string WrapText(const std::string& text, size_t width) {
+  std::string out;
+  size_t line = 0;  // the current line's length so far
+  size_t at = 0;
+  while (at < text.size()) {
+    if (text[at] == '\n') {
+      out += '\n';
+      line = 0;
+      ++at;
+      continue;
+    }
+    if (text[at] == ' ') {
+      ++at;
+      continue;
+    }
+    size_t end = text.find_first_of(" \n", at);
+    if (end == std::string::npos) end = text.size();
+    const std::string word = text.substr(at, end - at);
+    // Characters, not bytes: UTF-8 continuation bytes do not count.
+    const size_t length = static_cast<size_t>(
+        std::count_if(word.begin(), word.end(), [](char c) { return (c & 0xC0) != 0x80; }));
+    if (line > 0 && line + 1 + length > width) {
+      out += '\n';
+      line = 0;
+    } else if (line > 0) {
+      out += ' ';
+      ++line;
+    }
+    out += word;
+    line += length;
+    at = end;
+  }
+  return out;
+}
+
 MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr) {
+  const size_t listed = std::min(result.mods.size(), kListedMods);
   std::string names;
-  for (const std::string& mod : result.mods) names += (names.empty() ? "" : ", ") + mod;
+  for (size_t i = 0; i < listed; ++i) names += (names.empty() ? "" : ", ") + result.mods[i];
+  const bool many = result.mods.size() > kListedMods;
+  if (many && result.status != mods::ImportStatus::kInstalled) names += ", ...";
   const std::vector<std::pair<std::string, std::string>> values = {
       {"mods", names},
+      {"count", std::to_string(result.mods.size())},
+      {"more", std::to_string(result.mods.size() - listed)},
       {"detail", result.detail},
       {"needed", Megabytes(result.bytes_needed)},
       {"free", Megabytes(result.bytes_free)}};
   using mods::ImportStatus;
   const char* english = kCannotWrite;
   switch (result.status) {
-    case ImportStatus::kInstalled: english = kInstalled; break;
+    case ImportStatus::kInstalled: english = many ? kInstalledMany : kInstalled; break;
     case ImportStatus::kCancelled: english = kCancelled; break;
     case ImportStatus::kNoModFound: english = kNoModFound; break;
     case ImportStatus::kAlreadyInstalled: english = kAlreadyInstalled; break;
@@ -85,7 +130,7 @@ MenuMessage ModPickMessage(PickProblem problem, const std::string& detail, const
 std::vector<std::string> ModImportTexts() {
   return {kImportTitle,       kImportOk,          kImportAskSource, kImportZipButton,
           kImportFolderButton, kImportCancelButton, kImportPickZip,   kImportPickFolder,
-          kImportZipFilter,   kImportBusy,        kInstalled,       kAlreadyInstalled,
+          kImportZipFilter,   kImportBusy,        kInstalled,       kInstalledMany,   kAlreadyInstalled,
           kNoModFound,        kUnreadable,        kUnsafeName,      kUnsupportedEntry,
           kNonAsciiName,      kNotEnoughSpace,    kCannotWrite,     kCancelled,
           kNoPicker,          kNotCopied};

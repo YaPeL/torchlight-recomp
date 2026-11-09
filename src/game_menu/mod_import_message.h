@@ -33,6 +33,16 @@ inline constexpr const char* kImportZipFilter = "Zip archives";
 // The busy notice while it runs (live/busy_notice_text.h fills {percent}).
 inline constexpr const char* kImportBusy = "Importing mod... {percent}%";
 
+// The boxes' text is wrapped at this many characters when shown (WrapText): the runtime's message
+// box draws each line whole, so a long one ran off the screen (29 mods' names on the POCO,
+// 2026-11-09).
+inline constexpr size_t kBoxLineLength = 70;
+// The mods named in a box; the rest are counted.
+inline constexpr size_t kListedMods = 5;
+// Breaks `text` into lines of at most `width` characters at spaces (a longer word gets a line of
+// its own), keeping its own line breaks.
+std::string WrapText(const std::string& text, size_t width);
+
 // The box after ImportMod: what was installed, or why nothing was.
 MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr);
 

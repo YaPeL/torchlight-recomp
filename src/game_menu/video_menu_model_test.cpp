@@ -409,6 +409,34 @@ void TestImportMessages() {
   Check(box.text.starts_with("[Installed: A, B.") && box.text.find("{mods}") == std::string::npos,
         "installed: the names filled in after translating");
 
+  // A pack (29 mods on the POCO): five named, the rest counted, the restart still said; wrapped as
+  // shown, every line within the box's length.
+  mods::ImportResult pack;
+  pack.status = mods::ImportStatus::kInstalled;
+  for (int i = 0; i < 29; ++i) pack.mods.push_back("JCC - Mod " + std::to_string(i));
+  const std::string flat = ModImportMessage(pack, [](const std::string& english) { return english; }).text;
+  const std::string many = WrapText(flat, kBoxLineLength);
+  Check(flat.starts_with("Installed 29 mods: JCC - Mod 0, JCC - Mod 1, JCC - Mod 2, JCC - Mod 3, JCC - Mod 4 and 24 more.") &&
+            flat.find("Mod 5") == std::string::npos && flat.find("restart it") != std::string::npos,
+        "a pack: five named, the rest counted, the restart said");
+  for (size_t at = 0, end; at < many.size(); at = end + 1) {
+    end = many.find('\n', at);
+    if (end == std::string::npos) end = many.size();
+    Check(end - at <= kBoxLineLength, "every line within the box");
+  }
+  pack.status = mods::ImportStatus::kAlreadyInstalled;
+  const std::string again = ModImportMessage(pack, [](const std::string& english) { return english; }).text;
+  Check(again.find("JCC - Mod 4, ...") != std::string::npos && again.find("Mod 5") == std::string::npos,
+        "already installed, a pack: five named and an ellipsis");
+
+  // The wrapping: at spaces, a long word alone, its own breaks kept, UTF-8 counted by characters.
+  Check(WrapText("aaa bbb ccc", 7) == "aaa bbb\nccc", "wrapped at a space");
+  Check(WrapText("a verylongword b", 5) == "a\nverylongword\nb", "a long word on a line of its own");
+  Check(WrapText("one\ntwo three", 9) == "one\ntwo three", "its own line breaks kept");
+  Check(WrapText("\xc3\xa9\xc3\xa9\xc3\xa9 abc", 7) == "\xc3\xa9\xc3\xa9\xc3\xa9 abc",
+        "UTF-8 counted by characters");
+  Check(WrapText("", 10).empty(), "nothing to wrap");
+
   mods::ImportResult existing;
   existing.status = mods::ImportStatus::kAlreadyInstalled;
   existing.mods = {"Mine"};
