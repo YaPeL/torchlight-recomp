@@ -136,6 +136,20 @@ void TestPadPrompts() {
     Check(!Parse("touch_controls = \"sometimes\"\n", &w).touch_controls && !w.empty(),
           "an unknown touch mode warns and stays unset");
   }
+  {
+    // The touch layout: the Xbox style by default, live, round trips, a bad value warns.
+    std::vector<std::string> w;
+    Check(Parse("", &w).touch_layout == TouchStyle::kXbox && w.empty(), "the Xbox touch layout by default");
+    Check(!RequiresRestart(Setting::kTouchLayout), "the touch layout takes effect live");
+    HostSettings one;
+    one.touch_layout = TouchStyle::kPlayStation;
+    const HostSettings back = Parse(Serialize(one), &w);
+    Check(back.touch_layout == TouchStyle::kPlayStation && back == one && w.empty(), "touch_layout round trip");
+    Check(Parse("touch_layout = \"xbox\"\n", &w).touch_layout == TouchStyle::kXbox && w.empty(),
+          "touch_layout = \"xbox\"");
+    Check(Parse("touch_layout = \"nintendo\"\n", &w).touch_layout == TouchStyle::kXbox && !w.empty(),
+          "a bad touch_layout value warns and stays Xbox");
+  }
   Check(s.pad_prompts == PadPrompts::kAuto && !s.swap_confirm_cancel && warnings.empty(),
         "no keys: automatic prompts, no swap");
   s = Parse("pad_prompts = \"nintendo\"\nswap_confirm_cancel = true\n", &warnings);
