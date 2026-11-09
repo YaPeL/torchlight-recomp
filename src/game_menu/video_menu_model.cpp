@@ -154,6 +154,10 @@ bool VideoMenuModel::Step(Row row, int direction) {
       }
       return true;
     }
+    case Row::kTouchLayout:
+      if (!caps_.touch_controls) return false;
+      return StepIn(std::vector<settings::TouchStyle>{settings::TouchStyle::kXbox, settings::TouchStyle::kPlayStation},
+                    current_.touch_layout, direction);
     case Row::kVsync:
     case Row::kSwapConfirmCancel:
       return false;
@@ -260,6 +264,8 @@ std::string VideoMenuModel::Text(Row row) const {
       return current_.vsync ? "On" : "Off";
     case Row::kSwapConfirmCancel:
       return current_.swap_confirm_cancel ? "On" : "Off";
+    case Row::kTouchLayout:
+      return current_.touch_layout == settings::TouchStyle::kPlayStation ? "PlayStation" : "Xbox 360";
   }
   return "";
 }
@@ -287,6 +293,8 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kSwapConfirmCancel:
       return current_.pad_prompts == settings::PadPrompts::kNintendo ||
              (current_.pad_prompts == settings::PadPrompts::kAuto && nintendo_pad_);
+    // Only where the touch controls are installed (live: the controls are laid out again).
+    case Row::kTouchLayout: return caps_.touch_controls;
   }
   return false;
 }
@@ -323,6 +331,7 @@ Section SectionOf(Row row) {
   switch (row) {
     case Row::kPadPrompts:
     case Row::kSwapConfirmCancel:
+    case Row::kTouchLayout:
       return Section::kControls;
     case Row::kLanguage:
     case Row::kAchievements:

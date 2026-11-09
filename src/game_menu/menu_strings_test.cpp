@@ -44,7 +44,7 @@ void TestShippedFile() {
                          "Some changes need a restart", "Unlimited", "Window", "Default", "Auto",
                          "PC", "Antialiasing", "Off", "Shadows", "360 (512) on restart",
                          "PC (1024) on restart", "Low-End Devices", "Low",
-                         "Low on restart", "Xbox 360 on restart"};
+                         "Low on restart", "Xbox 360 on restart", "Touch Layout"};
   for (const char* language : {"de", "fr", "es"}) {
     for (const char* text : texts) {
       if (!s.Has(language, text)) {

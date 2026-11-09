@@ -197,11 +197,33 @@ void TestPadPrompts() {
 void TestSections() {
   int count[kSectionCount] = {};
   for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
-  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 5,
-        "six video rows, two controls, five extras");
+  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 3 && count[int(Section::kExtras)] == 5,
+        "six video rows, three controls, five extras");
   Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
             SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
         "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
+}
+
+void TestTouchLayout() {
+  // Without touch controls (a desktop): shown, disabled, does not step.
+  VideoMenuModel desktop(Desktop(), HostSettings{}, HostSettings{});
+  Check(SectionOf(Row::kTouchLayout) == Section::kControls && !IsCheckbox(Row::kTouchLayout),
+        "the touch layout: a value in Controls");
+  Check(!desktop.Enabled(Row::kTouchLayout) && !desktop.Step(Row::kTouchLayout, +1) &&
+            desktop.settings().touch_layout == TouchStyle::kXbox,
+        "no touch controls: disabled");
+  Capabilities caps = Desktop();
+  caps.touch_controls = true;
+  VideoMenuModel m(caps, HostSettings{}, HostSettings{});
+  Check(m.Enabled(Row::kTouchLayout) && m.Text(Row::kTouchLayout) == "Xbox 360",
+        "touch controls: enabled, Xbox by default");
+  Check(!m.Toggle(Row::kTouchLayout) && !m.Step(Row::kTouchLayout, -1), "not a checkbox; Xbox is the first");
+  Check(m.Step(Row::kTouchLayout, +1) && m.settings().touch_layout == TouchStyle::kPlayStation &&
+            m.Text(Row::kTouchLayout) == "PlayStation",
+        "right: PlayStation");
+  Check(!m.Step(Row::kTouchLayout, +1), "PlayStation is the last");
+  Check(!m.RestartNeeded(), "live: no restart");
+  Check(m.Reset() && m.settings().touch_layout == TouchStyle::kXbox, "Reset Defaults: Xbox");
 }
 
 void TestReset() {
@@ -388,6 +410,7 @@ int main() {
   TestAchievements();
   TestPadPrompts();
   TestSections();
+  TestTouchLayout();
   std::printf("video_menu_model_test: ok\n");
   return 0;
 }
