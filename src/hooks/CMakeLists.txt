@@ -23,6 +23,13 @@ target_link_libraries(adaptive_vsync_test PRIVATE torchlight_adaptive_vsync)
 target_compile_options(adaptive_vsync_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME adaptive_vsync_test COMMAND adaptive_vsync_test)
 
+# The GUI redraw filter's rule (gui_redraw_filter.h, header only): tested on its own over a made-up
+# window tree; the hook that uses it (gui_redraw_filter_hooks.cpp) is part of the executable.
+add_executable(gui_redraw_filter_test gui_redraw_filter_test.cpp)
+target_link_libraries(gui_redraw_filter_test PRIVATE guest_abi)
+target_compile_options(gui_redraw_filter_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME gui_redraw_filter_test COMMAND gui_redraw_filter_test)
+
 # The watch on the guest's waits for the GPU (gpu_wait_watch.h): no guest or SDK dependency, tested
 # on its own; the hook that uses it (gpu_wait_hooks.cpp) is part of the executable.
 add_library(torchlight_gpu_wait_watch STATIC gpu_wait_watch.cpp)

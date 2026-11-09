@@ -117,6 +117,8 @@ set(TORCHLIGHT_SOURCES
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
     src/hooks/native_skeleton.cpp
+    # The GUI redraw filter (--native_gui_redraw_filter, off by default).
+    src/hooks/gui_redraw_filter_hooks.cpp
     src/hooks/pixel_util_hooks.cpp
     src/hooks/wardrobe_blend_hooks.cpp
     src/hooks/adaptive_vsync_hooks.cpp
@@ -385,7 +387,7 @@ if(TORCHLIGHT_DIAGNOSTICS)
     # (capture::Session::CompareLog).
     set_property(SOURCE src/capture/session.cpp src/hooks/render_system_hooks.cpp
                  src/hooks/guest_copy_hooks.cpp src/hooks/native_skeleton.cpp
-                 src/diag/store_trace.cpp
+                 src/hooks/gui_redraw_filter_hooks.cpp src/diag/store_trace.cpp
                  APPEND PROPERTY COMPILE_DEFINITIONS TORCHLIGHT_DIAGNOSTICS=1)
     # The store trace (diag/store_trace.h, --diag_store_trace): precompiled after the generated
     # code's own header, it redefines its guest stores; the whole generated code is rebuilt.
