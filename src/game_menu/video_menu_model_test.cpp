@@ -416,7 +416,8 @@ void TestImportMessages() {
   for (int i = 0; i < 29; ++i) pack.mods.push_back("JCC - Mod " + std::to_string(i));
   const std::string flat = ModImportMessage(pack, [](const std::string& english) { return english; }).text;
   const std::string many = WrapText(flat, kBoxLineLength);
-  Check(flat.starts_with("Installed 29 mods: JCC - Mod 0, JCC - Mod 1, JCC - Mod 2, JCC - Mod 3, JCC - Mod 4 and 24 more.") &&
+  Check(flat.starts_with("Installed 29 mods: JCC - Mod 0, JCC - Mod 1, JCC - Mod 2, JCC - Mod 3, "
+                         "JCC - Mod 4 and 24 more.") &&
             flat.find("Mod 5") == std::string::npos && flat.find("restart it") != std::string::npos,
         "a pack: five named, the rest counted, the restart said");
   for (size_t at = 0, end; at < many.size(); at = end + 1) {
