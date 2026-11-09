@@ -914,6 +914,25 @@ ImGui's foreground draw list.
 - **Validated on desktop:** a window grab during an unattended run shows the controls at rest and
   with the stick and X held. There is no unit test of the drawing itself.
 
+**A4.5, the touch layout: Xbox or PlayStation** (a player asked to move with the d-pad,
+2026-11-06; the owner's design, 2026-11-09). `settings.toml` `touch_layout`, `"xbox"` by default or
+`"playstation"`: the "Touch Layout" row in the settings menu's Controls section, enabled only where
+the touch controls are installed; it takes effect at once (the controls are laid out again).
+- **Xbox** (the 360 pad's, as before): the floating stick moves the hero, the small d-pad below and
+  inward of it switches skill sets. `touch_test` checks this layout against the numbers from before
+  the option.
+- **PlayStation:** the d-pad and the stick trade places, sizes and jobs (`input/touch_pad.h`).
+  - The d-pad, with the stick's radius (11 mm), sits where the stick rests and moves the hero: its
+    eight directions are the left stick at full tilt (`DpadStick`).
+  - The stick, with the d-pad's radius (8 mm), sits where the d-pad is, fixed (a finger takes it
+    within its radius; there is no floating zone), and presses the d-pad: past half its tilt, its
+    direction is the d-pad's by the d-pad's own eight sectors (`StickDpad`). The game sees a held
+    d-pad, so its own edge and repeat apply, as with a pad's.
+- **Only the touch controls change:** the SDK merges them with a physical pad per axis and button,
+  so a pad's stick and d-pad work as always with either layout.
+- The drawing lights the d-pad's arms from its fingers and moves the stick's knob with its own
+  finger, whatever each one does.
+
 *Steps* (each validated before the next):
 
 | Step | What | Validated by |
