@@ -7,7 +7,6 @@
 
 #include <cstdint>
 
-
 namespace torchlight::guest_abi::guest_heap {
 
 // [confirmed] A block's dlmalloc chunk, as kFree (sub_821CD9A8) reads it: the size word just below

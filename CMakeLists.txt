@@ -117,7 +117,7 @@ set(TORCHLIGHT_SOURCES
     src/hooks/gpu_wait_hooks.cpp
     src/hooks/guest_copy_hooks.cpp
     src/hooks/native_skeleton.cpp
-    # The GUI redraw filter (--native_gui_redraw_filter, off by default).
+    # The GUI redraw filter (--native_gui_redraw_filter, on by default).
     src/hooks/gui_redraw_filter_hooks.cpp
     src/hooks/pixel_util_hooks.cpp
     src/hooks/wardrobe_blend_hooks.cpp

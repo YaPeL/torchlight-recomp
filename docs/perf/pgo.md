@@ -129,12 +129,12 @@ fresh bench save, offscreen on the desktop (the first one, 2026-11-01, on the i7
 Deck measured with it, it did not train it). The Windows release profile
 (`pgo/windows-x86_64.profdata`, `fce8f9b9...`, 2026-11-01) was trained the same way by the desktop
 kit (`fight.txt`, `fight5.txt`, `town.txt`, off then on); the port is on by default there too since
-2026-11-06. From the GUI redraw filter on (`--native_gui_redraw_filter`, on by default since 2026-11-09), the "on"
-half of every desktop training sets both flags: the three scripts with `--native_skeleton=false
---native_gui_redraw_filter=false`, then the three with `--native_skeleton=true
---native_gui_redraw_filter=true` (the desktop kit's `run_pgo.py` since 2026-11-06; the Linux runs
-the same). The profiles in the assets repository predate it: the filter is measured, and any default
-for it decided, only with profiles trained this way.
+2026-11-06. From the GUI redraw filter on (`--native_gui_redraw_filter`, on by default since
+2026-11-09), the "on" half of every desktop training sets both flags: the three scripts with
+`--native_skeleton=false --native_gui_redraw_filter=false`, then the three with
+`--native_skeleton=true --native_gui_redraw_filter=true` (the desktop kit's `run_pgo.py` since
+2026-11-06; the Linux runs the same). The profiles in the assets repository predate the filter;
+the release profiles are trained this way again before the next release.
 
 The profiles written before 2026-10-31 summed every minute's copy of the counts (the runtime
 appended each write to the file), which weighed the start of each run more: trained again.
