@@ -42,6 +42,9 @@ class VideoMenuModel {
   // The value shown in a row ("1920x1080", "Auto", "21:9", "Unlimited", "Español"...).
   std::string Text(Row row) const;
   bool Enabled(Row row) const;
+  // Whether the row is shown at all (in its section): the touch layout only where the touch
+  // controls are installed (the owner, 2026-11-09: hidden, not greyed out, on a desktop or a Deck).
+  bool Shown(Row row) const;
   bool Checked(Row row) const;
   // A setting that takes effect after a restart differs from the one the game started with.
   bool RestartNeeded() const;

@@ -126,9 +126,9 @@ void SetProperty(GuestCall& call, uint32_t window, const char* name, const std::
   call.Release(mark);
 }
 
-// The column shows the model: the chosen section's rows (the others hidden, which the menu's
-// navigation passes over, as it passes over disabled windows), values, checkboxes and the restart
-// notice.
+// The column shows the model: the chosen section's rows the model shows (the others hidden, which
+// the menu's navigation passes over, as it passes over disabled windows), values, checkboxes and
+// the restart notice.
 void Refresh(GuestCall& call) {
   // The column may have been built before the backend reported what it applies.
   if (const uint32_t max_msaa = live::MaxMsaa()) g_column.model->SetMaxMsaa(max_msaa);
@@ -140,7 +140,7 @@ void Refresh(GuestCall& call) {
   }
   for (int i = 0; i < kRowCount; ++i) {
     const Row row = Row(i);
-    const char* shown = SectionOf(row) == g_column.section ? "True" : "False";
+    const char* shown = SectionOf(row) == g_column.section && model.Shown(row) ? "True" : "False";
     SetProperty(call, g_column.focus[i], "Visible", shown);
     SetProperty(call, g_column.label[i], "Visible", shown);
     const bool enabled = model.Enabled(row);

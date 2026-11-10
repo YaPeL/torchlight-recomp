@@ -205,18 +205,25 @@ void TestSections() {
 }
 
 void TestTouchLayout() {
-  // Without touch controls (a desktop): shown, disabled, does not step.
+  // Without touch controls (a desktop, a Deck): hidden, disabled, does not step; the other rows are
+  // shown, so Controls holds the button prompts and the A/B swap.
   VideoMenuModel desktop(Desktop(), HostSettings{}, HostSettings{});
   Check(SectionOf(Row::kTouchLayout) == Section::kControls && !IsCheckbox(Row::kTouchLayout),
         "the touch layout: a value in Controls");
-  Check(!desktop.Enabled(Row::kTouchLayout) && !desktop.Step(Row::kTouchLayout, +1) &&
-            desktop.settings().touch_layout == TouchStyle::kXbox,
-        "no touch controls: disabled");
+  Check(!desktop.Shown(Row::kTouchLayout) && !desktop.Enabled(Row::kTouchLayout) &&
+            !desktop.Step(Row::kTouchLayout, +1) && desktop.settings().touch_layout == TouchStyle::kXbox,
+        "no touch controls: hidden");
+  int shown_controls = 0;
+  for (int i = 0; i < kRowCount; ++i) {
+    if (Row(i) != Row::kTouchLayout) Check(desktop.Shown(Row(i)), "every other row shown");
+    if (SectionOf(Row(i)) == Section::kControls && desktop.Shown(Row(i))) ++shown_controls;
+  }
+  Check(shown_controls == 2, "a desktop's Controls: the button prompts and the A/B swap");
   Capabilities caps = Desktop();
   caps.touch_controls = true;
   VideoMenuModel m(caps, HostSettings{}, HostSettings{});
-  Check(m.Enabled(Row::kTouchLayout) && m.Text(Row::kTouchLayout) == "Xbox 360",
-        "touch controls: enabled, Xbox by default");
+  Check(m.Shown(Row::kTouchLayout) && m.Enabled(Row::kTouchLayout) && m.Text(Row::kTouchLayout) == "Xbox 360",
+        "touch controls: shown, enabled, Xbox by default");
   Check(!m.Toggle(Row::kTouchLayout) && !m.Step(Row::kTouchLayout, -1), "not a checkbox; Xbox is the first");
   Check(m.Step(Row::kTouchLayout, +1) && m.settings().touch_layout == TouchStyle::kPlayStation &&
             m.Text(Row::kTouchLayout) == "PlayStation",

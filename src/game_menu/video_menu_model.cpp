@@ -270,6 +270,8 @@ std::string VideoMenuModel::Text(Row row) const {
   return "";
 }
 
+bool VideoMenuModel::Shown(Row row) const { return row != Row::kTouchLayout || caps_.touch_controls; }
+
 bool VideoMenuModel::Enabled(Row row) const {
   switch (row) {
     case Row::kResolution: return settings::ResolutionChoices(caps_).enabled;
