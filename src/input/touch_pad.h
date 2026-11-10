@@ -52,8 +52,9 @@ struct TouchLayout {
   // lands in to take it (x0, y0, x1, y1: pixels, y down).
   float stick_x = 0, stick_y = 0, stick_radius = 0;
   float zone_x0 = 0, zone_y0 = 0, zone_x1 = 0, zone_y1 = 0;
-  // TouchStyle::kPlayStation: the d-pad moves the hero (its directions are the left stick's) and
-  // the stick, fixed (a finger takes it within its radius of its base), presses the d-pad.
+  // TouchStyle::kPlayStation: the d-pad moves the hero (its directions are the left stick's; its
+  // finger keeps it wherever it goes, as the stick's) and the stick, fixed (a finger takes it
+  // within its radius of its base), presses the d-pad.
   bool swapped = false;
 };
 

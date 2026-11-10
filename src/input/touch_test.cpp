@@ -201,6 +201,18 @@ void TestPlayStationStyle() {
     pad.Move(1, dp.x, dp.y);
     Check(pad.State() == PadState{}, "at the centre: still");
 
+    // A long run: the thumb drifts 20 mm up and left of the d-pad, past its slop and over LB and LT;
+    // the d-pad keeps it and the hero keeps going up and left.
+    const float mm = screen.px_per_mm;
+    pad.Move(1, dp.x - 14 * mm, dp.y - 14 * mm);
+    s = pad.State();
+    Check(s.left_x == -23170 && s.left_y == 23170 && s.buttons == 0 && s.left_trigger == 0,
+          "a drift up-left: still up-left, no shoulder");
+    pad.Move(1, dp.x - 3 * mm, dp.y - 40 * mm);
+    s = pad.State();
+    Check(s.left_y == 32767 && s.buttons == 0 && s.left_trigger == 0, "far up: up, no shoulder");
+    pad.Move(1, dp.x, dp.y);
+
     // The stick: fixed, taken within its radius, its directions the d-pad's past half its tilt.
     const float r = pad.layout().stick_radius;
     const float sx = pad.layout().stick_x, sy = pad.layout().stick_y;
@@ -235,6 +247,8 @@ void TestPlayStationStyle() {
   const PadState s = pad.State();
   Check(s.buttons == pad::kUp && s.left_x == 0 && s.left_y == 0, "Xbox: the d-pad's up");
   Check(PadKeyBits(s) == pad::kUp, "Xbox: the d-pad's up keystroke");
+  pad.Move(1, dp.x - dp.radius * 2, dp.y - dp.radius * 2);
+  Check(pad.State().buttons == 0, "Xbox: a finger far off the d-pad lets it go, as before");
 }
 
 void TestHeldButton() {

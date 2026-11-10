@@ -185,6 +185,9 @@ void TouchPad::Move(uint64_t id, float x, float y) {
   f.y = y;
   if (f.role == Role::kButton) {
     const TouchButton& b = layout_.buttons[f.button];
+    // The d-pad that moves the hero keeps its finger wherever it goes, as the stick does: a thumb
+    // that drifts on a long run neither stops the hero nor takes a shoulder.
+    if (layout_.swapped && b.shape == TouchShape::kDpad) return;
     if (Inside(b, x, y, kHoldSlop)) return;
     // Off its button: onto another one, or nothing until it reaches one.
     if (const int other = ButtonAt(x, y); other >= 0) {
