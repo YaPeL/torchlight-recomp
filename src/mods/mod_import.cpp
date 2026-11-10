@@ -6,6 +6,8 @@
 #include <fstream>
 #include <memory>
 #include <optional>
+#include <unordered_map>
+#include <unordered_set>
 #include <system_error>
 
 #include "mods/mod_list.h"
@@ -88,18 +90,35 @@ std::string Utf8Of(const fs::path& path) {
 fs::path PathOf(std::string_view utf8) { return fs::path(std::u8string(utf8.begin(), utf8.end())); }
 
 // A name that is one plain path component on every platform the game runs on: no separators,
-// colons (drive letters, NTFS streams) or control characters, not "." or "..", and no trailing dot
-// or space (Windows drops them, so two names would meet).
+// colons (drive letters, NTFS streams), control characters or the other characters Windows refuses
+// (<>"|?*), not "." or "..", no trailing dot or space (Windows drops them, so two names would
+// meet), and not a device name Windows keeps in every folder (CON, NUL, AUX, PRN, COM1-9, LPT1-9,
+// in any case, with an extension too: "Mod/media/COM1" would open a serial port, "NUL" would drop
+// the data).
 bool IsPlainComponent(std::string_view name) {
   if (name.empty() || name == "." || name == "..") return false;
   if (name.back() == '.' || name.back() == ' ') return false;
-  return std::none_of(name.begin(), name.end(), [](char c) {
-    return c == '/' || c == '\\' || c == ':' || IsControl(c);
-  });
+  if (std::any_of(name.begin(), name.end(), [](char c) {
+        return c == '/' || c == '\\' || c == ':' || c == '<' || c == '>' || c == '"' || c == '|' ||
+               c == '?' || c == '*' || IsControl(c);
+      })) {
+    return false;
+  }
+  std::string_view base = name.substr(0, name.find('.'));
+  while (!base.empty() && base.back() == ' ') base.remove_suffix(1);
+  for (const char* device : {"CON", "NUL", "AUX", "PRN"}) {
+    if (EqualNoCase(base, device)) return false;
+  }
+  if (base.size() == 4 && (EqualNoCase(base.substr(0, 3), "COM") || EqualNoCase(base.substr(0, 3), "LPT")) &&
+      base[3] >= '1' && base[3] <= '9') {
+    return false;
+  }
+  return true;
 }
 
 // A zip entry's name as components, '\' read as a separator; nothing when it is absolute, has a
-// drive letter or a colon, or a ".." (it would write outside the mod's folder). Empty and "."
+// drive letter, or a component that is not plain (IsPlainComponent: "..", a colon, a device
+// name...), since it could write outside the mod's folder or not where it says. Empty and "."
 // components are dropped.
 std::optional<std::vector<std::string>> SplitEntryName(std::string name) {
   std::replace(name.begin(), name.end(), '\\', '/');
@@ -112,56 +131,65 @@ std::optional<std::vector<std::string>> SplitEntryName(std::string name) {
     const std::string part = name.substr(start, end - start);
     start = end + 1;
     if (part.empty() || part == ".") continue;
-    if (part == ".." || part.find(':') != std::string::npos) return std::nullopt;
-    if (std::any_of(part.begin(), part.end(), IsControl)) return std::nullopt;
+    if (!IsPlainComponent(part)) return std::nullopt;
     parts.push_back(part);
   }
   if (parts.empty()) return std::nullopt;
   return parts;
 }
 
-bool StartsWith(const std::vector<std::string>& parts, const std::vector<std::string>& prefix) {
-  return parts.size() > prefix.size() && std::equal(prefix.begin(), prefix.end(), parts.begin());
-}
-
-// Whether the folder at `prefix` is a mod: a mod.dat file or a media folder right in it.
-bool IsModAt(const std::vector<Entry>& entries, const std::vector<std::string>& prefix) {
-  for (const Entry& entry : entries) {
-    if (!StartsWith(entry.parts, prefix)) continue;
-    const std::string& first = entry.parts[prefix.size()];
-    const bool last = entry.parts.size() == prefix.size() + 1;
-    if (last && !entry.directory && EqualNoCase(first, kDescriptorFile)) return true;
-    if (EqualNoCase(first, "media") && (!last || entry.directory)) return true;
-  }
-  return false;
-}
-
-// The names right below `prefix`, in first-seen order, and whether each is a folder.
-std::vector<std::pair<std::string, bool>> Children(const std::vector<Entry>& entries,
-                                                   const std::vector<std::string>& prefix) {
+// The folders a mod can be at (the root, a top-level folder, one below a single top-level
+// folder), built in one pass over the entries: for each, the names right below it in first-seen
+// order with whether each is a folder, and whether it is a mod (a mod.dat file or a media folder
+// right in it). Keyed by the folder's components joined with '/' (none holds one).
+struct Folder {
   std::vector<std::pair<std::string, bool>> children;
+  std::unordered_map<std::string, size_t> index;  // child name -> children[i]
+  bool mod = false;
+};
+using Folders = std::unordered_map<std::string, Folder>;
+
+std::string KeyOf(const std::vector<std::string>& parts, size_t count) {
+  std::string key;
+  for (size_t i = 0; i < count; ++i) key += (i ? "/" : "") + parts[i];
+  return key;
+}
+
+Folders FoldersOf(const std::vector<Entry>& entries) {
+  Folders folders;
   for (const Entry& entry : entries) {
-    if (!StartsWith(entry.parts, prefix)) continue;
-    const std::string& name = entry.parts[prefix.size()];
-    const bool folder = entry.directory || entry.parts.size() > prefix.size() + 1;
-    auto it = std::find_if(children.begin(), children.end(),
-                           [&](const auto& child) { return child.first == name; });
-    if (it == children.end()) children.emplace_back(name, folder);
-    else it->second = it->second || folder;
+    for (size_t depth = 0; depth < 3 && depth < entry.parts.size(); ++depth) {
+      Folder& folder = folders[KeyOf(entry.parts, depth)];
+      const std::string& name = entry.parts[depth];
+      const bool last = entry.parts.size() == depth + 1;
+      const bool is_folder = entry.directory || !last;
+      const auto [it, added] = folder.index.try_emplace(name, folder.children.size());
+      if (added) folder.children.emplace_back(name, is_folder);
+      else folder.children[it->second].second = folder.children[it->second].second || is_folder;
+      if (last && !entry.directory && EqualNoCase(name, kDescriptorFile)) folder.mod = true;
+      if (EqualNoCase(name, "media") && is_folder) folder.mod = true;
+    }
   }
-  return children;
+  return folders;
+}
+
+const Folder* FolderAt(const Folders& folders, const std::vector<std::string>& prefix) {
+  const auto it = folders.find(KeyOf(prefix, prefix.size()));
+  return it == folders.end() ? nullptr : &it->second;
 }
 
 // The mod folders right below `prefix`; the other children go to `skipped`.
-std::vector<FoundMod> ModFoldersAt(const std::vector<Entry>& entries,
-                                   const std::vector<std::string>& prefix,
+std::vector<FoundMod> ModFoldersAt(const Folders& folders, const std::vector<std::string>& prefix,
                                    std::vector<std::string>& skipped) {
   std::vector<FoundMod> mods;
   std::vector<std::string> others;
-  for (const auto& [name, folder] : Children(entries, prefix)) {
+  const Folder* at = FolderAt(folders, prefix);
+  if (!at) return mods;
+  for (const auto& [name, folder] : at->children) {
     std::vector<std::string> child = prefix;
     child.push_back(name);
-    if (folder && IsModAt(entries, child)) mods.push_back({name, child});
+    const Folder* inside = folder ? FolderAt(folders, child) : nullptr;
+    if (inside && inside->mod) mods.push_back({name, child});
     else others.push_back(name);
   }
   if (!mods.empty()) skipped.insert(skipped.end(), others.begin(), others.end());
@@ -170,12 +198,14 @@ std::vector<FoundMod> ModFoldersAt(const std::vector<Entry>& entries,
 
 std::vector<FoundMod> FindMods(const std::vector<Entry>& entries, const std::string& root_name,
                                std::vector<std::string>& skipped) {
-  if (IsModAt(entries, {})) return {{root_name, {}}};
-  auto mods = ModFoldersAt(entries, {}, skipped);
+  const Folders folders = FoldersOf(entries);
+  const Folder* root = FolderAt(folders, {});
+  if (!root) return {};
+  if (root->mod) return {{root_name, {}}};
+  auto mods = ModFoldersAt(folders, {}, skipped);
   if (!mods.empty()) return mods;
-  const auto children = Children(entries, {});
-  if (children.size() == 1 && children.front().second) {
-    return ModFoldersAt(entries, {children.front().first}, skipped);
+  if (root->children.size() == 1 && root->children.front().second) {
+    return ModFoldersAt(folders, {root->children.front().first}, skipped);
   }
   return {};
 }
@@ -221,18 +251,31 @@ class Zip {
   bool open_ = false;
 };
 
-// The zip's entries, every one checked; a failure on the first that cannot be taken.
-std::optional<Failure> ListZip(Zip& zip, std::vector<Entry>& entries) {
+bool Cancelled(const std::atomic<bool>* cancel) { return cancel && cancel->load(); }
+
+// The zip's entries, every one checked; a failure on the first that cannot be taken. `cancel` is
+// polled every kCancelPoll entries.
+std::optional<Failure> ListZip(Zip& zip, std::vector<Entry>& entries, const std::atomic<bool>* cancel) {
   mz_zip_archive* archive = zip.get();
   const mz_uint count = mz_zip_reader_get_num_files(archive);
+  if (count > kMaxImportEntries) {
+    return Failure{ImportStatus::kUnreadable, std::to_string(count) + " entries, more than " +
+                                                  std::to_string(kMaxImportEntries)};
+  }
   for (mz_uint i = 0; i < count; ++i) {
+    if (i % kCancelPoll == 0 && Cancelled(cancel)) return Failure{ImportStatus::kCancelled, ""};
     mz_zip_archive_file_stat stat;
     if (!mz_zip_reader_file_stat(archive, i, &stat)) {
       return Failure{ImportStatus::kUnreadable,
                      mz_zip_get_error_string(mz_zip_get_last_error(archive))};
     }
     // The whole name (the stat's copy stops at 512 bytes).
-    std::string name(mz_zip_reader_get_filename(archive, i, nullptr, 0), '\0');
+    const mz_uint length = mz_zip_reader_get_filename(archive, i, nullptr, 0);
+    if (length > kMaxImportNameBytes + 1) {
+      return Failure{ImportStatus::kUnreadable, "an entry name longer than " +
+                                                    std::to_string(kMaxImportNameBytes) + " bytes"};
+    }
+    std::string name(length, '\0');
     mz_zip_reader_get_filename(archive, i, name.data(), static_cast<mz_uint>(name.size()));
     name.resize(name.find('\0') == std::string::npos ? name.size() : name.find('\0'));
     const bool utf8 = (stat.m_bit_flag & (1u << 11)) != 0;
@@ -259,17 +302,25 @@ std::optional<Failure> ListZip(Zip& zip, std::vector<Entry>& entries) {
 
 // ---- the folder ---------------------------------------------------------------------------
 
-std::optional<Failure> ListFolder(const fs::path& folder, std::vector<Entry>& entries) {
+std::optional<Failure> ListFolder(const fs::path& folder, std::vector<Entry>& entries,
+                                  const std::atomic<bool>* cancel) {
   std::error_code ec;
   fs::recursive_directory_iterator it(folder, ec), end;
   for (; !ec && it != end; it.increment(ec)) {
+    if (entries.size() % kCancelPoll == 0 && Cancelled(cancel)) return Failure{ImportStatus::kCancelled, ""};
+    if (entries.size() >= kMaxImportEntries) {
+      return Failure{ImportStatus::kUnreadable, "more than " + std::to_string(kMaxImportEntries) + " entries"};
+    }
     const fs::directory_entry& item = *it;
     const fs::path relative = item.path().lexically_relative(folder);
     if (item.is_symlink(ec)) {
       return Failure{ImportStatus::kUnsupportedEntry, Utf8Of(relative) + " (symbolic link)"};
     }
     Entry entry;
-    for (const fs::path& part : relative) entry.parts.push_back(Utf8Of(part));
+    for (const fs::path& part : relative) {
+      entry.parts.push_back(Utf8Of(part));
+      if (!IsPlainComponent(entry.parts.back())) return Failure{ImportStatus::kUnsafeName, Utf8Of(relative)};
+    }
     entry.file = item.path();
     if (item.is_directory(ec)) {
       entry.directory = true;
@@ -367,21 +418,31 @@ std::optional<Failure> WriteFile(const Entry& entry, Zip* zip, const fs::path& t
   return std::nullopt;
 }
 
-// The entries of `mod` to write and where below its folder; a mods.dat at its top is left out.
-std::vector<std::pair<const Entry*, fs::path>> FilesOf(const std::vector<Entry>& entries,
-                                                       const FoundMod& mod) {
-  std::vector<std::pair<const Entry*, fs::path>> files;
+// The entries of each mod to write and where below its folder, in one pass (the mods' prefixes
+// all have one length); a mods.dat at a mod's top is left out.
+std::vector<std::vector<std::pair<const Entry*, fs::path>>> FilesOf(const std::vector<Entry>& entries,
+                                                                    const std::vector<FoundMod>& mods) {
+  std::vector<std::vector<std::pair<const Entry*, fs::path>>> files(mods.size());
+  if (mods.empty()) return files;
+  const size_t depth = mods.front().prefix.size();
+  std::unordered_map<std::string, size_t> by_prefix;
+  for (size_t m = 0; m < mods.size(); ++m) by_prefix[KeyOf(mods[m].prefix, depth)] = m;
   for (const Entry& entry : entries) {
-    if (!StartsWith(entry.parts, mod.prefix)) continue;
-    const size_t depth = entry.parts.size() - mod.prefix.size();
-    if (depth == 1 && !entry.directory && EqualNoCase(entry.parts.back(), kListFile)) continue;
+    if (entry.parts.size() <= depth) continue;
+    const auto it = by_prefix.find(KeyOf(entry.parts, depth));
+    if (it == by_prefix.end()) continue;
+    if (entry.parts.size() == depth + 1 && !entry.directory && EqualNoCase(entry.parts.back(), kListFile)) continue;
     fs::path relative;
-    for (size_t i = mod.prefix.size(); i < entry.parts.size(); ++i) {
-      relative /= PathOf(entry.parts[i]);
-    }
-    files.emplace_back(&entry, relative);
+    for (size_t i = depth; i < entry.parts.size(); ++i) relative /= PathOf(entry.parts[i]);
+    files[it->second].emplace_back(&entry, relative);
   }
   return files;
+}
+
+// `text` with ASCII letters lowered: the guest's paths ignore their case.
+std::string Folded(std::string text) {
+  std::transform(text.begin(), text.end(), text.begin(), Lower);
+  return text;
 }
 
 std::string Megabytes(uint64_t bytes) {
@@ -389,6 +450,16 @@ std::string Megabytes(uint64_t bytes) {
 }
 
 }  // namespace
+
+uint64_t ImportSpaceNeeded(const std::vector<uint64_t>& file_sizes, uint64_t block_size) {
+  uint64_t total = 0;
+  for (const uint64_t size : file_sizes) {
+    total += size == 0 ? block_size : (size + block_size - 1) / block_size * block_size;
+  }
+  return total;
+}
+
+uint64_t ImportSpaceReserve(uint64_t capacity) { return std::max<uint64_t>(kImportReserveMin, capacity / 20); }
 
 std::string ImportResult::message() const {
   std::string names;
@@ -427,7 +498,7 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   std::string root_name;
   if (fs::is_directory(from, ec)) {
     root_name = Utf8Of(from.filename());
-    if (auto failure = ListFolder(from, entries)) return fail(*failure);
+    if (auto failure = ListFolder(from, entries, cancel)) return fail(*failure);
   } else {
     root_name = Utf8Of(from.stem());
     zip = std::make_unique<Zip>();
@@ -435,11 +506,12 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
     if (!zip->Open(from, error)) {
       return fail({ImportStatus::kUnreadable, Utf8Of(from) + ": " + error});
     }
-    if (auto failure = ListZip(*zip, entries)) return fail(*failure);
+    if (auto failure = ListZip(*zip, entries, cancel)) return fail(*failure);
   }
 
   const std::vector<FoundMod> mods = FindMods(entries, root_name, result.skipped);
   if (mods.empty()) return fail({ImportStatus::kNoModFound, ""});
+  std::unordered_map<std::string, std::string> folded_mods;  // folded name -> name
   for (const FoundMod& mod : mods) {
     const std::string_view suffix(kImportPartialSuffix);
     const bool partial_name = mod.name.size() > suffix.size() &&
@@ -447,37 +519,73 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
     if (!IsPlainComponent(mod.name) || EqualNoCase(mod.name, kListFile) || partial_name) {
       return fail({ImportStatus::kUnsafeName, mod.name});
     }
+    // Two mods of a pack named alike but for case would be one folder to the guest.
+    const auto [it, added] = folded_mods.try_emplace(Folded(mod.name), mod.name);
+    if (!added) return fail({ImportStatus::kUnsafeName, it->second + ", " + mod.name});
   }
 
-  // Names already in the mods folder, in any case (the guest's paths ignore it).
+  std::vector<std::vector<std::pair<const Entry*, fs::path>>> files = FilesOf(entries, mods);
+  // Two files of a mod at paths alike but for case: which one the guest reads would depend on the
+  // file system.
+  for (size_t m = 0; m < mods.size(); ++m) {
+    std::unordered_set<std::string> seen;
+    for (const auto& [entry, relative] : files[m]) {
+      if (entry->directory) continue;
+      if (!seen.insert(Folded(Utf8Of(relative))).second) {
+        return fail({ImportStatus::kUnsafeName, mods[m].name + "/" + Utf8Of(relative)});
+      }
+    }
+  }
+
+  // Names already in the mods folder, in any case (the guest's paths ignore it). A .partial there
+  // is only ever an import's that was interrupted (never loaded as a mod): removed.
   const fs::path mods_folder = data_dir / "mods";
   fs::create_directories(mods_folder, ec);
   if (ec) return fail({ImportStatus::kCannotWrite, Utf8Of(mods_folder) + ": " + ec.message()});
-  for (const auto& existing : fs::directory_iterator(mods_folder, ec)) {
-    const std::string name = Utf8Of(existing.path().filename());
-    for (const FoundMod& mod : mods) {
-      if (EqualNoCase(name, mod.name)) result.mods.push_back(mod.name);
+  std::vector<fs::path> stale;
+  fs::directory_iterator it(mods_folder, ec), end;
+  for (; !ec && it != end; it.increment(ec)) {
+    const std::string name = Utf8Of(it->path().filename());
+    const std::string_view suffix(kImportPartialSuffix);
+    if (name.size() > suffix.size() &&
+        EqualNoCase(std::string_view(name).substr(name.size() - suffix.size()), suffix)) {
+      stale.push_back(it->path());
+      continue;
+    }
+    if (const auto found = folded_mods.find(Folded(name)); found != folded_mods.end()) {
+      result.mods.push_back(found->second);
     }
   }
+  if (ec) return fail({ImportStatus::kCannotWrite, Utf8Of(mods_folder) + ": " + ec.message()});
+  for (const fs::path& path : stale) fs::remove_all(path, ec);
   if (!result.mods.empty()) return fail({ImportStatus::kAlreadyInstalled, ""});
 
-  std::vector<std::vector<std::pair<const Entry*, fs::path>>> files;
+  // The space: each file rounded up to the disk's blocks, each folder a block, and a reserve left
+  // for the saves and settings on the same disk.
   ImportProgress totals;
-  for (const FoundMod& mod : mods) {
-    files.push_back(FilesOf(entries, mod));
-    for (const auto& [entry, relative] : files.back()) {
-      if (entry->directory) continue;
+  std::vector<uint64_t> sizes;
+  for (const auto& mod_files : files) {
+    for (const auto& [entry, relative] : mod_files) {
+      if (entry->directory) {
+        sizes.push_back(0);
+        continue;
+      }
       ++totals.files_total;
       totals.bytes_total += entry->size;
+      sizes.push_back(entry->size);
     }
   }
   const fs::space_info space = fs::space(mods_folder, ec);
-  if (!ec && space.available < totals.bytes_total) {
-    result.bytes_needed = totals.bytes_total;
+  if (ec) {
+    return fail({ImportStatus::kCannotWrite, "cannot read the free space of " + Utf8Of(mods_folder) + ": " +
+                                                 ec.message()});
+  }
+  const uint64_t needed = ImportSpaceNeeded(sizes, kImportBlockSize) + ImportSpaceReserve(space.capacity);
+  if (space.available < needed) {
+    result.bytes_needed = needed;
     result.bytes_free = space.available;
     return fail({ImportStatus::kNotEnoughSpace,
-                 "needs " + Megabytes(totals.bytes_total) + ", " + Megabytes(space.available) +
-                     " free"});
+                 "needs " + Megabytes(needed) + " with the reserve, " + Megabytes(space.available) + " free"});
   }
 
   // Each mod into its .partial, then all renamed; on any failure what this import wrote goes.
@@ -492,8 +600,6 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   writer.Report();
   for (size_t m = 0; m < mods.size(); ++m) {
     const fs::path partial = mods_folder / PathOf(mods[m].name + kImportPartialSuffix);
-    // A .partial is only ever ours: what an interrupted import left.
-    fs::remove_all(partial, ec);
     partials.push_back(partial);
     fs::create_directories(partial, ec);
     if (ec) return undo({ImportStatus::kCannotWrite, Utf8Of(partial) + ": " + ec.message()});

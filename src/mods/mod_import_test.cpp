@@ -34,6 +34,7 @@ struct ZipEntry {
   bool ascii_name = false;  // no UTF-8 flag (the name is CP437 as the format says)
   bool symlink = false;     // a Unix symbolic link in the external attributes
   bool encrypted = false;   // the general purpose flag's bit 0
+  bool absolute = false;    // the name's first byte made '/' (miniz's writer refuses one)
 };
 
 std::vector<uint8_t> ZipBytes(const std::vector<ZipEntry>& entries) {
@@ -51,7 +52,21 @@ std::vector<uint8_t> ZipBytes(const std::vector<ZipEntry>& entries) {
   std::vector<uint8_t> bytes(static_cast<uint8_t*>(buffer), static_cast<uint8_t*>(buffer) + size);
   mz_zip_writer_end(&zip);
   // The central directory's headers (signature PK\1\2): what miniz's writer cannot set.
-  for (size_t at = 0; at + 46 <= bytes.size(); ++at) {
+  if (std::none_of(entries.begin(), entries.end(),
+                   [](const ZipEntry& e) { return e.symlink || e.encrypted || e.absolute; })) {
+    return bytes;
+  }
+  for (size_t at = 0; at + 30 <= bytes.size(); ++at) {
+    // The local headers (PK\3\4) hold the name too, at 30.
+    if (std::memcmp(&bytes[at], "PK\3\4", 4) == 0) {
+      const size_t name_length = bytes[at + 26] | bytes[at + 27] << 8;
+      const std::string name(reinterpret_cast<const char*>(&bytes[at + 30]), name_length);
+      for (const ZipEntry& e : entries) {
+        if (e.absolute && e.name == name) bytes[at + 30] = '/';
+      }
+      continue;
+    }
+    if (at + 46 > bytes.size()) break;
     if (std::memcmp(&bytes[at], "PK\1\2", 4) != 0) continue;
     const size_t name_length = bytes[at + 28] | bytes[at + 29] << 8;
     const std::string name(reinterpret_cast<const char*>(&bytes[at + 46]), name_length);
@@ -63,6 +78,7 @@ std::vector<uint8_t> ZipBytes(const std::vector<ZipEntry>& entries) {
         for (int b = 0; b < 4; ++b) bytes[at + 38 + b] = static_cast<uint8_t>(mode >> (8 * b));
       }
       if (e.encrypted) bytes[at + 8] |= 1;
+      if (e.absolute) bytes[at + 46] = '/';
     }
   }
   return bytes;
@@ -187,6 +203,17 @@ int main() {
          ImportStatus::kUnsupportedEntry},
         {"cp437.zip", {"Mod/media/caf\xE9.dds", "x", true}, ImportStatus::kNonAsciiName},
         {"badutf8.zip", {"Mod/media/caf\xE9.dds", "x"}, ImportStatus::kNonAsciiName},
+        {"absolute.zip", {"_evil", "x", false, false, false, true}, ImportStatus::kUnsafeName},
+        {"device.zip", {"Mod/media/COM1", "x"}, ImportStatus::kUnsafeName},
+        {"device2.zip", {"Mod/media/nul.txt", "x"}, ImportStatus::kUnsafeName},
+        {"device3.zip", {"Mod/Lpt9/a.dds", "x"}, ImportStatus::kUnsafeName},
+        {"device4.zip", {"Mod/media/aux .dds", "x"}, ImportStatus::kUnsafeName},
+        {"chars.zip", {"Mod/media/a?.dds", "x"}, ImportStatus::kUnsafeName},
+        {"chars2.zip", {"Mod/media/a<b>.dds", "x"}, ImportStatus::kUnsafeName},
+        {"chars3.zip", {"Mod/media/a|b\"c*.dds", "x"}, ImportStatus::kUnsafeName},
+        {"trail.zip", {"Mod/media/dot.", "x"}, ImportStatus::kUnsafeName},
+        {"trail2.zip", {"Mod/media /a.dds", "x"}, ImportStatus::kUnsafeName},
+        {"longname.zip", {"Mod/media/" + std::string(1100, 'a'), "x"}, ImportStatus::kUnreadable},
     };
     for (const auto& c : cases) {
       const fs::path data = fresh();
@@ -297,6 +324,90 @@ int main() {
     Check(Listing(data / "mods") == Names{"Cancel"} &&
               !fs::exists(data / "mods/Cancel/stale.txt"),
           "after cancel: the stale .partial is not part of the mod");
+  }
+
+  // Names alike but for case: two mods of a pack, or two files of a mod; and names that only look
+  // like a device (COM0, CONSOLE, a .com file) are fine.
+  {
+    const fs::path data = fresh();
+    auto result = ImportMod(zip("case.zip", {{"A/mod.dat", kModDat}, {"a/media/x", "x"}}), data);
+    Check(result.status == ImportStatus::kUnsafeName, "A/ and a/: " + result.message());
+    result = ImportMod(zip("case2.zip", {{"mod.dat", kModDat}, {"media/X.dds", "1"}, {"Media/x.DDS", "2"}}),
+                       data);
+    Check(result.status == ImportStatus::kUnsafeName, "files alike but for case: " + result.message());
+    Check(Listing(data / "mods").empty(), "case: nothing written");
+    result = ImportMod(
+        zip("near.zip", {{"mod.dat", kModDat}, {"media/COM0", "a"}, {"media/CONSOLE.txt", "b"}, {"media/x.com", "c"}}),
+        data);
+    Check(result.ok(), "names near a device's: " + result.message());
+  }
+
+  // An entry whose data is larger than its header says: refused, nothing left.
+  {
+    const fs::path data = fresh();
+    auto bytes = ZipBytes({{"Mod/mod.dat", kModDat}, {"Mod/media/big", std::string(8000, 'b')}});
+    // The central directory's uncompressed size (offset 24) of the second entry, made 100.
+    int seen = 0;
+    for (size_t at = 0; at + 46 <= bytes.size(); ++at) {
+      if (std::memcmp(&bytes[at], "PK\1\2", 4) != 0 || ++seen != 2) continue;
+      bytes[at + 24] = 100;
+      bytes[at + 25] = bytes[at + 26] = bytes[at + 27] = 0;
+    }
+    WriteBytes(root / "sources/larger.zip", bytes);
+    const auto result = ImportMod(root / "sources/larger.zip", data);
+    Check(result.status == ImportStatus::kUnreadable, "larger than declared: " + result.message());
+    Check(Listing(data / "mods").empty(), "larger than declared: nothing left");
+  }
+
+  // Many empty entries: imported, each counted; past the cap: refused before reading them.
+  {
+    const fs::path data = fresh();
+    std::vector<ZipEntry> many = {{"mod.dat", kModDat}};
+    for (int i = 0; i < 3000; ++i) many.push_back({"media/e" + std::to_string(i), ""});
+    ImportProgress last;
+    const auto result = ImportMod(zip("Many.zip", many), data, [&](const ImportProgress& p) { last = p; });
+    Check(result.ok() && last.files_total == 3001 && last.files_done == 3001, "many empty: " + result.message());
+
+    std::vector<ZipEntry> too_many;
+    too_many.reserve(kMaxImportEntries + 1);
+    for (size_t i = 0; i <= kMaxImportEntries; ++i) too_many.push_back({"m/" + std::to_string(i), ""});
+    const fs::path data2 = fresh();
+    const auto capped = ImportMod(zip("TooMany.zip", too_many), data2);
+    Check(capped.status == ImportStatus::kUnreadable, "past the cap: " + capped.message());
+    Check(Listing(data2 / "mods").empty(), "past the cap: nothing written");
+  }
+
+  // The space: blocks and the reserve.
+  {
+    Check(ImportSpaceNeeded({}, 4096) == 0, "space: nothing");
+    Check(ImportSpaceNeeded({0, 1, 4096, 4097}, 4096) == 4096 + 4096 + 4096 + 8192, "space: rounded to blocks");
+    Check(ImportSpaceReserve(1ull << 30) == kImportReserveMin, "reserve: at least 256 MB");
+    Check(ImportSpaceReserve(100ull << 30) == 5ull << 30, "reserve: 5 % of a large disk");
+  }
+
+  // A cancel already set stops the listing: nothing written.
+  {
+    const fs::path data = fresh();
+    std::atomic<bool> cancel{true};
+    const auto result = ImportMod(zip("Early.zip", {{"mod.dat", kModDat}}), data, {}, &cancel);
+    Check(result.status == ImportStatus::kCancelled && Listing(data / "mods").empty(),
+          "cancel while listing: " + result.message());
+  }
+
+  // Every .partial in the mods folder goes when an import starts; a folder with a name Windows
+  // refuses is refused as a source too.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/Other.partial/old.txt", "old");
+    const auto result = ImportMod(zip("Fresh.zip", {{"mod.dat", kModDat}}), data);
+    Check(result.ok() && Listing(data / "mods") == Names{"Fresh"}, "stale partials cleared: " + result.message());
+
+    const fs::path source = root / "sources/Bad Folder";
+    WriteText(source / "mod.dat", kModDat);
+    WriteText(source / "media/what?.dds", "x");
+    const fs::path data2 = fresh();
+    const auto folder = ImportMod(source, data2);
+    Check(folder.status == ImportStatus::kUnsafeName, "folder with a '?': " + folder.message());
   }
 
   // Names the mod cannot take.
