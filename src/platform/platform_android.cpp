@@ -28,6 +28,7 @@
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -394,11 +395,18 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
     return PickResult::kUncopied;
   }
   const Sint64 size = SDL_GetIOSize(in);
-  // Room for the copy, and a reserve so that it never fills the device the saves are on.
+  // Room for the copy, and a reserve so that it never fills the device the saves are on (as the
+  // mods' import, mods/mod_import.h): refused when the free space cannot be read; a document of
+  // unknown size needs the reserve at least.
   constexpr uint64_t kReserve = uint64_t(256) << 20;
   std::error_code space_ec;
   const std::filesystem::space_info space = std::filesystem::space(dir, space_ec);
-  if (size > 0 && !space_ec && space.available < uint64_t(size) + kReserve) {
+  if (space_ec) {
+    SDL_CloseIO(in);
+    error = "cannot read the free space for the copy: " + space_ec.message();
+    return PickResult::kUncopied;
+  }
+  if (space.available < uint64_t(std::max<Sint64>(size, 0)) + kReserve) {
     SDL_CloseIO(in);
     error = "not enough free space to copy the chosen file: it needs " +
             std::to_string((uint64_t(size) + kReserve) >> 20) + " MB and " + std::to_string(space.available >> 20) +

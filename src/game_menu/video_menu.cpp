@@ -211,14 +211,17 @@ void RunModImport(std::filesystem::path data_dir) {
                     : platform::PickFileUncopied(Tr(kImportPickZip), path, error,
                                                  {{Tr(kImportZipFilter), "zip"}});
   });
-  // Android's document is copied here, off the UI thread, with the busy notice showing it.
+  // Android's document is copied here, off the UI thread, with the busy notice showing it from
+  // the first chunk (elsewhere nothing is copied, and no notice flashes).
   if (picked == platform::PickResult::kChosen) {
-    live::ShowBusyNotice(Tr(kImportCopying));
-    picked = platform::CopyPickedFile(path, error, [](uint64_t done, uint64_t total) {
+    bool shown = false;
+    picked = platform::CopyPickedFile(path, error, [&shown](uint64_t done, uint64_t total) {
+      if (!shown) live::ShowBusyNotice(Tr(kImportCopying));
+      shown = true;
       live::SetBusyNoticeProgress(size_t(done), size_t(total));
       return true;
     });
-    live::HideBusyNotice();
+    if (shown) live::HideBusyNotice();
   }
   std::optional<MenuMessage> message;
   bool installed = false;
