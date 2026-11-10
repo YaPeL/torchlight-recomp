@@ -389,6 +389,11 @@ void TestImportMod() {
             m.Text(Row::kImportMod) == "Importing...",
         "running: disabled, says so");
   m.SetImportRunning(false);
+  Check(m.Shown(Row::kImportMod) && m.Shown(Row::kVsync), "shown by default");
+  m.SetImportHidden(true);
+  Check(!m.Shown(Row::kImportMod) && !m.Enabled(Row::kImportMod) && !m.Activate(Row::kImportMod),
+        "a gamescope session: hidden, A does nothing");
+  m.SetImportHidden(false);
   Check(!m.RestartNeeded(), "nothing imported: no restart");
   m.NoteModImported();
   Check(m.RestartNeeded(), "a mod imported: restart notice");

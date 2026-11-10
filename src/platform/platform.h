@@ -61,6 +61,9 @@ bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.
 bool IsSteamDeck();
+// Running inside a gamescope session (the Steam Deck's Game Mode, or gamescope elsewhere), where
+// the desktop's file pickers may open where they cannot be seen (Linux; false elsewhere).
+bool InGamescopeSession();
 // The internal resolution the game starts at by default, where the platform wants less than the
 // display (Android: about 1280x800 on a 2560x1600 tablet, docs/android-port.md, A2); 0x0 elsewhere,
 // the display's size.

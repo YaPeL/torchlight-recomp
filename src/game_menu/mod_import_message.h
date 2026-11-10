@@ -30,6 +30,9 @@ inline constexpr const char* kImportCancelButton = "Cancel";
 inline constexpr const char* kImportPickZip = "Choose the mod's .zip file";
 inline constexpr const char* kImportPickFolder = "Choose the mod's folder";
 inline constexpr const char* kImportZipFilter = "Zip archives";
+// Every file too (the owner, 2026-11-09): a provider may label a zip otherwise, and the import
+// tells a file that is not a zip apart. On Android both filters together offer every file.
+inline constexpr const char* kImportAllFilter = "All files";
 // The busy notices while the chosen file is copied (Android: the picker's document) and while it
 // is imported (live/busy_notice_text.h fills {percent}).
 inline constexpr const char* kImportCopying = "Copying mod... {percent}%";

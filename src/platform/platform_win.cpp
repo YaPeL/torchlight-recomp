@@ -313,6 +313,8 @@ bool IsSteamDeck() {
          (product == L"Jupiter" || product == L"Galileo");
 }
 
+bool InGamescopeSession() { return false; }
+
 float ContentScaleDpi() { return 96.0f; }  // Windows' nominal
 
 bool TouchControlsByDefault() { return false; }

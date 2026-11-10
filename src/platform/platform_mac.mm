@@ -323,6 +323,8 @@ void ForgetPickedFiles() {}
 bool HasDirect3D11(const std::string&) { return false; }
 bool IsSteamDeck() { return false; }
 
+bool InGamescopeSession() { return false; }
+
 bool OnBattery() {
   // The source providing power now: "Battery Power" when unplugged ("AC Power" otherwise).
   CFTypeRef info = IOPSCopyPowerSourcesInfo();

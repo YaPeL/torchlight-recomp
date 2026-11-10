@@ -485,6 +485,8 @@ bool OnBattery() { return SDL_GetPowerInfo(nullptr, nullptr) == SDL_POWERSTATE_O
 
 bool IsSteamDeck() { return false; }
 
+bool InGamescopeSession() { return false; }
+
 // GLES, OGRE's only render system here: nothing to probe or fall back to.
 bool CanCreateGl33Context() { return true; }
 

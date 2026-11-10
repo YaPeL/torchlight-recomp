@@ -267,6 +267,8 @@ std::string VideoMenuModel::Text(Row row) const {
   return "";
 }
 
+bool VideoMenuModel::Shown(Row row) const { return row != Row::kImportMod || !import_hidden_; }
+
 bool VideoMenuModel::Enabled(Row row) const {
   switch (row) {
     case Row::kResolution: return settings::ResolutionChoices(caps_).enabled;
@@ -290,7 +292,7 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kSwapConfirmCancel:
       return current_.pad_prompts == settings::PadPrompts::kNintendo ||
              (current_.pad_prompts == settings::PadPrompts::kAuto && nintendo_pad_);
-    case Row::kImportMod: return import_available_ && !import_running_;
+    case Row::kImportMod: return import_available_ && !import_running_ && !import_hidden_;
   }
   return false;
 }

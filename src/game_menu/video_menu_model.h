@@ -47,6 +47,9 @@ class VideoMenuModel {
   // The value shown in a row ("1920x1080", "Auto", "21:9", "Unlimited", "Español"...).
   std::string Text(Row row) const;
   bool Enabled(Row row) const;
+  // Whether the row is shown at all (in its section): Import Mod not in a gamescope session (the
+  // owner, 2026-11-09: hidden in the Deck's Game Mode, where the desktop's picker can open unseen).
+  bool Shown(Row row) const;
   bool Checked(Row row) const;
   // A setting that takes effect after a restart differs from the one the game started with, or a
   // mod was imported (the game loads mods when it starts).
@@ -62,6 +65,7 @@ class VideoMenuModel {
   // Import Mod: offered where the system has a file picker and the mods folder is known; disabled
   // while an import runs; a mod installed needs a restart.
   void SetImportAvailable(bool available) { import_available_ = available; }
+  void SetImportHidden(bool hidden) { import_hidden_ = hidden; }
   void SetImportRunning(bool running) { import_running_ = running; }
   void NoteModImported() { mod_imported_ = true; }
 
@@ -77,7 +81,7 @@ class VideoMenuModel {
   settings::Capabilities caps_;
 
   bool nintendo_pad_ = false;
-  bool import_available_ = false, import_running_ = false, mod_imported_ = false;
+  bool import_available_ = false, import_running_ = false, mod_imported_ = false, import_hidden_ = false;
   settings::HostSettings current_, startup_;
   std::string default_language_;
 };
