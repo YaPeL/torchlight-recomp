@@ -181,7 +181,7 @@ REX_FUNC(sub_821A40E0) {
   if (game_ui && pc::NotificationsShown()) Update(ctx, base, game_ui);
   if (game_ui) torchlight::dev::OnGameUiUpdate(ctx, base, game_ui, context);
   // Import Mod's result box, when an import has finished (game_menu/video_menu.h).
-  if (game_ui) torchlight::game_menu::OnGameUiFrame(ctx, base);
+  if (game_ui) torchlight::game_menu::OnGameUiFrame(ctx, base, context);
 }
 
 }  // extern "C"

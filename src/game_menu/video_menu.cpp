@@ -33,6 +33,7 @@
 #include "game_menu/wide_layout.h"
 #include "frontend/zip_archive.h"
 #include "hooks/video_mode_hooks.h"
+#include "guest_abi/achievements.h"
 #include "guest_abi/game_ui.h"
 #include "live/busy_notice.h"
 #include "live/install.h"
@@ -179,6 +180,7 @@ struct ModImport {
   std::atomic<bool> finished{false};  // the worker left its answer below
   std::mutex mutex;
   std::optional<MenuMessage> message;  // under mutex; none when the player cancelled the picker
+  std::optional<mods::ImportResult> result;  // under mutex: the import's, for the box in play
   bool installed = false;              // under mutex
   // A question for the player (Replace?): the worker leaves it and waits for `answer` (the button,
   // -1 when the box closed without one or could not be shown).
@@ -291,6 +293,8 @@ void RunModImport(std::filesystem::path data_dir) {
       else REXLOG_WARN("mod import: {}", result.message());
       installed = result.ok();
       message = ModImportMessage(result, Tr);
+      std::lock_guard lock(g_import.mutex);
+      g_import.result = result;
       break;
     }
   }
@@ -656,7 +660,16 @@ void OnSettingsResetDefaults(PPCContext& ctx, uint8_t* base, uint32_t settings_m
 
 }  // namespace
 
-void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
+void OnGameUiFrame(PPCContext& ctx, uint8_t* base, uint32_t context) {
+  // A game in progress or not (context +5124 == 1, achievements.h kContextEligibility): in the log
+  // when it changes, as Import Mod's box after a replace depends on it.
+  const bool in_play =
+      context && guest_abi::ReadU32(base, context + guest_abi::achievements::kContextEligibility) == 1;
+  static int logged_in_play = -1;
+  if (int(in_play) != logged_in_play) {
+    logged_in_play = in_play;
+    REXLOG_INFO("game menu: {}", in_play ? "a game in progress" : "no game in progress");
+  }
   if (g_import.asking.exchange(false)) {
     std::lock_guard lock(g_import.mutex);
     g_import.to_show = std::move(g_import.question);
@@ -668,6 +681,12 @@ void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
     std::lock_guard lock(g_import.mutex);
     g_import.to_show = std::move(g_import.message);
     g_import.message.reset();
+    // In a game in progress a replace's box says to restart from the title screen, without Quit Now.
+    if (in_play && g_import.to_show && g_import.result && g_import.result->ok() &&
+        !g_import.result->replaced.empty()) {
+      g_import.to_show = ModImportMessage(*g_import.result, Tr, true);
+    }
+    g_import.result.reset();
     g_import.show_attempts = 0;
     if (g_import.installed) g_import.mod_imported = true;
     if (g_column.model) {

@@ -55,7 +55,10 @@ std::string WrapText(const std::string& text, size_t width);
 // Android) it says to restart, with Quit Now (quit_button) and Later (selected); a replace that
 // failed with every old mod kept (ImportResult::old_mods_kept: on Windows a file the game holds
 // open can make the swap fail) says the installed version was kept.
-MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr);
+// `in_play`: a game is in progress (the settings menu opened from the pause menu): after a replace
+// the box then says to restart from the title screen, with OK only, so that nothing of the floor is
+// lost by quitting there (the owner, 2026-11-10).
+MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr, bool in_play = false);
 
 // The question after an import refused for a name already installed (kAlreadyInstalled): Replace
 // (button 0, imported again with mods::ImportOptions::replace) or Cancel (button 1, selected when

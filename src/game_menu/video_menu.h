@@ -35,7 +35,8 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
 
 // Every frame of the game UI (CGameUI::Update, achievements/toast.cpp), game's thread: shows the
 // result of an Import Mod once it is ready, with the game's message box.
-void OnGameUiFrame(PPCContext& ctx, uint8_t* base);
+// `context`: CGameUI::Update's game context (r5), whose +5124 is 1 while a game is in progress.
+void OnGameUiFrame(PPCContext& ctx, uint8_t* base, uint32_t context);
 
 // One OGRE FileSystem resource location in the default group, added through the guest (game's
 // thread); false on failure. Also used for the player's mods (mods_install.h).

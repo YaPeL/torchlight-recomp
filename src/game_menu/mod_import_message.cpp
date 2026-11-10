@@ -34,6 +34,8 @@ constexpr const char* kReplaceQuestion =
     "A mod named {mods} is already installed. Replace it with the one you chose?";
 constexpr const char* kReplaceButton = "Replace";
 constexpr const char* kReplaced = "Replaced: {mods}. Restart the game to use the new version.";
+constexpr const char* kReplacedInPlay =
+    "Replaced: {mods}. Restart the game from the title screen to use the new version.";
 constexpr const char* kQuitNowButton = "Quit Now";
 constexpr const char* kLaterButton = "Later";
 constexpr const char* kReplaceKept =
@@ -114,7 +116,7 @@ std::string WrapText(const std::string& text, size_t width) {
   return out;
 }
 
-MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr) {
+MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr, bool in_play) {
   const size_t listed = std::min(result.mods.size(), kListedMods);
   std::string names;
   for (size_t i = 0; i < listed; ++i) names += (names.empty() ? "" : ", ") + result.mods[i];
@@ -142,6 +144,7 @@ MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& 
     case ImportStatus::kNotEnoughSpace: english = kNotEnoughSpace; break;
     case ImportStatus::kCannotWrite: english = kCannotWrite; break;
   }
+  if (result.ok() && !result.replaced.empty() && in_play) return Box(tr, Text(tr, kReplacedInPlay, values));
   if (result.ok() && !result.replaced.empty()) {
     return {Text(tr, kImportTitle), Text(tr, kReplaced, values), {Text(tr, kQuitNowButton), Text(tr, kLaterButton)},
             1, 0};
@@ -173,7 +176,7 @@ std::vector<std::string> ModImportTexts() {
           kInstalledMany,     kAlreadyInstalled,
           kNoModFound,        kUnreadable,        kUnsafeName,      kUnsupportedEntry,
           kNonAsciiName,      kNotAZip,           kReplaceQuestion, kReplaceButton,
-          kReplaced,          kQuitNowButton,     kLaterButton,     kReplaceKept,
+          kReplaced,          kReplacedInPlay,    kQuitNowButton,     kLaterButton,     kReplaceKept,
           kNotEnoughSpace,    kCannotWrite,     kCancelled,
           kNoPicker,          kNotCopied};
 }

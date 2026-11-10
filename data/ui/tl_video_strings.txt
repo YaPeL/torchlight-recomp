@@ -60,6 +60,7 @@ The mod was not imported: its zip writes file names in an old Windows encoding (
 A mod named {mods} is already installed. Replace it with the one you chose? = Ein Mod namens {mods} ist bereits installiert. Durch den gewählten ersetzen?
 Replace = Ersetzen
 Replaced: {mods}. Restart the game to use the new version. = Ersetzt: {mods}. Starte das Spiel neu, um die neue Version zu verwenden.
+Replaced: {mods}. Restart the game from the title screen to use the new version. = Ersetzt: {mods}. Starte das Spiel über den Titelbildschirm neu, um die neue Version zu verwenden.
 Quit Now = Jetzt beenden
 Later = Später
 The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = Die neue Version konnte nicht installiert werden ({detail}). Die installierte blieb unverändert: Beende das Spiel und importiere sie erneut.
@@ -124,6 +125,7 @@ The mod was not imported: its zip writes file names in an old Windows encoding (
 A mod named {mods} is already installed. Replace it with the one you chose? = Un mod nommé {mods} est déjà installé. Le remplacer par celui que vous avez choisi ?
 Replace = Remplacer
 Replaced: {mods}. Restart the game to use the new version. = Remplacé : {mods}. Relancez le jeu pour utiliser la nouvelle version.
+Replaced: {mods}. Restart the game from the title screen to use the new version. = Remplacé : {mods}. Relancez le jeu depuis l'écran titre pour utiliser la nouvelle version.
 Quit Now = Quitter maintenant
 Later = Plus tard
 The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = La nouvelle version n'a pas pu être installée ({detail}). Celle déjà installée a été conservée telle quelle : fermez le jeu et importez-la à nouveau.
@@ -188,6 +190,7 @@ The mod was not imported: its zip writes file names in an old Windows encoding (
 A mod named {mods} is already installed. Replace it with the one you chose? = Ya hay un mod instalado con el nombre {mods}. ¿Reemplazarlo por el que elegiste?
 Replace = Reemplazar
 Replaced: {mods}. Restart the game to use the new version. = Reemplazado: {mods}. Reinicia el juego para usar la versión nueva.
+Replaced: {mods}. Restart the game from the title screen to use the new version. = Reemplazado: {mods}. Reinicia el juego desde la pantalla de título para usar la versión nueva.
 Quit Now = Salir ahora
 Later = Más tarde
 The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = No se pudo instalar la versión nueva ({detail}). La instalada quedó como estaba: cierra el juego e impórtala de nuevo.

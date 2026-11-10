@@ -478,6 +478,14 @@ void TestImportMessages() {
             restart.quit_button == 0,
         "replaced: restart, Quit Now and Later (selected)");
   Check(ModImportMessage(installed, Bracket).quit_button == -1, "a plain install: no Quit Now");
+  // In a game in progress: restart from the title screen, OK only (no Quit Now: the floor's progress
+  // would be lost); everything else is as outside a game.
+  const MenuMessage in_play = ModImportMessage(replaced, Bracket, true);
+  Check(in_play.text == "[Replaced: Mine. Restart the game from the title screen to use the new version.]" &&
+            in_play.buttons == std::vector<std::string>{"[OK]"} && in_play.quit_button == -1,
+        "replaced in play: the title screen, OK only");
+  Check(ModImportMessage(installed, Bracket, true).text == ModImportMessage(installed, Bracket).text,
+        "a plain install: the same box in play");
   mods::ImportResult kept;
   kept.status = mods::ImportStatus::kCannotWrite;
   kept.detail = "Access is denied";
