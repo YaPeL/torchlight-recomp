@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -452,9 +453,13 @@ std::string Megabytes(uint64_t bytes) {
 }  // namespace
 
 uint64_t ImportSpaceNeeded(const std::vector<uint64_t>& file_sizes, uint64_t block_size) {
+  // Saturating: a zip64 entry may declare an absurd size, which must not wrap to a small total.
+  constexpr uint64_t kMax = std::numeric_limits<uint64_t>::max();
   uint64_t total = 0;
   for (const uint64_t size : file_sizes) {
-    total += size == 0 ? block_size : (size + block_size - 1) / block_size * block_size;
+    const uint64_t blocks = size == 0 ? 1 : size / block_size + (size % block_size != 0);
+    const uint64_t bytes = blocks > kMax / block_size ? kMax : blocks * block_size;
+    total = bytes > kMax - total ? kMax : total + bytes;
   }
   return total;
 }
@@ -557,7 +562,11 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
     }
   }
   if (ec) return fail({ImportStatus::kCannotWrite, Utf8Of(mods_folder) + ": " + ec.message()});
-  for (const fs::path& path : stale) fs::remove_all(path, ec);
+  // A leftover .partial that cannot be removed would mix its files into this import's.
+  for (const fs::path& path : stale) {
+    fs::remove_all(path, ec);
+    if (ec) return fail({ImportStatus::kCannotWrite, "cannot remove " + Utf8Of(path) + ": " + ec.message()});
+  }
   if (!result.mods.empty()) return fail({ImportStatus::kAlreadyInstalled, ""});
 
   // The space: each file rounded up to the disk's blocks, each folder a block, and a reserve left
@@ -571,7 +580,9 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
         continue;
       }
       ++totals.files_total;
-      totals.bytes_total += entry->size;
+      totals.bytes_total = entry->size > std::numeric_limits<uint64_t>::max() - totals.bytes_total
+                               ? std::numeric_limits<uint64_t>::max()
+                               : totals.bytes_total + entry->size;
       sizes.push_back(entry->size);
     }
   }
