@@ -50,3 +50,4 @@ rexglue-android-sdl-power.patch
 rexglue-phys-host-offset-no-compare.patch
 rexglue-indirect-dispatch-count-opt-in.patch
 rexglue-no-package-registry.patch
+rexglue-imgui-input-queue.patch

@@ -70,7 +70,8 @@ in number order; a branch adds its own line at its number's place.
 | 52 | `rexglue-phys-host-offset-no-compare.patch` | `develop` | In the series (after 51); changes Windows' and macOS arm64's generated code too (the owner's OK) |
 | 53 | `rexglue-indirect-dispatch-count-opt-in.patch` | `develop` | In the series (after 52); changes the generated code of every configuration but Release |
 | 54 | `rexglue-no-package-registry.patch` | `develop` | In the series (after 53) |
-| 55 | | | Next free number |
+| 55 | `rexglue-imgui-input-queue.patch` | `develop` | In the series (after 54) |
+| 56 | | | Next free number |
 
 ## The patches
 
@@ -781,6 +782,16 @@ in number order; a branch adds its own line at its number's place.
     install leaves `~/.cmake/packages/rexglue` as it was. `tools/deps/build_sdk.sh` and
     `tools/build-deps/windows.ps1` also pass the option OFF, for a reused work folder whose
     CMake cache still holds the old default.
+
+55. `rexglue-imgui-input-queue.patch`: the ImGui drawer queues mouse and touch input as ImGui events
+    instead of writing `io.MousePos` and `io.MouseDown`, which ImGui reads only at each frame: a
+    press and a release between two frames (an instant tap, such as Android's `input tap`, or a
+    click faster than a frame) were lost, so a tap on a dialog's OK did nothing. A tap without
+    movement is now a click however short it is. Test: `tests/unit/ui/imgui_drawer_input_test.cpp`
+    (the instant click and tap fail without the change; the click is the Android case, since SDL
+    delivers touches there as mouse events); not yet confirmed with a tap on a device. One instant tap on Android once moved a
+    message box down by about 615 px instead; that is not explained by this and was not seen again.
+    The generated code is the same, but `codegen_id` changes (`src` and `include` are its inputs).
 
 The observation and diagnostic patches there were before remain in the git history.
 
