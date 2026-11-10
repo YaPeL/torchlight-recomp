@@ -145,6 +145,11 @@ void TestPadPrompts() {
     one.touch_layout = TouchStyle::kPlayStation;
     const HostSettings back = Parse(Serialize(one), &w);
     Check(back.touch_layout == TouchStyle::kPlayStation && back == one && w.empty(), "touch_layout round trip");
+    Check(Serialize(HostSettings{}).find("\n# touch_layout = \"xbox\"\n") != std::string::npos &&
+              Serialize(one).find("\ntouch_layout = \"playstation\"\n") != std::string::npos,
+          "touch_layout written only when not the default, else a hint");
+    Check(Parse(Serialize(HostSettings{}), &w).touch_layout == TouchStyle::kXbox && w.empty(),
+          "the default round trips as Xbox");
     Check(Parse("touch_layout = \"xbox\"\n", &w).touch_layout == TouchStyle::kXbox && w.empty(),
           "touch_layout = \"xbox\"");
     Check(Parse("touch_layout = \"nintendo\"\n", &w).touch_layout == TouchStyle::kXbox && !w.empty(),

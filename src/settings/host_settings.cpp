@@ -606,9 +606,12 @@ std::string Serialize(const HostSettings& settings) {
   }
   out << "# The touch controls' layout: \"xbox\" (the 360 pad's: the stick moves the hero, the d-pad\n"
       << "# below it switches skill sets) or \"playstation\" (the d-pad moves the hero, the stick below it\n"
-      << "# switches skill sets).\n"
-      << "touch_layout = " << Quote(settings.touch_layout == TouchStyle::kPlayStation ? "playstation" : "xbox")
-      << "\n";
+      << "# switches skill sets).\n";
+  if (settings.touch_layout == TouchStyle::kPlayStation) {
+    out << "touch_layout = \"playstation\"\n";
+  } else {
+    out << "# touch_layout = \"xbox\"\n";
+  }
   return out.str();
 }
 
