@@ -381,6 +381,9 @@ int main() {
   {
     Check(ImportSpaceNeeded({}, 4096) == 0, "space: nothing");
     Check(ImportSpaceNeeded({0, 1, 4096, 4097}, 4096) == 4096 + 4096 + 4096 + 8192, "space: rounded to blocks");
+    Check(ImportSpaceNeeded({UINT64_MAX - 10, 4096}, 4096) == UINT64_MAX &&
+              ImportSpaceNeeded({UINT64_MAX / 2, UINT64_MAX / 2, UINT64_MAX / 2}, 4096) == UINT64_MAX,
+          "space: absurd sizes saturate instead of wrapping");
     Check(ImportSpaceReserve(1ull << 30) == kImportReserveMin, "reserve: at least 256 MB");
     Check(ImportSpaceReserve(100ull << 30) == 5ull << 30, "reserve: 5 % of a large disk");
   }
