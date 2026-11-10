@@ -1,7 +1,7 @@
 // The one-player input policy (one_player_input.h): two real pads and a synthetic controller (the
 // touch controls, a script's) all feed guest user 0; users 1-3 see no controller, so the game never
-// asks a second user to sign in (issue #138). The SDK's default, for comparison, gives the second
-// pad to user 1.
+// asks a second user to sign in (issue #138). For comparison, the SDK's SlotAssignment (the policy
+// its CreateDefaultInputSystem installs) gives the second pad to user 1.
 
 #include <algorithm>
 #include <cstdio>
@@ -54,7 +54,7 @@ int main() {
     Check(ids.empty(), "user " + std::to_string(user) + ": no controller");
   }
 
-  // The SDK's default, the cause: the second pad is user 1's.
+  // SlotAssignment, the SDK's default policy and the cause: the second pad is user 1's.
   rex::input::SlotAssignment slots;
   slots.OnDevicesChanged(TwoPadsAndATouchController());
   slots.DevicesForUser(1, ids);

@@ -78,6 +78,7 @@ target_include_directories(torchlight_one_player_input PRIVATE "${TORCHLIGHT_REX
 target_compile_options(torchlight_one_player_input PRIVATE -Wall -Wextra)
 add_executable(one_player_input_test one_player_input_test.cpp)
 target_link_libraries(one_player_input_test PRIVATE torchlight_one_player_input)
+target_compile_options(one_player_input_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME one_player_input_test COMMAND one_player_input_test)
 
 # The consumer side (backend thread): links the frontend and the OGRE backend, so it is a library

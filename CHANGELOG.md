@@ -31,6 +31,12 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 - The game uses less CPU while waiting for the graphics work, which saves battery on laptops and
   the Steam Deck.
 
+### Fixed
+
+- With two controllers connected (or one plus a virtual one, such as Steam Input's or
+  DS4Windows'), pressing "Begin" on the second one showed "Sign In Error: You must be signed in
+  with a gamer profile" with no way past it. Every controller now plays the one player.
+
 ### Linux and the Steam Deck
 
 - The Linux build now needs a CPU with x86-64-v3 (AVX2, FMA): Intel Haswell (2013) or newer, AMD
