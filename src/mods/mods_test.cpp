@@ -114,6 +114,18 @@ int main() {
     Check(scan.mods[2].name.empty() && scan.mods[2].descriptor_digest == 0, "a folder without mod.dat is a mod, as on PC");
   }
   Check(scan.skipped.size() == 1 && scan.skipped[0].starts_with("broken"), "an unreadable mod.dat is skipped");
+  // What an interrupted import left (mod_import.h) is not a mod.
+  Write(root / "half.partial" / "media" / "x.dds", Ascii("x"));
+  scan = ScanModsFolder(root);
+  Check(scan.mods.size() == 3 && scan.skipped.size() == 2 && scan.skipped[1].starts_with("half.partial"),
+        "a .partial folder is skipped");
+  fs::remove_all(root / "half.partial");
+  Write(root / "old.replaced" / "media" / "x.dds", Ascii("x"));
+  const auto with_replaced = ScanModsFolder(root);
+  Check(with_replaced.mods.size() == 3 && with_replaced.skipped.size() == 2 &&
+            with_replaced.skipped[1].starts_with("old.replaced"),
+        "a .replaced folder is skipped");
+  fs::remove_all(root / "old.replaced");
   fs::remove_all(root / "nodat");  // the plan below counts the mods with a descriptor
   scan = ScanModsFolder(root);
 

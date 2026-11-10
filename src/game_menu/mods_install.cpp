@@ -35,6 +35,7 @@
 #include "platform/platform.h"
 #include "mods/class_list.h"
 #include "mods/icon_atlas.h"
+#include "mods/mod_import.h"
 #include "mods/mod_list.h"
 #include "mods/pad_prompts.h"
 #include "mods/replacements_guest_view.h"
@@ -278,6 +279,12 @@ void InstallMods(rex::Runtime* runtime, const std::filesystem::path& data_dir, c
   MountReplacements(runtime, data_dir, game_pak);
   const std::filesystem::path folder = data_dir / "mods";
   g_mods_folder = folder;
+  // An import interrupted mid-replace (mods/mod_import.h): its old mod put back before the scan, so
+  // the plan and the saves' fingerprint never miss it.
+  const mods::ImportRecovery recovery = mods::RecoverInterruptedImports(folder);
+  for (const std::string& name : recovery.restored) REXLOG_WARN("mods: {} put back (an import was interrupted)", name);
+  for (const std::string& name : recovery.removed) REXLOG_INFO("mods: {} left by an interrupted import removed", name);
+  if (!recovery.ok()) REXLOG_WARN("mods: cannot clear what an interrupted import left: {}", recovery.error);
   mods::ScanResult scan = mods::ScanModsFolder(folder);
   for (const std::string& line : scan.skipped) REXLOG_WARN("mods: skipped {}", line);
   std::optional<mods::ModList> list;

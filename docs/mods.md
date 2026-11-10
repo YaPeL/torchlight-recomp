@@ -1321,7 +1321,7 @@ What the launcher would add on top, kept in the launcher (a thin layer over the 
   ones -1 (any negative value), then `WriteModList` to `mods.dat`. Write it whole, to a temporary
   file renamed over the old one.
 - **Install a mod:** copy its folder into the mods folder as it is; it shows up at the end at the
-  next scan. The launcher should not unpack archives itself unless asked to later.
+  next scan. A .zip or a folder the player picks goes through `mods/mod_import.h` (8c).
 
 What the game does at its next start with a changed set (nothing for the launcher to do): it copies
 the saves before using it (`save-backups/...-mods`), rebuilds its unit table when the mods' units
@@ -1332,6 +1332,64 @@ starts; your saves are copied first" covers it.
 Not decided, for the launcher's author and the user: whether a mod with a `mod.dat` that does not
 read (skipped by the scan) is shown as broken, and whether `COMPRESSED` is shown at all (it is kept as
 read; this build loads only unpacked folders).
+
+## 8c. Importing a mod from a .zip or a folder (2026-11-06)
+
+`mods/mod_import.h` installs a mod the player picked, a `.zip` or a folder, into the mods folder:
+the zip is **extracted on import** into `mods/<name>/`, the layout of section 8, and from then on it
+is a mod like any copied in by hand (the next start adds it to `mods.dat` and builds what it needs).
+Accepted layouts: `mod.dat` or `media/` at the source's root (one mod, named after the zip or the
+folder), top-level folders that hold them (one mod or a pack, each named after its folder; other
+top-level files are left out), or the same one level down below a single folder (a zipped `mods`
+folder). A `mods.dat` in the source is never copied. Each mod is written to `<name>.partial` and
+renamed without replacing anything, so a name already there (in any case) fails the import
+(`kAlreadyInstalled`), and a failure or a cancel leaves nothing behind (a `.partial` an interrupted
+run left is never loaded as a mod, and every one is removed when the next import starts).
+
+**Replacing a mod** (the owner's decision, 2026-11-09): after `kAlreadyInstalled` the game asks
+"Replace?", and on yes imports again with `ImportOptions::replace`. Every new mod is first complete
+in its `.partial`; then each old folder is renamed to `<name>.replaced`, the new one renamed into
+place, and only when all are in place are the old ones removed. Every folder that matches the
+name in any case is replaced (a case-sensitive file system can hold several; the guest sees one).
+- **A failure puts every old folder back, and never loses one:** the new mods already in place are
+  first renamed aside (`<name>.undo.partial`, one rename each, so a mod's folder is never half
+  removed), the old ones renamed back, and only then is anything deleted. An old one that cannot be
+  put back is kept as `<name>.replaced` and reported (`kCannotWrite`).
+- **Recovery** (`RecoverInterruptedImports`, at start-up before the mods are scanned and when an
+  import starts): every `.partial` is removed; a `<name>.replaced` is removed when a mod of that
+  name is there in any case (never two copies of one mod), and put back as `<name>` when none is. So
+  a run killed mid-swap never starts without the mod, which would drop it from `mods.dat`'s plan
+  and the saves' fingerprint.
+- **A pack killed mid-swap can come back mixed:** the mods already swapped new, the others old (each
+  one whole).
+- A `.replaced` or `.partial` is never loaded as a mod.
+
+Refused, before anything is written:
+- entries with unsafe names, in any component and on every platform: absolute, `..`, drive
+  letters, colons, the characters `<>"|?*`, a trailing dot or space, and Windows' device names
+  (`CON`, `NUL`, `AUX`, `PRN`, `COM1`-`9`, `LPT1`-`9`, in any case, with an extension too);
+- a file that is not a zip (`kNotAZip`: no zip signature at its start, e.g. a `.rar` or `.7z`
+  picked through Android's "All files" filter); a damaged or truncated zip is `kUnreadable`;
+- symbolic links and encrypted entries; names are taken as UTF-8 only with the entry's UTF-8 flag,
+  otherwise they must be ASCII (the format's CP437 agrees with ASCII only). A zip from an old
+  Windows tool, whose names are in the system's code page without the flag, is refused
+  (`kNonAsciiName`, the entry as detail; the owner's decision, 2026-11-09: the player is told to zip
+  it again with a tool that writes UTF-8 names; reading CP1252 is for later, if players ask);
+- two mods of a pack, or two files of a mod, whose names differ only in case (the guest's paths
+  ignore it);
+- more than 200,000 entries, or a name longer than 1,024 bytes (the listing is linear in the
+  entries and polls the cancel);
+- not enough free space: each file rounded up to a 4 KiB block (a folder or an empty file takes
+  one), plus a reserve for the saves and settings on the same disk, the larger of 256 MB and 5 % of
+  it; an import whose free space cannot be read is refused too.
+
+Why not mount the zip instead: the game's data loader lists and opens a mod's files by path through
+the runtime's file system (`.DAT` units, the mod file map, `mod.dat`) and writes its compiled `.ADM`
+files into the mod's folder, and our host side reads the same files (unit index and cache, texture
+resolver, the replacements' walk, atlases and class lists). Mounting would need a zip device with a
+write overlay and zip-aware readers in all of those, several days at medium-high risk, and the zip
+would still have to be copied into the app's storage on Android; extracting reuses the folder
+pipeline unchanged.
 
 ## 9. Future work: UI and input crossover
 

@@ -70,6 +70,11 @@ std::vector<std::filesystem::path> FolderRoots();
 // The logs' folder below UserFolder(kState) where that folder is not the logs' own: "logs" in the
 // user's folders (Linux, Windows), nothing in a portable or run root, whose kState is logs/ already.
 std::filesystem::path LogsSubfolder();
+// Renames `from` to `to`, failing (with the system's reason in `error`) when `to` exists, with no
+// window between the check and the rename (one implementation per platform). The folders'
+// migration below and the mods' import (mods/mod_import.h).
+bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to,
+                     std::string& error);
 
 struct LegacyFolder {
   std::filesystem::path old_path, new_path;
