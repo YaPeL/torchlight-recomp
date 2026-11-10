@@ -3,6 +3,7 @@
 #include <miniz.h>
 
 #include <algorithm>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <memory>
@@ -48,6 +49,10 @@ bool EqualNoCase(std::string_view a, std::string_view b) {
   return a.size() == b.size() && std::equal(a.begin(), a.end(), b.begin(), [](char x, char y) {
            return Lower(x) == Lower(y);
          });
+}
+
+bool EndsWithNoCase(std::string_view text, std::string_view suffix) {
+  return text.size() > suffix.size() && EqualNoCase(text.substr(text.size() - suffix.size()), suffix);
 }
 
 bool IsControl(char c) { return static_cast<unsigned char>(c) < 0x20; }
@@ -212,6 +217,15 @@ std::vector<FoundMod> FindMods(const std::vector<Entry>& entries, const std::str
 }
 
 // ---- the zip --------------------------------------------------------------------------------
+
+// A zip starts with a local file header (PK\3\4), or an end of central directory when it is
+// empty (PK\5\6); anything else is not a zip (a .rar, a .7z, a text file).
+bool LooksLikeZip(const fs::path& path) {
+  std::ifstream in(path, std::ios::binary);
+  char magic[4] = {};
+  in.read(magic, sizeof magic);
+  return in.gcount() == 4 && (std::memcmp(magic, "PK\3\4", 4) == 0 || std::memcmp(magic, "PK\5\6", 4) == 0);
+}
 
 size_t ReadAt(void* opaque, mz_uint64 offset, void* buffer, size_t size) {
   auto& file = *static_cast<std::ifstream*>(opaque);
@@ -471,11 +485,16 @@ std::string ImportResult::message() const {
   for (const std::string& mod : mods) names += (names.empty() ? "" : ", ") + mod;
   const std::string about = detail.empty() ? "" : ": " + detail;
   switch (status) {
-    case ImportStatus::kInstalled: return "installed " + names;
+    case ImportStatus::kInstalled: {
+      std::string replaced;
+      for (const std::string& mod : this->replaced) replaced += (replaced.empty() ? "" : ", ") + mod;
+      return "installed " + names + (replaced.empty() ? "" : " (replacing " + replaced + ")");
+    }
     case ImportStatus::kCancelled: return "cancelled; nothing installed";
     case ImportStatus::kNoModFound: return "no mod found (no mod.dat or media folder)";
     case ImportStatus::kAlreadyInstalled: return "already installed: " + names;
     case ImportStatus::kUnreadable: return "cannot read the source" + about;
+    case ImportStatus::kNotAZip: return "not a zip file" + about;
     case ImportStatus::kUnsafeName: return "unsafe name" + about;
     case ImportStatus::kUnsupportedEntry: return "unsupported entry" + about;
     case ImportStatus::kNonAsciiName: return "entry name not in UTF-8 or ASCII" + about;
@@ -486,7 +505,8 @@ std::string ImportResult::message() const {
 }
 
 ImportResult ImportMod(const std::filesystem::path& source, const std::filesystem::path& data_dir,
-                       const ImportProgressCallback& progress, const std::atomic<bool>* cancel) {
+                       const ImportProgressCallback& progress, const std::atomic<bool>* cancel,
+                       const ImportOptions& options) {
   ImportResult result;
   auto fail = [&](Failure failure) {
     result.status = failure.status;
@@ -506,6 +526,7 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
     if (auto failure = ListFolder(from, entries, cancel)) return fail(*failure);
   } else {
     root_name = Utf8Of(from.stem());
+    if (!LooksLikeZip(from)) return fail({ImportStatus::kNotAZip, Utf8Of(from.filename())});
     zip = std::make_unique<Zip>();
     std::string error;
     if (!zip->Open(from, error)) {
@@ -518,10 +539,10 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   if (mods.empty()) return fail({ImportStatus::kNoModFound, ""});
   std::unordered_map<std::string, std::string> folded_mods;  // folded name -> name
   for (const FoundMod& mod : mods) {
-    const std::string_view suffix(kImportPartialSuffix);
-    const bool partial_name = mod.name.size() > suffix.size() &&
-                              EqualNoCase(mod.name.substr(mod.name.size() - suffix.size()), suffix);
-    if (!IsPlainComponent(mod.name) || EqualNoCase(mod.name, kListFile) || partial_name) {
+    // The import's own folders' suffixes are not names a mod can take.
+    const bool own_suffix = EndsWithNoCase(mod.name, kImportPartialSuffix) ||
+                            EndsWithNoCase(mod.name, kImportReplacedSuffix);
+    if (!IsPlainComponent(mod.name) || EqualNoCase(mod.name, kListFile) || own_suffix) {
       return fail({ImportStatus::kUnsafeName, mod.name});
     }
     // Two mods of a pack named alike but for case would be one folder to the guest.
@@ -547,18 +568,14 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   const fs::path mods_folder = data_dir / "mods";
   fs::create_directories(mods_folder, ec);
   if (ec) return fail({ImportStatus::kCannotWrite, Utf8Of(mods_folder) + ": " + ec.message()});
-  std::vector<fs::path> stale;
-  fs::directory_iterator it(mods_folder, ec), end;
-  for (; !ec && it != end; it.increment(ec)) {
-    const std::string name = Utf8Of(it->path().filename());
-    const std::string_view suffix(kImportPartialSuffix);
-    if (name.size() > suffix.size() &&
-        EqualNoCase(std::string_view(name).substr(name.size() - suffix.size()), suffix)) {
-      stale.push_back(it->path());
-      continue;
-    }
-    if (const auto found = folded_mods.find(Folded(name)); found != folded_mods.end()) {
-      result.mods.push_back(found->second);
+  // What an interrupted import left: its .partial folders, and the old folders of a replace.
+  std::vector<fs::path> stale, replaced_left;
+  {
+    fs::directory_iterator it(mods_folder, ec), end;
+    for (; !ec && it != end; it.increment(ec)) {
+      const std::string name = Utf8Of(it->path().filename());
+      if (EndsWithNoCase(name, kImportPartialSuffix)) stale.push_back(it->path());
+      else if (EndsWithNoCase(name, kImportReplacedSuffix)) replaced_left.push_back(it->path());
     }
   }
   if (ec) return fail({ImportStatus::kCannotWrite, Utf8Of(mods_folder) + ": " + ec.message()});
@@ -567,7 +584,36 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
     fs::remove_all(path, ec);
     if (ec) return fail({ImportStatus::kCannotWrite, "cannot remove " + Utf8Of(path) + ": " + ec.message()});
   }
-  if (!result.mods.empty()) return fail({ImportStatus::kAlreadyInstalled, ""});
+  // A .replaced whose mod is missing is put back (the swap was interrupted before the new one was
+  // in place); one whose mod is there is removed (the new one was).
+  for (const fs::path& path : replaced_left) {
+    const std::string name = Utf8Of(path.filename());
+    const fs::path original = mods_folder / PathOf(name.substr(0, name.size() - std::strlen(kImportReplacedSuffix)));
+    if (fs::exists(original, ec)) {
+      fs::remove_all(path, ec);
+    } else {
+      std::string error;
+      if (!platform::RenameNoReplace(path, original, error)) ec = std::make_error_code(std::errc::io_error);
+    }
+    if (ec) return fail({ImportStatus::kCannotWrite, "cannot clear " + Utf8Of(path) + ": " + ec.message()});
+  }
+  // The mods already there, by the source's name and their own folder's.
+  std::vector<std::string> existing(mods.size());
+  {
+    fs::directory_iterator it(mods_folder, ec), end;
+    for (; !ec && it != end; it.increment(ec)) {
+      const std::string name = Utf8Of(it->path().filename());
+      if (const auto found = folded_mods.find(Folded(name)); found != folded_mods.end()) {
+        result.mods.push_back(found->second);
+        for (size_t m = 0; m < mods.size(); ++m) {
+          if (mods[m].name == found->second) existing[m] = name;
+        }
+      }
+    }
+  }
+  if (ec) return fail({ImportStatus::kCannotWrite, Utf8Of(mods_folder) + ": " + ec.message()});
+  if (!result.mods.empty() && !options.replace) return fail({ImportStatus::kAlreadyInstalled, ""});
+  result.mods.clear();
 
   // The space: each file rounded up to the disk's blocks, each folder a block, and a reserve left
   // for the saves and settings on the same disk.
@@ -599,11 +645,17 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
                  "needs " + Megabytes(needed) + " with the reserve, " + Megabytes(space.available) + " free"});
   }
 
-  // Each mod into its .partial, then all renamed; on any failure what this import wrote goes.
+  // Each mod into its .partial, then all renamed (an old one aside first); on any failure what
+  // this import wrote goes and the old ones come back.
   std::vector<fs::path> partials, installed;
+  std::vector<std::pair<fs::path, fs::path>> backups;  // .replaced -> the old folder
   auto undo = [&](Failure failure) {
     for (const fs::path& path : partials) fs::remove_all(path, ec);
     for (const fs::path& path : installed) fs::remove_all(path, ec);
+    for (const auto& [backup, original] : backups) {
+      std::string error;
+      platform::RenameNoReplace(backup, original, error);
+    }
     result.mods.clear();
     return fail(std::move(failure));
   };
@@ -629,10 +681,23 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   for (size_t m = 0; m < mods.size(); ++m) {
     const fs::path target = mods_folder / PathOf(mods[m].name);
     std::string error;
+    if (!existing[m].empty()) {
+      const fs::path old = mods_folder / PathOf(existing[m]);
+      const fs::path backup = mods_folder / PathOf(existing[m] + kImportReplacedSuffix);
+      if (!platform::RenameNoReplace(old, backup, error)) {
+        return undo({ImportStatus::kCannotWrite, Utf8Of(old) + ": " + error});
+      }
+      backups.emplace_back(backup, old);
+    }
     if (!platform::RenameNoReplace(partials[m], target, error)) {
       return undo({ImportStatus::kCannotWrite, Utf8Of(target) + ": " + error});
     }
     installed.push_back(target);
+  }
+  // All in place: the old folders go (one that cannot is removed by the next import).
+  for (const auto& [backup, original] : backups) {
+    fs::remove_all(backup, ec);
+    result.replaced.push_back(Utf8Of(original.filename()));
   }
   result.status = ImportStatus::kInstalled;
   for (const FoundMod& mod : mods) result.mods.push_back(mod.name);

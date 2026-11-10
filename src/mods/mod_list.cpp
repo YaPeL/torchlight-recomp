@@ -78,9 +78,15 @@ ScanResult ScanModsFolder(const std::filesystem::path& mods_folder) {
   });
   for (const auto& folder : folders) {
     const std::string name = folder.filename().string();
-    const std::string suffix = kImportPartialSuffix;
-    if (name.size() > suffix.size() && EqualNoCase(name.substr(name.size() - suffix.size()), suffix)) {
+    const auto ends_with = [&](const std::string& suffix) {
+      return name.size() > suffix.size() && EqualNoCase(name.substr(name.size() - suffix.size()), suffix);
+    };
+    if (ends_with(kImportPartialSuffix)) {
       result.skipped.push_back(name + ": an import that did not finish");
+      continue;
+    }
+    if (ends_with(kImportReplacedSuffix)) {
+      result.skipped.push_back(name + ": a mod being replaced by an import");
       continue;
     }
     std::filesystem::path descriptor;

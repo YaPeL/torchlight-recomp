@@ -38,8 +38,12 @@ struct ScanResult {
 // with this suffix is what an interrupted import left, never a mod.
 inline constexpr const char* kImportPartialSuffix = ".partial";
 
-// The mods in `mods_folder` (missing folder: none). Folders ending in kImportPartialSuffix are
-// skipped.
+// The old folder of a mod an import is replacing (ImportOptions::replace), until the new one is in
+// place: one with this suffix is never a mod either (the next import puts it back or removes it).
+inline constexpr const char* kImportReplacedSuffix = ".replaced";
+
+// The mods in `mods_folder` (missing folder: none). Folders ending in kImportPartialSuffix or
+// kImportReplacedSuffix are skipped.
 ScanResult ScanModsFolder(const std::filesystem::path& mods_folder);
 
 struct ModListEntry {
