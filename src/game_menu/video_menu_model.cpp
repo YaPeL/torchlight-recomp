@@ -154,6 +154,10 @@ bool VideoMenuModel::Step(Row row, int direction) {
       }
       return true;
     }
+    case Row::kTouchLayout:
+      if (!caps_.touch_controls) return false;
+      return StepIn(std::vector<settings::TouchStyle>{settings::TouchStyle::kXbox, settings::TouchStyle::kPlayStation},
+                    current_.touch_layout, direction);
     case Row::kVsync:
     case Row::kSwapConfirmCancel:
     case Row::kImportMod:
@@ -261,13 +265,19 @@ std::string VideoMenuModel::Text(Row row) const {
       return current_.vsync ? "On" : "Off";
     case Row::kSwapConfirmCancel:
       return current_.swap_confirm_cancel ? "On" : "Off";
+    case Row::kTouchLayout:
+      return current_.touch_layout == settings::TouchStyle::kPlayStation ? "PlayStation" : "Xbox 360";
     case Row::kImportMod:
       return import_running_ ? "Importing..." : "Import Mod";
   }
   return "";
 }
 
-bool VideoMenuModel::Shown(Row row) const { return row != Row::kImportMod || !import_hidden_; }
+bool VideoMenuModel::Shown(Row row) const {
+  if (row == Row::kTouchLayout) return caps_.touch_controls;
+  if (row == Row::kImportMod) return !import_hidden_;
+  return true;
+}
 
 bool VideoMenuModel::Enabled(Row row) const {
   switch (row) {
@@ -292,6 +302,8 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kSwapConfirmCancel:
       return current_.pad_prompts == settings::PadPrompts::kNintendo ||
              (current_.pad_prompts == settings::PadPrompts::kAuto && nintendo_pad_);
+    // Only where the touch controls are installed (live: the controls are laid out again).
+    case Row::kTouchLayout: return caps_.touch_controls;
     case Row::kImportMod: return import_available_ && !import_running_ && !import_hidden_;
   }
   return false;
@@ -329,6 +341,7 @@ Section SectionOf(Row row) {
   switch (row) {
     case Row::kPadPrompts:
     case Row::kSwapConfirmCancel:
+    case Row::kTouchLayout:
       return Section::kControls;
     case Row::kLanguage:
     case Row::kAchievements:

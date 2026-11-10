@@ -20,14 +20,24 @@ class Runtime;
 namespace torchlight::live {
 
 // Before the guest runs (with the other input drivers), the game window open. Installs nothing with
-// "never".
-void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode);
+// "never". `options`: the layout's (settings.toml "touch_layout", TouchLayoutOptionsOf).
+void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode, input::TouchLayoutOptions options);
+input::TouchLayoutOptions TouchLayoutOptionsOf(const settings::HostSettings& settings);
+// Whether InstallTouchControls installed them ("never", or no touch screen nor window: not).
+bool TouchControlsInstalled();
+// The layout's style changed (the settings menu, live): the controls are laid out again (the
+// fingers on them are dropped, as on a resize). Nothing without touch controls.
+void SetTouchLayout(input::TouchLayoutOptions options);
 
 // What the drawing needs (A4.2): whether they are shown, the layout and what is pressed.
 struct TouchSnapshot {
   bool visible = false;
   input::TouchLayout layout;
   input::PadState state;
+  // The d-pad's pressed directions and the stick finger's own deflection (as the left stick's):
+  // with the PlayStation layout the state's d-pad is the stick's and its left stick the d-pad's.
+  uint16_t dpad = 0;
+  int16_t knob_x = 0, knob_y = 0;
   float stick_base_x = 0, stick_base_y = 0;
   bool stick_held = false;
   float width = 0, height = 0;  // the window's pixels the layout is for

@@ -11,7 +11,7 @@ float Distance(float x0, float y0, float x1, float y1) { return std::hypot(x1 - 
 
 }  // namespace
 
-TouchLayout GameplayLayout(const TouchScreen& screen) {
+TouchLayout GameplayLayout(const TouchScreen& screen, const TouchLayoutOptions& options) {
   using namespace touch_mm;
   const float mm = screen.px_per_mm;
   const float w = screen.width, h = screen.height;
@@ -55,7 +55,18 @@ TouchLayout GameplayLayout(const TouchScreen& screen) {
   const float reach = kStickRadius + kDpadRadius + kMinGap, dy = stick_y - dpad_y;
   // At least a stick's radius inward, so on a tall screen (a tablet) it is not under the stick.
   const float dpad_x = stick_x + std::max(std::sqrt(std::max(0.0f, reach * reach - dy * dy)), kStickRadius);
-  round("D-pad", 0, left(dpad_x), bottom(dpad_y), kDpadRadius, TouchShape::kDpad);
+  const bool swapped = options.style == TouchStyle::kPlayStation;
+  if (!swapped) {
+    round("D-pad", 0, left(dpad_x), bottom(dpad_y), kDpadRadius, TouchShape::kDpad);
+  } else {
+    // A PlayStation pad's: the d-pad, as big as the stick, where the stick rests; the stick, as
+    // small as the d-pad, fixed where the d-pad is (the gap between them is the same).
+    round("D-pad", 0, left(stick_x), bottom(stick_y), kStickRadius, TouchShape::kDpad);
+    layout.stick_x = left(dpad_x);
+    layout.stick_y = bottom(dpad_y);
+    layout.stick_radius = kDpadRadius * mm;
+    layout.swapped = true;
+  }
 
   // The shoulders in the top corners, and Back and Start at the top centre.
   const float row = kTopRowMargin + small_r;
@@ -68,11 +79,14 @@ TouchLayout GameplayLayout(const TouchScreen& screen) {
   wide("Back", pad::kBack, false, false, w / 2 - centre, top(row), kMenuWidth);
   wide("Start", pad::kStart, false, false, w / 2 + centre, top(row), kMenuWidth);
 
-  // The stick's zone: the lower left 40% x 70% of the screen (a button there takes the touch).
-  layout.zone_x0 = 0;
-  layout.zone_y0 = h * 0.3f;
-  layout.zone_x1 = w * 0.4f;
-  layout.zone_y1 = h;
+  // The stick's zone: the lower left 40% x 70% of the screen (a button there takes the touch); none
+  // for the fixed stick.
+  if (!swapped) {
+    layout.zone_x0 = 0;
+    layout.zone_y0 = h * 0.3f;
+    layout.zone_x1 = w * 0.4f;
+    layout.zone_y1 = h;
+  }
   return layout;
 }
 
@@ -99,13 +113,32 @@ static bool Inside(const TouchButton& b, float x, float y, float slop) {
   return Distance(x, y, b.x, b.y) <= b.radius * slop;
 }
 
-uint16_t DpadDirections(const TouchButton& dpad, float x, float y) {
-  const float dx = x - dpad.x, dy = y - dpad.y;
-  if (std::hypot(dx, dy) < dpad.radius * 0.2f) return 0;
+// The d-pad's directions for an offset (y down): a diagonal presses both sides when one component
+// is at least half the other.
+static uint16_t Directions(float dx, float dy) {
   uint16_t bits = 0;
   if (std::abs(dx) >= std::abs(dy) * 0.5f) bits |= dx > 0 ? pad::kRight : pad::kLeft;
   if (std::abs(dy) >= std::abs(dx) * 0.5f) bits |= dy > 0 ? pad::kDown : pad::kUp;
   return bits;
+}
+
+uint16_t DpadDirections(const TouchButton& dpad, float x, float y) {
+  const float dx = x - dpad.x, dy = y - dpad.y;
+  if (std::hypot(dx, dy) < dpad.radius * 0.2f) return 0;
+  return Directions(dx, dy);
+}
+
+uint16_t StickDpad(int16_t x, int16_t y) {
+  if (std::hypot(float(x), float(y)) < kStickDpadThreshold * 32767) return 0;
+  return Directions(x, -float(y));  // XInput's y up, the offset's down
+}
+
+void DpadStick(uint16_t directions, int16_t& x, int16_t& y) {
+  const int sx = ((directions & pad::kRight) ? 1 : 0) - ((directions & pad::kLeft) ? 1 : 0);
+  const int sy = ((directions & pad::kUp) ? 1 : 0) - ((directions & pad::kDown) ? 1 : 0);
+  const int16_t full = sx && sy ? 23170 : 32767;
+  x = static_cast<int16_t>(sx * full);
+  y = static_cast<int16_t>(sy * full);
 }
 
 int TouchPad::ButtonAt(float x, float y) const {
@@ -128,6 +161,13 @@ void TouchPad::Down(uint64_t id, float x, float y) {
   if (const int b = ButtonAt(x, y); b >= 0) {
     f.role = Role::kButton;
     f.button = b;
+  } else if (layout_.swapped) {
+    // The fixed stick: within its radius of its base, which stays put.
+    if (!stick_held() && Distance(x, y, layout_.stick_x, layout_.stick_y) <= layout_.stick_radius) {
+      f.role = Role::kStick;
+      f.base_x = layout_.stick_x;
+      f.base_y = layout_.stick_y;
+    }
   } else if (!stick_held() && x >= layout_.zone_x0 && x <= layout_.zone_x1 && y >= layout_.zone_y0 &&
              y <= layout_.zone_y1) {
     f.role = Role::kStick;
@@ -145,6 +185,9 @@ void TouchPad::Move(uint64_t id, float x, float y) {
   f.y = y;
   if (f.role == Role::kButton) {
     const TouchButton& b = layout_.buttons[f.button];
+    // The d-pad that moves the hero keeps its finger wherever it goes, as the stick does: a thumb
+    // that drifts on a long run neither stops the hero nor takes a shoulder.
+    if (layout_.swapped && b.shape == TouchShape::kDpad) return;
     if (Inside(b, x, y, kHoldSlop)) return;
     // Off its button: onto another one, or nothing until it reaches one.
     if (const int other = ButtonAt(x, y); other >= 0) {
@@ -182,26 +225,60 @@ float TouchPad::stick_base_y() const {
   return layout_.stick_y;
 }
 
+void TouchPad::StickOf(const Finger& f, int16_t& x, int16_t& y) const {
+  x = y = 0;
+  if (layout_.stick_radius <= 0) return;
+  float dx = f.x - f.base_x, dy = f.y - f.base_y;
+  const float len = std::hypot(dx, dy);
+  if (len > layout_.stick_radius) {
+    dx *= layout_.stick_radius / len;
+    dy *= layout_.stick_radius / len;
+  }
+  // XInput's y points up; the screen's down.
+  x = static_cast<int16_t>(std::lround(dx / layout_.stick_radius * 32767));
+  y = static_cast<int16_t>(std::lround(-dy / layout_.stick_radius * 32767));
+}
+
+uint16_t TouchPad::dpad_directions() const {
+  uint16_t bits = 0;
+  for (const auto& [id, f] : fingers_) {
+    if (f.role != Role::kButton) continue;
+    const TouchButton& b = layout_.buttons[f.button];
+    if (b.shape == TouchShape::kDpad) bits |= DpadDirections(b, f.x, f.y);
+  }
+  return bits;
+}
+
+void TouchPad::stick_deflection(int16_t& x, int16_t& y) const {
+  x = y = 0;
+  for (const auto& [id, f] : fingers_) {
+    if (f.role == Role::kStick) StickOf(f, x, y);
+  }
+}
+
 PadState TouchPad::State() const {
   PadState pad;
+  uint16_t dpad = 0;  // the d-pad's directions
+  int16_t stick_x = 0, stick_y = 0;
   for (const auto& [id, f] : fingers_) {
     if (f.role == Role::kButton) {
       const TouchButton& b = layout_.buttons[f.button];
       pad.buttons |= b.buttons;
-      if (b.shape == TouchShape::kDpad) pad.buttons |= DpadDirections(b, f.x, f.y);
+      if (b.shape == TouchShape::kDpad) dpad |= DpadDirections(b, f.x, f.y);
       if (b.left_trigger) pad.left_trigger = 255;
       if (b.right_trigger) pad.right_trigger = 255;
-    } else if (f.role == Role::kStick && layout_.stick_radius > 0) {
-      float dx = f.x - f.base_x, dy = f.y - f.base_y;
-      const float len = std::hypot(dx, dy);
-      if (len > layout_.stick_radius) {
-        dx *= layout_.stick_radius / len;
-        dy *= layout_.stick_radius / len;
-      }
-      // XInput's y points up; the screen's down.
-      pad.left_x = static_cast<int16_t>(std::lround(dx / layout_.stick_radius * 32767));
-      pad.left_y = static_cast<int16_t>(std::lround(-dy / layout_.stick_radius * 32767));
+    } else if (f.role == Role::kStick) {
+      StickOf(f, stick_x, stick_y);
     }
+  }
+  if (!layout_.swapped) {
+    pad.buttons |= dpad;
+    pad.left_x = stick_x;
+    pad.left_y = stick_y;
+  } else {
+    // A PlayStation pad's: the d-pad moves the hero, the stick presses the d-pad.
+    DpadStick(dpad, pad.left_x, pad.left_y);
+    pad.buttons |= StickDpad(stick_x, stick_y);
   }
   return pad;
 }

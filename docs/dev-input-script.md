@@ -86,7 +86,7 @@ One command per line; `#` starts a comment. Durations are `N` or `Ns` (seconds),
 | `capture [NAME]` | an F9 capture, NAME in the log; the controller stays still a few frames |
 | `dump_ui NAME` | the game UI's window tree to `<capture folder>/NAME.json` (below); the script waits until it is written |
 | `touch ID X Y` | a finger (1-9) on the touch controls (docs/android-port.md, A4), down at X, Y in window fractions (0-1, Y down), or moved there when it is down; needs the touch controls installed (`touch_controls` not `never`; on a desktop without a touch screen, `"always"` or `--dev_touch_mouse`) |
-| `touch ID CONTROL` | the same at a control's centre: `X`, `Y`, `A`, `B`, `LT`, `RT`, `LB`, `RB`, `Back`, `Start`, and the d-pad's `Up`, `Down`, `Left`, `Right` |
+| `touch ID CONTROL` | the same at a control's centre: `X`, `Y`, `A`, `B`, `LT`, `RT`, `LB`, `RB`, `Back`, `Start`, the d-pad's `Up`, `Down`, `Left`, `Right`, and `Stick` (the stick's resting base; move the finger with `touch ID X Y` to tilt it) |
 | `release ID` | that finger lifted |
 | `replay FILE [trace FILE]` | a recorded controller played by time, and with `trace` the hero's trace of each frame (below) |
 | `command TEXT` | a guest developer command, e.g. `ASCEND` (to the town from the mine's first floor) |
