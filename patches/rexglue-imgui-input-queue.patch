@@ -16,22 +16,25 @@ NewFrame; detaching clears the queue too, so no event replays into the next acti
 that the other kind of pointer interrupts (a touch while a mouse button is held, or the reverse) is
 released away from everything, so it is abandoned rather than completed as a click.
 
-Two consequences beyond the tap. On macOS ImGui's default ConfigMacOSXBehaviors now applies to the
-mouse too: Cmd+click is a right click in the dialogs (the direct writes bypassed it). And the
-mouse events go through ImGui's queue (a vector) like the key events already did, so the input
+The mouse events go through ImGui's queue (a vector) like the key events already did, so the input
 handlers and Draw must stay on one thread, as they are when a presenter draws the dialogs and in
-this project's detached use.
+this project's detached use. (On macOS, ImGui's Cmd+click-as-right-click can now apply, but only
+when Cmd goes down in the same frame as the click, since the drawer sets io.KeySuper directly; the
+dialogs take only the left button, so such a click does nothing.)
 
 Test: tests/unit/ui/imgui_drawer_input_test.cpp drives a modal with an OK button through a window's
 input listeners: a click and an instant touch tap between two frames press it once each, without
 moving the dialog; a click held over several frames presses it once; a press released outside it
 does not; a press interrupted by the other pointer clicks nothing; the window captures the mouse
 only while a button is held, also when the last dialog goes with a button down. Without the change
-the instant cases fail (0 presses). Verified by the unit test only, not yet with a tap on a device.
+the instant cases fail (0 presses). The case that fixes Android is the instant click: SDL delivers
+touches there as mouse events; the touch case covers TouchEvent, which no SDK window sends today.
+Verified by the unit test only, not yet with a tap on a device.
 
 Not explained by this: in one Android run an instant tap moved a message box down by about 615 px
-instead of pressing OK; neither the lost press nor gamepad navigation moves a window, and it was not
-seen again.
+instead of pressing OK, and it was not seen again. With mouse events a tap's release applies in the
+same frame as its position, so a tap alone cannot drag; the move needs a lost or late release, or
+the position changing while held, neither of which this patch changes.
 
 The generated code does not change; codegen_id does (src and include are among its inputs).
 

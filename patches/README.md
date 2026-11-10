@@ -788,9 +788,8 @@ in number order; a branch adds its own line at its number's place.
     press and a release between two frames (an instant tap, such as Android's `input tap`, or a
     click faster than a frame) were lost, so a tap on a dialog's OK did nothing. A tap without
     movement is now a click however short it is. Test: `tests/unit/ui/imgui_drawer_input_test.cpp`
-    (the instant click and tap fail without the change); not yet confirmed with a tap on a device.
-    On macOS, Cmd+click is now a right click in the dialogs (ImGui's default Mac behaviour, which
-    the direct writes bypassed). One instant tap on Android once moved a
+    (the instant click and tap fail without the change; the click is the Android case, since SDL
+    delivers touches there as mouse events); not yet confirmed with a tap on a device. One instant tap on Android once moved a
     message box down by about 615 px instead; that is not explained by this and was not seen again.
     The generated code is the same, but `codegen_id` changes (`src` and `include` are its inputs).
 
