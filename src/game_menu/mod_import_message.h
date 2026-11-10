@@ -19,6 +19,7 @@ struct MenuMessage {
   std::string title, text;
   std::vector<std::string> buttons;
   int active = 0;  // the button selected when the box opens
+  int quit_button = -1;  // the button that closes the game (Quit Now), or none
 };
 
 inline constexpr const char* kImportTitle = "Import Mod";
@@ -49,7 +50,11 @@ inline constexpr size_t kListedMods = 5;
 // its own), keeping its own line breaks.
 std::string WrapText(const std::string& text, size_t width);
 
-// The box after ImportMod: what was installed, or why nothing was.
+// The box after ImportMod: what was installed, or why nothing was. After a replace (the owner,
+// 2026-11-10: allowed even for a mod the running game uses, the only way to update one on
+// Android) it says to restart, with Quit Now (quit_button) and Later (selected); a replace that
+// failed with every old mod kept (ImportResult::old_mods_kept: on Windows a file the game holds
+// open can make the swap fail) says the installed version was kept.
 MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr);
 
 // The question after an import refused for a name already installed (kAlreadyInstalled): Replace

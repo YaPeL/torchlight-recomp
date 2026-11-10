@@ -33,6 +33,12 @@ constexpr const char* kNotAZip = "{detail} is not a zip file. Choose the mod's .
 constexpr const char* kReplaceQuestion =
     "A mod named {mods} is already installed. Replace it with the one you chose?";
 constexpr const char* kReplaceButton = "Replace";
+constexpr const char* kReplaced = "Replaced: {mods}. Restart the game to use the new version.";
+constexpr const char* kQuitNowButton = "Quit Now";
+constexpr const char* kLaterButton = "Later";
+constexpr const char* kReplaceKept =
+    "The new version could not be installed ({detail}). The installed one was kept as it was: close "
+    "the game and import it again.";
 constexpr const char* kNotEnoughSpace =
     "There is not enough free space for the mod: it needs {needed} MB and {free} MB are free.";
 constexpr const char* kCannotWrite = "The mod could not be written to the mods folder: {detail}";
@@ -136,6 +142,11 @@ MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& 
     case ImportStatus::kNotEnoughSpace: english = kNotEnoughSpace; break;
     case ImportStatus::kCannotWrite: english = kCannotWrite; break;
   }
+  if (result.ok() && !result.replaced.empty()) {
+    return {Text(tr, kImportTitle), Text(tr, kReplaced, values), {Text(tr, kQuitNowButton), Text(tr, kLaterButton)},
+            1, 0};
+  }
+  if (!result.ok() && result.old_mods_kept && result.status == ImportStatus::kCannotWrite) english = kReplaceKept;
   return Box(tr, Text(tr, english, values));
 }
 
@@ -162,6 +173,7 @@ std::vector<std::string> ModImportTexts() {
           kInstalledMany,     kAlreadyInstalled,
           kNoModFound,        kUnreadable,        kUnsafeName,      kUnsupportedEntry,
           kNonAsciiName,      kNotAZip,           kReplaceQuestion, kReplaceButton,
+          kReplaced,          kQuitNowButton,     kLaterButton,     kReplaceKept,
           kNotEnoughSpace,    kCannotWrite,     kCancelled,
           kNoPicker,          kNotCopied};
 }

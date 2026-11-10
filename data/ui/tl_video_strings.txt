@@ -59,6 +59,10 @@ The mod was not imported: its zip writes file names in an old Windows encoding (
 {detail} is not a zip file. Choose the mod's .zip file. = {detail} ist keine ZIP-Datei. Wähle die ZIP-Datei des Mods.
 A mod named {mods} is already installed. Replace it with the one you chose? = Ein Mod namens {mods} ist bereits installiert. Durch den gewählten ersetzen?
 Replace = Ersetzen
+Replaced: {mods}. Restart the game to use the new version. = Ersetzt: {mods}. Starte das Spiel neu, um die neue Version zu verwenden.
+Quit Now = Jetzt beenden
+Later = Später
+The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = Die neue Version konnte nicht installiert werden ({detail}). Die installierte blieb unverändert: Beende das Spiel und importiere sie erneut.
 There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = Nicht genug freier Speicher für den Mod: Er braucht {needed} MB, frei sind {free} MB.
 The mod could not be written to the mods folder: {detail} = Der Mod konnte nicht in den Mods-Ordner geschrieben werden: {detail}
 The import was cancelled; nothing was installed. = Der Import wurde abgebrochen; nichts wurde installiert.
@@ -119,6 +123,10 @@ The mod was not imported: its zip writes file names in an old Windows encoding (
 {detail} is not a zip file. Choose the mod's .zip file. = {detail} n'est pas un fichier zip. Choisissez le fichier .zip du mod.
 A mod named {mods} is already installed. Replace it with the one you chose? = Un mod nommé {mods} est déjà installé. Le remplacer par celui que vous avez choisi ?
 Replace = Remplacer
+Replaced: {mods}. Restart the game to use the new version. = Remplacé : {mods}. Relancez le jeu pour utiliser la nouvelle version.
+Quit Now = Quitter maintenant
+Later = Plus tard
+The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = La nouvelle version n'a pas pu être installée ({detail}). Celle déjà installée a été conservée telle quelle : fermez le jeu et importez-la à nouveau.
 There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = Il n'y a pas assez d'espace libre pour le mod : il lui faut {needed} Mo et {free} Mo sont libres.
 The mod could not be written to the mods folder: {detail} = Le mod n'a pas pu être écrit dans le dossier des mods : {detail}
 The import was cancelled; nothing was installed. = L'importation a été annulée ; rien n'a été installé.
@@ -179,6 +187,10 @@ The mod was not imported: its zip writes file names in an old Windows encoding (
 {detail} is not a zip file. Choose the mod's .zip file. = {detail} no es un archivo zip. Elige el archivo .zip del mod.
 A mod named {mods} is already installed. Replace it with the one you chose? = Ya hay un mod instalado con el nombre {mods}. ¿Reemplazarlo por el que elegiste?
 Replace = Reemplazar
+Replaced: {mods}. Restart the game to use the new version. = Reemplazado: {mods}. Reinicia el juego para usar la versión nueva.
+Quit Now = Salir ahora
+Later = Más tarde
+The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = No se pudo instalar la versión nueva ({detail}). La instalada quedó como estaba: cierra el juego e impórtala de nuevo.
 There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = No hay espacio libre suficiente para el mod: necesita {needed} MB y hay {free} MB libres.
 The mod could not be written to the mods folder: {detail} = No se pudo escribir el mod en la carpeta de mods: {detail}
 The import was cancelled; nothing was installed. = La importación se canceló; no se instaló nada.

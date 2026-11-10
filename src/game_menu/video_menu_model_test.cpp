@@ -466,6 +466,29 @@ void TestImportMessages() {
   Check(ModImportMessage(braces, Bracket).text.starts_with("[Installed: {detail}."),
         "the placeholders filled in one pass");
 
+  // After a replace: restart, Quit Now (closes the game) and Later (selected). A replace that failed
+  // with the old mods kept says so; one that lost an old mod gives the detail.
+  mods::ImportResult replaced;
+  replaced.status = mods::ImportStatus::kInstalled;
+  replaced.mods = {"Mine"};
+  replaced.replaced = {"Mine"};
+  const MenuMessage restart = ModImportMessage(replaced, Bracket);
+  Check(restart.text == "[Replaced: Mine. Restart the game to use the new version.]" &&
+            restart.buttons == std::vector<std::string>{"[Quit Now]", "[Later]"} && restart.active == 1 &&
+            restart.quit_button == 0,
+        "replaced: restart, Quit Now and Later (selected)");
+  Check(ModImportMessage(installed, Bracket).quit_button == -1, "a plain install: no Quit Now");
+  mods::ImportResult kept;
+  kept.status = mods::ImportStatus::kCannotWrite;
+  kept.detail = "Access is denied";
+  kept.old_mods_kept = true;
+  Check(ModImportMessage(kept, Bracket).text.find("(Access is denied). The installed one was kept as it was") !=
+            std::string::npos,
+        "a failed replace with the old mod kept: said so");
+  kept.old_mods_kept = false;
+  Check(ModImportMessage(kept, Bracket).text.starts_with("[The mod could not be written"),
+        "an old mod not kept: the plain error with its detail");
+
   // Not a zip: named; the replace question: the names, Replace then Cancel.
   mods::ImportResult rar;
   rar.status = mods::ImportStatus::kNotAZip;

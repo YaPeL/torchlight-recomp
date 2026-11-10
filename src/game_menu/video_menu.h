@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 
 #include <rex/ppc/context.h>
@@ -27,9 +28,10 @@ class GuestCall;
 // the hooks. Without it (or when the layouts are missing) the hooks only call the originals. On a
 // frame wider than 16:9 it also serves the game's framed layouts with their bands re-anchored
 // (wide_layout.h), generated from the user's pak into the local cache.
-// `app_context`: the UI thread, where Import Mod shows the system's pickers.
+// `app_context`: the UI thread, where Import Mod shows the system's pickers. `request_close`: closes
+// the game as the player would (Quit Now after a mod was replaced).
 void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
-             rex::ui::WindowedAppContext* app_context);
+             rex::ui::WindowedAppContext* app_context, std::function<void()> request_close = {});
 
 // Every frame of the game UI (CGameUI::Update, achievements/toast.cpp), game's thread: shows the
 // result of an Import Mod once it is ready, with the game's message box.

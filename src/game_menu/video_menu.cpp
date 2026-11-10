@@ -174,6 +174,7 @@ void Refresh(GuestCall& call) {
 // (OnGameUiFrame) with the game's message box. The game keeps running meanwhile.
 struct ModImport {
   rex::ui::WindowedAppContext* app_context = nullptr;  // set by Install
+  std::function<void()> request_close;                  // set by Install
   std::atomic<bool> running{false};
   std::atomic<bool> finished{false};  // the worker left its answer below
   std::mutex mutex;
@@ -189,6 +190,7 @@ struct ModImport {
   GuestMessageBox box;
   std::optional<MenuMessage> to_show;
   bool to_show_asks = false, box_asks = false;
+  int box_quit_button = -1;  // the open box's Quit Now
   int show_attempts = 0;
   bool mod_imported = false;  // a mod was installed this run: the column says a restart is needed
 };
@@ -396,8 +398,9 @@ void InstallGeneratedLayouts(rex::Runtime* runtime, const std::filesystem::path&
 }  // namespace
 
 void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
-             rex::ui::WindowedAppContext* app_context) {
+             rex::ui::WindowedAppContext* app_context, std::function<void()> request_close) {
   g_import.app_context = app_context;
+  g_import.request_close = std::move(request_close);
   g_import.box.set_runtime(runtime);
   if (!runtime || !runtime->file_system()) {
     REXLOG_ERROR("game menu: no runtime file system; video menu off");
@@ -679,6 +682,11 @@ void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
   }
   if (g_import.box.open()) {
     const std::optional<int> button = g_import.box.Poll(base);
+    if (button && *button >= 0 && *button == g_import.box_quit_button && g_import.request_close) {
+      REXLOG_INFO("mod import: Quit Now after a replace");
+      g_import.request_close();
+    }
+    if (button) g_import.box_quit_button = -1;
     if (button && g_import.box_asks) {
       g_import.box_asks = false;
       std::lock_guard lock(g_import.mutex);
@@ -695,6 +703,7 @@ void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
   if (g_import.box.Show(ctx, base, message.title, WrapText(message.text, kBoxLineLength), message.buttons,
                          message.active)) {
     g_import.box_asks = g_import.to_show_asks;
+    g_import.box_quit_button = message.quit_button;
     g_import.to_show.reset();
     g_import.to_show_asks = false;
   } else if (g_import.show_attempts > 10 * 60) {
