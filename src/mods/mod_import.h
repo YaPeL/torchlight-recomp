@@ -19,12 +19,19 @@
 // anything is written, and any failure or cancel removes what this import wrote, so there is never
 // half a mod (a pack is installed whole or not at all).
 //
-// Zip entries: absolute names, "..", drive letters and colons (with '\' read as a separator, as
-// Windows tools write it) are refused, and so are symbolic links, encrypted entries and
+// Zip entries (and a folder's): absolute names, "..", drive letters, colons, the characters
+// <>"|?*, a trailing dot or space, and Windows' device names (CON, NUL, AUX, PRN, COM1-9, LPT1-9,
+// with an extension too), in any component, are refused on every platform (with '\' read as a
+// separator, as Windows tools write it), and so are symbolic links, encrypted entries and
 // compression methods miniz cannot read. Names are UTF-8 when the entry's UTF-8 flag (general
 // purpose bit 11) is set; without it the zip format says CP437, which agrees with ASCII only, so a
 // name with other bytes is refused (kNonAsciiName) instead of guessing its code page. The free
-// space of the mods folder's disk is checked against the files' uncompressed size before writing.
+// space of the mods folder's disk is checked before writing (ImportSpaceNeeded plus
+// ImportSpaceReserve; an import whose free space cannot be read is refused). A zip of more than
+// kMaxImportEntries entries, or with a name longer than kMaxImportNameBytes, is refused before its
+// entries are read (kUnreadable). Two mods of a pack, or two files of a mod, whose names differ only
+// in case are refused (kUnsafeName): the guest's paths ignore case. Every .partial in the mods
+// folder is removed when an import starts.
 // No guest, OGRE or SDL: platform code only through platform::RenameNoReplace.
 
 #pragma once
@@ -51,6 +58,20 @@ enum class ImportStatus {
   kCannotWrite,
 };
 
+// The limits on a source: its entries, and an entry name's bytes.
+inline constexpr size_t kMaxImportEntries = 200000;
+inline constexpr size_t kMaxImportNameBytes = 1024;
+// Listing polls the cancel every this many entries.
+inline constexpr size_t kCancelPoll = 1024;
+// The free space an import needs: each file rounded up to kImportBlockSize (an empty one or a
+// folder takes a block; std::filesystem does not tell the disk's block size, 4 KiB is the common
+// one), plus a reserve kept free for the saves and settings on the same disk: the larger of
+// kImportReserveMin and 5 % of the disk.
+inline constexpr uint64_t kImportBlockSize = 4096;
+inline constexpr uint64_t kImportReserveMin = 256ull << 20;
+uint64_t ImportSpaceNeeded(const std::vector<uint64_t>& file_sizes, uint64_t block_size);
+uint64_t ImportSpaceReserve(uint64_t capacity);
+
 struct ImportProgress {
   uint64_t files_done = 0, files_total = 0;
   uint64_t bytes_done = 0, bytes_total = 0;
@@ -66,7 +87,8 @@ struct ImportResult {
   std::string detail;
   // Top-level entries of the source that are not part of any mod (left out).
   std::vector<std::string> skipped;
-  // kNotEnoughSpace: what the files need and what the disk has free, in bytes.
+  // kNotEnoughSpace: what the import needs (the reserve included) and what the disk has free, in
+  // bytes.
   uint64_t bytes_needed = 0, bytes_free = 0;
 
   bool ok() const { return status == ImportStatus::kInstalled; }
