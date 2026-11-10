@@ -156,6 +156,7 @@ bool VideoMenuModel::Step(Row row, int direction) {
     }
     case Row::kVsync:
     case Row::kSwapConfirmCancel:
+    case Row::kImportMod:
       return false;
   }
   return false;
@@ -260,9 +261,13 @@ std::string VideoMenuModel::Text(Row row) const {
       return current_.vsync ? "On" : "Off";
     case Row::kSwapConfirmCancel:
       return current_.swap_confirm_cancel ? "On" : "Off";
+    case Row::kImportMod:
+      return import_running_ ? "Importing..." : "Import Mod";
   }
   return "";
 }
+
+bool VideoMenuModel::Shown(Row row) const { return row != Row::kImportMod || !import_hidden_; }
 
 bool VideoMenuModel::Enabled(Row row) const {
   switch (row) {
@@ -287,6 +292,7 @@ bool VideoMenuModel::Enabled(Row row) const {
     case Row::kSwapConfirmCancel:
       return current_.pad_prompts == settings::PadPrompts::kNintendo ||
              (current_.pad_prompts == settings::PadPrompts::kAuto && nintendo_pad_);
+    case Row::kImportMod: return import_available_ && !import_running_ && !import_hidden_;
   }
   return false;
 }
@@ -309,7 +315,7 @@ bool VideoMenuModel::Checked(Row row) const {
 }
 
 bool VideoMenuModel::RestartNeeded() const {
-  return Language(current_.language) != Language(startup_.language) ||
+  return mod_imported_ || Language(current_.language) != Language(startup_.language) ||
          current_.render_system != startup_.render_system || current_.gpu != startup_.gpu ||
          current_.aspect != startup_.aspect ||
          current_.shadow_resolution != startup_.shadow_resolution ||
@@ -329,6 +335,7 @@ Section SectionOf(Row row) {
     case Row::kRenderer:
     case Row::kGpu:
     case Row::kLowQuality:
+    case Row::kImportMod:
       return Section::kExtras;
     default:
       return Section::kVideo;

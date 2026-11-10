@@ -1,15 +1,18 @@
 // Tests for the video settings column's model: texts, steps through the choices, the checkbox,
 // and the restart notice.
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 
+#include "game_menu/mod_import_message.h"
 #include "game_menu/video_menu_model.h"
 
 namespace {
 
 using namespace torchlight::game_menu;
 using namespace torchlight::settings;
+namespace mods = torchlight::mods;
 
 void Check(bool ok, const char* what) {
   if (!ok) {
@@ -197,8 +200,8 @@ void TestPadPrompts() {
 void TestSections() {
   int count[kSectionCount] = {};
   for (int i = 0; i < kRowCount; ++i) ++count[int(SectionOf(Row(i)))];
-  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 5,
-        "six video rows, two controls, five extras");
+  Check(count[int(Section::kVideo)] == 6 && count[int(Section::kControls)] == 2 && count[int(Section::kExtras)] == 6,
+        "six video rows, two controls, six extras");
   Check(SectionOf(Row::kFpsCap) == Section::kVideo && SectionOf(Row::kVsync) == Section::kVideo &&
             SectionOf(Row::kSwapConfirmCancel) == Section::kControls && SectionOf(Row::kLanguage) == Section::kExtras,
         "the frame rate cap and vsync in Video, the swap in Controls, the language in Extras");
@@ -368,6 +371,169 @@ void TestLowQuality() {
         "back to the 360's also on restart");
 }
 
+void TestImportMod() {
+  VideoMenuModel m(Desktop(), HostSettings{}, HostSettings{});
+  Check(SectionOf(Row::kImportMod) == Section::kExtras, "Import Mod in the extras section");
+  Check(IsAction(Row::kImportMod) && !IsCheckbox(Row::kImportMod) && !IsAction(Row::kVsync),
+        "Import Mod is the action row");
+  Check(!m.Enabled(Row::kImportMod) && !m.Activate(Row::kImportMod),
+        "without a picker or a mods folder: disabled, A does nothing");
+  m.SetImportAvailable(true);
+  Check(m.Enabled(Row::kImportMod) && m.Activate(Row::kImportMod) &&
+            m.Text(Row::kImportMod) == "Import Mod",
+        "available: enabled, A starts it");
+  Check(!m.Step(Row::kImportMod, +1) && !m.Toggle(Row::kImportMod), "no value to move or toggle");
+  Check(!m.Activate(Row::kVsync), "a checkbox is not an action");
+  m.SetImportRunning(true);
+  Check(!m.Enabled(Row::kImportMod) && !m.Activate(Row::kImportMod) &&
+            m.Text(Row::kImportMod) == "Importing...",
+        "running: disabled, says so");
+  m.SetImportRunning(false);
+  Check(m.Shown(Row::kImportMod) && m.Shown(Row::kVsync), "shown by default");
+  m.SetImportHidden(true);
+  Check(!m.Shown(Row::kImportMod) && !m.Enabled(Row::kImportMod) && !m.Activate(Row::kImportMod),
+        "a gamescope session: hidden, A does nothing");
+  m.SetImportHidden(false);
+  Check(!m.RestartNeeded(), "nothing imported: no restart");
+  m.NoteModImported();
+  Check(m.RestartNeeded(), "a mod imported: restart notice");
+  m.Reset();
+  Check(m.RestartNeeded(), "Reset Defaults does not undo an import");
+}
+
+// Brackets around each text, to see the translation applied before the values are filled in.
+std::string Bracket(const std::string& english) { return "[" + english + "]"; }
+
+void TestImportMessages() {
+  mods::ImportResult installed;
+  installed.status = mods::ImportStatus::kInstalled;
+  installed.mods = {"A", "B"};
+  const MenuMessage box = ModImportMessage(installed, Bracket);
+  Check(box.title == "[Import Mod]" && box.buttons == std::vector<std::string>{"[OK]"},
+        "title and OK translated");
+  Check(box.text.starts_with("[Installed: A, B.") && box.text.find("{mods}") == std::string::npos,
+        "installed: the names filled in after translating");
+
+  // A pack (29 mods on the POCO): five named, the rest counted, the restart still said; wrapped as
+  // shown, every line within the box's length.
+  mods::ImportResult pack;
+  pack.status = mods::ImportStatus::kInstalled;
+  for (int i = 0; i < 29; ++i) pack.mods.push_back("JCC - Mod " + std::to_string(i));
+  const std::string flat = ModImportMessage(pack, [](const std::string& english) { return english; }).text;
+  const std::string many = WrapText(flat, kBoxLineLength);
+  Check(flat.starts_with("Installed 29 mods: JCC - Mod 0, JCC - Mod 1, JCC - Mod 2, JCC - Mod 3, "
+                         "JCC - Mod 4 and 24 more.") &&
+            flat.find("Mod 5") == std::string::npos && flat.find("restart it") != std::string::npos,
+        "a pack: five named, the rest counted, the restart said");
+  for (size_t at = 0, end; at < many.size(); at = end + 1) {
+    end = many.find('\n', at);
+    if (end == std::string::npos) end = many.size();
+    Check(end - at <= kBoxLineLength, "every line within the box");
+  }
+  pack.status = mods::ImportStatus::kAlreadyInstalled;
+  const std::string again = ModImportMessage(pack, [](const std::string& english) { return english; }).text;
+  Check(again.find("JCC - Mod 4, ...") != std::string::npos && again.find("Mod 5") == std::string::npos,
+        "already installed, a pack: five named and an ellipsis");
+
+  // The wrapping: at spaces, a long word alone, its own breaks kept, UTF-8 counted by characters.
+  Check(WrapText("aaa bbb ccc", 7) == "aaa bbb\nccc", "wrapped at a space");
+  Check(WrapText("a verylongword b", 5) == "a\nverylongword\nb", "a long word on a line of its own");
+  Check(WrapText("one\ntwo three", 9) == "one\ntwo three", "its own line breaks kept");
+  Check(WrapText("\xc3\xa9\xc3\xa9\xc3\xa9 abc", 7) == "\xc3\xa9\xc3\xa9\xc3\xa9 abc",
+        "UTF-8 counted by characters");
+  Check(WrapText("", 10).empty(), "nothing to wrap");
+
+  mods::ImportResult existing;
+  existing.status = mods::ImportStatus::kAlreadyInstalled;
+  existing.mods = {"Mine"};
+  Check(ModImportMessage(existing, Bracket).text.find("named Mine is already installed") !=
+            std::string::npos,
+        "already installed: names the mod");
+
+  mods::ImportResult space;
+  space.status = mods::ImportStatus::kNotEnoughSpace;
+  space.bytes_needed = (3u << 20) + 1;
+  space.bytes_free = 1u << 20;
+  Check(ModImportMessage(space, Bracket).text.find("needs 4 MB and 1 MB are free") !=
+            std::string::npos,
+        "no space: megabytes, rounded up");
+
+  // A value is never filled in again: a mod named "{detail}" stays so.
+  mods::ImportResult braces;
+  braces.status = mods::ImportStatus::kInstalled;
+  braces.mods = {"{detail}"};
+  braces.detail = "X";
+  Check(ModImportMessage(braces, Bracket).text.starts_with("[Installed: {detail}."),
+        "the placeholders filled in one pass");
+
+  // After a replace: restart, Quit Now (closes the game) and Later (selected). A replace that failed
+  // with the old mods kept says so; one that lost an old mod gives the detail.
+  mods::ImportResult replaced;
+  replaced.status = mods::ImportStatus::kInstalled;
+  replaced.mods = {"Mine"};
+  replaced.replaced = {"Mine"};
+  const MenuMessage restart = ModImportMessage(replaced, Bracket);
+  Check(restart.text == "[Replaced: Mine. Restart the game to use the new version.]" &&
+            restart.buttons == std::vector<std::string>{"[Quit Now]", "[Later]"} && restart.active == 1 &&
+            restart.quit_button == 0,
+        "replaced: restart, Quit Now and Later (selected)");
+  Check(ModImportMessage(installed, Bracket).quit_button == -1, "a plain install: no Quit Now");
+  // In a game in progress: restart from the title screen, OK only (no Quit Now: the floor's progress
+  // would be lost); everything else is as outside a game.
+  const MenuMessage in_play = ModImportMessage(replaced, Bracket, true);
+  Check(in_play.text == "[Replaced: Mine. Restart the game from the title screen to use the new version.]" &&
+            in_play.buttons == std::vector<std::string>{"[OK]"} && in_play.quit_button == -1,
+        "replaced in play: the title screen, OK only");
+  Check(ModImportMessage(installed, Bracket, true).text == ModImportMessage(installed, Bracket).text,
+        "a plain install: the same box in play");
+  mods::ImportResult kept;
+  kept.status = mods::ImportStatus::kCannotWrite;
+  kept.detail = "Access is denied";
+  kept.old_mods_kept = true;
+  Check(ModImportMessage(kept, Bracket).text.find("(Access is denied). The installed one was kept as it was") !=
+            std::string::npos,
+        "a failed replace with the old mod kept: said so");
+  kept.old_mods_kept = false;
+  Check(ModImportMessage(kept, Bracket).text.starts_with("[The mod could not be written"),
+        "an old mod not kept: the plain error with its detail");
+
+  // Not a zip: named; the replace question: the names, Replace then Cancel.
+  mods::ImportResult rar;
+  rar.status = mods::ImportStatus::kNotAZip;
+  rar.detail = "Mod.rar";
+  Check(ModImportMessage(rar, Bracket).text == "[Mod.rar is not a zip file. Choose the mod's .zip file.]",
+        "not a zip: the file named");
+  const MenuMessage ask = ModReplaceQuestion(existing, Bracket);
+  Check(ask.text.find("named Mine is already installed. Replace it") != std::string::npos &&
+            ask.buttons == std::vector<std::string>{"[Replace]", "[Cancel]"} && ask.active == 1,
+        "replace: the name, Replace first, Cancel second and selected");
+
+  mods::ImportResult unsafe;
+  unsafe.status = mods::ImportStatus::kUnsafeName;
+  unsafe.detail = "../evil";
+  Check(ModImportMessage(unsafe, Bracket).text.find("(../evil)") != std::string::npos,
+        "the detail shown");
+
+  Check(ModPickMessage(PickProblem::kNotCopied, "disk full", Bracket).text ==
+            "[The chosen file could not be copied: disk full]",
+        "the picker's copy failed");
+  // Every status has a text of its own.
+  using mods::ImportStatus;
+  std::vector<std::string> texts;
+  for (ImportStatus status :
+       {ImportStatus::kInstalled, ImportStatus::kCancelled, ImportStatus::kNoModFound,
+        ImportStatus::kAlreadyInstalled, ImportStatus::kUnreadable, ImportStatus::kUnsafeName,
+        ImportStatus::kUnsupportedEntry, ImportStatus::kNonAsciiName,
+        ImportStatus::kNotEnoughSpace, ImportStatus::kCannotWrite, ImportStatus::kNotAZip}) {
+    mods::ImportResult result;
+    result.status = status;
+    const std::string text =
+        ModImportMessage(result, [](const std::string& english) { return english; }).text;
+    Check(std::find(texts.begin(), texts.end(), text) == texts.end(), "a text per status");
+    texts.push_back(text);
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -388,6 +554,8 @@ int main() {
   TestAchievements();
   TestPadPrompts();
   TestSections();
+  TestImportMod();
+  TestImportMessages();
   std::printf("video_menu_model_test: ok\n");
   return 0;
 }

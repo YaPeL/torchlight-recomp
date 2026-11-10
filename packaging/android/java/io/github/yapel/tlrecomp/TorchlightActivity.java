@@ -2,6 +2,9 @@ package io.github.yapel.tlrecomp;
 
 import android.content.Context;
 import android.content.pm.ApplicationInfo;
+import android.database.Cursor;
+import android.net.Uri;
+import android.provider.OpenableColumns;
 
 import java.io.BufferedReader;
 import java.io.File;
@@ -58,6 +61,21 @@ public class TorchlightActivity extends SDLActivity {
     }
 
     static native void nativeAppEnding();
+
+    // The name a picked document's provider gives it (OpenableColumns.DISPLAY_NAME), or null: its
+    // copy is named after it (platform_android.cpp, OpenablePickedFile), since a URI such as
+    // ".../document/msf:1234" names no file. Called from native code.
+    static String documentDisplayName(String uri) {
+        Context context = SDLActivity.getContext();
+        if (context == null) return null;
+        try (Cursor cursor = context.getContentResolver().query(
+                Uri.parse(uri), new String[] {OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)) return cursor.getString(0);
+        } catch (RuntimeException e) {
+            // no name: the URI's
+        }
+        return null;
+    }
 
     @Override
     protected void onDestroy() {

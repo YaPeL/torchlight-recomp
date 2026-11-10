@@ -312,10 +312,19 @@ void PickCallback(void* userdata, const char* const* filelist, int) {
 }
 
 PickResult Pick(SDL_FileDialogType type, const std::string& title, std::string& path,
-                std::string& error) {
+                std::string& error, const std::vector<FileFilter>& filters = {}) {
   PickState state;
   SDL_PropertiesID props = SDL_CreateProperties();
   SDL_SetStringProperty(props, SDL_PROP_FILE_DIALOG_TITLE_STRING, title.c_str());
+  // SDL may read the filters until its callback comes, and this waits for it.
+  std::vector<SDL_DialogFileFilter> sdl_filters;
+  for (const FileFilter& filter : filters) {
+    sdl_filters.push_back({filter.name.c_str(), filter.pattern.c_str()});
+  }
+  if (!sdl_filters.empty()) {
+    SDL_SetPointerProperty(props, SDL_PROP_FILE_DIALOG_FILTERS_POINTER, sdl_filters.data());
+    SDL_SetNumberProperty(props, SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER, Sint64(sdl_filters.size()));
+  }
   BringToFront();
   SDL_ShowFileDialogWithProperties(type, PickCallback, &state, props);
   while (!state.done) {
@@ -399,9 +408,19 @@ class SdlProgressWindow : public ProgressWindow {
 
 }  // namespace
 
-PickResult PickFile(const std::string& title, std::string& path, std::string& error) {
-  const PickResult picked = Pick(SDL_FILEDIALOG_OPENFILE, title, path, error);
+PickResult PickFile(const std::string& title, std::string& path, std::string& error,
+                    const std::vector<FileFilter>& filters) {
+  const PickResult picked = Pick(SDL_FILEDIALOG_OPENFILE, title, path, error, filters);
   return picked == PickResult::kChosen ? OpenablePickedFile(title, path, error) : picked;
+}
+
+PickResult PickFileUncopied(const std::string& title, std::string& path, std::string& error,
+                            const std::vector<FileFilter>& filters) {
+  return Pick(SDL_FILEDIALOG_OPENFILE, title, path, error, filters);
+}
+
+PickResult CopyPickedFile(std::string& path, std::string& error, const CopyProgress& progress) {
+  return OpenablePickedFile(std::string(), path, error, &progress);
 }
 
 PickResult PickFolder(const std::string& title, std::string& path, std::string& error) {

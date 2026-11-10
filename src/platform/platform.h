@@ -61,6 +61,9 @@ bool OnBattery();
 // Whether the machine is a Steam Deck (Valve's Jupiter, or Galileo for the OLED model), from its
 // firmware's system information.
 bool IsSteamDeck();
+// Running inside a gamescope session (the Steam Deck's Game Mode, or gamescope elsewhere), where
+// the desktop's file pickers may open where they cannot be seen (Linux; false elsewhere).
+bool InGamescopeSession();
 // The internal resolution the game starts at by default, where the platform wants less than the
 // display (Android: about 1280x800 on a 2560x1600 tablet, docs/android-port.md, A2); 0x0 elsewhere,
 // the display's size.
@@ -139,15 +142,33 @@ enum class PickResult { kChosen, kCancelled, kFailed, kUncopied };
 // The file's `path` is one the program can open: on Android the picker gives a document URI, which
 // is copied first (with a progress window) to the app's cache; ForgetPickedFiles removes those
 // copies once they are used.
-PickResult PickFile(const std::string& title, std::string& path, std::string& error);
+// `filters` limit the files offered (none: any file); Android turns each pattern into its MIME
+// type (SDL's SDLActivity.showFileDialog).
+struct FileFilter {
+  std::string name;     // "Zip archives"
+  std::string pattern;  // extensions without the dot, ';' between them: "zip"
+};
+PickResult PickFile(const std::string& title, std::string& path, std::string& error,
+                    const std::vector<FileFilter>& filters = {});
 PickResult PickFolder(const std::string& title, std::string& path, std::string& error);
 // Whether PickFolder can show a picker here (Android's, through SDL, picks files only).
 bool CanPickFolder();
 // Removes the copies PickFile made (Android); nothing elsewhere.
 void ForgetPickedFiles();
+// A picked document's copy going on: bytes copied and the total (0 when not known); false stops it.
+using CopyProgress = std::function<bool(uint64_t done, uint64_t total)>;
 // The platform's half of PickFile (platform_sdl.cpp): the chosen `path` made one the program can
-// open; kCancelled when the player stopped the copy.
-PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error);
+// open; kCancelled when the player stopped the copy. The copy reports to `progress` when given,
+// else to a progress window titled `title`.
+PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error,
+                              const CopyProgress* progress = nullptr);
+// PickFile in two halves, for a caller that copies away from the UI thread (Import Mod: a big
+// document's copy there froze the dialogs and the busy notice): the picker alone, whose `path` may
+// be a document URI on Android, and then, on any thread, the copy (OpenablePickedFile) reporting
+// to `progress`.
+PickResult PickFileUncopied(const std::string& title, std::string& path, std::string& error,
+                            const std::vector<FileFilter>& filters = {});
+PickResult CopyPickedFile(std::string& path, std::string& error, const CopyProgress& progress);
 // The system's preferred languages, most preferred first, as lower-case codes ("de", "pt-br").
 std::vector<std::string> PreferredLanguages();
 // A small window with a progress bar and a line of text (drawn with SDL's ASCII debug font: letters

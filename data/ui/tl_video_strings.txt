@@ -1,5 +1,7 @@
-# Translations of the host settings column (tl_video_settings.uilayout) for the languages the game
-# ships, written for this project: the game's own translation files have none of these texts.
+# Translations of the host settings column (tl_video_settings.uilayout) and its Import Mod boxes
+# (game_menu/mod_import_message.h) for the languages the game ships, written for this project:
+# the game's own translation files have none of these texts. {words} in braces are filled in by
+# the host.
 # A section per language code ([de], [fr], [es]); each line is "English text = translation".
 # Texts without a line stay in English.
 
@@ -33,6 +35,40 @@ Low-End Devices = Schwache Geräte
 Low = Niedrig
 Low on restart = Niedrig nach Neustart
 Xbox 360 on restart = Xbox 360 nach Neustart
+Import Mod = Mod importieren
+Importing... = Wird importiert...
+OK = OK
+Import a mod from a .zip file or from a folder? = Einen Mod aus einer .zip-Datei oder aus einem Ordner importieren?
+Zip File = Zip-Datei
+Folder = Ordner
+Cancel = Abbrechen
+Choose the mod's .zip file = Die .zip-Datei des Mods wählen
+Choose the mod's folder = Den Ordner des Mods wählen
+Zip archives = Zip-Archive
+All files = Alle Dateien
+Copying mod... {percent}% = Mod wird kopiert... {percent} %
+Importing mod... {percent}% = Mod wird importiert... {percent} %
+Installed: {mods}. Mods are loaded when the game starts: restart it to play with them. = Installiert: {mods}. Mods werden beim Spielstart geladen: Starte das Spiel neu, um mit ihnen zu spielen.
+Installed {count} mods: {mods} and {more} more. Mods are loaded when the game starts: restart it to play with them. = {count} Mods installiert: {mods} und {more} weitere. Mods werden beim Spielstart geladen: Starte das Spiel neu, um mit ihnen zu spielen.
+A mod named {mods} is already installed, so nothing was changed. Remove or rename it in the mods folder to import this one. = Ein Mod namens {mods} ist bereits installiert, daher wurde nichts geändert. Entferne ihn im Mods-Ordner oder benenne ihn um, um diesen zu importieren.
+No mod was found. A mod has a mod.dat file or a media folder, at the top of the zip or folder or in a folder inside it. = Kein Mod gefunden. Ein Mod hat eine Datei mod.dat oder einen Ordner media, oben im Zip oder Ordner oder in einem Ordner darin.
+The zip or folder could not be read: {detail} = Das Zip oder der Ordner konnte nicht gelesen werden: {detail}
+The mod was not imported: a file name in it could write outside its folder ({detail}). = Der Mod wurde nicht importiert: Ein Dateiname darin könnte außerhalb seines Ordners schreiben ({detail}).
+The mod was not imported: it holds a link, an encrypted file or a compression this import cannot read ({detail}). = Der Mod wurde nicht importiert: Er enthält eine Verknüpfung, eine verschlüsselte Datei oder eine Komprimierung, die dieser Import nicht lesen kann ({detail}).
+The mod was not imported: its zip writes file names in an old Windows encoding ({detail}), which this import cannot read. Unzip it and zip it again with a recent tool (7-Zip, or the system's own), which writes the names as UTF-8. = Der Mod wurde nicht importiert: Seine ZIP-Datei schreibt Dateinamen in einer alten Windows-Kodierung ({detail}), die dieser Import nicht lesen kann. Entpacke sie und packe sie mit einem aktuellen Programm (7-Zip oder dem des Systems) neu, das die Namen als UTF-8 schreibt.
+{detail} is not a zip file. Choose the mod's .zip file. = {detail} ist keine ZIP-Datei. Wähle die ZIP-Datei des Mods.
+A mod named {mods} is already installed. Replace it with the one you chose? = Ein Mod namens {mods} ist bereits installiert. Durch den gewählten ersetzen?
+Replace = Ersetzen
+Replaced: {mods}. Restart the game to use the new version. = Ersetzt: {mods}. Starte das Spiel neu, um die neue Version zu verwenden.
+Replaced: {mods}. Restart the game from the title screen to use the new version. = Ersetzt: {mods}. Starte das Spiel über den Titelbildschirm neu, um die neue Version zu verwenden.
+Quit Now = Jetzt beenden
+Later = Später
+The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = Die neue Version konnte nicht installiert werden ({detail}). Die installierte blieb unverändert: Beende das Spiel und importiere sie erneut.
+There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = Nicht genug freier Speicher für den Mod: Er braucht {needed} MB, frei sind {free} MB.
+The mod could not be written to the mods folder: {detail} = Der Mod konnte nicht in den Mods-Ordner geschrieben werden: {detail}
+The import was cancelled; nothing was installed. = Der Import wurde abgebrochen; nichts wurde installiert.
+No file picker could be opened: {detail} = Es konnte keine Dateiauswahl geöffnet werden: {detail}
+The chosen file could not be copied: {detail} = Die gewählte Datei konnte nicht kopiert werden: {detail}
 
 [fr]
 Video = Vidéo
@@ -64,6 +100,40 @@ Low-End Devices = Petites machines
 Low = Bas
 Low on restart = Bas après relance
 Xbox 360 on restart = Xbox 360 après relance
+Import Mod = Importer un mod
+Importing... = Importation...
+OK = OK
+Import a mod from a .zip file or from a folder? = Importer un mod depuis un fichier .zip ou depuis un dossier ?
+Zip File = Fichier zip
+Folder = Dossier
+Cancel = Annuler
+Choose the mod's .zip file = Choisir le fichier .zip du mod
+Choose the mod's folder = Choisir le dossier du mod
+Zip archives = Archives zip
+All files = Tous les fichiers
+Copying mod... {percent}% = Copie du mod... {percent} %
+Importing mod... {percent}% = Importation du mod... {percent} %
+Installed: {mods}. Mods are loaded when the game starts: restart it to play with them. = Installé : {mods}. Les mods sont chargés au démarrage du jeu : relancez-le pour jouer avec.
+Installed {count} mods: {mods} and {more} more. Mods are loaded when the game starts: restart it to play with them. = {count} mods installés : {mods} et {more} autres. Les mods sont chargés au démarrage du jeu : relancez-le pour jouer avec.
+A mod named {mods} is already installed, so nothing was changed. Remove or rename it in the mods folder to import this one. = Un mod nommé {mods} est déjà installé, rien n'a donc été modifié. Supprimez-le ou renommez-le dans le dossier des mods pour importer celui-ci.
+No mod was found. A mod has a mod.dat file or a media folder, at the top of the zip or folder or in a folder inside it. = Aucun mod trouvé. Un mod contient un fichier mod.dat ou un dossier media, à la racine du zip ou du dossier, ou dans un dossier qu'il contient.
+The zip or folder could not be read: {detail} = Le zip ou le dossier n'a pas pu être lu : {detail}
+The mod was not imported: a file name in it could write outside its folder ({detail}). = Le mod n'a pas été importé : un nom de fichier qu'il contient pourrait écrire hors de son dossier ({detail}).
+The mod was not imported: it holds a link, an encrypted file or a compression this import cannot read ({detail}). = Le mod n'a pas été importé : il contient un lien, un fichier chiffré ou une compression que cette importation ne sait pas lire ({detail}).
+The mod was not imported: its zip writes file names in an old Windows encoding ({detail}), which this import cannot read. Unzip it and zip it again with a recent tool (7-Zip, or the system's own), which writes the names as UTF-8. = Le mod n'a pas été importé : son zip écrit les noms de fichiers dans un ancien encodage Windows ({detail}), que cette importation ne sait pas lire. Décompressez-le et recompressez-le avec un outil récent (7-Zip ou celui du système), qui écrit les noms en UTF-8.
+{detail} is not a zip file. Choose the mod's .zip file. = {detail} n'est pas un fichier zip. Choisissez le fichier .zip du mod.
+A mod named {mods} is already installed. Replace it with the one you chose? = Un mod nommé {mods} est déjà installé. Le remplacer par celui que vous avez choisi ?
+Replace = Remplacer
+Replaced: {mods}. Restart the game to use the new version. = Remplacé : {mods}. Relancez le jeu pour utiliser la nouvelle version.
+Replaced: {mods}. Restart the game from the title screen to use the new version. = Remplacé : {mods}. Relancez le jeu depuis l'écran titre pour utiliser la nouvelle version.
+Quit Now = Quitter maintenant
+Later = Plus tard
+The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = La nouvelle version n'a pas pu être installée ({detail}). Celle déjà installée a été conservée telle quelle : fermez le jeu et importez-la à nouveau.
+There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = Il n'y a pas assez d'espace libre pour le mod : il lui faut {needed} Mo et {free} Mo sont libres.
+The mod could not be written to the mods folder: {detail} = Le mod n'a pas pu être écrit dans le dossier des mods : {detail}
+The import was cancelled; nothing was installed. = L'importation a été annulée ; rien n'a été installé.
+No file picker could be opened: {detail} = Aucun sélecteur de fichiers n'a pu être ouvert : {detail}
+The chosen file could not be copied: {detail} = Le fichier choisi n'a pas pu être copié : {detail}
 
 [es]
 Video = Video
@@ -95,3 +165,37 @@ Low-End Devices = Equipos modestos
 Low = Bajo
 Low on restart = Bajo al reiniciar
 Xbox 360 on restart = Xbox 360 al reiniciar
+Import Mod = Importar mod
+Importing... = Importando...
+OK = Aceptar
+Import a mod from a .zip file or from a folder? = ¿Importar un mod desde un archivo .zip o desde una carpeta?
+Zip File = Archivo zip
+Folder = Carpeta
+Cancel = Cancelar
+Choose the mod's .zip file = Elige el archivo .zip del mod
+Choose the mod's folder = Elige la carpeta del mod
+Zip archives = Archivos zip
+All files = Todos los archivos
+Copying mod... {percent}% = Copiando mod... {percent} %
+Importing mod... {percent}% = Importando mod... {percent} %
+Installed: {mods}. Mods are loaded when the game starts: restart it to play with them. = Instalado: {mods}. Los mods se cargan al iniciar el juego: reinícialo para jugar con ellos.
+Installed {count} mods: {mods} and {more} more. Mods are loaded when the game starts: restart it to play with them. = {count} mods instalados: {mods} y {more} más. Los mods se cargan al iniciar el juego: reinícialo para jugar con ellos.
+A mod named {mods} is already installed, so nothing was changed. Remove or rename it in the mods folder to import this one. = Ya hay un mod instalado con el nombre {mods}, así que no se cambió nada. Bórralo o cámbiale el nombre en la carpeta de mods para importar este.
+No mod was found. A mod has a mod.dat file or a media folder, at the top of the zip or folder or in a folder inside it. = No se encontró ningún mod. Un mod tiene un archivo mod.dat o una carpeta media, en la raíz del zip o de la carpeta o en una carpeta dentro.
+The zip or folder could not be read: {detail} = No se pudo leer el zip o la carpeta: {detail}
+The mod was not imported: a file name in it could write outside its folder ({detail}). = El mod no se importó: un nombre de archivo suyo podría escribir fuera de su carpeta ({detail}).
+The mod was not imported: it holds a link, an encrypted file or a compression this import cannot read ({detail}). = El mod no se importó: contiene un enlace, un archivo cifrado o una compresión que esta importación no sabe leer ({detail}).
+The mod was not imported: its zip writes file names in an old Windows encoding ({detail}), which this import cannot read. Unzip it and zip it again with a recent tool (7-Zip, or the system's own), which writes the names as UTF-8. = El mod no se importó: su zip escribe los nombres de archivo en una codificación vieja de Windows ({detail}), que esta importación no puede leer. Descomprímelo y vuelve a comprimirlo con una herramienta reciente (7-Zip o la del sistema), que escribe los nombres en UTF-8.
+{detail} is not a zip file. Choose the mod's .zip file. = {detail} no es un archivo zip. Elige el archivo .zip del mod.
+A mod named {mods} is already installed. Replace it with the one you chose? = Ya hay un mod instalado con el nombre {mods}. ¿Reemplazarlo por el que elegiste?
+Replace = Reemplazar
+Replaced: {mods}. Restart the game to use the new version. = Reemplazado: {mods}. Reinicia el juego para usar la versión nueva.
+Replaced: {mods}. Restart the game from the title screen to use the new version. = Reemplazado: {mods}. Reinicia el juego desde la pantalla de título para usar la versión nueva.
+Quit Now = Salir ahora
+Later = Más tarde
+The new version could not be installed ({detail}). The installed one was kept as it was: close the game and import it again. = No se pudo instalar la versión nueva ({detail}). La instalada quedó como estaba: cierra el juego e impórtala de nuevo.
+There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = No hay espacio libre suficiente para el mod: necesita {needed} MB y hay {free} MB libres.
+The mod could not be written to the mods folder: {detail} = No se pudo escribir el mod en la carpeta de mods: {detail}
+The import was cancelled; nothing was installed. = La importación se canceló; no se instaló nada.
+No file picker could be opened: {detail} = No se pudo abrir ningún selector de archivos: {detail}
+The chosen file could not be copied: {detail} = No se pudo copiar el archivo elegido: {detail}

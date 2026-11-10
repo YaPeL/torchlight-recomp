@@ -1,6 +1,7 @@
 // What the video settings column in the game's settings menu shows and does, without the guest:
-// each row's text, left/right through its choices, the vsync checkbox, and whether something that
-// needs a restart changed. The rows' choices come from settings::Capabilities.
+// each row's text, left/right through its choices, the vsync checkbox, the Import Mod action, and
+// whether something that needs a restart changed. The rows' choices come from
+// settings::Capabilities.
 
 #pragma once
 
@@ -12,14 +13,16 @@ namespace torchlight::game_menu {
 
 enum class Row {
   kResolution, kAspect, kFpsCap, kMsaa, kShadowResolution, kLanguage, kAchievements, kPadPrompts,
-  kVsync, kSwapConfirmCancel, kRenderer, kGpu, kLowQuality
+  kVsync, kSwapConfirmCancel, kRenderer, kGpu, kLowQuality, kImportMod
 };
-inline constexpr int kRowCount = 13;
+inline constexpr int kRowCount = 14;
 // The rows shown as a checkbox (A toggles them) instead of a value moved with left and right.
 inline bool IsCheckbox(Row row) { return row == Row::kVsync || row == Row::kSwapConfirmCancel; }
+// The rows shown as a button that A presses (Activate), with no value: importing a mod.
+inline bool IsAction(Row row) { return row == Row::kImportMod; }
 
 // The column's sections, one shown at a time under their buttons: the video rows, the pad's
-// (button prompts and the A/B swap) and the rest (language, achievements).
+// (button prompts and the A/B swap) and the rest (language, achievements, Import Mod).
 enum class Section { kVideo, kControls, kExtras };
 inline constexpr int kSectionCount = 3;
 Section SectionOf(Row row);
@@ -36,14 +39,20 @@ class VideoMenuModel {
   bool Step(Row row, int direction);
   // A checkbox row; true when it changed.
   bool Toggle(Row row);
+  // An action row pressed: true when it may start now (the column then runs it).
+  bool Activate(Row row) const { return IsAction(row) && Enabled(row); }
   // Back to the default settings (the game menu's "Reset Defaults"); true when something changed.
   bool Reset();
 
   // The value shown in a row ("1920x1080", "Auto", "21:9", "Unlimited", "Español"...).
   std::string Text(Row row) const;
   bool Enabled(Row row) const;
+  // Whether the row is shown at all (in its section): Import Mod not in a gamescope session (the
+  // owner, 2026-11-09: hidden in the Deck's Game Mode, where the desktop's picker can open unseen).
+  bool Shown(Row row) const;
   bool Checked(Row row) const;
-  // A setting that takes effect after a restart differs from the one the game started with.
+  // A setting that takes effect after a restart differs from the one the game started with, or a
+  // mod was imported (the game loads mods when it starts).
   bool RestartNeeded() const;
 
   const settings::HostSettings& settings() const { return current_; }
@@ -53,6 +62,12 @@ class VideoMenuModel {
   // Whether the pad connected now is a Nintendo one: the automatic style follows it, so the A/B
   // swap applies with it only (mods::EffectivePadStyle).
   void SetNintendoPadConnected(bool connected) { nintendo_pad_ = connected; }
+  // Import Mod: offered where the system has a file picker and the mods folder is known; disabled
+  // while an import runs; a mod installed needs a restart.
+  void SetImportAvailable(bool available) { import_available_ = available; }
+  void SetImportHidden(bool hidden) { import_hidden_ = hidden; }
+  void SetImportRunning(bool running) { import_running_ = running; }
+  void NoteModImported() { mod_imported_ = true; }
 
  private:
   std::string DefaultGpu() const;
@@ -66,6 +81,7 @@ class VideoMenuModel {
   settings::Capabilities caps_;
 
   bool nintendo_pad_ = false;
+  bool import_available_ = false, import_running_ = false, mod_imported_ = false, import_hidden_ = false;
   settings::HostSettings current_, startup_;
   std::string default_language_;
 };

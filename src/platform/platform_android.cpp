@@ -9,6 +9,7 @@
 // (ServeSurfaceChanges, with TorchlightSurface.java). The input is the rest of stage A1 of
 // docs/android-port.md.
 
+#include "platform/document_name.h"
 #include "platform/platform.h"
 #include "platform/platform_sdl.h"
 #include "platform/user_folders.h"
@@ -27,6 +28,7 @@
 #include <SDL3/SDL_properties.h>
 #include <SDL3/SDL_video.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -347,10 +349,40 @@ std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {1280, 800}; 
 
 bool HasSystemBackButton() { return true; }
 
+// The name the document's provider gives (TorchlightActivity.documentDisplayName); empty when it
+// gives none or the call fails.
+std::string DocumentDisplayName(const std::string& uri) {
+  auto* env = static_cast<JNIEnv*>(SDL_GetAndroidJNIEnv());
+  auto activity = static_cast<jobject>(SDL_GetAndroidActivity());
+  if (!env || !activity) return {};
+  std::string name;
+  jclass cls = env->GetObjectClass(activity);
+  jmethodID method = env->GetStaticMethodID(cls, "documentDisplayName", "(Ljava/lang/String;)Ljava/lang/String;");
+  if (method) {
+    jstring juri = env->NewStringUTF(uri.c_str());
+    auto result = static_cast<jstring>(env->CallStaticObjectMethod(cls, method, juri));
+    if (result && !env->ExceptionCheck()) {
+      if (const char* chars = env->GetStringUTFChars(result, nullptr)) {
+        name = chars;
+        env->ReleaseStringUTFChars(result, chars);
+      }
+    }
+    if (result) env->DeleteLocalRef(result);
+    env->DeleteLocalRef(juri);
+  }
+  if (env->ExceptionCheck()) env->ExceptionClear();
+  env->DeleteLocalRef(cls);
+  env->DeleteLocalRef(activity);
+  return name;
+}
+
 // Android's picker (SDL's, through the Storage Access Framework) gives a document URI
 // (content://...), which SDL opens but plain file I/O does not: the document is copied to the
-// app's cache first, with a progress window (docs/android-port.md, A1.2: the player's game).
-PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error) {
+// app's cache first, with a progress window (docs/android-port.md, A1.2: the player's game). SDL
+// has one window on Android (SDL_androidwindow.c, "Android only supports one window"): once the
+// game's is up (Import Mod), the copy goes on without the progress window and cannot be cancelled.
+PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error,
+                              const CopyProgress* report) {
   if (path.rfind("content://", 0) != 0) return PickResult::kChosen;
   const std::string dir = CacheDir("picked");
   if (dir.empty()) {
@@ -363,14 +395,32 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
     return PickResult::kUncopied;
   }
   const Sint64 size = SDL_GetIOSize(in);
-  const std::string copy = dir + "picked_file";
+  // Room for the copy, and a reserve so that it never fills the device the saves are on (as the
+  // mods' import, mods/mod_import.h): refused when the free space cannot be read; a document of
+  // unknown size needs the reserve at least.
+  constexpr uint64_t kReserve = uint64_t(256) << 20;
+  std::error_code space_ec;
+  const std::filesystem::space_info space = std::filesystem::space(dir, space_ec);
+  if (space_ec) {
+    SDL_CloseIO(in);
+    error = "cannot read the free space for the copy: " + space_ec.message();
+    return PickResult::kUncopied;
+  }
+  if (space.available < uint64_t(std::max<Sint64>(size, 0)) + kReserve) {
+    SDL_CloseIO(in);
+    error = "not enough free space to copy the chosen file: it needs " +
+            std::to_string((uint64_t(size) + kReserve) >> 20) + " MB and " + std::to_string(space.available >> 20) +
+            " MB are free";
+    return PickResult::kUncopied;
+  }
+  const std::string copy = dir + PickedDocumentName(path, DocumentDisplayName(path));
   std::ofstream out(copy, std::ios::binary | std::ios::trunc);
   if (!out.is_open()) {
     SDL_CloseIO(in);
     error = "cannot create " + copy;
     return PickResult::kUncopied;
   }
-  auto progress = ProgressWindow::Open(title);
+  auto progress = report ? nullptr : ProgressWindow::Open(title);
   std::vector<char> buffer(4 << 20);
   Sint64 done = 0;
   PickResult result = PickResult::kChosen;
@@ -390,6 +440,10 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
       break;
     }
     done += Sint64(got);
+    if (report && !(*report)(uint64_t(done), size > 0 ? uint64_t(size) : 0)) {
+      result = PickResult::kCancelled;
+      break;
+    }
     if (progress) {
       const double fraction = size > 0 ? double(done) / double(size) : 0;
       const std::string text = std::to_string(done >> 20) + " / " +
@@ -430,6 +484,8 @@ bool HasDirect3D11(const std::string&) { return false; }
 bool OnBattery() { return SDL_GetPowerInfo(nullptr, nullptr) == SDL_POWERSTATE_ON_BATTERY; }
 
 bool IsSteamDeck() { return false; }
+
+bool InGamescopeSession() { return false; }
 
 // GLES, OGRE's only render system here: nothing to probe or fall back to.
 bool CanCreateGl33Context() { return true; }
