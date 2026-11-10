@@ -1349,9 +1349,20 @@ run left is never loaded as a mod, and every one is removed when the next import
 **Replacing a mod** (the owner's decision, 2026-11-09): after `kAlreadyInstalled` the game asks
 "Replace?", and on yes imports again with `ImportOptions::replace`. Every new mod is first complete
 in its `.partial`; then each old folder is renamed to `<name>.replaced`, the new one renamed into
-place, and only when all are in place are the old ones removed. A failure before that puts every
-old folder back, so the old mod stays intact. A `.replaced` is never loaded as a mod; the next import
-puts one back when its mod is missing (a run killed mid-swap) and removes it otherwise.
+place, and only when all are in place are the old ones removed. Every folder that matches the
+name in any case is replaced (a case-sensitive file system can hold several; the guest sees one).
+- **A failure puts every old folder back, and never loses one:** the new mods already in place are
+  first renamed aside (`<name>.undo.partial`, one rename each, so a mod's folder is never half
+  removed), the old ones renamed back, and only then is anything deleted. An old one that cannot be
+  put back is kept as `<name>.replaced` and reported (`kCannotWrite`).
+- **Recovery** (`RecoverInterruptedImports`, at start-up before the mods are scanned and when an
+  import starts): every `.partial` is removed; a `<name>.replaced` is removed when a mod of that
+  name is there in any case (never two copies of one mod), and put back as `<name>` when none is. So
+  a run killed mid-swap never starts without the mod, which would drop it from `mods.dat`'s plan
+  and the saves' fingerprint.
+- **A pack killed mid-swap can come back mixed:** the mods already swapped new, the others old (each
+  one whole).
+- A `.replaced` or `.partial` is never loaded as a mod.
 
 Refused, before anything is written:
 - entries with unsafe names, in any component and on every platform: absolute, `..`, drive

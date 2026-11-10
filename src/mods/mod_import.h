@@ -22,8 +22,12 @@
 // instead: once every new mod is complete in its .partial, each old folder is renamed to
 // <its name>.replaced, the new one renamed into place, and only when all are in place are the old
 // ones removed; a failure before that puts every old folder back, so the old mod stays intact.
-// An import starts by putting back a <name>.replaced whose <name> is missing (an import
-// interrupted mid-swap) and removing one whose <name> is there.
+// What an interrupted import leaves is cleared by RecoverInterruptedImports, at start-up and when an
+// import starts. A failure while undoing a replace never loses the old mod: the new ones in place
+// are first renamed aside (one rename each, so a mod's folder is never half removed), the old ones
+// renamed back, and only then is anything deleted; an old one that cannot be put back is kept as
+// <name>.replaced and reported (kCannotWrite). A pack whose import is killed mid-swap may come back
+// mixed: the mods already swapped new, the others old (each one whole).
 //
 // Zip entries (and a folder's): absolute names, "..", drive letters, colons, the characters
 // <>"|?*, a trailing dot or space, and Windows' device names (CON, NUL, AUX, PRN, COM1-9, LPT1-9,
@@ -73,7 +77,27 @@ struct ImportOptions {
   // Replace mods already installed under the same names (in any case) instead of failing with
   // kAlreadyInstalled; the player's confirmation, asked after a first import without it.
   bool replace = false;
+  // Tests only: a failure made at a step when this returns true for it: "swap:<mod>" (before the
+  // new mod is renamed into place), "undo:<mod>" (moving a new mod aside while undoing),
+  // "restore:<old folder>" (putting an old mod back).
+  std::function<bool(const std::string& step)> fault;
 };
+
+// What RecoverInterruptedImports did, for the log; `error` when something could not be cleared
+// (then the rest is left for the next time).
+struct ImportRecovery {
+  std::vector<std::string> removed;   // .partial folders, and .replaced ones whose mod is there
+  std::vector<std::string> restored;  // .replaced folders put back under their mod's name
+  std::string error;
+  bool ok() const { return error.empty(); }
+};
+// Clears what an interrupted import left in `mods_folder`: every .partial is removed; a
+// <name>.replaced is removed when a mod of that name is there in any case (the replace had put
+// the new one in place), and put back as <name> when none is (it was interrupted before). Called at
+// start-up before the mods are scanned (game_menu/mods_install.cpp), so a mod is never missing
+// from a run because a replace was interrupted, and when each import starts. Missing folder:
+// nothing to do.
+ImportRecovery RecoverInterruptedImports(const std::filesystem::path& mods_folder);
 
 // The limits on a source: its entries, and an entry name's bytes.
 inline constexpr size_t kMaxImportEntries = 200000;

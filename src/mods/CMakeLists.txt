@@ -92,6 +92,6 @@ target_link_libraries(torchlight_mod_import PRIVATE torchlight_miniz torchlight_
 target_compile_options(torchlight_mod_import PRIVATE -Wall -Wextra -Werror)
 set_target_properties(torchlight_mod_import PROPERTIES POSITION_INDEPENDENT_CODE ON)
 add_executable(mods_mod_import_test mod_import_test.cpp)
-target_link_libraries(mods_mod_import_test PRIVATE torchlight_mod_import torchlight_miniz)
+target_link_libraries(mods_mod_import_test PRIVATE torchlight_mod_import torchlight_mods torchlight_miniz)
 target_compile_options(mods_mod_import_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mods_mod_import_test COMMAND mods_mod_import_test)

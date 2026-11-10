@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "mods/mod_import.h"
+#include "mods/mod_list.h"
 
 namespace fs = std::filesystem;
 using namespace torchlight::mods;
@@ -309,6 +310,91 @@ int main() {
     Check(Listing(data / "mods") == Names{"Done", "Lost", "Other"} && ReadText(data / "mods/Lost/mod.dat") == "lost" &&
               ReadText(data / "mods/Done/mod.dat") == "done",
           "recovery: Lost put back, Done's old copy removed");
+  }
+
+  // A swap that fails on the second mod of a pack (a fault before it is renamed into place): the
+  // first, already swapped, goes aside, both old mods come back byte-identical, nothing new left.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/A/mod.dat", "old A");
+    WriteText(data / "mods/B/mod.dat", "old B");
+    ImportOptions replace;
+    replace.replace = true;
+    replace.fault = [](const std::string& step) { return step == "swap:B"; };
+    const auto result = ImportMod(zip("swap-fail.zip", {{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}}), data, {},
+                                  nullptr, replace);
+    Check(result.status == ImportStatus::kCannotWrite && result.mods.empty() && result.replaced.empty(),
+          "swap failing: " + result.message());
+    Check(Listing(data / "mods") == Names{"A", "B"} && ReadText(data / "mods/A/mod.dat") == "old A" &&
+              ReadText(data / "mods/B/mod.dat") == "old B",
+          "swap failing: the old mods back, nothing else left");
+  }
+
+  // An undo that cannot put an old mod back: reported, the old one kept as .replaced, the new one
+  // (whole) in its place; the recovery then keeps the mod that is there.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/A/mod.dat", "old A");
+    WriteText(data / "mods/B/mod.dat", "old B");
+    ImportOptions replace;
+    replace.replace = true;
+    replace.fault = [](const std::string& step) { return step == "swap:B" || step == "undo:A"; };
+    const auto result = ImportMod(zip("undo-fail.zip", {{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}}), data, {},
+                                  nullptr, replace);
+    Check(result.status == ImportStatus::kCannotWrite && result.detail.find("A.replaced") != std::string::npos,
+          "undo failing: reported with the backup's name: " + result.message());
+    Check(Listing(data / "mods") == Names{"A", "A.replaced", "B"} && ReadText(data / "mods/A/mod.dat") == kModDat &&
+              ReadText(data / "mods/A.replaced/mod.dat") == "old A" && ReadText(data / "mods/B/mod.dat") == "old B",
+          "undo failing: A whole (new), its old copy kept, B old");
+  }
+  {
+    // The restore itself failing (the new one moved aside): the old one kept, nothing lost; the
+    // recovery puts it back.
+    const fs::path data = fresh();
+    WriteText(data / "mods/A/mod.dat", "old A");
+    ImportOptions replace;
+    replace.replace = true;
+    replace.fault = [](const std::string& step) { return step == "swap:B" || step == "restore:A"; };
+    WriteText(data / "mods/B/mod.dat", "old B");
+    const auto result = ImportMod(zip("restore-fail.zip", {{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}}), data,
+                                  {}, nullptr, replace);
+    Check(result.status == ImportStatus::kCannotWrite && result.detail.find("A.replaced") != std::string::npos,
+          "restore failing: reported: " + result.message());
+    Check(Listing(data / "mods") == Names{"A.replaced", "B"} && ReadText(data / "mods/A.replaced/mod.dat") == "old A",
+          "restore failing: the old A kept aside, the new one removed");
+    const ImportRecovery recovery = RecoverInterruptedImports(data / "mods");
+    Check(recovery.ok() && recovery.restored == Names{"A"} && ReadText(data / "mods/A/mod.dat") == "old A",
+          "restore failing: the recovery puts A back");
+  }
+
+  // Killed between the old mod's move aside and the new one's rename: .replaced and .partial; the
+  // recovery (as at start-up) puts the old one back and drops the partial; the scan then sees it.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/X.replaced/mod.dat", kModDat);
+    WriteText(data / "mods/X.replaced/media/old.txt", "old X");
+    WriteText(data / "mods/X.partial/mod.dat", kModDat);
+    WriteText(data / "mods/Y.undo.partial/mod.dat", "aside");
+    const ImportRecovery recovery = RecoverInterruptedImports(data / "mods");
+    Check(recovery.ok() && recovery.restored == Names{"X"} && recovery.removed.size() == 2,
+          "mid-swap: X back, the partials removed");
+    Check(Listing(data / "mods") == Names{"X"} && ReadText(data / "mods/X/media/old.txt") == "old X",
+          "mid-swap: only the old X");
+    const ScanResult scan = ScanModsFolder(data / "mods");
+    Check(scan.mods.size() == 1 && scan.mods[0].folder == "X", "mid-swap: the start-up scan sees X");
+  }
+
+  // Case variants: the old "mymod" replaced by "MyMod", killed before the old one was removed. The
+  // recovery removes the old copy (the mod is there in another case), never making two.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/MyMod/mod.dat", "new");
+    WriteText(data / "mods/mymod.replaced/mod.dat", "old");
+    const ImportRecovery recovery = RecoverInterruptedImports(data / "mods");
+    Check(recovery.ok() && recovery.restored.empty() && recovery.removed == Names{"mymod.replaced"},
+          "case variant: the old copy removed");
+    Check(Listing(data / "mods") == Names{"MyMod"}, "case variant: one mod");
+    Check(RecoverInterruptedImports(data / "nowhere").ok(), "no mods folder: nothing to do");
   }
 
   // Damaged zips: truncated (no central directory), not a zip, and an entry whose data is
