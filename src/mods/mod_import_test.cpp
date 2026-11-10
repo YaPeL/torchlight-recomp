@@ -323,8 +323,9 @@ int main() {
     replace.fault = [](const std::string& step) { return step == "swap:B"; };
     const auto result = ImportMod(zip("swap-fail.zip", {{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}}), data, {},
                                   nullptr, replace);
-    Check(result.status == ImportStatus::kCannotWrite && result.mods.empty() && result.replaced.empty(),
-          "swap failing: " + result.message());
+    Check(result.status == ImportStatus::kCannotWrite && result.mods.empty() && result.replaced.empty() &&
+              result.old_mods_kept,
+          "swap failing: the old mods kept, said so: " + result.message());
     Check(Listing(data / "mods") == Names{"A", "B"} && ReadText(data / "mods/A/mod.dat") == "old A" &&
               ReadText(data / "mods/B/mod.dat") == "old B",
           "swap failing: the old mods back, nothing else left");
@@ -341,8 +342,9 @@ int main() {
     replace.fault = [](const std::string& step) { return step == "swap:B" || step == "undo:A"; };
     const auto result = ImportMod(zip("undo-fail.zip", {{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}}), data, {},
                                   nullptr, replace);
-    Check(result.status == ImportStatus::kCannotWrite && result.detail.find("A.replaced") != std::string::npos,
-          "undo failing: reported with the backup's name: " + result.message());
+    Check(result.status == ImportStatus::kCannotWrite && result.detail.find("A.replaced") != std::string::npos &&
+              !result.old_mods_kept,
+          "undo failing: reported with the backup's name, not as kept: " + result.message());
     Check(Listing(data / "mods") == Names{"A", "A.replaced", "B"} && ReadText(data / "mods/A/mod.dat") == kModDat &&
               ReadText(data / "mods/A.replaced/mod.dat") == "old A" && ReadText(data / "mods/B/mod.dat") == "old B",
           "undo failing: A whole (new), its old copy kept, B old");
@@ -358,8 +360,9 @@ int main() {
     WriteText(data / "mods/B/mod.dat", "old B");
     const auto result = ImportMod(zip("restore-fail.zip", {{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}}), data,
                                   {}, nullptr, replace);
-    Check(result.status == ImportStatus::kCannotWrite && result.detail.find("A.replaced") != std::string::npos,
-          "restore failing: reported: " + result.message());
+    Check(result.status == ImportStatus::kCannotWrite && result.detail.find("A.replaced") != std::string::npos &&
+              !result.old_mods_kept,
+          "restore failing: reported, not as kept: " + result.message());
     Check(Listing(data / "mods") == Names{"A.replaced", "B"} && ReadText(data / "mods/A.replaced/mod.dat") == "old A",
           "restore failing: the old A kept aside, the new one removed");
     const ImportRecovery recovery = RecoverInterruptedImports(data / "mods");
