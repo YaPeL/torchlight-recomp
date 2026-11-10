@@ -127,6 +127,10 @@ struct ImportResult {
   std::vector<std::string> mods;
   // kInstalled with ImportOptions::replace: the folders that were replaced (their old names).
   std::vector<std::string> replaced;
+  // A failed ImportOptions::replace that left every old mod as it was (the player is told so; on
+  // Windows a file the running game holds open can make the swap fail): false when an old mod
+  // could not be put back (it is then left as a .replaced folder for the next start).
+  bool old_mods_kept = false;
   // The entry, path or system error the status is about; empty when there is none.
   std::string detail;
   // Top-level entries of the source that are not part of any mod (left out).

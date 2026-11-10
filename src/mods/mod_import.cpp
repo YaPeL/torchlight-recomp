@@ -564,9 +564,11 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
                        const ImportProgressCallback& progress, const std::atomic<bool>* cancel,
                        const ImportOptions& options) {
   ImportResult result;
+  bool old_lost = false;  // a replace's undo could not put an old mod back
   auto fail = [&](Failure failure) {
     result.status = failure.status;
     result.detail = std::move(failure.detail);
+    result.old_mods_kept = options.replace && !old_lost;
     return result;
   };
   std::error_code ec;
@@ -709,6 +711,7 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
     for (const fs::path& path : discard) fs::remove_all(path, undo_ec);
     result.mods.clear();
     if (!not_restored.empty()) {
+      old_lost = true;
       failure = {ImportStatus::kCannotWrite,
                  failure.detail + "; the old mod could not be put back: kept as " + not_restored +
                      " in the mods folder. At the next start, if the new mod is in its place it is kept and the "
