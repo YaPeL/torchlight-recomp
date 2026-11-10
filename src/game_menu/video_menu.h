@@ -29,9 +29,11 @@ class GuestCall;
 // frame wider than 16:9 it also serves the game's framed layouts with their bands re-anchored
 // (wide_layout.h), generated from the user's pak into the local cache.
 // `app_context`: the UI thread, where Import Mod shows the system's pickers. `request_close`: closes
-// the game as the player would (Quit Now after a mod was replaced).
+// the game as the player would (Quit Now after a mod was replaced). `language`: the host settings'
+// (a language pack gets its Serif14 font here if it lacks one, pack_fonts.h).
 void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
-             rex::ui::WindowedAppContext* app_context, std::function<void()> request_close = {});
+             rex::ui::WindowedAppContext* app_context, std::function<void()> request_close = {},
+             const std::string& language = {});
 
 // Every frame of the game UI (CGameUI::Update, achievements/toast.cpp), game's thread: shows the
 // result of an Import Mod once it is ready, with the game's message box.

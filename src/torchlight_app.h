@@ -167,7 +167,7 @@ class TorchlightApp : public rex::ReXApp {
         app_context().CallInUIThread([this] {
           if (window()) window()->RequestClose();
         });
-      });
+      }, host.language);
     }
     // PC saves from the game files' import/ folder: the part confirmed before is applied here,
     // before the guest runs; old save backups are pruned too.
