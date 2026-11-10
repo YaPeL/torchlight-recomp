@@ -477,12 +477,16 @@ int main() {
     const auto result = ImportMod(zip("Fresh.zip", {{"mod.dat", kModDat}}), data);
     Check(result.ok() && Listing(data / "mods") == Names{"Fresh"}, "stale partials cleared: " + result.message());
 
+    // (Only where the file system lets such a name be made: not on Windows.)
     const fs::path source = root / "sources/Bad Folder";
     WriteText(source / "mod.dat", kModDat);
     WriteText(source / "media/what?.dds", "x");
-    const fs::path data2 = fresh();
-    const auto folder = ImportMod(source, data2);
-    Check(folder.status == ImportStatus::kUnsafeName, "folder with a '?': " + folder.message());
+    std::error_code made;
+    if (fs::exists(source / "media/what?.dds", made)) {
+      const fs::path data2 = fresh();
+      const auto folder = ImportMod(source, data2);
+      Check(folder.status == ImportStatus::kUnsafeName, "folder with a '?': " + folder.message());
+    }
   }
 
   // Names the mod cannot take.
