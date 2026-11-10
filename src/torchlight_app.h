@@ -162,7 +162,13 @@ class TorchlightApp : public rex::ReXApp {
     auto* graphics = runtime() ? runtime()->graphics_system() : nullptr;
     torchlight::capture::Install(graphics ? graphics->presenter() : nullptr);
     // The video menu changes what the native backend draws: only mode.
-    if (torchlight::live::OnlyMode()) torchlight::game_menu::Install(runtime(), game_data_root());
+    if (torchlight::live::OnlyMode()) {
+      torchlight::game_menu::Install(runtime(), game_data_root(), &app_context(), [this] {
+        app_context().CallInUIThread([this] {
+          if (window()) window()->RequestClose();
+        });
+      });
+    }
     // PC saves from the game files' import/ folder: the part confirmed before is applied here,
     // before the guest runs; old save backups are pruned too.
     {

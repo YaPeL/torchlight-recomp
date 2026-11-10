@@ -82,3 +82,16 @@ add_executable(mods_texture_files_test texture_files_test.cpp)
 target_link_libraries(mods_texture_files_test PRIVATE torchlight_texture_files)
 target_compile_options(mods_texture_files_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME mods_texture_files_test COMMAND mods_texture_files_test)
+
+# Importing a picked mod (a .zip or a folder) into the mods folder (mod_import.h): miniz for the
+# zip, and the platform's no-replace rename (torchlight_user_folders) for the final step.
+add_library(torchlight_mod_import STATIC mod_import.cpp)
+target_include_directories(torchlight_mod_import PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_compile_features(torchlight_mod_import PUBLIC cxx_std_23)
+target_link_libraries(torchlight_mod_import PRIVATE torchlight_miniz torchlight_user_folders)
+target_compile_options(torchlight_mod_import PRIVATE -Wall -Wextra -Werror)
+set_target_properties(torchlight_mod_import PROPERTIES POSITION_INDEPENDENT_CODE ON)
+add_executable(mods_mod_import_test mod_import_test.cpp)
+target_link_libraries(mods_mod_import_test PRIVATE torchlight_mod_import torchlight_mods torchlight_miniz)
+target_compile_options(mods_mod_import_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME mods_mod_import_test COMMAND mods_mod_import_test)

@@ -491,6 +491,29 @@
                 <Property Name="MousePassThroughEnabled" Value="True" />
             </Window>
         </Window>
+        <!-- An action, not a setting: a button like the section ones, pressed with A (Import Mod,
+             game_menu/mod_import_message.h); its text is "tl_video/import_mod/value". -->
+        <Window Type="ceguiWidget/ImageButton" Name="tl_video/import_mod" >
+            <Property Name="tabOrder" Value="29" />
+            <Property Name="Visible" Value="False" />
+            <Property Name="HoverImage" Value="set:widgets1 image:gem_button_small_rollover" />
+            <Property Name="NormalImage" Value="set:widgets2 image:gem_button_small" />
+            <Property Name="PushedImage" Value="set:widgets1 image:gem_button_small_rollover" />
+            <Property Name="DisabledImage" Value="set:widgets2 image:gem_button_small" />
+            <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+            <Property Name="UnifiedAreaRect" Value="{{0,37},{0,406},{0,258},{0,442}}" />
+            <Property Name="WantsMultiClickEvents" Value="False" />
+            <Window Type="ceguiWidget/StaticText" Name="tl_video/import_mod/value" >
+                <Property Name="Font" Value="Serif14" />
+                <Property Name="Text" Value="Import Mod" />
+                <Property Name="UnifiedMaxSize" Value="{{1,0},{1,0}}" />
+                <Property Name="UnifiedAreaRect" Value="{{0,0},{0,-2},{1,0},{1,-2}}" />
+                <Property Name="HorzTextFormatting" Value="CentreAligned" />
+                <Property Name="VertFormatting" Value="CentreAligned" />
+                <Property Name="WantsMultiClickEvents" Value="False" />
+                <Property Name="MousePassThroughEnabled" Value="True" />
+            </Window>
+        </Window>
         <Window Type="ceguiWidget/StaticText" Name="tl_video/restart_note" >
             <Property Name="Font" Value="Serif14" />
             <Property Name="Text" Value="Some changes need a restart" />

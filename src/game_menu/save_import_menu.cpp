@@ -35,6 +35,7 @@
 #include <rex/system/xtypes.h>
 
 #include "game_menu/guest_call.h"
+#include "game_menu/guest_message_box.h"
 #include "game_menu/menu_strings.h"
 #include "guest_abi/ogre_layout.h"
 #include "guest_abi/save_menu.h"
@@ -48,10 +49,6 @@
 #include "save_import/import_plan.h"
 #include "save_import/pak.h"
 #include "settings/host_settings.h"
-
-// The runtime's XamShowMessageBoxUI export (the import thunk's target), called directly: GuestCall
-// passes eight arguments, and this one takes nine.
-extern "C" REX_FUNC(__imp__XamShowMessageBoxUI);
 
 namespace torchlight::game_menu {
 namespace {
@@ -67,12 +64,6 @@ constexpr const char* kSaveRoot = "SAVE:\\";
 constexpr const char* kStringsFile = "tl_import_strings.txt";
 
 enum class Stage { kOff, kIdle, kNotice, kPlanning, kAsking, kAskingStash };
-
-// A message box shown with XamShowMessageBoxUI: its texts, buttons, result and XOVERLAPPED in one
-// block of the system heap, alive until the box closes.
-struct Box {
-  uint32_t block = 0, result = 0, overlapped = 0;
-};
 
 struct State {
   rex::Runtime* runtime = nullptr;
@@ -92,7 +83,7 @@ struct State {
   si::ImportPlan plan;
   std::vector<size_t> stash_questions;  // indexes into plan.stashes still to ask about
   std::map<std::string, bool> replace_stash;
-  Box box;
+  GuestMessageBox box;
 };
 
 State g;
@@ -104,80 +95,13 @@ void Log(const std::string& line) {
 
 std::string Tr(const std::string& english) { return g.strings.Translate(g.language, english); }
 
-// UTF-16BE, zero terminated, at `address`.
-uint32_t PutText(uint8_t* base, uint32_t address, const std::string& utf8) {
-  const std::u16string text = si::Utf16(utf8);
-  for (char16_t unit : text) {
-    uint8_t* bytes = abi::xbox_memory::HostAddress(base, address);
-    bytes[0] = static_cast<uint8_t>(unit >> 8);
-    bytes[1] = static_cast<uint8_t>(unit);
-    address += 2;
-  }
-  uint8_t* end = abi::xbox_memory::HostAddress(base, address);
-  end[0] = end[1] = 0;
-  return address + 2;
-}
-
-size_t TextBytes(const std::string& utf8) { return (si::Utf16(utf8).size() + 1) * 2; }
-
-void FreeBox() {
-  if (g.box.block) g.runtime->memory()->SystemHeapFree(g.box.block);
-  g.box = {};
-}
-
 // Opens the box; false if it could not be shown.
 bool ShowBox(PPCContext& ctx, uint8_t* base, const si::ImportMessage& message) {
-  FreeBox();
-  // result (4) | XOVERLAPPED (28) | button pointers | texts
-  const uint32_t fixed = 4 + 28 + 4 * static_cast<uint32_t>(message.buttons.size());
-  size_t size = fixed + TextBytes(message.title) + TextBytes(message.text);
-  for (const auto& button : message.buttons) size += TextBytes(button);
-  const uint32_t block = g.runtime->memory()->SystemHeapAlloc(static_cast<uint32_t>(size + 16));
-  if (!block) return false;
-  std::memset(abi::xbox_memory::HostAddress(base, block), 0, size + 16);
-  g.box = {block, block, block + 4};
-  abi::WriteU32(base, g.box.overlapped, X_ERROR_IO_PENDING);  // XOVERLAPPED.result
-  const uint32_t buttons = block + 32;
-  const uint32_t title = buttons + 4 * static_cast<uint32_t>(message.buttons.size());
-  const uint32_t text = PutText(base, title, message.title);
-  uint32_t next = PutText(base, text, message.text);
-  for (size_t i = 0; i < message.buttons.size(); ++i) {
-    abi::WriteU32(base, buttons + 4 * static_cast<uint32_t>(i), next);
-    next = PutText(base, next, message.buttons[i]);
-  }
-
-  // Nine arguments: the ninth on the stack, below the caller's (the hooked function has returned,
-  // nothing there is live).
-  PPCContext call = ctx;
-  const uint32_t stack = (ctx.r1.u32 - 0x200) & ~0xFu;
-  call.r1.u64 = stack;
-  call.r3.u64 = 0;  // user index
-  call.r4.u64 = title;
-  call.r5.u64 = text;
-  call.r6.u64 = message.buttons.size();
-  call.r7.u64 = buttons;
-  call.r8.u64 = static_cast<uint32_t>(message.active);
-  call.r9.u64 = 0;  // flags: no icon
-  call.r10.u64 = g.box.result;
-  abi::WriteU32(base, stack + menu::kStackArgumentOffset, g.box.overlapped);
-  __imp__XamShowMessageBoxUI(call, base);
-  if (call.r3.u32 != X_ERROR_IO_PENDING && call.r3.u32 != X_ERROR_SUCCESS) {
-    REXLOG_ERROR("save import: the message box did not open ({:08X})", call.r3.u32);
-    FreeBox();
-    return false;
-  }
-  return true;
+  return g.box.Show(ctx, base, message.title, message.text, message.buttons, message.active);
 }
 
 // The chosen button once the box closed (-1 if it closed without one); none while it is open.
-std::optional<int> PollBox(uint8_t* base) {
-  if (!g.box.block) return -1;
-  const uint32_t status = abi::ReadU32(base, g.box.overlapped);
-  if (status == X_ERROR_IO_PENDING) return std::nullopt;
-  const int button = status == X_ERROR_SUCCESS ? static_cast<int>(abi::ReadU32(base, g.box.result)) : -1;
-  FreeBox();
-  return button;
-}
+std::optional<int> PollBox(uint8_t* base) { return g.box.Poll(base); }
 
 bool ReadSaveFile(const std::string& name, si::Bytes& out) {
   rex::filesystem::File* file = nullptr;
@@ -386,6 +310,7 @@ void InstallSaveImport(rex::Runtime* runtime, const fs::path& game_data_root,
                        [](const std::string& line) { REXLOG_INFO("save backups: {}", line); });
   if (!runtime || !runtime->file_system()) return;
   g.runtime = runtime;
+  g.box.set_runtime(runtime);
   std::string error;
   {
     std::vector<std::string> warnings;

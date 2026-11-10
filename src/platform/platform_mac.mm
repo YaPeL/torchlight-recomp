@@ -310,7 +310,7 @@ std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
 bool HasSystemBackButton() { return false; }
 
 // The picker's paths are files the program opens as they are.
-PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
+PickResult OpenablePickedFile(const std::string&, std::string&, std::string&, const CopyProgress*) {
   return PickResult::kChosen;
 }
 
@@ -322,6 +322,8 @@ void ForgetPickedFiles() {}
 
 bool HasDirect3D11(const std::string&) { return false; }
 bool IsSteamDeck() { return false; }
+
+bool InGamescopeSession() { return false; }
 
 bool OnBattery() {
   // The source providing power now: "Battery Power" when unplugged ("AC Power" otherwise).

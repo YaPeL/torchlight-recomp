@@ -2,11 +2,16 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
+#include <utility>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
+#include <thread>
 
 #include <rex/cvar.h>
 #include <rex/filesystem/devices/host_path_device.h>
@@ -15,9 +20,12 @@
 #include <rex/ppc/context.h>
 #include <rex/ppc/func.h>
 #include <rex/runtime.h>
+#include <rex/ui/windowed_app_context.h>
 
 #include "game_menu/class_selector_model.h"
 #include "game_menu/guest_call.h"
+#include "game_menu/guest_message_box.h"
+#include "game_menu/mod_import_message.h"
 #include "game_menu/mods_install.h"
 #include "game_menu/menu_strings.h"
 #include "game_menu/skill_tree_model.h"
@@ -25,8 +33,11 @@
 #include "game_menu/wide_layout.h"
 #include "frontend/zip_archive.h"
 #include "hooks/video_mode_hooks.h"
+#include "guest_abi/achievements.h"
 #include "guest_abi/game_ui.h"
+#include "live/busy_notice.h"
 #include "live/install.h"
+#include "mods/mod_import.h"
 #include "platform/platform.h"
 
 namespace ui = torchlight::guest_abi::game_ui;
@@ -84,7 +95,7 @@ Column g_column;
 // Row names in the layout (tl_video_settings.uilayout), in Row order.
 constexpr const char* kRowNames[kRowCount] = {"resolution",   "aspect",      "fps_cap", "msaa", "shadows",  "language",
                                               "achievements", "pad_prompts", "vsync",   "swap", "renderer", "gpu",
-                                              "low_quality", "touch_layout"};
+                                              "low_quality",  "touch_layout", "import_mod"};
 // Section button names in the layout, in Section order.
 constexpr const char* kSectionNames[kSectionCount] = {"video", "controls", "extras"};
 // The menu's yellow, for values and the chosen section's button; white for the others.
@@ -148,11 +159,163 @@ void Refresh(GuestCall& call) {
     SetProperty(call, g_column.focus[i], "Alpha", enabled ? "1" : "0.5");
     if (IsCheckbox(row)) {
       SetProperty(call, g_column.focus[i], "Selected", model.Checked(row) ? "True" : "False");
+    } else if (IsAction(row)) {
+      SetProperty(call, g_column.value[i], "Text", Tr(model.Text(row)));
     } else {
       SetProperty(call, g_column.value[i], "Text", "< " + Tr(model.Text(row)) + " >");
     }
   }
   SetProperty(call, g_column.restart_note, "Visible", model.RestartNeeded() ? "True" : "False");
+}
+
+// Import Mod (mods/mod_import.h). The column starts it on the game's thread; a worker thread has
+// the UI thread show the system's dialogs (they belong to it: SDL pumps its events there, and
+// macOS's pickers run only on the main thread), imports with the busy notice showing its progress,
+// and leaves the box with the result, which the game's thread shows from CGameUI's update
+// (OnGameUiFrame) with the game's message box. The game keeps running meanwhile.
+struct ModImport {
+  rex::ui::WindowedAppContext* app_context = nullptr;  // set by Install
+  std::function<void()> request_close;                  // set by Install
+  std::atomic<bool> running{false};
+  std::atomic<bool> finished{false};  // the worker left its answer below
+  std::mutex mutex;
+  std::optional<MenuMessage> message;  // under mutex; none when the player cancelled the picker
+  std::optional<mods::ImportResult> result;  // under mutex: the import's, for the box in play
+  bool installed = false;              // under mutex
+  // A question for the player (Replace?): the worker leaves it and waits for `answer` (the button,
+  // -1 when the box closed without one or could not be shown).
+  std::atomic<bool> asking{false};
+  std::optional<MenuMessage> question;  // under mutex
+  std::optional<int> answer;            // under mutex
+  std::condition_variable answered;
+  // Game's thread: the box being shown, or waiting to be, and whether it asks.
+  GuestMessageBox box;
+  std::optional<MenuMessage> to_show;
+  bool to_show_asks = false, box_asks = false;
+  int box_quit_button = -1;  // the open box's Quit Now
+  int show_attempts = 0;
+  bool mod_imported = false;  // a mod was installed this run: the column says a restart is needed
+};
+ModImport g_import;
+
+// The mods folder's parent (mods_install.h ModsFolder), empty when the mods were not set up.
+std::filesystem::path ImportDataDir() {
+  std::filesystem::path folder = ModsFolder();
+  if (!folder.has_filename()) folder = folder.parent_path();
+  return folder.empty() ? folder : folder.parent_path();
+}
+
+// The worker thread: asks the player through the game's box (OnGameUiFrame) and waits; the button.
+int AskPlayer(MenuMessage question) {
+  std::unique_lock lock(g_import.mutex);
+  g_import.question = std::move(question);
+  g_import.answer.reset();
+  g_import.asking = true;
+  g_import.answered.wait(lock, [] { return g_import.answer.has_value(); });
+  return *g_import.answer;
+}
+
+// The worker thread: the dialogs on the UI thread, then the import.
+void RunModImport(std::filesystem::path data_dir) {
+  platform::SetCurrentThreadName("Mod import");
+  std::string path, error;
+  platform::PickResult picked = platform::PickResult::kCancelled;
+  // Where both pickers work, the player chooses; Android's picks files only (a zip).
+  g_import.app_context->CallInUIThreadSynchronous([&] {
+    bool folder = false;
+    if (platform::CanPickFolder()) {
+      const int choice = platform::AskChoice(Tr(kImportTitle), Tr(kImportAskSource),
+                                             {Tr(kImportZipButton), Tr(kImportFolderButton),
+                                              Tr(kImportCancelButton)});
+      if (choice != 0 && choice != 1) return;
+      folder = choice == 1;
+    }
+    picked = folder ? platform::PickFolder(Tr(kImportPickFolder), path, error)
+                    : platform::PickFileUncopied(Tr(kImportPickZip), path, error,
+                                                 {{Tr(kImportZipFilter), "zip"}, {Tr(kImportAllFilter), "*"}});
+  });
+  // Android's document is copied here, off the UI thread, with the busy notice showing it from
+  // the first chunk (elsewhere nothing is copied, and no notice flashes).
+  if (picked == platform::PickResult::kChosen) {
+    bool shown = false;
+    picked = platform::CopyPickedFile(path, error, [&shown](uint64_t done, uint64_t total) {
+      if (!shown) live::ShowBusyNotice(Tr(kImportCopying));
+      shown = true;
+      live::SetBusyNoticeProgress(size_t(done), size_t(total));
+      return true;
+    });
+    if (shown) live::HideBusyNotice();
+  }
+  std::optional<MenuMessage> message;
+  bool installed = false;
+  switch (picked) {
+    case platform::PickResult::kCancelled:
+      REXLOG_INFO("mod import: nothing chosen");
+      break;
+    case platform::PickResult::kFailed:
+      REXLOG_WARN("mod import: no picker: {}", error);
+      message = ModPickMessage(PickProblem::kNoPicker, error, Tr);
+      break;
+    case platform::PickResult::kUncopied:
+      REXLOG_WARN("mod import: the chosen file was not copied: {}", error);
+      message = ModPickMessage(PickProblem::kNotCopied, error, Tr);
+      break;
+    case platform::PickResult::kChosen: {
+      REXLOG_INFO("mod import: from {}", path);
+      live::ShowBusyNotice(Tr(kImportBusy));
+      const auto progress = [](const mods::ImportProgress& done) {
+        live::SetBusyNoticeProgress(size_t(done.bytes_done), size_t(done.bytes_total));
+      };
+      mods::ImportResult result = mods::ImportMod(path, data_dir, progress);
+      live::HideBusyNotice();
+      // A mod of that name is there: replaced only if the player says so (the owner, 2026-11-09);
+      // the replacement keeps the old one until the new one is in place (mods/mod_import.h).
+      if (result.status == mods::ImportStatus::kAlreadyInstalled) {
+        REXLOG_INFO("mod import: {}; asking whether to replace", result.message());
+        if (AskPlayer(ModReplaceQuestion(result, Tr)) != 0) {
+          REXLOG_INFO("mod import: not replaced");
+          platform::ForgetPickedFiles();
+          std::lock_guard lock(g_import.mutex);
+          g_import.message.reset();
+          g_import.installed = false;
+          g_import.finished = true;
+          return;
+        }
+        live::ShowBusyNotice(Tr(kImportBusy));
+        result = mods::ImportMod(path, data_dir, progress, nullptr, {.replace = true});
+        live::HideBusyNotice();
+        for (const std::string& old : result.replaced) REXLOG_INFO("mod import: replaced {}", old);
+      }
+      for (const std::string& skipped : result.skipped) {
+        REXLOG_INFO("mod import: left out {} (not part of a mod)", skipped);
+      }
+      if (result.ok()) REXLOG_INFO("mod import: {}", result.message());
+      else REXLOG_WARN("mod import: {}", result.message());
+      installed = result.ok();
+      message = ModImportMessage(result, Tr);
+      std::lock_guard lock(g_import.mutex);
+      g_import.result = result;
+      break;
+    }
+  }
+  // Android's copy of the chosen document, used now.
+  platform::ForgetPickedFiles();
+  {
+    std::lock_guard lock(g_import.mutex);
+    g_import.message = std::move(message);
+    g_import.installed = installed;
+  }
+  g_import.finished = true;
+}
+
+// A on Import Mod (game's thread).
+void StartModImport() {
+  const std::filesystem::path data_dir = ImportDataDir();
+  if (!g_import.app_context || data_dir.empty() || g_import.running.exchange(true)) return;
+  g_import.finished = false;
+  // Detached: it ends by itself, and a game closed meanwhile does not wait for the picker. What an
+  // import interrupted that way leaves is a .partial folder, never loaded as a mod.
+  std::thread(RunModImport, data_dir).detach();
 }
 
 }  // namespace
@@ -238,7 +401,11 @@ void InstallGeneratedLayouts(rex::Runtime* runtime, const std::filesystem::path&
 
 }  // namespace
 
-void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root) {
+void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
+             rex::ui::WindowedAppContext* app_context, std::function<void()> request_close) {
+  g_import.app_context = app_context;
+  g_import.request_close = std::move(request_close);
+  g_import.box.set_runtime(runtime);
   if (!runtime || !runtime->file_system()) {
     REXLOG_ERROR("game menu: no runtime file system; video menu off");
     return;
@@ -417,6 +584,18 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
   g_column.model = std::make_unique<VideoMenuModel>(live::HostCapabilities(),
                                                     live::CurrentHostSettings(),
                                                     live::StartupHostSettings(), g_language);
+  // Import Mod: with the UI thread for the pickers and a mods folder (InstallMods ran).
+  g_column.model->SetImportAvailable(g_import.app_context && !ImportDataDir().empty());
+  // Not in a gamescope session (the Deck's Game Mode): the desktop's picker may open unseen there.
+  const bool gamescope = platform::InGamescopeSession();
+  g_column.model->SetImportHidden(gamescope);
+  static bool logged = false;
+  if (gamescope && !std::exchange(logged, true)) {
+    REXLOG_INFO("game menu: a gamescope session, Import Mod hidden (the desktop's picker may open unseen)");
+  }
+  // The column is made anew each time the menu opens: an import still running, or one done this run.
+  g_column.model->SetImportRunning(g_import.running);
+  if (g_import.mod_imported) g_column.model->NoteModImported();
   Refresh(call);
   REXLOG_INFO("game menu: video settings 0x{:08X} added to the settings menu 0x{:08X}", column,
               settings_menu);
@@ -452,6 +631,13 @@ bool OnSettingsNavigation(PPCContext& ctx, uint8_t* base, uint32_t handler, uint
   bool changed = false;
   if (action == ui::navigation::kActionLeft || action == ui::navigation::kActionRight) {
     changed = g_column.model->Step(Row(row), action == ui::navigation::kActionLeft ? -1 : +1);
+  } else if (action == ui::navigation::kActionAccept && IsAction(Row(row))) {
+    if (g_column.model->Activate(Row(row))) {
+      StartModImport();
+      g_column.model->SetImportRunning(g_import.running);
+      Refresh(call);
+    }
+    return true;
   } else if (action == ui::navigation::kActionAccept) {
     changed = g_column.model->Toggle(Row(row));
   } else {
@@ -474,6 +660,84 @@ void OnSettingsResetDefaults(PPCContext& ctx, uint8_t* base, uint32_t settings_m
 }
 
 }  // namespace
+
+void OnGameUiFrame(PPCContext& ctx, uint8_t* base, uint32_t context) {
+  // A game in progress or not (context +5124 == 1, achievements.h kContextEligibility): in the log
+  // when it changes, as Import Mod's box after a replace depends on it.
+  const bool in_play =
+      context && guest_abi::ReadU32(base, context + guest_abi::achievements::kContextEligibility) == 1;
+  static int logged_in_play = -1;
+  if (int(in_play) != logged_in_play) {
+    logged_in_play = in_play;
+    REXLOG_INFO("game menu: {}", in_play ? "a game in progress" : "no game in progress");
+  }
+  if (g_import.asking.exchange(false)) {
+    std::lock_guard lock(g_import.mutex);
+    g_import.to_show = std::move(g_import.question);
+    g_import.question.reset();
+    g_import.to_show_asks = true;
+    g_import.show_attempts = 0;
+  }
+  if (g_import.finished.exchange(false)) {
+    std::lock_guard lock(g_import.mutex);
+    g_import.to_show = std::move(g_import.message);
+    g_import.message.reset();
+    // In a game in progress a replace's box says to restart from the title screen, without Quit Now.
+    if (in_play && g_import.to_show && g_import.result && g_import.result->ok() &&
+        !g_import.result->replaced.empty()) {
+      g_import.to_show = ModImportMessage(*g_import.result, Tr, true);
+    }
+    g_import.result.reset();
+    g_import.show_attempts = 0;
+    if (g_import.installed) g_import.mod_imported = true;
+    if (g_column.model) {
+      if (g_import.installed) g_column.model->NoteModImported();
+      g_column.model->SetImportRunning(false);
+    }
+    g_import.running = false;
+    if (g_column.model) {
+      GuestCall call(ctx, base);
+      Refresh(call);
+    }
+  }
+  if (g_import.box.open()) {
+    const std::optional<int> button = g_import.box.Poll(base);
+    if (button && *button >= 0 && *button == g_import.box_quit_button && g_import.request_close) {
+      REXLOG_INFO("mod import: Quit Now after a replace");
+      g_import.request_close();
+    }
+    if (button) g_import.box_quit_button = -1;
+    if (button && g_import.box_asks) {
+      g_import.box_asks = false;
+      std::lock_guard lock(g_import.mutex);
+      g_import.answer = *button;
+      g_import.answered.notify_all();
+    }
+    return;
+  }
+  if (!g_import.to_show) return;
+  // Another box may be open for a while (the game's own): tried again about every second, ten
+  // times, and then the log keeps the result.
+  if (g_import.show_attempts++ % 60 != 0) return;
+  const MenuMessage& message = *g_import.to_show;
+  if (g_import.box.Show(ctx, base, message.title, WrapText(message.text, kBoxLineLength), message.buttons,
+                         message.active)) {
+    g_import.box_asks = g_import.to_show_asks;
+    g_import.box_quit_button = message.quit_button;
+    g_import.to_show.reset();
+    g_import.to_show_asks = false;
+  } else if (g_import.show_attempts > 10 * 60) {
+    REXLOG_WARN("mod import: the box could not be shown: {}", message.text);
+    g_import.to_show.reset();
+    if (g_import.to_show_asks) {
+      // A question nobody saw: answered as Cancel, so the worker goes on.
+      g_import.to_show_asks = false;
+      std::lock_guard lock(g_import.mutex);
+      g_import.answer = -1;
+      g_import.answered.notify_all();
+    }
+  }
+}
 
 }  // namespace torchlight::game_menu
 

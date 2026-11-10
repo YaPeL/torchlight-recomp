@@ -6,10 +6,6 @@
 
 namespace torchlight::platform {
 
-// Renames `from` to `to` failing if `to` exists (platform file).
-bool RenameNoReplace(const std::filesystem::path& from, const std::filesystem::path& to,
-                     std::string& error);
-
 namespace {
 
 // The folders this run keeps in place of the user's, by kind; empty: the user's.

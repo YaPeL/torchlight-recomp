@@ -5,10 +5,12 @@
 #include <string>
 
 #include "game_menu/menu_strings.h"
+#include "game_menu/mod_import_message.h"
 
 namespace {
 
 using torchlight::game_menu::MenuStrings;
+using torchlight::game_menu::ModImportTexts;
 
 void Check(bool ok, const char* what) {
   if (!ok) {
@@ -49,6 +51,17 @@ void TestShippedFile() {
     for (const char* text : texts) {
       if (!s.Has(language, text)) {
         std::fprintf(stderr, "FAIL: %s has no line for %s\n", language, text);
+        std::exit(1);
+      }
+    }
+  }
+  // Import Mod: its row and every text of its boxes, pickers and notice (mod_import_message.h).
+  std::vector<std::string> import_texts = ModImportTexts();
+  import_texts.push_back("Importing...");
+  for (const char* language : {"de", "fr", "es"}) {
+    for (const std::string& text : import_texts) {
+      if (!s.Has(language, text)) {
+        std::fprintf(stderr, "FAIL: %s has no line for %s\n", language, text.c_str());
         std::exit(1);
       }
     }

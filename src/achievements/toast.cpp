@@ -23,6 +23,7 @@
 #include "achievements/ui_strings.h"
 #include "dev/guest_command.h"
 #include "game_menu/guest_call.h"
+#include "game_menu/video_menu.h"
 #include "guest_abi/game_ui.h"
 #include "guest_abi/game_ui_sheet.h"
 #include "live/install.h"
@@ -179,6 +180,8 @@ REX_FUNC(sub_821A40E0) {
   __imp__sub_821A40E0(ctx, base);
   if (game_ui && pc::NotificationsShown()) Update(ctx, base, game_ui);
   if (game_ui) torchlight::dev::OnGameUiUpdate(ctx, base, game_ui, context);
+  // Import Mod's result box, when an import has finished (game_menu/video_menu.h).
+  if (game_ui) torchlight::game_menu::OnGameUiFrame(ctx, base, context);
 }
 
 }  // extern "C"

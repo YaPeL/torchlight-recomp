@@ -160,6 +160,7 @@ bool VideoMenuModel::Step(Row row, int direction) {
                     current_.touch_layout, direction);
     case Row::kVsync:
     case Row::kSwapConfirmCancel:
+    case Row::kImportMod:
       return false;
   }
   return false;
@@ -266,11 +267,17 @@ std::string VideoMenuModel::Text(Row row) const {
       return current_.swap_confirm_cancel ? "On" : "Off";
     case Row::kTouchLayout:
       return current_.touch_layout == settings::TouchStyle::kPlayStation ? "PlayStation" : "Xbox 360";
+    case Row::kImportMod:
+      return import_running_ ? "Importing..." : "Import Mod";
   }
   return "";
 }
 
-bool VideoMenuModel::Shown(Row row) const { return row != Row::kTouchLayout || caps_.touch_controls; }
+bool VideoMenuModel::Shown(Row row) const {
+  if (row == Row::kTouchLayout) return caps_.touch_controls;
+  if (row == Row::kImportMod) return !import_hidden_;
+  return true;
+}
 
 bool VideoMenuModel::Enabled(Row row) const {
   switch (row) {
@@ -297,6 +304,7 @@ bool VideoMenuModel::Enabled(Row row) const {
              (current_.pad_prompts == settings::PadPrompts::kAuto && nintendo_pad_);
     // Only where the touch controls are installed (live: the controls are laid out again).
     case Row::kTouchLayout: return caps_.touch_controls;
+    case Row::kImportMod: return import_available_ && !import_running_ && !import_hidden_;
   }
   return false;
 }
@@ -319,7 +327,7 @@ bool VideoMenuModel::Checked(Row row) const {
 }
 
 bool VideoMenuModel::RestartNeeded() const {
-  return Language(current_.language) != Language(startup_.language) ||
+  return mod_imported_ || Language(current_.language) != Language(startup_.language) ||
          current_.render_system != startup_.render_system || current_.gpu != startup_.gpu ||
          current_.aspect != startup_.aspect ||
          current_.shadow_resolution != startup_.shadow_resolution ||
@@ -340,6 +348,7 @@ Section SectionOf(Row row) {
     case Row::kRenderer:
     case Row::kGpu:
     case Row::kLowQuality:
+    case Row::kImportMod:
       return Section::kExtras;
     default:
       return Section::kVideo;

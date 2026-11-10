@@ -34,7 +34,19 @@ struct ScanResult {
   std::vector<std::string> skipped; // "<folder>: why" for subfolders that are not mods
 };
 
-// The mods in `mods_folder` (missing folder: none).
+// A folder an import is writing (mods/mod_import.h), renamed to the mod's name once complete: one
+// with this suffix is what an interrupted import left, never a mod.
+inline constexpr const char* kImportPartialSuffix = ".partial";
+
+// The old folder of a mod an import is replacing (ImportOptions::replace), until the new one is in
+// place: one with this suffix is never a mod either (the next import puts it back or removes it).
+inline constexpr const char* kImportReplacedSuffix = ".replaced";
+// A new mod moved aside while a failed replace is undone; ends in kImportPartialSuffix, so it is
+// skipped and cleared as any .partial.
+inline constexpr const char* kImportUndoPartialSuffix = ".undo.partial";
+
+// The mods in `mods_folder` (missing folder: none). Folders ending in kImportPartialSuffix or
+// kImportReplacedSuffix are skipped.
 ScanResult ScanModsFolder(const std::filesystem::path& mods_folder);
 
 struct ModListEntry {

@@ -11,6 +11,7 @@
 #include <cstdio>
 #include <fstream>
 #include <cstdlib>
+#include <string_view>
 #include <cstring>
 #include <pthread.h>
 #include <filesystem>
@@ -367,7 +368,7 @@ std::pair<uint32_t, uint32_t> PreferredRenderResolution() { return {0, 0}; }
 bool HasSystemBackButton() { return false; }
 
 // The picker's paths are files the program opens as they are.
-PickResult OpenablePickedFile(const std::string&, std::string&, std::string&) {
+PickResult OpenablePickedFile(const std::string&, std::string&, std::string&, const CopyProgress*) {
   return PickResult::kChosen;
 }
 
@@ -390,6 +391,13 @@ bool IsSteamDeck() {
   };
   const std::string product = read("product_name");
   return read("sys_vendor") == "Valve" && (product == "Jupiter" || product == "Galileo");
+}
+
+bool InGamescopeSession() {
+  // gamescope's own variable for its clients, and the desktop name its session sets.
+  const char* display = std::getenv("GAMESCOPE_WAYLAND_DISPLAY");
+  const char* desktop = std::getenv("XDG_CURRENT_DESKTOP");
+  return (display && *display) || (desktop && std::string_view(desktop) == "gamescope");
 }
 
 // Not probed: GL3+ is the only render system, so there is nothing to fall back to.
