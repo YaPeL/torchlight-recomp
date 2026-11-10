@@ -414,6 +414,15 @@ PickResult PickFile(const std::string& title, std::string& path, std::string& er
   return picked == PickResult::kChosen ? OpenablePickedFile(title, path, error) : picked;
 }
 
+PickResult PickFileUncopied(const std::string& title, std::string& path, std::string& error,
+                            const std::vector<FileFilter>& filters) {
+  return Pick(SDL_FILEDIALOG_OPENFILE, title, path, error, filters);
+}
+
+PickResult CopyPickedFile(std::string& path, std::string& error, const CopyProgress& progress) {
+  return OpenablePickedFile(std::string(), path, error, &progress);
+}
+
 PickResult PickFolder(const std::string& title, std::string& path, std::string& error) {
   return Pick(SDL_FILEDIALOG_OPENFOLDER, title, path, error);
 }

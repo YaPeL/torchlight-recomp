@@ -49,6 +49,8 @@ int main() {
   CheckNamed(downloads + "msf%3A1234", ".hidden.zip", "picked_file");
   CheckNamed(external + "primary%3AOther.zip", "..", "Other.zip");
   CheckNamed(downloads + "msf%3A1234", "a\\b.zip", "picked_file");
+  CheckNamed(downloads + "msf%3A1234", std::string(197, 'a') + ".zip", "picked_file");
+  CheckNamed(downloads + "msf%3A1234", std::string(196, 'a') + ".zip", std::string(196, 'a') + ".zip");
   if (failures) return 1;
   std::puts("document_name_test: ok");
   return 0;

@@ -152,9 +152,20 @@ PickResult PickFolder(const std::string& title, std::string& path, std::string& 
 bool CanPickFolder();
 // Removes the copies PickFile made (Android); nothing elsewhere.
 void ForgetPickedFiles();
+// A picked document's copy going on: bytes copied and the total (0 when not known); false stops it.
+using CopyProgress = std::function<bool(uint64_t done, uint64_t total)>;
 // The platform's half of PickFile (platform_sdl.cpp): the chosen `path` made one the program can
-// open; kCancelled when the player stopped the copy.
-PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error);
+// open; kCancelled when the player stopped the copy. The copy reports to `progress` when given,
+// else to a progress window titled `title`.
+PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error,
+                              const CopyProgress* progress = nullptr);
+// PickFile in two halves, for a caller that copies away from the UI thread (Import Mod: a big
+// document's copy there froze the dialogs and the busy notice): the picker alone, whose `path` may
+// be a document URI on Android, and then, on any thread, the copy (OpenablePickedFile) reporting
+// to `progress`.
+PickResult PickFileUncopied(const std::string& title, std::string& path, std::string& error,
+                            const std::vector<FileFilter>& filters = {});
+PickResult CopyPickedFile(std::string& path, std::string& error, const CopyProgress& progress);
 // The system's preferred languages, most preferred first, as lower-case codes ("de", "pt-br").
 std::vector<std::string> PreferredLanguages();
 // A small window with a progress bar and a line of text (drawn with SDL's ASCII debug font: letters

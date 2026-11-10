@@ -461,7 +461,7 @@
         <!-- An action, not a setting: a button like the section ones, pressed with A (Import Mod,
              game_menu/mod_import_message.h); its text is "tl_video/import_mod/value". -->
         <Window Type="ceguiWidget/ImageButton" Name="tl_video/import_mod" >
-            <Property Name="tabOrder" Value="28" />
+            <Property Name="tabOrder" Value="29" />
             <Property Name="Visible" Value="False" />
             <Property Name="HoverImage" Value="set:widgets1 image:gem_button_small_rollover" />
             <Property Name="NormalImage" Value="set:widgets2 image:gem_button_small" />

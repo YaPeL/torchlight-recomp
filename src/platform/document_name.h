@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 namespace torchlight::platform {
@@ -12,6 +13,8 @@ namespace torchlight::platform {
 // ".../document/raw%3A%2Fstorage%2Femulated%2F0%2FDownload%2FMyMod.zip"); "picked_file" when it
 // names no file with an extension ("msf:1234") or the name could be read as a path. The mods'
 // import names a mod at a zip's root after it (mods/mod_import.h).
+// A name longer than kMaxDocumentName bytes is not used either (a file name's limit is 255).
+inline constexpr size_t kMaxDocumentName = 200;
 std::string PickedDocumentName(const std::string& uri);
 // The same, preferring the name the document's provider gives (OpenableColumns.DISPLAY_NAME,
 // platform_android.cpp; empty when it gave none): a URI like "msf:1234" (the downloads provider,

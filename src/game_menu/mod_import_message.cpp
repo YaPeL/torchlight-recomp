@@ -38,13 +38,24 @@ constexpr const char* kNotCopied = "The chosen file could not be copied: {detail
 // Translates `english` and fills its {placeholders}.
 std::string Text(const Translate& tr, const std::string& english,
                  const std::vector<std::pair<std::string, std::string>>& values = {}) {
-  std::string text = tr(english);
-  for (const auto& [key, value] : values) {
-    const std::string placeholder = "{" + key + "}";
-    for (size_t at = text.find(placeholder); at != std::string::npos;
-         at = text.find(placeholder, at + value.size())) {
-      text.replace(at, placeholder.size(), value);
+  // One pass over the translated text, so a value holding "{detail}" (a mod's name) stays as it is.
+  const std::string translated = tr(english);
+  std::string text;
+  size_t at = 0;
+  while (at < translated.size()) {
+    bool filled = false;
+    if (translated[at] == '{') {
+      for (const auto& [key, value] : values) {
+        const std::string placeholder = "{" + key + "}";
+        if (translated.compare(at, placeholder.size(), placeholder) == 0) {
+          text += value;
+          at += placeholder.size();
+          filled = true;
+          break;
+        }
+      }
     }
+    if (!filled) text += translated[at++];
   }
   return text;
 }
@@ -130,7 +141,7 @@ MenuMessage ModPickMessage(PickProblem problem, const std::string& detail, const
 std::vector<std::string> ModImportTexts() {
   return {kImportTitle,       kImportOk,          kImportAskSource, kImportZipButton,
           kImportFolderButton, kImportCancelButton, kImportPickZip,   kImportPickFolder,
-          kImportZipFilter,   kImportBusy,        kInstalled,       kInstalledMany,   kAlreadyInstalled,
+          kImportZipFilter,   kImportCopying,     kImportBusy,        kInstalled,       kInstalledMany,   kAlreadyInstalled,
           kNoModFound,        kUnreadable,        kUnsafeName,      kUnsupportedEntry,
           kNonAsciiName,      kNotEnoughSpace,    kCannotWrite,     kCancelled,
           kNoPicker,          kNotCopied};

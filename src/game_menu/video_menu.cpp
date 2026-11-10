@@ -181,6 +181,7 @@ struct ModImport {
   GuestMessageBox box;
   std::optional<MenuMessage> to_show;
   int show_attempts = 0;
+  bool mod_imported = false;  // a mod was installed this run: the column says a restart is needed
 };
 ModImport g_import;
 
@@ -207,9 +208,18 @@ void RunModImport(std::filesystem::path data_dir) {
       folder = choice == 1;
     }
     picked = folder ? platform::PickFolder(Tr(kImportPickFolder), path, error)
-                    : platform::PickFile(Tr(kImportPickZip), path, error,
-                                         {{Tr(kImportZipFilter), "zip"}});
+                    : platform::PickFileUncopied(Tr(kImportPickZip), path, error,
+                                                 {{Tr(kImportZipFilter), "zip"}});
   });
+  // Android's document is copied here, off the UI thread, with the busy notice showing it.
+  if (picked == platform::PickResult::kChosen) {
+    live::ShowBusyNotice(Tr(kImportCopying));
+    picked = platform::CopyPickedFile(path, error, [](uint64_t done, uint64_t total) {
+      live::SetBusyNoticeProgress(size_t(done), size_t(total));
+      return true;
+    });
+    live::HideBusyNotice();
+  }
   std::optional<MenuMessage> message;
   bool installed = false;
   switch (picked) {
@@ -528,6 +538,9 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
                                                     live::StartupHostSettings(), g_language);
   // Import Mod: with the UI thread for the pickers and a mods folder (InstallMods ran).
   g_column.model->SetImportAvailable(g_import.app_context && !ImportDataDir().empty());
+  // The column is made anew each time the menu opens: an import still running, or one done this run.
+  g_column.model->SetImportRunning(g_import.running);
+  if (g_import.mod_imported) g_column.model->NoteModImported();
   Refresh(call);
   REXLOG_INFO("game menu: video settings 0x{:08X} added to the settings menu 0x{:08X}", column,
               settings_menu);
@@ -599,6 +612,7 @@ void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
     g_import.to_show = std::move(g_import.message);
     g_import.message.reset();
     g_import.show_attempts = 0;
+    if (g_import.installed) g_import.mod_imported = true;
     if (g_column.model) {
       if (g_import.installed) g_column.model->NoteModImported();
       g_column.model->SetImportRunning(false);

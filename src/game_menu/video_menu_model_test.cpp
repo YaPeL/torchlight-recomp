@@ -453,6 +453,14 @@ void TestImportMessages() {
             std::string::npos,
         "no space: megabytes, rounded up");
 
+  // A value is never filled in again: a mod named "{detail}" stays so.
+  mods::ImportResult braces;
+  braces.status = mods::ImportStatus::kInstalled;
+  braces.mods = {"{detail}"};
+  braces.detail = "X";
+  Check(ModImportMessage(braces, Bracket).text.starts_with("[Installed: {detail}."),
+        "the placeholders filled in one pass");
+
   mods::ImportResult unsafe;
   unsafe.status = mods::ImportStatus::kUnsafeName;
   unsafe.detail = "../evil";

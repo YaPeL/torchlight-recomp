@@ -30,7 +30,9 @@ inline constexpr const char* kImportCancelButton = "Cancel";
 inline constexpr const char* kImportPickZip = "Choose the mod's .zip file";
 inline constexpr const char* kImportPickFolder = "Choose the mod's folder";
 inline constexpr const char* kImportZipFilter = "Zip archives";
-// The busy notice while it runs (live/busy_notice_text.h fills {percent}).
+// The busy notices while the chosen file is copied (Android: the picker's document) and while it
+// is imported (live/busy_notice_text.h fills {percent}).
+inline constexpr const char* kImportCopying = "Copying mod... {percent}%";
 inline constexpr const char* kImportBusy = "Importing mod... {percent}%";
 
 // The boxes' text is wrapped at this many characters when shown (WrapText): the runtime's message

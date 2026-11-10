@@ -380,7 +380,8 @@ std::string DocumentDisplayName(const std::string& uri) {
 // app's cache first, with a progress window (docs/android-port.md, A1.2: the player's game). SDL
 // has one window on Android (SDL_androidwindow.c, "Android only supports one window"): once the
 // game's is up (Import Mod), the copy goes on without the progress window and cannot be cancelled.
-PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error) {
+PickResult OpenablePickedFile(const std::string& title, std::string& path, std::string& error,
+                              const CopyProgress* report) {
   if (path.rfind("content://", 0) != 0) return PickResult::kChosen;
   const std::string dir = CacheDir("picked");
   if (dir.empty()) {
@@ -393,6 +394,16 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
     return PickResult::kUncopied;
   }
   const Sint64 size = SDL_GetIOSize(in);
+  // Room for the copy, and a reserve so that it never fills the device the saves are on.
+  constexpr uint64_t kReserve = uint64_t(256) << 20;
+  std::error_code space_ec;
+  const std::filesystem::space_info space = std::filesystem::space(dir, space_ec);
+  if (size > 0 && !space_ec && space.available < uint64_t(size) + kReserve) {
+    SDL_CloseIO(in);
+    error = "not enough free space to copy the chosen file: it needs " + std::to_string((uint64_t(size) + kReserve) >> 20) +
+            " MB and " + std::to_string(space.available >> 20) + " MB are free";
+    return PickResult::kUncopied;
+  }
   const std::string copy = dir + PickedDocumentName(path, DocumentDisplayName(path));
   std::ofstream out(copy, std::ios::binary | std::ios::trunc);
   if (!out.is_open()) {
@@ -400,7 +411,7 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
     error = "cannot create " + copy;
     return PickResult::kUncopied;
   }
-  auto progress = ProgressWindow::Open(title);
+  auto progress = report ? nullptr : ProgressWindow::Open(title);
   std::vector<char> buffer(4 << 20);
   Sint64 done = 0;
   PickResult result = PickResult::kChosen;
@@ -420,6 +431,10 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
       break;
     }
     done += Sint64(got);
+    if (report && !(*report)(uint64_t(done), size > 0 ? uint64_t(size) : 0)) {
+      result = PickResult::kCancelled;
+      break;
+    }
     if (progress) {
       const double fraction = size > 0 ? double(done) / double(size) : 0;
       const std::string text = std::to_string(done >> 20) + " / " +
