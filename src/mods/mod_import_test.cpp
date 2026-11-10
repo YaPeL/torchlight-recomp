@@ -397,6 +397,25 @@ int main() {
     Check(RecoverInterruptedImports(data / "nowhere").ok(), "no mods folder: nothing to do");
   }
 
+  // A .partial that cannot be removed (a folder in it without write permission; where permissions
+  // stop it: not as root, nor on Windows) does not keep the old mod from being put back.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/Stuck.partial/inner/file.txt", "x");
+    WriteText(data / "mods/Old.replaced/mod.dat", "old");
+    std::error_code ec;
+    fs::permissions(data / "mods/Stuck.partial/inner", fs::perms::owner_read | fs::perms::owner_exec,
+                    fs::perm_options::replace, ec);
+    const ImportRecovery recovery = RecoverInterruptedImports(data / "mods");
+    Check(recovery.restored == Names{"Old"} && ReadText(data / "mods/Old/mod.dat") == "old",
+          "a stuck .partial: the old mod still put back");
+    if (fs::exists(data / "mods/Stuck.partial", ec)) {
+      Check(!recovery.ok() && recovery.error.find("Stuck.partial") != std::string::npos,
+            "a stuck .partial: reported");
+    }
+    fs::permissions(data / "mods/Stuck.partial/inner", fs::perms::owner_all, fs::perm_options::replace, ec);
+  }
+
   // Damaged zips: truncated (no central directory), not a zip, and an entry whose data is
   // damaged after the first was written (its .partial removed).
   {
