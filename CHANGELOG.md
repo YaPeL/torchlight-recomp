@@ -31,6 +31,12 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 - The game uses less CPU while waiting for the graphics work, which saves battery on laptops and
   the Steam Deck.
 
+### Fixed
+
+- Language packs made from a PC translation (for instance GOG's Russian): texts in the settings,
+  skills, character, stats and waypoint menus came out blank, because those menus use a font
+  (Serif14) only the Xbox 360 has. The game now makes it from the pack's own font.
+
 ### Linux and the Steam Deck
 
 - The Linux build now needs a CPU with x86-64-v3 (AVX2, FMA): Intel Haswell (2013) or newer, AMD
