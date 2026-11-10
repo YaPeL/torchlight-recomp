@@ -1343,10 +1343,20 @@ folder), top-level folders that hold them (one mod or a pack, each named after i
 top-level files are left out), or the same one level down below a single folder (a zipped `mods`
 folder). A `mods.dat` in the source is never copied. Each mod is written to `<name>.partial` and
 renamed without replacing anything, so a name already there fails the import, and a failure or a
-cancel leaves nothing behind (a `.partial` an interrupted run left is never loaded as a mod, and the
-next import of that name replaces it). Zip entries with unsafe names (absolute, `..`, drive letters,
-colons), symbolic links or encryption are refused; names are taken as UTF-8 only with the entry's
-UTF-8 flag, otherwise they must be ASCII (the format's CP437 agrees with ASCII only).
+cancel leaves nothing behind (a `.partial` an interrupted run left is never loaded as a mod, and
+every one is removed when the next import starts). Refused, before anything is written:
+- entries with unsafe names, in any component and on every platform: absolute, `..`, drive
+  letters, colons, the characters `<>"|?*`, a trailing dot or space, and Windows' device names
+  (`CON`, `NUL`, `AUX`, `PRN`, `COM1`-`9`, `LPT1`-`9`, in any case, with an extension too);
+- symbolic links and encrypted entries; names are taken as UTF-8 only with the entry's UTF-8 flag,
+  otherwise they must be ASCII (the format's CP437 agrees with ASCII only);
+- two mods of a pack, or two files of a mod, whose names differ only in case (the guest's paths
+  ignore it);
+- more than 200,000 entries, or a name longer than 1,024 bytes (the listing is linear in the
+  entries and polls the cancel);
+- not enough free space: each file rounded up to a 4 KiB block (a folder or an empty file takes
+  one), plus a reserve for the saves and settings on the same disk, the larger of 256 MB and 5 % of
+  it; an import whose free space cannot be read is refused too.
 
 Why not mount the zip instead: the game's data loader lists and opens a mod's files by path through
 the runtime's file system (`.DAT` units, the mod file map, `mod.dat`) and writes its compiled `.ADM`
