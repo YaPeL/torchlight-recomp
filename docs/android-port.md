@@ -917,7 +917,8 @@ ImGui's foreground draw list.
 **A4.5, the touch layout: Xbox or PlayStation** (a player asked to move with the d-pad,
 2026-11-06; the owner's design, 2026-11-09). `settings.toml` `touch_layout`, `"xbox"` by default or
 `"playstation"` (written only when not the default): the "Touch Layout" row in the settings menu's
-Controls section, enabled only where the touch controls were installed (`TouchControlsInstalled`); it takes effect at once (the controls are laid out again).
+Controls section, enabled only where the touch controls were installed (`TouchControlsInstalled`);
+it takes effect at once (the controls are laid out again).
 - **Xbox** (the 360 pad's, as before): the floating stick moves the hero, the small d-pad below and
   inward of it switches skill sets. `touch_test` checks this layout against the numbers from before
   the option.
