@@ -466,6 +466,17 @@ void TestImportMessages() {
   Check(ModImportMessage(braces, Bracket).text.starts_with("[Installed: {detail}."),
         "the placeholders filled in one pass");
 
+  // Not a zip: named; the replace question: the names, Replace then Cancel.
+  mods::ImportResult rar;
+  rar.status = mods::ImportStatus::kNotAZip;
+  rar.detail = "Mod.rar";
+  Check(ModImportMessage(rar, Bracket).text == "[Mod.rar is not a zip file. Choose the mod's .zip file.]",
+        "not a zip: the file named");
+  const MenuMessage ask = ModReplaceQuestion(existing, Bracket);
+  Check(ask.text.find("named Mine is already installed. Replace it") != std::string::npos &&
+            ask.buttons == std::vector<std::string>{"[Replace]", "[Cancel]"},
+        "replace: the name, Replace first, Cancel second");
+
   mods::ImportResult unsafe;
   unsafe.status = mods::ImportStatus::kUnsafeName;
   unsafe.detail = "../evil";
@@ -482,7 +493,7 @@ void TestImportMessages() {
        {ImportStatus::kInstalled, ImportStatus::kCancelled, ImportStatus::kNoModFound,
         ImportStatus::kAlreadyInstalled, ImportStatus::kUnreadable, ImportStatus::kUnsafeName,
         ImportStatus::kUnsupportedEntry, ImportStatus::kNonAsciiName,
-        ImportStatus::kNotEnoughSpace, ImportStatus::kCannotWrite}) {
+        ImportStatus::kNotEnoughSpace, ImportStatus::kCannotWrite, ImportStatus::kNotAZip}) {
     mods::ImportResult result;
     result.status = status;
     const std::string text =

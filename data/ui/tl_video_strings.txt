@@ -55,7 +55,10 @@ No mod was found. A mod has a mod.dat file or a media folder, at the top of the 
 The zip or folder could not be read: {detail} = Das Zip oder der Ordner konnte nicht gelesen werden: {detail}
 The mod was not imported: a file name in it could write outside its folder ({detail}). = Der Mod wurde nicht importiert: Ein Dateiname darin könnte außerhalb seines Ordners schreiben ({detail}).
 The mod was not imported: it holds a link, an encrypted file or a compression this import cannot read ({detail}). = Der Mod wurde nicht importiert: Er enthält eine Verknüpfung, eine verschlüsselte Datei oder eine Komprimierung, die dieser Import nicht lesen kann ({detail}).
-The mod was not imported: the zip does not say how its file names are written ({detail}). Zip it again with a tool that saves the names as UTF-8. = Der Mod wurde nicht importiert: Das Zip gibt nicht an, wie seine Dateinamen geschrieben sind ({detail}). Packe ihn erneut mit einem Programm, das die Namen als UTF-8 speichert.
+The mod was not imported: its zip writes file names in an old Windows encoding ({detail}), which this import cannot read. Unzip it and zip it again with a recent tool (7-Zip, or the system's own), which writes the names as UTF-8. = Der Mod wurde nicht importiert: Seine ZIP-Datei schreibt Dateinamen in einer alten Windows-Kodierung ({detail}), die dieser Import nicht lesen kann. Entpacke sie und packe sie mit einem aktuellen Programm (7-Zip oder dem des Systems) neu, das die Namen als UTF-8 schreibt.
+{detail} is not a zip file. Choose the mod's .zip file. = {detail} ist keine ZIP-Datei. Wähle die ZIP-Datei des Mods.
+A mod named {mods} is already installed. Replace it with the one you chose? = Ein Mod namens {mods} ist bereits installiert. Durch den gewählten ersetzen?
+Replace = Ersetzen
 There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = Nicht genug freier Speicher für den Mod: Er braucht {needed} MB, frei sind {free} MB.
 The mod could not be written to the mods folder: {detail} = Der Mod konnte nicht in den Mods-Ordner geschrieben werden: {detail}
 The import was cancelled; nothing was installed. = Der Import wurde abgebrochen; nichts wurde installiert.
@@ -112,7 +115,10 @@ No mod was found. A mod has a mod.dat file or a media folder, at the top of the 
 The zip or folder could not be read: {detail} = Le zip ou le dossier n'a pas pu être lu : {detail}
 The mod was not imported: a file name in it could write outside its folder ({detail}). = Le mod n'a pas été importé : un nom de fichier qu'il contient pourrait écrire hors de son dossier ({detail}).
 The mod was not imported: it holds a link, an encrypted file or a compression this import cannot read ({detail}). = Le mod n'a pas été importé : il contient un lien, un fichier chiffré ou une compression que cette importation ne sait pas lire ({detail}).
-The mod was not imported: the zip does not say how its file names are written ({detail}). Zip it again with a tool that saves the names as UTF-8. = Le mod n'a pas été importé : le zip n'indique pas comment ses noms de fichiers sont écrits ({detail}). Recompressez-le avec un outil qui enregistre les noms en UTF-8.
+The mod was not imported: its zip writes file names in an old Windows encoding ({detail}), which this import cannot read. Unzip it and zip it again with a recent tool (7-Zip, or the system's own), which writes the names as UTF-8. = Le mod n'a pas été importé : son zip écrit les noms de fichiers dans un ancien encodage Windows ({detail}), que cette importation ne sait pas lire. Décompressez-le et recompressez-le avec un outil récent (7-Zip ou celui du système), qui écrit les noms en UTF-8.
+{detail} is not a zip file. Choose the mod's .zip file. = {detail} n'est pas un fichier zip. Choisissez le fichier .zip du mod.
+A mod named {mods} is already installed. Replace it with the one you chose? = Un mod nommé {mods} est déjà installé. Le remplacer par celui que vous avez choisi ?
+Replace = Remplacer
 There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = Il n'y a pas assez d'espace libre pour le mod : il lui faut {needed} Mo et {free} Mo sont libres.
 The mod could not be written to the mods folder: {detail} = Le mod n'a pas pu être écrit dans le dossier des mods : {detail}
 The import was cancelled; nothing was installed. = L'importation a été annulée ; rien n'a été installé.
@@ -169,7 +175,10 @@ No mod was found. A mod has a mod.dat file or a media folder, at the top of the 
 The zip or folder could not be read: {detail} = No se pudo leer el zip o la carpeta: {detail}
 The mod was not imported: a file name in it could write outside its folder ({detail}). = El mod no se importó: un nombre de archivo suyo podría escribir fuera de su carpeta ({detail}).
 The mod was not imported: it holds a link, an encrypted file or a compression this import cannot read ({detail}). = El mod no se importó: contiene un enlace, un archivo cifrado o una compresión que esta importación no sabe leer ({detail}).
-The mod was not imported: the zip does not say how its file names are written ({detail}). Zip it again with a tool that saves the names as UTF-8. = El mod no se importó: el zip no indica cómo están escritos los nombres de sus archivos ({detail}). Vuelve a comprimirlo con una herramienta que guarde los nombres en UTF-8.
+The mod was not imported: its zip writes file names in an old Windows encoding ({detail}), which this import cannot read. Unzip it and zip it again with a recent tool (7-Zip, or the system's own), which writes the names as UTF-8. = El mod no se importó: su zip escribe los nombres de archivo en una codificación vieja de Windows ({detail}), que esta importación no puede leer. Descomprímelo y vuelve a comprimirlo con una herramienta reciente (7-Zip o la del sistema), que escribe los nombres en UTF-8.
+{detail} is not a zip file. Choose the mod's .zip file. = {detail} no es un archivo zip. Elige el archivo .zip del mod.
+A mod named {mods} is already installed. Replace it with the one you chose? = Ya hay un mod instalado con el nombre {mods}. ¿Reemplazarlo por el que elegiste?
+Replace = Reemplazar
 There is not enough free space for the mod: it needs {needed} MB and {free} MB are free. = No hay espacio libre suficiente para el mod: necesita {needed} MB y hay {free} MB libres.
 The mod could not be written to the mods folder: {detail} = No se pudo escribir el mod en la carpeta de mods: {detail}
 The import was cancelled; nothing was installed. = La importación se canceló; no se instaló nada.

@@ -26,8 +26,13 @@ constexpr const char* kUnsupportedEntry =
     "The mod was not imported: it holds a link, an encrypted file or a compression this import "
     "cannot read ({detail}).";
 constexpr const char* kNonAsciiName =
-    "The mod was not imported: the zip does not say how its file names are written ({detail}). "
-    "Zip it again with a tool that saves the names as UTF-8.";
+    "The mod was not imported: its zip writes file names in an old Windows encoding ({detail}), "
+    "which this import cannot read. Unzip it and zip it again with a recent tool (7-Zip, or the "
+    "system's own), which writes the names as UTF-8.";
+constexpr const char* kNotAZip = "{detail} is not a zip file. Choose the mod's .zip file.";
+constexpr const char* kReplaceQuestion =
+    "A mod named {mods} is already installed. Replace it with the one you chose?";
+constexpr const char* kReplaceButton = "Replace";
 constexpr const char* kNotEnoughSpace =
     "There is not enough free space for the mod: it needs {needed} MB and {free} MB are free.";
 constexpr const char* kCannotWrite = "The mod could not be written to the mods folder: {detail}";
@@ -127,10 +132,21 @@ MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& 
     case ImportStatus::kUnsafeName: english = kUnsafeName; break;
     case ImportStatus::kUnsupportedEntry: english = kUnsupportedEntry; break;
     case ImportStatus::kNonAsciiName: english = kNonAsciiName; break;
+    case ImportStatus::kNotAZip: english = kNotAZip; break;
     case ImportStatus::kNotEnoughSpace: english = kNotEnoughSpace; break;
     case ImportStatus::kCannotWrite: english = kCannotWrite; break;
   }
   return Box(tr, Text(tr, english, values));
+}
+
+MenuMessage ModReplaceQuestion(const mods::ImportResult& result, const Translate& tr) {
+  std::string names;
+  for (size_t i = 0; i < std::min(result.mods.size(), kListedMods); ++i) {
+    names += (names.empty() ? "" : ", ") + result.mods[i];
+  }
+  if (result.mods.size() > kListedMods) names += ", ...";
+  return {Text(tr, kImportTitle), Text(tr, kReplaceQuestion, {{"mods", names}}),
+          {Text(tr, kReplaceButton), Text(tr, kImportCancelButton)}};
 }
 
 MenuMessage ModPickMessage(PickProblem problem, const std::string& detail, const Translate& tr) {
@@ -144,7 +160,8 @@ std::vector<std::string> ModImportTexts() {
           kImportZipFilter,   kImportAllFilter,   kImportCopying,     kImportBusy,      kInstalled,
           kInstalledMany,     kAlreadyInstalled,
           kNoModFound,        kUnreadable,        kUnsafeName,      kUnsupportedEntry,
-          kNonAsciiName,      kNotEnoughSpace,    kCannotWrite,     kCancelled,
+          kNonAsciiName,      kNotAZip,           kReplaceQuestion, kReplaceButton,
+          kNotEnoughSpace,    kCannotWrite,     kCancelled,
           kNoPicker,          kNotCopied};
 }
 

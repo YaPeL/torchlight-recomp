@@ -51,6 +51,10 @@ std::string WrapText(const std::string& text, size_t width);
 // The box after ImportMod: what was installed, or why nothing was.
 MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr);
 
+// The question after an import refused for a name already installed (kAlreadyInstalled): Replace
+// (button 0, imported again with mods::ImportOptions::replace) or Cancel (button 1).
+MenuMessage ModReplaceQuestion(const mods::ImportResult& result, const Translate& tr);
+
 // The box when nothing could be imported because the picker failed: no picker could be shown, or
 // (Android) the chosen document could not be copied where it can be read. `detail`: the system's
 // reason.

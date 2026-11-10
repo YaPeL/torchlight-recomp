@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <condition_variable>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -177,9 +178,16 @@ struct ModImport {
   std::mutex mutex;
   std::optional<MenuMessage> message;  // under mutex; none when the player cancelled the picker
   bool installed = false;              // under mutex
-  // Game's thread: the box being shown, or waiting to be.
+  // A question for the player (Replace?): the worker leaves it and waits for `answer` (the button,
+  // -1 when the box closed without one or could not be shown).
+  std::atomic<bool> asking{false};
+  std::optional<MenuMessage> question;  // under mutex
+  std::optional<int> answer;            // under mutex
+  std::condition_variable answered;
+  // Game's thread: the box being shown, or waiting to be, and whether it asks.
   GuestMessageBox box;
   std::optional<MenuMessage> to_show;
+  bool to_show_asks = false, box_asks = false;
   int show_attempts = 0;
   bool mod_imported = false;  // a mod was installed this run: the column says a restart is needed
 };
@@ -190,6 +198,16 @@ std::filesystem::path ImportDataDir() {
   std::filesystem::path folder = ModsFolder();
   if (!folder.has_filename()) folder = folder.parent_path();
   return folder.empty() ? folder : folder.parent_path();
+}
+
+// The worker thread: asks the player through the game's box (OnGameUiFrame) and waits; the button.
+int AskPlayer(MenuMessage question) {
+  std::unique_lock lock(g_import.mutex);
+  g_import.question = std::move(question);
+  g_import.answer.reset();
+  g_import.asking = true;
+  g_import.answered.wait(lock, [] { return g_import.answer.has_value(); });
+  return *g_import.answer;
 }
 
 // The worker thread: the dialogs on the UI thread, then the import.
@@ -240,11 +258,29 @@ void RunModImport(std::filesystem::path data_dir) {
     case platform::PickResult::kChosen: {
       REXLOG_INFO("mod import: from {}", path);
       live::ShowBusyNotice(Tr(kImportBusy));
-      const mods::ImportResult result =
-          mods::ImportMod(path, data_dir, [](const mods::ImportProgress& progress) {
-            live::SetBusyNoticeProgress(size_t(progress.bytes_done), size_t(progress.bytes_total));
-          });
+      const auto progress = [](const mods::ImportProgress& done) {
+        live::SetBusyNoticeProgress(size_t(done.bytes_done), size_t(done.bytes_total));
+      };
+      mods::ImportResult result = mods::ImportMod(path, data_dir, progress);
       live::HideBusyNotice();
+      // A mod of that name is there: replaced only if the player says so (the owner, 2026-11-09);
+      // the replacement keeps the old one until the new one is in place (mods/mod_import.h).
+      if (result.status == mods::ImportStatus::kAlreadyInstalled) {
+        REXLOG_INFO("mod import: {}; asking whether to replace", result.message());
+        if (AskPlayer(ModReplaceQuestion(result, Tr)) != 0) {
+          REXLOG_INFO("mod import: not replaced");
+          platform::ForgetPickedFiles();
+          std::lock_guard lock(g_import.mutex);
+          g_import.message.reset();
+          g_import.installed = false;
+          g_import.finished = true;
+          return;
+        }
+        live::ShowBusyNotice(Tr(kImportBusy));
+        result = mods::ImportMod(path, data_dir, progress, nullptr, {.replace = true});
+        live::HideBusyNotice();
+        for (const std::string& old : result.replaced) REXLOG_INFO("mod import: replaced {}", old);
+      }
       for (const std::string& skipped : result.skipped) {
         REXLOG_INFO("mod import: left out {} (not part of a mod)", skipped);
       }
@@ -612,6 +648,13 @@ void OnSettingsResetDefaults(PPCContext& ctx, uint8_t* base, uint32_t settings_m
 }  // namespace
 
 void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
+  if (g_import.asking.exchange(false)) {
+    std::lock_guard lock(g_import.mutex);
+    g_import.to_show = std::move(g_import.question);
+    g_import.question.reset();
+    g_import.to_show_asks = true;
+    g_import.show_attempts = 0;
+  }
   if (g_import.finished.exchange(false)) {
     std::lock_guard lock(g_import.mutex);
     g_import.to_show = std::move(g_import.message);
@@ -629,7 +672,13 @@ void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
     }
   }
   if (g_import.box.open()) {
-    g_import.box.Poll(base);  // OK is its only button: nothing to do with the answer
+    const std::optional<int> button = g_import.box.Poll(base);
+    if (button && g_import.box_asks) {
+      g_import.box_asks = false;
+      std::lock_guard lock(g_import.mutex);
+      g_import.answer = *button;
+      g_import.answered.notify_all();
+    }
     return;
   }
   if (!g_import.to_show) return;
@@ -638,10 +687,19 @@ void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
   if (g_import.show_attempts++ % 60 != 0) return;
   const MenuMessage& message = *g_import.to_show;
   if (g_import.box.Show(ctx, base, message.title, WrapText(message.text, kBoxLineLength), message.buttons, 0)) {
+    g_import.box_asks = g_import.to_show_asks;
     g_import.to_show.reset();
+    g_import.to_show_asks = false;
   } else if (g_import.show_attempts > 10 * 60) {
-    REXLOG_WARN("mod import: the result box could not be shown: {}", message.text);
+    REXLOG_WARN("mod import: the box could not be shown: {}", message.text);
     g_import.to_show.reset();
+    if (g_import.to_show_asks) {
+      // A question nobody saw: answered as Cancel, so the worker goes on.
+      g_import.to_show_asks = false;
+      std::lock_guard lock(g_import.mutex);
+      g_import.answer = -1;
+      g_import.answered.notify_all();
+    }
   }
 }
 
