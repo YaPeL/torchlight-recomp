@@ -523,15 +523,9 @@ ImportRecovery RecoverInterruptedImports(const std::filesystem::path& mods_folde
     out.error = Utf8Of(mods_folder) + ": " + ec.message();
     return out;
   }
-  // A leftover .partial that cannot be removed would mix its files into the next import's.
-  for (const fs::path& path : partials) {
-    fs::remove_all(path, ec);
-    if (ec) {
-      out.error = "cannot remove " + Utf8Of(path) + ": " + ec.message();
-      return out;
-    }
-    out.removed.push_back(Utf8Of(path.filename()));
-  }
+  // Each step goes on after an error (the errors collected): a locked .partial must not keep the old
+  // mods from being put back. The .replaced first: they may be the only copy of a mod.
+  const auto note = [&](const std::string& error) { out.error += (out.error.empty() ? "" : "; ") + error; };
   // A .replaced whose mod is there (in any case: never two copies of one mod) is removed, the
   // replace having put the new one in place; one whose mod is missing is put back.
   for (const fs::path& path : replaced) {
@@ -540,19 +534,28 @@ ImportRecovery RecoverInterruptedImports(const std::filesystem::path& mods_folde
     if (present.contains(Folded(original))) {
       fs::remove_all(path, ec);
       if (ec) {
-        out.error = "cannot remove " + Utf8Of(path) + ": " + ec.message();
-        return out;
+        note("cannot remove " + Utf8Of(path) + ": " + ec.message());
+        continue;
       }
       out.removed.push_back(name);
     } else {
       std::string error;
       if (!platform::RenameNoReplace(path, mods_folder / PathOf(original), error)) {
-        out.error = "cannot put " + Utf8Of(path) + " back: " + error;
-        return out;
+        note("cannot put " + Utf8Of(path) + " back: " + error);
+        continue;
       }
       present.insert(Folded(original));
       out.restored.push_back(original);
     }
+  }
+  // A leftover .partial that cannot be removed would mix its files into the next import's.
+  for (const fs::path& path : partials) {
+    fs::remove_all(path, ec);
+    if (ec) {
+      note("cannot remove " + Utf8Of(path) + ": " + ec.message());
+      continue;
+    }
+    out.removed.push_back(Utf8Of(path.filename()));
   }
   return out;
 }
@@ -708,7 +711,8 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
     if (!not_restored.empty()) {
       failure = {ImportStatus::kCannotWrite,
                  failure.detail + "; the old mod could not be put back: kept as " + not_restored +
-                     " in the mods folder (put back at the next start if its mod is missing)"};
+                     " in the mods folder. At the next start, if the new mod is in its place it is kept and the "
+                     "old copy removed; otherwise the old one is put back"};
     }
     return fail(std::move(failure));
   };
