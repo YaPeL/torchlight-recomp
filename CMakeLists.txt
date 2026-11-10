@@ -451,6 +451,8 @@ target_link_libraries(torchlight PRIVATE torchlight_game_menu_model torchlight_m
     torchlight_save_mod_list torchlight_video_mode torchlight_guest_path torchlight_gpu_wait_watch torchlight_missing_file_cache
     torchlight_game_setup torchlight_save_import torchlight_guest_copy torchlight_pixel_util torchlight_bucket_cull
     torchlight_native_render_system torchlight_frustum_test torchlight_dev_input_script)
+# The mods' import: what an interrupted one left is cleared at start-up (game_menu/mods_install.cpp).
+target_link_libraries(torchlight PRIVATE torchlight_mod_import)
 target_link_libraries(torchlight PRIVATE torchlight_commands torchlight_registry torchlight_live
     torchlight_live_mode
     torchlight_backend torchlight_achievements)

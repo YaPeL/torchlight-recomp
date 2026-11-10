@@ -504,6 +504,59 @@ std::string ImportResult::message() const {
   return "";
 }
 
+ImportRecovery RecoverInterruptedImports(const std::filesystem::path& mods_folder) {
+  ImportRecovery out;
+  std::error_code ec;
+  if (!fs::is_directory(mods_folder, ec)) return out;  // no mods folder: nothing was interrupted
+  std::vector<fs::path> partials, replaced;
+  std::unordered_set<std::string> present;  // the mods there, folded (the guest ignores case)
+  {
+    fs::directory_iterator it(mods_folder, ec), end;
+    for (; !ec && it != end; it.increment(ec)) {
+      const std::string name = Utf8Of(it->path().filename());
+      if (EndsWithNoCase(name, kImportPartialSuffix)) partials.push_back(it->path());
+      else if (EndsWithNoCase(name, kImportReplacedSuffix)) replaced.push_back(it->path());
+      else present.insert(Folded(name));
+    }
+  }
+  if (ec) {
+    out.error = Utf8Of(mods_folder) + ": " + ec.message();
+    return out;
+  }
+  // A leftover .partial that cannot be removed would mix its files into the next import's.
+  for (const fs::path& path : partials) {
+    fs::remove_all(path, ec);
+    if (ec) {
+      out.error = "cannot remove " + Utf8Of(path) + ": " + ec.message();
+      return out;
+    }
+    out.removed.push_back(Utf8Of(path.filename()));
+  }
+  // A .replaced whose mod is there (in any case: never two copies of one mod) is removed, the
+  // replace having put the new one in place; one whose mod is missing is put back.
+  for (const fs::path& path : replaced) {
+    const std::string name = Utf8Of(path.filename());
+    const std::string original = name.substr(0, name.size() - std::strlen(kImportReplacedSuffix));
+    if (present.contains(Folded(original))) {
+      fs::remove_all(path, ec);
+      if (ec) {
+        out.error = "cannot remove " + Utf8Of(path) + ": " + ec.message();
+        return out;
+      }
+      out.removed.push_back(name);
+    } else {
+      std::string error;
+      if (!platform::RenameNoReplace(path, mods_folder / PathOf(original), error)) {
+        out.error = "cannot put " + Utf8Of(path) + " back: " + error;
+        return out;
+      }
+      present.insert(Folded(original));
+      out.restored.push_back(original);
+    }
+  }
+  return out;
+}
+
 ImportResult ImportMod(const std::filesystem::path& source, const std::filesystem::path& data_dir,
                        const ImportProgressCallback& progress, const std::atomic<bool>* cancel,
                        const ImportOptions& options) {
@@ -568,45 +621,23 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   const fs::path mods_folder = data_dir / "mods";
   fs::create_directories(mods_folder, ec);
   if (ec) return fail({ImportStatus::kCannotWrite, Utf8Of(mods_folder) + ": " + ec.message()});
-  // What an interrupted import left: its .partial folders, and the old folders of a replace.
-  std::vector<fs::path> stale, replaced_left;
-  {
-    fs::directory_iterator it(mods_folder, ec), end;
-    for (; !ec && it != end; it.increment(ec)) {
-      const std::string name = Utf8Of(it->path().filename());
-      if (EndsWithNoCase(name, kImportPartialSuffix)) stale.push_back(it->path());
-      else if (EndsWithNoCase(name, kImportReplacedSuffix)) replaced_left.push_back(it->path());
-    }
+  // What an interrupted import left (its .partial folders, the old folders of a replace): cleared
+  // first, as at start-up.
+  if (const ImportRecovery recovery = RecoverInterruptedImports(mods_folder); !recovery.ok()) {
+    return fail({ImportStatus::kCannotWrite, recovery.error});
   }
-  if (ec) return fail({ImportStatus::kCannotWrite, Utf8Of(mods_folder) + ": " + ec.message()});
-  // A leftover .partial that cannot be removed would mix its files into this import's.
-  for (const fs::path& path : stale) {
-    fs::remove_all(path, ec);
-    if (ec) return fail({ImportStatus::kCannotWrite, "cannot remove " + Utf8Of(path) + ": " + ec.message()});
-  }
-  // A .replaced whose mod is missing is put back (the swap was interrupted before the new one was
-  // in place); one whose mod is there is removed (the new one was).
-  for (const fs::path& path : replaced_left) {
-    const std::string name = Utf8Of(path.filename());
-    const fs::path original = mods_folder / PathOf(name.substr(0, name.size() - std::strlen(kImportReplacedSuffix)));
-    if (fs::exists(original, ec)) {
-      fs::remove_all(path, ec);
-    } else {
-      std::string error;
-      if (!platform::RenameNoReplace(path, original, error)) ec = std::make_error_code(std::errc::io_error);
-    }
-    if (ec) return fail({ImportStatus::kCannotWrite, "cannot clear " + Utf8Of(path) + ": " + ec.message()});
-  }
-  // The mods already there, by the source's name and their own folder's.
-  std::vector<std::string> existing(mods.size());
+  // The mods already there, by the source's name, with every folder that matches it in any case
+  // (a case-sensitive file system can hold several: all are the same mod to the guest).
+  std::vector<std::vector<std::string>> existing(mods.size());
   {
     fs::directory_iterator it(mods_folder, ec), end;
     for (; !ec && it != end; it.increment(ec)) {
       const std::string name = Utf8Of(it->path().filename());
       if (const auto found = folded_mods.find(Folded(name)); found != folded_mods.end()) {
-        result.mods.push_back(found->second);
         for (size_t m = 0; m < mods.size(); ++m) {
-          if (mods[m].name == found->second) existing[m] = name;
+          if (mods[m].name != found->second) continue;
+          if (existing[m].empty()) result.mods.push_back(found->second);
+          existing[m].push_back(name);
         }
       }
     }
@@ -645,18 +676,40 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
                  "needs " + Megabytes(needed) + " with the reserve, " + Megabytes(space.available) + " free"});
   }
 
-  // Each mod into its .partial, then all renamed (an old one aside first); on any failure what
+  // Each mod into its .partial, then all renamed (the old ones aside first); on any failure what
   // this import wrote goes and the old ones come back.
-  std::vector<fs::path> partials, installed;
-  std::vector<std::pair<fs::path, fs::path>> backups;  // .replaced -> the old folder
+  const auto fault = [&](const std::string& step) { return options.fault && options.fault(step); };
+  std::vector<fs::path> partials;
+  std::vector<std::pair<fs::path, std::string>> installed;  // a new mod in place, and its name
+  std::vector<std::pair<fs::path, fs::path>> backups;       // .replaced -> the old folder
   auto undo = [&](Failure failure) {
-    for (const fs::path& path : partials) fs::remove_all(path, ec);
-    for (const fs::path& path : installed) fs::remove_all(path, ec);
+    std::error_code undo_ec;
+    std::vector<fs::path> discard;
+    for (const fs::path& path : partials) {
+      if (fs::exists(path, undo_ec)) discard.push_back(path);
+    }
+    // The new mods already in place go aside first, each with one rename (never half removed),
+    // the old ones come back, and only then is anything deleted: the old mod is never lost.
+    std::string not_restored;
+    for (auto it = installed.rbegin(); it != installed.rend(); ++it) {
+      const fs::path aside = mods_folder / PathOf(it->second + kImportUndoPartialSuffix);
+      std::string error;
+      if (fault("undo:" + it->second) || !platform::RenameNoReplace(it->first, aside, error)) continue;
+      discard.push_back(aside);
+    }
     for (const auto& [backup, original] : backups) {
       std::string error;
-      platform::RenameNoReplace(backup, original, error);
+      if (fault("restore:" + Utf8Of(original.filename())) || !platform::RenameNoReplace(backup, original, error)) {
+        not_restored += (not_restored.empty() ? "" : ", ") + Utf8Of(backup.filename());
+      }
     }
+    for (const fs::path& path : discard) fs::remove_all(path, undo_ec);
     result.mods.clear();
+    if (!not_restored.empty()) {
+      failure = {ImportStatus::kCannotWrite,
+                 failure.detail + "; the old mod could not be put back: kept as " + not_restored +
+                     " in the mods folder (put back at the next start if its mod is missing)"};
+    }
     return fail(std::move(failure));
   };
   Writer writer{progress, cancel, totals};
@@ -681,20 +734,22 @@ ImportResult ImportMod(const std::filesystem::path& source, const std::filesyste
   for (size_t m = 0; m < mods.size(); ++m) {
     const fs::path target = mods_folder / PathOf(mods[m].name);
     std::string error;
-    if (!existing[m].empty()) {
-      const fs::path old = mods_folder / PathOf(existing[m]);
-      const fs::path backup = mods_folder / PathOf(existing[m] + kImportReplacedSuffix);
+    for (const std::string& old_name : existing[m]) {
+      const fs::path old = mods_folder / PathOf(old_name);
+      const fs::path backup = mods_folder / PathOf(old_name + kImportReplacedSuffix);
       if (!platform::RenameNoReplace(old, backup, error)) {
         return undo({ImportStatus::kCannotWrite, Utf8Of(old) + ": " + error});
       }
       backups.emplace_back(backup, old);
     }
+    if (fault("swap:" + mods[m].name)) return undo({ImportStatus::kCannotWrite, Utf8Of(target) + ": a test's fault"});
     if (!platform::RenameNoReplace(partials[m], target, error)) {
       return undo({ImportStatus::kCannotWrite, Utf8Of(target) + ": " + error});
     }
-    installed.push_back(target);
+    installed.emplace_back(target, mods[m].name);
   }
-  // All in place: the old folders go (one that cannot is removed by the next import).
+  // All in place: the old folders go (one that cannot is removed by RecoverInterruptedImports at
+  // the next start: its mod is there).
   for (const auto& [backup, original] : backups) {
     fs::remove_all(backup, ec);
     result.replaced.push_back(Utf8Of(original.filename()));
