@@ -386,8 +386,8 @@ void InitRunningSettings(const std::filesystem::path& game_data_root, rex::Runti
   caps.gpu_selectable = g_gpu_error.empty();
   caps.any_vblank_rate = true;
   caps.languages = settings::InstalledLanguages(game_data_root);
-  caps.touch_controls = settings::EffectiveTouchControls(g_host_settings.values, platform::TouchControlsByDefault()) !=
-                        settings::TouchControls::kNever;
+  // Installed before this (torchlight_app.h): the touch layout row works only with them.
+  caps.touch_controls = TouchControlsInstalled();
   std::lock_guard lock(g_running.mutex);
   g_running.caps = caps;
   g_running.startup = settings::Normalize(g_host_settings.values, caps);

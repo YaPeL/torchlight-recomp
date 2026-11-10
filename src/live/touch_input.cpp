@@ -161,12 +161,17 @@ class TouchState {
     points_w_ = width;
     points_h_ = height;
   }
-  // The settings menu changed the layout's options.
-  void Options(input::TouchLayoutOptions options) {
+  // The settings menu changed the layout's options; whether it changed the layout.
+  bool Options(input::TouchLayoutOptions options) {
     std::lock_guard lock(mutex_);
-    if (!installed_ || options.style == options_.style) return;
+    if (!installed_ || options.style == options_.style) return false;
     options_ = options;
     Relayout();
+    return true;
+  }
+  bool Installed() {
+    std::lock_guard lock(mutex_);
+    return installed_;
   }
   void Density(SDL_WindowID window, float px_per_mm) {
     std::lock_guard lock(mutex_);
@@ -439,8 +444,10 @@ input::TouchLayoutOptions TouchLayoutOptionsOf(const settings::HostSettings& set
                                                                                : input::TouchStyle::kXbox};
 }
 
+bool TouchControlsInstalled() { return State().Installed(); }
+
 void SetTouchLayout(input::TouchLayoutOptions options) {
-  State().Options(options);
+  if (!State().Options(options)) return;
   REXLOG_INFO("touch: the {} layout", options.style == input::TouchStyle::kPlayStation ? "PlayStation" : "Xbox");
 }
 

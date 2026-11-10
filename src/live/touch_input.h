@@ -23,6 +23,8 @@ namespace torchlight::live {
 // "never". `options`: the layout's (settings.toml "touch_layout", TouchLayoutOptionsOf).
 void InstallTouchControls(rex::Runtime* runtime, settings::TouchControls mode, input::TouchLayoutOptions options);
 input::TouchLayoutOptions TouchLayoutOptionsOf(const settings::HostSettings& settings);
+// Whether InstallTouchControls installed them ("never", or no touch screen nor window: not).
+bool TouchControlsInstalled();
 // The layout's style changed (the settings menu, live): the controls are laid out again (the
 // fingers on them are dropped, as on a resize). Nothing without touch controls.
 void SetTouchLayout(input::TouchLayoutOptions options);
