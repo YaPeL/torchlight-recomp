@@ -1,0 +1,516 @@
+Patch 55. After patch 54.
+
+ImGuiDrawer wrote the mouse and touch state into ImGui directly (io.MousePos, io.MouseDown,
+io.MouseWheel), so ImGui saw only the state at each NewFrame. A press and a release that arrive
+between the same two frames (an instant tap, like Android's `input tap`, or a click faster than a
+frame) left the button up at the next frame: ImGui never saw the press and the click was lost. On
+Android the dialogs get touches as SDL's synthesized mouse events, so a tap on a message box's OK
+did nothing.
+
+The handlers now queue ImGui input events (AddMousePosEvent, AddMouseButtonEvent,
+AddMouseWheelEvent, AddMouseSourceEvent), the API ImGui has had since 1.87 (the keys already used
+it). The queue keeps every transition and spreads them over the following frames in order
+(ConfigInputTrickleEventQueue), so a tap without movement is a click however short it is. Mouse
+capture follows the drawer's own record of the buttons held, as io.MouseDown now changes only at
+NewFrame; detaching clears the queue too, so no event replays into the next activation. A press
+that the other kind of pointer interrupts (a touch while a mouse button is held, or the reverse) is
+released away from everything, so it is abandoned rather than completed as a click.
+
+Two consequences beyond the tap. On macOS ImGui's default ConfigMacOSXBehaviors now applies to the
+mouse too: Cmd+click is a right click in the dialogs (the direct writes bypassed it). And the
+mouse events go through ImGui's queue (a vector) like the key events already did, so the input
+handlers and Draw must stay on one thread, as they are when a presenter draws the dialogs and in
+this project's detached use.
+
+Test: tests/unit/ui/imgui_drawer_input_test.cpp drives a modal with an OK button through a window's
+input listeners: a click and an instant touch tap between two frames press it once each, without
+moving the dialog; a click held over several frames presses it once; a press released outside it
+does not; a press interrupted by the other pointer clicks nothing; the window captures the mouse
+only while a button is held, also when the last dialog goes with a button down. Without the change
+the instant cases fail (0 presses). Verified by the unit test only, not yet with a tap on a device.
+
+Not explained by this: in one Android run an instant tap moved a message box down by about 615 px
+instead of pressing OK; neither the lost press nor gamepad navigation moves a window, and it was not
+seen again.
+
+The generated code does not change; codegen_id does (src and include are among its inputs).
+
+Upstream: not proposed.
+
+diff --git a/include/rex/ui/imgui_drawer.h b/include/rex/ui/imgui_drawer.h
+index a570fa0..8b013a4 100644
+--- a/include/rex/ui/imgui_drawer.h
++++ b/include/rex/ui/imgui_drawer.h
+@@ -118,6 +118,9 @@ class ImGuiDrawer : public WindowInputListener, public UIDrawer {
+   // If it's TouchEvent::kPointerIDNone, the ImGui mouse is controlled by the
+   // mouse.
+   uint32_t touch_pointer_id_ = TouchEvent::kPointerIDNone;
++  // The physical mouse buttons held (bit 0 left, bit 1 right), as sent to ImGui's event queue;
++  // the window captures the mouse while any is.
++  uint32_t mouse_buttons_down_ = 0;
+   // Whether after the next frame (since the mouse up event needs to be handled
+   // with the correct mouse position still), the ImGui mouse position should be
+   // reset (for instance, after releasing a touch), so it's not hovering over
+diff --git a/src/ui/imgui_drawer.cpp b/src/ui/imgui_drawer.cpp
+index 127f6fd..058bf12 100644
+--- a/src/ui/imgui_drawer.cpp
++++ b/src/ui/imgui_drawer.cpp
+@@ -104,7 +104,7 @@ ImGuiDrawer::~ImGuiDrawer() {
+     window_->RemoveInputListener(this);
+     if (internal_state_) {
+       ImGui::SetCurrentContext(internal_state_);
+-      if (touch_pointer_id_ == TouchEvent::kPointerIDNone && ImGui::IsAnyMouseDown()) {
++      if (touch_pointer_id_ == TouchEvent::kPointerIDNone && mouse_buttons_down_) {
+         window_->ReleaseMouse();
+       }
+     }
+@@ -219,6 +219,7 @@ void ImGuiDrawer::Initialize() {
+   last_frame_time_ticks_ = rex::chrono::Clock::QueryHostTickCount();
+ 
+   touch_pointer_id_ = TouchEvent::kPointerIDNone;
++  mouse_buttons_down_ = 0;
+   reset_mouse_position_after_next_frame_ = false;
+ }
+ 
+@@ -437,7 +438,7 @@ void ImGuiDrawer::Draw(UIDrawContext& ui_draw_context) {
+ 
+   if (reset_mouse_position_after_next_frame_) {
+     reset_mouse_position_after_next_frame_ = false;
+-    io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
++    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
+   }
+ 
+   // Detaching is deferred if the last dialog is removed during drawing, perform
+@@ -513,31 +514,37 @@ void ImGuiDrawer::OnKeyChar(KeyEvent& e) {
+   }
+ }
+ 
++// The ImGui mouse button of a window mouse button, or -1 for one ImGui does not get.
++static int ImGuiMouseButtonIndex(MouseEvent::Button button) {
++  switch (button) {
++    case MouseEvent::Button::kLeft:
++      return 0;
++    case MouseEvent::Button::kRight:
++      return 1;
++    default:
++      return -1;
++  }
++}
++
++// The mouse and touch handlers queue ImGui input events (io.AddMouse*Event) rather than writing
++// io.MousePos and io.MouseDown: written directly, only the state at the next NewFrame counts, so a
++// press and a release between two frames (an instant tap, or a click faster than a frame) were
++// never seen and the click was lost. The queue keeps every transition and hands them to the
++// following frames in order (ImGuiIO::ConfigInputTrickleEventQueue), so a tap without movement is
++// a click however short it is.
+ void ImGuiDrawer::OnMouseDown(MouseEvent& e) {
+   SwitchToPhysicalMouseAndUpdateMousePosition(e);
+-  auto& io = GetIO();
+-  int button = -1;
+-  switch (e.button()) {
+-    case rex::ui::MouseEvent::Button::kLeft: {
+-      button = 0;
+-      break;
+-    }
+-    case rex::ui::MouseEvent::Button::kRight: {
+-      button = 1;
+-      break;
+-    }
+-    default: {
+-      // Ignored.
+-      break;
+-    }
++  int button = ImGuiMouseButtonIndex(e.button());
++  if (button < 0) {
++    return;
+   }
+-  if (button >= 0 && button < std::size(io.MouseDown)) {
+-    if (!io.MouseDown[button]) {
+-      if (!ImGui::IsAnyMouseDown()) {
+-        window_->CaptureMouse();
+-      }
+-      io.MouseDown[button] = true;
++  uint32_t bit = uint32_t(1) << button;
++  if (!(mouse_buttons_down_ & bit)) {
++    if (!mouse_buttons_down_) {
++      window_->CaptureMouse();
+     }
++    mouse_buttons_down_ |= bit;
++    GetIO().AddMouseButtonEvent(button, true);
+   }
+ }
+ 
+@@ -547,36 +554,23 @@ void ImGuiDrawer::OnMouseMove(MouseEvent& e) {
+ 
+ void ImGuiDrawer::OnMouseUp(MouseEvent& e) {
+   SwitchToPhysicalMouseAndUpdateMousePosition(e);
+-  auto& io = GetIO();
+-  int button = -1;
+-  switch (e.button()) {
+-    case rex::ui::MouseEvent::Button::kLeft: {
+-      button = 0;
+-      break;
+-    }
+-    case rex::ui::MouseEvent::Button::kRight: {
+-      button = 1;
+-      break;
+-    }
+-    default: {
+-      // Ignored.
+-      break;
+-    }
++  int button = ImGuiMouseButtonIndex(e.button());
++  if (button < 0) {
++    return;
+   }
+-  if (button >= 0 && button < std::size(io.MouseDown)) {
+-    if (io.MouseDown[button]) {
+-      io.MouseDown[button] = false;
+-      if (!ImGui::IsAnyMouseDown()) {
+-        window_->ReleaseMouse();
+-      }
++  uint32_t bit = uint32_t(1) << button;
++  if (mouse_buttons_down_ & bit) {
++    mouse_buttons_down_ &= ~bit;
++    GetIO().AddMouseButtonEvent(button, false);
++    if (!mouse_buttons_down_) {
++      window_->ReleaseMouse();
+     }
+   }
+ }
+ 
+ void ImGuiDrawer::OnMouseWheel(MouseEvent& e) {
+   SwitchToPhysicalMouseAndUpdateMousePosition(e);
+-  auto& io = GetIO();
+-  io.MouseWheel += float(e.scroll_y()) / float(MouseEvent::kScrollPerDetent);
++  GetIO().AddMouseWheelEvent(0.0f, float(e.scroll_y()) / float(MouseEvent::kScrollPerDetent));
+ }
+ 
+ void ImGuiDrawer::OnTouchEvent(TouchEvent& e) {
+@@ -587,8 +581,16 @@ void ImGuiDrawer::OnTouchEvent(TouchEvent& e) {
+     // The latest pointer needs to be controlling the ImGui mouse.
+     if (touch_pointer_id_ == TouchEvent::kPointerIDNone) {
+       // Switching from the mouse to touch input.
+-      if (ImGui::IsAnyMouseDown()) {
+-        std::memset(io.MouseDown, 0, sizeof(io.MouseDown));
++      if (mouse_buttons_down_) {
++        // The interrupted mouse press is abandoned, not completed: released away from everything,
++        // so it clicks nothing.
++        io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
++        for (int button = 0; button < 2; ++button) {
++          if (mouse_buttons_down_ & (uint32_t(1) << button)) {
++            io.AddMouseButtonEvent(button, false);
++          }
++        }
++        mouse_buttons_down_ = 0;
+         window_->ReleaseMouse();
+       }
+     }
+@@ -598,27 +600,30 @@ void ImGuiDrawer::OnTouchEvent(TouchEvent& e) {
+       return;
+     }
+   }
++  io.AddMouseSourceEvent(ImGuiMouseSource_TouchScreen);
+   UpdateMousePosition(e.x(), e.y());
+   if (action == TouchEvent::Action::kUp || action == TouchEvent::Action::kCancel) {
+-    io.MouseDown[0] = false;
++    io.AddMouseButtonEvent(0, false);
+     touch_pointer_id_ = TouchEvent::kPointerIDNone;
+     // Make sure that after a touch, the ImGui mouse isn't hovering over
+     // anything.
+     reset_mouse_position_after_next_frame_ = true;
+   } else {
+-    io.MouseDown[0] = true;
++    io.AddMouseButtonEvent(0, true);
+     reset_mouse_position_after_next_frame_ = false;
+   }
+ }
+ 
+ void ImGuiDrawer::ClearInput() {
+   auto& io = GetIO();
+-  if (touch_pointer_id_ == TouchEvent::kPointerIDNone && ImGui::IsAnyMouseDown()) {
++  if (touch_pointer_id_ == TouchEvent::kPointerIDNone && mouse_buttons_down_) {
+     window_->ReleaseMouse();
+   }
+-  io.MousePos = ImVec2(-FLT_MAX, -FLT_MAX);
+-  std::memset(io.MouseDown, 0, sizeof(io.MouseDown));
++  // Events still queued would replay into the next activation.
++  io.ClearEventsQueue();
++  io.ClearInputMouse();
+   io.ClearInputKeys();
++  mouse_buttons_down_ = 0;
+   touch_pointer_id_ = TouchEvent::kPointerIDNone;
+   reset_mouse_position_after_next_frame_ = false;
+ }
+@@ -649,23 +654,25 @@ void ImGuiDrawer::OnKey(KeyEvent& e, bool is_down) {
+ }
+ 
+ void ImGuiDrawer::UpdateMousePosition(float x, float y) {
+-  auto& io = GetIO();
+   float physical_to_logical = float(window_->GetMediumDpi()) / float(window_->GetDpi());
+-  io.MousePos.x = x * physical_to_logical;
+-  io.MousePos.y = y * physical_to_logical;
++  GetIO().AddMousePosEvent(x * physical_to_logical, y * physical_to_logical);
+ }
+ 
+ void ImGuiDrawer::SwitchToPhysicalMouseAndUpdateMousePosition(const MouseEvent& e) {
++  auto& io = GetIO();
+   if (touch_pointer_id_ != TouchEvent::kPointerIDNone) {
+     touch_pointer_id_ = TouchEvent::kPointerIDNone;
+-    auto& io = GetIO();
+-    std::memset(io.MouseDown, 0, sizeof(io.MouseDown));
++    // A touch drives only the left button; the interrupted touch is abandoned, released away from
++    // everything so it clicks nothing.
++    io.AddMousePosEvent(-FLT_MAX, -FLT_MAX);
++    io.AddMouseButtonEvent(0, false);
+     // Nothing needs to be done regarding CaptureMouse and ReleaseMouse - all
+     // buttons as well as mouse capture have been released when switching to
+     // touch input, the mouse is never captured during touch input, and now
+     // resetting to no buttons down (therefore not capturing).
+   }
+   reset_mouse_position_after_next_frame_ = false;
++  io.AddMouseSourceEvent(ImGuiMouseSource_Mouse);
+   UpdateMousePosition(float(e.x()), float(e.y()));
+ }
+ 
+diff --git a/tests/unit/CMakeLists.txt b/tests/unit/CMakeLists.txt
+index d436f1e..ff713bf 100644
+--- a/tests/unit/CMakeLists.txt
++++ b/tests/unit/CMakeLists.txt
+@@ -30,6 +30,7 @@ add_executable(unit_tests
+     system/guest_fatal_test.cpp
+     input/input_assignment_test.cpp
+     input/keystroke_repeat_test.cpp
++    ui/imgui_drawer_input_test.cpp
+     codegen/codegen_writer_test.cpp
+     codegen/output_partition_test.cpp
+     codegen/output_stamp_test.cpp
+diff --git a/tests/unit/ui/imgui_drawer_input_test.cpp b/tests/unit/ui/imgui_drawer_input_test.cpp
+new file mode 100644
+index 0000000..7617fd4
+--- /dev/null
++++ b/tests/unit/ui/imgui_drawer_input_test.cpp
+@@ -0,0 +1,223 @@
++// Tests for ImGuiDrawer's mouse and touch input: a press and a release that arrive between the
++// same two frames (an instant tap, or a click faster than a frame) are a click, as a slower one is.
++// Driven through a Window's input listeners, as the platform windows deliver events, with a window
++// and an immediate drawer that draw nothing.
++
++#include <catch2/catch_test_macros.hpp>
++#include <cstdint>
++#include <memory>
++
++#include <imgui.h>
++#include <rex/ui/imgui_dialog.h>
++#include <rex/ui/imgui_drawer.h>
++#include <rex/ui/immediate_drawer.h>
++#include <rex/ui/presenter.h>
++#include <rex/ui/ui_event.h>
++#include <rex/ui/window.h>
++#include <rex/ui/windowed_app_context.h>
++
++namespace {
++
++using namespace rex::ui;
++
++constexpr uint32_t kWidth = 1280, kHeight = 720;
++
++class TestAppContext final : public WindowedAppContext {
++ public:
++  void NotifyUILoopOfPendingFunctions() override {}
++  void PlatformQuitFromUIThread() override {}
++};
++
++class TestWindow final : public Window {
++ public:
++  explicit TestWindow(WindowedAppContext& context) : Window(context, "test", kWidth, kHeight) {}
++  ~TestWindow() override { EnterDestructor(); }
++
++  void Mouse(bool down, float x, float y) {
++    WindowDestructionReceiver receiver(this);
++    MouseEvent e(this, MouseEvent::Button::kLeft, int32_t(x), int32_t(y));
++    if (down) {
++      OnMouseDown(e, receiver);
++    } else {
++      OnMouseUp(e, receiver);
++    }
++  }
++  void Touch(TouchEvent::Action action, float x, float y) {
++    WindowDestructionReceiver receiver(this);
++    TouchEvent e(this, 0, action, x, y);
++    OnTouchEvent(e, receiver);
++  }
++
++ protected:
++  bool OpenImpl() override {
++    WindowDestructionReceiver receiver(this);
++    OnActualSizeUpdate(kWidth, kHeight, receiver);
++    return true;
++  }
++  void RequestCloseImpl() override {}
++  std::unique_ptr<Surface> CreateSurfaceImpl(Surface::TypeFlags) override { return nullptr; }
++  void RequestPaintImpl() override {}
++};
++
++class NullTexture final : public ImmediateTexture {
++ public:
++  NullTexture(uint32_t width, uint32_t height) : ImmediateTexture(width, height) {}
++};
++
++class NullImmediateDrawer final : public ImmediateDrawer {
++ public:
++  std::unique_ptr<ImmediateTexture> CreateTexture(uint32_t width, uint32_t height,
++                                                  ImmediateTextureFilter, bool,
++                                                  const uint8_t*) override {
++    return std::make_unique<NullTexture>(width, height);
++  }
++  void Begin(UIDrawContext&, float, float) override {}
++  void BeginDrawBatch(const ImmediateDrawBatch&) override {}
++  void Draw(const ImmediateDraw&) override {}
++  void EndDrawBatch() override {}
++  void End() override {}
++};
++
++// A modal with one OK button, as the message boxes; it stays open and counts the presses.
++class OkDialog final : public ImGuiDialog {
++ public:
++  explicit OkDialog(ImGuiDrawer* drawer) : ImGuiDialog(drawer) {}
++  int presses = 0;
++  ImVec2 ok_center{}, window_pos{};
++
++ protected:
++  void OnDraw(ImGuiIO&) override {
++    if (!opened_) {
++      ImGui::OpenPopup("Dialog");
++      opened_ = true;
++    }
++    if (ImGui::BeginPopupModal("Dialog", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
++      ImGui::TextUnformatted("A message for the dialog's body.");
++      if (ImGui::Button("OK")) {
++        ++presses;
++      }
++      const ImVec2 lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
++      ok_center = ImVec2((lo.x + hi.x) / 2, (lo.y + hi.y) / 2);
++      window_pos = ImGui::GetWindowPos();
++      ImGui::EndPopup();
++    }
++  }
++
++ private:
++  bool opened_ = false;
++};
++
++struct Fixture {
++  TestAppContext context;
++  TestWindow window{context};
++  NullImmediateDrawer immediate;
++  std::unique_ptr<ImGuiDrawer> drawer;
++  OkDialog* dialog = nullptr;
++
++  Fixture() {
++    REQUIRE(window.Open());
++    drawer = std::make_unique<ImGuiDrawer>(&window, 0);
++    drawer->SetPresenterAndImmediateDrawer(nullptr, &immediate);
++    dialog = new OkDialog(drawer.get());  // owned by the drawer
++    Frames(5);                            // the modal opens and settles
++  }
++  ~Fixture() {
++    // Every case ends with the buttons up: the window must not still capture the mouse.
++    CHECK(!window.IsMouseCaptureRequested());
++    drawer->SetPresenterAndImmediateDrawer(nullptr, nullptr);
++  }
++
++  void Frames(int count) {
++    for (int i = 0; i < count; ++i) {
++      AppUIDrawContext draw_context(kWidth, kHeight);
++      drawer->Draw(draw_context);
++    }
++  }
++};
++
++}  // namespace
++
++TEST_CASE("ImGuiDrawer: a click within one frame presses the button", "[ui]") {
++  Fixture f;
++  const ImVec2 ok = f.dialog->ok_center, pos = f.dialog->window_pos;
++  f.window.Mouse(true, ok.x, ok.y);
++  f.window.Mouse(false, ok.x, ok.y);
++  f.Frames(10);
++  CHECK(f.dialog->presses == 1);
++  CHECK(f.dialog->window_pos.x == pos.x);
++  CHECK(f.dialog->window_pos.y == pos.y);
++
++  f.window.Mouse(true, ok.x, ok.y);
++  f.window.Mouse(false, ok.x, ok.y);
++  f.Frames(1);
++  f.window.Mouse(true, ok.x, ok.y);
++  f.window.Mouse(false, ok.x, ok.y);
++  f.Frames(10);
++  CHECK(f.dialog->presses == 3);
++}
++
++TEST_CASE("ImGuiDrawer: a click over several frames presses the button once", "[ui]") {
++  Fixture f;
++  const ImVec2 ok = f.dialog->ok_center;
++  f.window.Mouse(true, ok.x, ok.y);
++  f.Frames(3);
++  CHECK(f.dialog->presses == 0);
++  f.window.Mouse(false, ok.x, ok.y);
++  f.Frames(3);
++  CHECK(f.dialog->presses == 1);
++}
++
++TEST_CASE("ImGuiDrawer: an instant touch tap presses the button", "[ui]") {
++  Fixture f;
++  const ImVec2 ok = f.dialog->ok_center, pos = f.dialog->window_pos;
++  f.window.Touch(TouchEvent::Action::kDown, ok.x, ok.y);
++  f.window.Touch(TouchEvent::Action::kUp, ok.x, ok.y);
++  f.Frames(10);
++  CHECK(f.dialog->presses == 1);
++  CHECK(f.dialog->window_pos.x == pos.x);
++  CHECK(f.dialog->window_pos.y == pos.y);
++}
++
++TEST_CASE("ImGuiDrawer: a press that leaves the button does not click it", "[ui]") {
++  Fixture f;
++  const ImVec2 ok = f.dialog->ok_center;
++  f.window.Mouse(true, ok.x, ok.y);
++  f.window.Mouse(false, 2.0f, 2.0f);  // released outside the dialog
++  f.Frames(10);
++  CHECK(f.dialog->presses == 0);
++}
++
++TEST_CASE("ImGuiDrawer: the mouse is captured while a button is held; touch abandons the press", "[ui]") {
++  Fixture f;
++  const ImVec2 ok = f.dialog->ok_center;
++  f.window.Mouse(true, ok.x, ok.y);
++  CHECK(f.window.IsMouseCaptureRequested());
++  f.window.Touch(TouchEvent::Action::kDown, ok.x, ok.y);  // touch takes over: capture released
++  CHECK(!f.window.IsMouseCaptureRequested());
++  f.window.Touch(TouchEvent::Action::kUp, ok.x, ok.y);
++  f.Frames(10);
++  CHECK(f.dialog->presses == 1);  // the tap; the interrupted mouse press clicks nothing
++}
++
++TEST_CASE("ImGuiDrawer: a mouse event abandons a touch in progress", "[ui]") {
++  Fixture f;
++  const ImVec2 ok = f.dialog->ok_center;
++  f.window.Touch(TouchEvent::Action::kDown, ok.x, ok.y);
++  f.Frames(2);
++  f.window.Mouse(true, ok.x, ok.y);
++  f.window.Mouse(false, ok.x, ok.y);
++  f.Frames(10);
++  CHECK(f.dialog->presses == 1);  // the click; the interrupted touch clicks nothing
++}
++
++TEST_CASE("ImGuiDrawer: removing the last dialog releases a held button", "[ui]") {
++  Fixture f;
++  const ImVec2 ok = f.dialog->ok_center;
++  f.window.Mouse(true, ok.x, ok.y);
++  f.Frames(1);
++  delete f.dialog;  // detaches the drawer, which clears its input
++  f.dialog = nullptr;
++  CHECK(!f.window.IsMouseCaptureRequested());
++  f.window.Mouse(false, ok.x, ok.y);  // no longer listening: nothing to release
++  CHECK(!f.window.IsMouseCaptureRequested());
++}

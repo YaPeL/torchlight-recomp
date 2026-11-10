@@ -1401,7 +1401,7 @@ draft (codegen, `bd833a2`'s follow-up), with the measurement as its evidence.
 - Afterwards: rebase the drafts on `development` and hand them over for review (D4 and D17 with
   special care).
 - The shared SDK copies on the Linux machine (2026-11-06). The live SDK is `bd833a2` with
-  develop's series, up to patch 54 (codegen_id `b0a9641de0b5431d7437dcb810b7b1bd`). One
+  develop's series, up to patch 54 (codegen_id `b0a9641de0b5431d7437dcb810b7b1bd`; 55 is in the series, not yet in this copy). One
   older copy stays next to it: `rexglue-sdk-bd833a2-52`, the same series up to patch 52, to roll
   back the last swap (two `mv`; its install is inside it). It goes at the next swap, when the copy
   it replaces becomes the rollback. The old base `rexglue-sdk-0c7b01a` was deleted after the
@@ -1484,7 +1484,8 @@ Three branches added SDK patches with clashing numbers. Numbers are now handed o
 | 52 | `rexglue-phys-host-offset-no-compare.patch` | `develop` | `bd833a2`, after 51 |
 | 53 | `rexglue-indirect-dispatch-count-opt-in.patch` | `develop` | `bd833a2`, after 52 |
 | 54 | `rexglue-no-package-registry.patch` | `develop` | `bd833a2`, after 53 |
-| 55 | next free (`patches/README.md`, "Numbers", is the table kept up to date) | | |
+| 55 | `rexglue-imgui-input-queue.patch` | `develop` | `bd833a2`, after 54 |
+| 56 | next free (`patches/README.md`, "Numbers", is the table kept up to date) | | |
 
 22-27 are in `develop`; their branches were merged and deleted on 2026-10-09.
 
