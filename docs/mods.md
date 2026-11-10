@@ -1342,14 +1342,28 @@ Accepted layouts: `mod.dat` or `media/` at the source's root (one mod, named aft
 folder), top-level folders that hold them (one mod or a pack, each named after its folder; other
 top-level files are left out), or the same one level down below a single folder (a zipped `mods`
 folder). A `mods.dat` in the source is never copied. Each mod is written to `<name>.partial` and
-renamed without replacing anything, so a name already there fails the import, and a failure or a
-cancel leaves nothing behind (a `.partial` an interrupted run left is never loaded as a mod, and
-every one is removed when the next import starts). Refused, before anything is written:
+renamed without replacing anything, so a name already there (in any case) fails the import
+(`kAlreadyInstalled`), and a failure or a cancel leaves nothing behind (a `.partial` an interrupted
+run left is never loaded as a mod, and every one is removed when the next import starts).
+
+**Replacing a mod** (the owner's decision, 2026-11-09): after `kAlreadyInstalled` the game asks
+"Replace?", and on yes imports again with `ImportOptions::replace`. Every new mod is first complete
+in its `.partial`; then each old folder is renamed to `<name>.replaced`, the new one renamed into
+place, and only when all are in place are the old ones removed. A failure before that puts every
+old folder back, so the old mod stays intact. A `.replaced` is never loaded as a mod; the next import
+puts one back when its mod is missing (a run killed mid-swap) and removes it otherwise.
+
+Refused, before anything is written:
 - entries with unsafe names, in any component and on every platform: absolute, `..`, drive
   letters, colons, the characters `<>"|?*`, a trailing dot or space, and Windows' device names
   (`CON`, `NUL`, `AUX`, `PRN`, `COM1`-`9`, `LPT1`-`9`, in any case, with an extension too);
+- a file that is not a zip (`kNotAZip`: no zip signature at its start, e.g. a `.rar` or `.7z`
+  picked through Android's "All files" filter); a damaged or truncated zip is `kUnreadable`;
 - symbolic links and encrypted entries; names are taken as UTF-8 only with the entry's UTF-8 flag,
-  otherwise they must be ASCII (the format's CP437 agrees with ASCII only);
+  otherwise they must be ASCII (the format's CP437 agrees with ASCII only). A zip from an old
+  Windows tool, whose names are in the system's code page without the flag, is refused
+  (`kNonAsciiName`, the entry as detail; the owner's decision, 2026-11-09: the player is told to zip
+  it again with a tool that writes UTF-8 names; reading CP1252 is for later, if players ask);
 - two mods of a pack, or two files of a mod, whose names differ only in case (the guest's paths
   ignore it);
 - more than 200,000 entries, or a name longer than 1,024 bytes (the listing is linear in the

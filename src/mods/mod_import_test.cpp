@@ -245,6 +245,72 @@ int main() {
           "existing: untouched, A not installed");
   }
 
+  // Replacing (the player confirmed): the old folder goes only once the new one is in place.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/b/old.txt", "old");
+    WriteText(data / "mods/Keep/mod.dat", kModDat);
+    const fs::path source = zip("replace.zip", {{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}, {"B/new.txt", "new"}});
+    ImportOptions replace;
+    replace.replace = true;
+    const auto result = ImportMod(source, data, {}, nullptr, replace);
+    Check(result.ok() && result.mods == Names{"A", "B"} && result.replaced == Names{"b"},
+          "replace: " + result.message());
+    Check(Listing(data / "mods") == Names{"A", "B", "Keep"} && ReadText(data / "mods/B/new.txt") == "new" &&
+              !fs::exists(data / "mods/B/old.txt"),
+          "replace: the new B in place, the old b's files gone, Keep untouched");
+    Check(result.message().find("replacing b") != std::string::npos, "replace: the log names it");
+  }
+
+  // A replace that fails (a pack whose second mod's data is damaged): the old mods byte-identical,
+  // nothing of the new ones left.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/A/mod.dat", "old A");
+    WriteText(data / "mods/B/media/b.txt", "old B");
+    auto bytes = ZipBytes({{"A/mod.dat", kModDat}, {"B/mod.dat", kModDat}, {"B/media/b.txt", std::string(4000, 'b')}});
+    size_t third = 0, count = 0;
+    for (size_t at = 0; at + 4 <= bytes.size(); ++at) {
+      if (std::memcmp(&bytes[at], "PK\3\4", 4) == 0 && ++count == 3) third = at;
+    }
+    Check(third > 0, "replace failing: third entry found");
+    const size_t data_at = third + 30 + std::strlen("B/media/b.txt");
+    for (size_t i = data_at; i < data_at + 4 && i < bytes.size(); ++i) bytes[i] ^= 0x5A;
+    WriteBytes(root / "sources/replace-damaged.zip", bytes);
+    ImportOptions replace;
+    replace.replace = true;
+    const auto result = ImportMod(root / "sources/replace-damaged.zip", data, {}, nullptr, replace);
+    Check(result.status == ImportStatus::kUnreadable && result.replaced.empty(),
+          "replace failing: " + result.message());
+    Check(Listing(data / "mods") == Names{"A", "B"} && ReadText(data / "mods/A/mod.dat") == "old A" &&
+              ReadText(data / "mods/B/media/b.txt") == "old B" && !fs::exists(data / "mods/B/mod.dat"),
+          "replace failing: the old mods intact");
+  }
+
+  // Without the player's confirmation an existing name still fails, as before.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/Solo/mod.dat", "old");
+    const auto result = ImportMod(zip("Solo.zip", {{"mod.dat", kModDat}}), data);
+    Check(result.status == ImportStatus::kAlreadyInstalled && result.mods == Names{"Solo"} &&
+              ReadText(data / "mods/Solo/mod.dat") == "old",
+          "no replace: refused, untouched");
+  }
+
+  // What an interrupted replace left: a .replaced whose mod is missing comes back; one whose mod is
+  // there goes. Then the import goes on.
+  {
+    const fs::path data = fresh();
+    WriteText(data / "mods/Lost.replaced/mod.dat", "lost");
+    WriteText(data / "mods/Done.replaced/mod.dat", "stale");
+    WriteText(data / "mods/Done/mod.dat", "done");
+    const auto result = ImportMod(zip("Other.zip", {{"mod.dat", kModDat}}), data);
+    Check(result.ok(), "recovery: " + result.message());
+    Check(Listing(data / "mods") == Names{"Done", "Lost", "Other"} && ReadText(data / "mods/Lost/mod.dat") == "lost" &&
+              ReadText(data / "mods/Done/mod.dat") == "done",
+          "recovery: Lost put back, Done's old copy removed");
+  }
+
   // Damaged zips: truncated (no central directory), not a zip, and an entry whose data is
   // damaged after the first was written (its .partial removed).
   {
@@ -257,7 +323,13 @@ int main() {
     Check(result.status == ImportStatus::kUnreadable, "truncated: " + result.message());
     WriteText(root / "sources/text.zip", "not a zip at all");
     result = ImportMod(root / "sources/text.zip", data);
-    Check(result.status == ImportStatus::kUnreadable, "not a zip: " + result.message());
+    Check(result.status == ImportStatus::kNotAZip && result.detail == "text.zip", "not a zip: " + result.message());
+    WriteText(root / "sources/archive.rar", "Rar!\x1a\x07\x01");
+    result = ImportMod(root / "sources/archive.rar", data);
+    Check(result.status == ImportStatus::kNotAZip, "a .rar: " + result.message());
+    WriteText(root / "sources/empty.zip", "");
+    result = ImportMod(root / "sources/empty.zip", data);
+    Check(result.status == ImportStatus::kNotAZip, "an empty file: " + result.message());
     // The second entry's data: flip bytes in the middle of the file (after mod.dat's local entry).
     auto damaged =
         ZipBytes({{"Mod/mod.dat", kModDat}, {"Mod/media/a", std::string(4000, 'a') + "end"}});
@@ -418,6 +490,8 @@ int main() {
     const fs::path data = fresh();
     const auto result = ImportMod(zip("x.partial.zip", {{"mod.dat", kModDat}}), data);
     Check(result.status == ImportStatus::kUnsafeName, "partial name: " + result.message());
+    const auto replaced = ImportMod(zip("x.Replaced.zip", {{"mod.dat", kModDat}}), data);
+    Check(replaced.status == ImportStatus::kUnsafeName, "replaced name: " + replaced.message());
   }
 
   std::error_code ec;
