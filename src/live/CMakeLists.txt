@@ -68,6 +68,18 @@ target_link_libraries(deferred_check_test PRIVATE torchlight_live)
 target_compile_options(deferred_check_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME deferred_check_test COMMAND deferred_check_test)
 
+# Every controller as the one player (one_player_input.h); the SDK's input, so a library of its own,
+# tested without the game.
+add_library(torchlight_one_player_input STATIC one_player_input.cpp)
+target_include_directories(torchlight_one_player_input PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
+target_link_libraries(torchlight_one_player_input PUBLIC rex::runtime)
+target_compile_features(torchlight_one_player_input PUBLIC cxx_std_23)
+target_include_directories(torchlight_one_player_input PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
+target_compile_options(torchlight_one_player_input PRIVATE -Wall -Wextra)
+add_executable(one_player_input_test one_player_input_test.cpp)
+target_link_libraries(one_player_input_test PRIVATE torchlight_one_player_input)
+add_test(NAME one_player_input_test COMMAND one_player_input_test)
+
 # The consumer side (backend thread): links the frontend and the OGRE backend, so it is a library
 # of its own; the queue and the store above stay testable without OGRE.
 add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp frame_timing.cpp
@@ -75,6 +87,7 @@ add_library(torchlight_live_mode STATIC live_content_source.cpp live_mode.cpp fr
     ui_gamepad.cpp named_texture_refresh.cpp
     system_back_button.cpp touch_input.cpp touch_overlay.cpp)
 target_link_libraries(torchlight_live_mode PUBLIC torchlight_live torchlight_frontend torchlight_texture_files rex::runtime
+    torchlight_one_player_input
     torchlight_platform torchlight_settings torchlight_input torchlight_adaptive_vsync)
 target_include_directories(torchlight_live_mode PRIVATE "${TORCHLIGHT_REX_INCLUDE}")
 target_compile_options(torchlight_live_mode PRIVATE -Wall -Wextra)

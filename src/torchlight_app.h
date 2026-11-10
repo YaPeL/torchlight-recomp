@@ -36,6 +36,7 @@
 #include "hooks/rtss_listener_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
+#include "live/one_player_input.h"
 #include "dev/script_input.h"
 #include "game_setup/first_run.h"
 #include "platform/storage_mode.h"
@@ -213,6 +214,8 @@ class TorchlightApp : public rex::ReXApp {
                                          user_data_root(), torchlight::game_menu::MountedModPlan(),
                                          torchlight::mods::UnitIndexBuiltInGame());
     }
+    // Every controller plays the one player (guest user 0, the only one signed in; issue #138).
+    torchlight::live::InstallOnePlayerInput(runtime());
     // Android: the system's Back button as the pad's Back (before live::Install, as the script).
     torchlight::live::InstallSystemBackButton(runtime());
     // The touch controls (settings.toml "touch_controls"): a controller of their own fed by the
