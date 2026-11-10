@@ -400,8 +400,9 @@ PickResult OpenablePickedFile(const std::string& title, std::string& path, std::
   const std::filesystem::space_info space = std::filesystem::space(dir, space_ec);
   if (size > 0 && !space_ec && space.available < uint64_t(size) + kReserve) {
     SDL_CloseIO(in);
-    error = "not enough free space to copy the chosen file: it needs " + std::to_string((uint64_t(size) + kReserve) >> 20) +
-            " MB and " + std::to_string(space.available >> 20) + " MB are free";
+    error = "not enough free space to copy the chosen file: it needs " +
+            std::to_string((uint64_t(size) + kReserve) >> 20) + " MB and " + std::to_string(space.available >> 20) +
+            " MB are free";
     return PickResult::kUncopied;
   }
   const std::string copy = dir + PickedDocumentName(path, DocumentDisplayName(path));

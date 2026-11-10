@@ -141,7 +141,8 @@ MenuMessage ModPickMessage(PickProblem problem, const std::string& detail, const
 std::vector<std::string> ModImportTexts() {
   return {kImportTitle,       kImportOk,          kImportAskSource, kImportZipButton,
           kImportFolderButton, kImportCancelButton, kImportPickZip,   kImportPickFolder,
-          kImportZipFilter,   kImportCopying,     kImportBusy,        kInstalled,       kInstalledMany,   kAlreadyInstalled,
+          kImportZipFilter,   kImportCopying,     kImportBusy,      kInstalled,
+          kInstalledMany,     kAlreadyInstalled,
           kNoModFound,        kUnreadable,        kUnsafeName,      kUnsupportedEntry,
           kNonAsciiName,      kNotEnoughSpace,    kCannotWrite,     kCancelled,
           kNoPicker,          kNotCopied};

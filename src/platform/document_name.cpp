@@ -15,7 +15,8 @@ int HexDigit(char c) {
 
 // A file name with an extension that cannot be read as a path, hidden or a control character.
 bool Plain(const std::string& name) {
-  return name.size() <= kMaxDocumentName && name.find('.') != std::string::npos && name.front() != '.' && name.find('\\') == std::string::npos &&
+  return name.size() <= kMaxDocumentName && name.find('.') != std::string::npos && name.front() != '.' &&
+         name.find('\\') == std::string::npos &&
          std::none_of(name.begin(), name.end(), [](char c) { return static_cast<unsigned char>(c) < 0x20; });
 }
 
