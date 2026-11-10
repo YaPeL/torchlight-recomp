@@ -146,7 +146,8 @@ MenuMessage ModReplaceQuestion(const mods::ImportResult& result, const Translate
   }
   if (result.mods.size() > kListedMods) names += ", ...";
   return {Text(tr, kImportTitle), Text(tr, kReplaceQuestion, {{"mods", names}}),
-          {Text(tr, kReplaceButton), Text(tr, kImportCancelButton)}};
+          {Text(tr, kReplaceButton), Text(tr, kImportCancelButton)},
+          1};
 }
 
 MenuMessage ModPickMessage(PickProblem problem, const std::string& detail, const Translate& tr) {

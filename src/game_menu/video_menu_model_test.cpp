@@ -474,8 +474,8 @@ void TestImportMessages() {
         "not a zip: the file named");
   const MenuMessage ask = ModReplaceQuestion(existing, Bracket);
   Check(ask.text.find("named Mine is already installed. Replace it") != std::string::npos &&
-            ask.buttons == std::vector<std::string>{"[Replace]", "[Cancel]"},
-        "replace: the name, Replace first, Cancel second");
+            ask.buttons == std::vector<std::string>{"[Replace]", "[Cancel]"} && ask.active == 1,
+        "replace: the name, Replace first, Cancel second and selected");
 
   mods::ImportResult unsafe;
   unsafe.status = mods::ImportStatus::kUnsafeName;

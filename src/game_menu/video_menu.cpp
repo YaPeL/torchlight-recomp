@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <condition_variable>
+#include <utility>
 #include <cctype>
 #include <filesystem>
 #include <fstream>
@@ -578,7 +579,12 @@ void AddVideoColumn(PPCContext& ctx, uint8_t* base, uint32_t settings_menu) {
   // Import Mod: with the UI thread for the pickers and a mods folder (InstallMods ran).
   g_column.model->SetImportAvailable(g_import.app_context && !ImportDataDir().empty());
   // Not in a gamescope session (the Deck's Game Mode): the desktop's picker may open unseen there.
-  g_column.model->SetImportHidden(platform::InGamescopeSession());
+  const bool gamescope = platform::InGamescopeSession();
+  g_column.model->SetImportHidden(gamescope);
+  static bool logged = false;
+  if (gamescope && !std::exchange(logged, true)) {
+    REXLOG_INFO("game menu: a gamescope session, Import Mod hidden (the desktop's picker may open unseen)");
+  }
   // The column is made anew each time the menu opens: an import still running, or one done this run.
   g_column.model->SetImportRunning(g_import.running);
   if (g_import.mod_imported) g_column.model->NoteModImported();
@@ -686,7 +692,8 @@ void OnGameUiFrame(PPCContext& ctx, uint8_t* base) {
   // times, and then the log keeps the result.
   if (g_import.show_attempts++ % 60 != 0) return;
   const MenuMessage& message = *g_import.to_show;
-  if (g_import.box.Show(ctx, base, message.title, WrapText(message.text, kBoxLineLength), message.buttons, 0)) {
+  if (g_import.box.Show(ctx, base, message.title, WrapText(message.text, kBoxLineLength), message.buttons,
+                         message.active)) {
     g_import.box_asks = g_import.to_show_asks;
     g_import.to_show.reset();
     g_import.to_show_asks = false;

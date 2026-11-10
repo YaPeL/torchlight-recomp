@@ -18,6 +18,7 @@ using Translate = std::function<std::string(const std::string&)>;
 struct MenuMessage {
   std::string title, text;
   std::vector<std::string> buttons;
+  int active = 0;  // the button selected when the box opens
 };
 
 inline constexpr const char* kImportTitle = "Import Mod";
@@ -52,7 +53,8 @@ std::string WrapText(const std::string& text, size_t width);
 MenuMessage ModImportMessage(const mods::ImportResult& result, const Translate& tr);
 
 // The question after an import refused for a name already installed (kAlreadyInstalled): Replace
-// (button 0, imported again with mods::ImportOptions::replace) or Cancel (button 1).
+// (button 0, imported again with mods::ImportOptions::replace) or Cancel (button 1, selected when
+// it opens, so that pressing A through it does not replace a mod).
 MenuMessage ModReplaceQuestion(const mods::ImportResult& result, const Translate& tr);
 
 // The box when nothing could be imported because the picker failed: no picker could be shown, or
