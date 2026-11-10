@@ -27,18 +27,30 @@ std::optional<fs::path> Child(const fs::path& dir, std::string_view name) {
   return std::nullopt;
 }
 
-// Replaces the value of attribute `attribute` inside [begin, end) of `text`; false without it.
+// Replaces the value of attribute `attribute` inside [begin, end) of `text`: the name after any
+// white space, "=" (spaces around it allowed) and a value in double or single quotes; false without
+// it.
 bool ReplaceAttribute(std::string& text, size_t begin, size_t& end, std::string_view attribute,
                       std::string_view value) {
-  const std::string key = " " + std::string(attribute) + "=\"";
-  const size_t at = text.find(key, begin);
-  if (at == std::string::npos || at >= end) return false;
-  const size_t start = at + key.size();
-  const size_t close = text.find('"', start);
-  if (close == std::string::npos || close >= end) return false;
-  text.replace(start, close - start, value);
-  end = end - (close - start) + value.size();
-  return true;
+  const auto space = [](char c) { return std::isspace(static_cast<unsigned char>(c)) != 0; };
+  for (size_t at = text.find(attribute, begin); at != std::string::npos && at < end;
+       at = text.find(attribute, at + 1)) {
+    if (at == 0 || !space(text[at - 1])) continue;
+    size_t i = at + attribute.size();
+    while (i < end && space(text[i])) ++i;
+    if (i >= end || text[i] != '=') continue;
+    ++i;
+    while (i < end && space(text[i])) ++i;
+    if (i >= end || (text[i] != '"' && text[i] != '\'')) continue;
+    const char quote = text[i];
+    const size_t start = i + 1;
+    const size_t close = text.find(quote, start);
+    if (close == std::string::npos || close >= end) return false;
+    text.replace(start, close - start, value);
+    end = end - (close - start) + value.size();
+    return true;
+  }
+  return false;
 }
 
 }  // namespace
@@ -56,7 +68,10 @@ std::optional<std::string> DerivedFont(std::string_view font_xml, std::string_vi
 
 bool WriteMissingSerif14(const fs::path& pack_dir, const fs::path& out_dir, std::string& error) {
   error.clear();
-  const std::optional<fs::path> media = Child(pack_dir, "media");
+  // The pack's folder in any case too ("translations/RU/" for the language "ru").
+  const std::optional<fs::path> pack = Child(pack_dir.parent_path(), pack_dir.filename().string());
+  if (!pack) return false;
+  const std::optional<fs::path> media = Child(*pack, "media");
   const std::optional<fs::path> ui = media ? Child(*media, "UI") : std::nullopt;
   if (!ui) return false;
   const std::optional<fs::path> serif = Child(*ui, "Serif.font");

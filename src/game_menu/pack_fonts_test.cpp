@@ -51,6 +51,14 @@ int main() {
   Check(!DerivedFont("<Font Name=\"Serif\" />", "Serif14", 14), "no size: nothing");
   Check(!DerivedFont("not a font", "Serif14", 14), "no <Font: nothing");
   Check(!DerivedFont("<Font Size=\"11\" />", "Serif14", 14), "no name: nothing");
+  // A hand-written .font: attributes on their own lines, tabs, single quotes, spaces around "=";
+  // and "FontName" is not "Name".
+  Check(DerivedFont("<Font\n\tName = 'Serif'\n\tFilename='a.ttf'\tSize='11' />", "Serif14", 14) ==
+            "<Font\n\tName = 'Serif14'\n\tFilename='a.ttf'\tSize='14' />",
+        "white space and single quotes");
+  Check(DerivedFont("<Font FontName=\"x\" Name=\"Serif\" Size=\"11\" />", "Serif14", 14) ==
+            "<Font FontName=\"x\" Name=\"Serif14\" Size=\"14\" />",
+        "a longer attribute name is not taken");
 
   const fs::path root = fs::temp_directory_path() / "pack_fonts_test";
   fs::remove_all(root);
@@ -64,6 +72,12 @@ int main() {
   Write(root / "ru/Media/ui/serif14.FONT", "its own");
   Check(!WriteMissingSerif14(root / "ru", root / "out", error) && error.empty() && !fs::exists(root / "out"),
         "the pack's own Serif14: nothing written");
+  // The pack's folder in another case ("RU" for "ru"): found.
+  fs::remove_all(root / "out");
+  fs::remove_all(root / "ru");
+  Write(root / "RU/media/UI/Serif.font", kSerif);
+  Check(WriteMissingSerif14(root / "ru", root / "out", error) && fs::exists(root / "out/media/UI/Serif14.font"),
+        "the pack folder in another case: written");
   // No fonts in the pack (the translation only): nothing.
   Write(root / "de/translation.dat.adm", "x");
   Check(!WriteMissingSerif14(root / "de", root / "out", error) && error.empty(), "no fonts: nothing");

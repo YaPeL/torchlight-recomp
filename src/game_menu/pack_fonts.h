@@ -17,11 +17,12 @@
 namespace torchlight::game_menu {
 
 // The font definition `font_xml` (a CEGUI .font file) as the font `name` at `size`: its <Font>
-// element's Name and Size attributes replaced, everything else kept. Nothing when it has no
-// <Font element with both.
+// element's Name and Size attributes replaced (after any white space, values in double or single
+// quotes), everything else kept. Nothing when it has no <Font element with both.
 std::optional<std::string> DerivedFont(std::string_view font_xml, std::string_view name, int size);
 
-// `pack_dir` (translations/<code>/) has media/UI/Serif.font (any case) and no Serif14.font: writes
+// `pack_dir` (translations/<code>/, the folder itself in any case too) has media/UI/Serif.font (any
+// case) and no Serif14.font: writes
 // `out_dir`/media/UI/Serif14.font from it and returns true. False when nothing is needed or it
 // cannot be done (`error` says why for the latter).
 bool WriteMissingSerif14(const std::filesystem::path& pack_dir, const std::filesystem::path& out_dir,

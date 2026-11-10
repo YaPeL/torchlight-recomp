@@ -26,9 +26,9 @@
 #include "game_menu/guest_call.h"
 #include "game_menu/guest_message_box.h"
 #include "game_menu/mod_import_message.h"
-#include "game_menu/pack_fonts.h"
 #include "game_menu/mods_install.h"
 #include "game_menu/menu_strings.h"
+#include "game_menu/pack_fonts.h"
 #include "game_menu/skill_tree_model.h"
 #include "game_menu/video_menu_model.h"
 #include "game_menu/wide_layout.h"
@@ -65,7 +65,6 @@ constexpr const char* kLayoutsDeviceMount = "\\Device\\TorchlightLayouts";
 constexpr const char* kLayoutsDeviceLink = "tllayouts:";
 constexpr const char* kLayoutsResourceLocation = "tllayouts:\\";
 bool g_generated_layouts = false;
-
 
 // Our translations (loaded by Install) and the game's language: the console language the runtime
 // reports, read when the column is built (the host settings set it before the guest runs).
