@@ -33,6 +33,10 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 ### Fixed
 
+- With two controllers connected (or one plus a virtual one, such as Steam Input's or
+  DS4Windows'), pressing "Begin" on the second one showed "Sign In Error: You must be signed in
+  with a gamer profile" with no way past it. Any controller can now start the game; the one
+  player is played by the last controller used, and only that one rumbles.
 - Language packs made from a PC translation (for instance GOG's Russian): texts in the settings,
   skills, character, stats and waypoint menus came out blank, because those menus use a font
   (Serif14) only the Xbox 360 has. The game now makes it from the pack's own font.

@@ -36,6 +36,7 @@
 #include "hooks/rtss_listener_hooks.h"
 #include "hooks/video_mode_hooks.h"
 #include "live/install.h"
+#include "live/one_player_input.h"
 #include "dev/script_input.h"
 #include "game_setup/first_run.h"
 #include "platform/storage_mode.h"
@@ -110,6 +111,8 @@ class TorchlightApp : public rex::ReXApp {
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
     torchlight::live::PreSetup(config);
+    // One player: the last controller to start an input plays (one_player_input.h, issue #138).
+    config.input_factory = torchlight::live::CreateOnePlayerInputSystem;
   }
 
   void OnPostSetup() override {
