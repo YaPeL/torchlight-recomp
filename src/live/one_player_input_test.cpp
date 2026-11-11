@@ -1,6 +1,7 @@
 // One player, one controller at a time (one_player_input.h), with fake pads: the pad that last
-// started an input is the only one read and the only one that rumbles; an idle pad never mixes
-// into it; and, through the SDK's InputSystem, "Begin" pressed on the second pad reaches guest
+// started an input is the only one read and the only one that rumbles; an idle pad, a copy of the
+// pad in hand (even a poll late), a pad plugged in held and drift at the dead zone's edge never
+// take over; and, through the SDK's InputSystem, "Begin" pressed on the second pad reaches guest
 // user 0 while user 1 has no controller (issue #138's Sign In Error).
 
 #include <cstdio>
@@ -45,6 +46,7 @@ class FakePads final : public rex::input::InputDriver {
       DeviceInfo info;
       info.id = DeviceId(id);
       info.name = "pad " + std::to_string(id);
+      info.synthetic = synthetic;
       out.push_back(info);
     }
   }
@@ -72,16 +74,24 @@ class FakePads final : public rex::input::InputDriver {
     it->second.rumble = static_cast<uint16_t>(v->left_motor_speed);
     return X_ERROR_SUCCESS;
   }
-  X_RESULT GetDeviceKeystroke(DeviceId, uint32_t, rex::input::X_INPUT_KEYSTROKE*) override {
-    return X_ERROR_EMPTY;
+  X_RESULT GetDeviceKeystroke(DeviceId id, uint32_t, rex::input::X_INPUT_KEYSTROKE* k) override {
+    auto it = pads.find(static_cast<uint64_t>(id));
+    if (it == pads.end()) return X_ERROR_DEVICE_NOT_CONNECTED;
+    if (it->second.keystrokes == 0) return X_ERROR_EMPTY;
+    --it->second.keystrokes;
+    *k = {};
+    k->virtual_key = static_cast<uint16_t>(id);
+    return X_ERROR_SUCCESS;
   }
 
   struct Pad {
     X_INPUT_GAMEPAD now = {};
     uint32_t packet = 0;
     uint16_t rumble = 0;
+    int keystrokes = 0;
   };
   std::map<uint64_t, Pad> pads = {{1, {}}, {2, {}}};
+  bool synthetic = false;
 };
 
 X_INPUT_GAMEPAD Stick(int16_t x, int16_t y) {
@@ -113,7 +123,9 @@ Rig MakeRig() {
   FakePads* raw = fake.get();
   std::vector<std::unique_ptr<rex::input::InputDriver>> drivers;
   drivers.push_back(std::move(fake));
-  return {raw, std::make_unique<ActivePadDriver>(std::move(drivers))};
+  Rig rig{raw, std::make_unique<ActivePadDriver>(std::move(drivers))};
+  Read(*rig.driver);  // both pads at rest: their baseline
+  return rig;
 }
 
 void OneDeviceForTheGame() {
@@ -132,7 +144,7 @@ void IdlePadNeverMixes() {
   for (int frame = 0; frame < 30; ++frame) {
     const int16_t drift = (frame % 2) ? 3000 : -3000;  // under the 7849 dead zone
     rig.pads->pads[1].now = Stick(drift, -drift);
-    const int16_t x = static_cast<int16_t>(12000 + frame * 500);
+    const int16_t x = static_cast<int16_t>(20000 + frame * 300);
     rig.pads->pads[2].now = Stick(x, 20000);
     const auto state = Read(*rig.driver);
     Check(static_cast<int16_t>(state.gamepad.thumb_lx) == x &&
@@ -201,7 +213,7 @@ void RumbleOnlyOnTheActivePad() {
         "only the active pad rumbles");
 
   // The player picks up pad 1 mid-rumble: pad 2 stops, pad 1 takes the rumble.
-  rig.pads->pads[1].now = Buttons(kButtonA);
+  rig.pads->pads[1].now = Buttons(kButtonX);
   Read(*rig.driver);
   Check(rig.pads->pads[1].rumble == 40000 && rig.pads->pads[2].rumble == 0,
         "the rumble moves with the player");
@@ -232,6 +244,82 @@ void UnpluggedPadHandsOver() {
         "no pad, no device");
 }
 
+// A copy of the pad in hand a poll late (Steam Input, DS4Windows): one switch at most, never back.
+void StaggeredCopiesStay() {
+  auto rig = MakeRig();
+  // The pad in hand (1) first, its copy (2) a poll later: no switch.
+  rig.pads->pads[1].now = Buttons(kButtonA);
+  Read(*rig.driver);
+  rig.pads->pads[2].now = Buttons(kButtonA);
+  Read(*rig.driver);
+  Check(rig.driver->Active() == DeviceId(1), "a copy's late press does not take over");
+  rig.pads->pads[1].now = Stick(20000, 0);
+  rig.pads->pads[2].now = Buttons(kButtonA);
+  Read(*rig.driver);
+  rig.pads->pads[2].now = Stick(21000, 500);
+  Read(*rig.driver);
+  Check(rig.driver->Active() == DeviceId(1),
+        "a copy's late stick, the same way, does not take over");
+
+  // The copy (2) first, the pad in hand a poll later: the copy plays, and no switch back.
+  rig.pads->pads[1].now = {};
+  rig.pads->pads[2].now = {};
+  Read(*rig.driver);
+  rig.pads->pads[2].now = Buttons(kButtonX);
+  Read(*rig.driver);
+  Check(rig.driver->Active() == DeviceId(2), "the copy's early press takes over");
+  rig.pads->pads[1].now = Buttons(kButtonX);
+  Read(*rig.driver);
+  Check(rig.driver->Active() == DeviceId(2), "the pad in hand's late press does not flip back");
+
+  // Another way (a second player on the other pad) still takes over.
+  rig.pads->pads[1].now = Buttons(kButtonX | kButtonA);
+  Read(*rig.driver);
+  Check(rig.driver->Active() == DeviceId(1), "a button the active pad does not hold takes over");
+}
+
+// A pad plugged in with a button held or its stick off-centre starts nothing until it is used.
+void PluggedInHeldStartsNothing() {
+  auto rig = MakeRig();
+  rig.pads->pads[3].now = Buttons(kButtonA);
+  rig.pads->pads[3].now.thumb_lx = 25000;
+  Read(*rig.driver);
+  Read(*rig.driver);
+  Check(rig.driver->Active() == DeviceId(1), "a pad plugged in held does not take over");
+  rig.pads->pads[3].now = Buttons(kButtonA | kButtonX);
+  Read(*rig.driver);
+  Check(rig.driver->Active() == DeviceId(3), "it plays once it presses a new button");
+}
+
+// Drift across the dead zone's edge, and a push short of twice the dead zone: nothing starts.
+void DriftAtTheEdgeStartsNothing() {
+  auto rig = MakeRig();
+  for (int frame = 0; frame < 20; ++frame) {
+    rig.pads->pads[2].now = Stick((frame % 2) ? 7000 : 9000, 0);
+    rig.pads->pads[2].now.thumb_ry = (frame % 2) ? -8000 : -9500;
+    Read(*rig.driver);
+  }
+  rig.pads->pads[2].now = Stick(14000, 0);
+  Read(*rig.driver);
+  Check(rig.driver->Active() == DeviceId(1), "drift at the edge does not take over");
+}
+
+// The other pads' keystrokes are dropped; the active pad's come through.
+void OtherPadsKeystrokesDropped() {
+  auto rig = MakeRig();
+  rig.pads->pads[2].keystrokes = 3;
+  rig.pads->pads[1].keystrokes = 1;
+  rex::input::X_INPUT_KEYSTROKE k = {};
+  Check(rig.driver->GetDeviceKeystroke(ActivePadDriver::kDevice, 0, &k) == X_ERROR_SUCCESS &&
+            static_cast<uint16_t>(k.virtual_key) == 1,
+        "the active pad's keystroke");
+  Check(rig.pads->pads[2].keystrokes == 0, "the other pad's keystrokes dropped");
+  rig.pads->pads[2].now = Buttons(kButtonA);
+  Read(*rig.driver);
+  Check(rig.driver->GetDeviceKeystroke(ActivePadDriver::kDevice, 0, &k) == X_ERROR_EMPTY,
+        "no stale keystroke after the switch");
+}
+
 // Issue #138 through the SDK: "Begin" (A) on the second pad reaches user 0; user 1 has no
 // controller, so the game never asks it to sign in. With the SDK's default (every pad its own
 // device under SlotAssignment) the same press went to user 1.
@@ -239,19 +327,36 @@ void SecondPadBeginsAsUserZero() {
   auto rig = MakeRig();
   rex::input::InputSystem input(nullptr);
   input.AddDriver(std::move(rig.driver));
+  auto touch = std::make_unique<FakePads>();
+  touch->synthetic = true;
+  touch->pads = {{7, {}}};
+  touch->pads[7].now = Buttons(kButtonX);
+  input.AddDriver(std::move(touch));
   input.SetDeviceAssignment(std::make_unique<rex::input::SlotAssignment>());
 
   rex::input::X_INPUT_STATE state = {};
   Check(input.GetState(0, &state) == X_ERROR_SUCCESS, "user 0 has a controller");
   rig.pads->pads[2].now = Buttons(kButtonA);
   Check(input.GetState(0, &state) == X_ERROR_SUCCESS &&
-            static_cast<uint16_t>(state.gamepad.buttons) == kButtonA,
-        "A on the second pad is user 0's A");
+            static_cast<uint16_t>(state.gamepad.buttons) == (kButtonA | kButtonX),
+        "A on the second pad is user 0's A, beside the touch controls' X");
   for (uint32_t user = 1; user < rex::input::kMaxGuestUsers; ++user) {
     Check(input.GetState(user, &state) == X_ERROR_DEVICE_NOT_CONNECTED,
           "user " + std::to_string(user) + ": no controller");
   }
   input.Shutdown();
+}
+
+// The factory itself, without pads (tool mode): users 1-3 never get a controller.
+void FactoryKeepsOtherUsersEmpty() {
+  auto system = torchlight::live::CreateOnePlayerInputSystem(true);
+  auto* input = static_cast<rex::input::InputSystem*>(system.get());
+  rex::input::X_INPUT_STATE state = {};
+  for (uint32_t user = 1; user < rex::input::kMaxGuestUsers; ++user) {
+    Check(input->GetState(user, &state) == X_ERROR_DEVICE_NOT_CONNECTED,
+          "factory: user " + std::to_string(user) + " has no controller");
+  }
+  input->Shutdown();
 }
 
 }  // namespace
@@ -264,7 +369,12 @@ int main() {
   RumbleOnlyOnTheActivePad();
   PacketNumberMovesOnASwitch();
   UnpluggedPadHandsOver();
+  StaggeredCopiesStay();
+  PluggedInHeldStartsNothing();
+  DriftAtTheEdgeStartsNothing();
+  OtherPadsKeystrokesDropped();
   SecondPadBeginsAsUserZero();
+  FactoryKeepsOtherUsersEmpty();
   std::puts("one_player_input_test: ok");
   return 0;
 }

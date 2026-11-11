@@ -1,5 +1,6 @@
 #include "live/one_player_input.h"
 
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
 
@@ -24,32 +25,85 @@ using rex::X_STATUS;
 using rex::input::DeviceId;
 using rex::input::X_INPUT_GAMEPAD;
 
-bool PastDeadzone(int16_t axis) {
-  return std::abs(static_cast<int>(axis)) >= rex::input::kThumbDeadzone;
+struct Stick {
+  int x, y;
+};
+
+Stick Left(const X_INPUT_GAMEPAD& g) {
+  return {static_cast<int16_t>(g.thumb_lx), static_cast<int16_t>(g.thumb_ly)};
 }
 
-bool StickOut(int16_t x, int16_t y) {
-  return PastDeadzone(x) || PastDeadzone(y);
+Stick Right(const X_INPUT_GAMEPAD& g) {
+  return {static_cast<int16_t>(g.thumb_rx), static_cast<int16_t>(g.thumb_ry)};
+}
+
+bool Beyond(Stick s, int deadzone) {
+  return std::abs(s.x) >= deadzone || std::abs(s.y) >= deadzone;
 }
 
 bool TriggerIn(uint8_t trigger) {
-  return trigger >= rex::input::kTriggerThreshold;
+  return trigger >= rex::input::X_INPUT_GAMEPAD_TRIGGER_THRESHOLD;
 }
 
-// A new button, or a stick or trigger that just left its dead zone. Holding an input is not
-// starting one, so two pads both held (Steam Input's copy of the pad in hand) never trade places.
-bool StartedInput(const X_INPUT_GAMEPAD& before, const X_INPUT_GAMEPAD& now) {
-  const auto pressed = static_cast<uint16_t>(now.buttons) & ~static_cast<uint16_t>(before.buttons);
-  if (pressed != 0) return true;
-  if (TriggerIn(now.left_trigger) && !TriggerIn(before.left_trigger)) return true;
-  if (TriggerIn(now.right_trigger) && !TriggerIn(before.right_trigger)) return true;
-  if (StickOut(now.thumb_lx, now.thumb_ly) && !StickOut(before.thumb_lx, before.thumb_ly)) {
+// Both pushed, and within about 45 degrees of each other.
+bool SameWay(Stick a, Stick b) {
+  const double dot = static_cast<double>(a.x) * b.x + static_cast<double>(a.y) * b.y;
+  const double norms = std::hypot(a.x, a.y) * std::hypot(b.x, b.y);
+  return norms > 0 && dot >= 0.7 * norms;
+}
+
+constexpr int kLeftDeadzone = rex::input::X_INPUT_GAMEPAD_LEFT_THUMB_DEADZONE;
+constexpr int kRightDeadzone = rex::input::X_INPUT_GAMEPAD_RIGHT_THUMB_DEADZONE;
+
+// A stick starts an input past twice its dead zone, and only after resting inside it: a pad
+// drifting at the dead zone's edge never starts one.
+bool StickStarted(Stick now, int deadzone, bool& rested) {
+  if (!Beyond(now, deadzone)) {
+    rested = true;
+    return false;
+  }
+  if (rested && Beyond(now, 2 * deadzone)) {
+    rested = false;
     return true;
   }
-  return StickOut(now.thumb_rx, now.thumb_ry) && !StickOut(before.thumb_rx, before.thumb_ry);
+  return false;
 }
 
 }  // namespace
+
+ActivePadDriver::Started ActivePadDriver::Read(Pad& pad, const X_INPUT_GAMEPAD& now) {
+  Started started;
+  if (!pad.seen) {
+    // The first reading only sets the baseline: a pad plugged in with a button held, or a stick
+    // resting off-centre, starts nothing.
+    pad.seen = true;
+    pad.left_rested = !Beyond(Left(now), kLeftDeadzone);
+    pad.right_rested = !Beyond(Right(now), kRightDeadzone);
+    pad.last = now;
+    return started;
+  }
+  started.buttons = static_cast<uint16_t>(static_cast<uint16_t>(now.buttons) &
+                                          ~static_cast<uint16_t>(pad.last.buttons));
+  started.left_trigger = TriggerIn(now.left_trigger) && !TriggerIn(pad.last.left_trigger);
+  started.right_trigger = TriggerIn(now.right_trigger) && !TriggerIn(pad.last.right_trigger);
+  started.left_stick = StickStarted(Left(now), kLeftDeadzone, pad.left_rested);
+  started.right_stick = StickStarted(Right(now), kRightDeadzone, pad.right_rested);
+  pad.last = now;
+  return started;
+}
+
+// Whether what a pad just started is already on the active pad's reading: the same buttons held,
+// the same triggers pulled, the sticks pushed the same way. That is a copy of the pad in hand
+// (Steam Input's, DS4Windows'), which often lands a poll apart from it, not another player.
+bool ActivePadDriver::Echoes(const Started& started, const X_INPUT_GAMEPAD& now,
+                             const X_INPUT_GAMEPAD& active) {
+  if ((started.buttons & ~static_cast<uint16_t>(active.buttons)) != 0) return false;
+  if (started.left_trigger && !TriggerIn(active.left_trigger)) return false;
+  if (started.right_trigger && !TriggerIn(active.right_trigger)) return false;
+  if (started.left_stick && !SameWay(Left(now), Left(active))) return false;
+  if (started.right_stick && !SameWay(Right(now), Right(active))) return false;
+  return true;
+}
 
 ActivePadDriver::ActivePadDriver(std::vector<std::unique_ptr<rex::input::InputDriver>> pads)
     : InputDriver(nullptr, 0), drivers_(std::move(pads)) {
@@ -84,7 +138,12 @@ void ActivePadDriver::RefreshPadsLocked() {
       pad.driver = driver.get();
       pad.info = info;
       for (const auto& old : pads_) {
-        if (old.driver == pad.driver && old.info.id == info.id) pad.last = old.last;
+        if (old.driver == pad.driver && old.info.id == info.id) {
+          pad.last = old.last;
+          pad.seen = old.seen;
+          pad.left_rested = old.left_rested;
+          pad.right_rested = old.right_rested;
+        }
       }
       pads.push_back(std::move(pad));
     }
@@ -109,7 +168,8 @@ void ActivePadDriver::SwitchToLocked(Pad& pad) {
     rex::input::X_INPUT_VIBRATION stop = {};
     old->driver->SetDeviceVibration(old->info.id, &stop);
   }
-  const bool first = active_ == DeviceId::kInvalid;
+  const bool first = !announced_;
+  announced_ = true;
   active_ = pad.info.id;
   active_driver_ = pad.driver;
   if (static_cast<uint16_t>(vibration_.left_motor_speed) != 0 ||
@@ -127,25 +187,36 @@ bool ActivePadDriver::PollLocked(rex::input::X_INPUT_STATE& out) {
   Pad* active = ActivePadLocked();
   if (!active) return false;
 
-  Pad* claimant = nullptr;
-  bool active_started = false;
-  X_INPUT_GAMEPAD active_now = {};
+  // Every pad is read before deciding, so a copy is compared with the active pad's reading of
+  // this same poll.
+  struct Reading {
+    Pad* pad;
+    Started started;
+    X_INPUT_GAMEPAD now;
+  };
+  std::vector<Reading> readings;
+  readings.reserve(pads_.size());
   for (auto& pad : pads_) {
     rex::input::X_INPUT_STATE state = {};
     if (pad.driver->GetDeviceState(pad.info.id, &state) != X_ERROR_SUCCESS) continue;
-    const bool started = StartedInput(pad.last, state.gamepad);
-    pad.last = state.gamepad;
-    if (&pad == active) {
-      active_started = started;
-      active_now = state.gamepad;
-    } else if (started && !claimant) {
-      claimant = &pad;
+    readings.push_back({&pad, Read(pad, state.gamepad), state.gamepad});
+  }
+  X_INPUT_GAMEPAD active_now = {};
+  bool active_started = false;
+  for (const auto& r : readings) {
+    if (r.pad == active) {
+      active_now = r.now;
+      active_started = r.started.any();
     }
   }
   // The pad in hand keeps the player while it is starting inputs too (two pads pressed at once).
-  if (claimant && !active_started) {
-    SwitchToLocked(*claimant);
-    active_now = claimant->last;
+  if (!active_started) {
+    for (const auto& r : readings) {
+      if (r.pad == active || !r.started.any() || Echoes(r.started, r.now, active_now)) continue;
+      SwitchToLocked(*r.pad);
+      active_now = r.now;
+      break;
+    }
   }
 
   out = {};

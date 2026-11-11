@@ -7,9 +7,11 @@
 //
 // The physical pads are wrapped in one device, which the SDK then gives to user 0 (a lone physical
 // device always gets the lowest ordinal). The pad that speaks for it is the active one: the last
-// pad to start an input (a new button, or a stick or trigger leaving its dead zone). Only it is
-// read and only it rumbles, so an idle pad, or Steam Input's copy of the same pad, never mixes
-// into the player's input. Synthetic devices (keyboard and mouse, the touch controls, a script's
+// pad to start an input (a new button, a trigger pulled, or a stick pushed past twice its dead zone
+// after resting inside it). Only it is read and only it rumbles, so an idle pad never mixes into
+// the player's input. An input that the active pad already has (the same buttons, the stick the
+// same way) does not take over: that is a copy of the pad in hand (Steam Input's, DS4Windows'),
+// even a poll late. Synthetic devices (keyboard and mouse, the touch controls, a script's
 // controller) are not pads and still feed user 0 beside it.
 
 #pragma once
@@ -56,7 +58,21 @@ class ActivePadDriver final : public rex::input::InputDriver {
     rex::input::InputDriver* driver = nullptr;
     rex::input::DeviceInfo info;
     rex::input::X_INPUT_GAMEPAD last = {};
+    bool seen = false;  // `last` holds a reading
+    bool left_rested = true, right_rested = true;
   };
+  // What a reading started, against the pad's previous one.
+  struct Started {
+    uint16_t buttons = 0;
+    bool left_trigger = false, right_trigger = false, left_stick = false, right_stick = false;
+    bool any() const {
+      return buttons != 0 || left_trigger || right_trigger || left_stick || right_stick;
+    }
+  };
+
+  static Started Read(Pad& pad, const rex::input::X_INPUT_GAMEPAD& now);
+  static bool Echoes(const Started& started, const rex::input::X_INPUT_GAMEPAD& now,
+                     const rex::input::X_INPUT_GAMEPAD& active);
 
   // Re-lists the pads, keeping each one's last reading; with the active pad gone, the first pad
   // takes over.
@@ -75,12 +91,15 @@ class ActivePadDriver final : public rex::input::InputDriver {
   rex::input::InputDriver* active_driver_ = nullptr;
   rex::input::X_INPUT_VIBRATION vibration_ = {};
   // Ours, not the active pad's: a switch must never read as "no change" to the game.
-  uint32_t packet_number_ = 0;
+  uint32_t packet_number_ = 1;  // as SDL's pads start
+  bool announced_ = false;
   rex::input::X_INPUT_GAMEPAD last_out_ = {};
 };
 
 // The SDK's CreateDefaultInputSystem with its pad drivers behind an ActivePadDriver (the same
-// drivers, in the same order, chosen by the same input_backend setting).
+// drivers, in the same order, chosen by the same input_backend setting). It mirrors rexglue-sdk
+// src/input/input_system.cpp CreateDefaultInputSystem (bd833a2 with patches/series, lines 491-523):
+// check it again on every SDK update.
 std::unique_ptr<rex::system::IInputSystem> CreateOnePlayerInputSystem(bool tool_mode);
 
 }  // namespace torchlight::live
