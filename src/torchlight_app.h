@@ -111,6 +111,8 @@ class TorchlightApp : public rex::ReXApp {
 
   void OnPreSetup(rex::RuntimeConfig& config) override {
     torchlight::live::PreSetup(config);
+    // One player: the last controller to start an input plays (one_player_input.h, issue #138).
+    config.input_factory = torchlight::live::CreateOnePlayerInputSystem;
   }
 
   void OnPostSetup() override {
@@ -214,8 +216,6 @@ class TorchlightApp : public rex::ReXApp {
                                          user_data_root(), torchlight::game_menu::MountedModPlan(),
                                          torchlight::mods::UnitIndexBuiltInGame());
     }
-    // Every controller plays the one player (guest user 0, the only one signed in; issue #138).
-    torchlight::live::InstallOnePlayerInput(runtime());
     // Android: the system's Back button as the pad's Back (before live::Install, as the script).
     torchlight::live::InstallSystemBackButton(runtime());
     // The touch controls (settings.toml "touch_controls"): a controller of their own fed by the

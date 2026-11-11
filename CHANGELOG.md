@@ -35,7 +35,8 @@ User-facing changes for the release notes, newest first. Developers: add a line 
 
 - With two controllers connected (or one plus a virtual one, such as Steam Input's or
   DS4Windows'), pressing "Begin" on the second one showed "Sign In Error: You must be signed in
-  with a gamer profile" with no way past it. Every controller now plays the one player.
+  with a gamer profile" with no way past it. Any controller can now start the game; the one
+  player is played by the last controller used, and only that one rumbles.
 
 ### Linux and the Steam Deck
 

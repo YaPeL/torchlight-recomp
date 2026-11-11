@@ -68,7 +68,7 @@ target_link_libraries(deferred_check_test PRIVATE torchlight_live)
 target_compile_options(deferred_check_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME deferred_check_test COMMAND deferred_check_test)
 
-# Every controller as the one player (one_player_input.h); the SDK's input, so a library of its own,
+# One player, one controller at a time (one_player_input.h); the SDK's input, so a library of its own,
 # tested without the game.
 add_library(torchlight_one_player_input STATIC one_player_input.cpp)
 target_include_directories(torchlight_one_player_input PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
