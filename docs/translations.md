@@ -14,8 +14,10 @@ game data (next to `translations/de`, `fr` and `es`) with:
   translation). The game looks texts up by their exact English original.
 - optionally `media/UI/`: fonts for the language's script. A pack's files take the place of the
   game's with the same path. Scripts the game's fonts lack (Cyrillic, for instance) need `.font`
-  files pointing to a font that has them, including `Serif14.font`, which the Xbox 360 version has
-  and the PC version does not.
+  files pointing to a font that has them. `Serif14.font` is the Xbox 360's only (the PC version has
+  none, so a pack made from a PC translation lacks it): when a pack has `Serif.font` and no
+  `Serif14.font`, the game makes one from its `Serif.font` at size 14 (the settings, skills,
+  character, stats and waypoint menus use it).
 
 Packs appear in the *Language* list by their folder name. If the selected pack is removed, the game
 starts in English.

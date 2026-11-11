@@ -28,6 +28,7 @@
 #include "game_menu/mod_import_message.h"
 #include "game_menu/mods_install.h"
 #include "game_menu/menu_strings.h"
+#include "game_menu/pack_fonts.h"
 #include "game_menu/skill_tree_model.h"
 #include "game_menu/video_menu_model.h"
 #include "game_menu/wide_layout.h"
@@ -383,13 +384,24 @@ int WriteLayouts(const std::filesystem::path& pak_path, const std::filesystem::p
   return written;
 }
 
-void InstallGeneratedLayouts(rex::Runtime* runtime, const std::filesystem::path& game_data_root) {
+void InstallGeneratedLayouts(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
+                             const std::string& language) {
   const std::string cache = platform::CacheDir("layouts");
   if (cache.empty()) {
     REXLOG_ERROR("layouts: no cache folder; menus keep their 16:9 frames and two skill columns");
     return;
   }
   if (WriteLayouts(game_data_root / "pak.zip", cache, hooks::WiderThan16x9()) <= 0) return;
+  // A language pack made from a PC translation has no Serif14 (the 360's only): one from its Serif,
+  // written before the device is mounted (it lists its folder once).
+  if (!language.empty() && !settings::NativeLanguage(language)) {
+    std::string error;
+    if (WriteMissingSerif14(game_data_root / "translations" / language, cache, error)) {
+      REXLOG_INFO("language pack: Serif14.font made from the pack's Serif.font ({})", language);
+    } else if (!error.empty()) {
+      REXLOG_WARN("language pack: no Serif14.font for {}: {}", language, error);
+    }
+  }
   auto device = std::make_unique<rex::filesystem::HostPathDevice>(kLayoutsDeviceMount, cache, true);
   if (!device->Initialize() || !runtime->file_system()->RegisterDevice(std::move(device)) ||
       !runtime->file_system()->RegisterSymbolicLink(kLayoutsDeviceLink, kLayoutsDeviceMount)) {
@@ -402,7 +414,8 @@ void InstallGeneratedLayouts(rex::Runtime* runtime, const std::filesystem::path&
 }  // namespace
 
 void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
-             rex::ui::WindowedAppContext* app_context, std::function<void()> request_close) {
+             rex::ui::WindowedAppContext* app_context, std::function<void()> request_close,
+             const std::string& language) {
   g_import.app_context = app_context;
   g_import.request_close = std::move(request_close);
   g_import.box.set_runtime(runtime);
@@ -431,7 +444,7 @@ void Install(rex::Runtime* runtime, const std::filesystem::path& game_data_root,
   for (const std::string& warning : warnings) REXLOG_WARN("game menu: {}: {}", kStringsFile, warning);
   g_enabled = true;
   REXLOG_INFO("game menu: layouts from {} as {}", data.string(), kDeviceLink);
-  InstallGeneratedLayouts(runtime, game_data_root);
+  InstallGeneratedLayouts(runtime, game_data_root, language);
 }
 
 // One FileSystem location in a group (the default one unless told); false on failure (video_menu.h).
@@ -483,6 +496,7 @@ void AddResourceLocations(PPCContext& ctx, uint8_t* base) {
       g_enabled = false;
     }
   }
+  const std::string pack = live::LanguagePack();
   if (g_generated_layouts) {
     if (AddFileSystemLocation(call, kLayoutsResourceLocation, true)) {
       REXLOG_INFO("layouts: resource location {} added", kLayoutsResourceLocation);
@@ -490,7 +504,6 @@ void AddResourceLocations(PPCContext& ctx, uint8_t* base) {
       REXLOG_ERROR("layouts: cannot add {}", kLayoutsResourceLocation);
     }
   }
-  const std::string pack = live::LanguagePack();
   if (!pack.empty()) {
     const std::string folder = "game:\\translations\\" + pack + "\\";
     if (AddFileSystemLocation(call, folder, true)) {

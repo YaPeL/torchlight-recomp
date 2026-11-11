@@ -2,7 +2,7 @@
 # calls (video_menu.cpp, guest_call.cpp) are part of the executable.
 add_library(torchlight_game_menu_model STATIC video_menu_model.cpp menu_strings.cpp
     text_conversion.cpp wide_layout.cpp mod_scripts.cpp
-    skill_tree_model.cpp class_selector_model.cpp mod_import_message.cpp)
+    skill_tree_model.cpp class_selector_model.cpp mod_import_message.cpp pack_fonts.cpp)
 target_include_directories(torchlight_game_menu_model PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/..")
 # torchlight_mod_import: Import Mod's result (mod_import_message.h) and the import itself.
 target_link_libraries(torchlight_game_menu_model PUBLIC torchlight_settings torchlight_mod_import)
@@ -13,6 +13,11 @@ add_executable(video_menu_model_test video_menu_model_test.cpp)
 target_link_libraries(video_menu_model_test PRIVATE torchlight_game_menu_model)
 target_compile_options(video_menu_model_test PRIVATE -Wall -Wextra -Werror)
 add_test(NAME video_menu_model_test COMMAND video_menu_model_test)
+
+add_executable(pack_fonts_test pack_fonts_test.cpp)
+target_link_libraries(pack_fonts_test PRIVATE torchlight_game_menu_model)
+target_compile_options(pack_fonts_test PRIVATE -Wall -Wextra -Werror)
+add_test(NAME pack_fonts_test COMMAND pack_fonts_test)
 
 add_executable(menu_strings_test menu_strings_test.cpp)
 target_link_libraries(menu_strings_test PRIVATE torchlight_game_menu_model)
