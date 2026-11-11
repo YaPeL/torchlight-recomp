@@ -117,8 +117,9 @@ void ActivePadDriver::SwitchToLocked(Pad& pad) {
     rex::input::X_INPUT_VIBRATION rumble = vibration_;
     pad.driver->SetDeviceVibration(pad.info.id, &rumble);
   }
-  REXLOG_INFO("input: {} \"{}\" plays the one player", first ? "controller" : "now controller",
-              pad.info.name);
+  const auto number = static_cast<size_t>(&pad - pads_.data()) + 1;
+  REXLOG_INFO("input: {}controller {} of {} (\"{}\") plays the one player", first ? "" : "now ",
+              number, pads_.size(), pad.info.name);
 }
 
 bool ActivePadDriver::PollLocked(rex::input::X_INPUT_STATE& out) {

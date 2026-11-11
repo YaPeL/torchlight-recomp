@@ -391,7 +391,7 @@ uint32_t NowMs() {
 }
 
 // The script's controller: one synthetic device, which the SDK feeds to guest user 0 together with
-// any real controller (rex::input::SlotAssignment / SharedAssignment).
+// the controller in the player's hands (live/one_player_input.h).
 class ScriptInputDriver : public rex::input::InputDriver {
  public:
   static constexpr rex::input::DeviceId kDevice = static_cast<rex::input::DeviceId>(0x53435249);
