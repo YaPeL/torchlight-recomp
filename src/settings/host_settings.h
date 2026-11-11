@@ -33,6 +33,8 @@ enum class AchievementSet { kXbox, kPc };
 // The pad prompts' style (mods/pad_prompts.h): automatic (the connected pad's) or a fixed one. Read
 // once at startup.
 enum class PadPrompts { kAuto, kXbox, kPlayStation, kNintendo };
+// settings.toml "touch_layout" (input::TouchStyle's choices).
+enum class TouchStyle { kXbox, kPlayStation };
 // The touch controls (docs/android-port.md, A4; input/touch_visibility.h): automatic (hidden while a
 // physical pad is used, shown on a touch), always shown or never. Read once at startup. Without the
 // key, the platform's default (EffectiveTouchControls; the owner's decision, 2026-10-18).
@@ -89,6 +91,9 @@ struct HostSettings {
   // The touch controls' visibility; empty when the file has no valid "touch_controls" key (the
   // platform's default). Not written back while empty.
   std::optional<TouchControls> touch_controls;
+  // The touch controls' style (input::TouchStyle): the 360 pad's, or a PlayStation pad's, with the
+  // d-pad (moving the hero) and the stick (switching skill sets) trading places and jobs. Live.
+  TouchStyle touch_layout = TouchStyle::kXbox;
   bool operator==(const HostSettings&) const = default;
 };
 
@@ -130,12 +135,14 @@ struct Capabilities {
   // The most multisampling the backend applies here (tl_backend_max_msaa): 1 none, 2 or 4; 0 while
   // not known yet (the backend has not started).
   uint32_t max_msaa = 0;
+  // Touch controls are installed (EffectiveTouchControls is not "never"): their options apply.
+  bool touch_controls = false;
 };
 
 // Settings the menu shows. Changing one of these takes effect after restarting the game.
 enum class Setting {
   kRenderSystem, kGpu, kRenderResolution, kFpsCap, kVsync, kLanguage, kAspect, kAchievements, kPadPrompts,
-  kSwapConfirmCancel, kMsaa, kShadowResolution, kLowQuality
+  kSwapConfirmCancel, kMsaa, kShadowResolution, kLowQuality, kTouchLayout
 };
 bool RequiresRestart(Setting setting);
 // The achievement set in effect: the setting, or Xbox when it is missing or invalid.

@@ -146,6 +146,7 @@ bool RequiresRestart(Setting setting) {
     case Setting::kFpsCap:
     case Setting::kVsync:
     case Setting::kMsaa:
+    case Setting::kTouchLayout:
       return false;
     case Setting::kShadowResolution:
     case Setting::kLowQuality:
@@ -521,6 +522,10 @@ HostSettings Parse(std::string_view text, std::vector<std::string>* warnings) {
     } else if (key == "swap_confirm_cancel") {
       ok = value == "true" || value == "false";
       if (ok) settings.swap_confirm_cancel = value == "true";
+    } else if (key == "touch_layout") {
+      std::string s;
+      ok = ParseString(value, s) && (s == "xbox" || s == "playstation");
+      if (ok) settings.touch_layout = s == "playstation" ? TouchStyle::kPlayStation : TouchStyle::kXbox;
     } else if (key == "vsync") {
       ok = value == "true" || value == "false";
       if (ok) settings.vsync = value == "true";
@@ -598,6 +603,14 @@ std::string Serialize(const HostSettings& settings) {
     out << "touch_controls = " << Quote(std::string(TouchControlsName(*settings.touch_controls))) << "\n";
   } else {
     out << "# touch_controls = \"auto\"\n";
+  }
+  out << "# The touch controls' layout: \"xbox\" (the 360 pad's: the stick moves the hero, the d-pad\n"
+      << "# below it switches skill sets) or \"playstation\" (the d-pad moves the hero, the stick below it\n"
+      << "# switches skill sets).\n";
+  if (settings.touch_layout == TouchStyle::kPlayStation) {
+    out << "touch_layout = \"playstation\"\n";
+  } else {
+    out << "# touch_layout = \"xbox\"\n";
   }
   return out.str();
 }

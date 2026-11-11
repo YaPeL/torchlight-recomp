@@ -170,7 +170,7 @@ class TorchlightApp : public rex::ReXApp {
         app_context().CallInUIThread([this] {
           if (window()) window()->RequestClose();
         });
-      });
+      }, host.language);
     }
     // PC saves from the game files' import/ folder: the part confirmed before is applied here,
     // before the guest runs; old save backups are pruned too.
@@ -218,10 +218,11 @@ class TorchlightApp : public rex::ReXApp {
     }
     // Android: the system's Back button as the pad's Back (before live::Install, as the script).
     torchlight::live::InstallSystemBackButton(runtime());
-    // The touch controls (settings.toml "touch_controls"): a controller of their own fed by the
-    // fingers (docs/android-port.md, A4).
+    // The touch controls (settings.toml "touch_controls", "touch_layout"): a controller of their
+    // own fed by the fingers (docs/android-port.md, A4).
     torchlight::live::InstallTouchControls(
-        runtime(), torchlight::settings::EffectiveTouchControls(host, torchlight::platform::TouchControlsByDefault()));
+        runtime(), torchlight::settings::EffectiveTouchControls(host, torchlight::platform::TouchControlsByDefault()),
+        torchlight::live::TouchLayoutOptionsOf(host));
     // Development builds: a controller script (before live::Install sets the input's active
     // callback, which the script's controller follows too).
     torchlight::dev::InstallInputScript(runtime(), [this] {

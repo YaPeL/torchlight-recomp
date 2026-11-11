@@ -13,16 +13,16 @@ namespace torchlight::game_menu {
 
 enum class Row {
   kResolution, kAspect, kFpsCap, kMsaa, kShadowResolution, kLanguage, kAchievements, kPadPrompts,
-  kVsync, kSwapConfirmCancel, kRenderer, kGpu, kLowQuality, kImportMod
+  kVsync, kSwapConfirmCancel, kRenderer, kGpu, kLowQuality, kTouchLayout, kImportMod
 };
-inline constexpr int kRowCount = 14;
+inline constexpr int kRowCount = 15;
 // The rows shown as a checkbox (A toggles them) instead of a value moved with left and right.
 inline bool IsCheckbox(Row row) { return row == Row::kVsync || row == Row::kSwapConfirmCancel; }
 // The rows shown as a button that A presses (Activate), with no value: importing a mod.
 inline bool IsAction(Row row) { return row == Row::kImportMod; }
 
-// The column's sections, one shown at a time under their buttons: the video rows, the pad's
-// (button prompts and the A/B swap) and the rest (language, achievements, Import Mod).
+// The column's sections, one shown at a time under their buttons: the video rows, the controls'
+// (button prompts, the A/B swap, the touch layout) and the rest (language, achievements, Import Mod).
 enum class Section { kVideo, kControls, kExtras };
 inline constexpr int kSectionCount = 3;
 Section SectionOf(Row row);
@@ -47,8 +47,9 @@ class VideoMenuModel {
   // The value shown in a row ("1920x1080", "Auto", "21:9", "Unlimited", "Español"...).
   std::string Text(Row row) const;
   bool Enabled(Row row) const;
-  // Whether the row is shown at all (in its section): Import Mod not in a gamescope session (the
-  // owner, 2026-11-09: hidden in the Deck's Game Mode, where the desktop's picker can open unseen).
+  // Whether the row is shown at all (in its section), the owner's decisions (2026-11-09): the touch
+  // layout only where the touch controls are installed (hidden, not greyed out, on a desktop or a
+  // Deck); Import Mod not in a gamescope session (the Deck's Game Mode: the picker can open unseen).
   bool Shown(Row row) const;
   bool Checked(Row row) const;
   // A setting that takes effect after a restart differs from the one the game started with, or a
