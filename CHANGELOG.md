@@ -1,23 +1,80 @@
 # Changelog
 
 User-facing changes for the release notes, newest first. Developers: add a line under
-"Unreleased" for anything a player or tester would notice.
+the newest "(unreleased)" version for anything a player or tester would notice.
 
-## Unreleased
+## v1.1.0 (unreleased)
+
+### New settings
+
+- Antialiasing (Settings > Video): Off, 2x or 4x, smoothing jagged edges. 2x is the default, as the
+  Xbox 360 drew it; only what your graphics card supports is offered. It applies at once.
+- Shadows (Settings > Video): 360 (512), the default, or PC (1024), the sharper shadows of the PC
+  version. It applies on restart.
+- Low-End Devices (Settings > Extras): Xbox 360, the default, or Low, the game's own lighter mode
+  for weak machines (shorter view distance, closer camera, less to draw). It applies on restart.
+- Import Mod (Settings > Extras): installs a mod from a .zip, or on the desktop also from a folder,
+  into the game's `mods` folder. A mod of the same name asks before replacing it, and a failed
+  import leaves the old one in place. The new mod is used from the next start.
 
 ### Faster
 
 - The menus run about 20–28 % faster: the game no longer rebuilds its interface when nothing on it
   changed. If you ever see a menu or the HUD not updating, set `native_gui_redraw_filter = false` in
-  `torchlight.toml` (or start with `--native_gui_redraw_filter=false`).
+  `torchlight.toml` (or start with `--native_gui_redraw_filter=false`) and tell us where.
+- Windows: animated characters' skeletons are computed natively too: 5.9 % more frames per second
+  in the benchmark fight.
+- Windows (Direct3D 11): drawing no longer rebuilds each model's vertex layout on almost every draw.
+
+### Fixed
+
+- With two controllers connected (or one plus a virtual one, such as Steam Input's or
+  DS4Windows'), pressing "Begin" on the second one showed "Sign In Error: You must be signed in
+  with a gamer profile" with no way past it. Any controller can now start the game; the one
+  player is played by the last controller used, and only that one rumbles.
+- Language packs made from a PC translation (for instance GOG's Russian): texts in the settings,
+  skills, character, stats and waypoint menus came out blank, because those menus use a font
+  (Serif14) only the Xbox 360 has. The game now makes it from the pack's own font.
+- The town's first cutscene: if it started while you held the attack button, the hero stood still
+  instead of walking to Syl. He now walks.
+- The Swap A/B row (Settings > Controls) can be changed on Auto only while a Nintendo controller is
+  connected, the only case where it does anything.
+
+### Linux and the Steam Deck
+
+- The AppImage can now update itself with AppImageUpdate or Gear Lever. Coming from v1.0.0, download
+  this version by hand once; later versions are found by the updater.
+
+### Android (highly experimental)
+
+- On battery the frame rate is capped at 60 when the cap is on Automatic (it used to never see
+  the battery), saving power; plugged in, the cap follows the display as before.
+- Touch Layout (Settings > Controls): Xbox 360, as before, or PlayStation, where the d-pad sits
+  in the stick's place and moves the hero.
+- The launcher shows the game's cat icon instead of the system's blank one.
+- A quick tap on a dialog button (OK, Yes, No) is no longer lost.
+
+### Known limitations
+
+- The Linux build needs a CPU with x86-64-v3 (AVX2, FMA): Intel Haswell (2013) or newer, AMD
+  Excavator or Zen or newer, and the Steam Deck.
+- On the Steam Deck, the first start's setup is done in Desktop Mode. Import Mod is hidden in Game
+  Mode, where the file picker could open out of sight; use it from Desktop Mode.
+- A rare hang at startup on an Intel laptop: if the game stays on the first screens, close it and
+  start it again.
+- Android is highly experimental: tested mostly on one phone, with performance and compatibility
+  on other devices unknown.
+
+## v1.0.0 (2026-11-05)
+
+### Faster
+
 - Every desktop build is now optimized with a profile of real play (profile-guided optimization)
   on Linux, Windows and macOS. In the benchmark fight, the game's main thread needs 6.4 % fewer CPU
   cycles per frame than v0.12.5 (Linux, i7-8750H; frame 10.9 to 10.1 ms).
 - Linux: the game is built for x86-64-v3 CPUs and computes animated characters' skeletons
   natively: on top of the line above, 10.5 % fewer cycles per frame in the same fight than a
   Linux build without them. On the Steam Deck the native skeletons alone take 5.9 % off.
-- Windows: animated characters' skeletons are computed natively too: 5.9 % more frames per second
-  in the benchmark fight.
 - The recompiled game code translates memory addresses more cheaply: 9.3 % fewer cycles on
   Android and a 6.4 % faster fight on macOS in the tests.
 - Much faster rendering of animated characters: big fights no longer drop the frame rate,
@@ -30,16 +87,6 @@ User-facing changes for the release notes, newest first. Developers: add a line 
   where a new wave of enemies appears is shorter.
 - The game uses less CPU while waiting for the graphics work, which saves battery on laptops and
   the Steam Deck.
-
-### Fixed
-
-- With two controllers connected (or one plus a virtual one, such as Steam Input's or
-  DS4Windows'), pressing "Begin" on the second one showed "Sign In Error: You must be signed in
-  with a gamer profile" with no way past it. Any controller can now start the game; the one
-  player is played by the last controller used, and only that one rumbles.
-- Language packs made from a PC translation (for instance GOG's Russian): texts in the settings,
-  skills, character, stats and waypoint menus came out blank, because those menus use a font
-  (Serif14) only the Xbox 360 has. The game now makes it from the pack's own font.
 
 ### Linux and the Steam Deck
 
@@ -71,8 +118,7 @@ User-facing changes for the release notes, newest first. Developers: add a line 
   folders instead, with the likely reason on your system (on Windows, also a game started once as
   administrator, whose folder then belongs to the administrators). Started as administrator, it
   warns before making that folder and suggests the user folders.
-- The game has its own icon, a cat, on Linux, Windows, macOS and Android (where it used to show
-  the system's blank icon).
+- The game has its own icon, a cat, on Linux, Windows and macOS.
 
 ### Android (highly experimental)
 
