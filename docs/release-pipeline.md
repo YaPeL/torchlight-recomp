@@ -317,8 +317,9 @@ researched: whether any recomp has received a takedown.
   `default.xex`. The build needs nothing else from the game (codegen reads the XEX named in the
   manifest; `pak.zip` and the rest are read at runtime from the user's copy). To confirm in the
   first release run.
-- **Published** (Releases only): the AppImage and the Windows zip, a `SHA256SUMS` file
-  and the build attestation. Separately, as their own public downloads, the patched SDK and OGRE
+- **Published** (Releases only): the AppImage with its `.zsync` (for AppImageUpdate and Gear
+  Lever; the image's update information points at the latest release's), the Windows zip, the
+  macOS `.dmg`, a `SHA256SUMS` file and the build attestation. Separately, as their own public downloads, the patched SDK and OGRE
   builds (no game content; decision 5). Never: the XEX, `generated/`, debug symbols (private,
   decision 4), intermediate artifacts, captures or sessions.
 - **Private, never in the public repository's caches or artifacts**: the XEX and the debug symbols
@@ -397,7 +398,8 @@ environment (approval first), on GitHub-hosted runners only.
    `make_zip.ps1`, `check_zip.ps1`), upload of the zip only. **check-windows** runs `check_zip.ps1`
    again on a second runner, on the downloaded zip. Runners have no Windows Sandbox and no GPU: the
    clean-machine run is `packaging/windows/sandbox_check.ps1`, by hand.
-5. **publish**: draft release with the files, `SHA256SUMS` and
+5. **publish**: draft release with the files (the AppImage's `.zsync` among them, checked
+   against the image's update information in game-linux), `SHA256SUMS` and
    `actions/attest-build-provenance`. The owner publishes it after trying it on real hardware
    (Linux desktop and Steam Deck): running the game is an agreed milestone, not a CI step.
 

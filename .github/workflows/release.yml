@@ -9,7 +9,8 @@
 #
 # Rules for the job that touches the game (decision 3): no actions/cache, no compiler cache, no
 # upload of generated/, of the build directory or of the symbols; nothing of the game printed. The
-# only artifacts are the AppImage, the zip and the .dmg, which are what get published.
+# only artifacts are the AppImage (with its .zsync), the zip and the .dmg, which are what get
+# published.
 name: Release
 
 on:
