@@ -7,6 +7,9 @@
 # the pinned static runtime get_tools.sh puts next to it (runtime-x86_64).
 # Usage: make_appimage.sh INSTALL_DIR OUTPUT.AppImage [EXECUTABLE]
 #   EXECUTABLE  what AppRun starts (default torchlight; replay for CI's package-check)
+# The game's image (EXECUTABLE torchlight) carries its update information: the latest GitHub
+# release's Torchlight-Recomp-*x86_64.AppImage.zsync, which appimagetool writes next to OUTPUT
+# (AppImageUpdate, Gear Lever). The replay's image carries none.
 # Needs linuxdeploy and appimagetool in PATH with runtime-x86_64 next to appimagetool (CI downloads
 # pinned versions with get_tools.sh), objcopy, and the
 # compiler the tree was built with (for its libstdc++).
@@ -61,6 +64,13 @@ chmod +x "$appdir/AppRun"
 
 runtime="$(dirname "$(command -v appimagetool)")/runtime-x86_64"
 [ -f "$runtime" ] || { echo "make_appimage: no AppImage runtime at $runtime (get_tools.sh)" >&2; exit 1; }
-APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 appimagetool --no-appstream --runtime-file "$runtime" \
-  "$appdir" "$output"
+if [ "$executable" = torchlight ]; then
+  APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 appimagetool --no-appstream --runtime-file "$runtime" \
+    -u "gh-releases-zsync|YaPeL|torchlight-recomp|latest|Torchlight-Recomp-*x86_64.AppImage.zsync" \
+    "$appdir" "$output"
+  [ -f "$output.zsync" ] || { echo "make_appimage: appimagetool wrote no $output.zsync" >&2; exit 1; }
+else
+  APPIMAGE_EXTRACT_AND_RUN=1 ARCH=x86_64 appimagetool --no-appstream --runtime-file "$runtime" \
+    "$appdir" "$output"
+fi
 echo "AppImage: $output"

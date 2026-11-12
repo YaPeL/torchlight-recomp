@@ -111,6 +111,15 @@ jobs:
           packaging/linux/get_tools.sh /tmp/tools
           PATH=/tmp/tools:$PATH CXX=clang++ packaging/linux/make_appimage.sh /tmp/install \
             "Torchlight-Recomp-${GITHUB_REF_NAME}-x86_64.AppImage"
+          # Self-update (AppImageUpdate, Gear Lever): the image names the latest release's .zsync,
+          # which appimagetool wrote next to it with the same base name.
+          image="Torchlight-Recomp-${GITHUB_REF_NAME}-x86_64.AppImage"
+          # Read from the runtime's .upd_info section: running the image (even with
+          # --appimage-updateinformation) would extract it and start the game without FUSE.
+          info=$(readelf -p .upd_info "$image" | sed -nE 's/^ *\[ *0\] +//p')
+          [ "$info" = "gh-releases-zsync|YaPeL|torchlight-recomp|latest|Torchlight-Recomp-*x86_64.AppImage.zsync" ] || {
+            echo "unexpected update information: $info" >&2; exit 1; }
+          grep -q "^Filename: $image\$" "$image.zsync" || { echo "the .zsync names another file" >&2; exit 1; }
       # The bundled libstdc++ and libgcc_s are GPL-3.0 (with the GCC Runtime Library Exception):
       # every release carries the exact source package they were built from, so it does not
       # depend on the PPA keeping that version (THIRD_PARTY_NOTICES.md). If the PPA no longer has
@@ -146,6 +155,7 @@ jobs:
           name: appimage
           path: |
             Torchlight-Recomp-*-x86_64.AppImage
+            Torchlight-Recomp-*-x86_64.AppImage.zsync
             gcc-*-source-*.tar
           retention-days: 7
 
@@ -485,8 +495,8 @@ jobs:
           name: macos-dmg
       - name: Checksums
         run: |
-          sha256sum Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.zip \
-            Torchlight-Recomp-*-arm64.dmg gcc-*-source-*.tar > SHA256SUMS
+          sha256sum Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.AppImage.zsync \
+            Torchlight-Recomp-*-x86_64.zip Torchlight-Recomp-*-arm64.dmg gcc-*-source-*.tar > SHA256SUMS
       # Build attestations need a public repository: skipped while it is private.
       - name: Attestation
         if: ${{ !github.event.repository.private }}
@@ -538,5 +548,5 @@ jobs:
           gh release create "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" --draft \
             --title "Torchlight Recomp $GITHUB_REF_NAME" \
             --notes-file notes.md \
-            Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.zip \
-            Torchlight-Recomp-*-arm64.dmg gcc-*-source-*.tar SHA256SUMS
+            Torchlight-Recomp-*-x86_64.AppImage Torchlight-Recomp-*-x86_64.AppImage.zsync \
+            Torchlight-Recomp-*-x86_64.zip Torchlight-Recomp-*-arm64.dmg gcc-*-source-*.tar SHA256SUMS
