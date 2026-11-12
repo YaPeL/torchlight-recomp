@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The launcher icon (data/icon/README.md): the cat on a plain colour, which each launcher cuts to
+     its own shape. The cat fits the layer's 66 dp safe circle, so no shape cuts an ear or a
+     whisker. Every Android the app runs on (11 and later) uses this; the mipmap-*dpi/ic_launcher.png
+     files are the plain icon for launchers that draw no adaptive ones. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
