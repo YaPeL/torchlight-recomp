@@ -9,36 +9,35 @@ the newest "(unreleased)" version for anything a player or tester would notice.
 
 - Antialiasing (Settings > Video): Off, 2x or 4x, smoothing jagged edges. 2x is the default, as the
   Xbox 360 drew it; only what your graphics card supports is offered. It applies at once.
-- Shadows (Settings > Video): 360 (512), the default, or PC (1024), the sharper shadows of the PC
-  version. It applies on restart.
+- Shadows (Settings > Video): 360, the default, or PC, the sharper shadows of the PC version. It
+  applies on restart.
 - Low-End Devices (Settings > Extras): Xbox 360, the default, or Low, the game's own lighter mode
   for weak machines (shorter view distance, closer camera, less to draw). It applies on restart.
-- Import Mod (Settings > Extras): installs a mod from a .zip, or on the desktop also from a folder,
-  into the game's `mods` folder. A mod of the same name asks before replacing it, and a failed
-  import leaves the old one in place. The new mod is used from the next start.
+- Import Mod (Settings > Extras): installs a mod from a .zip (on Windows, macOS and Linux also
+  from a folder) into the game's `mods` folder. A mod of the same name asks before replacing it,
+  and a failed import leaves the old one in place. The new mod is used from the next start.
 
 ### Faster
 
-- The menus run about 20–28 % faster: the game no longer rebuilds its interface when nothing on it
+- The menus run about 20–28% faster: the game no longer rebuilds its interface when nothing on it
   changed. If you ever see a menu or the HUD not updating, set `native_gui_redraw_filter = false` in
   `torchlight.toml` (or start with `--native_gui_redraw_filter=false`) and tell us where.
-- Windows: animated characters' skeletons are computed natively too: 5.9 % more frames per second
+- Windows: animated characters' skeletons are computed natively too: 5.9% more frames per second
   in the benchmark fight.
-- Windows (Direct3D 11): drawing no longer rebuilds each model's vertex layout on almost every draw.
 
 ### Fixed
 
 - With two controllers connected (or one plus a virtual one, such as Steam Input's or
   DS4Windows'), pressing "Begin" on the second one showed "Sign In Error: You must be signed in
-  with a gamer profile" with no way past it. Any controller can now start the game; the one
-  player is played by the last controller used, and only that one rumbles.
+  with a gamer profile" with no way past it. Any controller can now start the game; the
+  player is controlled by whichever controller was used last, and only that one rumbles.
 - Language packs made from a PC translation (for instance GOG's Russian): texts in the settings,
   skills, character, stats and waypoint menus came out blank, because those menus use a font
   (Serif14) only the Xbox 360 has. The game now makes it from the pack's own font.
 - The town's first cutscene: if it started while you held the attack button, the hero stood still
   instead of walking to Syl. He now walks.
-- The Swap A/B row (Settings > Controls) can be changed on Auto only while a Nintendo controller is
-  connected, the only case where it does anything.
+- The Swap A/B row (Settings > Controls) is now locked while the button prompts are on Auto, unless
+  a Nintendo controller is connected: it only ever applies with Nintendo's buttons.
 
 ### Linux and the Steam Deck
 
@@ -47,8 +46,8 @@ the newest "(unreleased)" version for anything a player or tester would notice.
 
 ### Android (highly experimental)
 
-- On battery the frame rate is capped at 60 when the cap is on Automatic (it used to never see
-  the battery), saving power; plugged in, the cap follows the display as before.
+- On battery the frame rate is capped at 60 when the cap is on Automatic (it used to ignore the
+  battery), saving power; plugged in, the cap follows the display as before.
 - Touch Layout (Settings > Controls): Xbox 360, as before, or PlayStation, where the d-pad sits
   in the stick's place and moves the hero.
 - The launcher shows the game's cat icon instead of the system's blank one.
@@ -60,8 +59,8 @@ the newest "(unreleased)" version for anything a player or tester would notice.
   Excavator or Zen or newer, and the Steam Deck.
 - On the Steam Deck, the first start's setup is done in Desktop Mode. Import Mod is hidden in Game
   Mode, where the file picker could open out of sight; use it from Desktop Mode.
-- A rare hang at startup on an Intel laptop: if the game stays on the first screens, close it and
-  start it again.
+- A rare hang at startup has been seen on one Intel laptop: if the game stays on the first
+  screens, close it and start it again.
 - Android is highly experimental: tested mostly on one phone, with performance and compatibility
   on other devices unknown.
 
