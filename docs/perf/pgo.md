@@ -82,7 +82,8 @@ game's own code (v1.0.0's build: 5).
    (`-Werror=profile-instr-out-of-date`), and rebuilds everything that reads it when it changes.
    `tools/pgo/check_profile_match.py LOG --build-dir BUILD --profdata LLVM_PROFDATA` on the build's
    output also measures the game's own code: it fails over 5 % of the profile's functions with
-   mismatched data, or when the profile was not used.
+   mismatched data, when the profile was not used, or when the log shows nothing compiled (it
+   reads logs in UTF-8 or UTF-16, which Windows PowerShell 5.1's `Tee-Object` writes).
 
 One profile per platform: the generated code differs between them, and any change to what the
 generated code computes can change the hash of nearly every function (it happened when

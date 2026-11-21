@@ -93,8 +93,8 @@ def main(argv=None):
             use = USE.search(open(ninja, errors="replace").read())
     total, bad, lines = mismatch(text)
     if lines == 0 and not COMPILE.search(text):
-        print("pgo check: no compile line in the log (not a build log, or an encoding it cannot "
-              "read): no result")
+        print("pgo check: no compile line in the log (nothing was rebuilt, not a build log, or an "
+              "encoding it cannot read): no result")
         return 1
     if lines == 0 and not use:
         print("pgo check: no -fprofile-instr-use in the log: the profile was not used")
