@@ -38,11 +38,12 @@ the newest "(unreleased)" version for anything a player or tester would notice.
   instead of walking to Syl. He now walks.
 - The Swap A/B row (Settings > Controls) is now locked while the button prompts are on Auto, unless
   a Nintendo controller is connected: it only ever applies with Nintendo's buttons.
+- macOS: Cmd+click works as a right click in dialogs.
 
 ### Linux and the Steam Deck
 
-- The AppImage can now update itself with AppImageUpdate or Gear Lever. Coming from v1.0.0, download
-  this version by hand once; later versions are found by the updater.
+- The AppImage can now update itself with AppImageUpdate or Gear Lever. Coming from v1.0.0,
+  download this version by hand once; later versions are found by the updater.
 
 ### Android (highly experimental)
 
