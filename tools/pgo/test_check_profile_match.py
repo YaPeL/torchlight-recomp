@@ -12,9 +12,9 @@ W = ("x.cpp:1:1: warning: profile data may be out of date: of {n} functions, {m}
      "data that will be ignored [-Wprofile-instr-out-of-date]\n")
 
 
-def run(text, *extra):
-    with tempfile.NamedTemporaryFile("w", suffix=".log", delete=False) as f:
-        f.write(text)
+def run(text, *extra, encoding="utf-8"):
+    with tempfile.NamedTemporaryFile("wb", suffix=".log", delete=False) as f:
+        f.write(text.encode(encoding))
     try:
         return c.main([f.name, *extra])
     finally:
@@ -31,6 +31,15 @@ def main():
     assert run(used + W.format(n=1000, m=10, v="have")) == 1, "a mismatch needs the profile count"
     assert run(used) == 0, "no mismatch reported: everything matched"
     assert run("clang++ -c a.cpp\n") == 1, "the profile was not used"
+    # Windows PowerShell 5.1's Tee-Object writes UTF-16 (with a BOM): read as such, not as 0.
+    bad = used + W.format(n=1000, m=200, v="have")
+    for enc in ("utf-16", "utf-16-le", "utf-16-be", "utf-8-sig"):
+        assert run(bad, *f, encoding=enc) == 1, f"{enc}: the 20 % is seen"
+        assert run(used + W.format(n=1000, m=10, v="have"), *f, encoding=enc) == 0, enc
+    assert c.mismatch(c.decode_log(bad.encode("utf-16"))) == (1000, 200, 1)
+    # No compile line at all: no result, not a pass with 0.
+    assert run("", "--build-dir", "/nonexistent") == 1, "an empty log fails"
+    assert run("some other output\n", *f) == 1, "a log with nothing compiled fails"
     assert run(used + W.format(n=40000, m=1500, v="have"), "--functions", "20000") == 1, \
         "measured on the profile, not on the units that warned"
     d = tempfile.mkdtemp()
