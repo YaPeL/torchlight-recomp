@@ -47,8 +47,8 @@ the newest "(unreleased)" version for anything a player or tester would notice.
 
 ### Android (highly experimental)
 
-- On battery the frame rate is capped at 60 when the cap is on Automatic (it used to ignore the
-  battery), saving power; plugged in, the cap follows the display as before.
+- On battery (checked when the game starts) the frame rate is capped at 60 when the cap is on Auto
+  (it used to ignore the battery), saving power; plugged in, the cap follows the display as before.
 - Touch Layout (Settings > Controls): Xbox 360, as before, or PlayStation, where the d-pad sits
   in the stick's place and moves the hero.
 - The launcher shows the game's cat icon instead of the system's blank one.
