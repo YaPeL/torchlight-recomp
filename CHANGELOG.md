@@ -22,8 +22,8 @@ the newest "(unreleased)" version for anything a player or tester would notice.
 - The menus run about 20–28% faster: the game no longer rebuilds its interface when nothing on it
   changed. If you ever see a menu or the HUD not updating, set `native_gui_redraw_filter = false` in
   `torchlight.toml` (or start with `--native_gui_redraw_filter=false`) and tell us where.
-- Windows: animated characters' skeletons are computed natively too: 5.9% more frames per second
-  in the benchmark fight.
+- Windows and macOS: animated characters' skeletons are computed natively too: 5.9% more frames
+  per second in the benchmark fight on Windows, 5.1% on macOS.
 
 ### Fixed
 

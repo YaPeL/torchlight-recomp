@@ -1,7 +1,7 @@
 // OGRE's node and bone transforms as host code (--native_skeleton; on by default in the Linux
-// x86-64-v3 and Windows x86-64 builds): Node::_update, Node::needUpdate, Bone::needUpdate, Node::_updateFromParent,
-// Node::updateFromParentImpl and the derived orientation/position/scale getters, under
-// Entity::cacheBoneMatrices and the scene graph.
+// x86-64-v3, Windows x86-64 and macOS arm64 builds): Node::_update, Node::needUpdate,
+// Bone::needUpdate, Node::_updateFromParent, Node::updateFromParentImpl and the derived
+// orientation/position/scale getters, under Entity::cacheBoneMatrices and the scene graph.
 //
 // Ported from torchlight-nx 1.0.3 (https://github.com/liartes/torchlight-nx, tag v1.0.3, commit
 // 6624ad2, src/torchlight_ogre_natif.cpp; GPL-3.0, after NFSMW-NX's method), which wrote them for
@@ -56,7 +56,9 @@
 // −6 % on the desktop with a PGO profile trained with it on. On by default in the Windows x86-64
 // build too (x86-64-v2, its fma calls go to the CRT as the recompiled code's): +5.9 % frames a
 // second in fight.txt's fight with a profile trained with it off and on (2026-11-06; Linux on v2
-// found no gain, docs/performance-profile.md). On ARM64 (the POCO) no clear gain.
+// found no gain, docs/performance-profile.md). On by default in the macOS arm64 build: +5.1 % frames
+// a second in the same fight with a profile trained with it off and on, and its parity checked on
+// ARM64 (2026-11-06, docs/regressions.md). Off on Android: neutral on the POCO.
 #ifndef TORCHLIGHT_NATIVE_SKELETON_DEFAULT
 #define TORCHLIGHT_NATIVE_SKELETON_DEFAULT 0
 #endif
