@@ -233,8 +233,12 @@ if(TORCHLIGHT_X86_64_V3 AND UNIX AND NOT APPLE AND NOT ANDROID AND
 endif()
 # And in the Windows x86-64 build (x86-64-v2): measured there with a PGO profile trained with the
 # port off and on, 5.9 % more frames a second in fight.txt's fight (2026-11-06,
-# docs/performance-profile.md). Not on macOS or Android (ARM64: no clear gain on the POCO).
-if(WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+# docs/performance-profile.md). And in the macOS arm64 build (the target's architecture, from the
+# mac-arm64 presets): +5.1 % frames a second in the same fight with a profile trained with it off
+# and on, its parity checked on ARM64 (2026-11-06, docs/regressions.md). Not on Android: neutral on
+# the POCO.
+if((WIN32 AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
+   OR (APPLE AND CMAKE_OSX_ARCHITECTURES STREQUAL "arm64"))
     set_property(SOURCE src/hooks/native_skeleton.cpp APPEND PROPERTY COMPILE_DEFINITIONS
                  TORCHLIGHT_NATIVE_SKELETON_DEFAULT=1)
 endif()
