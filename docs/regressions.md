@@ -100,21 +100,47 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
   - The owner's two tests (`skel-night2.sh`): without PGO, 26.63 → 26.12 ms (−1.9 %, cycles 63.9 →
     62.3 M, −2.4 %); with a profile trained with the port on (0 of 19167 functions mismatched),
     21.51 → 21.29 ms (−1.0 %, cycles 51.4 → 50.0 M, −2.8 %).
-  - So Android keeps the port off. Its parity on ARM64 (`--diag_store_compare_native`,
-    `--diag_skeleton_check`) was never run on the POCO; it is pending the macOS measurement on the
-    owner's Mac (Apple Silicon), which runs both, and decides macOS's default.
-- **Pending for the release after v1.1** (the owner, 2026-11-20): the port on by default on ARM64.
-  The code has nothing x86-specific (`std::fma` in double, `-ffp-contract=off`); the change is
-  ready on the branch `perf/skeleton-arm64` (`4c81ea7`, one condition in `CMakeLists.txt`, no PR,
-  not to be merged before these; its PR also updates the default's comments in
-  `src/hooks/native_skeleton.cpp`):
-  - **the parity on ARM64**, never run: `fight.txt` with `--diag_store_compare
-    --diag_store_compare_native` and `fight5.txt` with `--diag_skeleton_check` in a diagnostics
-    build, 0 differing (and 0 not verified in the store compare), as on x86-64;
-  - **the measurement on macOS** (the Mac, A B B A with a profile trained with the port off and
-    on), which decides macOS's default;
-  - **Android**, already measured neutral (above): on only if the parity holds and a new
-    measurement shows a gain.
+  - So Android keeps the port off.
+- **macOS (Apple Silicon), measured 2026-11-06 by the macOS agent** (the results reached this file
+  on 2026-11-21). Mac mini M2, Xcode 26.6 (AppleClang 21.0.0.21000101), develop `f7e5503`, SDK
+  series up to patch 54 (codegen_id `b0a9641de0b5431d7437dcb810b7b1bd`). Mac on power, low power
+  mode off, no thermal warnings; every run through `tools/run_capped`, its own `--user_data_root`
+  with a fresh copy of the kit's save and settings (fps cap unlimited, vsync off),
+  `--audio_mute=true`, 15 s between runs; the user folders (292 files) and the game data identical
+  before and after.
+  - **Speed:** `mac-arm64-release` (`-O3 -DNDEBUG -g`, dev input and commands) with the release's
+    `pgo/macos-arm64.profdata` (sha256 `d4e4464f…`, assets `653c579`, trained with the port off and
+    on), 1 of 38521 functions mismatched. `fight.txt`, A B B A A B B A, A `--native_skeleton=false`,
+    B `=true`:
+
+    | Run | Mode | Rest fps | Fight fps | Fight ms | Fight p99 ms |
+    | --- | --- | --- | --- | --- | --- |
+    | 1 | A | 441.7 | 165.5 | 6.04 | 10.53 |
+    | 2 | B | 465.6 | 159.1 | 6.28 | 9.78 |
+    | 3 | B | 459.3 | 158.9 | 6.29 | 9.67 |
+    | 4 | A | 445.8 | 142.0 | 7.04 | 10.52 |
+    | 5 | A | 441.4 | 152.9 | 6.54 | 10.35 |
+    | 6 | B | 476.9 | 170.7 | 5.86 | 9.50 |
+    | 7 | B | 464.4 | 165.3 | 6.05 | 9.54 |
+    | 8 | A | 453.4 | 162.0 | 6.17 | 11.02 |
+
+    Means: A rest 445.6 fps, fight 155.6 fps (6.447 ms, p99 10.61); B rest 466.6, fight 163.5 fps
+    (6.120 ms, p99 9.62). With the port: rest +4.7 %, fight +5.1 % (−5.1 % ms), fight p99 −9 %;
+    the fight's spread narrower (A sd 10.5 fps, 142.0–165.5; B sd 5.6).
+  - **Parity on ARM64** (the same commit with `TORCHLIGHT_DIAGNOSTICS=ON`, no PGO): `fight.txt`
+    with `--native_skeleton=true --diag_store_compare --diag_store_compare_native`, 9,576,620
+    compares, 0 differing, 0 not verified; `fight5.txt` with `--native_skeleton=true
+    --diag_skeleton_check`, 12,000,000 `updateFromParentImpl` calls compared, 0 differing. The
+    binding check passed in both builds (43927 guest functions; 210 hooked with PGO, 234 in the
+    diagnostics build).
+  - The macOS agent recommends the port on by default on macOS.
+- **ARM64 status:** the parity holds on ARM64 (above), as on x86-64. The code has nothing
+  x86-specific (`std::fma` in double, `-ffp-contract=off`).
+  - **macOS:** a gain measured (above); on by default is the owner's call (v1.1 or v1.1.1).
+  - **Android:** stays off (the owner, 2026-11-21): the POCO measured neutral, and with the parity
+    verified on ARM64 nothing else is to be measured there.
+  - The branch `perf/skeleton-arm64` (`4c81ea7`) turns it on for both macOS and Android; it is not
+    to be merged as it is (Android stays off).
 
 ## ThinLTO bound the generated code's calls past the hooks (caught before any merge)
 
