@@ -105,11 +105,12 @@ lesson goes into a test, `AGENTS.md`, `REVIEW.md` or a lint, not only here.
     owner's Mac (Apple Silicon), which runs both, and decides macOS's default.
 - **Pending for the release after v1.1** (the owner, 2026-11-20): the port on by default on ARM64.
   The code has nothing x86-specific (`std::fma` in double, `-ffp-contract=off`); the change is
-  ready on the branch `perf/skeleton-arm64` (`4c81ea7`, one `CMakeLists.txt` line, no PR, not to
-  be merged before these):
+  ready on the branch `perf/skeleton-arm64` (`4c81ea7`, one condition in `CMakeLists.txt`, no PR,
+  not to be merged before these; its PR also updates the default's comments in
+  `src/hooks/native_skeleton.cpp`):
   - **the parity on ARM64**, never run: `fight.txt` with `--diag_store_compare
     --diag_store_compare_native` and `fight5.txt` with `--diag_skeleton_check` in a diagnostics
-    build, 0 differing and 0 not verified, as on x86-64;
+    build, 0 differing (and 0 not verified in the store compare), as on x86-64;
   - **the measurement on macOS** (the Mac, A B B A with a profile trained with the port off and
     on), which decides macOS's default;
   - **Android**, already measured neutral (above): on only if the parity holds and a new
